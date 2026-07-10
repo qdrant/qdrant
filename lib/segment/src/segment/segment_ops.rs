@@ -130,8 +130,11 @@ impl Segment {
     }
 
     /// Byte-blob analogue of [`Segment::replace_all_vectors`]: vector values
-    /// are storage-native bytes (the `retrieve_raw` form). Semantics are the
-    /// same — named vectors not present in `vectors` are deleted.
+    /// are storage-native bytes (the `retrieve_raw` form), overlaid with
+    /// decoded `updated_vectors` written fresh by the operation. Semantics are
+    /// the same — a name present in `updated_vectors` takes the fresh value, a
+    /// name present only in `raw_vectors` takes the verbatim bytes, and named
+    /// vectors present in neither are deleted.
     ///
     /// Unlike its decoded twin, `internal_id` may also be a fresh id one past
     /// the current end: the raw insert paths reuse this loop and the storages
@@ -144,14 +147,19 @@ impl Segment {
         &mut self,
         internal_id: PointOffsetType,
         op_num: SeqNumberType,
-        vectors: &[(VectorNameBuf, Vec<u8>)],
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: &NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
-            let bytes = find_raw_vector(vectors, vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+            if let Some(updated) = updated_vectors.get(vector_name) {
+                vector_index.update_vector(internal_id, Some(updated), hw_counter)?;
+            } else {
+                let bytes = find_raw_vector(raw_vectors, vector_name);
+                vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+            }
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         Ok(())
@@ -167,12 +175,13 @@ impl Segment {
         &mut self,
         point_id: PointIdType,
         op_num: SeqNumberType,
-        vectors: &[(VectorNameBuf, Vec<u8>)],
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: &NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        self.replace_all_vectors_raw(new_index, op_num, vectors, hw_counter)?;
+        self.replace_all_vectors_raw(new_index, op_num, raw_vectors, updated_vectors, hw_counter)?;
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
     }
@@ -200,7 +209,8 @@ impl Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         old_id: PointOffsetType,
-        vectors: &[(VectorNameBuf, Vec<u8>)],
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: &NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
@@ -209,7 +219,7 @@ impl Segment {
             .borrow()
             .with_view(|view| view.get_payload(old_id, hw_counter))?;
         let new_id = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        self.replace_all_vectors_raw(new_id, op_num, vectors, hw_counter)?;
+        self.replace_all_vectors_raw(new_id, op_num, raw_vectors, updated_vectors, hw_counter)?;
         self.payload_index
             .borrow_mut()
             .overwrite_payload(new_id, &payload, hw_counter)?;

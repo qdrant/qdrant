@@ -1102,20 +1102,18 @@ impl SegmentHolder {
                             "CoW raw move requires encoding-compatible vector configs on source and destination",
                         );
 
+                        // A single upsert call applies both the verbatim bytes
+                        // and the fresh overlay: a follow-up `update_vectors`
+                        // would re-read the just-written point decoded on
+                        // append-only segments (clone-and-tombstone), undoing
+                        // the lossless byte move.
                         appendable_write_segment.upsert_point_raw(
                             op_num,
                             point_id,
                             &raw_vectors,
+                            updated_vectors,
                             hw_counter,
                         )?;
-                        if !updated_vectors.is_empty() {
-                            appendable_write_segment.update_vectors(
-                                op_num,
-                                point_id,
-                                updated_vectors,
-                                hw_counter,
-                            )?;
-                        }
                         appendable_write_segment
                             .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 

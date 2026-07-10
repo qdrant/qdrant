@@ -757,15 +757,19 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &[(VectorNameBuf, Vec<u8>)],
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        mut updated_vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
-        for (vector_name, _) in vectors {
+        for (vector_name, _) in raw_vectors {
             check_vector_name(vector_name, &self.segment_config)?;
         }
-        // No `preprocess` here on purpose: raw bytes are the stored form,
+        check_named_vectors(&updated_vectors, &self.segment_config)?;
+        // Raw bytes get no `preprocess` on purpose: they are the stored form,
         // already preprocessed (e.g. cosine-normalized) on first ingestion.
+        // `updated_vectors` are fresh operation data and do need it.
+        updated_vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
         let stored_internal_point = self
             .id_tracker
             .borrow()
@@ -788,7 +792,8 @@ impl SegmentEntry for Segment {
                                 op_num,
                                 point_id,
                                 existing_internal_id,
-                                vectors,
+                                raw_vectors,
+                                &updated_vectors,
                                 hw_counter,
                             )?;
                             Ok((true, Some(new_id)))
@@ -796,7 +801,8 @@ impl SegmentEntry for Segment {
                             segment.replace_all_vectors_raw(
                                 existing_internal_id,
                                 op_num,
-                                vectors,
+                                raw_vectors,
+                                &updated_vectors,
                                 hw_counter,
                             )?;
                             Ok((true, Some(existing_internal_id)))
@@ -805,8 +811,13 @@ impl SegmentEntry for Segment {
                 )
             }
             None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
-                let new_index =
-                    segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+                let new_index = segment.insert_new_vectors_raw(
+                    point_id,
+                    op_num,
+                    raw_vectors,
+                    &updated_vectors,
+                    hw_counter,
+                )?;
                 Ok((false, Some(new_index)))
             }),
         }

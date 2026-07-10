@@ -829,7 +829,8 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _vectors: &[(VectorNameBuf, Vec<u8>)],
+        _raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        _updated_vectors: NamedVectors,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(

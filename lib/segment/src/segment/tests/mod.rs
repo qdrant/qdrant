@@ -881,6 +881,7 @@ fn test_upsert_raw_dense_roundtrip() {
         100,
         7.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -904,6 +905,7 @@ fn test_upsert_raw_dense_roundtrip() {
         101,
         7.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), bytes2)],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -948,6 +950,7 @@ fn test_upsert_raw_append_only_replace() {
         102,
         7.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -1015,6 +1018,7 @@ fn test_upsert_raw_multivec_roundtrip() {
         100,
         4.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -1068,6 +1072,7 @@ fn test_upsert_raw_sparse_roundtrip() {
         100,
         7.into(),
         &[(sparse_name.to_string(), bytes.clone())],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -1120,6 +1125,7 @@ fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
             100,
             7.into(),
             &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+            NamedVectors::default(),
             &hw_counter,
         )
         .unwrap();
@@ -1153,6 +1159,7 @@ fn test_upsert_raw_malformed_blob_rejected() {
         100,
         7.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2])],
+        NamedVectors::default(),
         &hw_counter,
     );
     assert!(result.is_err(), "malformed blob must be rejected");
@@ -1197,6 +1204,7 @@ fn test_upsert_raw_dense_turbo_bytes() {
         100,
         7.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -1259,6 +1267,7 @@ fn test_upsert_raw_multivec_turbo_bytes() {
         100,
         4.into(),
         &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
         &hw_counter,
     )
     .unwrap();
@@ -1273,6 +1282,81 @@ fn test_upsert_raw_multivec_turbo_bytes() {
         src.vector(DEFAULT_VECTOR_NAME, 4.into(), &hw_counter)
             .unwrap(),
     );
+}
+
+/// Combined raw + fresh upsert (a CoW move whose operation touches only some
+/// named vectors): the untouched name travels byte-identically while the
+/// updated name takes the fresh value, in one versioned write. Covers the
+/// insert path and the append-only replace path — a follow-up
+/// `update_vectors` call would clone-and-tombstone there, re-reading the
+/// just-written raw bytes decoded.
+#[test]
+fn test_upsert_raw_with_updated_vectors() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut src = build_segment_with_two_named_vecs(src_dir.path(), 4, 2, Distance::Dot).unwrap();
+    let vec1 = vec![0.1_f32, 0.2, 0.3, 0.4];
+    let vec2 = vec![1.0_f32, 2.0];
+    let mut vectors = NamedVectors::default();
+    vectors.insert(VECTOR1_NAME.to_owned(), VectorInternal::Dense(vec1.clone()));
+    vectors.insert(VECTOR2_NAME.to_owned(), VectorInternal::Dense(vec2));
+    src.upsert_point(100, 7.into(), vectors, &hw_counter)
+        .unwrap();
+    let bytes1 = retrieve_raw_vector(&src, 7.into(), VECTOR1_NAME);
+
+    let fresh_vec2 = vec![5.0_f32, 6.0];
+    for append_only in [false, true] {
+        let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+        let mut dst =
+            build_segment_with_two_named_vecs(dst_dir.path(), 4, 2, Distance::Dot).unwrap();
+        dst.append_only_mutations = append_only;
+
+        if append_only {
+            // Pre-insert an older point so the raw upsert takes the
+            // clone-and-tombstone replace path.
+            let mut old_vectors = NamedVectors::default();
+            old_vectors.insert(
+                VECTOR1_NAME.to_owned(),
+                VectorInternal::Dense(vec![9.0_f32, 9.0, 9.0, 9.0]),
+            );
+            dst.upsert_point(99, 7.into(), old_vectors, &hw_counter)
+                .unwrap();
+        }
+
+        let mut updated_vectors = NamedVectors::default();
+        updated_vectors.insert(
+            VECTOR2_NAME.to_owned(),
+            VectorInternal::Dense(fresh_vec2.clone()),
+        );
+        dst.upsert_point_raw(
+            100,
+            7.into(),
+            &[(VECTOR1_NAME.to_owned(), bytes1.clone())],
+            updated_vectors,
+            &hw_counter,
+        )
+        .unwrap();
+
+        // The untouched name traveled verbatim...
+        assert_eq!(
+            retrieve_raw_vector(&dst, 7.into(), VECTOR1_NAME),
+            bytes1,
+            "append_only: {append_only}",
+        );
+        assert_eq!(
+            dst.vector(VECTOR1_NAME, 7.into(), &hw_counter).unwrap(),
+            Some(VectorInternal::Dense(vec1.clone())),
+            "append_only: {append_only}",
+        );
+        // ...and the updated name took the fresh value.
+        assert_eq!(
+            dst.vector(VECTOR2_NAME, 7.into(), &hw_counter).unwrap(),
+            Some(VectorInternal::Dense(fresh_vec2.clone())),
+            "append_only: {append_only}",
+        );
+    }
 }
 
 /// Tests segment functions to ensure invalid requests do error

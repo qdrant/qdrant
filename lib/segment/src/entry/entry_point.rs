@@ -438,15 +438,21 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
     /// [`ReadSegmentEntry::retrieve_raw`], so requantized (e.g. TurboQuant)
     /// vectors relocate without a lossy decode/re-encode round-trip.
     ///
-    /// The bytes carry no encoding/version tag: the target segment must have
-    /// the same vector configuration (kind, datatype, dim) as the source. The
-    /// bytes are inserted as-is, without preprocessing — they were already
+    /// `updated_vectors` carries decoded vectors written fresh by the
+    /// operation; they are preprocessed and applied in the same versioned
+    /// write, taking precedence over `raw_vectors` on name collisions. Names
+    /// present in neither container are dropped, matching upsert semantics.
+    ///
+    /// The raw bytes carry no encoding/version tag: the target segment must
+    /// have the same vector configuration (kind, datatype, dim) as the source.
+    /// They are inserted as-is, without preprocessing — they were already
     /// preprocessed (e.g. cosine-normalized) when first ingested.
     fn upsert_point_raw(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vectors: &[(VectorNameBuf, Vec<u8>)],
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
