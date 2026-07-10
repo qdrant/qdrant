@@ -19,6 +19,8 @@ use super::format::{
 };
 use crate::common::operation_error::{OperationError, OperationResult};
 
+const HEADER_AND_BASIC_BLOCK_INDEX_SIZE: u64 = size_of::<Header>() as u64 + 16 * 1024; // Header + 16 KB
+
 /// Per-block metadata, parsed from the block index section and kept resident.
 pub(super) struct BlockMeta {
     /// First key of the block, stored in full. Any valid separator (a string
@@ -53,7 +55,11 @@ pub struct PrefixIndex<S: UniversalRead = MmapFile> {
 }
 
 impl<S: UniversalRead> PrefixIndex<S> {
-    fn open_options(populate: Populate) -> OpenOptions {
+    fn prefix_open_options(populate: Populate) -> OpenOptions {
+        // Default a lazy open to partially populating the header + a slice of
+        // the block index, so the index can be opened without a full read.
+        let populate = populate.or_partial(0..HEADER_AND_BASIC_BLOCK_INDEX_SIZE);
+
         OpenOptions {
             writeable: false,
             need_sequential: false,
@@ -72,8 +78,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
             return Ok(());
         }
 
-        // TODO(uio): Turn Populate::No into Populate::BackgroundPartial(0..header + header.block_index_size)
-        fs.schedule_prefetch(&file_path, Some(Self::open_options(populate)), None)?;
+        fs.schedule_prefetch(&file_path, Some(Self::prefix_open_options(populate)), None)?;
 
         Ok(())
     }
@@ -90,7 +95,11 @@ impl<S: UniversalRead> PrefixIndex<S> {
             return Ok(None);
         }
 
-        let storage = fs.open(&file_path, Self::open_options(populate), Default::default())?;
+        let storage = fs.open(
+            &file_path,
+            Self::prefix_open_options(populate),
+            Default::default(),
+        )?;
 
         let header_size = size_of::<Header>() as u64;
         let header_bytes = storage.read_bytes::<Random>(0..header_size, align_of::<Header>())?;

@@ -6,17 +6,17 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{
-    BLOCK_SIZE, DiskCache, DiskCacheRemote, to_block_range,
+    DiskCache, DiskCacheRemote, block_aligned_fetch, to_block_range,
 };
 use crate::universal_io::{self, ReadPipeline, Result, UniversalIoError, UniversalRead, UserData};
 
 #[cfg(target_os = "linux")]
 /// Required alignment when using io_uring with `O_DIRECT` on Linux
-const REMOTE_READ_ALIGNMENT: usize = universal_io::io_uring::KERNEL_PAGE_SIZE;
+pub(super) const REMOTE_READ_ALIGNMENT: usize = universal_io::io_uring::KERNEL_PAGE_SIZE;
 
 #[cfg(not(target_os = "linux"))]
 /// Default alignment on non-Linux platforms
-const REMOTE_READ_ALIGNMENT: usize = 1;
+pub(super) const REMOTE_READ_ALIGNMENT: usize = 1;
 
 struct RemoteMeta<File, U> {
     file: File,
@@ -91,11 +91,10 @@ where
         });
     }
 
-    // BLOCK_SIZE aligned, clamped to EOF.
-    let byte_offset = u64::from(blocks_range.start) * BLOCK_SIZE as u64;
-    let fetch_length = blocks_range.len() as u64 * BLOCK_SIZE as u64;
-    let max_length = local.mmap().len::<u8>()?.saturating_sub(byte_offset);
-    let blocks_byte_range = byte_offset..byte_offset + max_length.min(fetch_length);
+    // BLOCK_SIZE aligned, clamped to EOF. `range` is non-empty here, so the
+    // block range is non-empty and `block_aligned_fetch` yields `Some`.
+    let (blocks_range, blocks_byte_range) = block_aligned_fetch(range, local.mmap().len::<u8>()?)
+        .expect("non-empty range has a non-empty block range");
 
     Ok(Source::Remote {
         blocks_range,

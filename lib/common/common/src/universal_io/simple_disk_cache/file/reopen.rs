@@ -26,6 +26,9 @@ where
             State::ReopenPrefill { pipeline, local } => {
                 self.init_from_reopen_prefill(pipeline, local)?
             }
+            State::PartialPrefill { pipeline, len } => {
+                self.init_from_partial_prefill(pipeline, len)?
+            }
         };
         *self.is_ready.get_mut() = false;
 
@@ -35,7 +38,7 @@ where
         let local_len = local.mmap().len::<u8>()?;
 
         match self.open_options.populate {
-            Populate::Auto | Populate::No => {
+            Populate::Auto | Populate::No | Populate::Partial(_) => {
                 let remote_len = remote.len::<u8>()?;
 
                 // The remote is assumed to be append-only; a smaller file is unexpected.
