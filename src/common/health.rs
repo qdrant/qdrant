@@ -311,9 +311,13 @@ impl Task {
     /// index of such peers means waiting for the commit index of a foreign consensus, which this
     /// peer may never reach.
     ///
-    /// An empty `conf_state` means this peer doesn't know the cluster configuration yet (e.g. it
-    /// bootstraps and didn't apply any configuration change so far). In this case all known peer
-    /// addresses are considered members.
+    /// The `conf_state` filter only applies if this peer is a member itself. A bootstrapping
+    /// peer seeds `conf_state` with just the first voter of the cluster until it applies the
+    /// configuration change entries of the log. Filtering by that interim `conf_state` would
+    /// leave a single member and misclassify this peer as a single-node cluster, reporting it
+    /// ready before it caught up with the cluster commit index. The same reasoning covers an
+    /// empty `conf_state`: this peer doesn't know the cluster configuration yet, so all known
+    /// peer addresses are considered members.
     fn member_peer_addresses(&self) -> PeerAddressById {
         let persistent = self.consensus_state.persistent.read();
         let conf_state = &persistent.state().conf_state;
@@ -329,7 +333,7 @@ impl Task {
 
         let mut peer_address_by_id = persistent.peer_address_by_id();
 
-        if !members.is_empty() {
+        if members.contains(&persistent.this_peer_id()) {
             peer_address_by_id.retain(|peer_id, _| members.contains(peer_id));
         }
 
