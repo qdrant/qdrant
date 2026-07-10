@@ -74,6 +74,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
 
         // Chunks
         preopen_chunks(fs, directory, advice, populate)?;
+
         Ok(())
     }
 

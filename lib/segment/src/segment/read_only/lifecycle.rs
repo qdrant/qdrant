@@ -151,14 +151,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
 
-            if config.quantization_config(vector_name).is_some() {
-                if let Some(quant_config) = ReadOnlyQuantizedVectors::<S>::preopen(
-                    fs,
-                    &path,
-                    vector_config.multivector_config.is_some(),
-                )? {
-                    quantized_config.insert(vector_name.clone(), quant_config);
-                }
+            if config.quantization_config(vector_name).is_some()
+                && let Some(quant_config) =
+                    ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config)?
+            {
+                quantized_config.insert(vector_name.clone(), quant_config);
             }
         }
 

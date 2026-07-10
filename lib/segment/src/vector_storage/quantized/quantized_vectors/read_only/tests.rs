@@ -18,14 +18,15 @@ use crate::common::live_reload::LiveReload;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
-    BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantizationConfig, TurboQuantQuantizationConfig,
+    BinaryQuantizationConfig, Distance, Indexes, MultiVectorConfig, ProductQuantizationConfig,
+    QuantizationConfig, ScalarQuantizationConfig, TurboQuantQuantizationConfig, VectorDataConfig,
+    VectorStorageType,
 };
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectors, QuantizedVectorsStorageType,
+    QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::vector_storage_base::{VectorStorage, VectorStorageRead};
 
@@ -175,7 +176,6 @@ fn read_only_matches_read_write_multivector(
     #[case] storage_type: QuantizedVectorsStorageType,
 ) {
     use crate::fixtures::payload_fixtures::random_multi_vector;
-    use crate::types::MultiVectorConfig;
     use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 
     let quant_dir = tempfile::Builder::new()
@@ -241,9 +241,33 @@ fn read_only_matches_read_write_multivector(
     }
 }
 
+/// Minimal [`VectorDataConfig`] carrying just what `preopen` reads off it: whether
+/// the vector storage is on-disk, and whether it is a multivector.
+fn preopen_vector_config(
+    on_disk: bool,
+    multivector_config: Option<MultiVectorConfig>,
+) -> VectorDataConfig {
+    VectorDataConfig {
+        size: DIMS,
+        distance: DISTANCE,
+        storage_type: if on_disk {
+            VectorStorageType::Mmap
+        } else {
+            VectorStorageType::Memory
+        },
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config,
+        datatype: None,
+    }
+}
+
 /// Build a `CachedFs` over `dir` with the listing snapshot taken, the way the
 /// segment open path does before `preopen`, then remove every entry in `dir`
-/// after `preopen` ran.
+/// after `preopen` ran. Also returns the config `preopen` parsed, the way the
+/// segment open path threads it into `open`'s `known_quantized_config` — `open`
+/// only reads `quantized.config.json` itself when that's `None`, and by then
+/// the file is gone.
 ///
 /// Merely opening after a `preopen` proves nothing: `CachedFs` falls back to a
 /// plain inner open for any path that was never scheduled, so a
@@ -251,10 +275,14 @@ fn read_only_matches_read_write_multivector(
 /// the directory makes the prefetch pool the *only* possible source: the
 /// already-open handles parked in the pool stay readable, while any fallback
 /// open hits `NotFound`.
-fn preopen_and_unlink(dir: &std::path::Path, multivector: bool) -> CachedFs<MmapFs> {
+fn preopen_and_unlink(
+    dir: &std::path::Path,
+    vector_config: &VectorDataConfig,
+) -> (CachedFs<MmapFs>, Option<QuantizedVectorsConfig>) {
     let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
     cached_fs.cache_file_info().unwrap();
-    ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, multivector).unwrap();
+    let quantized_config =
+        ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, vector_config).unwrap();
 
     for entry in fs_err::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -265,7 +293,7 @@ fn preopen_and_unlink(dir: &std::path::Path, multivector: bool) -> CachedFs<Mmap
         }
     }
 
-    cached_fs
+    (cached_fs, quantized_config)
 }
 
 /// `preopen` must schedule exactly the files `open` goes on to consume; see
@@ -296,12 +324,13 @@ fn preopen_then_open_through_cached_fs(
     )
     .unwrap();
 
-    let cached_fs = preopen_and_unlink(quant_dir.path(), false);
+    let vector_config = preopen_vector_config(on_disk, None);
+    let (cached_fs, quantized_config) = preopen_and_unlink(quant_dir.path(), &vector_config);
 
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &cached_fs,
         quant_dir.path(),
-        None,
+        quantized_config,
         storage.distance(),
         storage.datatype(),
         None,
@@ -337,7 +366,6 @@ fn preopen_then_open_multivector_through_cached_fs(
     #[case] storage_type: QuantizedVectorsStorageType,
 ) {
     use crate::fixtures::payload_fixtures::random_multi_vector;
-    use crate::types::MultiVectorConfig;
     use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 
     let quant_dir = tempfile::Builder::new()
@@ -368,12 +396,13 @@ fn preopen_then_open_multivector_through_cached_fs(
     )
     .unwrap();
 
-    let cached_fs = preopen_and_unlink(quant_dir.path(), true);
+    let vector_config = preopen_vector_config(on_disk, Some(multivector_config));
+    let (cached_fs, quantized_config) = preopen_and_unlink(quant_dir.path(), &vector_config);
 
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &cached_fs,
         quant_dir.path(),
-        None,
+        quantized_config,
         storage.distance(),
         storage.datatype(),
         Some(&multivector_config),

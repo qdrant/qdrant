@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
-use common::universal_io::{OneshotFile, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use fs_err::File;
 
@@ -21,13 +21,22 @@ pub struct QuantizedRamStorage {
 }
 
 impl QuantizedRamStorage {
+    pub fn preopen<S: UniversalRead>(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(path, None, None)?;
+
+        Ok(())
+    }
+
     /// Load all quantized vectors into RAM through the provided [`UniversalRead`]
     /// filesystem, performing no writes.
     ///
     /// The data is read once through the pluggable `S` backend (mmap, io_uring,
     /// object storage, …) and evicted from the RAM/page cache afterwards via
     /// [`OneshotFile`], since we keep our own heap copy.
-    pub fn from_file<S: UniversalRead>(
+    pub fn open<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
@@ -180,7 +189,7 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 0).unwrap_err();
+        let err = QuantizedRamStorage::open::<MmapFile>(&MmapFs, &path, 0).unwrap_err();
 
         assert!(matches!(
             err,
@@ -195,7 +204,7 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4, 5]).unwrap();
 
-        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap_err();
+        let err = QuantizedRamStorage::open::<MmapFile>(&MmapFs, &path, 2).unwrap_err();
 
         assert!(matches!(
             err,
@@ -212,7 +221,7 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        let storage = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap();
+        let storage = QuantizedRamStorage::open::<MmapFile>(&MmapFs, &path, 2).unwrap();
 
         assert_eq!(storage.vectors_count(), 2);
         assert_eq!(storage.get_vector_data(0).as_ref(), [1, 2]);

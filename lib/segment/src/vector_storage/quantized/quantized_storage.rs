@@ -9,7 +9,8 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+    UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -51,7 +52,7 @@ impl QuantizedStorage<MmapFile> {
     /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
     pub(crate) fn reload(&mut self) -> OperationResult<()> {
         let path = self.path.clone();
-        *self = Self::from_file(&MmapFs, &path, self.quantized_vector_size.get())?;
+        *self = Self::open(&MmapFs, &path, self.quantized_vector_size.get())?;
         Ok(())
     }
 }
@@ -79,7 +80,13 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         }
     }
 
-    pub fn from_file(
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        fs.schedule_prefetch(path, Some(Self::open_options()), None)?;
+
+        Ok(())
+    }
+
+    pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
@@ -106,7 +113,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     /// Open the encoded vectors at `path`, creating an empty storage if the file does not yet exist.
-    pub fn open(
+    pub fn open_or_create(
         fs: &S::Fs,
         path: &Path,
         quantized_vector_size: usize,
@@ -117,14 +124,14 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         }
 
         // Ensure the backing file exists without clobbering existing data:
-        // `from_file` mmaps the file read-only and fails if it is missing.
+        // `open` mmaps the file read-only and fails if it is missing.
         fs_err::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(false)
             .open(path)?;
 
-        let storage = Self::from_file(fs, path, quantized_vector_size)?;
+        let storage = Self::open(fs, path, quantized_vector_size)?;
 
         if prefault {
             storage.populate();

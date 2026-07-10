@@ -30,7 +30,7 @@ impl TurboEncodedVectorStorage {
         quantized_vector_size: usize,
         populate: bool,
     ) -> OperationResult<Self> {
-        Ok(Self::Mmap(QuantizedStorage::<MmapFile>::open(
+        Ok(Self::Mmap(QuantizedStorage::<MmapFile>::open_or_create(
             &MmapFs,
             path,
             quantized_vector_size,

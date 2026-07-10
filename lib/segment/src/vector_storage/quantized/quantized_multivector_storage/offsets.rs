@@ -46,6 +46,27 @@ impl MultivectorOffsetsStorageRam {
         })
     }
 
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+    pub fn preopen<S: UniversalRead>(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(
+            path,
+            Some(Self::open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        Ok(())
+    }
+
     /// Load all offsets into RAM through the provided [`UniversalRead`] filesystem,
     /// performing no writes.
     ///
@@ -56,12 +77,7 @@ impl MultivectorOffsetsStorageRam {
     ) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: true,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(Populate::No),
             Default::default(),
         )?);
         Ok(MultivectorOffsetsStorageRam {
@@ -146,18 +162,26 @@ impl MultivectorOffsetsStorageMmap<MmapFile> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
+    const OPEN_OPTIONS: OpenOptions = OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Global,
+    };
+
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        fs.schedule_prefetch(path, Some(Self::OPEN_OPTIONS), None)?;
+
+        Ok(())
+    }
+
     /// Open the offsets file read-only through the provided [`UniversalRead`] filesystem.
     ///
     /// Performs no writes, making this the entry point used by read-only storages.
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
+            Self::OPEN_OPTIONS,
             Default::default(),
         )?);
 
