@@ -62,7 +62,7 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_holder::recovery_guard::{
     ActiveRecoveries, RecoveryProgressHandle, ShardRecoveryGuard,
 };
-use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
+use crate::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
@@ -452,6 +452,70 @@ impl ShardHolder {
             .shard_transfer_changes
             .send(ShardTransferChange::Start(transfer));
         Ok(changed)
+    }
+
+    /// Update an existing transfer record's method in place, preserving its `sync` flag.
+    /// This is the last durable write of a shard-transfer restart.
+    ///
+    /// The record is updated in place, never removed and re-inserted, so it is
+    /// always present. A restart replayed after a crash can therefore always find
+    /// the record and re-run.
+    ///
+    /// Returns the resulting record:
+    /// - No matching record: returns `None`. The record is never removed during a
+    ///   restart, so this is a stale duplicate restart (the caller dismisses it).
+    /// - Method already updated: returns the record unchanged, without writing.
+    ///   This is a replay whose method update already landed.
+    /// - Otherwise: replaces the method (resetting `to_shard_id` and `filter`) and
+    ///   returns the updated record.
+    pub fn register_restart_transfer(
+        &self,
+        key: &ShardTransferKey,
+        new_method: ShardTransferMethod,
+    ) -> CollectionResult<Option<ShardTransfer>> {
+        let mut updated = None;
+
+        self.shard_transfers.write_optional(|transfers| {
+            let existing = transfers.iter().find(|transfer| key.check(transfer))?;
+
+            // Replay: the method was already updated on a previous apply. Return
+            // the record without rewriting the file.
+            if existing.method == Some(new_method) {
+                updated = Some(existing.clone());
+                return None;
+            }
+
+            let new_transfer = ShardTransfer {
+                shard_id: existing.shard_id,
+                to_shard_id: None,
+                from: existing.from,
+                to: existing.to,
+                // Preserve the sync flag from the old transfer
+                sync: existing.sync,
+                method: Some(new_method),
+                filter: None,
+            };
+
+            let mut transfers = transfers.clone();
+            transfers.retain(|transfer| !key.check(transfer));
+            transfers.insert(new_transfer.clone());
+            updated = Some(new_transfer);
+            Some(transfers)
+        })?;
+
+        // A restart is semantically the old transfer aborted and a new one
+        // started; notify watchers as that pair (there is no dedicated Restart
+        // change variant).
+        if let Some(transfer) = &updated {
+            let _ = self
+                .shard_transfer_changes
+                .send(ShardTransferChange::Abort(*key));
+            let _ = self
+                .shard_transfer_changes
+                .send(ShardTransferChange::Start(transfer.clone()));
+        }
+
+        Ok(updated)
     }
 
     pub fn register_finish_transfer(&self, key: &ShardTransferKey) -> CollectionResult<bool> {
@@ -1548,4 +1612,106 @@ pub(crate) enum ShardTransferChange {
 
 pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::not_found(format!("shard {shard_id}"))
+}
+
+/// `register_restart_transfer` is the last durable write of a shard-transfer
+/// restart (finding E). These tests pin its replay-safety: the record is never
+/// removed, so a replay after the method-updating write reports the record
+/// (rather than "no transfer"), and the update is value-idempotent.
+#[cfg(test)]
+mod restart_transfer_tests {
+    use super::*;
+
+    fn make_holder() -> (tempfile::TempDir, ShardHolder) {
+        let dir = tempfile::tempdir().unwrap();
+        let holder = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();
+        (dir, holder)
+    }
+
+    // A replication (sync) wal-delta transfer — the shape that actually gets
+    // restarted (restart is only proposed as a wal-delta fallback).
+    fn wal_delta_transfer() -> ShardTransfer {
+        ShardTransfer {
+            shard_id: 1,
+            to_shard_id: None,
+            from: 10,
+            to: 20,
+            sync: true,
+            method: Some(ShardTransferMethod::WalDelta),
+            filter: None,
+        }
+    }
+
+    #[test]
+    fn test_register_restart_transfer_absent_is_none() {
+        let (_dir, holder) = make_holder();
+        let key = wal_delta_transfer().key();
+
+        // No record: a restart of a transfer that isn't registered is a
+        // stale-duplicate signal, reported as None.
+        let result = holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap();
+        assert_eq!(
+            result, None,
+            "restart of an absent transfer must return None"
+        );
+    }
+
+    #[test]
+    fn test_register_restart_transfer_updates_method_in_place() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let key = transfer.key();
+        holder
+            .register_start_shard_transfer(transfer.clone())
+            .unwrap();
+
+        let updated = holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap()
+            .expect("restart must return the updated record");
+
+        assert_eq!(updated.method, Some(ShardTransferMethod::Snapshot));
+        assert_eq!(updated.sync, transfer.sync, "sync flag must be preserved");
+        assert_eq!(updated.to_shard_id, None);
+        assert_eq!(updated.filter, None);
+        assert_eq!(updated.from, transfer.from);
+        assert_eq!(updated.to, transfer.to);
+        assert_eq!(updated.shard_id, transfer.shard_id);
+
+        // The record is replaced in place — still exactly one transfer, now with
+        // the new method (never removed, so a replay can always find it).
+        let transfers = holder.shard_transfers.read();
+        assert_eq!(transfers.len(), 1);
+        assert_eq!(
+            transfers.iter().next().unwrap().method,
+            Some(ShardTransferMethod::Snapshot),
+        );
+    }
+
+    #[test]
+    fn test_register_restart_transfer_replay_is_noop() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let key = transfer.key();
+        holder
+            .register_start_shard_transfer(transfer.clone())
+            .unwrap();
+
+        // Apply the restart, then replay it (as a crash after the method write
+        // would). The replay must report the record (not None) and leave the set
+        // unchanged — a single, idempotent no-op.
+        holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap();
+        let replay = holder
+            .register_restart_transfer(&key, ShardTransferMethod::Snapshot)
+            .unwrap()
+            .expect("replay must still find the record, not treat it as absent");
+
+        assert_eq!(replay.method, Some(ShardTransferMethod::Snapshot));
+        assert_eq!(replay.sync, transfer.sync);
+        assert_eq!(holder.shard_transfers.read().len(), 1);
+    }
 }
