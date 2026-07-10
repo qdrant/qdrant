@@ -319,55 +319,6 @@ pub async fn recover_shard_snapshot(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn hash_materialized_snapshot_uses_materialized_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let storage_path = dir.path().join("storage-key.snapshot");
-        let materialized_file = tempfile::Builder::new()
-            .prefix("materialized")
-            .suffix(".snapshot")
-            .tempfile_in(dir.path())
-            .unwrap()
-            .into_temp_path();
-        let materialized_path = materialized_file.to_path_buf();
-        let snapshot_file = MaybeTempPath::Temporary(materialized_file);
-
-        tokio::fs::write(&storage_path, b"storage bytes")
-            .await
-            .unwrap();
-        tokio::fs::write(&materialized_path, b"materialized bytes")
-            .await
-            .unwrap();
-
-        let actual = hash_materialized_snapshot_if_requested(&snapshot_file, true)
-            .await
-            .unwrap()
-            .unwrap();
-        let storage_hash = sha_256::hash_file(&storage_path).await.unwrap();
-        let materialized_hash = sha_256::hash_file(&materialized_path).await.unwrap();
-
-        assert_ne!(actual, storage_hash);
-        assert_eq!(actual, materialized_hash);
-    }
-
-    #[tokio::test]
-    async fn hash_materialized_snapshot_skips_hash_when_not_requested() {
-        let dir = tempfile::tempdir().unwrap();
-        let missing_path = dir.path().join("missing.snapshot");
-        let snapshot_file = MaybeTempPath::Persistent(missing_path);
-
-        let actual = hash_materialized_snapshot_if_requested(&snapshot_file, false)
-            .await
-            .unwrap();
-
-        assert_eq!(actual, None);
-    }
-}
-
 /// # Cancel safety
 ///
 /// This function is *not* cancel safe.
@@ -495,4 +446,53 @@ pub async fn try_take_partial_snapshot_recovery_lock(
         .await?;
 
     Ok(recovery_lock)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn hash_materialized_snapshot_uses_materialized_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage_path = dir.path().join("storage-key.snapshot");
+        let materialized_file = tempfile::Builder::new()
+            .prefix("materialized")
+            .suffix(".snapshot")
+            .tempfile_in(dir.path())
+            .unwrap()
+            .into_temp_path();
+        let materialized_path = materialized_file.to_path_buf();
+        let snapshot_file = MaybeTempPath::Temporary(materialized_file);
+
+        fs_err::tokio::write(&storage_path, b"storage bytes")
+            .await
+            .unwrap();
+        fs_err::tokio::write(&materialized_path, b"materialized bytes")
+            .await
+            .unwrap();
+
+        let actual = hash_materialized_snapshot_if_requested(&snapshot_file, true)
+            .await
+            .unwrap()
+            .unwrap();
+        let storage_hash = sha_256::hash_file(&storage_path).await.unwrap();
+        let materialized_hash = sha_256::hash_file(&materialized_path).await.unwrap();
+
+        assert_ne!(actual, storage_hash);
+        assert_eq!(actual, materialized_hash);
+    }
+
+    #[tokio::test]
+    async fn hash_materialized_snapshot_skips_hash_when_not_requested() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing_path = dir.path().join("missing.snapshot");
+        let snapshot_file = MaybeTempPath::Persistent(missing_path);
+
+        let actual = hash_materialized_snapshot_if_requested(&snapshot_file, false)
+            .await
+            .unwrap();
+
+        assert_eq!(actual, None);
+    }
 }
