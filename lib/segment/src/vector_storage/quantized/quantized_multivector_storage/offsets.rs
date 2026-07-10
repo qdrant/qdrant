@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
     UniversalReadFs, UniversalWrite,
 };
 use fs_err as fs;
@@ -375,6 +375,16 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        ChunkedVectorsRead::<MultivectorOffset, S>::preopen(
+            fs,
+            path,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+    }
+
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
         let data = ChunkedVectorsRead::open(
             fs,

@@ -118,6 +118,15 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
             VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path)?;
+
+            // Quantized vectors live in the vector storage directory.
+            if config.quantization_config(vector_name).is_some() {
+                ReadOnlyQuantizedVectors::<S>::preopen(
+                    fs,
+                    &path,
+                    vector_config.multivector_config.is_some(),
+                )?;
+            }
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);

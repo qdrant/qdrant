@@ -70,7 +70,7 @@ pub struct QuantizedStorageBuilder<S> {
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
-    fn open_options() -> OpenOptions {
+    pub(in crate::vector_storage::quantized) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,

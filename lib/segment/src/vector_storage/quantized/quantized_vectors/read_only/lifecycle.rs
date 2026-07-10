@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use common::universal_io::{OkNotFound, UniversalRead, UniversalReadFs, read_json_via};
+use common::universal_io::{
+    CachedReadFs, OkNotFound, UniversalRead, UniversalReadFs, read_json_via,
+};
 use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
@@ -18,10 +20,69 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedStorageKind, QuantizedVectors, QuantizedVectorsConfig,
+    QuantizedStorageKind, QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
 };
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
+    /// Schedule background prefetch of every file [`Self::open`] will read.
+    ///
+    /// Reads the quantization config to learn the layout — and then schedules
+    /// it, so `open`'s own read is served from the prefetch pool. A missing
+    /// config means quantization isn't built: nothing to schedule, like
+    /// `open`'s `Ok(None)`. `multivector` stands in for `open`'s
+    /// `multivector_config`: only presence changes the file set.
+    ///
+    /// Unlike `open` there is no dispatch on the storage kind: which flat
+    /// reader (RAM oneshot vs mmap) later consumes the data file doesn't
+    /// change the file set, only flat vs chunked does — and that is the
+    /// storage *type*. Absent files are skipped rather than reported: the
+    /// subsequent open is the one to produce the error.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        multivector: bool,
+    ) -> OperationResult<()> {
+        let config_path = QuantizedVectors::get_config_path(path);
+        let config: Option<QuantizedVectorsConfig> =
+            read_json_via(fs, &config_path).ok_not_found()?;
+        let Some(config) = config else {
+            return Ok(());
+        };
+        fs.schedule_prefetch(&config_path, None, None)?;
+
+        // Per-method metadata.
+        fs.schedule_prefetch(&QuantizedVectors::get_meta_path(path), None, None)
+            .ok_not_found()?;
+
+        // Quantized data (and multivector offsets): a flat file for the
+        // immutable layout, a chunked directory for the appendable one.
+        let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
+        let offsets_path =
+            multivector.then(|| QuantizedVectors::get_offsets_path(path, config.storage_type));
+        match config.storage_type {
+            QuantizedVectorsStorageType::Immutable => {
+                fs.schedule_prefetch(
+                    &data_path,
+                    Some(QuantizedStorage::<S>::open_options()),
+                    None,
+                )
+                .ok_not_found()?;
+                if let Some(offsets_path) = offsets_path {
+                    fs.schedule_prefetch(&offsets_path, None, None)
+                        .ok_not_found()?;
+                }
+            }
+            QuantizedVectorsStorageType::Mutable => {
+                QuantizedChunkedStorageRead::<S>::preopen(fs, &data_path).ok_not_found()?;
+                if let Some(offsets_path) = offsets_path {
+                    MultivectorOffsetsStorageChunkedRead::<S>::preopen(fs, &offsets_path)
+                        .ok_not_found()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Open existing quantized vectors read-only through the [`UniversalRead`] backend `S`.
     ///
     /// Returns `Ok(None)` when no quantization config is present at `path`. Every read —
