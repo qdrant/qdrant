@@ -51,6 +51,11 @@ pub enum Populate {
     Blocking,
     /// Populate, but prefer to do it in the background
     PreferBackground,
+    /// Populate only the given range.
+    ///
+    /// Backends that cannot populate a sub-range treat this like
+    /// [`Populate::No`].
+    Partial(ReadRange),
 }
 
 impl From<bool> for Populate {
@@ -67,8 +72,18 @@ impl Populate {
     pub fn to_bool<S: UniversalRead>(self) -> bool {
         match self {
             Populate::Auto => S::populate_auto(),
-            Populate::No => false,
+            Populate::No | Populate::Partial(_) => false,
             Populate::Blocking | Populate::PreferBackground => true,
+        }
+    }
+
+    /// Default a non-populate (`Auto`/`No`) to partially populating `range`.
+    pub fn or_partial(self, range: Range<u64>) -> Populate {
+        match self {
+            Populate::Auto | Populate::No => {
+                Populate::Partial(ReadRange::new(range.start, range.end - range.start))
+            }
+            Populate::Blocking | Populate::PreferBackground | Populate::Partial(_) => self,
         }
     }
 }

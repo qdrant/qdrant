@@ -279,7 +279,8 @@ impl<S: UniversalRead> Tracker<S> {
         populate: Populate,
     ) -> Result<()> {
         let path = Self::tracker_file_name(path);
-        // TODO(uio): use Populate::BackgroundPartial when Populate::No
+        // Default a lazy open to partially populating the header.
+        let populate = populate.or_partial(0..size_of::<TrackerHeader>() as u64);
         fs.schedule_prefetch(&path, Some(tracker_open_options(populate, false)), None)?;
         Ok(())
     }

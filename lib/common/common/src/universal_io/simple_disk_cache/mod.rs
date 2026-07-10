@@ -21,6 +21,7 @@ pub trait DiskCacheRemote:
         Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
         ReadPipeline<'static, ()>: Send,
         ReadPipeline<'static, u64>: Send,
+        ReadPipeline<'static, Range<u32>>: Send,
     > + Clone
     + 'static
 {
@@ -33,6 +34,7 @@ where
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::ReadPipeline<'static, ()>: Send,
     R::ReadPipeline<'static, u64>: Send,
+    R::ReadPipeline<'static, Range<u32>>: Send,
 {
 }
 
@@ -51,4 +53,29 @@ fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
     }
     let end = byte_range.end.div_ceil(BLOCK_SIZE as u64) as u32;
     start..end
+}
+
+/// Expand a requested `byte_range` to the block-aligned region that must be
+/// fetched from the remote to cover it, clamped to the file's `len` (EOF).
+///
+/// Returns the covering block range together with its EOF-clamped byte range,
+/// or `None` when `byte_range` is empty.
+fn block_aligned_fetch(byte_range: Range<u64>, file_len: u64) -> Option<(Range<u32>, Range<u64>)> {
+    let blocks_range = to_block_range(byte_range);
+    if blocks_range.is_empty() {
+        return None;
+    }
+
+    // BLOCK_SIZE aligned, clamped to EOF.
+    let byte_offset = u64::from(blocks_range.start) * BLOCK_SIZE as u64;
+    let fetch_length = blocks_range.len() as u64 * BLOCK_SIZE as u64;
+    let max_length = file_len.saturating_sub(byte_offset);
+    let blocks_byte_range = byte_offset..byte_offset + max_length.min(fetch_length);
+
+    // The first block already starts past EOF: nothing valid to fetch.
+    if blocks_byte_range.is_empty() {
+        return None;
+    }
+
+    Some((blocks_range, blocks_byte_range))
 }

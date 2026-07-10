@@ -54,8 +54,10 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            // TODO(uio): files have headers, we should use Populate::BackgroundPartial
-            populate: Populate::No,
+            populate: Populate::Partial(ReadRange::new(
+                0,
+                size_of::<I2eHeader>().max(size_of::<E2iHeader>()) as u64,
+            )),
             advice: AdviceSetting::Global,
         }
     }

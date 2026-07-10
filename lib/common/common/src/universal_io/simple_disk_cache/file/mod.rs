@@ -1,5 +1,6 @@
 //! [`DiskCache`]: a lazily-populated local mirror of an immutable remote file.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -67,6 +68,11 @@ pub(crate) enum State<R: UniversalRead + 'static> {
         pipeline: OwnedPipeline<R, u64>,
         local: LocalState,
     },
+    /// Open-time partial prefill
+    PartialPrefill {
+        pipeline: OwnedPipeline<R, Range<u32>>,
+        len: u64,
+    },
 }
 
 impl<R: UniversalRead + 'static> State<R> {
@@ -74,7 +80,10 @@ impl<R: UniversalRead + 'static> State<R> {
     pub fn is_ready(&self) -> bool {
         match self {
             State::Ready { .. } => true,
-            State::Uninit | State::OpenPrefill { .. } | State::ReopenPrefill { .. } => false,
+            State::Uninit
+            | State::OpenPrefill { .. }
+            | State::ReopenPrefill { .. }
+            | State::PartialPrefill { .. } => false,
         }
     }
 
@@ -82,7 +91,10 @@ impl<R: UniversalRead + 'static> State<R> {
     pub fn is_uninit(&self) -> bool {
         match self {
             State::Uninit => true,
-            State::Ready { .. } | State::OpenPrefill { .. } | State::ReopenPrefill { .. } => false,
+            State::Ready { .. }
+            | State::OpenPrefill { .. }
+            | State::ReopenPrefill { .. }
+            | State::PartialPrefill { .. } => false,
         }
     }
 }

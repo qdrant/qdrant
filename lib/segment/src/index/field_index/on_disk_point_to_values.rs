@@ -100,6 +100,9 @@ where
     S: UniversalRead,
 {
     fn open_options(populate: Populate) -> OpenOptions {
+        // Default a lazy open to partially populating the header.
+        let populate = populate.or_partial(0..size_of::<Header>() as u64);
+
         OpenOptions {
             writeable: false,
             need_sequential: false,
@@ -179,7 +182,6 @@ where
     ) -> OperationResult<()> {
         let file_name = dir.join(POINT_TO_VALUES_PATH);
 
-        // TODO(uio): Turn Populate::No into Populate::BackgroundPartial(0..header_size)
         fs.schedule_prefetch(&file_name, Some(Self::open_options(populate)), None)?;
 
         Ok(())

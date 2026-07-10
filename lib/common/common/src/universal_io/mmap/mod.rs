@@ -110,6 +110,7 @@ impl MmapFile {
 
         let populate = match populate {
             Populate::Auto => Self::populate_auto(),
+            Populate::Partial(_) | // mmap does not support partial populate
             Populate::No => false,
             Populate::PreferBackground | // mmap does not yet implement background populate
             Populate::Blocking => true,
