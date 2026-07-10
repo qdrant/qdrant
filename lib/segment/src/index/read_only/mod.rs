@@ -8,7 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::UniversalReadFs;
+use common::universal_io::{CachedReadFs, OkNotFound, UniversalReadFs};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -76,6 +76,76 @@ pub struct ReadOnlyVectorIndexOpenArgs<
 }
 
 impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
+    /// Schedule background prefetch of every file [`Self::open`] will read,
+    /// dispatching on `vector_config` the same way. The plain index opens no
+    /// files.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        vector_config: &VectorDataConfig,
+        path: &Path,
+    ) -> OperationResult<()> {
+        match &vector_config.index {
+            Indexes::Plain {} => Ok(()),
+            Indexes::Hnsw(hnsw_config) => ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config),
+        }
+    }
+
+    /// Schedule background prefetch of every file [`Self::open_sparse`] will
+    /// read, mirroring its `(index_type, datatype)` dispatch.
+    ///
+    /// Reads the sparse index config to dispatch — and then schedules it, so
+    /// `open_sparse`'s own read is served from the prefetch pool. A missing
+    /// config is tolerated: `open_sparse` is the one to report it. The
+    /// low-memory downgrade of `ImmutableRam` to `Mmap` is not applied — the
+    /// former's preopen forwards to the latter's anyway.
+    pub fn preopen_sparse(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+        let config_path = SparseIndexConfig::get_config_path(path);
+        let Some(config) = SparseIndexConfig::load_universal(fs, &config_path).ok_not_found()?
+        else {
+            return Ok(());
+        };
+        fs.schedule_prefetch(&config_path, None, None)?;
+
+        fn preopen<S, Fs, TInvertedIndex>(fs: &Fs, path: &Path) -> OperationResult<()>
+        where
+            S: UniversalReadExt + 'static,
+            Fs: CachedReadFs<File = S>,
+            TInvertedIndex: InvertedIndexReadOnly<S>,
+        {
+            ReadOnlySparseVectorIndex::<S, TInvertedIndex>::preopen(fs, path)
+        }
+
+        match (config.index_type, config.datatype.unwrap_or_default()) {
+            (SparseIndexType::MutableRam, _) => Err(OperationError::service_error(
+                "MutableRam sparse index has no read-only representation",
+            )),
+            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
+                preopen::<S, _, InvertedIndexCompressedImmutableRam<f32>>(fs, path)
+            }
+            (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
+                preopen::<S, _, InvertedIndexCompressedMmap<f32, S>>(fs, path)
+            }
+            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
+                preopen::<S, _, InvertedIndexCompressedImmutableRam<f16>>(fs, path)
+            }
+            (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
+                preopen::<S, _, InvertedIndexCompressedMmap<f16, S>>(fs, path)
+            }
+            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
+                preopen::<S, _, InvertedIndexCompressedImmutableRam<QuantizedU8>>(fs, path)
+            }
+            (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
+                preopen::<S, _, InvertedIndexCompressedMmap<QuantizedU8, S>>(fs, path)
+            }
+            (
+                SparseIndexType::ImmutableRam | SparseIndexType::Mmap,
+                VectorStorageDatatype::Turbo4,
+            ) => Err(OperationError::service_error(
+                "Turbo4 datatype storage is not yet supported",
+            )),
+        }
+    }
+
     /// Open the read-only dense vector index from its config (sparse: follow-up).
     pub fn open<Fs: UniversalReadFs<File = S>>(
         vector_config: &VectorDataConfig,

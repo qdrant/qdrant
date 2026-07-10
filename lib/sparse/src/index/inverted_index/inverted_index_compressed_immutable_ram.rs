@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::VecExt;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, Result, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    CachedReadFs, MmapFs, Result, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
@@ -36,6 +36,10 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::<W, S>::open_ro(fs, path)?;
         Self::from_mmap_index(mmap_inverted_index)
+    }
+
+    fn preopen_ro<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<()> {
+        InvertedIndexCompressedMmap::<W, S>::preopen_ro(fs, path)
     }
 }
 

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalReadFs;
+use common::universal_io::{CachedReadFs, OkNotFound, UniversalReadFs};
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -68,6 +68,29 @@ type ReadView<'a, S> = HNSWIndexReadView<
 >;
 
 impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// Absent files are skipped rather than reported: the graph config may
+    /// legitimately be missing (`open` derives defaults), and for the rest the
+    /// subsequent open is the one to produce the error.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        hnsw_config: &HnswConfig,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(&HnswGraphConfig::get_config_path(path), None, None)
+            .ok_not_found()?;
+
+        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+        let residency = if is_on_disk {
+            GraphLinksResidency::Cold
+        } else {
+            GraphLinksResidency::Cached
+        };
+        GraphLayers::preopen_universal(fs, path, residency).ok_not_found()?;
+        Ok(())
+    }
+
     /// Read-only mirror of `HNSWIndex::open`: loads the graph through `fs`.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,

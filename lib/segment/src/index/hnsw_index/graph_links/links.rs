@@ -45,6 +45,23 @@ pub enum GraphLinksResidency {
 }
 
 impl GraphLinks {
+    /// Open options [`Self::load_universal`] uses for `residency`.
+    pub(in crate::index::hnsw_index) fn open_options(
+        residency: GraphLinksResidency,
+    ) -> OpenOptions {
+        let populate = match residency {
+            // Pin does not populate because we load into heap later
+            GraphLinksResidency::Cold | GraphLinksResidency::Pinned => Populate::No,
+            GraphLinksResidency::Cached => Populate::Blocking,
+        };
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Advice(Advice::Random),
+        }
+    }
+
     /// Load the links through universal IO with the requested [`GraphLinksResidency`].
     ///
     /// `Cold`/`Cached` require a borrowable (mmap-backed) backend to keep the
@@ -61,18 +78,7 @@ impl GraphLinks {
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        let populate = match residency {
-            // Pin does not populate because we load into heap later
-            GraphLinksResidency::Cold | GraphLinksResidency::Pinned => Populate::No,
-            GraphLinksResidency::Cached => Populate::Blocking,
-        };
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate,
-            advice: AdviceSetting::Advice(Advice::Random),
-        };
-        let storage = fs.open(path, options, Default::default())?;
+        let storage = fs.open(path, Self::open_options(residency), Default::default())?;
         let owner = match residency {
             GraphLinksResidency::Cold | GraphLinksResidency::Cached => {
                 GraphLinksEnum::from_storage(storage)?

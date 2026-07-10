@@ -16,8 +16,8 @@ use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead, UniversalReadFs,
-    UniversalWrite, UserData, read_json_via,
+    CachedReadFs, MmapFs, OpenOptions, Populate, ReadBytesItem, Result, UniversalRead,
+    UniversalReadFs, UniversalWrite, UserData, read_json_via,
 };
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -43,6 +43,15 @@ impl StorageVersion for Version {
     }
 }
 
+fn index_open_options() -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Advice(Advice::Normal),
+    }
+}
+
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     for InvertedIndexCompressedMmap<W, S>
 {
@@ -52,12 +61,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         let storage = fs.open(
             Self::index_file_path(path),
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No,
-                advice: AdviceSetting::Advice(Advice::Normal),
-            },
+            index_open_options(),
             Default::default(),
         )?;
 
@@ -76,6 +80,16 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
         }
 
         Ok(index)
+    }
+
+    fn preopen_ro<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<()> {
+        fs.schedule_prefetch(&Self::index_config_file_path(path), None, None)?;
+        fs.schedule_prefetch(
+            &Self::index_file_path(path),
+            Some(index_open_options()),
+            None,
+        )?;
+        Ok(())
     }
 }
 
@@ -641,5 +655,67 @@ mod tests {
         assert!(index.get(6, &arena, &hw_counter).is_err());
         assert!(index.get(7, &arena, &hw_counter).is_err());
         assert!(index.get(100, &arena, &hw_counter).is_err());
+    }
+
+    /// `preopen_ro` must schedule exactly the files `open_ro` goes on to
+    /// consume.
+    ///
+    /// Merely opening after a `preopen_ro` proves nothing: `CachedFs` falls
+    /// back to a plain inner open for any path that was never scheduled. To
+    /// make the prefetch pool the *only* possible source, the index directory
+    /// is emptied between the two calls: the already-open handles parked in
+    /// the pool stay readable, while any fallback open hits `NotFound`.
+    #[test]
+    fn preopen_then_open_ro_through_cached_fs() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (3, 20.0)].into());
+        builder.add(3, [(2, 30.0)].into());
+        let inverted_index_ram = builder.build();
+
+        let ram_dir = Builder::new()
+            .prefix("preopen_index_ram")
+            .tempdir()
+            .unwrap();
+        let inverted_index_ram = InvertedIndexCompressedImmutableRam::from_ram_index(
+            &MmapFs,
+            Cow::Borrowed(&inverted_index_ram),
+            &ram_dir,
+        )
+        .unwrap();
+
+        let dir = Builder::new()
+            .prefix("preopen_index_dir")
+            .tempdir()
+            .unwrap();
+        InvertedIndexCompressedMmap::<f32, MmapFile>::convert_and_save(
+            &MmapFs,
+            &inverted_index_ram,
+            &dir,
+        )
+        .unwrap();
+
+        // Same order as the segment open path: snapshot, then preopen, then open.
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        InvertedIndexCompressedMmap::<f32, MmapFile>::preopen_ro(&cached_fs, dir.path()).unwrap();
+
+        // Everything `open_ro` reads must now come from the prefetch pool.
+        for entry in fs_err::read_dir(dir.path()).unwrap() {
+            fs_err::remove_file(entry.unwrap().path()).unwrap();
+        }
+
+        let index =
+            InvertedIndexCompressedMmap::<f32, MmapFile>::open_ro(&cached_fs, dir.path()).unwrap();
+        compare_indexes(&inverted_index_ram, &index);
+
+        let arena = Blink::new();
+        assert_eq!(index.get(1, &arena, &hw_counter).unwrap().len(), 2);
+        assert_eq!(index.get(2, &arena, &hw_counter).unwrap().len(), 2);
+        assert_eq!(index.get(3, &arena, &hw_counter).unwrap().len(), 2);
     }
 }

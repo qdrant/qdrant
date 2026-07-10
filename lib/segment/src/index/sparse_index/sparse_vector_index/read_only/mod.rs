@@ -4,8 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::storage_version::StorageVersion as _;
-use common::universal_io::UniversalReadFs;
+use common::storage_version::{StorageVersion as _, VERSION_FILE};
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 use sparse::SearchScratchPool;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
@@ -68,6 +68,18 @@ pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalReadExt, Fs: Univer
 impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
     ReadOnlySparseVectorIndex<S, TInvertedIndex>
 {
+    /// Schedule background prefetch of the files [`Self::open`] will read:
+    /// the inverted index, its version file and the indices tracker.
+    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> OperationResult<()>
+    where
+        TInvertedIndex: InvertedIndexReadOnly<S>,
+    {
+        TInvertedIndex::preopen_ro(fs, path)?;
+        fs.schedule_prefetch(&path.join(VERSION_FILE), None, None)?;
+        fs.schedule_prefetch(&IndicesTracker::file_path(path), None, None)?;
+        Ok(())
+    }
+
     /// Similar to [`super::SparseVectorIndex::open`].
     pub fn open<Fs: UniversalReadFs<File = S>>(
         args: ReadOnlySparseVectorIndexOpenArgs<S, Fs>,

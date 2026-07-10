@@ -7,7 +7,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Result, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    CachedReadFs, Result, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite,
+    UserData,
 };
 
 use super::posting_list_common::PostingListIter;
@@ -29,6 +30,10 @@ pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
     /// See [`InvertedIndex::open_ro`].
     fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self>;
+
+    /// Schedule background prefetch of the files [`InvertedIndex::open_ro`]
+    /// will read.
+    fn preopen_ro<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<()>;
 }
 
 pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {
