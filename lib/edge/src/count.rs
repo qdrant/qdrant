@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -25,7 +26,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 )
             })?;
 
-            per_segment.into_iter().flatten().count()
+            per_segment
+                .into_iter()
+                .flatten()
+                .collect::<BTreeSet<_>>()
+                .len()
         } else {
             let estimations = self.par_map_segments(|segment| {
                 segment
