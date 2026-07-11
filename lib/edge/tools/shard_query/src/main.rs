@@ -50,10 +50,18 @@
 //!
 //! `--prefix` is the key prefix inside the bucket that points at the edge-shard
 //! root — the directory that contains `edge_config.json` and `segments/`.
+//!
+//! With `--live-reload <SECONDS>` the tool keeps running after the first
+//! answer: every interval it [`refresh`](ReadOnlyEdgeShard::refresh)es the
+//! shard from object storage, re-runs the same request, and prints the
+//! difference against the previous results (`+` appeared, `-` disappeared,
+//! `~` changed), so a leader writing to the same bucket can be observed live.
 
+use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
@@ -89,6 +97,14 @@ struct Cli {
     /// before the sub-command.
     #[command(flatten)]
     connection: ConnectionArgs,
+
+    /// Live-reload polling interval in seconds. When set, the tool keeps
+    /// running after the first answer: every interval it refreshes the shard
+    /// from object storage, re-runs the same request, and prints the
+    /// difference against the previous results (`+` appeared, `-` disappeared,
+    /// `~` changed). Must be given before the sub-command.
+    #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
+    live_reload: Option<u64>,
 
     /// Which read request to run against the shard.
     #[command(subcommand)]
@@ -423,104 +439,191 @@ fn record_json(
     json
 }
 
-fn print_records(records: &[Record], next_offset: Option<PointId>) -> Result<()> {
-    println!("scroll returned {} record(s)", records.len());
-    for record in records {
-        let json = record_json(
-            serde_json::to_value(record.id)?,
-            serde_json::to_value(&record.payload)?,
-            record.vector.as_ref(),
-            serde_json::Value::Null,
-        );
-        println!("{}", serde_json::to_string(&json)?);
+/// One result row in a comparable form: the point id (as its JSON encoding,
+/// used as the diff key) plus the rendered JSON line.
+type Row = (String, serde_json::Value);
+
+/// A read request parsed once from the CLI args, so every live-reload
+/// iteration re-runs exactly the same request.
+enum PreparedRequest {
+    Scroll(ScrollRequest),
+    Search(SearchRequest),
+}
+
+impl PreparedRequest {
+    fn build(command: &Command) -> Result<Self> {
+        match command {
+            Command::Scroll(args) => {
+                let filter = args.common.resolve_filter()?;
+                match &filter {
+                    Some(filter) => {
+                        log::info!("scrolling with filter: {}", serde_json::to_string(filter)?)
+                    }
+                    None => log::info!("scrolling with no filter (all points)"),
+                }
+
+                let offset = args.offset.as_deref().map(parse_point_id).transpose()?;
+                let order_by = args
+                    .order_by
+                    .as_deref()
+                    .map(|key| {
+                        key.parse::<JsonPath>()
+                            .map(OrderByInterface::Key)
+                            .map_err(|()| anyhow!("invalid --order-by path: {key:?}"))
+                    })
+                    .transpose()?;
+
+                Ok(Self::Scroll(ScrollRequest {
+                    offset,
+                    limit: Some(args.common.limit),
+                    filter,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: args.common.with_vectors.into(),
+                    order_by,
+                }))
+            }
+            Command::Search(args) => {
+                let filter = args.common.resolve_filter()?;
+                match &filter {
+                    Some(filter) => {
+                        log::info!("searching with filter: {}", serde_json::to_string(filter)?)
+                    }
+                    None => log::info!("searching with no filter"),
+                }
+
+                let vector = parse_vector(&args.vector)?;
+                log::info!("query vector has {} dimension(s)", vector.len());
+
+                let query = QueryEnum::Nearest(NamedQuery {
+                    query: VectorInternal::Dense(vector),
+                    using: args.using.clone(),
+                });
+
+                let params = (args.hnsw_ef.is_some() || args.exact).then(|| SearchParams {
+                    hnsw_ef: args.hnsw_ef,
+                    exact: args.exact,
+                    ..Default::default()
+                });
+
+                Ok(Self::Search(SearchRequest {
+                    query,
+                    filter,
+                    params,
+                    limit: args.common.limit,
+                    offset: args.offset,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: Some(args.common.with_vectors.into()),
+                    score_threshold: args.score_threshold,
+                }))
+            }
+        }
     }
-    if let Some(offset) = next_offset {
-        println!("next_page_offset: {}", serde_json::to_string(&offset)?);
+
+    /// Run the request against the shard's current state. Returns the result
+    /// rows and, for scroll, the next-page offset of this run.
+    fn run<S: EdgeShardRead>(&self, shard: &S) -> Result<(Vec<Row>, Option<PointId>)> {
+        match self {
+            Self::Scroll(request) => {
+                let (records, next_offset) = shard
+                    .scroll(request.clone())
+                    .context("scroll request failed")?;
+                let rows = records.iter().map(record_row).collect::<Result<_>>()?;
+                Ok((rows, next_offset))
+            }
+            Self::Search(request) => {
+                let points = shard
+                    .search(request.clone())
+                    .context("search request failed")?;
+                let rows = points.iter().map(scored_point_row).collect::<Result<_>>()?;
+                Ok((rows, None))
+            }
+        }
+    }
+
+    /// Print a full result set (the first answer; later runs print diffs).
+    fn print_full(&self, rows: &[Row], next_offset: Option<&PointId>) -> Result<()> {
+        match self {
+            Self::Scroll(_) => println!("scroll returned {} record(s)", rows.len()),
+            Self::Search(_) => println!("search returned {} result(s)", rows.len()),
+        }
+        for (_, row) in rows {
+            println!("{}", serde_json::to_string(row)?);
+        }
+        if let Self::Scroll(_) = self {
+            match next_offset {
+                Some(offset) => println!("next_page_offset: {}", serde_json::to_string(offset)?),
+                None => println!("next_page_offset: <none>"),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn record_row(record: &Record) -> Result<Row> {
+    let json = record_json(
+        serde_json::to_value(record.id)?,
+        serde_json::to_value(&record.payload)?,
+        record.vector.as_ref(),
+        serde_json::Value::Null,
+    );
+    Ok((serde_json::to_string(&record.id)?, json))
+}
+
+fn scored_point_row(point: &ScoredPoint) -> Result<Row> {
+    let json = record_json(
+        serde_json::to_value(point.id)?,
+        serde_json::to_value(&point.payload)?,
+        point.vector.as_ref(),
+        serde_json::json!({ "score": point.score, "version": point.version }),
+    );
+    Ok((serde_json::to_string(&point.id)?, json))
+}
+
+/// Print the difference between the previous and the current run of the same
+/// request: `+` rows whose id appeared, `-` rows whose id disappeared, `~` rows
+/// whose rendered content changed for the same id (old -> new). A pure
+/// reordering of unchanged rows prints nothing.
+fn print_diff(previous: &[Row], current: &[Row]) -> Result<()> {
+    let previous_by_id: HashMap<&str, &serde_json::Value> = previous
+        .iter()
+        .map(|(id, row)| (id.as_str(), row))
+        .collect();
+    let current_by_id: HashMap<&str, &serde_json::Value> =
+        current.iter().map(|(id, row)| (id.as_str(), row)).collect();
+
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    let mut changed = 0usize;
+    for (id, row) in current {
+        match previous_by_id.get(id.as_str()) {
+            None => {
+                added += 1;
+                println!("+ {}", serde_json::to_string(row)?);
+            }
+            Some(old) if **old != *row => {
+                changed += 1;
+                println!(
+                    "~ {} -> {}",
+                    serde_json::to_string(old)?,
+                    serde_json::to_string(row)?
+                );
+            }
+            Some(_) => {}
+        }
+    }
+    for (id, row) in previous {
+        if !current_by_id.contains_key(id.as_str()) {
+            removed += 1;
+            println!("- {}", serde_json::to_string(row)?);
+        }
+    }
+
+    if added == 0 && removed == 0 && changed == 0 {
+        println!("no changes");
     } else {
-        println!("next_page_offset: <none>");
+        println!("{added} added, {removed} removed, {changed} changed");
     }
     Ok(())
-}
-
-fn print_scored_points(points: &[ScoredPoint]) -> Result<()> {
-    println!("search returned {} result(s)", points.len());
-    for point in points {
-        let json = record_json(
-            serde_json::to_value(point.id)?,
-            serde_json::to_value(&point.payload)?,
-            point.vector.as_ref(),
-            serde_json::json!({ "score": point.score, "version": point.version }),
-        );
-        println!("{}", serde_json::to_string(&json)?);
-    }
-    Ok(())
-}
-
-fn run_scroll<S: EdgeShardRead>(shard: &S, args: &ScrollArgs) -> Result<()> {
-    let filter = args.common.resolve_filter()?;
-    match &filter {
-        Some(filter) => log::info!("scrolling with filter: {}", serde_json::to_string(filter)?),
-        None => log::info!("scrolling with no filter (all points)"),
-    }
-
-    let offset = args.offset.as_deref().map(parse_point_id).transpose()?;
-    let order_by = args
-        .order_by
-        .as_deref()
-        .map(|key| {
-            key.parse::<JsonPath>()
-                .map(OrderByInterface::Key)
-                .map_err(|()| anyhow!("invalid --order-by path: {key:?}"))
-        })
-        .transpose()?;
-
-    let request = ScrollRequest {
-        offset,
-        limit: Some(args.common.limit),
-        filter,
-        with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: args.common.with_vectors.into(),
-        order_by,
-    };
-
-    let (records, next_offset) = shard.scroll(request).context("scroll request failed")?;
-    print_records(&records, next_offset)
-}
-
-fn run_search<S: EdgeShardRead>(shard: &S, args: &SearchArgs) -> Result<()> {
-    let filter = args.common.resolve_filter()?;
-    match &filter {
-        Some(filter) => log::info!("searching with filter: {}", serde_json::to_string(filter)?),
-        None => log::info!("searching with no filter"),
-    }
-
-    let vector = parse_vector(&args.vector)?;
-    log::info!("query vector has {} dimension(s)", vector.len());
-
-    let query = QueryEnum::Nearest(NamedQuery {
-        query: VectorInternal::Dense(vector),
-        using: args.using.clone(),
-    });
-
-    let params = (args.hnsw_ef.is_some() || args.exact).then(|| SearchParams {
-        hnsw_ef: args.hnsw_ef,
-        exact: args.exact,
-        ..Default::default()
-    });
-
-    let request = SearchRequest {
-        query,
-        filter,
-        params,
-        limit: args.common.limit,
-        offset: args.offset,
-        with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(args.common.with_vectors.into()),
-        score_threshold: args.score_threshold,
-    };
-
-    let points = shard.search(request).context("search request failed")?;
-    print_scored_points(&points)
 }
 
 /// Open the read-only shard over backend `A` and dispatch the requested command.
@@ -550,10 +653,38 @@ where
         .context("failed to open read-only edge shard over object storage")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
-    match &cli.command {
-        Command::Scroll(args) => run_scroll(&shard, args),
-        Command::Search(args) => run_search(&shard, args),
+    let request = PreparedRequest::build(&cli.command)?;
+    let (rows, next_offset) = request.run(&shard)?;
+    request.print_full(&rows, next_offset.as_ref())?;
+
+    let Some(interval_secs) = cli.live_reload else {
+        return Ok(());
+    };
+
+    // Live-reload loop: refresh the shard from object storage every interval,
+    // re-run the same request, and print the diff against the previous run.
+    // Runs until interrupted.
+    let interval = Duration::from_secs(interval_secs);
+    let mut previous = rows;
+    for iteration in 1u64.. {
+        std::thread::sleep(interval);
+
+        if let Err(err) = shard.refresh() {
+            // The shard keeps serving its previous state; retry next tick.
+            log::error!("live-reload refresh failed (will retry in {interval_secs}s): {err}");
+            continue;
+        }
+        log::info!(
+            "live-reload #{iteration}: refreshed shard, {} segment(s)",
+            shard.segments_count(),
+        );
+
+        let (rows, _) = request.run(&shard)?;
+        println!("--- refresh #{iteration}: diff vs previous results ---");
+        print_diff(&previous, &rows)?;
+        previous = rows;
     }
+    unreachable!("live-reload loop only ends by interruption");
 }
 
 fn main() -> Result<()> {
