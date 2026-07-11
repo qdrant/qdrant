@@ -221,6 +221,52 @@ impl Segment {
         Ok(new_id)
     }
 
+    /// Write a complete point at `internal_id` in one pass: vectors from a
+    /// mix of storage-native bytes and decoded values, then the payload.
+    ///
+    /// Every configured named vector storage gets touched: a name present in
+    /// `updated_vectors` is written from its decoded value, a name present
+    /// only in `raw_vectors` is written from its bytes, and an absent name is
+    /// written as `None` (the slot is grown and marked deleted), matching
+    /// [`Segment::replace_all_vectors_raw`]'s contract. The payload is
+    /// written last — always, even when empty, for the same null-index
+    /// `total_point_count` bump reason as [`Segment::clone_and_mutate_point`].
+    ///
+    /// `internal_id` may be a fresh id one past the current end: the raw
+    /// write paths grow the storages as needed.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    pub(super) fn write_point_parts(
+        &mut self,
+        internal_id: PointOffsetType,
+        op_num: SeqNumberType,
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: &NamedVectors,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        debug_assert!(self.is_appendable());
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            match updated_vectors.get(vector_name) {
+                Some(vector) => {
+                    vector_index.update_vector(internal_id, Some(vector), hw_counter)?;
+                }
+                None => {
+                    let bytes = find_raw_vector(raw_vectors, vector_name);
+                    vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+                }
+            }
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+        self.payload_index
+            .borrow_mut()
+            .overwrite_payload(internal_id, payload, hw_counter)?;
+        Ok(())
+    }
+
     /// Append-only update: snapshot the point at `old_id` into owned vectors
     /// and payload, hand them to `mutate` for in-memory modification, then
     /// write the result at a fresh internal id and repoint the id tracker.
