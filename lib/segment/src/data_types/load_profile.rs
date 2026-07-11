@@ -90,6 +90,30 @@ impl LoadProfile {
         }
     }
 
+    /// Fold another request's profile into this one: a component *either* request needs
+    /// warm stays warm. This builds the profile of a composite query — e.g. a hybrid
+    /// search running one core search per vector — from its parts' profiles.
+    ///
+    /// The union is sound because every placement method is monotone in the warm sets:
+    /// growing them only ever turns "park cold" into "keep the configured placement",
+    /// so the merged profile dominates each input and no component a sub-request
+    /// touches is demoted. It is also minimal: nothing is warmed that no part asked for.
+    ///
+    /// Combine multiple profiles with `reduce`, not `fold` with a starting profile:
+    /// `merge`'s identity element is the *coldest* profile (empty warm sets), which is
+    /// the opposite of passing no profile at all (everything warm per config) — there is
+    /// deliberately no `empty()`/`Default` constructor to blur that distinction.
+    pub fn merge(&mut self, other: LoadProfile) {
+        let LoadProfile {
+            warm_vectors,
+            warm_payload_fields,
+            warm_payload_storage,
+        } = other;
+        self.warm_vectors.extend(warm_vectors);
+        self.warm_payload_fields.extend(warm_payload_fields);
+        self.warm_payload_storage |= warm_payload_storage;
+    }
+
     /// Placement override for the payload storage.
     pub fn payload_storage_placement(&self) -> Option<Populate> {
         let Self {
@@ -291,6 +315,52 @@ mod tests {
 
         // A filter is present, so raw payloads may be read for unindexed conditions.
         assert_eq!(profile.payload_storage_placement(), None);
+    }
+
+    #[test]
+    fn merged_hybrid_profile_warms_the_union() {
+        // Hybrid search: one core search per vector, each with its own filter.
+        let dense_filter = Filter::new_must(match_condition("city", "London"));
+        let mut profile = LoadProfile::for_search("dense", Some(&dense_filter), false);
+
+        let sparse_filter = Filter::new_must(match_condition("country", "UK"));
+        profile.merge(LoadProfile::for_search(
+            "sparse",
+            Some(&sparse_filter),
+            true,
+        ));
+
+        // Both queried vectors stay warm; a third one parks cold.
+        assert_eq!(profile.vector_storage_placement("dense"), None);
+        assert_eq!(profile.vector_index_placement("dense"), None);
+        assert_eq!(profile.vector_storage_placement("sparse"), None);
+        assert_eq!(profile.vector_index_placement("sparse"), None);
+        assert_eq!(
+            profile.vector_storage_placement("other"),
+            Some(Populate::No)
+        );
+
+        // Filter keys of both parts stay warm; an untouched field parks cold.
+        assert_eq!(profile.payload_index_placement(&path("city")), None);
+        assert_eq!(profile.payload_index_placement(&path("country")), None);
+        assert_eq!(
+            profile.payload_index_placement(&path("price")),
+            Some(Populate::No)
+        );
+
+        // One part returns payloads, so the payload storage stays warm.
+        assert_eq!(profile.payload_storage_placement(), None);
+    }
+
+    #[test]
+    fn merge_with_coldest_profile_is_identity() {
+        let filter = Filter::new_must(match_condition("city", "London"));
+        let mut profile = LoadProfile::for_search("dense", Some(&filter), true);
+        let reference = profile.clone();
+
+        // `for_retrieve` is the coldest profile — merging it changes nothing.
+        profile.merge(LoadProfile::for_retrieve());
+        assert_eq!(profile, reference);
     }
 
     #[test]
