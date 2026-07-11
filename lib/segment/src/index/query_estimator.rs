@@ -18,7 +18,7 @@ use crate::types::{Condition, Filter, MinShould};
 ///
 /// * `estimation` - cardinality estimations of number of points selected by payload filter
 /// * `available_vectors` - number of available vectors for the named vector storage
-/// * `total_vectors` - total number of points in the segment
+/// * `available_points` - number of available (non-deleted) points in the segment
 ///
 /// # Result
 ///
