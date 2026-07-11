@@ -89,9 +89,10 @@ use common::universal_io::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
 };
 use edge::{
-    Condition, EdgeConfig, EdgeShardRead, FieldCondition, Filter, JsonPath, Match, NamedQuery,
-    OrderByInterface, PointId, QueryEnum, ReadOnlyEdgeShard, Record, ScoredPoint, ScrollRequest,
-    SearchParams, SearchRequest, ValueVariants, VectorInternal, WithPayloadInterface,
+    Condition, EdgeConfig, EdgeShardRead, FieldCondition, Filter, JsonPath, LoadProfile, Match,
+    NamedQuery, OrderByInterface, PointId, QueryEnum, ReadOnlyEdgeShard, Record, ScoredPoint,
+    ScrollRequest, SearchParams, SearchRequest, ValueVariants, VectorInternal,
+    WithPayloadInterface,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
@@ -258,6 +259,12 @@ struct ConnectionArgs {
     /// from the number of available CPUs. Omit to use the default.
     #[arg(long)]
     search_threads: Option<usize>,
+
+    /// Disable the request-derived load profile: warm every segment component
+    /// per the persisted segment configs, like a long-lived deployment would,
+    /// instead of parking the components this request won't touch cold.
+    #[arg(long, default_value_t = false)]
+    no_load_profile: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -627,6 +634,15 @@ impl PreparedRequest {
         }
     }
 
+    /// The request's [`LoadProfile`], deciding which segment components the
+    /// shard open warms. Derived once, before the open.
+    fn load_profile(&self) -> LoadProfile {
+        match self {
+            Self::Scroll(request) => request.load_profile(),
+            Self::Search(request) => request.load_profile(),
+        }
+    }
+
     /// Run the request against the shard's current state. Returns the result
     /// rows and, for scroll, the next-page offset of this run.
     fn run<S: EdgeShardRead>(&self, shard: &S) -> Result<(Vec<Row>, Option<PointId>)> {
@@ -749,6 +765,12 @@ where
     let cached_fs = build_cached_fs::<A>(remote_config, prefix, cache_dir)?;
     log::info!("caching segment reads under {}", cache_dir.display());
 
+    // Build the request before the open: the shard is opened for exactly this request, so the
+    // request's load profile decides which segment components are warmed at all (unless disabled
+    // with `--no-load-profile`).
+    let request = PreparedRequest::build(&cli.command)?;
+    let load_profile = (!cli.connection.no_load_profile).then(|| request.load_profile());
+
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
     // them via the manifest. `prefix` is passed only as the shard's (logical) path label. A
     // caller-provided `--search-threads` overrides the derived search-pool size (segments never
@@ -757,11 +779,11 @@ where
         .connection
         .search_threads
         .map(|n| EdgeConfig::builder().max_search_threads(n).build());
-    let shard = ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config)
-        .context("failed to open read-only edge shard over object storage")?;
+    let shard =
+        ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config, load_profile)
+            .context("failed to open read-only edge shard over object storage")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
-    let request = PreparedRequest::build(&cli.command)?;
     let (rows, next_offset) = request.run(&shard)?;
     request.print_full(&rows, next_offset.as_ref())?;
 

@@ -1,4 +1,5 @@
 use schemars::JsonSchema;
+use segment::data_types::load_profile::LoadProfile;
 use segment::data_types::order_by::OrderByInterface;
 use segment::types::{Filter, PointIdType, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,29 @@ impl Default for ScrollRequestInternal {
 }
 
 impl ScrollRequestInternal {
+    /// Request-specific [`LoadProfile`] for opening a read-only shard to serve exactly
+    /// this scroll: no vector components are warmed, and only the field indexes the
+    /// filter and `order_by` read keep their configured placement.
+    pub fn load_profile(&self) -> LoadProfile {
+        let Self {
+            offset: _,
+            limit: _,
+            filter,
+            with_payload,
+            with_vector: _,
+            order_by,
+        } = self;
+
+        let order_by_key = order_by.as_ref().map(|order_by| match order_by {
+            OrderByInterface::Key(key) => key,
+            OrderByInterface::Struct(order_by) => &order_by.key,
+        });
+        // The `with_payload` default of a scroll is `true`.
+        let with_payload = with_payload.as_ref().is_none_or(|wp| wp.is_required());
+
+        LoadProfile::for_scroll(filter.as_ref(), order_by_key, with_payload)
+    }
+
     pub const fn default_limit() -> usize {
         10
     }

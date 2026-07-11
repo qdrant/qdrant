@@ -4,6 +4,7 @@ use std::sync::Arc;
 use common::universal_io::{MmapFile, MmapFs};
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationResult;
+use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 
 use crate::EdgeConfig;
@@ -16,7 +17,7 @@ impl ReadOnlyEdgeShard<MmapFile> {
     /// leader's segment manifest. Requires the leader to write a manifest (the
     /// `write_segment_manifest` feature flag).
     pub fn open_mmap(path: &Path) -> OperationResult<Self> {
-        Self::open(MmapFs, path, None)
+        Self::open(MmapFs, path, None, None)
     }
 }
 
@@ -48,12 +49,24 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// parameters at open (its `Some` values win over the derived ones; `vectors`/`sparse_vectors`
     /// are ignored); a [`refresh`](Self::refresh) re-derives the config from the segments alone.
     /// An empty shard (no segments yet) starts from the provided config (or a default one).
-    pub fn open(fs: S::Fs, path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self>
+    ///
+    /// A `load_profile` — derived from the request this shard is being opened to serve (see
+    /// [`LoadProfile`]) — parks the segment components that request won't touch cold instead of
+    /// warming them per the persisted segment configs, cutting the cold-start cost. Without one,
+    /// loading follows the segment configs alone. The profile also applies to segments a later
+    /// [`refresh`](Self::refresh) discovers: the shard was opened for that one request, so new
+    /// segments shouldn't load any warmer.
+    pub fn open(
+        fs: S::Fs,
+        path: &Path,
+        config: Option<EdgeConfig>,
+        load_profile: Option<LoadProfile>,
+    ) -> OperationResult<Self>
     where
         S::Fs: Send + Sync + Clone + 'static,
     {
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(fs, path, enumerator, config)
+        Self::open_with_enumerator(fs, path, enumerator, config, load_profile)
     }
 
     /// Open with an explicit segment [`enumerator`](SegmentEnumerator).
@@ -70,6 +83,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         path: &Path,
         enumerator: impl SegmentEnumerator + 'static,
         config: Option<EdgeConfig>,
+        load_profile: Option<LoadProfile>,
     ) -> OperationResult<Self>
     where
         S::Fs: Send + Sync + Clone + 'static,
@@ -87,6 +101,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             segments: RwLock::new(ReadOnlySegmentHolder::default()),
             enumerator: Box::new(enumerator),
             search_pool,
+            load_profile,
         };
         shard.refresh()?;
 
