@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::load_profile::LoadProfile;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
@@ -76,14 +77,22 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// prefetched before the listing snapshot is taken (see
     /// [`build_cached_fs`]), and probes for optional files resolve against
     /// the snapshot, without inner-filesystem round-trips.
+    ///
+    /// A `load_profile` — derived from the one request this open serves —
+    /// overrides the config-derived placement of the components that request
+    /// does not touch, parking them cold instead of warming them (see
+    /// [`LoadProfile`]). Without one, every component loads as the persisted
+    /// segment config says.
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
+        load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
-        let (segment_config, payload_config) = Self::first_preopen(&cached_fs, segment_path)?;
+        let (segment_config, payload_config) =
+            Self::first_preopen(&cached_fs, segment_path, load_profile)?;
         Self::open_via(
             &cached_fs,
             fs,
@@ -92,6 +101,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_config,
             uuid,
             deferred_internal_id,
+            load_profile,
         )
     }
 
@@ -101,6 +111,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     fn first_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
+        load_profile: Option<&LoadProfile>,
     ) -> OperationResult<(SegmentConfig, PayloadConfig)> {
         let SegmentState {
             initial_version: _,
@@ -109,23 +120,32 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
         // Payload storage
-        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_populate(&config))?;
+        let payload_storage_populate = load_profile
+            .and_then(|profile| profile.payload_storage_placement())
+            .unwrap_or_else(|| payload_populate(&config));
+        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_storage_populate)?;
 
-        // Id tracker
+        // Id tracker; always loaded — every request resolves ids through it.
         ReadOnlyIdTrackerEnum::preopen(fs, segment_path)?;
 
         // Vector storages
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path)?;
+            let storage_populate =
+                load_profile.and_then(|profile| profile.vector_storage_placement(vector_name));
+            VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path, storage_populate)?;
 
             // Quantized vectors live in the vector storage directory; a no-op
             // when quantization isn't configured for this vector.
-            ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config)?;
+            let quantized_populate =
+                load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
+            ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config, quantized_populate)?;
 
             // Vector index
             let index_path = get_vector_index_path(segment_path, vector_name);
-            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path)?;
+            let index_populate =
+                load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
+            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_populate)?;
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
@@ -133,12 +153,22 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
 
             // Sparse vector index
             let index_path = get_vector_index_path(segment_path, vector_name);
-            VectorIndexReadEnum::<S>::preopen_sparse(fs, sparse_vector_config, &index_path)?;
+            let index_populate =
+                load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
+            VectorIndexReadEnum::<S>::preopen_sparse(
+                fs,
+                sparse_vector_config,
+                &index_path,
+                index_populate,
+            )?;
         }
 
         // Payload indexes
-        let payload_config =
-            ReadOnlyStructPayloadIndex::preopen(fs, &get_payload_index_path(segment_path))?;
+        let payload_config = ReadOnlyStructPayloadIndex::preopen(
+            fs,
+            &get_payload_index_path(segment_path),
+            load_profile,
+        )?;
 
         Ok((config, payload_config))
     }
@@ -153,7 +183,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// appendable id tracker): a caching wrapper's snapshot would go stale.
     ///
     /// `config` and `payload_config` are the ones
-    /// [`first_preopen`](Self::first_preopen) already parsed off `fs`.
+    /// [`first_preopen`](Self::first_preopen) already parsed off `fs`, and
+    /// `load_profile` is the profile that preopen already applied — the opens
+    /// here must make the same placement decisions the prefetches did.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_via(
         fs: &impl CachedReadFs<File = S>,
         raw_fs: &S::Fs,
@@ -162,6 +195,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         payload_config: PayloadConfig,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
+        load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
         if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written last, so
@@ -175,10 +209,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         let is_appendable = config.is_appendable();
         let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
 
+        let payload_storage_populate = load_profile
+            .and_then(|profile| profile.payload_storage_placement())
+            .unwrap_or_else(|| payload_populate(&config));
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
             fs,
             segment_path.to_path_buf(),
-            payload_populate(&config),
+            payload_storage_populate,
         )?));
 
         // Detect the persisted format by attempting each format's open (no
@@ -197,8 +234,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         > = HashMap::new();
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage =
-                VectorStorageReadEnum::open(fs, vector_config, &path)?.ok_or_else(|| {
+            let storage_populate =
+                load_profile.and_then(|profile| profile.vector_storage_placement(vector_name));
+            let storage = VectorStorageReadEnum::open(fs, vector_config, &path, storage_populate)?
+                .ok_or_else(|| {
                     OperationError::service_error(format!(
                         "Read-only dense vector storage '{vector_name}' was not found, or is corrupted.",
                     ))
@@ -220,6 +259,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             vector_storages.clone(),
             &get_payload_index_path(segment_path),
             payload_config,
+            load_profile,
         )?));
 
         let mut vector_data = HashMap::new();
@@ -234,6 +274,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 id_tracker.clone(),
                 payload_index.clone(),
                 vector_storage,
+                load_profile,
             )?;
             vector_data.insert(vector_name.clone(), data);
         }
@@ -273,6 +314,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
 impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
+    /// `load_profile` mirrors the preopen's per-vector placement decisions.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn open_dense(
         fs: &impl UniversalReadFs<File = S>,
@@ -283,6 +325,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
@@ -292,6 +335,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
                 let storage = vector_storage.borrow();
                 (storage.distance(), storage.datatype(), storage.is_on_disk())
             };
+            let quantized_populate =
+                load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
             ReadOnlyQuantizedVectors::open(
                 fs,
                 &vector_storage_path,
@@ -299,12 +344,15 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
                 datatype,
                 vector_config.multivector_config.as_ref(),
                 on_disk,
+                quantized_populate,
             )?
         } else {
             None
         };
         let quantized_vectors = Arc::new(AtomicRefCell::new(quantized_vectors));
 
+        let index_populate =
+            load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
         let vector_index = Arc::new(AtomicRefCell::new(VectorIndexReadEnum::open(
             vector_config,
             ReadOnlyVectorIndexOpenArgs {
@@ -315,6 +363,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
                 payload_index,
                 quantized_vectors: quantized_vectors.clone(),
             },
+            index_populate,
         )?));
 
         Ok(Self {

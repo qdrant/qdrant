@@ -86,14 +86,21 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// Schedule background prefetch of every file [`Self::open`] will read,
     /// dispatching on `vector_config` the same way. The plain index opens no
     /// files.
+    ///
+    /// A `populate_override` (from a request-specific
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces
+    /// the config-derived placement of the index data.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
+        populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         match &vector_config.index {
             Indexes::Plain {} => Ok(()),
-            Indexes::Hnsw(hnsw_config) => ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config),
+            Indexes::Hnsw(hnsw_config) => {
+                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, populate_override)
+            }
         }
     }
 
@@ -112,6 +119,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         fs: &impl CachedReadFs<File = S>,
         sparse_vector_config: &SparseVectorDataConfig,
         path: &Path,
+        populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         // Sparse index config; `open_sparse` reads it off the parked handle.
         let config_path = SparseIndexConfig::get_config_path(path);
@@ -139,13 +147,17 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         // one) decides whether the index data is warmed: the immutable-RAM
         // open reads it in full, `cached` keeps it mmap-backed with the page
         // cache primed, and `cold` reads lazily.
+        // A `populate_override` replaces the placement-derived populate of the
+        // mmap-backed placements. The pinned (immutable-RAM) placement ignores
+        // it: its open reads the index in full whatever the prefetch did.
         let placement = sparse_vector_config
             .index
             .memory_placement()
             .clamp_to_low_memory();
         let populate = match placement {
-            Memory::Pinned | Memory::Cached => Populate::PreferBackground,
-            Memory::Cold => Populate::No,
+            Memory::Pinned => Populate::PreferBackground,
+            Memory::Cached => populate_override.unwrap_or(Populate::PreferBackground),
+            Memory::Cold => populate_override.unwrap_or(Populate::No),
         };
 
         // Inverted index
@@ -161,9 +173,11 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     }
 
     /// Open the read-only dense vector index from its config (sparse: follow-up).
+    /// `populate_override` mirrors [`preopen`](Self::preopen).
     pub fn open<Fs: UniversalReadFs<File = S>>(
         vector_config: &VectorDataConfig,
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Self>
     where
         // The HNSW graph keeps its universal-IO storage handle alive behind a
@@ -193,6 +207,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
                 quantized_vectors,
                 payload_index,
                 *hnsw_config,
+                populate_override,
             )?)),
         })
     }

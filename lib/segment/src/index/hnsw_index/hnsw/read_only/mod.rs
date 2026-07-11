@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::{CachedReadFs, OkNotFound, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs};
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -72,18 +72,32 @@ type ReadView<'a, S> = HNSWIndexReadView<
 /// flag), degraded at load time by the node-wide low-memory mode. Mirrors the
 /// writable [`HNSWIndex::open`][1].
 ///
+/// A `populate_override` (from a request-specific
+/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces the
+/// config-derived residency — the graph links support every residency over the
+/// same files, so even a `pinned` graph can be demoted to a lazy cold view.
+/// `is_on_disk` stays config-derived: it describes the configuration, not the
+/// per-open placement.
+///
 /// [1]: super::super::HNSWIndex::open
-fn graph_residency(hnsw_config: &HnswConfig) -> (GraphLinksResidency, bool) {
+fn graph_residency(
+    hnsw_config: &HnswConfig,
+    populate_override: Option<Populate>,
+) -> (GraphLinksResidency, bool) {
     let memory = hnsw_config.memory_placement().clamp_to_low_memory();
     let is_on_disk = memory.is_on_disk();
 
-    let residency = match memory {
-        // Keep the links cold: lazily loaded from disk, cached with usage
-        Memory::Cold => GraphLinksResidency::Cold,
-        // Pre-populate the links into the page cache on load
-        Memory::Cached => GraphLinksResidency::Cached,
-        // Materialize the links on heap, so they are never evicted by cache pressure
-        Memory::Pinned => GraphLinksResidency::Pinned,
+    let residency = match populate_override {
+        Some(Populate::No | Populate::Auto | Populate::Partial(_)) => GraphLinksResidency::Cold,
+        Some(Populate::Blocking | Populate::PreferBackground) => GraphLinksResidency::Cached,
+        None => match memory {
+            // Keep the links cold: lazily loaded from disk, cached with usage
+            Memory::Cold => GraphLinksResidency::Cold,
+            // Pre-populate the links into the page cache on load
+            Memory::Cached => GraphLinksResidency::Cached,
+            // Materialize the links on heap, so they are never evicted by cache pressure
+            Memory::Pinned => GraphLinksResidency::Pinned,
+        },
     };
 
     (residency, is_on_disk)
@@ -95,19 +109,23 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         hnsw_config: &HnswConfig,
+        populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         // Graph config; may legitimately be absent (`open` derives defaults).
         fs.schedule_prefetch(&HnswGraphConfig::get_config_path(path), None, None)
             .ok_not_found()?;
 
         // Graph data and links
-        let (residency, _is_on_disk) = graph_residency(hnsw_config);
+        let (residency, _is_on_disk) = graph_residency(hnsw_config, populate_override);
         GraphLayers::preopen_universal(fs, path, residency)?;
 
         Ok(())
     }
 
     /// Read-only mirror of `HNSWIndex::open`: loads the graph through `fs`.
+    /// `populate_override` mirrors [`preopen`](Self::preopen): it replaces the
+    /// config-derived residency of the graph links.
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
@@ -116,6 +134,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         hnsw_config: HnswConfig,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Self>
     where
         // The graph keeps its universal-IO storage handle alive behind a
@@ -152,7 +171,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
         // Note that non-borrowable backends materialize the links into heap
         // RAM whatever the residency.
-        let (residency, is_on_disk) = graph_residency(&hnsw_config);
+        let (residency, is_on_disk) = graph_residency(&hnsw_config, populate_override);
         let graph = GraphLayers::load_universal(fs, path, residency)?;
 
         Ok(Self {

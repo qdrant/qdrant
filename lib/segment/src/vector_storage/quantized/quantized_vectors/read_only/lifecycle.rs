@@ -42,10 +42,18 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     /// in full on open), `cached` keeps the data mmap-backed with the page
     /// cache primed, `cold` reads lazily except the first vector, which the
     /// load reads to validate the stored vector size.
+    ///
+    /// A `populate_override` (from a request-specific
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces
+    /// the placement-derived populate of the mmap-backed placements. The
+    /// `pinned` placement ignores it: its RAM loaders read the data in full on
+    /// open whatever the prefetch did, so skipping the prefetch would only
+    /// move the same read onto the open.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         vector_config: &VectorDataConfig,
+        populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         let Some(quantization_config) = &vector_config.quantization_config else {
             return Ok(());
@@ -71,8 +79,11 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             on_disk_vector_storage,
         );
         let populate = match placement {
-            Memory::Cached | Memory::Pinned => Populate::PreferBackground,
-            Memory::Cold => Populate::No,
+            Memory::Cached => populate_override.unwrap_or(Populate::PreferBackground),
+            Memory::Cold => populate_override.unwrap_or(Populate::No),
+            // `Pinned` flat data goes through the RAM loaders below; pinned
+            // chunked data stays mmap-backed and unpopulated, like the open.
+            Memory::Pinned => Populate::No,
         };
 
         // The load reads the first vector off the data (from the first chunk,
@@ -159,6 +170,9 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     ///
     /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
     /// the original (source) vector storage this quantization was built for.
+    /// `populate_override` mirrors [`preopen`](Self::preopen): it replaces the
+    /// `cached`-placement page-cache priming.
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
@@ -166,6 +180,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         datatype: VectorStorageDatatype,
         multivector_config: Option<&MultiVectorConfig>,
         on_disk_vector_storage: bool,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Option<Self>> {
         let config_path = QuantizedVectors::get_config_path(path);
         let config: Option<QuantizedVectorsConfig> =
@@ -192,7 +207,12 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
 
         // For the cached placement quantized vectors stay mmap-backed, but the
         // page cache is primed on load — mirroring [`QuantizedVectors::load`].
-        if memory_placement == Memory::Cached {
+        // The override replaces that priming decision, like in the preopen.
+        let prime_cache = match populate_override {
+            None => memory_placement == Memory::Cached,
+            Some(populate) => memory_placement == Memory::Cached && populate.to_bool::<S>(),
+        };
+        if prime_cache {
             quantized_vectors.populate()?;
         }
 

@@ -140,6 +140,7 @@ mod tests {
                 &MmapFs,
                 &dense_config(storage_type, None),
                 dir.path(),
+                None,
             )
             .unwrap();
             assert!(opened.is_none(), "{storage_type:?} should be a no-op");
@@ -175,6 +176,7 @@ mod tests {
             &MmapFs,
             &dense_config(VectorStorageType::ChunkedMmap, None),
             dir.path(),
+            None,
         )
         .unwrap()
         .unwrap();
@@ -216,6 +218,7 @@ mod tests {
             &MmapFs,
             &dense_config(VectorStorageType::Mmap, None),
             dir.path(),
+            None,
         )
         .unwrap()
         .unwrap();
@@ -272,6 +275,7 @@ mod tests {
                 Some(MultiVectorConfig::default()),
             ),
             dir.path(),
+            None,
         )
         .unwrap()
         .unwrap();
@@ -330,7 +334,7 @@ mod tests {
 
         let config = dense_config(VectorStorageType::ChunkedMmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
-        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path()).unwrap();
+        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [
@@ -340,7 +344,7 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path())
+        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), None)
             .unwrap()
             .unwrap();
         assert_eq!(storage.total_vector_count(), vectors.len());
@@ -378,7 +382,7 @@ mod tests {
 
         let config = dense_config(VectorStorageType::Mmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
-        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path()).unwrap();
+        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for file_name in [
@@ -388,7 +392,7 @@ mod tests {
             fs_err::remove_file(dir.path().join(file_name)).unwrap();
         }
 
-        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path())
+        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), None)
             .unwrap()
             .unwrap();
         assert_eq!(storage.total_vector_count(), vectors.len());
@@ -441,7 +445,7 @@ mod tests {
             Some(MultiVectorConfig::default()),
         );
         let cached_fs = snapshot_cached_fs(dir.path());
-        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path()).unwrap();
+        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [
@@ -452,7 +456,7 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path())
+        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), None)
             .unwrap()
             .unwrap();
         assert_eq!(storage.total_vector_count(), multis.len());
@@ -490,6 +494,7 @@ mod tests {
             &MmapFs,
             &dense_config(VectorStorageType::ChunkedMmap, None),
             dir.path(),
+            None,
         )
         .unwrap()
         .unwrap();

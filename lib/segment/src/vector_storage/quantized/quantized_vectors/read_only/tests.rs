@@ -142,6 +142,7 @@ fn read_only_matches_read_write(
         storage.datatype(),
         None,
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -224,6 +225,7 @@ fn read_only_matches_read_write_multivector(
         storage.datatype(),
         Some(&multivector_config),
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -285,7 +287,7 @@ fn preopen_and_unlink(
 
     let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
     cached_fs.cache_file_info().unwrap();
-    ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config).unwrap();
+    ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config, None).unwrap();
 
     for entry in fs_err::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -344,6 +346,7 @@ fn preopen_then_open_through_cached_fs(
         storage.datatype(),
         None,
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -418,6 +421,7 @@ fn preopen_then_open_multivector_through_cached_fs(
         storage.datatype(),
         Some(&multivector_config),
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -495,6 +499,7 @@ fn live_reload_chunked_preserves_scores() {
         storage.datatype(),
         None,
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");

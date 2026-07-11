@@ -163,7 +163,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         new_config: &SegmentConfig,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
-        let storage = VectorStorageReadEnum::open(fs, config, &path)?.ok_or_else(|| {
+        // A config reload follows the new config alone: the request-specific
+        // load profile of the original open (if any) does not outlive it.
+        let storage = VectorStorageReadEnum::open(fs, config, &path, None)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "Read-only dense vector storage '{name}' was not found, or is corrupted.",
             ))
@@ -178,6 +180,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             self.id_tracker.clone(),
             self.payload_index.clone(),
             storage,
+            None,
         )
     }
 

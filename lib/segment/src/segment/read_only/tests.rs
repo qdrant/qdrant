@@ -12,6 +12,7 @@ use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::Builder;
 
+use crate::data_types::load_profile::LoadProfile;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, VectorInternal};
@@ -217,13 +218,52 @@ fn read_only_segment_matches_mutable() {
     let segment_uuid = mutable.uuid;
 
     // Open the very same directory read-only over the universal mmap fs.
-    let read_only = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
-        .expect("read-only open");
+    let read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
+            .expect("read-only open");
 
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
     assert_eq!(read_only.segment_uuid(), segment_uuid);
 
     assert_query_equivalence(&mutable, &read_only);
+}
+
+/// A request-specific [`LoadProfile`] only demotes placement, never disables a
+/// component: whatever the profile, every query the segment can serve must
+/// still answer identically to the mutable reference.
+#[test]
+fn read_only_segment_with_load_profile_matches_mutable() {
+    let segments_dir = Builder::new().prefix("ro_segments_lp").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder_lp").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+
+    let profiles = [
+        // Everything cold: HNSW graph, vector storage and both payload indexes
+        // are all demoted.
+        LoadProfile::for_retrieve(),
+        // Scroll filtered on "kw": vector components and the "num" index are
+        // demoted, the "kw" index and payload storage keep their placement.
+        LoadProfile::for_scroll(Some(&keyword_filter("red")), None, true),
+        // Search on the default vector: payload storage and both payload
+        // indexes are demoted, the vector components keep their placement.
+        LoadProfile::for_search(DEFAULT_VECTOR_NAME, None, false),
+    ];
+    for profile in &profiles {
+        let read_only = ReadOnlySegment::<MmapFile>::open(
+            &MmapFs,
+            &segment_path,
+            segment_uuid,
+            None,
+            Some(profile),
+        )
+        .expect("read-only open with load profile");
+
+        assert_eq!(read_only.available_point_count(), NUM_POINTS);
+        assert_query_equivalence(&mutable, &read_only);
+    }
 }
 
 /// Open a segment straight from an S3-compatible store (rustfs/minio) over
@@ -297,6 +337,7 @@ fn read_only_segment_over_s3() {
         Path::new(&key_prefix),
         segment_uuid,
         None,
+        None,
     )
     .expect("read-only open over S3");
 
@@ -335,7 +376,7 @@ fn read_only_segment_config_reload_payload_index() {
 
     // Open read-only: only `kw` is indexed.
     let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
             .expect("read-only open");
     {
         let payload_index = read_only.payload_index.borrow();
