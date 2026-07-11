@@ -2195,6 +2195,7 @@ dependencies = [
  "io_bridge_uio_grpc",
  "log",
  "object_store",
+ "rand 0.10.2",
  "serde_json",
 ]
 

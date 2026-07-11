@@ -89,9 +89,9 @@ use common::universal_io::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
 };
 use edge::{
-    Condition, EdgeConfig, EdgeShardRead, FieldCondition, Filter, JsonPath, LoadProfile, Match,
-    NamedQuery, OrderByInterface, PointId, QueryEnum, ReadOnlyEdgeShard, Record, ScoredPoint,
-    ScrollRequest, SearchParams, SearchRequest, ValueVariants, VectorInternal,
+    Condition, DEFAULT_VECTOR_NAME, EdgeConfig, EdgeShardRead, FieldCondition, Filter, JsonPath,
+    LoadProfile, Match, NamedQuery, OrderByInterface, PointId, QueryEnum, ReadOnlyEdgeShard,
+    Record, ScoredPoint, ScrollRequest, SearchParams, SearchRequest, ValueVariants, VectorInternal,
     WithPayloadInterface,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
@@ -342,9 +342,10 @@ struct SearchArgs {
 
     /// Query vector. Accepts a JSON array (`[0.1, 0.2, ...]`), a comma-separated
     /// list (`0.1,0.2,...`), or `@path`/`@-` to read either form from a file or
-    /// stdin.
+    /// stdin. Omit to search with a random vector — its dimension is read from
+    /// the shard config after the shard opens.
     #[arg(long)]
-    vector: String,
+    vector: Option<String>,
 
     /// Name of the vector to search (for collections with named vectors). Omit
     /// to use the default/unnamed vector.
@@ -606,8 +607,17 @@ impl PreparedRequest {
                     None => log::info!("searching with no filter"),
                 }
 
-                let vector = parse_vector(&args.vector)?;
-                log::info!("query vector has {} dimension(s)", vector.len());
+                // No `--vector` leaves the placeholder empty; it is replaced by a
+                // random vector once the shard is open and its config known (see
+                // `fill_random_vector`) — the load profile only needs the name.
+                let vector = match &args.vector {
+                    Some(raw) => {
+                        let vector = parse_vector(raw)?;
+                        log::info!("query vector has {} dimension(s)", vector.len());
+                        vector
+                    }
+                    None => Vec::new(),
+                };
 
                 let query = QueryEnum::Nearest(NamedQuery {
                     query: VectorInternal::Dense(vector),
@@ -641,6 +651,38 @@ impl PreparedRequest {
             Self::Scroll(request) => request.load_profile(),
             Self::Search(request) => request.load_profile(),
         }
+    }
+
+    /// Replace an omitted `--vector` (the empty placeholder from
+    /// [`build`](Self::build)) with a random one, its dimension read from the
+    /// now-open shard's config. No-op for scroll and explicit vectors.
+    fn fill_random_vector<S: EdgeShardRead>(&mut self, shard: &S) -> Result<()> {
+        let Self::Search(request) = self else {
+            return Ok(());
+        };
+        let QueryEnum::Nearest(named) = &mut request.query else {
+            return Ok(());
+        };
+        let VectorInternal::Dense(vector) = &mut named.query else {
+            return Ok(());
+        };
+        if !vector.is_empty() {
+            return Ok(());
+        }
+
+        let config = shard.config_snapshot();
+        let name = named.using.as_deref().unwrap_or(DEFAULT_VECTOR_NAME);
+        let dim = config
+            .vectors
+            .get(name)
+            .with_context(|| format!("vector {name:?} is not present in the shard config"))?
+            .size;
+
+        use rand::RngExt as _;
+        let mut rng = rand::rng();
+        *vector = (0..dim).map(|_| rng.random::<f32>()).collect();
+        log::info!("searching with a random {dim}-dimensional vector");
+        Ok(())
     }
 
     /// Run the request against the shard's current state. Returns the result
@@ -767,8 +809,9 @@ where
 
     // Build the request before the open: the shard is opened for exactly this request, so the
     // request's load profile decides which segment components are warmed at all (unless disabled
-    // with `--no-load-profile`).
-    let request = PreparedRequest::build(&cli.command)?;
+    // with `--no-load-profile`). An omitted `--vector` stays a placeholder until the open
+    // reveals the dimension (the profile only needs the vector name).
+    let mut request = PreparedRequest::build(&cli.command)?;
     let load_profile = (!cli.connection.no_load_profile).then(|| request.load_profile());
 
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
@@ -780,12 +823,14 @@ where
         .search_threads
         .map(|n| EdgeConfig::builder().max_search_threads(n).build());
 
-    log::info!("Load profile: {:?}", load_profile);
+    log::info!("Load profile: {load_profile:?}");
 
     let shard =
         ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config, load_profile)
             .context("failed to open read-only edge shard over object storage")?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
+
+    request.fill_random_vector(&shard)?;
 
     let (rows, next_offset) = request.run(&shard)?;
     request.print_full(&rows, next_offset.as_ref())?;
