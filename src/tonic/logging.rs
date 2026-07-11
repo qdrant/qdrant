@@ -1,9 +1,15 @@
 use std::task::{Context, Poll};
 
+use api::grpc::qdrant::storage_read_server;
 use futures_util::future::BoxFuture;
 use tonic::Code;
 use tower::Service;
 use tower_layer::Layer;
+
+/// Service component of a gRPC request path (`/{package.Service}/{Method}`).
+fn service_name(method_name: &str) -> Option<&str> {
+    method_name.strip_prefix('/')?.split('/').next()
+}
 
 #[derive(Clone)]
 pub struct LoggingMiddleware<T> {
@@ -58,6 +64,22 @@ where
                             Code::Cancelled => {
                                 // cluster mode generates a large amount of `stream error received: stream no longer needed`
                                 log::trace!("gRPC cancelled {method_name} {elapsed_sec:.6}");
+                            }
+                            // A read-only follower routinely probes files that are created
+                            // lazily by the writer (e.g. the mutable id tracker's mappings and
+                            // versions), so a StorageRead not-found is expected traffic, not a
+                            // client error worth INFO.
+                            Code::NotFound
+                                if service_name(&method_name)
+                                    == Some(storage_read_server::SERVICE_NAME) =>
+                            {
+                                log::debug!(
+                                    "gRPC {} failed with {} {:?} {:.6}",
+                                    method_name,
+                                    grpc_status.code(),
+                                    grpc_status.message(),
+                                    elapsed_sec,
+                                );
                             }
                             Code::DeadlineExceeded
                             | Code::Aborted

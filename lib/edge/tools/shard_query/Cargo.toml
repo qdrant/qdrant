@@ -15,6 +15,7 @@ path = "src/main.rs"
 edge = { path = "../.." }
 common = { path = "../../../common/common" }
 io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
+io_bridge_uio_grpc = { path = "../../../common/io_bridge_uio_grpc" }
 
 fs-err = { workspace = true }
 object_store = { workspace = true }
