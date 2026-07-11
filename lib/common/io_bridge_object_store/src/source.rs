@@ -89,7 +89,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                         location.starts_with(&prefix_str).then(|| ListedFile {
                             path: PathBuf::from(location),
                             size: e.size,
-                            last_modified: Some(e.last_modified.into()),
+                            last_modified: Some(SystemTime::from(e.last_modified)),
                         })
                     })
                     .collect()),
