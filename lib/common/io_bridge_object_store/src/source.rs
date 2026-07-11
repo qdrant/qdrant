@@ -89,6 +89,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                         location.starts_with(&prefix_str).then(|| ListedFile {
                             path: PathBuf::from(location),
                             size: e.size,
+                            last_modified: Some(e.last_modified.into()),
                         })
                     })
                     .collect()),
@@ -320,7 +321,13 @@ mod tests {
             .block_on(source.list_files(Path::new("dir/page_")))
             .expect("list_files")
             .into_iter()
-            .map(|ListedFile { path, size }| (path.to_string_lossy().into_owned(), size))
+            .map(
+                |ListedFile {
+                     path,
+                     size,
+                     last_modified: _,
+                 }| (path.to_string_lossy().into_owned(), size),
+            )
             .collect();
         files.sort();
         assert_eq!(

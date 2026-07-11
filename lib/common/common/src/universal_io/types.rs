@@ -201,6 +201,9 @@ pub struct ReadBytesItem<U: UserData> {
 pub struct ListedFile {
     pub path: std::path::PathBuf,
     pub size: u64,
+    /// Last modification time, when the backend exposes one (local
+    /// filesystems, object stores); `None` otherwise.
+    pub last_modified: Option<std::time::SystemTime>,
 }
 
 pub type ByteOffset = u64;

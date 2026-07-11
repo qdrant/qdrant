@@ -206,10 +206,12 @@ async fn list_files() {
             ListedFile {
                 path: PathBuf::from("data/a.bin"),
                 size: 10,
+                last_modified: None,
             },
             ListedFile {
                 path: PathBuf::from("data/b.bin"),
                 size: 10,
+                last_modified: None,
             },
         ]
     );
