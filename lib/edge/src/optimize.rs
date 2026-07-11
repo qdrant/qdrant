@@ -180,6 +180,37 @@ mod tests {
 
     #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
+    fn exact_count_deduplicates_across_segments() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-exact-count-dedup")
+            .tempdir()
+            .unwrap();
+
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
+        shard
+            .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
+            .unwrap();
+        drop(shard);
+
+        duplicate_single_segment(dir.path());
+
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        assert_eq!(reopened.info().unwrap().segments_count, 2);
+
+        let count = reopened
+            .count(CountRequestInternal {
+                filter: None,
+                exact: true,
+            })
+            .unwrap();
+        assert_eq!(
+            count, 1,
+            "exact count should deduplicate point ids across segments"
+        );
+    }
+
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+    #[test]
     fn does_not_force_merge_all_segments_into_one() {
         let dir = tempfile::Builder::new()
             .prefix("edge-opt-do-not-force-one")
@@ -312,16 +343,14 @@ mod tests {
         );
 
         // All duplicated segments contained the same point (id=1). After merge,
-        // the exact info().points_count depends on how many segments remain
-        // (info sums per-segment counts without cross-segment deduplication).
-        // The important invariant is that the shard is functional.
+        // the exact count should deduplicate across remaining segments.
         let count = reopened
             .count(CountRequestInternal {
                 filter: None,
                 exact: true,
             })
             .unwrap();
-        assert!(count >= 1, "shard should still have data after merge");
+        assert_eq!(count, 1, "merged shard should have exactly one point");
 
         assert_points_retrievable_with_vectors(&reopened, &[1]);
     }
@@ -644,17 +673,15 @@ mod tests {
 
         // The duplicated segments each had 750 surviving points (same IDs).
         // After merge, the shard should be functional with correct data.
-        // We use count(exact=true) since info().points_count sums per-segment
-        // counts without cross-segment deduplication.
         let count = reopened
             .count(CountRequestInternal {
                 filter: None,
                 exact: true,
             })
             .unwrap();
-        assert!(
-            count >= 750,
-            "merged shard should preserve surviving points"
+        assert_eq!(
+            count, 750,
+            "merged shard should preserve surviving points without double-counting"
         );
 
         // Surviving points (251..=1000) should be queryable with correct vectors
