@@ -1078,6 +1078,9 @@ fn test_upsert_moved_point_single_slot() {
         Some(VectorInternal::Dense(raw_vec)),
     );
     assert_eq!(dst.payload(7.into(), &hw_counter).unwrap(), payload);
+    // Payload storage was mutated: its snapshot version stamp must move to
+    // this op, or partial snapshots would skip the changed payload files.
+    assert_eq!(dst.version_tracker.get_payload(), Some(101));
 
     // Replace path with a decoded overlay shadowing the raw bytes: exactly
     // one fresh slot (the clone), and the overlay wins over the raw bytes.
@@ -1099,6 +1102,7 @@ fn test_upsert_moved_point_single_slot() {
         Some(VectorInternal::Dense(new_vec)),
     );
     assert_eq!(dst.payload(7.into(), &hw_counter).unwrap(), payload2);
+    assert_eq!(dst.version_tracker.get_payload(), Some(102));
 }
 
 /// On an append-only segment, the follow-up steps of a multi-step point

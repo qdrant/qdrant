@@ -264,6 +264,10 @@ impl Segment {
         self.payload_index
             .borrow_mut()
             .overwrite_payload(internal_id, payload, hw_counter)?;
+        // The overwrite mutated payload storage: stamp it so partial
+        // snapshots re-upload it (the old CoW path bumped this via
+        // `set_full_payload`).
+        self.version_tracker.set_payload(Some(op_num));
         Ok(())
     }
 
