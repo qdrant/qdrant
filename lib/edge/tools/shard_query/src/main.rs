@@ -1,6 +1,7 @@
 //! Experimental binary that opens a [`ReadOnlyEdgeShard`] directly over object
-//! storage (AWS S3 / S3-compatible, or Google Cloud Storage) and runs a single
-//! read request against it.
+//! storage (AWS S3 / S3-compatible, or Google Cloud Storage) — or directly over
+//! a running Qdrant peer's `StorageRead` gRPC service — and runs a single read
+//! request against it.
 //!
 //! The operation is selected with a sub-command:
 //!
@@ -51,11 +52,30 @@
 //! `--prefix` is the key prefix inside the bucket that points at the edge-shard
 //! root — the directory that contains `edge_config.json` and `segments/`.
 //!
+//! Example — read a shard straight from a running Qdrant instance over its
+//! `StorageRead` gRPC service (no object storage involved; the instance must
+//! run with `QDRANT__FEATURE_FLAGS__WRITE_SEGMENT_MANIFEST=true` so the shard
+//! has a segment manifest). The shard is addressed by `--collection` and
+//! `--shard-id`; `--prefix` stays empty:
+//!
+//! ```sh
+//! cargo run -p edge-shard-query -- \
+//!     --backend    uio-grpc \
+//!     --endpoint   http://localhost:6334 \
+//!     --collection my_collection \
+//!     --shard-id   0 \
+//!     scroll \
+//!     --limit 10
+//! ```
+//!
 //! With `--live-reload <SECONDS>` the tool keeps running after the first
 //! answer: every interval it [`refresh`](ReadOnlyEdgeShard::refresh)es the
 //! shard from object storage, re-runs the same request, and prints the
 //! difference against the previous results (`+` appeared, `-` disappeared,
 //! `~` changed), so a leader writing to the same bucket can be observed live.
+//! `--live-reload-key` is the same loop with each reload triggered manually by
+//! pressing Enter instead of a timer — handy when stepping through a debug
+//! scenario.
 
 use std::collections::HashMap;
 use std::io::Read as _;
@@ -76,16 +96,20 @@ use edge::{
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
 use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
+use io_bridge_uio_grpc::{UioGrpcConfig, UioGrpcSource};
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
 
-/// Object-storage backend to read from.
+/// Storage backend to read the shard from.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum Backend {
     /// AWS S3 or an S3-compatible store (MinIO, RustFS, LocalStack, ...).
     Aws,
     /// Google Cloud Storage.
     Gcs,
+    /// A running Qdrant peer's `StorageRead` gRPC service (its public gRPC
+    /// endpoint). The shard is addressed by `--collection`/`--shard-id`.
+    UioGrpc,
 }
 
 #[derive(Parser, Debug)]
@@ -106,9 +130,53 @@ struct Cli {
     #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..))]
     live_reload: Option<u64>,
 
+    /// Like `--live-reload`, but each reload is triggered manually by pressing
+    /// Enter instead of on a timer — easier when stepping through a debug
+    /// scenario. Not compatible with `@-` (stdin) request arguments.
+    #[arg(long, conflicts_with = "live_reload")]
+    live_reload_key: bool,
+
     /// Which read request to run against the shard.
     #[command(subcommand)]
     command: Command,
+}
+
+/// What triggers each live-reload iteration.
+enum ReloadTrigger {
+    /// Refresh every interval (`--live-reload <SECONDS>`).
+    Timer(Duration),
+    /// Refresh when the user presses Enter (`--live-reload-key`).
+    Key,
+}
+
+impl ReloadTrigger {
+    fn from_cli(cli: &Cli) -> Option<Self> {
+        if cli.live_reload_key {
+            // `conflicts_with` guarantees `--live-reload` is not also set.
+            return Some(Self::Key);
+        }
+        cli.live_reload
+            .map(|secs| Self::Timer(Duration::from_secs(secs)))
+    }
+
+    /// Block until the next reload should run. `false` means the trigger is
+    /// exhausted (stdin closed) and the loop should end.
+    fn wait(&self) -> Result<bool> {
+        match self {
+            Self::Timer(interval) => {
+                std::thread::sleep(*interval);
+                Ok(true)
+            }
+            Self::Key => {
+                log::info!("press Enter to live-reload (Ctrl+C to quit)");
+                let mut line = String::new();
+                let read = std::io::stdin()
+                    .read_line(&mut line)
+                    .context("failed to read from stdin")?;
+                Ok(read > 0)
+            }
+        }
+    }
 }
 
 /// How to reach the object store and where the shard lives inside it. Shared by
@@ -119,11 +187,13 @@ struct ConnectionArgs {
     #[arg(long, value_enum, default_value = "aws")]
     backend: Backend,
 
-    /// Bucket name (without any scheme prefix). Used by both backends.
+    /// [AWS/GCS] Bucket name (without any scheme prefix). Required for the
+    /// object-storage backends; unused by `uio-grpc`.
     #[arg(long, env = "BLOB_BUCKET")]
-    bucket: String,
+    bucket: Option<String>,
 
-    /// [AWS] Custom S3 endpoint URL (set for MinIO / RustFS / LocalStack). Omit for real AWS.
+    /// [AWS] Custom S3 endpoint URL (set for MinIO / RustFS / LocalStack; omit for real AWS).
+    /// [UIO] The Qdrant peer's public gRPC URL (e.g. `http://localhost:6334`); required.
     #[arg(long, env = "S3_ENDPOINT")]
     endpoint: Option<String>,
 
@@ -157,8 +227,22 @@ struct ConnectionArgs {
     #[arg(long, env = "GCS_SERVICE_ACCOUNT_KEY")]
     gcs_service_account_key: Option<String>,
 
-    /// Key prefix inside the bucket pointing at the edge-shard root (contains
-    /// `edge_config.json` and `segments/`). Empty means the bucket root.
+    /// [UIO] Collection name on the Qdrant peer; required.
+    #[arg(long, env = "QDRANT_COLLECTION")]
+    collection: Option<String>,
+
+    /// [UIO] Shard id within the collection.
+    #[arg(long, default_value_t = 0)]
+    shard_id: u32,
+
+    /// [UIO] Qdrant API key sent on every request. Omit for an unauthenticated peer.
+    #[arg(long, env = "QDRANT_API_KEY")]
+    api_key: Option<String>,
+
+    /// [AWS/GCS] Key prefix inside the bucket pointing at the edge-shard root
+    /// (contains `edge_config.json` and `segments/`). Empty means the bucket
+    /// root. The `uio-grpc` backend addresses the shard root by
+    /// `--collection`/`--shard-id`, so leave this empty there.
     #[arg(long, default_value = "")]
     prefix: String,
 
@@ -352,6 +436,13 @@ fn parse_vector(raw: &str) -> Result<Vec<f32>> {
     }
 }
 
+/// The bucket name, required by the object-storage backends (`uio-grpc` has none).
+fn require_bucket(conn: &ConnectionArgs) -> Result<String> {
+    conn.bucket
+        .clone()
+        .ok_or_else(|| anyhow!("--bucket is required for the {:?} backend", conn.backend))
+}
+
 fn build_aws_config(conn: &ConnectionArgs) -> Result<AwsConfig> {
     let credentials = match (&conn.access_key, &conn.secret_key) {
         (Some(access_key_id), Some(secret_access_key)) => AwsCredentials::Static {
@@ -368,7 +459,7 @@ fn build_aws_config(conn: &ConnectionArgs) -> Result<AwsConfig> {
     };
 
     Ok(AwsConfig {
-        bucket: conn.bucket.clone(),
+        bucket: require_bucket(conn)?,
         region: conn.region.clone(),
         endpoint: conn.endpoint.clone(),
         s3_express: conn.s3_express,
@@ -376,7 +467,7 @@ fn build_aws_config(conn: &ConnectionArgs) -> Result<AwsConfig> {
     })
 }
 
-fn build_gcs_config(conn: &ConnectionArgs) -> GcsConfig {
+fn build_gcs_config(conn: &ConnectionArgs) -> Result<GcsConfig> {
     let credentials = if let Some(key) = &conn.gcs_service_account_key {
         GcsCredentials::ServiceAccountKey(key.clone())
     } else if let Some(path) = &conn.gcs_service_account_path {
@@ -385,10 +476,27 @@ fn build_gcs_config(conn: &ConnectionArgs) -> GcsConfig {
         GcsCredentials::Default
     };
 
-    GcsConfig {
-        bucket: conn.bucket.clone(),
+    Ok(GcsConfig {
+        bucket: require_bucket(conn)?,
         credentials,
-    }
+    })
+}
+
+fn build_uio_config(conn: &ConnectionArgs) -> Result<UioGrpcConfig> {
+    Ok(UioGrpcConfig {
+        endpoint: conn.endpoint.clone().ok_or_else(|| {
+            anyhow!(
+                "--endpoint is required for the uio-grpc backend \
+                 (the peer's public gRPC URL, e.g. http://localhost:6334)"
+            )
+        })?,
+        collection: conn
+            .collection
+            .clone()
+            .ok_or_else(|| anyhow!("--collection is required for the uio-grpc backend"))?,
+        shard_id: conn.shard_id,
+        api_key: conn.api_key.clone(),
+    })
 }
 
 /// Build the disk-cache-backed filesystem used to read segment data.
@@ -657,21 +765,24 @@ where
     let (rows, next_offset) = request.run(&shard)?;
     request.print_full(&rows, next_offset.as_ref())?;
 
-    let Some(interval_secs) = cli.live_reload else {
+    let Some(trigger) = ReloadTrigger::from_cli(cli) else {
         return Ok(());
     };
 
-    // Live-reload loop: refresh the shard from object storage every interval,
-    // re-run the same request, and print the diff against the previous run.
-    // Runs until interrupted.
-    let interval = Duration::from_secs(interval_secs);
+    // Live-reload loop: on every trigger (timer tick or Enter), refresh the
+    // shard from the backend, re-run the same request, and print the diff
+    // against the previous run. Runs until interrupted (or stdin closes, in
+    // key mode).
     let mut previous = rows;
     for iteration in 1u64.. {
-        std::thread::sleep(interval);
+        if !trigger.wait()? {
+            log::info!("stdin closed; stopping live-reload");
+            return Ok(());
+        }
 
         if let Err(err) = shard.refresh() {
-            // The shard keeps serving its previous state; retry next tick.
-            log::error!("live-reload refresh failed (will retry in {interval_secs}s): {err}");
+            // The shard keeps serving its previous state; retry on the next trigger.
+            log::error!("live-reload refresh failed (will retry on next reload): {err}");
             continue;
         }
         log::info!(
@@ -698,12 +809,13 @@ fn main() -> Result<()> {
     let cache_dir = conn
         .cache_dir
         .clone()
-        .unwrap_or_else(|| std::env::temp_dir().join("edge-shard-query-cache"));
+        .unwrap_or_else(|| default_cache_dir(conn));
 
     log::info!(
-        "opening read-only edge shard backend={:?} bucket={:?} prefix={:?}",
+        "opening read-only edge shard backend={:?} bucket={:?} collection={:?} prefix={:?}",
         conn.backend,
         conn.bucket,
+        conn.collection,
         conn.prefix,
     );
 
@@ -715,7 +827,24 @@ fn main() -> Result<()> {
             &cli,
             &prefix,
             &cache_dir,
-            build_gcs_config(conn),
+            build_gcs_config(conn)?,
         ),
+        Backend::UioGrpc => {
+            run::<UioGrpcSource>(&cli, &prefix, &cache_dir, build_uio_config(conn)?)
+        }
+    }
+}
+
+/// Default local mirror directory. The mirror is keyed by `--prefix`-relative
+/// remote paths, so for `uio-grpc` — whose prefix is empty, the shard being
+/// addressed by `--collection`/`--shard-id` instead — the replica identity is
+/// folded into the directory to keep two shards from colliding in one mirror.
+fn default_cache_dir(conn: &ConnectionArgs) -> PathBuf {
+    let base = std::env::temp_dir().join("edge-shard-query-cache");
+    match conn.backend {
+        Backend::Aws | Backend::Gcs => base,
+        Backend::UioGrpc => base
+            .join(conn.collection.as_deref().unwrap_or("default"))
+            .join(conn.shard_id.to_string()),
     }
 }
