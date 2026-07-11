@@ -61,23 +61,20 @@ fn open_options(populate: Populate) -> OpenOptions {
 
 /// Read the logical flag length from the status struct, opened read-only.
 ///
-/// Returns `Ok(None)` when the status file is absent
+/// An absent status file propagates as not-found: whether that is legitimate
+/// depends on the caller — [`ReadOnlyRoaringFlags::open`] masks it (the index
+/// may simply not exist), a reload must not (the file existed before).
 fn read_status_len<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
-) -> OperationResult<Option<usize>> {
-    let Some(file) = fs
-        .open(
-            status_file(directory),
-            open_options(Populate::No),
-            Default::default(),
-        )
-        .ok_not_found()?
-    else {
-        return Ok(None);
-    };
+) -> OperationResult<usize> {
+    let file = fs.open(
+        status_file(directory),
+        open_options(Populate::No),
+        Default::default(),
+    )?;
     let status = TypedStorage::<S, DynamicFlagsStatus>::new(file);
-    Ok(Some(status.read_whole()?[0].len()))
+    Ok(status.read_whole()?[0].len())
 }
 
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
@@ -124,7 +121,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         directory: &Path,
     ) -> OperationResult<Option<Self>> {
         // A missing status file means the index isn't present on disk.
-        let Some(len) = read_status_len::<S>(fs, directory)? else {
+        let Some(len) = read_status_len::<S>(fs, directory).ok_not_found()? else {
             return Ok(None);
         };
 
@@ -222,9 +219,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
 
         // The logical length grows as points are appended; refresh it so
         // length-driven readers (the null index's `iter_falses`) stay correct.
-        if let Some(len) = read_status_len::<S>(fs, &self.directory)? {
-            self.len = len;
-        }
+        // Once the index exists its status file always does, so absence here is
+        // a genuine not-found (segment removed mid-reload), not a lazy file.
+        self.len = read_status_len::<S>(fs, &self.directory)?;
 
         Ok(())
     }

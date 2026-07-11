@@ -377,3 +377,43 @@ fn read_only_segment_config_reload_payload_index() {
     }
     assert_query_equivalence(&mutable, &read_only);
 }
+
+/// A follower distinguishes "segment removed by the leader" from corruption by
+/// classifying errors as not-found (see `IsNotFound for OperationError`): both
+/// opening a vanished segment directory and live-reloading a segment whose
+/// directory vanished mid-flight must classify, so the shard-level refresh can
+/// re-check the segment manifest instead of escalating.
+#[test]
+fn vanished_segment_classifies_not_found() {
+    use common::universal_io::IsNotFound as _;
+
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+    drop(mutable);
+
+    // Open of a directory that never existed.
+    let Err(err) = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segments_dir.path().join("no-such-segment"),
+        segment_uuid,
+        None,
+    ) else {
+        panic!("open of a missing directory must fail");
+    };
+    assert!(err.is_not_found(), "expected not-found, got: {err}");
+
+    // Live-reload of a segment whose directory vanished after open (the leader
+    // removed it): the first component reopen hits the missing file.
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
+            .expect("read-only open");
+    fs_err::remove_dir_all(&segment_path).unwrap();
+    let err = read_only
+        .live_reload(&MmapFs, &HardwareCounterCell::disposable())
+        .expect_err("live_reload over a removed directory must fail");
+    assert!(err.is_not_found(), "expected not-found, got: {err}");
+}
