@@ -44,11 +44,12 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     /// load reads to validate the stored vector size.
     ///
     /// A `populate_override` (from a request-specific
-    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces
-    /// the placement-derived populate of the mmap-backed placements. The
-    /// `pinned` placement ignores it: its RAM loaders read the data in full on
-    /// open whatever the prefetch did, so skipping the prefetch would only
-    /// move the same read onto the open.
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) demotes
+    /// the effective placement (see [`Memory::with_populate_override`]) —
+    /// including `pinned`: within the immutable layout the RAM and mmap
+    /// loaders share the on-disk format, so [`Self::open`] demotes a pinned
+    /// storage kind to its lazy mmap counterpart and nothing needs the data
+    /// prefetched.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
@@ -77,13 +78,13 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         let placement = QuantizedVectors::memory_placement(
             quantization_config.memory_placement(),
             on_disk_vector_storage,
-        );
+        )
+        .with_populate_override(populate_override);
         let populate = match placement {
-            Memory::Cached => populate_override.unwrap_or(Populate::PreferBackground),
-            Memory::Cold => populate_override.unwrap_or(Populate::No),
+            Memory::Cached => Populate::PreferBackground,
             // `Pinned` flat data goes through the RAM loaders below; pinned
             // chunked data stays mmap-backed and unpopulated, like the open.
-            Memory::Pinned => Populate::No,
+            Memory::Cold | Memory::Pinned => Populate::No,
         };
 
         // The load reads the first vector off the data (from the first chunk,
@@ -170,8 +171,10 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     ///
     /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
     /// the original (source) vector storage this quantization was built for.
-    /// `populate_override` mirrors [`preopen`](Self::preopen): it replaces the
-    /// `cached`-placement page-cache priming.
+    /// `populate_override` mirrors [`preopen`](Self::preopen): it demotes the effective
+    /// placement — a demoted pinned placement opens the lazy mmap loaders over the same
+    /// flat files instead of the RAM ones, and a demoted cached placement skips the
+    /// page-cache priming.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
@@ -189,6 +192,10 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             return Ok(None);
         };
 
+        let memory_placement = config
+            .memory_placement(on_disk_vector_storage)
+            .with_populate_override(populate_override);
+
         let storage_impl = match multivector_config {
             Some(multivector_config) => Self::open_multi(
                 fs,
@@ -196,27 +203,38 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
                 &config,
                 multivector_config,
                 on_disk_vector_storage,
+                memory_placement,
             )?,
-            None => Self::open_single(fs, path, &config, on_disk_vector_storage)?,
+            None => Self::open_single(fs, path, &config, on_disk_vector_storage, memory_placement)?,
         };
-
-        let memory_placement = config.memory_placement(on_disk_vector_storage);
 
         let quantized_vectors =
             Self::new(storage_impl, config, path.to_path_buf(), distance, datatype);
 
         // For the cached placement quantized vectors stay mmap-backed, but the
         // page cache is primed on load — mirroring [`QuantizedVectors::load`].
-        // The override replaces that priming decision, like in the preopen.
-        let prime_cache = match populate_override {
-            None => memory_placement == Memory::Cached,
-            Some(populate) => memory_placement == Memory::Cached && populate.to_bool::<S>(),
-        };
-        if prime_cache {
+        if memory_placement == Memory::Cached {
             quantized_vectors.populate()?;
         }
 
         Ok(Some(quantized_vectors))
+    }
+
+    /// Resolve the storage kind for `memory_placement` — the config-selected kind, with
+    /// the RAM kinds demoted to their mmap counterparts (same flat files) when the
+    /// effective placement is no longer pinned (a load-profile demotion; the placement
+    /// itself never gets *warmer* than the config, so the reverse cannot happen).
+    fn placed_storage_kind(
+        config: &QuantizedVectorsConfig,
+        on_disk_vector_storage: bool,
+        memory_placement: Memory,
+    ) -> OperationResult<QuantizedStorageKind> {
+        let storage_kind = config.storage_kind(on_disk_vector_storage)?;
+        let storage_kind = match memory_placement {
+            Memory::Pinned => storage_kind,
+            Memory::Cached | Memory::Cold => storage_kind.demote_ram_to_mmap(),
+        };
+        Ok(storage_kind)
     }
 
     fn open_single(
@@ -224,6 +242,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         path: &Path,
         config: &QuantizedVectorsConfig,
         on_disk_vector_storage: bool,
+        memory_placement: Memory,
     ) -> OperationResult<ReadOnlyQuantizedVectorStorage<S>> {
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
         let meta_path = QuantizedVectors::get_meta_path(path);
@@ -234,38 +253,43 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         let mmap = || QuantizedStorage::<S>::from_file(fs, &data_path, size);
         let chunked = || QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size);
 
-        let storage = match config.storage_kind(on_disk_vector_storage)? {
-            QuantizedStorageKind::ScalarRam => ReadOnlyQuantizedVectorStorage::ScalarRam(
-                EncodedVectorsU8::load(fs, ram()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::ScalarMmap => ReadOnlyQuantizedVectorStorage::ScalarMmap(
-                EncodedVectorsU8::load(fs, mmap()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::PqRam => ReadOnlyQuantizedVectorStorage::PQRam(
-                EncodedVectorsPQ::load(fs, ram()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::PqMmap => ReadOnlyQuantizedVectorStorage::PQMmap(
-                EncodedVectorsPQ::load(fs, mmap()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::BinaryRam => ReadOnlyQuantizedVectorStorage::BinaryRam(
-                EncodedVectorsBin::load(fs, ram()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::BinaryMmap => ReadOnlyQuantizedVectorStorage::BinaryMmap(
-                EncodedVectorsBin::load(fs, mmap()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::BinaryChunked => ReadOnlyQuantizedVectorStorage::BinaryChunked(
-                EncodedVectorsBin::load(fs, chunked()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::TqRam => ReadOnlyQuantizedVectorStorage::TQRam(
-                EncodedVectorsTQ::load(fs, ram()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::TqMmap => ReadOnlyQuantizedVectorStorage::TQMmap(
-                EncodedVectorsTQ::load(fs, mmap()?, &meta_path)?,
-            ),
-            QuantizedStorageKind::TqChunked => ReadOnlyQuantizedVectorStorage::TQChunked(
-                EncodedVectorsTQ::load(fs, chunked()?, &meta_path)?,
-            ),
-        };
+        let storage =
+            match Self::placed_storage_kind(config, on_disk_vector_storage, memory_placement)? {
+                QuantizedStorageKind::ScalarRam => ReadOnlyQuantizedVectorStorage::ScalarRam(
+                    EncodedVectorsU8::load(fs, ram()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::ScalarMmap => ReadOnlyQuantizedVectorStorage::ScalarMmap(
+                    EncodedVectorsU8::load(fs, mmap()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::PqRam => ReadOnlyQuantizedVectorStorage::PQRam(
+                    EncodedVectorsPQ::load(fs, ram()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::PqMmap => ReadOnlyQuantizedVectorStorage::PQMmap(
+                    EncodedVectorsPQ::load(fs, mmap()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::BinaryRam => ReadOnlyQuantizedVectorStorage::BinaryRam(
+                    EncodedVectorsBin::load(fs, ram()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::BinaryMmap => ReadOnlyQuantizedVectorStorage::BinaryMmap(
+                    EncodedVectorsBin::load(fs, mmap()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::BinaryChunked => {
+                    ReadOnlyQuantizedVectorStorage::BinaryChunked(EncodedVectorsBin::load(
+                        fs,
+                        chunked()?,
+                        &meta_path,
+                    )?)
+                }
+                QuantizedStorageKind::TqRam => ReadOnlyQuantizedVectorStorage::TQRam(
+                    EncodedVectorsTQ::load(fs, ram()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::TqMmap => ReadOnlyQuantizedVectorStorage::TQMmap(
+                    EncodedVectorsTQ::load(fs, mmap()?, &meta_path)?,
+                ),
+                QuantizedStorageKind::TqChunked => ReadOnlyQuantizedVectorStorage::TQChunked(
+                    EncodedVectorsTQ::load(fs, chunked()?, &meta_path)?,
+                ),
+            };
         Ok(storage)
     }
 
@@ -275,6 +299,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         config: &QuantizedVectorsConfig,
         multivector_config: &MultiVectorConfig,
         on_disk_vector_storage: bool,
+        memory_placement: Memory,
     ) -> OperationResult<ReadOnlyQuantizedVectorStorage<S>> {
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
         let meta_path = QuantizedVectors::get_meta_path(path);
@@ -291,100 +316,111 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         let mmap_offsets = || MultivectorOffsetsStorageMmap::<S>::open(fs, &offsets_path);
         let chunked_offsets = || MultivectorOffsetsStorageChunkedRead::<S>::open(fs, &offsets_path);
 
-        let storage = match config.storage_kind(on_disk_vector_storage)? {
-            QuantizedStorageKind::ScalarRam => {
-                let inner = EncodedVectorsU8::load(fs, ram()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::ScalarRamMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    ram_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::ScalarMmap => {
-                let inner = EncodedVectorsU8::load(fs, mmap()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    mmap_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::PqRam => {
-                let inner = EncodedVectorsPQ::load(fs, ram()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::PQRamMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    ram_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::PqMmap => {
-                let inner = EncodedVectorsPQ::load(fs, mmap()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::PQMmapMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    mmap_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::BinaryRam => {
-                let inner = EncodedVectorsBin::load(fs, ram()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::BinaryRamMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    ram_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::BinaryMmap => {
-                let inner = EncodedVectorsBin::load(fs, mmap()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    mmap_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::BinaryChunked => {
-                let inner = EncodedVectorsBin::load(fs, chunked()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(
-                    QuantizedMultivectorStorage::new(
+        let storage =
+            match Self::placed_storage_kind(config, on_disk_vector_storage, memory_placement)? {
+                QuantizedStorageKind::ScalarRam => {
+                    let inner = EncodedVectorsU8::load(fs, ram()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::ScalarRamMulti(
+                        QuantizedMultivectorStorage::new(
+                            dim,
+                            inner,
+                            ram_offsets()?,
+                            *multivector_config,
+                        ),
+                    )
+                }
+                QuantizedStorageKind::ScalarMmap => {
+                    let inner = EncodedVectorsU8::load(fs, mmap()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(
+                        QuantizedMultivectorStorage::new(
+                            dim,
+                            inner,
+                            mmap_offsets()?,
+                            *multivector_config,
+                        ),
+                    )
+                }
+                QuantizedStorageKind::PqRam => {
+                    let inner = EncodedVectorsPQ::load(fs, ram()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::PQRamMulti(QuantizedMultivectorStorage::new(
                         dim,
                         inner,
-                        chunked_offsets()?,
+                        ram_offsets()?,
                         *multivector_config,
-                    ),
-                )
-            }
-            QuantizedStorageKind::TqRam => {
-                let inner = EncodedVectorsTQ::load(fs, ram()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::TQRamMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    ram_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::TqMmap => {
-                let inner = EncodedVectorsTQ::load(fs, mmap()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::TQMmapMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    mmap_offsets()?,
-                    *multivector_config,
-                ))
-            }
-            QuantizedStorageKind::TqChunked => {
-                let inner = EncodedVectorsTQ::load(fs, chunked()?, &meta_path)?;
-                ReadOnlyQuantizedVectorStorage::TQChunkedMulti(QuantizedMultivectorStorage::new(
-                    dim,
-                    inner,
-                    chunked_offsets()?,
-                    *multivector_config,
-                ))
-            }
-        };
+                    ))
+                }
+                QuantizedStorageKind::PqMmap => {
+                    let inner = EncodedVectorsPQ::load(fs, mmap()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::PQMmapMulti(QuantizedMultivectorStorage::new(
+                        dim,
+                        inner,
+                        mmap_offsets()?,
+                        *multivector_config,
+                    ))
+                }
+                QuantizedStorageKind::BinaryRam => {
+                    let inner = EncodedVectorsBin::load(fs, ram()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::BinaryRamMulti(
+                        QuantizedMultivectorStorage::new(
+                            dim,
+                            inner,
+                            ram_offsets()?,
+                            *multivector_config,
+                        ),
+                    )
+                }
+                QuantizedStorageKind::BinaryMmap => {
+                    let inner = EncodedVectorsBin::load(fs, mmap()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(
+                        QuantizedMultivectorStorage::new(
+                            dim,
+                            inner,
+                            mmap_offsets()?,
+                            *multivector_config,
+                        ),
+                    )
+                }
+                QuantizedStorageKind::BinaryChunked => {
+                    let inner = EncodedVectorsBin::load(fs, chunked()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(
+                        QuantizedMultivectorStorage::new(
+                            dim,
+                            inner,
+                            chunked_offsets()?,
+                            *multivector_config,
+                        ),
+                    )
+                }
+                QuantizedStorageKind::TqRam => {
+                    let inner = EncodedVectorsTQ::load(fs, ram()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::TQRamMulti(QuantizedMultivectorStorage::new(
+                        dim,
+                        inner,
+                        ram_offsets()?,
+                        *multivector_config,
+                    ))
+                }
+                QuantizedStorageKind::TqMmap => {
+                    let inner = EncodedVectorsTQ::load(fs, mmap()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::TQMmapMulti(QuantizedMultivectorStorage::new(
+                        dim,
+                        inner,
+                        mmap_offsets()?,
+                        *multivector_config,
+                    ))
+                }
+                QuantizedStorageKind::TqChunked => {
+                    let inner = EncodedVectorsTQ::load(fs, chunked()?, &meta_path)?;
+                    ReadOnlyQuantizedVectorStorage::TQChunkedMulti(
+                        QuantizedMultivectorStorage::new(
+                            dim,
+                            inner,
+                            chunked_offsets()?,
+                            *multivector_config,
+                        ),
+                    )
+                }
+            };
         Ok(storage)
     }
 }

@@ -73,11 +73,11 @@ type ReadView<'a, S> = HNSWIndexReadView<
 /// writable [`HNSWIndex::open`][1].
 ///
 /// A `populate_override` (from a request-specific
-/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces the
-/// config-derived residency — the graph links support every residency over the
-/// same files, so even a `pinned` graph can be demoted to a lazy cold view.
-/// `is_on_disk` stays config-derived: it describes the configuration, not the
-/// per-open placement.
+/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) demotes the
+/// effective placement (see [`Memory::with_populate_override`]) — the graph
+/// links support every residency over the same files, so even a `pinned` graph
+/// can be demoted to a lazy cold view. `is_on_disk` stays config-derived: it
+/// describes the configuration, not the per-open placement.
 ///
 /// [1]: super::super::HNSWIndex::open
 fn graph_residency(
@@ -87,17 +87,13 @@ fn graph_residency(
     let memory = hnsw_config.memory_placement().clamp_to_low_memory();
     let is_on_disk = memory.is_on_disk();
 
-    let residency = match populate_override {
-        Some(Populate::No | Populate::Auto | Populate::Partial(_)) => GraphLinksResidency::Cold,
-        Some(Populate::Blocking | Populate::PreferBackground) => GraphLinksResidency::Cached,
-        None => match memory {
-            // Keep the links cold: lazily loaded from disk, cached with usage
-            Memory::Cold => GraphLinksResidency::Cold,
-            // Pre-populate the links into the page cache on load
-            Memory::Cached => GraphLinksResidency::Cached,
-            // Materialize the links on heap, so they are never evicted by cache pressure
-            Memory::Pinned => GraphLinksResidency::Pinned,
-        },
+    let residency = match memory.with_populate_override(populate_override) {
+        // Keep the links cold: lazily loaded from disk, cached with usage
+        Memory::Cold => GraphLinksResidency::Cold,
+        // Pre-populate the links into the page cache on load
+        Memory::Cached => GraphLinksResidency::Cached,
+        // Materialize the links on heap, so they are never evicted by cache pressure
+        Memory::Pinned => GraphLinksResidency::Pinned,
     };
 
     (residency, is_on_disk)

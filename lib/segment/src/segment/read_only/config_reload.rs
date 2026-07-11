@@ -201,6 +201,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             self.id_tracker.clone(),
             self.payload_index.clone(),
             storage,
+            None,
         )
     }
 

@@ -147,17 +147,17 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         // one) decides whether the index data is warmed: the immutable-RAM
         // open reads it in full, `cached` keeps it mmap-backed with the page
         // cache primed, and `cold` reads lazily.
-        // A `populate_override` replaces the placement-derived populate of the
-        // mmap-backed placements. The pinned (immutable-RAM) placement ignores
-        // it: its open reads the index in full whatever the prefetch did.
+        // A `populate_override` demotes the effective placement — including the
+        // pinned (immutable-RAM) one, which `open_sparse` downgrades to the
+        // lazy mmap open (same on-disk format, like the low-memory clamp).
         let placement = sparse_vector_config
             .index
             .memory_placement()
-            .clamp_to_low_memory();
+            .clamp_to_low_memory()
+            .with_populate_override(populate_override);
         let populate = match placement {
-            Memory::Pinned => Populate::PreferBackground,
-            Memory::Cached => populate_override.unwrap_or(Populate::PreferBackground),
-            Memory::Cold => populate_override.unwrap_or(Populate::No),
+            Memory::Pinned | Memory::Cached => Populate::PreferBackground,
+            Memory::Cold => Populate::No,
         };
 
         // Inverted index
@@ -215,8 +215,11 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// Open the read-only sparse vector index from its persisted [`SparseIndexConfig`],
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
     /// `MutableRam` has no read-only representation.
+    /// `populate_override` mirrors [`preopen_sparse`](Self::preopen_sparse): a cold
+    /// override downgrades `ImmutableRam` to the lazy `Mmap` open, like low-memory mode.
     pub fn open_sparse<Fs: UniversalReadFs<File = S>>(
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Self> {
         let ReadOnlyVectorIndexOpenArgs {
             fs,
@@ -230,9 +233,16 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         let config =
             SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
 
+        // A cold populate override parks the index on disk, exactly like the
+        // low-memory downgrade below.
+        let demote_to_mmap = match populate_override {
+            Some(Populate::No | Populate::Auto | Populate::Partial(_)) => true,
+            Some(Populate::Blocking | Populate::PreferBackground) | None => false,
+        };
+
         // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
         let effective_index_type = match config.index_type {
-            SparseIndexType::ImmutableRam if low_memory_mode().prefer_disk() => {
+            SparseIndexType::ImmutableRam if low_memory_mode().prefer_disk() || demote_to_mmap => {
                 SparseIndexType::Mmap
             }
             SparseIndexType::ImmutableRam => SparseIndexType::ImmutableRam,

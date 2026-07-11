@@ -1833,6 +1833,32 @@ impl Memory {
         }
         self
     }
+
+    /// Apply a request-specific populate override (from a
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) to this placement at
+    /// load time: a cold-ward override parks any placement cold — like `clamp_to_low_memory`,
+    /// even a pinned one, whose components all support a lazy on-disk open over the same
+    /// files — and a warm-ward one primes the page cache of an otherwise cold placement
+    /// (never materializing on heap: `Pinned` only ever comes from the config).
+    ///
+    /// Never affects the persisted configuration.
+    pub fn with_populate_override(
+        self,
+        populate_override: Option<common::universal_io::Populate>,
+    ) -> Self {
+        use common::universal_io::Populate;
+
+        let Some(populate) = populate_override else {
+            return self;
+        };
+        match populate {
+            Populate::No | Populate::Auto | Populate::Partial(_) => Self::Cold,
+            Populate::Blocking | Populate::PreferBackground => match self {
+                Self::Cold | Self::Cached => Self::Cached,
+                Self::Pinned => Self::Pinned,
+            },
+        }
+    }
 }
 
 /// Storage types for vectors

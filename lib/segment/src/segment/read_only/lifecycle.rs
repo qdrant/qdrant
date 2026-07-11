@@ -287,6 +287,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 id_tracker.clone(),
                 payload_index.clone(),
                 vector_storage,
+                load_profile,
             )?;
             vector_data.insert(vector_name.clone(), data);
         }
@@ -375,6 +376,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
 
     /// Open one sparse vector's index over `fs`, mirroring
     /// `open_sparse_vector_data`. Sparse vectors are never quantized.
+    /// `load_profile` mirrors the preopen's per-vector placement decisions.
     pub(super) fn open_sparse(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
@@ -382,10 +384,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
 
+        let index_populate =
+            load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
         let vector_index = Arc::new(AtomicRefCell::new(VectorIndexReadEnum::open_sparse(
             ReadOnlyVectorIndexOpenArgs {
                 fs,
@@ -395,6 +400,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
                 payload_index,
                 quantized_vectors: quantized_vectors.clone(),
             },
+            index_populate,
         )?));
 
         Ok(Self {

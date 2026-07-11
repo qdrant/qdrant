@@ -111,9 +111,9 @@ impl LoadProfile {
 
     /// Placement override for the quantized vectors of `vector_name`.
     ///
-    /// Only demotes cache priming: quantized data whose persisted storage kind is a RAM
-    /// one is still read in full by the open (the storage kind is part of the persisted
-    /// layout, not a placement knob).
+    /// Demotes even a pinned placement: within the immutable layout the RAM and mmap
+    /// loaders share the on-disk format, so a demoted pinned config opens the lazy mmap
+    /// loaders instead of reading the data in full.
     pub fn quantized_vectors_placement(&self, vector_name: &VectorName) -> Option<Populate> {
         self.vector_placement(vector_name)
     }
@@ -121,7 +121,8 @@ impl LoadProfile {
     /// Placement override for the (dense or sparse) vector index of `vector_name`.
     ///
     /// For HNSW this demotes the graph links to cold residency; an immutable-RAM sparse
-    /// index is still materialized by the open (like the quantized RAM storage kinds).
+    /// index is downgraded to the lazy mmap open over the same files, like the
+    /// low-memory clamp.
     pub fn vector_index_placement(&self, vector_name: &VectorName) -> Option<Populate> {
         self.vector_placement(vector_name)
     }
