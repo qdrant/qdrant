@@ -390,7 +390,10 @@ impl Segment {
     ///   [`Segment::clone_and_mutate_point`] with `snapshot_mutate`, which
     ///   sees an owned snapshot of the point's vectors and payload and
     ///   modifies it in memory; the helper writes the result at a fresh
-    ///   internal id and tombstones the old one.
+    ///   internal id and tombstones the old one. Exception: a slot written
+    ///   by the current operation (its version equals `op_num`) is mutated
+    ///   in place — it is not durable yet, so cloning it would only chain
+    ///   dead slots for multi-step point writes.
     ///
     /// Both closures return the op-specific result bool (e.g. "was anything
     /// deleted"). The version-recording offset is chosen automatically:
@@ -412,7 +415,21 @@ impl Segment {
         InPlace: FnOnce(&mut Segment, PointOffsetType) -> OperationResult<bool>,
         SnapshotMutate: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<bool>,
     {
-        let append_only = self.is_append_only();
+        // A slot whose version already equals `op_num` was written by the
+        // current operation (an earlier step of a multi-step point write,
+        // e.g. the upsert preceding this set_full_payload). It cannot be
+        // durable yet: the segment write lock is held across the whole
+        // operation, so no flush — and hence no read-only follower — can
+        // have observed it, and a crash discards it (versions flush last,
+        // WAL replay re-applies the whole operation). Mutating it in place
+        // is therefore invisible to readers and avoids cloning the point
+        // once per step.
+        let same_op_slot = self
+            .id_tracker
+            .borrow()
+            .internal_version(existing_internal_id)
+            .is_some_and(|slot_version| slot_version == op_num);
+        let append_only = self.is_append_only() && !same_op_slot;
         self.handle_point_version_and_failure(
             op_num,
             point_id,
