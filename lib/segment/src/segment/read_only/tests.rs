@@ -442,6 +442,7 @@ fn vanished_segment_classifies_not_found() {
         &segments_dir.path().join("no-such-segment"),
         segment_uuid,
         None,
+        None,
     ) else {
         panic!("open of a missing directory must fail");
     };
@@ -450,7 +451,7 @@ fn vanished_segment_classifies_not_found() {
     // Live-reload of a segment whose directory vanished after open (the leader
     // removed it): the first component reopen hits the missing file.
     let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
             .expect("read-only open");
     fs_err::remove_dir_all(&segment_path).unwrap();
     let err = read_only
