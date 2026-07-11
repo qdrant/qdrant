@@ -14,7 +14,7 @@ use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 ///
 /// Geohash string is a base32 encoded string.
 /// It means that each character can be represented with 5 bits.
-/// Also, the length of the string is encoded as 4 bits (because max size is [`GeoHash::MAX_LENGTH`] = 12).
+/// Also, the length of the string is encoded as 4 bits (because max size is `GeoHash::MAX_LEN` = 12).
 /// So, the packed representation is 64 bits long: 5bits * 12chars + 4bits = 64 bits.
 ///
 /// Characters are stored in reverse order to keep lexicographical order.
@@ -35,7 +35,7 @@ pub struct GeoHash(u64);
 
 /// Variation of [`GeoHash`] to serialize/deserialize without validation.
 ///
-/// Unlike [`GeoHash`], it might contain invalid bit patterns, e.g. `length > GeoHash::MAX_LENGTH`,
+/// Unlike [`GeoHash`], it might contain invalid bit patterns, e.g. `length > GeoHash::MAX_LEN`,
 /// or non-zeroed unused bits in characters.
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
