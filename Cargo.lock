@@ -2192,6 +2192,7 @@ dependencies = [
  "env_logger",
  "fs-err",
  "io_bridge_object_store",
+ "io_bridge_uio_grpc",
  "log",
  "object_store",
  "serde_json",
