@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
+use api::grpc::conversions::system_time_to_proto;
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesEntry,
@@ -99,7 +100,7 @@ where
                 |ListedFile {
                      path,
                      size,
-                     last_modified: _,
+                     last_modified,
                  }| {
                     path.strip_prefix(&base).ok().map(|rel| {
                         // Always use forward slashes in gRPC responses regardless of OS.
@@ -110,6 +111,7 @@ where
                         ListFilesEntry {
                             path: components.join("/"),
                             size,
+                            last_modified: last_modified.map(system_time_to_proto),
                         }
                     })
                 },

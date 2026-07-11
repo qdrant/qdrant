@@ -8465,6 +8465,7 @@ dependencies = [
  "fs-err",
  "futures",
  "prost 0.14.4",
+ "prost-types 0.14.4",
  "tokio",
  "tonic",
  "tonic-prost",

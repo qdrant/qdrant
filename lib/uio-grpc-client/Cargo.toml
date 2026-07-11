@@ -15,6 +15,7 @@ common = { path = "../common/common" }
 bytes = { workspace = true }
 futures = { workspace = true }
 prost = { workspace = true }
+prost-types = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tonic-prost = { workspace = true }
