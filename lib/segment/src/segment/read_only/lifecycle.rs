@@ -141,26 +141,31 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
             ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config, quantized_populate)?;
 
-            // Vector index
-            let index_path = get_vector_index_path(segment_path, vector_name);
-            let index_populate =
-                load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
-            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_populate)?;
+            // Vector index. A deferred index (see `LoadProfile::vector_index_deferred`)
+            // is not opened at all, so nothing is prefetched for it either.
+            let index_deferred =
+                load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+            if !index_deferred {
+                let index_path = get_vector_index_path(segment_path, vector_name);
+                VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, None)?;
+            }
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
             ReadOnlySparseVectorStorage::<S>::preopen(fs, &path)?;
 
-            // Sparse vector index
-            let index_path = get_vector_index_path(segment_path, vector_name);
-            let index_populate =
-                load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
-            VectorIndexReadEnum::<S>::preopen_sparse(
-                fs,
-                sparse_vector_config,
-                &index_path,
-                index_populate,
-            )?;
+            // Sparse vector index; deferred indexes prefetch nothing, as above.
+            let index_deferred =
+                load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+            if !index_deferred {
+                let index_path = get_vector_index_path(segment_path, vector_name);
+                VectorIndexReadEnum::<S>::preopen_sparse(
+                    fs,
+                    sparse_vector_config,
+                    &index_path,
+                    None,
+                )?;
+            }
         }
 
         // Payload indexes
@@ -267,6 +272,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_dense(
                 fs,
+                raw_fs,
                 segment_path,
                 vector_name,
                 vector_config,
@@ -282,6 +288,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_sparse(
                 fs,
+                raw_fs,
                 segment_path,
                 vector_name,
                 id_tracker.clone(),
@@ -316,9 +323,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     /// `load_profile` mirrors the preopen's per-vector placement decisions.
+    /// `raw_fs` is the segment's raw backend, retained by a deferred index for
+    /// its open-on-first-use (the caching `fs` only lives for this open).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn open_dense(
         fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &S::Fs,
         segment_path: &Path,
         vector_name: &VectorName,
         vector_config: &VectorDataConfig,
@@ -352,20 +362,36 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         };
         let quantized_vectors = Arc::new(AtomicRefCell::new(quantized_vectors));
 
-        let index_populate =
-            load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
-        let vector_index = Arc::new(AtomicRefCell::new(VectorIndexReadEnum::open(
-            vector_config,
-            ReadOnlyVectorIndexOpenArgs {
-                fs,
-                path: &vector_index_path,
+        // A profile that never scores this vector defers the index open to its
+        // first use (see `LoadProfile::vector_index_deferred`) — except for the
+        // plain index, which opens no files, so there is nothing to defer.
+        let index_deferred = vector_config.index.is_indexed()
+            && load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+        let vector_index = if index_deferred {
+            VectorIndexReadEnum::deferred_dense(
+                raw_fs.clone(),
+                vector_index_path,
+                vector_config.clone(),
                 id_tracker,
-                vector_storage: vector_storage.clone(),
+                vector_storage.clone(),
                 payload_index,
-                quantized_vectors: quantized_vectors.clone(),
-            },
-            index_populate,
-        )?));
+                quantized_vectors.clone(),
+            )
+        } else {
+            VectorIndexReadEnum::open(
+                vector_config,
+                ReadOnlyVectorIndexOpenArgs {
+                    fs,
+                    path: &vector_index_path,
+                    id_tracker,
+                    vector_storage: vector_storage.clone(),
+                    payload_index,
+                    quantized_vectors: quantized_vectors.clone(),
+                },
+                None,
+            )?
+        };
+        let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 
         Ok(Self {
             vector_index,
@@ -376,9 +402,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
 
     /// Open one sparse vector's index over `fs`, mirroring
     /// `open_sparse_vector_data`. Sparse vectors are never quantized.
-    /// `load_profile` mirrors the preopen's per-vector placement decisions.
+    /// `load_profile` mirrors the preopen's per-vector placement decisions;
+    /// `raw_fs` is retained by a deferred index, as in [`Self::open_dense`].
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn open_sparse(
         fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &S::Fs,
         segment_path: &Path,
         vector_name: &VectorName,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
@@ -389,19 +418,32 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
 
-        let index_populate =
-            load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
-        let vector_index = Arc::new(AtomicRefCell::new(VectorIndexReadEnum::open_sparse(
-            ReadOnlyVectorIndexOpenArgs {
-                fs,
-                path: &vector_index_path,
+        // A profile that never scores this vector defers the index open to its
+        // first use (see `LoadProfile::vector_index_deferred`).
+        let index_deferred =
+            load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+        let vector_index = if index_deferred {
+            VectorIndexReadEnum::deferred_sparse(
+                raw_fs.clone(),
+                vector_index_path,
                 id_tracker,
-                vector_storage: vector_storage.clone(),
+                vector_storage.clone(),
                 payload_index,
-                quantized_vectors: quantized_vectors.clone(),
-            },
-            index_populate,
-        )?));
+            )
+        } else {
+            VectorIndexReadEnum::open_sparse(
+                ReadOnlyVectorIndexOpenArgs {
+                    fs,
+                    path: &vector_index_path,
+                    id_tracker,
+                    vector_storage: vector_storage.clone(),
+                    payload_index,
+                    quantized_vectors: quantized_vectors.clone(),
+                },
+                None,
+            )?
+        };
+        let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 
         Ok(Self {
             vector_index,

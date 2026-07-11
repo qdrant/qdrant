@@ -142,13 +142,21 @@ impl LoadProfile {
         self.vector_placement(vector_name)
     }
 
-    /// Placement override for the (dense or sparse) vector index of `vector_name`.
+    /// Whether the (dense or sparse) vector index of `vector_name` is opened at all.
     ///
-    /// For HNSW this demotes the graph links to cold residency; an immutable-RAM sparse
-    /// index is downgraded to the lazy mmap open over the same files, like the
-    /// low-memory clamp.
-    pub fn vector_index_placement(&self, vector_name: &VectorName) -> Option<Populate> {
-        self.vector_placement(vector_name)
+    /// A vector the request never scores defers its index instead of merely parking it
+    /// cold: on a remote backend even a cold HNSW open must mirror the whole links file
+    /// (`GraphLinksView` requires one contiguous slice), so the only way not to fetch it
+    /// is not to open it. The deferred index opens on first use (with a cold placement),
+    /// keeping the profile's contract — every request the segment can serve still works,
+    /// just colder.
+    pub fn vector_index_deferred(&self, vector_name: &VectorName) -> bool {
+        let Self {
+            warm_vectors,
+            warm_payload_fields: _,
+            warm_payload_storage: _,
+        } = self;
+        !warm_vectors.contains(vector_name)
     }
 
     /// Placement override for the payload index of `field`.
@@ -248,7 +256,7 @@ mod tests {
             profile.vector_storage_placement("dense"),
             Some(Populate::No)
         );
-        assert_eq!(profile.vector_index_placement("dense"), Some(Populate::No));
+        assert!(profile.vector_index_deferred("dense"));
         assert_eq!(
             profile.quantized_vectors_placement("dense"),
             Some(Populate::No)
@@ -269,14 +277,14 @@ mod tests {
         let profile = LoadProfile::for_search("dense", None, false);
 
         assert_eq!(profile.vector_storage_placement("dense"), None);
-        assert_eq!(profile.vector_index_placement("dense"), None);
+        assert!(!profile.vector_index_deferred("dense"));
         assert_eq!(profile.quantized_vectors_placement("dense"), None);
 
         assert_eq!(
             profile.vector_storage_placement("other"),
             Some(Populate::No)
         );
-        assert_eq!(profile.vector_index_placement("other"), Some(Populate::No));
+        assert!(profile.vector_index_deferred("other"));
 
         // No payload returned and no filter: payload storage and indexes park cold.
         assert_eq!(profile.payload_storage_placement(), Some(Populate::No));
@@ -332,9 +340,9 @@ mod tests {
 
         // Both queried vectors stay warm; a third one parks cold.
         assert_eq!(profile.vector_storage_placement("dense"), None);
-        assert_eq!(profile.vector_index_placement("dense"), None);
+        assert!(!profile.vector_index_deferred("dense"));
         assert_eq!(profile.vector_storage_placement("sparse"), None);
-        assert_eq!(profile.vector_index_placement("sparse"), None);
+        assert!(!profile.vector_index_deferred("sparse"));
         assert_eq!(
             profile.vector_storage_placement("other"),
             Some(Populate::No)

@@ -779,6 +779,9 @@ where
         .connection
         .search_threads
         .map(|n| EdgeConfig::builder().max_search_threads(n).build());
+
+    log::info!("Load profile: {:?}", load_profile);
+
     let shard =
         ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config, load_profile)
             .context("failed to open read-only edge shard over object storage")?;

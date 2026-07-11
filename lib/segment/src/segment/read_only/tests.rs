@@ -459,3 +459,90 @@ fn vanished_segment_classifies_not_found() {
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
 }
+
+/// A load profile that never scores a vector defers its index: the open must
+/// not touch the index files at all. Proven by deleting the index directory
+/// before the open — the open and every non-search read still work, and only
+/// a search (whose first use runs the deferred open) surfaces the missing
+/// files.
+#[test]
+fn deferred_index_reads_nothing_at_open() {
+    use crate::data_types::load_profile::LoadProfile;
+    use crate::segment_constructor::get_vector_index_path;
+
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+    drop(mutable);
+
+    fs_err::remove_dir_all(get_vector_index_path(&segment_path, DEFAULT_VECTOR_NAME)).unwrap();
+
+    let filter = keyword_filter("red");
+    let profile = LoadProfile::for_scroll(Some(&filter), None, true);
+    let read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        Some(&profile),
+    )
+    .expect("open with a deferred index must not read the index files");
+
+    // Non-search reads never touch the deferred index.
+    assert!(!sorted_filtered(&read_only, &filter).is_empty());
+    let hw = HardwareCounterCell::new();
+    assert!(read_only.payload(1.into(), &hw).unwrap() != Default::default());
+
+    // A search runs the deferred open, which now hits the deleted files.
+    let query = QueryVector::Nearest(VectorInternal::Dense(vec![0.5; DIM]));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let result = read_only.search_batch(
+        DEFAULT_VECTOR_NAME,
+        &[&query],
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        NUM_POINTS,
+        None,
+        &sqc,
+    );
+    assert!(
+        result.is_err(),
+        "search over a deferred index with deleted files must fail",
+    );
+}
+
+/// A deferred index opens transparently on first use: a segment opened under a
+/// scroll profile (every vector cold) answers searches, filtered reads and
+/// payload reads identically to an eagerly opened one.
+#[test]
+fn deferred_index_opens_on_first_search() {
+    use crate::data_types::load_profile::LoadProfile;
+
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+    drop(mutable);
+
+    let eager = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
+        .expect("eager open");
+
+    let profile = LoadProfile::for_scroll(None, None, true);
+    let deferred = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        Some(&profile),
+    )
+    .expect("open with a deferred index");
+
+    assert_query_equivalence(&eager, &deferred);
+}
