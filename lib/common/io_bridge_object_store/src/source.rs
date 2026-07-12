@@ -17,6 +17,7 @@ use std::future::Future;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use bytes::Bytes;
 use common::universal_io::{ListedFile, Result, UniversalIoError, UniversalKind};
@@ -89,6 +90,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                         location.starts_with(&prefix_str).then(|| ListedFile {
                             path: PathBuf::from(location),
                             size: e.size,
+                            last_modified: Some(SystemTime::from(e.last_modified)),
                         })
                     })
                     .collect()),
@@ -320,7 +322,13 @@ mod tests {
             .block_on(source.list_files(Path::new("dir/page_")))
             .expect("list_files")
             .into_iter()
-            .map(|ListedFile { path, size }| (path.to_string_lossy().into_owned(), size))
+            .map(
+                |ListedFile {
+                     path,
+                     size,
+                     last_modified: _,
+                 }| (path.to_string_lossy().into_owned(), size),
+            )
             .collect();
         files.sort();
         assert_eq!(

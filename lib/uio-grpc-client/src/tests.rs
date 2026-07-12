@@ -13,6 +13,11 @@ use crate::generated::qdrant::storage_read_server::{
 use crate::generated::qdrant::*;
 use crate::read::Client;
 
+/// Fixed modification time served by the mock for every listed file.
+fn mock_modified_time() -> std::time::SystemTime {
+    std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000)
+}
+
 struct MockServer {
     files: Arc<HashMap<(String, String), Vec<u8>>>,
 }
@@ -44,6 +49,10 @@ impl StorageReadTrait for MockServer {
                     ListFilesEntry {
                         path: path.clone(),
                         size: data.len() as u64,
+                        last_modified: Some(prost_types::Timestamp {
+                            seconds: 1_000_000,
+                            nanos: 0,
+                        }),
                     }
                 })
             })
@@ -206,10 +215,12 @@ async fn list_files() {
             ListedFile {
                 path: PathBuf::from("data/a.bin"),
                 size: 10,
+                last_modified: Some(mock_modified_time()),
             },
             ListedFile {
                 path: PathBuf::from("data/b.bin"),
                 size: 10,
+                last_modified: Some(mock_modified_time()),
             },
         ]
     );

@@ -2780,6 +2780,10 @@ pub fn date_time_to_proto(date_time: DateTimePayloadType) -> prost_wkt_types::Ti
     naive_date_time_to_proto(date_time.0.naive_utc())
 }
 
+pub fn system_time_to_proto(time: std::time::SystemTime) -> prost_wkt_types::Timestamp {
+    naive_date_time_to_proto(chrono::DateTime::<chrono::Utc>::from(time).naive_utc())
+}
+
 pub fn try_date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
 ) -> Result<DateTimePayloadType, Status> {

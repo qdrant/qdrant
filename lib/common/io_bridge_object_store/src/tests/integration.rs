@@ -130,7 +130,12 @@ fn test_list_files() {
         .block_on(store.list_files(Path::new("listed")))
         .expect("list_files");
     assert_eq!(files.len(), 3);
-    for ListedFile { path, size } in &files {
+    for ListedFile {
+        path,
+        size,
+        last_modified: _,
+    } in &files
+    {
         assert!(path.to_string_lossy().starts_with("listed/"));
         assert_eq!(*size, 1);
     }

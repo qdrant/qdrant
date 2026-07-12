@@ -16,6 +16,8 @@ use crate::universal_io::{
 pub struct FileInfo {
     /// Length in bytes of the entire file
     pub size: u64,
+    /// Last modification time, when the listing backend exposes one
+    pub last_modified: Option<std::time::SystemTime>,
 }
 
 /// Read-only filesystem wrapper that snapshots the file listing and serves
@@ -128,6 +130,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
             .map(|(path, info)| ListedFile {
                 path: path.clone(),
                 size: info.size,
+                last_modified: info.last_modified,
             })
             .collect()
     }
@@ -140,10 +143,19 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
 
         let files_info: HashMap<_, _> = list
             .into_iter()
-            .map(|ListedFile { path, size }| {
-                let info = FileInfo { size };
-                (path, info)
-            })
+            .map(
+                |ListedFile {
+                     path,
+                     size,
+                     last_modified,
+                 }| {
+                    let info = FileInfo {
+                        size,
+                        last_modified,
+                    };
+                    (path, info)
+                },
+            )
             .collect();
 
         self.files_info = Some(files_info);
