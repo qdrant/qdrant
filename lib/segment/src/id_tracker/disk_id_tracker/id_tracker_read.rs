@@ -5,7 +5,9 @@ use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::UniversalWrite;
 
 use super::DiskIdTracker;
-use super::mappings::{DiskMappingsSource, log_lookup_err};
+use super::mappings::{
+    DiskMappingsSource, log_lookup_err, log_lookup_err_batch, resolve_external_ids_batch,
+};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
@@ -51,6 +53,23 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         log_lookup_err(self.resolve_external(internal_id))
+    }
+
+    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+        log_lookup_err_batch(
+            self.resolve_external_batch(internal_ids),
+            internal_ids.len(),
+        )
+    }
+
+    /// Batched external→internal resolution; the behavior argument is ignored
+    /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
+    fn resolve_external_ids(
+        &self,
+        point_ids: &[PointIdType],
+        _deferred_behavior: DeferredBehavior,
+    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
+        resolve_external_ids_batch(self, point_ids)
     }
 
     fn total_point_count(&self) -> usize {

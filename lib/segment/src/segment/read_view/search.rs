@@ -215,16 +215,20 @@ where
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        let result_offsets: Vec<PointOffsetType> =
+            internal_result.iter().map(|scored| scored.idx).collect();
+        let external_ids = self.id_tracker.external_ids_batch(&result_offsets);
+
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
-            .filter_map(|scored_point_offset| {
-                let point_offset = scored_point_offset.idx;
-                let point_id = self.id_tracker.external_id(point_offset);
+            .zip(external_ids)
+            .filter_map(|(scored_point_offset, point_id)| {
                 // This can happen if a point was modified between retrieving and post-processing,
                 // but this function locks the segment so it can't be modified during execution.
                 debug_assert!(
                     point_id.is_some(),
-                    "Point with internal ID {point_offset} not found in id tracker"
+                    "Point with internal ID {} not found in id tracker",
+                    scored_point_offset.idx,
                 );
                 point_id.map(|id| (id, scored_point_offset))
             })
@@ -239,11 +243,17 @@ where
             DeferredBehavior::VisibleOnly,
         )?;
 
+        let scored_offset_ids: Vec<PointOffsetType> =
+            scored_offsets.iter().map(|scored| scored.idx).collect();
+        let versions = self.id_tracker.internal_versions_batch(&scored_offset_ids);
+
         let mut results = Vec::with_capacity(point_ids.len());
 
-        for (point_id, scored_offset) in point_ids.into_iter().zip(scored_offsets) {
+        for ((point_id, scored_offset), point_version) in
+            point_ids.into_iter().zip(scored_offsets).zip(versions)
+        {
             let ScoredPointOffset {
-                idx: point_offset,
+                idx: _,
                 score: point_score,
             } = scored_offset;
 
@@ -260,14 +270,11 @@ where
                 continue;
             };
 
-            let point_version =
-                self.id_tracker
-                    .internal_version(point_offset)
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!(
-                            "Corrupter id_tracker, no version for point {point_id}"
-                        ))
-                    })?;
+            let point_version = point_version.ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Corrupter id_tracker, no version for point {point_id}"
+                ))
+            })?;
 
             let SegmentRecord {
                 id,

@@ -66,6 +66,74 @@ pub trait DiskMappingsSource {
             self.mapping_reader().external_id(offset)
         }
     }
+
+    /// Batch counterpart of [`point_deleted`](Self::point_deleted), in input
+    /// order. The default loops over the single check (fine for the writable
+    /// tracker's resident bitvec); the read-only tracker overrides it with one
+    /// pipelined pass over the on-disk deleted file.
+    fn points_deleted_batch(&self, offsets: &[PointOffsetType]) -> OperationResult<Vec<bool>> {
+        offsets
+            .iter()
+            .map(|&offset| self.point_deleted(offset))
+            .collect()
+    }
+
+    /// Batch counterpart of [`resolve_internal`](Self::resolve_internal): one
+    /// pipelined mapping-lookup pass plus one deleted-check pass, instead of
+    /// two serial reads per point. Results are in input order.
+    fn resolve_internal_batch(
+        &self,
+        external_ids: &[PointIdType],
+    ) -> OperationResult<Vec<Option<PointOffsetType>>> {
+        let mut resolved = self.mapping_reader().lookup_batch(external_ids)?;
+
+        // The immutable runs still carry points deleted after build; re-check.
+        let found: Vec<PointOffsetType> = resolved.iter().copied().flatten().collect();
+        let deleted = self.points_deleted_batch(&found)?;
+        let mut deleted = deleted.into_iter();
+        for slot in resolved.iter_mut().filter(|slot| slot.is_some()) {
+            if deleted
+                .next()
+                .expect("one deleted flag per resolved offset")
+            {
+                *slot = None;
+            }
+        }
+
+        Ok(resolved)
+    }
+
+    /// Batch counterpart of [`resolve_external`](Self::resolve_external): one
+    /// pipelined deleted-check pass, then one mapping-read pass over the
+    /// surviving offsets. Results are in input order.
+    fn resolve_external_batch(
+        &self,
+        offsets: &[PointOffsetType],
+    ) -> OperationResult<Vec<Option<PointIdType>>> {
+        let deleted = self.points_deleted_batch(offsets)?;
+
+        let live: Vec<PointOffsetType> = offsets
+            .iter()
+            .zip(&deleted)
+            .filter(|&(_, &deleted)| !deleted)
+            .map(|(&offset, _)| offset)
+            .collect();
+        let external_ids = self.mapping_reader().external_ids_batch(&live)?;
+
+        let mut external_ids = external_ids.into_iter();
+        Ok(deleted
+            .into_iter()
+            .map(|deleted| {
+                if deleted {
+                    None
+                } else {
+                    external_ids
+                        .next()
+                        .expect("one external id per live offset")
+                }
+            })
+            .collect())
+    }
 }
 
 /// A borrowed `(reader, deleted)` view; a `Copy` pair of references whose
@@ -126,11 +194,46 @@ fn live_filter(deleted: &BitSlice) -> impl Fn(&(PointIdType, PointOffsetType)) -
 
 /// The one place a disk lookup error is dropped: logged and turned into `None`
 /// to satisfy the `Option`-returning `IdTrackerRead` boundary.
-///
-/// ToDo: this should be removed after we have a batch-read interface for id tracker lookups
 pub fn log_lookup_err<T>(result: OperationResult<Option<T>>) -> Option<T> {
     result.unwrap_or_else(|err| {
         log::error!("disk id tracker lookup failed: {err}");
         None
     })
+}
+
+/// Batch analogue of [`log_lookup_err`]: on a storage error, log it and yield
+/// all-`None` (`len` entries), since the `IdTrackerRead` batch methods must
+/// return one slot per input.
+pub fn log_lookup_err_batch<T>(
+    result: OperationResult<Vec<Option<T>>>,
+    len: usize,
+) -> Vec<Option<T>> {
+    result.unwrap_or_else(|err| {
+        log::error!("disk id tracker batch lookup failed: {err}");
+        std::iter::repeat_with(|| None).take(len).collect()
+    })
+}
+
+/// Shared [`resolve_external_ids`](crate::id_tracker::IdTrackerRead::resolve_external_ids)
+/// body for the disk trackers: batched external→internal resolution (one
+/// pipelined mapping pass plus one deleted pass), with the storage error
+/// swallowed-and-logged at the infallible `IdTrackerRead` boundary.
+///
+/// The disk mapping never carries deferred mutations, so there is no behavior
+/// argument here — both callers ignore theirs.
+pub fn resolve_external_ids_batch(
+    source: &impl DiskMappingsSource,
+    point_ids: &[PointIdType],
+) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
+    let resolved = log_lookup_err_batch(source.resolve_internal_batch(point_ids), point_ids.len());
+
+    let mut ids = Vec::with_capacity(point_ids.len());
+    let mut offsets = Vec::with_capacity(point_ids.len());
+    for (&point_id, resolved_offset) in point_ids.iter().zip(resolved) {
+        if let Some(offset) = resolved_offset {
+            ids.push(point_id);
+            offsets.push(offset);
+        }
+    }
+    (ids, offsets)
 }

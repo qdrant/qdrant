@@ -22,6 +22,11 @@ const SEED: u64 = 0b101100001101111000111001010100101000101100110100101001000111
 /// It does not mean a point with this version is always deleted.
 pub const DELETED_POINT_VERSION: SeqNumberType = 0;
 
+/// Chunk size for streaming callers of the batch lookups
+/// ([`IdTrackerRead::external_ids_batch`] & co): large enough to keep a
+/// pipelining backend busy, small enough not to materialize the whole stream.
+pub const ID_TRACKER_BATCH_SIZE: usize = 1024;
+
 /// Trait for point ids tracker.
 ///
 /// This tracker is used to convert external (i.e. user-facing) point id into internal point id
@@ -136,6 +141,21 @@ pub trait IdTrackerRead {
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
+    /// Batch counterpart of [`internal_version`](Self::internal_version), in
+    /// input order.
+    ///
+    /// The default loops over the single lookup, which is what in-RAM trackers
+    /// want; disk-resident trackers override it to pipeline the reads.
+    fn internal_versions_batch(
+        &self,
+        internal_ids: &[PointOffsetType],
+    ) -> Vec<Option<SeqNumberType>> {
+        internal_ids
+            .iter()
+            .map(|&internal_id| self.internal_version(internal_id))
+            .collect()
+    }
+
     /// Returns the internal ID of the point under explicit deferred
     /// semantics — see [`PointMappings::internal_id_with_behavior`].
     ///
@@ -151,6 +171,18 @@ pub trait IdTrackerRead {
     ///
     /// Excludes soft deleted points.
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType>;
+
+    /// Batch counterpart of [`external_id`](Self::external_id), in input
+    /// order. Deleted and unknown points yield `None`.
+    ///
+    /// The default loops over the single lookup, which is what in-RAM trackers
+    /// want; disk-resident trackers override it to pipeline the reads.
+    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+        internal_ids
+            .iter()
+            .map(|&internal_id| self.external_id(internal_id))
+            .collect()
+    }
 
     /// Number of total points
     ///

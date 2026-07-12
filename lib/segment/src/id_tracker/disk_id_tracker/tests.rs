@@ -76,6 +76,79 @@ fn assert_read_parity<A: IdTrackerRead, B: IdTrackerRead>(reference: &A, candida
     }
 }
 
+/// Assert every batch lookup agrees with its single-point counterpart,
+/// including missing ids, duplicates, deleted points and out-of-range offsets.
+fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
+    let live: Vec<(PointIdType, u32)> = tracker.point_mappings().iter_from(None).collect();
+
+    // External ids to probe: every live id, ids that are absent, a duplicate.
+    let mut external_ids: Vec<PointIdType> = live.iter().map(|&(id, _)| id).collect();
+    external_ids.push(PointIdType::NumId(u64::MAX));
+    external_ids.push(PointIdType::Uuid(uuid::Uuid::from_u128(u128::MAX)));
+    if let Some(&first) = external_ids.first() {
+        external_ids.push(first);
+    }
+
+    let (resolved_ids, resolved_offsets) =
+        tracker.resolve_external_ids(&external_ids, DeferredBehavior::VisibleOnly);
+    let resolved: Vec<(PointIdType, u32)> =
+        resolved_ids.into_iter().zip(resolved_offsets).collect();
+    let expected: Vec<(PointIdType, u32)> = external_ids
+        .iter()
+        .filter_map(|&external_id| {
+            tracker
+                .internal_id_with_behavior(external_id, DeferredBehavior::VisibleOnly)
+                .map(|offset| (external_id, offset))
+        })
+        .collect();
+    assert_eq!(resolved, expected, "resolve_external_ids mismatch");
+
+    // Offsets to probe: every offset (live and deleted), out-of-range ones,
+    // and a duplicate.
+    let mut offsets: Vec<u32> = (0..tracker.total_point_count() as u32 + 10).collect();
+    offsets.push(0);
+
+    let batch_external_ids = tracker.external_ids_batch(&offsets);
+    let batch_versions = tracker.internal_versions_batch(&offsets);
+    assert_eq!(batch_external_ids.len(), offsets.len());
+    assert_eq!(batch_versions.len(), offsets.len());
+    for (slot, &offset) in offsets.iter().enumerate() {
+        assert_eq!(
+            batch_external_ids[slot],
+            tracker.external_id(offset),
+            "external_ids_batch mismatch at {offset}",
+        );
+        assert_eq!(
+            batch_versions[slot],
+            tracker.internal_version(offset),
+            "internal_versions_batch mismatch at {offset}",
+        );
+    }
+
+    // Empty inputs stay empty.
+    assert_eq!(tracker.external_ids_batch(&[]), vec![]);
+    assert_eq!(tracker.internal_versions_batch(&[]), vec![]);
+    let (ids, offsets) = tracker.resolve_external_ids(&[], DeferredBehavior::VisibleOnly);
+    assert!(ids.is_empty() && offsets.is_empty());
+}
+
+#[test]
+fn batch_lookups_match_single() {
+    let (versions, mappings) = make_data(8);
+
+    // Trait defaults on the in-RAM tracker.
+    let immutable = build_immutable(&versions, mappings.clone());
+    assert_batch_parity(&immutable);
+
+    // Batched overrides on both disk trackers.
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+    assert_batch_parity(&disk);
+
+    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    assert_batch_parity(&read_only);
+}
+
 #[test]
 fn disk_matches_immutable() {
     let (versions, mappings) = make_data(1);
@@ -222,6 +295,14 @@ fn read_by_id_does_not_materialize_deleted_set() {
         let _ = read_only.internal_version(*offset);
         let _ = read_only.is_deleted_point(*offset);
     }
+
+    // Batch read-by-id must stay lazy as well.
+    let probe_ids: Vec<PointIdType> = live.iter().take(200).map(|&(id, _)| id).collect();
+    let probe_offsets: Vec<u32> = live.iter().take(200).map(|&(_, offset)| offset).collect();
+    let _ = read_only.resolve_external_ids(&probe_ids, DeferredBehavior::VisibleOnly);
+    let _ = read_only.external_ids_batch(&probe_offsets);
+    let _ = read_only.internal_versions_batch(&probe_offsets);
+
     assert!(
         !read_only.deleted_full_materialized(),
         "read-by-id lookups must not materialize the full deleted set",
@@ -281,6 +362,10 @@ fn deletion_and_live_reload() {
         assert!(read_only.is_deleted_point(*offset));
         assert_eq!(read_only.external_id(*offset), None);
     }
+
+    // Batch lookups agree with the single-point paths after the deletions too.
+    assert_batch_parity(&disk);
+    assert_batch_parity(&read_only);
 }
 
 /// Live-reload staleness regression (audit cases 1+2): the `deleted` file is

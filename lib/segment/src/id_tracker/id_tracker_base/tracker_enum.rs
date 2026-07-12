@@ -66,6 +66,46 @@ impl IdTrackerRead for IdTrackerEnum {
         }
     }
 
+    fn internal_versions_batch(
+        &self,
+        internal_ids: &[PointOffsetType],
+    ) -> Vec<Option<SeqNumberType>> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => t.internal_versions_batch(internal_ids),
+            IdTrackerEnum::ImmutableIdTracker(t) => t.internal_versions_batch(internal_ids),
+            IdTrackerEnum::InMemoryIdTracker(t) => t.internal_versions_batch(internal_ids),
+            IdTrackerEnum::DiskIdTracker(t) => t.internal_versions_batch(internal_ids),
+        }
+    }
+
+    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => t.external_ids_batch(internal_ids),
+            IdTrackerEnum::ImmutableIdTracker(t) => t.external_ids_batch(internal_ids),
+            IdTrackerEnum::InMemoryIdTracker(t) => t.external_ids_batch(internal_ids),
+            IdTrackerEnum::DiskIdTracker(t) => t.external_ids_batch(internal_ids),
+        }
+    }
+
+    fn resolve_external_ids(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: common::types::DeferredBehavior,
+    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior)
+            }
+            IdTrackerEnum::ImmutableIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior)
+            }
+            IdTrackerEnum::InMemoryIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior)
+            }
+            IdTrackerEnum::DiskIdTracker(t) => t.resolve_external_ids(point_ids, deferred_behavior),
+        }
+    }
+
     type Backend = MmapFile;
 
     fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {

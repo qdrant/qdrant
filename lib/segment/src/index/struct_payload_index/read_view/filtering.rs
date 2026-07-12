@@ -120,13 +120,10 @@ where
             }
             Condition::HasId(has_id) => {
                 let point_ids = has_id.has_id.clone();
-                let resolved_point_offsets: Vec<PointOffsetType> = point_ids
-                    .iter()
-                    .filter_map(|external_id| {
-                        self.id_tracker
-                            .internal_id_with_behavior(*external_id, deferred_behavior)
-                    })
-                    .collect();
+                let external_ids: Vec<_> = point_ids.iter().copied().collect();
+                let (_, resolved_point_offsets) = self
+                    .id_tracker
+                    .resolve_external_ids(&external_ids, deferred_behavior);
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {

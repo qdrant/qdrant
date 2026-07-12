@@ -81,13 +81,10 @@ where
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
             Condition::HasId(has_id) => {
-                let segment_ids: AHashSet<_> = has_id
-                    .has_id
-                    .iter()
-                    .filter_map(|external_id| {
-                        id_tracker.internal_id_with_behavior(*external_id, deferred_behavior)
-                    })
-                    .collect();
+                let external_ids: Vec<_> = has_id.has_id.iter().copied().collect();
+                let (_, offsets) =
+                    id_tracker.resolve_external_ids(&external_ids, deferred_behavior);
+                let segment_ids: AHashSet<_> = offsets.into_iter().collect();
                 ConditionCheckerEnum::Ids(IdsConditionChecker(segment_ids))
             }
             Condition::HasVector(has_vector) => {

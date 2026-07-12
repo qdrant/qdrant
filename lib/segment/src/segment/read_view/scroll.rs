@@ -7,7 +7,7 @@ use common::types::DeferredBehavior;
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::IdTrackerRead;
+use crate::id_tracker::{ID_TRACKER_BATCH_SIZE, IdTrackerRead};
 use crate::index::PayloadIndexRead;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -82,21 +82,28 @@ where
             .payload_index
             .estimate_cardinality(condition, hw_counter)?;
 
-        let ids_iterator = self
-            .payload_index
-            .iter_filtered_points(
-                condition,
-                &cardinality_estimation,
-                hw_counter,
-                is_stopped,
-                deferred_behavior,
-            )?
-            .filter_map(|internal_id| {
-                let external_id = self.id_tracker.external_id(internal_id)?;
-                match offset {
-                    Some(offset) if external_id < offset => None,
-                    _ => Some(external_id),
-                }
+        let internal_ids = self.payload_index.iter_filtered_points(
+            condition,
+            &cardinality_estimation,
+            hw_counter,
+            is_stopped,
+            deferred_behavior,
+        )?;
+
+        // The candidate set is fully drained below either way, so resolving
+        // external ids in chunks trades no laziness for pipelined lookups on
+        // disk-resident id trackers.
+        let chunks = internal_ids.chunks(ID_TRACKER_BATCH_SIZE);
+        let ids_iterator = chunks
+            .into_iter()
+            .flat_map(|chunk| {
+                let internal_ids: Vec<_> = chunk.collect();
+                self.id_tracker.external_ids_batch(&internal_ids)
+            })
+            .flatten()
+            .filter(|&external_id| match offset {
+                Some(offset) => external_id >= offset,
+                None => true,
             });
 
         let mut page = match limit {
