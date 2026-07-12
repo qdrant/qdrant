@@ -40,6 +40,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         let mut pending = pending_reload.borrow_mut();
         pending.merge(fresh);
 
+        log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}", self.uuid, pending);
+
         // Replay the full accumulated delta to every component. Bail on the first
         // error without clearing `pending`, so the next reload retries the union.
         {

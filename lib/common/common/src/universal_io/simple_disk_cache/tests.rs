@@ -48,7 +48,8 @@ impl Scenario {
         }
     }
 
-    fn expected_local_path(&self) -> PathBuf {
+    /// Base mirror path for the remote; every open appends a unique suffix.
+    fn local_path_base(&self) -> PathBuf {
         self.config.local_path_for(&self.remote_path).unwrap()
     }
 
@@ -202,9 +203,16 @@ mod tests_mod {
     #[test]
     fn local_file_is_created_on_first_read() {
         let scn = Scenario::new(BLOCK_SIZE * 2);
-        let expected_local = scn.expected_local_path();
 
         let file = scn.open::<R>(PREFILL);
+        let expected_local = file.local_path.clone();
+        assert!(
+            expected_local
+                .to_str()
+                .unwrap()
+                .starts_with(scn.local_path_base().to_str().unwrap()),
+            "unique mirror name must derive from the configured mapping",
+        );
 
         // Before the first read, the local file doesn't exist yet.
         assert!(
@@ -265,12 +273,61 @@ mod tests_mod {
         );
     }
 
+    /// Two live instances for the same remote path must not share a mirror:
+    /// each open gets a unique local name, so the second open cannot truncate
+    /// the first instance's mirror out from under it. This is what makes
+    /// refresh-by-fresh-open (live-reload) safe while the old handle is alive.
+    #[test]
+    fn concurrent_instances_have_independent_mirrors() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+
+        let first = scn.open::<R>(PREFILL);
+        let read_all = |cache: &DiskCache<R>| {
+            cache
+                .read::<Sequential, u8>(ReadRange {
+                    byte_offset: 0,
+                    length: scn.data.len() as u64,
+                })
+                .unwrap()
+                .to_vec()
+        };
+        assert_eq!(read_all(&first), scn.data);
+
+        let second = scn.open::<R>(PREFILL);
+        assert_ne!(first.local_path, second.local_path);
+        assert_eq!(read_all(&second), scn.data);
+
+        // The first instance's mirror survived the second open.
+        assert_eq!(read_all(&first), scn.data);
+    }
+
+    /// Dropping an instance removes its mirror file: names are unique per
+    /// open, so a leftover would never be reused.
+    #[test]
+    fn drop_removes_local_mirror() {
+        let scn = Scenario::new(BLOCK_SIZE);
+        let cache = scn.open::<R>(PREFILL);
+
+        let _ = cache
+            .read::<Sequential, u8>(ReadRange {
+                byte_offset: 0,
+                length: 1,
+            })
+            .unwrap();
+
+        let local_path = cache.local_path.clone();
+        assert!(local_path.exists());
+
+        drop(cache);
+        assert!(!local_path.exists());
+    }
+
     /// Reopen with no prior reads leaves the local mirror untouched.
     #[test]
     fn reopen_without_prior_reads_keeps_local_uninitialized() {
         let scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
-        let expected_local = scn.expected_local_path();
+        let expected_local = cache.local_path.clone();
         assert!(!expected_local.exists());
 
         cache.reopen().unwrap();
@@ -416,7 +473,7 @@ mod tests_mod {
         let file = scn.open_partial::<R>(0..(BLOCK_SIZE as u64 + 50));
 
         // The mirror is materialized lazily; nothing exists before the first read.
-        let expected_local = scn.expected_local_path();
+        let expected_local = file.local_path.clone();
         assert!(!expected_local.exists());
         assert!(!file.is_ready());
 

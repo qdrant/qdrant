@@ -1,9 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
-use common::sorted_slice::SortedSlice;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -13,26 +11,24 @@ use roaring::RoaringBitmap;
 
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
 use super::roaring_flags::RoaringFlagsRead;
-use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
 /// Read-only counterpart of [`RoaringFlags`][1].
 ///
 /// Materializes the persisted flags into an in-memory roaring bitmap on first
-/// use — *not* on open, unlike the writable variant — and keeps the backing
-/// [`StoredBitSlice`] handle so [`LiveReload::live_reload`] can reopen it to
-/// read the points the writer appended, rather than re-scanning the whole file.
-/// There is no write path: no buffer, no [`BufferedDynamicFlags`][2], no
-/// [`DynamicStoredFlags`][3]. The retained `S` is the one [`Self::open`] was
-/// called with, mirroring the other read-only field indexes, which likewise
-/// hold their backing storage across reloads.
+/// use — *not* on open, unlike the writable variant. The backing
+/// [`StoredBitSlice`] handle is kept for that lazy scan and is replaced
+/// wholesale by [`Self::live_reload`]. There is no write path: no buffer, no
+/// [`BufferedDynamicFlags`][2], no [`DynamicStoredFlags`][3]. The retained `S`
+/// is the one [`Self::open`] was called with, mirroring the other read-only
+/// field indexes, which likewise hold their backing storage across reloads.
 ///
 /// [1]: super::roaring_flags::RoaringFlags
 /// [2]: super::buffered_dynamic_flags::BufferedDynamicFlags
 /// [3]: super::dynamic_stored_flags::DynamicStoredFlags
 pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     /// In-memory bitmap of true flags, materialized from the backing file on
-    /// first access and patched in place on [`LiveReload::live_reload`].
+    /// first access and resynced by [`Self::live_reload`].
     ///
     /// Lazy so that opening the flags reads only the (tiny) status file: a
     /// segment open would otherwise scan every flags file end to end, which
@@ -42,8 +38,8 @@ pub struct ReadOnlyRoaringFlags<S: UniversalRead> {
     /// through `&self` from many threads. On a race both threads may build a
     /// bitmap; the first to finish wins and the loser's copy is dropped.
     bitmap: OnceLock<RoaringBitmap>,
-    /// Backing bitslice. A reload reopens this handle so points the writer
-    /// appended become readable, then reads only those new positions.
+    /// Backing bitslice, used by the lazy [`Self::bitmap`] scan. Replaced with
+    /// a freshly opened handle on every [`Self::live_reload`].
     storage: StoredBitSlice<S>,
     /// Total length of the flags, including trailing falses. Read from the status file.
     len: usize,
@@ -110,7 +106,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     }
 
     /// Open persisted flags read-only, retaining the bitslice handle for
-    /// [`Self::bitmap`] and [`LiveReload`].
+    /// [`Self::bitmap`].
     ///
     /// Returns [`Ok(None)`] when the flag directory doesn't exist (the status
     /// file is absent), matching the read path's never-create contract.
@@ -162,60 +158,40 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
 
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
-}
 
-impl<S: UniversalRead> LiveReload for ReadOnlyRoaringFlags<S> {
-    type Fs = S::Fs;
+    /// Refresh to the current on-disk state.
+    ///
+    /// Deliberately *not* an impl of [`LiveReload`][1]: this storage holds
+    /// arbitrary flags with no notion of points, so a point-delta interface
+    /// (deleted/new points) does not belong here — `open` never applied
+    /// deleted points either. The on-disk flags are the sole source of truth.
+    ///
+    /// The flags file is preallocated (power-of-two capacity) and mutated in
+    /// place within its length, which the held handle's `reopen()` — an
+    /// append-only-growth contract — never picks up on caching backends. So
+    /// instead a *fresh* handle is opened (a fresh open always mirrors the
+    /// current remote bytes), the materialized bitmap, if any, is resynced
+    /// from it, and it replaces the old handle.
+    ///
+    /// While the bitmap is still unmaterialized there is nothing to resync:
+    /// the eventual first scan reads the fresh storage installed here.
+    ///
+    /// [1]: crate::common::live_reload::LiveReload
+    pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
+        let storage = StoredBitSlice::<S>::open(
+            fs,
+            self.directory.join(FLAGS_FILE),
+            open_options(Populate::No),
+            Default::default(),
+        )?;
 
-    /// Refresh the in-memory bitmap to the current on-disk state by fetching
-    /// only the delta, instead of re-scanning every set position like
-    /// [`Self::open`].
-    ///
-    /// `deleted_points` are dropped from the bitmap — a removed point belongs in
-    /// no flag set, so this needs no I/O. `new_points` are freshly appended
-    /// offsets (the producer is append-only — see the body): each has its flag
-    /// read from the reopened bitslice and is inserted when set. A new offset was
-    /// never in the bitmap, so an unset flag needs no action.
-    ///
-    /// `hw_counter` is unused: the per-position reads go through the reopened
-    /// [`StoredBitSlice`], which takes no hardware counter — mirroring
-    /// [`Self::bitmap`], which also doesn't account its scan.
-    ///
-    /// While the bitmap is still unmaterialized there is nothing to patch: the
-    /// eventual scan reads the current on-disk flags, which the writer has
-    /// already brought up to date (it clears a retired point's flag). The
-    /// bitslice is still reopened, so that scan sees the grown file.
-    fn live_reload(
-        &mut self,
-        fs: &S::Fs,
-        deleted_points: &SortedSlice<'_, PointOffsetType>,
-        new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
         if let Some(bitmap) = self.bitmap.get_mut() {
-            for &point in deleted_points {
-                bitmap.remove(point);
-            }
+            *bitmap =
+                RoaringBitmap::from_sorted_iter(storage.iter_ones()?.map(|i| i as PointOffsetType))
+                    .expect("iter_ones iterates in sorted order");
         }
 
-        // Nothing appended → no on-disk delta to fetch, skip all I/O.
-        if new_points.is_empty() {
-            return Ok(());
-        }
-
-        // Live reload is append-only, so we only need to process the new range of
-        // the bitslice.
-        self.storage.reopen()?;
-        if let (Some(bitmap), Some(new_range)) = (self.bitmap.get_mut(), new_points.range_u64()) {
-            let start = new_range.start as usize;
-            let bitslice = self.storage.read_bit_range(new_range)?;
-            for point in bitslice
-                .iter_ones()
-                .map(|idx| (idx + start) as PointOffsetType)
-            {
-                bitmap.insert(point);
-            }
-        }
+        self.storage = storage;
 
         // The logical length grows as points are appended; refresh it so
         // length-driven readers (the null index's `iter_falses`) stay correct.
@@ -245,5 +221,110 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
             status_file(&self.directory),
             self.directory.join(FLAGS_FILE),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, MmapFs,
+        UniversalReadFileOps,
+    };
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+
+    /// The flags file is preallocated (power-of-two capacity) and mutated in
+    /// place within its length, so a reader over a caching backend cannot rely
+    /// on `reopen()`: bits the writer changes inside already-cached blocks
+    /// would stay stale forever. `live_reload` opens a fresh handle instead —
+    /// this drives it over `DiskCacheFs`, where the stale-cache failure
+    /// actually reproduces (mmap readers are read-through and can't catch it).
+    #[test]
+    fn live_reload_over_disk_cache_sees_in_place_bit_writes() {
+        let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
+        let remote_root = tmp.path().join("remote");
+        let local_root = tmp.path().join("local");
+        let dir = remote_root.join("flags");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&local_root).unwrap();
+
+        // The writer works on the "remote" directly; the reader mirrors it
+        // into `local_root` through the disk cache.
+        let mut writer = DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dir, Populate::No).unwrap();
+        writer.set_len(&MmapFs, 100).unwrap();
+        writer.set(5, true).unwrap();
+        writer.flusher()().unwrap();
+
+        let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+            config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+            remote: Default::default(),
+        })
+        .unwrap();
+        let mut flags = ReadOnlyRoaringFlags::<DiskCache<MmapFile>>::open(&cache_fs, &dir)
+            .unwrap()
+            .unwrap();
+
+        // Materialize the bitmap: scans (and locally caches) the whole
+        // preallocated flags file — the pre-write state this test must escape.
+        assert!(flags.get_bitmap().unwrap().contains(5));
+        assert_eq!(flags.len(), 100);
+
+        // In-place bit writes within the already-cached capacity, plus growth.
+        writer.set(6, true).unwrap();
+        writer.set(50, true).unwrap();
+        writer.set(5, false).unwrap();
+        writer.set_len(&MmapFs, 120).unwrap();
+        writer.flusher()().unwrap();
+
+        flags.live_reload(&cache_fs).unwrap();
+
+        let bitmap = flags.get_bitmap().unwrap();
+        assert!(bitmap.contains(6));
+        assert!(bitmap.contains(50));
+        assert!(
+            !bitmap.contains(5),
+            "cleared flag must not survive a reload"
+        );
+        assert_eq!(flags.len(), 120);
+    }
+
+    /// A bitmap that was never materialized needs no resync: the reload just
+    /// swaps in the fresh handle, and the eventual first scan reads it.
+    #[test]
+    fn live_reload_before_materialization_scans_fresh_state() {
+        let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
+        let remote_root = tmp.path().join("remote");
+        let local_root = tmp.path().join("local");
+        let dir = remote_root.join("flags");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&local_root).unwrap();
+
+        let mut writer = DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dir, Populate::No).unwrap();
+        writer.set_len(&MmapFs, 100).unwrap();
+        writer.set(5, true).unwrap();
+        writer.flusher()().unwrap();
+
+        let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+            config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+            remote: Default::default(),
+        })
+        .unwrap();
+        let mut flags = ReadOnlyRoaringFlags::<DiskCache<MmapFile>>::open(&cache_fs, &dir)
+            .unwrap()
+            .unwrap();
+
+        // No `get_bitmap` here: the bitmap stays unmaterialized.
+        writer.set(6, true).unwrap();
+        writer.flusher()().unwrap();
+
+        flags.live_reload(&cache_fs).unwrap();
+
+        let bitmap = flags.get_bitmap().unwrap();
+        assert!(bitmap.contains(5));
+        assert!(bitmap.contains(6));
     }
 }
