@@ -268,6 +268,77 @@ fn deletion_and_live_reload() {
     }
 }
 
+/// Case-1 regression of the live-reload staleness audit: the immutable
+/// tracker's `deleted` file is a fixed-size bitmap whose bits the writer
+/// flips in place — its length never changes — so a reader over a caching
+/// backend must not rely on `reopen()` (append-only-growth contract): the
+/// pre-deletion state, cached when `open` scanned the file, would be served
+/// forever and `live_reload` would never report the deletions.
+/// `live_reload` opens a fresh handle instead; this drives it over
+/// `DiskCacheFs`, where the stale-cache failure actually reproduces (mmap
+/// readers are read-through and can't catch it).
+#[test]
+fn immutable_deletion_and_live_reload_disk_cache() {
+    use std::sync::Arc;
+
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+    };
+
+    use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
+
+    let dir = Builder::new().prefix("imm").tempdir().unwrap();
+    let remote_root = dir.path().join("remote");
+    let local_root = dir.path().join("local");
+    let segment_path = remote_root.join("segment");
+    std::fs::create_dir_all(&segment_path).unwrap();
+    std::fs::create_dir_all(&local_root).unwrap();
+
+    // The writer works on the "remote" directly; the reader mirrors it into
+    // `local_root` through the disk cache.
+    let (versions, mappings) = make_data(6);
+    let mut immutable =
+        ImmutableIdTracker::<MmapFile>::new(&MmapFs, &segment_path, &versions, mappings).unwrap();
+
+    let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+    // `open` reads the whole pre-deletion deleted bitmap — the state this
+    // test must escape is now in the reader's local cache.
+    let mut read_only =
+        ReadOnlyImmutableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &segment_path).unwrap();
+
+    let to_delete: Vec<(PointIdType, u32)> = immutable
+        .point_mappings()
+        .iter_from(None)
+        .take(50)
+        .collect();
+    for (external_id, _) in &to_delete {
+        immutable.drop(*external_id).unwrap();
+    }
+    immutable.mapping_flusher()().unwrap();
+    immutable.versions_flusher()().unwrap();
+
+    let result = read_only.live_reload(&cache_fs).unwrap();
+
+    let mut expected: Vec<u32> = to_delete.iter().map(|(_, offset)| *offset).collect();
+    expected.sort_unstable();
+    assert_eq!(result.deleted, expected, "live_reload delta mismatch");
+    assert!(result.inserted.is_empty());
+
+    // After reload, the reader hides the deleted points on every path.
+    for (external_id, offset) in &to_delete {
+        assert_eq!(
+            read_only.internal_id_with_behavior(*external_id, DeferredBehavior::VisibleOnly),
+            None,
+        );
+        assert!(read_only.is_deleted_point(*offset));
+        assert_eq!(read_only.external_id(*offset), None);
+    }
+}
+
 /// The on-disk layout must keep headers and every section start aligned to
 /// `SECTION_ALIGN`, so the files stay mmap+transmute-friendly (`u128` requires
 /// 16-byte alignment). Also pins the store/parse padding agreement: parsed

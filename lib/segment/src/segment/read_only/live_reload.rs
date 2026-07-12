@@ -36,7 +36,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
         // accumulated delta survives an error and is replayed on the next call.
-        let fresh = id_tracker.borrow_mut().live_reload()?;
+        let fresh = id_tracker.borrow_mut().live_reload(fs)?;
         let mut pending = pending_reload.borrow_mut();
         pending.merge(fresh);
 
