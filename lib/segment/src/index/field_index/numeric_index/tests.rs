@@ -979,3 +979,91 @@ fn test_integer_index_fractional_range_bounds() {
         "lte: 1.5 must include integer 1 and exclude 2",
     );
 }
+
+/// The optional block-index sidecar over the sorted pairs must be a pure
+/// accelerator: cardinality estimates and filter results must be identical
+/// with the sidecar present and after deleting it (which falls back to plain
+/// binary search over the storage).
+#[test]
+fn test_block_index_fallback_equivalence() {
+    fn collect_results(
+        index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
+        queries: &[Range<OrderedFloat<FloatPayloadType>>],
+    ) -> Vec<(usize, usize, usize, Vec<PointOffsetType>)> {
+        let hw_counter = HardwareCounterCell::new();
+        queries
+            .iter()
+            .map(|query| {
+                let estimation =
+                    query::range_cardinality(index.inner(), &RangeInterface::Float(*query))
+                        .unwrap();
+                let points = index
+                    .inner()
+                    .filter(
+                        &FieldCondition::new_range(JsonPath::new("unused"), *query),
+                        &hw_counter,
+                    )
+                    .unwrap()
+                    .unwrap()
+                    .collect_vec();
+                (estimation.min, estimation.exp, estimation.max, points)
+            })
+            .collect()
+    }
+
+    // 3000 points x 2 values = 6000 pairs, several 16KiB blocks.
+    let (temp_dir, index) = random_index(3000, 2, IndexType::Mmap);
+    drop(index);
+
+    let block_index_path = temp_dir
+        .path()
+        .join(on_disk_numeric_index::PAIRS_BLOCK_INDEX_PATH);
+    assert!(block_index_path.exists());
+
+    // Random ranges (values live in 0..100), exact-value probes, and bounds
+    // outside the value domain.
+    let mut rng = StdRng::seed_from_u64(7);
+    let mut queries = Vec::new();
+    for _ in 0..100 {
+        let a: FloatPayloadType = rng.random_range(-10.0..110.0);
+        let b: FloatPayloadType = rng.random_range(-10.0..110.0);
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        let (lo, hi) = (OrderedFloat(lo), OrderedFloat(hi));
+        queries.push(Range {
+            lt: None,
+            gt: None,
+            gte: Some(lo),
+            lte: Some(hi),
+        });
+        queries.push(Range {
+            lt: Some(hi),
+            gt: Some(lo),
+            gte: None,
+            lte: None,
+        });
+        queries.push(Range {
+            lt: None,
+            gt: None,
+            gte: Some(lo),
+            lte: Some(lo),
+        });
+    }
+
+    let deleted = empty_deleted();
+
+    let with_block_index = open_index_from_disk(temp_dir.path(), IndexType::Mmap, &deleted);
+    let with_results = collect_results(&with_block_index, &queries);
+    drop(with_block_index);
+
+    fs_err::remove_file(&block_index_path).unwrap();
+    let without_block_index = open_index_from_disk(temp_dir.path(), IndexType::Mmap, &deleted);
+    let without_results = collect_results(&without_block_index, &queries);
+
+    assert_eq!(with_results, without_results);
+    // Sanity: the query mix actually matches points.
+    assert!(
+        with_results
+            .iter()
+            .any(|(_, _, _, points)| !points.is_empty())
+    );
+}

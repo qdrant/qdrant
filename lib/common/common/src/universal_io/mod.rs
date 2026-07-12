@@ -9,6 +9,7 @@ mod local_file_ops;
 mod mmap;
 mod oneshot;
 mod simple_disk_cache;
+mod sorted_block_index;
 mod traits;
 mod types;
 mod wrappers;
@@ -22,6 +23,7 @@ pub use self::oneshot::OneshotFile;
 pub use self::simple_disk_cache::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
+pub use self::sorted_block_index::SortedBlockIndex;
 pub use self::traits::{
     CachedReadFs, Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalRead,
     UniversalReadFileOps, UniversalReadFs, UniversalWrite, UniversalWriteFileOps, UserData,
