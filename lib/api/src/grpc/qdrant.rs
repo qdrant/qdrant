@@ -16273,6 +16273,9 @@ pub struct ListFilesEntry {
     pub path: ::prost::alloc::string::String,
     #[prost(uint64, tag = "2")]
     pub size: u64,
+    /// Last modification time, when the underlying storage exposes one.
+    #[prost(message, optional, tag = "3")]
+    pub last_modified: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
+use api::grpc::conversions::system_time_to_proto;
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesEntry,
@@ -95,19 +96,26 @@ where
 
         let files = files
             .into_iter()
-            .filter_map(|ListedFile { path, size }| {
-                path.strip_prefix(&base).ok().map(|rel| {
-                    // Always use forward slashes in gRPC responses regardless of OS.
-                    let components = rel
-                        .components()
-                        .filter_map(|c| c.as_os_str().to_str())
-                        .collect::<Vec<_>>();
-                    ListFilesEntry {
-                        path: components.join("/"),
-                        size,
-                    }
-                })
-            })
+            .filter_map(
+                |ListedFile {
+                     path,
+                     size,
+                     last_modified,
+                 }| {
+                    path.strip_prefix(&base).ok().map(|rel| {
+                        // Always use forward slashes in gRPC responses regardless of OS.
+                        let components = rel
+                            .components()
+                            .filter_map(|c| c.as_os_str().to_str())
+                            .collect::<Vec<_>>();
+                        ListFilesEntry {
+                            path: components.join("/"),
+                            size,
+                            last_modified: last_modified.map(system_time_to_proto),
+                        }
+                    })
+                },
+            )
             .collect::<Vec<_>>();
 
         Ok(Response::new(ListFilesResponse { files }))

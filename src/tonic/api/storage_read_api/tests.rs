@@ -267,18 +267,19 @@ async fn list_files_returns_paths_relative_to_shard_dir() {
 
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
+    for entry in &files {
+        assert!(
+            entry.last_modified.is_some(),
+            "local listing must carry a modification time",
+        );
+    }
+    let paths_and_sizes: Vec<_> = files
+        .iter()
+        .map(|entry| (entry.path.as_str(), entry.size))
+        .collect();
     assert_eq!(
-        files,
-        vec![
-            ListFilesEntry {
-                path: "index/chunk_1.bin".to_string(),
-                size: 3,
-            },
-            ListFilesEntry {
-                path: "index/chunk_2.bin".to_string(),
-                size: 3,
-            },
-        ]
+        paths_and_sizes,
+        [("index/chunk_1.bin", 3), ("index/chunk_2.bin", 3)]
     );
 
     drop_service(service, storage_dir).await;

@@ -147,6 +147,9 @@ impl Client {
             .map(|entry| ListedFile {
                 path: PathBuf::from(entry.path),
                 size: entry.size,
+                last_modified: entry
+                    .last_modified
+                    .and_then(|ts| std::time::SystemTime::try_from(ts).ok()),
             })
             .collect())
     }

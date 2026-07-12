@@ -259,6 +259,7 @@ pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 prost = "0.14.0"
 prost-build = { version = "0.14.0", features = ["cleanup-markdown"] }
+prost-types = "0.14.0"
 prost-wkt-types = "0.7"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
 raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84" ,features = ["prost-codec"], default-features = false }

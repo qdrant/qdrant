@@ -65,10 +65,11 @@ pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<L
         if file_type.is_dir() {
             matched_dirs.push(entry.path());
         } else if file_type.is_file() {
-            let size = entry.metadata()?.len();
+            let metadata = entry.metadata()?;
             results.push(ListedFile {
                 path: entry.path(),
-                size,
+                size: metadata.len(),
+                last_modified: metadata.modified().ok(),
             });
         }
     }
@@ -82,10 +83,11 @@ pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<L
             if file_type.is_dir() {
                 matched_dirs.push(entry.path());
             } else if file_type.is_file() {
-                let size = entry.metadata()?.len();
+                let metadata = entry.metadata()?;
                 results.push(ListedFile {
                     path: entry.path(),
-                    size,
+                    size: metadata.len(),
+                    last_modified: metadata.modified().ok(),
                 });
             }
         }
