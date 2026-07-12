@@ -923,7 +923,12 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             });
         };
-        let applied = self.handle_point_mutate(
+        // Payload-storage version stamping: the in-place arm mutates payload
+        // storage right here, so it bumps inside the closure. The clone arm
+        // is stamped by `clone_and_mutate_point` itself — bumping again after
+        // it with the same version would collapse the tracked version to
+        // `None`. Same pattern for the other payload operations below.
+        self.handle_point_mutate(
             op_num,
             point_id,
             internal_id,
@@ -934,17 +939,14 @@ impl SegmentEntry for Segment {
                     full_payload,
                     hw_counter,
                 )?;
+                segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
             |_vectors, snapshot_payload| {
                 *snapshot_payload = full_payload.clone();
                 Ok(true)
             },
-        )?;
-        if applied {
-            self.version_tracker.set_payload(Some(op_num));
-        }
-        Ok(applied)
+        )
     }
 
     fn set_payload(
@@ -964,7 +966,7 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             });
         };
-        let applied = self.handle_point_mutate(
+        self.handle_point_mutate(
             op_num,
             point_id,
             internal_id,
@@ -976,6 +978,7 @@ impl SegmentEntry for Segment {
                     key,
                     hw_counter,
                 )?;
+                segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
             |_vectors, snapshot_payload| {
@@ -985,11 +988,7 @@ impl SegmentEntry for Segment {
                 }
                 Ok(true)
             },
-        )?;
-        if applied {
-            self.version_tracker.set_payload(Some(op_num));
-        }
-        Ok(applied)
+        )
     }
 
     fn delete_payload(
@@ -1008,7 +1007,7 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             });
         };
-        let applied = self.handle_point_mutate(
+        self.handle_point_mutate(
             op_num,
             point_id,
             internal_id,
@@ -1018,17 +1017,14 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .delete_payload(internal_id, key, hw_counter)?;
+                segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
             |_vectors, snapshot_payload| {
                 snapshot_payload.remove(key);
                 Ok(true)
             },
-        )?;
-        if applied {
-            self.version_tracker.set_payload(Some(op_num));
-        }
-        Ok(applied)
+        )
     }
 
     fn clear_payload(
@@ -1046,7 +1042,7 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             });
         };
-        let applied = self.handle_point_mutate(
+        self.handle_point_mutate(
             op_num,
             point_id,
             internal_id,
@@ -1056,17 +1052,14 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .clear_payload(internal_id, hw_counter)?;
+                segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
             |_vectors, snapshot_payload| {
                 *snapshot_payload = Payload::default();
                 Ok(true)
             },
-        )?;
-        if applied {
-            self.version_tracker.set_payload(Some(op_num));
-        }
-        Ok(applied)
+        )
     }
 }
 
