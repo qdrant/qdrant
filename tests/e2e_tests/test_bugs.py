@@ -9,7 +9,11 @@ class TestSnapshotsInterferenceWithConsensus:
     ], indirect=True)
     def test_snapshot_does_not_block_other_operations(self, qdrant_compose):
         """Test that creating snapshots does not block other operations - https://github.com/qdrant/qdrant/issues/7489."""
-        client = ClientUtils(host=qdrant_compose[0].host, port=qdrant_compose[0].http_port, timeout=10)
+        # Generous client-side timeout: setup operations can exceed 10s on loaded CI
+        # runners (e.g. a leader election triggered mid-create_collection). The actual
+        # regression check below relies on the server-side `timeout=5` passed to
+        # delete_collection, so it is not weakened by this.
+        client = ClientUtils(host=qdrant_compose[0].host, port=qdrant_compose[0].http_port, timeout=30)
         client.wait_for_server()
         assert client.wait_for_cluster_ready(expected_peers=3), "Cluster did not become ready within timeout"
 
