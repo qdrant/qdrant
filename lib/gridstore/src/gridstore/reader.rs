@@ -15,7 +15,7 @@ use crate::blob::Blob;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PageId, PointOffset, Tracker};
+use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -26,7 +26,7 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 #[derive(Debug)]
 pub struct GridstoreReader<V, S: UniversalRead> {
     pub(super) config: StorageConfig,
-    pub(super) tracker: Tracker<S>,
+    pub(super) tracker: ReadOnlyTracker<S>,
     pub(super) pages: Pages<S>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
@@ -36,7 +36,7 @@ pub struct GridstoreReader<V, S: UniversalRead> {
 
 impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Create a [`GridstoreView`] borrowing this reader's data.
-    pub fn view(&self) -> GridstoreView<'_, V, S> {
+    pub fn view(&self) -> GridstoreView<'_, V, S, ReadOnlyTracker<S>> {
         GridstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
@@ -56,7 +56,12 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         paths
     }
 
-    pub fn max_point_offset(&self) -> PointOffset {
+    /// Exclusive upper bound of point offsets that may have a value.
+    ///
+    /// An upper bound derived from the tracker file's slot capacity, not an
+    /// exact count — see
+    /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
+    pub fn max_point_offset(&self) -> Result<PointOffset> {
         self.view().max_point_offset()
     }
 
@@ -89,10 +94,14 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         base_path: PathBuf,
         populate: Populate,
     ) -> Result<Self> {
+        let config_path = base_path.join(CONFIG_FILENAME);
+        let config: StorageConfig =
+            read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
+
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
-        let (config, tracker) = read_config_and_tracker(fs, &base_path, populate, false)?;
+        let tracker = ReadOnlyTracker::open(fs, &base_path, populate)?;
 
         let pages = Pages::<S>::open(fs, &base_path, false, populate)?;
 
@@ -134,7 +143,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let max_id = cmp::min(max_id, self.max_point_offset());
+        let max_id = cmp::min(max_id, self.max_point_offset()?);
 
         let point_offsets = (0..max_id).map(|point_offset| ((), point_offset));
 
@@ -192,13 +201,12 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
+    /// Both the tracker and the pages are refreshed unconditionally: the
+    /// tracker file is mutated in place and carries no reliable
+    /// cheaply-readable change signal, so there is no "nothing changed"
+    /// fast path. Both refreshes are cheap for non-populated readers.
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
-        let has_new_data = self.tracker.live_reload()?;
-
-        if !has_new_data {
-            return Ok(());
-        }
-
+        self.tracker.live_reload(fs)?;
         self.pages.live_reload(fs, self.populate)?;
 
         Ok(())

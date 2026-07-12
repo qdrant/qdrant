@@ -26,7 +26,7 @@ where
     I: Iterator<Item = (U, PointOffset)>,
     S: UniversalRead,
 {
-    pub fn new(
+    pub(crate) fn new(
         point_offsets: I,
         storage: &'a S,
         pending_updates: &'a AHashMap<PointOffset, PointerUpdates>,

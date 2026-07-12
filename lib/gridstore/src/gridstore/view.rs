@@ -11,7 +11,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PointOffset, PointerItem, Tracker, ValuePointer};
+use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -26,23 +26,19 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// A non-owning view into gridstore data.
 ///
 /// Holds borrowed references to pages and tracker, and contains all reading logic.
-/// Generic over the storage backend `S` for both pages and tracker (same as [`Pages<S>`] and
-/// [`Tracker<S>`]).
-///
-/// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
-pub struct GridstoreView<'a, V, S: UniversalRead> {
+/// Generic over the storage backend `S` (same as [`Pages<S>`]) and over the
+/// tracker type `T` — the writable [`Tracker`](crate::tracker::Tracker) for
+/// [`super::Gridstore`], the [`ReadOnlyTracker`](crate::tracker::ReadOnlyTracker)
+/// for [`super::GridstoreReader`].
+pub struct GridstoreView<'a, V, S: UniversalRead, T: TrackerRead<S>> {
     pub(super) config: &'a StorageConfig,
-    pub(super) tracker: &'a Tracker<S>,
+    pub(super) tracker: &'a T,
     pub(super) pages: &'a Pages<S>,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
-    pub(crate) fn new(
-        config: &'a StorageConfig,
-        tracker: &'a Tracker<S>,
-        pages: &'a Pages<S>,
-    ) -> Self {
+impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
+    pub(crate) fn new(config: &'a StorageConfig, tracker: &'a T, pages: &'a Pages<S>) -> Self {
         Self {
             config,
             tracker,
@@ -51,8 +47,12 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
         }
     }
 
-    pub fn max_point_offset(&self) -> PointOffset {
-        self.tracker.pointer_count()
+    /// Exclusive upper bound of point offsets that may have a value.
+    ///
+    /// Exact for the writable tracker; an upper bound (slot capacity) for the
+    /// read-only one — see [`TrackerRead::max_point_offset`].
+    pub fn max_point_offset(&self) -> Result<PointOffset> {
+        self.tracker.max_point_offset()
     }
 
     fn get_pointer(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
@@ -73,7 +73,7 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         match self.config.compression {
             Compression::None => value,

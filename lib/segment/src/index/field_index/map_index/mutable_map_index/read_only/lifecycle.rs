@@ -63,7 +63,7 @@ where
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
         let hw_counter = HardwareCounterCell::disposable();
         storage.iter::<_, GridstoreError>(
-            storage.max_point_offset(),
+            storage.max_point_offset()?,
             |idx, values: Vec<_>| {
                 in_memory_index.add_many_to_map(idx, values);
                 Ok(true)
