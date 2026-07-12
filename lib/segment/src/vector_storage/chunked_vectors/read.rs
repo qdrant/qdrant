@@ -468,8 +468,8 @@ mod tests {
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
         let dir = remote_root.join("vectors");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::create_dir_all(&local_root).unwrap();
+        fs_err::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&local_root).unwrap();
 
         let hw = HardwareCounterCell::disposable();
 
@@ -522,7 +522,7 @@ mod tests {
         for offset in [0, 99, 100, 149] {
             assert_eq!(
                 reader.get::<Random>(offset).unwrap().as_ref(),
-                make_vec(offset as usize, DIM).as_slice(),
+                make_vec(offset, DIM).as_slice(),
                 "vector {offset} mismatch after reload",
             );
         }

@@ -249,8 +249,8 @@ mod tests {
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
         let dir = remote_root.join("flags");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::create_dir_all(&local_root).unwrap();
+        fs_err::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&local_root).unwrap();
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
@@ -300,8 +300,8 @@ mod tests {
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
         let dir = remote_root.join("flags");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::create_dir_all(&local_root).unwrap();
+        fs_err::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&local_root).unwrap();
 
         let mut writer = DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dir, Populate::No).unwrap();
         writer.set_len(&MmapFs, 100).unwrap();

@@ -292,9 +292,9 @@ fn deletion_and_live_reload_disk_cache() {
     let local_root = dir.path().join("local");
     let immutable_path = remote_root.join("immutable_tracker");
     let disk_path = remote_root.join("disk_tracker");
-    std::fs::create_dir_all(&immutable_path).unwrap();
-    std::fs::create_dir_all(&disk_path).unwrap();
-    std::fs::create_dir_all(&local_root).unwrap();
+    fs_err::create_dir_all(&immutable_path).unwrap();
+    fs_err::create_dir_all(&disk_path).unwrap();
+    fs_err::create_dir_all(&local_root).unwrap();
 
     // The writers work on the "remote" directly; the readers mirror it into
     // `local_root` through the disk cache.
