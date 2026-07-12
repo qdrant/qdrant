@@ -213,6 +213,10 @@ impl Segment {
         self.payload_index
             .borrow_mut()
             .overwrite_payload(new_id, &payload, hw_counter)?;
+        // The payload content is unchanged, but writing it at `new_id` still
+        // mutates payload storage: stamp it so partial snapshots re-upload
+        // the changed files.
+        self.version_tracker.set_payload(Some(op_num));
         self.id_tracker.borrow_mut().set_link(point_id, new_id)?;
         Ok(new_id)
     }
@@ -313,6 +317,15 @@ impl Segment {
         self.payload_index
             .borrow_mut()
             .overwrite_payload(new_id, &payload, hw_counter)?;
+
+        // Writing the payload row at new_id mutated payload storage — even
+        // for a vectors-only mutation whose entry point never touches the
+        // payload version. Stamp it here so partial snapshots re-upload the
+        // changed files. The payload entry points deliberately do not bump
+        // again on this path (a same-version double bump would collapse the
+        // tracked version to `None`, degrading the stamp to the segment
+        // version): they bump inside their in-place closures instead.
+        self.version_tracker.set_payload(Some(op_num));
 
         // 6. Repoint the id tracker. `set_link` auto-tombstones old_id in
         //    the deleted bitslice when external_id was previously mapped to

@@ -970,6 +970,73 @@ fn test_upsert_raw_append_only_replace() {
     assert_eq!(dst.payload(7.into(), &hw_counter).unwrap(), payload);
 }
 
+/// Clone-based mutations rewrite the point's payload row at a fresh internal
+/// id, mutating payload storage even when the triggering operation is
+/// vectors-only — the snapshot version stamp must move, or partial snapshots
+/// skip the changed payload files. Payload operations must stamp exactly
+/// once: a same-version double bump collapses the tracked version to `None`.
+#[test]
+fn test_append_only_clone_stamps_payload_version() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    segment.append_only_mutations = true;
+    let hw_counter = HardwareCounterCell::new();
+
+    let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    // A fresh insert writes no payload row.
+    assert_eq!(segment.version_tracker.get_payload(), None);
+
+    // A payload operation stamps exactly once (clone arm only, no
+    // caller-side double bump that would collapse the version to `None`).
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    segment
+        .set_full_payload(101, 7.into(), &payload, &hw_counter)
+        .unwrap();
+    assert_eq!(segment.version_tracker.get_payload(), Some(101));
+
+    // A vectors-only update clones the point, rewriting its payload row at
+    // the fresh id: the stamp must follow.
+    let vec2 = vec![0.1_f32, 0.2, 0.3, 0.4];
+    segment
+        .upsert_point(102, 7.into(), only_default_vector(&vec2), &hw_counter)
+        .unwrap();
+    assert_eq!(segment.version_tracker.get_payload(), Some(102));
+
+    // Same for the raw clone path.
+    src.upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+    segment
+        .upsert_point_raw(
+            103,
+            7.into(),
+            &[(DEFAULT_VECTOR_NAME.to_owned(), bytes)],
+            &hw_counter,
+        )
+        .unwrap();
+    assert_eq!(segment.version_tracker.get_payload(), Some(103));
+    assert_eq!(segment.payload(7.into(), &hw_counter).unwrap(), payload);
+
+    // In-place payload operations (append-only off) still stamp.
+    let plain_dir = Builder::new().prefix("segment_plain").tempdir().unwrap();
+    let mut plain = build_simple_segment(plain_dir.path(), dim, Distance::Dot).unwrap();
+    plain
+        .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    plain
+        .set_full_payload(101, 7.into(), &payload, &hw_counter)
+        .unwrap();
+    assert_eq!(plain.version_tracker.get_payload(), Some(101));
+}
+
 /// Multi-dense raw round-trip: the flattened inner-vector blob must survive
 /// `retrieve_raw` → `upsert_point_raw` byte-identically and decode to the
 /// original multivector.
