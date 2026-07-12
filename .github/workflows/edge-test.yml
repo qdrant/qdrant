@@ -27,6 +27,21 @@ jobs:
           }}
 
     steps:
+      # Building the examples links several large statically-linked binaries,
+      # which gets close to the runner's disk limit. Only the fast `rm -rf`
+      # based options are enabled to keep this step under a minute.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          tool-cache: false
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
       - name: Checkout Qdrant
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
