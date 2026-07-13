@@ -15,6 +15,8 @@ pub mod test_binary_encodings;
 #[cfg(test)]
 pub mod test_neon;
 #[cfg(test)]
+pub mod test_owned_storage;
+#[cfg(test)]
 pub mod test_pq;
 #[cfg(test)]
 pub mod test_simple;
