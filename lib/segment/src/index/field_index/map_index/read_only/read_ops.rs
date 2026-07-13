@@ -1,10 +1,10 @@
 use std::borrow::{Borrow, Cow};
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
-use gridstore::Blob;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};

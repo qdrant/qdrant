@@ -1,5 +1,5 @@
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::BlobstoreReader;
 
 use super::inner::MutableFullTextIndexInner;
 
@@ -11,7 +11,7 @@ mod read_ops;
 ///
 /// Owns the same in-memory state ([`MutableFullTextIndexInner`]) but is backed
 /// by [`BlobstoreReader`] over generic [`UniversalRead`] instead of a writable
-/// [`gridstore::Blobstore`]. Implements
+/// [`blobstore::Blobstore`]. Implements
 /// [`super::super::full_text_index_read::FullTextIndexRead`] by forwarding to
 /// the inner; provides no mutation surface.
 ///

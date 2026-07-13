@@ -2,15 +2,15 @@ mod lifecycle;
 mod live_reload;
 mod payload_storage_read;
 
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::BlobstoreReader;
 
 use crate::types::Payload;
 
 /// Read-only counterpart to [`super::mmap_payload_storage::MmapPayloadStorage`].
 ///
 /// Backed by a [`BlobstoreReader`] over generic [`UniversalRead`] instead of a
-/// writable [`gridstore::Blobstore`]. Unlike the read-only field indexes there
+/// writable [`blobstore::Blobstore`]. Unlike the read-only field indexes there
 /// is no in-memory index to rebuild: [`Payload`] values are read straight from
 /// the reader, so [`PayloadStorageRead`](super::PayloadStorageRead) forwards
 /// directly to it. Opened via [`Self::open`] (see [`lifecycle`]); provides no

@@ -138,7 +138,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
                 byte_offset: start,
                 length: u64::from(pointer.length),
             };
-            return Ok(self.file.read::<P, u8>(range)?);
+            return Ok(self.file.read::<_, u8>(range, P::default())?);
         }
 
         // Buffered values are served from memory. A value never straddles the persisted

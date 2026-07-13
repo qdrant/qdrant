@@ -1,4 +1,4 @@
-use gridstore::Blobstore;
+use blobstore::Blobstore;
 
 pub(super) mod inner;
 mod lifecycle;

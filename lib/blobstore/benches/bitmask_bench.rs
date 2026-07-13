@@ -1,9 +1,9 @@
 use std::hint::black_box;
 
+use blobstore::bitmask::MmapBitmask;
+use blobstore::config::DEFAULT_REGION_SIZE_BLOCKS;
 use common::bitvec::BitVec;
 use criterion::{Criterion, criterion_group, criterion_main};
-use gridstore::bitmask::MmapBitmask;
-use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
 use rand::RngExt;
 use rand::rngs::SmallRng;
 

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use blobstore::BlobstoreReader;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::BlobstoreReader;
 
 use super::super::inner::MutableFullTextIndexInner;
 use super::ReadOnlyAppendableFullTextIndex;
@@ -34,7 +34,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     /// CBOR-serialized document through [`MutableInvertedIndexBuilder`] — the
     /// exact reconstruction the writable
     /// [`MutableFullTextIndex::open_gridstore`][1] performs over a writable
-    /// [`gridstore::Blobstore`]. No write path; the reader is retained for
+    /// [`blobstore::Blobstore`]. No write path; the reader is retained for
     /// later `files` / `clear_cache` use.
     ///
     /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching

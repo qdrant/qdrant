@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use blobstore::{Blob, BlobstoreReader};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::{Blob, BlobstoreReader};
 
 use super::super::InMemoryNumericIndex;
 use super::ReadOnlyAppendableNumericIndex;

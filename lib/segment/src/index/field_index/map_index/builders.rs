@@ -4,11 +4,11 @@ use std::mem::size_of_val;
 use std::path::PathBuf;
 
 use ahash::HashMap;
+use blobstore::Blob;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blob;
 use itertools::Itertools;
 use serde_json::Value;
 

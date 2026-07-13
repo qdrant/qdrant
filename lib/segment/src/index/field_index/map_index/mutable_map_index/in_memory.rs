@@ -3,9 +3,9 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::iter;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use roaring::RoaringBitmap;
 
 use super::super::read_ops::MapIndexRead;

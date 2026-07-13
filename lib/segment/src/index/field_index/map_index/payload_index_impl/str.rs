@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
 
+use blobstore::Blob;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use ecow::EcoString;
-use gridstore::Blob;
 
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;

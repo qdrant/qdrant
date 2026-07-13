@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use blobstore::config::StorageOptions;
+use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalWrite};
 use fs_err as fs;
-use gridstore::config::StorageOptions;
-use gridstore::{Blob, Blobstore};
 use serde_json::Value;
 
 use crate::common::Flusher;

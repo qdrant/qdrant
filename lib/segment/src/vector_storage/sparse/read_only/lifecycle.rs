@@ -1,7 +1,7 @@
 use std::path::Path;
 
+use blobstore::BlobstoreReader;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use gridstore::BlobstoreReader;
 
 use super::ReadOnlySparseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;

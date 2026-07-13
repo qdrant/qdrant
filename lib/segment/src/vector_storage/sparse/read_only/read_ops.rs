@@ -3,7 +3,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
-use gridstore::Blob;
+use blobstore::Blob;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::ReadOnlySparseVectorStorage;

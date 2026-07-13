@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
+use blobstore::error::GridstoreError;
 use common::mmap::Error as MmapError;
 use common::universal_io::{IsNotFound, UniversalIoError};
-use gridstore::error::GridstoreError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 

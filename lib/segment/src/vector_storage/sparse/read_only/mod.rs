@@ -1,5 +1,5 @@
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::BlobstoreReader;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;

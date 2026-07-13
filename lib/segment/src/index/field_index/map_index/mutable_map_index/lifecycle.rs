@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
+use blobstore::config::StorageOptions;
+use blobstore::error::GridstoreError;
+use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::config::StorageOptions;
-use gridstore::error::GridstoreError;
-use gridstore::{Blob, Blobstore};
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
@@ -18,7 +18,7 @@ const fn default_gridstore_options(block_size: usize) -> StorageOptions {
     StorageOptions {
         // Size dependent on map value type
         block_size_bytes: Some(block_size),
-        compression: Some(gridstore::config::Compression::None),
+        compression: Some(blobstore::config::Compression::None),
         page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
         region_size_blocks: None,
         mode: None,

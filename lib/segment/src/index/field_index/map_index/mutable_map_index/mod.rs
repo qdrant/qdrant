@@ -1,4 +1,4 @@
-use gridstore::{Blob, Blobstore};
+use blobstore::{Blob, Blobstore};
 
 use self::in_memory::InMemoryMapIndex;
 use super::MapIndexKey;

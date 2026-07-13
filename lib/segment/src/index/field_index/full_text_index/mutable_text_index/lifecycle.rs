@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+use blobstore::Blobstore;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blobstore;
 use itertools::Itertools;
 
 use super::super::FullTextIndex;

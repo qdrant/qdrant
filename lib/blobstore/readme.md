@@ -1,14 +1,14 @@
-# gridstore
+# blobstore
 
-Storage for variable-sized values.
+Storage for variable-sized values, provided by the outer `Blobstore` type.
 
 Operates in one of two modes, specified when creating a storage and selected
 automatically when opening one, based on the persisted config:
 
-- **dynamic** (default): read-write storage with in-place space reuse, backed
-  by memory mapped files.
-- **append-only**: append-only storage for serverless deployments, reading and
-  writing files directly.
+- **dynamic** (default, the `Gridstore` variant): read-write storage with
+  in-place space reuse, backed by memory mapped files.
+- **append-only** (the `Arenastore` variant): append-only storage for
+  serverless deployments, reading and writing files directly.
 
 Concepts shared by both modes:
 
@@ -21,7 +21,7 @@ Concepts shared by both modes:
   tracker is updated in-memory, and only persisted on flush.
 - Supports multiple threads reading and single thread writing.
 
-## Dynamic mode
+## Dynamic mode (`Gridstore`)
 
 ![Storage concepts](./storage-concepts.svg)
 
@@ -46,7 +46,7 @@ Concepts shared by both modes:
 | `bitmask.dat` | one bit per block: used or free                             |
 | `gaps.dat`    | per-region free block gap summaries                         |
 
-## Append-only mode
+## Append-only mode (`Arenastore`)
 
 Designed for serverless environments, which restrict IO: files can only be
 appended to, existing bytes can never be rewritten (preallocated zero padding

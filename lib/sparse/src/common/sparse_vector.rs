@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
+use blobstore::Blob;
 use common::types::ScoreType;
-use gridstore::Blob;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;

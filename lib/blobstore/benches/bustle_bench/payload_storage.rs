@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use blobstore::fixtures::{Payload, empty_storage};
 use bustle::Collection;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use gridstore::fixtures::{Payload, empty_storage};
 use parking_lot::RwLock;
 
 use crate::PayloadStorage;

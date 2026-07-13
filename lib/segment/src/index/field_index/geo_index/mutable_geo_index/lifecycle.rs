@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
+use blobstore::Blobstore;
+use blobstore::config::StorageOptions;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blobstore;
-use gridstore::config::StorageOptions;
 
 use super::MutableGeoIndex;
 use super::inner::InMemoryGeoIndex;
@@ -17,7 +17,7 @@ const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     // Size of geo point values in index
     block_size_bytes: Some(size_of::<RawGeoPoint>()),
     // Compressing geo point values is unreasonable
-    compression: Some(gridstore::config::Compression::None),
+    compression: Some(blobstore::config::Compression::None),
     // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
     page_size_bytes: Some(size_of::<RawGeoPoint>() * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
     region_size_blocks: None,

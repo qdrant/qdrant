@@ -2,10 +2,10 @@ use std::iter;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use blobstore::Blob;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use indexmap::IndexSet;
 use uuid::Uuid;
 

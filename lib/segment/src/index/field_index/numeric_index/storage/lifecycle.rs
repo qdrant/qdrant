@@ -3,10 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::immutable_numeric_index::ImmutableNumericIndex;
