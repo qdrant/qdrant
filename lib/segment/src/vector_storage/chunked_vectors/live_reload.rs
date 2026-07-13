@@ -36,7 +36,6 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRea
         }
 
         let reload_from = self.chunks.len().saturating_sub(1);
-        self.chunks.truncate(reload_from);
         let new_chunks = read_chunks_from(
             fs,
             &self.directory,
@@ -45,6 +44,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRea
             self.populate,
             false,
         )?;
+        self.chunks.truncate(reload_from);
         self.chunks.extend(new_chunks);
         self.len = new_len;
         Ok(())

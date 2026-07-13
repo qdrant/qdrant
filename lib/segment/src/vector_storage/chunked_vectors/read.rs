@@ -583,4 +583,75 @@ mod tests {
             );
         }
     }
+
+    /// A `live_reload` that fails mid-way (transient I/O error re-opening the
+    /// last chunk) must leave the reader serving its pre-refresh state: the
+    /// old chunk handle stays live, so no previously-readable vector vanishes.
+    #[cfg(unix)]
+    #[test]
+    fn failed_live_reload_keeps_serving_pre_refresh_state() {
+        use std::os::unix::fs::PermissionsExt;
+
+        const DIM: usize = 32;
+        let dir = Builder::new()
+            .prefix("chunked_reload_err")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
+            MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        for s in 0..100 {
+            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+        assert_eq!(
+            reader.get::<Random>(99).unwrap().as_ref(),
+            make_vec(99, DIM).as_slice(),
+        );
+
+        // Grow within the same chunk so the reload takes the slow path.
+        for s in 100..150 {
+            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        // Inject a transient error: chunk 0 still exists but cannot be opened.
+        let chunk_file = chunk_name(dir.path(), 0);
+        fs_err::set_permissions(&chunk_file, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        let reloaded = reader.live_reload(&MmapFs, &empty, &empty, &hw);
+
+        // Restore before asserting, so a failure leaves the tempdir removable.
+        fs_err::set_permissions(&chunk_file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            reloaded.is_err(),
+            "reload must fail while chunk is unreadable"
+        );
+
+        // The failed reload must not have torn the pre-refresh state.
+        assert_eq!(reader.len(), 100);
+        assert_eq!(
+            reader.get::<Random>(99).as_deref(),
+            Some(make_vec(99, DIM).as_slice()),
+            "vector 99 must survive a failed reload",
+        );
+    }
 }

@@ -49,8 +49,8 @@ impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
 
     /// Exclusive upper bound of point offsets that may have a value.
     ///
-    /// Exact for the writable tracker; an upper bound (slot capacity) for the
-    /// read-only one — see [`TrackerRead::max_point_offset`].
+    /// Exact for the writable tracker; the stored header count as of the last
+    /// reload for the read-only one — see [`TrackerRead::max_point_offset`].
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         self.tracker.max_point_offset()
     }

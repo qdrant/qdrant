@@ -58,8 +58,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
 
     /// Exclusive upper bound of point offsets that may have a value.
     ///
-    /// An upper bound derived from the tracker file's slot capacity, not an
-    /// exact count — see
+    /// The writer-maintained count read from the stored tracker header, as of
+    /// the last [`Self::live_reload`] — see
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         self.view().max_point_offset()
