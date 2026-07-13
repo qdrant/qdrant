@@ -10,7 +10,6 @@ use crate::EdgeConfig;
 use crate::read_only::ReadOnlyEdgeShard;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
-use crate::read_only::load::load_segments_parallel;
 
 impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the
@@ -62,9 +61,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Internal seam: [`open`](Self::open) always discovers via the manifest, but tests inject other
     /// discovery strategies (e.g. a directory scan) here.
     ///
-    /// Every segment reported by the enumerator is opened read-only. The manifest is superset-biased,
-    /// so segments that cannot be loaded (not yet finalized, already deleted, or appendable) are
-    /// skipped rather than failing the open.
+    /// The initial load is a [`refresh`](Self::refresh) over an empty shard: same discovery, same
+    /// parallel load, same handling of segments that change while being loaded. The manifest is
+    /// superset-biased, so segments that cannot be loaded (not yet finalized, already deleted, or
+    /// appendable) are skipped rather than failing the open.
     pub(crate) fn open_with_enumerator(
         fs: S::Fs,
         path: &Path,
@@ -80,37 +80,25 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         // config alone: the CPU-derived default unless explicitly set.
         let search_pool = crate::pool::build_search_pool(provided_config.search_thread_count())?;
 
-        let mut loaded =
-            load_segments_parallel::<S>(&search_pool, &fs, enumerator.list_segments()?);
-        // Fold the derived config in UUID order so the derivation is deterministic.
-        loaded.sort_unstable_by_key(|(uuid, _)| *uuid);
-        let mut holder = ReadOnlySegmentHolder::default();
-        let mut segments_config: Option<EdgeConfig> = None;
-        for (uuid, segment) in loaded {
-            // Derive the shard config from the segments' own configs: folded over all of them, so
-            // a segment carrying no information about a parameter (e.g. a plain appendable one
-            // says nothing about HNSW) never masks one that does.
-            segments_config = Some(EdgeConfig::fold_from_segment_config(
-                segments_config,
-                &segment.segment_config,
-            ));
-            let appendable = segment.segment_config.is_appendable();
-            holder.insert(uuid, appendable, Arc::new(RwLock::new(segment)));
-        }
-
-        let config = match segments_config {
-            Some(derived) => merge_follower_config(provided_config, derived),
-            // Empty shard: no segments to derive from yet, refresh re-derives once they appear.
-            None => provided_config,
-        };
-
-        Ok(Self {
+        let shard = Self {
             path: path.to_path_buf(),
             fs,
-            config: RwLock::new(Arc::new(config)),
-            segments: RwLock::new(holder),
+            config: RwLock::new(Arc::new(provided_config.clone())),
+            segments: RwLock::new(ReadOnlySegmentHolder::default()),
             enumerator: Box::new(enumerator),
             search_pool,
-        })
+        };
+        shard.refresh()?;
+
+        // Open-only config overlay: caller-provided tunables win over the segment-derived ones
+        // (`refresh` re-derives from the segments alone — see the `config` field docs). For an
+        // empty shard the refresh left the provided config in place, and the overlay is a no-op.
+        let derived = shard.config.read().clone();
+        *shard.config.write() = Arc::new(merge_follower_config(
+            provided_config,
+            EdgeConfig::clone(&derived),
+        ));
+
+        Ok(shard)
     }
 }
