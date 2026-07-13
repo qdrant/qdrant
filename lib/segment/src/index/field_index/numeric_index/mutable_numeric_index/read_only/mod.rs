@@ -1,5 +1,5 @@
 use common::universal_io::UniversalRead;
-use gridstore::{Blob, GridstoreReader};
+use gridstore::{Blob, BlobstoreReader};
 
 use super::super::Encodable;
 use super::InMemoryNumericIndex;
@@ -12,8 +12,8 @@ mod read_ops;
 /// Read-only counterpart to [`super::MutableNumericIndex`].
 ///
 /// Owns the same in-memory state ([`InMemoryNumericIndex`]) but is backed by
-/// [`GridstoreReader`] over generic [`UniversalRead`] instead of a writable
-/// [`gridstore::Gridstore`]. Implements
+/// [`BlobstoreReader`] over generic [`UniversalRead`] instead of a writable
+/// [`gridstore::Blobstore`]. Implements
 /// [`super::super::numeric_index_read::NumericIndexRead`] by forwarding to the
 /// in-memory index; provides no mutation surface.
 ///
@@ -24,12 +24,12 @@ where
     Vec<T>: Blob,
 {
     pub(super) in_memory_index: InMemoryNumericIndex<T>,
-    /// Backing Gridstore reader, populated by [`Self::open`]. Held to keep the
+    /// Backing Blobstore reader, populated by [`Self::open`]. Held to keep the
     /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
     /// reads it lands with the storage-variant enum lifecycle (it isn't part of
     /// the [`NumericIndexRead`](super::super::numeric_index_read::NumericIndexRead) surface).
     #[allow(dead_code)]
-    pub(super) storage: GridstoreReader<Vec<T>, S>,
+    pub(super) storage: BlobstoreReader<Vec<T>, S>,
 }
 
 #[cfg(test)]

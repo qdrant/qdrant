@@ -1,5 +1,5 @@
 use common::universal_io::UniversalRead;
-use gridstore::GridstoreReader;
+use gridstore::BlobstoreReader;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
@@ -10,7 +10,7 @@ mod read_ops;
 
 #[derive(Debug)]
 pub struct ReadOnlySparseVectorStorage<S: UniversalRead> {
-    storage: GridstoreReader<StoredSparseVector, S>,
+    storage: BlobstoreReader<StoredSparseVector, S>,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     next_point_offset: usize,

@@ -1,5 +1,5 @@
 use common::universal_io::UniversalRead;
-use gridstore::GridstoreReader;
+use gridstore::BlobstoreReader;
 
 use super::inner::InMemoryGeoIndex;
 use crate::types::RawGeoPoint;
@@ -11,8 +11,8 @@ mod read_ops;
 /// Read-only counterpart to [`super::MutableGeoIndex`].
 ///
 /// Owns the same in-memory state ([`InMemoryGeoIndex`]) but is backed by
-/// [`GridstoreReader`] over generic [`UniversalRead`] instead of a writable
-/// [`gridstore::Gridstore`]. Implements
+/// [`BlobstoreReader`] over generic [`UniversalRead`] instead of a writable
+/// [`gridstore::Blobstore`]. Implements
 /// [`super::super::read_ops::GeoIndexRead`] by forwarding to the inner;
 /// provides no mutation surface.
 ///
@@ -20,9 +20,9 @@ mod read_ops;
 /// the Gridstore on disk.
 pub struct ReadOnlyAppendableGeoIndex<S: UniversalRead> {
     pub(super) in_memory_index: InMemoryGeoIndex,
-    /// Backing Gridstore reader. Kept open after the in-memory state is built
+    /// Backing Blobstore reader. Kept open after the in-memory state is built
     /// so `files` / `clear_cache` can drive the underlying storage.
-    pub(super) storage: GridstoreReader<Vec<RawGeoPoint>, S>,
+    pub(super) storage: BlobstoreReader<Vec<RawGeoPoint>, S>,
 }
 
 #[cfg(test)]
@@ -72,7 +72,7 @@ mod tests {
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, the
         // write-enforced backend: every open is asserted non-writable, so this
-        // only succeeds because `GridstoreReader::open` opens its pages and
+        // only succeeds because `BlobstoreReader::open` opens its pages and
         // tracker read-only.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();

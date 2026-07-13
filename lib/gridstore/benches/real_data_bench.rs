@@ -13,7 +13,7 @@ use rand::rngs::SmallRng;
 use serde_json::Value;
 
 /// Insert CSV data into the storage
-fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path) {
+fn append_csv_data(storage: &mut gridstore::Blobstore<Payload>, csv_path: &Path) {
     let csv_file = BufReader::new(File::open(csv_path).expect("file should open"));
     let mut rdr = csv::Reader::from_reader(csv_file);
     let mut point_offset = storage.max_point_offset();

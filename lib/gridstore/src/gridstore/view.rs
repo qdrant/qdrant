@@ -17,27 +17,27 @@ use crate::tracker::{PointOffset, PointerItem, ReadOnlyTracker, TrackerRead, Val
 ///
 /// Holds borrowed references to the underlying storage, and contains all reading logic.
 ///
-/// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
-pub struct GridstoreView<'a, V, S: UniversalRead> {
+/// Constructed from either [`super::Blobstore`] or [`super::BlobstoreReader`].
+pub struct BlobstoreView<'a, V, S: UniversalRead> {
     variant: ViewVariant<'a, V, S>,
 }
 
 /// Mode specific implementation of the view, see [`crate::config::Mode`].
 enum ViewVariant<'a, V, S: UniversalRead> {
-    Dynamic(DynamicGridstoreView<'a, V, S, ReadOnlyTracker<S>>),
-    AppendOnly(ArenastoreView<'a, V, S>),
+    Gridstore(GridstoreView<'a, V, S, ReadOnlyTracker<S>>),
+    Arenastore(ArenastoreView<'a, V, S>),
 }
 
-impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
-    pub(super) fn from_dynamic(view: DynamicGridstoreView<'a, V, S, ReadOnlyTracker<S>>) -> Self {
+impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
+    pub(super) fn from_gridstore(view: GridstoreView<'a, V, S, ReadOnlyTracker<S>>) -> Self {
         Self {
-            variant: ViewVariant::Dynamic(view),
+            variant: ViewVariant::Gridstore(view),
         }
     }
 
-    pub(super) fn from_append_only(view: ArenastoreView<'a, V, S>) -> Self {
+    pub(super) fn from_arenastore(view: ArenastoreView<'a, V, S>) -> Self {
         Self {
-            variant: ViewVariant::AppendOnly(view),
+            variant: ViewVariant::Arenastore(view),
         }
     }
 
@@ -47,8 +47,8 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     /// see [`TrackerRead::max_point_offset`].
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
-            ViewVariant::Dynamic(view) => view.max_point_offset(),
-            ViewVariant::AppendOnly(view) => Ok(view.max_point_offset()),
+            ViewVariant::Gridstore(view) => view.max_point_offset(),
+            ViewVariant::Arenastore(view) => Ok(view.max_point_offset()),
         }
     }
 
@@ -57,8 +57,8 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
     /// Approximate (total page capacity) in dynamic mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
-            ViewVariant::Dynamic(view) => view.get_storage_size_bytes(),
-            ViewVariant::AppendOnly(view) => view.get_storage_size_bytes(),
+            ViewVariant::Gridstore(view) => view.get_storage_size_bytes(),
+            ViewVariant::Arenastore(view) => view.get_storage_size_bytes(),
         }
     }
 
@@ -68,13 +68,13 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
         pointer: ValuePointer,
     ) -> Result<Cow<'_, [u8]>> {
         match &self.variant {
-            ViewVariant::Dynamic(view) => view.read_from_pages::<P>(pointer),
-            ViewVariant::AppendOnly(view) => view.read_from_page::<P>(pointer),
+            ViewVariant::Gridstore(view) => view.read_from_pages::<P>(pointer),
+            ViewVariant::Arenastore(view) => view.read_from_page::<P>(pointer),
         }
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     /// Get the value for a given point offset.
     pub fn get_value<P: AccessPattern>(
         &self,
@@ -82,8 +82,8 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         match &self.variant {
-            ViewVariant::Dynamic(view) => view.get_value::<P>(point_offset, hw_counter),
-            ViewVariant::AppendOnly(view) => view.get_value::<P>(point_offset, hw_counter),
+            ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset, hw_counter),
+            ViewVariant::Arenastore(view) => view.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -102,10 +102,10 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
         E: From<GridstoreError>,
     {
         match &self.variant {
-            ViewVariant::Dynamic(view) => {
+            ViewVariant::Gridstore(view) => {
                 view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ViewVariant::AppendOnly(view) => {
+            ViewVariant::Arenastore(view) => {
                 view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -117,16 +117,16 @@ impl<'a, V: Blob, S: UniversalRead> GridstoreView<'a, V, S> {
 /// Holds borrowed references to pages and tracker, and contains all reading logic.
 /// Generic over the storage backend `S` (same as [`Pages<S>`]) and over the
 /// tracker type `T` — the writable [`Tracker`](crate::tracker::Tracker) for
-/// [`super::Gridstore`], the [`ReadOnlyTracker`](crate::tracker::ReadOnlyTracker)
-/// for [`super::GridstoreReader`].
-pub(super) struct DynamicGridstoreView<'a, V, S: UniversalRead, T: TrackerRead<S>> {
+/// [`super::Blobstore`], the [`ReadOnlyTracker`](crate::tracker::ReadOnlyTracker)
+/// for [`super::BlobstoreReader`].
+pub(super) struct GridstoreView<'a, V, S: UniversalRead, T: TrackerRead<S>> {
     pub(super) config: &'a StorageConfig,
     pub(super) tracker: &'a T,
     pub(super) pages: &'a Pages<S>,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead, T: TrackerRead<S>> DynamicGridstoreView<'a, V, S, T> {
+impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
     pub(crate) fn new(config: &'a StorageConfig, tracker: &'a T, pages: &'a Pages<S>) -> Self {
         Self {
             config,
@@ -162,7 +162,7 @@ impl<'a, V, S: UniversalRead, T: TrackerRead<S>> DynamicGridstoreView<'a, V, S, 
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> DynamicGridstoreView<'a, V, S, T> {
+impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         self.config.compression.compress(value)
     }

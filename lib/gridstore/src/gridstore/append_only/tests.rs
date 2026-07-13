@@ -9,20 +9,20 @@ use crate::error::GridstoreError;
 use crate::fixtures::{Payload, empty_storage_append_only, random_payload};
 use crate::gridstore::reader::CONFIG_FILENAME;
 use crate::tracker::ValuePointer;
-use crate::{Gridstore, GridstoreReader, direct_io};
+use crate::{Blobstore, BlobstoreReader, direct_io};
 
 /// Size in bytes of a single mapping entry in the tracker file
 const TRACKER_ENTRY_SIZE: u64 = 16;
 
 /// Create an empty append-only storage of raw byte values, for precise size assertions.
-fn empty_byte_storage(compression: Compression) -> (TempDir, Gridstore<Vec<u8>>) {
+fn empty_byte_storage(compression: Compression) -> (TempDir, Blobstore<Vec<u8>>) {
     let dir = TempDir::new().unwrap();
     let options = StorageOptions {
         compression: Some(compression),
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
 
@@ -74,7 +74,7 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
     let payloads = (0..100)
@@ -107,7 +107,7 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
     // Everything is still there after reopening, the mode is selected automatically
     drop(storage);
     let storage =
-        Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     storage.as_arenastore();
     assert_eq!(storage.max_point_offset(), 100);
     for (point_offset, payload) in &payloads {
@@ -128,7 +128,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -182,7 +182,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     }
     drop(storage);
     let storage =
-        Gridstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 3);
     for point_offset in 0..3 {
         assert_eq!(
@@ -399,7 +399,7 @@ fn test_unflushed_puts_are_lost_after_reopen() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -414,7 +414,7 @@ fn test_unflushed_puts_are_lost_after_reopen() {
 
     // Without a flush, the puts are gone after reopening, and left nothing behind on disk
     let mut storage =
-        Gridstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 0);
     assert_eq!(storage.get_value::<Random>(0, &hw_counter).unwrap(), None);
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
@@ -436,7 +436,7 @@ fn test_stale_flusher_is_noop() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -470,7 +470,7 @@ fn test_stale_flusher_is_noop() {
 
     drop(storage);
     let storage =
-        Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 4);
     for point_offset in 0..4 {
         assert_eq!(
@@ -524,7 +524,7 @@ fn test_clear_preserves_append_only_mode() {
     // The recreated storage is still in append-only mode after reopening
     drop(storage);
     let storage =
-        Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     storage.as_arenastore();
     assert_eq!(storage.max_point_offset(), 1);
 }
@@ -553,13 +553,13 @@ fn test_open_or_create_keeps_mode_on_disk() {
         ..Default::default()
     };
     let storage =
-        Gridstore::<Payload>::open_or_create(MmapFs, path.clone(), options, Populate::No).unwrap();
+        Blobstore::<Payload>::open_or_create(MmapFs, path.clone(), options, Populate::No).unwrap();
     storage.as_arenastore();
     drop(storage);
 
     // Opening again ignores the create options, the mode comes from the persisted config
     let storage =
-        Gridstore::<Payload>::open_or_create(MmapFs, path, StorageOptions::default(), Populate::No)
+        Blobstore::<Payload>::open_or_create(MmapFs, path, StorageOptions::default(), Populate::No)
             .unwrap();
     storage.as_arenastore();
 }
@@ -572,7 +572,7 @@ fn test_reader_on_append_only_storage() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -585,7 +585,7 @@ fn test_reader_on_append_only_storage() {
 
     // The reader selects the append-only mode automatically
     let reader =
-        GridstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 5);
     assert!(reader.is_on_disk());
@@ -651,7 +651,7 @@ fn test_reader_live_reload() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -663,7 +663,7 @@ fn test_reader_live_reload() {
     storage.flusher()().unwrap();
 
     let mut reader =
-        GridstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 3);
 
@@ -707,7 +707,7 @@ fn test_reader_iter_many_values() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -726,7 +726,7 @@ fn test_reader_iter_many_values() {
     storage.flusher()().unwrap();
 
     let reader =
-        GridstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
 
     let mut expected = 0;
@@ -767,7 +767,7 @@ fn test_open_rejects_truncated_page_file() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -785,9 +785,9 @@ fn test_open_rejects_truncated_page_file() {
     file.set_len(100).unwrap();
     drop(file);
 
-    assert!(Gridstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
+    assert!(Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
     assert!(
-        GridstoreReader::<Vec<u8>, MmapFile>::open(
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(
             &MmapFs,
             dir.path().to_path_buf(),
             Populate::No,
@@ -808,7 +808,7 @@ fn test_read_from_pages_rejects_unknown_page() {
     storage.flusher()().unwrap();
 
     let reader =
-        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
 
     // All values live in page 0, a pointer to any other page must not read anything
@@ -826,7 +826,7 @@ fn test_writes_only_append() {
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-    let put = |storage: &mut Gridstore<Payload>, point_offset: u32, value: &str| {
+    let put = |storage: &mut Blobstore<Payload>, point_offset: u32, value: &str| {
         let mut payload = Payload::default();
         payload.0.insert(
             "key".to_string(),
@@ -1003,7 +1003,7 @@ fn test_tracker_pads_mapping_gap_with_zeroes() {
     // Same after reopen; the count is derived from the exact file length
     let path = dir.path().to_path_buf();
     drop(storage);
-    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 4);
     assert!(
         storage
@@ -1164,7 +1164,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
     // On reopen, only the flushed mappings are left
     let path = dir.path().to_path_buf();
     drop(storage);
-    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 3);
     for (point_offset, payload) in payloads.iter().enumerate() {
         let expected = (point_offset < 3).then_some(payload);
@@ -1191,7 +1191,7 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
         mode: Some(created),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+    let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
     let hw_counter = HardwareCounterCell::new();
     storage
         .put_value(
@@ -1216,13 +1216,13 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
     // The other mode never finds its own files, so opening fails instead of misreading
-    assert!(Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
-    assert!(GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
+    assert!(Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
+    assert!(BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
 }
 
 /// Replaying puts of already persisted point offsets (e.g. a WAL redo after a crash where
 /// the flush completed but was never acknowledged) is rejected without writing anything;
-/// [`Gridstore::max_point_offset`] is the exact offset a replay must resume at.
+/// [`Blobstore::max_point_offset`] is the exact offset a replay must resume at.
 #[test]
 fn test_replayed_puts_leave_storage_intact() {
     let dir = TempDir::new().unwrap();
@@ -1237,7 +1237,7 @@ fn test_replayed_puts_leave_storage_intact() {
             mode: Some(Mode::AppendOnly),
             ..Default::default()
         };
-        let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+        let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
                 .put_value(point_offset as u32, payload, hw_counter_ref)
@@ -1247,7 +1247,7 @@ fn test_replayed_puts_leave_storage_intact() {
     }
 
     // "Crash" and replay all operations against the reopened storage
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     let tracker_snapshot = fs::read(storage.files()[0].clone()).unwrap();
     let page_len = storage.get_storage_size_bytes().unwrap();
 
@@ -1301,7 +1301,7 @@ fn test_zero_extended_tracker_reads_none() {
             mode: Some(Mode::AppendOnly),
             ..Default::default()
         };
-        let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+        let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
                 .put_value(point_offset as u32, payload, hw_counter_ref)
@@ -1320,7 +1320,7 @@ fn test_zero_extended_tracker_reads_none() {
     drop(file);
 
     // The zeroed entries count as mappings without a value
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 5);
     assert!(
         storage
@@ -1360,7 +1360,7 @@ fn test_zero_extended_tracker_reads_none() {
 
     // The reader agrees on the same view
     drop(storage);
-    let reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+    let reader = BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 6);
     assert!(
         reader
@@ -1386,7 +1386,7 @@ fn test_reader_never_writes() {
             mode: Some(Mode::AppendOnly),
             ..Default::default()
         };
-        let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+        let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
                 .put_value(point_offset as u32, payload, hw_counter_ref)
@@ -1411,7 +1411,7 @@ fn test_reader_never_writes() {
 
     // Open a reader and exercise every read path
     let mut reader =
-        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
     assert_eq!(
         reader.max_point_offset().unwrap(),
         5,
@@ -1462,7 +1462,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
         mode: Some(Mode::AppendOnly),
         ..Default::default()
     };
-    let mut storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+    let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
 
     // The values that must be visible after a reopen
     let mut flushed: Vec<Payload> = Vec::new();
@@ -1485,7 +1485,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
 
         // Every reopen must expose exactly the flushed values
         drop(storage);
-        storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
 
         assert_eq!(storage.max_point_offset(), flushed.len() as u32);
         assert_eq!(

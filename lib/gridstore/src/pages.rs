@@ -35,14 +35,14 @@ pub fn page_open_options(populate: Populate, writeable: bool) -> OpenOptions {
 pub(crate) struct Pages<S> {
     base_path: PathBuf,
     pages: Vec<S>,
-    /// Whether attached pages are opened writable. The writable [`Gridstore`]
-    /// opens writable so it can append; a read-only [`GridstoreReader`] opens
+    /// Whether attached pages are opened writable. The writable [`Blobstore`]
+    /// opens writable so it can append; a read-only [`BlobstoreReader`] opens
     /// non-writable so it can sit on a write-enforced backend (e.g.
     /// `ReadOnly<MmapFile>`). Applied by [`Self::attach_page`] to every page,
     /// including those attached later by grow / `live_reload`.
     ///
-    /// [`Gridstore`]: crate::Gridstore
-    /// [`GridstoreReader`]: crate::GridstoreReader
+    /// [`Blobstore`]: crate::Blobstore
+    /// [`BlobstoreReader`]: crate::BlobstoreReader
     writeable: bool,
 }
 

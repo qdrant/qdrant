@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Gridstore;
+use gridstore::Blobstore;
 use itertools::Itertools;
 
 use super::super::FullTextIndex;
@@ -30,7 +30,7 @@ impl MutableFullTextIndex {
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Gridstore::open_or_create(MmapFs, path, GRIDSTORE_OPTIONS, Populate::Blocking).map_err(
+            Blobstore::open_or_create(MmapFs, path, GRIDSTORE_OPTIONS, Populate::Blocking).map_err(
                 |err| {
                     OperationError::service_error(format!(
                         "failed to open mutable full text index on gridstore: {err}"
@@ -38,7 +38,7 @@ impl MutableFullTextIndex {
                 },
             )?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable full text index on gridstore: {err}"
                 ))

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::GridstoreReader;
+use gridstore::BlobstoreReader;
 
 use super::super::inner::MutableFullTextIndexInner;
 use super::ReadOnlyAppendableFullTextIndex;
@@ -18,9 +18,9 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     ///
     /// Returns whether the on-disk directory exists.
     pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
-        // Gridstore reader
+        // Blobstore reader
         Ok(
-            GridstoreReader::<Vec<u8>, S>::preopen(fs, dir, Populate::PreferBackground)
+            BlobstoreReader::<Vec<u8>, S>::preopen(fs, dir, Populate::PreferBackground)
                 .ok_not_found()?
                 .is_some(),
         )
@@ -29,12 +29,12 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     /// Open the appendable (Gridstore) full-text index read-only, threading
     /// every file open through the filesystem handle `fs`.
     ///
-    /// Opens a [`GridstoreReader`] over the generic filesystem object, then
+    /// Opens a [`BlobstoreReader`] over the generic filesystem object, then
     /// rebuilds the in-memory inverted index by replaying every stored,
     /// CBOR-serialized document through [`MutableInvertedIndexBuilder`] — the
     /// exact reconstruction the writable
     /// [`MutableFullTextIndex::open_gridstore`][1] performs over a writable
-    /// [`gridstore::Gridstore`]. No write path; the reader is retained for
+    /// [`gridstore::Blobstore`]. No write path; the reader is retained for
     /// later `files` / `clear_cache` use.
     ///
     /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching
@@ -48,7 +48,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
-            GridstoreReader::<Vec<u8>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
+            BlobstoreReader::<Vec<u8>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
         else {
             // Files don't exist, cannot load
             return Ok(None);

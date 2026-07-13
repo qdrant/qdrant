@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate, UniversalRead};
 use gridstore::error::GridstoreError;
-use gridstore::{Blob, Gridstore};
+use gridstore::{Blob, Blobstore};
 
 use super::super::Encodable;
 use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
@@ -157,13 +157,13 @@ where
     pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             let options = default_gridstore_options::<T>();
-            Gridstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
+            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable numeric index on gridstore: {err}"
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable numeric index on gridstore: {err}"
                 ))

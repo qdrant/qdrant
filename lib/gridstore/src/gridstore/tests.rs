@@ -245,7 +245,7 @@ fn test_update_single_payload() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     let put_payload =
-        |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+        |storage: &mut Blobstore<Payload>, payload_value: &str, expected_block_offset: u32| {
             let mut payload = Payload::default();
             payload.0.insert(
                 "key".to_string(),
@@ -595,7 +595,7 @@ fn test_behave_like_hashmap(
 
     // reopen storage
     let storage =
-        Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     // assert same size
     assert_eq!(storage.get_storage_size_bytes().unwrap(), before_size);
     // assert same length
@@ -702,7 +702,7 @@ fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::AppendOnly)] mod
             mode: Some(mode),
             ..Default::default()
         };
-        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
+        let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), options).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
 
         let page_mapping = storage.get_pointer(0).unwrap();
@@ -718,7 +718,7 @@ fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::AppendOnly)] mod
     }
 
     // reopen storage, the mode is selected automatically
-    let storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 1);
 
     let stored_payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -735,7 +735,7 @@ fn test_open_config_without_mode_as_dynamic() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
         storage
             .put_value(0, &minimal_payload(), hw_counter_ref)
             .unwrap();
@@ -754,14 +754,14 @@ fn test_open_config_without_mode_as_dynamic() {
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
     // Both the storage and the reader open it in dynamic mode
-    let storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     storage.as_gridstore();
     assert_eq!(
         storage.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(minimal_payload()),
     );
 
-    let reader = GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+    let reader = BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
     assert_eq!(
         reader.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(minimal_payload()),
@@ -780,7 +780,7 @@ fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::AppendOnly)] m
             mode: Some(mode),
             ..Default::default()
         };
-        let storage = Gridstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
+        let storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         storage.flusher()().unwrap();
     }
 
@@ -792,8 +792,8 @@ fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::AppendOnly)] m
     config.insert("block_size_bytes".to_string(), 0.into());
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-    assert!(Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
-    assert!(GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
+    assert!(Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
+    assert!(BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
 }
 
 #[test]
@@ -801,7 +801,7 @@ fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::AppendOnly)] m
 fn test_with_real_hm_data() {
     const EXPECTED_LEN: usize = 105_542;
 
-    fn write_data(storage: &mut Gridstore<Payload>, init_offset: u32) -> u32 {
+    fn write_data(storage: &mut Blobstore<Payload>, init_offset: u32) -> u32 {
         let csv_path = dataset::Dataset::HMArticles
             .download()
             .expect("download should succeed");
@@ -831,7 +831,7 @@ fn test_with_real_hm_data() {
         point_offset
     }
 
-    fn storage_double_pass_is_consistent(storage: &Gridstore<Payload>, right_shift_offset: u32) {
+    fn storage_double_pass_is_consistent(storage: &Blobstore<Payload>, right_shift_offset: u32) {
         let csv_path = dataset::Dataset::HMArticles
             .download()
             .expect("download should succeed");
@@ -884,7 +884,7 @@ fn test_with_real_hm_data() {
     storage.flusher()().unwrap();
     drop(storage);
 
-    let mut storage = Gridstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    let mut storage = Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 4);
     assert_eq!(
@@ -948,7 +948,7 @@ fn test_different_block_sizes(
         mode: Some(mode),
         ..Default::default()
     };
-    let mut storage = Gridstore::<_>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let mut storage = Blobstore::<_>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -996,7 +996,7 @@ fn test_deferred_flush() {
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-    let get_payload = |storage: &Gridstore<Payload>| {
+    let get_payload = |storage: &Blobstore<Payload>| {
         storage
             .get_value::<Random>(0, &hw_counter)
             .expect("no io error")
@@ -1009,7 +1009,7 @@ fn test_deferred_flush() {
             .to_owned()
     };
     let put_payload =
-        |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+        |storage: &mut Blobstore<Payload>, payload_value: &str, expected_block_offset: u32| {
             let mut payload = Payload::default();
             payload.0.insert(
                 "key".to_string(),
@@ -1063,7 +1063,7 @@ fn test_deferred_flush() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
 
     // On reopen, we expect to read the data at the time the flusher was created
@@ -1090,7 +1090,7 @@ fn test_deferred_flush_with_delete() {
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-    let get_payload = |storage: &Gridstore<Payload>| {
+    let get_payload = |storage: &Blobstore<Payload>| {
         Some(
             storage
                 .get_value::<Random>(0, &hw_counter)
@@ -1104,7 +1104,7 @@ fn test_deferred_flush_with_delete() {
         )
     };
     let put_payload =
-        |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+        |storage: &mut Blobstore<Payload>, payload_value: &str, expected_block_offset: u32| {
             let mut payload = Payload::default();
             payload.0.insert(
                 "key".to_string(),
@@ -1148,7 +1148,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();
@@ -1167,7 +1167,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
 
     // On reopen, delete was flushed this time, expect point to be missing
@@ -1192,7 +1192,7 @@ fn test_deferred_flush_with_delete() {
 
     // Reopen gridstore
     drop(storage);
-    let mut storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
 
     // On reopen, value 4 was flushed, expect to read it
@@ -1218,28 +1218,28 @@ fn test_deferred_flush_with_delete() {
 
     // Not flushed, still expect to read value 4
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
     }
 
     // First flusher flushed, expect to read value 5 if we load from disk
     flusher_1_value_5().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
     }
 
     // Second flusher flushed, expect point to be missing if we load from disk
     flusher_2_delete().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
         assert!(get_payload(&tmp_storage).is_none());
     }
 
     // Third flusher flushed, expect to read value 6 if we load from disk
     flusher_3_value_6().unwrap();
     {
-        let tmp_storage = Gridstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
         assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
     }
 
@@ -1252,13 +1252,13 @@ fn test_deferred_flush_with_delete() {
     );
 }
 
-/// Test that `GridstoreReader::live_reload` picks up new data written by a `Gridstore`.
+/// Test that `BlobstoreReader::live_reload` picks up new data written by a `Blobstore`.
 ///
 /// Scenario:
-/// 1. Create a writable Gridstore, write some data, flush.
-/// 2. Open a GridstoreReader on the same path.
+/// 1. Create a writable Blobstore, write some data, flush.
+/// 2. Open a BlobstoreReader on the same path.
 /// 3. Verify reader sees initial data.
-/// 4. Write more data via Gridstore, flush.
+/// 4. Write more data via Blobstore, flush.
 /// 5. Call `live_reload` on reader, verify it sees new data.
 /// 6. Also test that live_reload is a no-op when nothing changed.
 #[rstest]
@@ -1283,7 +1283,7 @@ fn test_live_reload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
         mode: Some(mode),
         ..Default::default()
     };
-    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
+    let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), options).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     let payload_1 = make_payload("key", "value_1");
@@ -1293,7 +1293,7 @@ fn test_live_reload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
 
     // Step 2: Open a reader
     let mut reader =
-        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 2);
 
     // Step 3: Verify reader sees initial data
@@ -1368,7 +1368,7 @@ fn test_live_reload_disk_cache() {
 
     // The writer works on the "remote" directly; the reader mirrors it into
     // `local_root` through the disk cache.
-    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+    let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
@@ -1379,7 +1379,7 @@ fn test_live_reload_disk_cache() {
         remote: Default::default(),
     })
     .unwrap();
-    let mut reader = GridstoreReader::<Payload, DiskCache<MmapFile>>::open(
+    let mut reader = BlobstoreReader::<Payload, DiskCache<MmapFile>>::open(
         &cache_fs,
         path.clone(),
         Populate::No,
@@ -1429,7 +1429,7 @@ fn test_live_reload_across_pages() {
         page_size_bytes: Some(page_size),
         ..Default::default()
     };
-    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), options).unwrap();
+    let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), options).unwrap();
 
     let payload = minimal_payload();
 
@@ -1445,7 +1445,7 @@ fn test_live_reload_across_pages() {
 
     // Open reader
     let mut reader =
-        GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), first_batch);
 
     // Verify reader can read all initial data
@@ -1486,7 +1486,7 @@ fn test_live_reload_across_pages() {
     }
 }
 
-/// Test that data is only actually flushed when the Gridstore instance is still valid
+/// Test that data is only actually flushed when the Blobstore instance is still valid
 ///
 /// Specifically:
 /// - ensure that 'late' flushers don't write any data if already invalidated by a clear or
@@ -1498,7 +1498,7 @@ fn test_skip_deferred_flush_after_clear() {
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-    let put_payload = |storage: &mut Gridstore<Payload>, point_offset: u32, payload_value: &str| {
+    let put_payload = |storage: &mut Blobstore<Payload>, point_offset: u32, payload_value: &str| {
         let mut payload = Payload::default();
         payload.0.insert(
             "key".to_string(),
@@ -1559,7 +1559,7 @@ fn test_skip_deferred_flush_after_clear() {
 
     // If we reopen the storage it must still be empty
     drop(storage);
-    let storage = Gridstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
@@ -1633,7 +1633,7 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
     }
 }
 
-/// `GridstoreView::for_each_in_batch` must yield the same values as calling
+/// `BlobstoreView::for_each_in_batch` must yield the same values as calling
 /// `get_value` per offset, including missing/out-of-range offsets that should be
 /// silently skipped (matching `get_value`'s `Ok(None)`).
 #[rstest]
@@ -1769,7 +1769,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Dynamic, Mode::AppendOnl
     let fs = RoFs::from_context(Default::default()).unwrap();
     let mut cached_fs = CachedFs::new(fs, dir.path()).unwrap();
     cached_fs.cache_file_info().unwrap();
-    GridstoreReader::<Payload, ReadOnly<MmapFile>>::preopen(
+    BlobstoreReader::<Payload, ReadOnly<MmapFile>>::preopen(
         &cached_fs,
         dir.path().to_path_buf(),
         Populate::No,
@@ -1786,7 +1786,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Dynamic, Mode::AppendOnl
         fs::remove_file(dir.path().join(file)).unwrap();
     }
 
-    let reader = GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(
+    let reader = BlobstoreReader::<Payload, ReadOnly<MmapFile>>::open(
         &cached_fs,
         dir.path().to_path_buf(),
         Populate::No,
@@ -1798,7 +1798,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Dynamic, Mode::AppendOnl
     );
 }
 
-/// Opening a [`GridstoreReader`] must not require a writable backend: a reader
+/// Opening a [`BlobstoreReader`] must not require a writable backend: a reader
 /// only reads. Backing it with the write-enforced `ReadOnly<MmapFile>` (which
 /// `debug_assert!`s every open is non-writable) only succeeds if the reader
 /// opens its pages and tracker read-only.
@@ -1823,7 +1823,7 @@ fn read_only_reader_over_write_enforced_backend() {
     // Reopen read-only over the write-enforced backend.
     type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
     let fs = RoFs::from_context(Default::default()).unwrap();
-    let reader = GridstoreReader::<Payload, ReadOnly<MmapFile>>::open(
+    let reader = BlobstoreReader::<Payload, ReadOnly<MmapFile>>::open(
         &fs,
         dir.path().to_path_buf(),
         Populate::No,

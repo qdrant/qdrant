@@ -159,7 +159,7 @@ fn read_slot<S: UniversalRead>(
 ///
 /// Keeps track of the places where the value for a point offset have been written, until we persist them.
 ///
-/// In context of Gridstore, for each point offset this means:
+/// In context of Blobstore, for each point offset this means:
 ///
 /// - `current` is the value the tracker should report and become persisted when flushing.
 ///   If exists, `Some`; otherwise, `None`.

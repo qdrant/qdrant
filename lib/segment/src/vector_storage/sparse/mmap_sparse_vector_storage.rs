@@ -11,7 +11,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
 use gridstore::config::{Compression, StorageOptions};
-use gridstore::{Blob, Gridstore};
+use gridstore::{Blob, Blobstore};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -31,7 +31,7 @@ pub(crate) const STORAGE_DIRNAME: &str = "store";
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
-    storage: Gridstore<StoredSparseVector>,
+    storage: Blobstore<StoredSparseVector>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -61,7 +61,7 @@ impl MmapSparseVectorStorage {
 
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(MmapFs, storage_dir, populate).map_err(|err| {
+        let storage = Blobstore::open(MmapFs, storage_dir, populate).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
@@ -102,7 +102,7 @@ impl MmapSparseVectorStorage {
             ..Default::default()
         };
 
-        let storage = Gridstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
+        let storage = Blobstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))
