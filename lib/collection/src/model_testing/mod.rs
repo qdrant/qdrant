@@ -25,9 +25,9 @@ use crate::shards::shard::PeerId;
 const PEER_ID: PeerId = 1;
 const COLLECTION_NAME: &str = "test";
 
-/// Static metadata for every vector name the test might ever activate. Eight names start
-/// active in the fixture ("a", "b", "i", "s", "m", "q", "h", "y", see `INITIAL_ACTIVE`);
-/// "c" and "u" are reachable through `Op::CreateVectorName`.
+/// Static metadata for every vector name the test might ever activate. Ten names start
+/// active in the fixture ("a", "b", "i", "s", "m", "q", "h", "y", "w", "z", see
+/// `INITIAL_ACTIVE`); "c" and "u" are reachable through `Op::CreateVectorName`.
 pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "a",
@@ -93,27 +93,47 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         kind: VectorKind::Dense(4),
         datatype: Some(Datatype::Uint8),
     },
+    // Multi-vector variants of the lossy-but-idempotent datatypes: each stored row goes
+    // through the same per-component round-trip as its dense counterpart ("h" / "y").
+    VectorCandidate {
+        name: "w",
+        kind: VectorKind::MultiDense(5),
+        datatype: Some(Datatype::Float16),
+    },
+    VectorCandidate {
+        name: "z",
+        kind: VectorKind::MultiDense(3),
+        datatype: Some(Datatype::Uint8),
+    },
 ];
 
-// The `datatype` override is only plumbed for plain dense candidates: the fixture's
-// sparse/multi-dense arms ignore it, `model_vector` has no multi-dense round-trip
-// prediction, and multi-dense read-backs are compared exactly rather than through
-// `dense_matches`. Fail the build if a non-Dense candidate ever carries one, instead
-// of soak-panicking with a false divergence at runtime.
+// Reject kind/datatype combinations the model cannot predict yet, at compile time
+// rather than as a false-divergence soak panic hours into a run:
+// - MultiDense + Turbo4: `model_vector` predicts Turbo4 via the per-vector
+//   `turbo_storage_roundtrip`; the engine's multivector quantization path differs, so
+//   there is no prediction for it. Float16/Uint8 multi-dense are fine: each row takes
+//   the same per-component round-trip as the dense case.
+// - Sparse + any datatype: the fixture's sparse arm ignores the field entirely
+//   (sparse datatype lives in the sparse index config, which is not modeled).
 const _: () = {
     let mut i = 0;
     while i < ALL_CANDIDATES.len() {
         let c = &ALL_CANDIDATES[i];
+        let supported = match c.kind {
+            VectorKind::Dense(_) => true,
+            VectorKind::MultiDense(_) => !matches!(c.datatype, Some(Datatype::Turbo4)),
+            VectorKind::Sparse => c.datatype.is_none(),
+        };
         assert!(
-            matches!(c.kind, VectorKind::Dense(_)) || c.datatype.is_none(),
-            "datatype overrides are only supported for VectorKind::Dense candidates"
+            supported,
+            "unsupported kind/datatype combination in ALL_CANDIDATES (see comment above)"
         );
         i += 1;
     }
 };
 
 /// Names present in the collection schema at fixture time.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m", "q", "h", "y"];
+pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m", "q", "h", "y", "w", "z"];
 
 /// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
 pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
@@ -122,8 +142,9 @@ pub(super) struct VectorCandidate {
     pub(super) name: &'static str,
     pub(super) kind: VectorKind,
     /// Storage datatype override; `None` leaves the schema field unset so the engine's
-    /// default (Float32) resolution applies. Only supported for `VectorKind::Dense` today,
-    /// enforced by the compile-time check next to `ALL_CANDIDATES`.
+    /// default (Float32) resolution applies. Supported for `VectorKind::Dense` (all
+    /// datatypes) and `VectorKind::MultiDense` (all but Turbo4); enforced by the
+    /// compile-time check next to `ALL_CANDIDATES`.
     pub(super) datatype: Option<Datatype>,
 }
 

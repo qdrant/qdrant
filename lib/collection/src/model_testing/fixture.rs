@@ -114,6 +114,9 @@ pub(super) async fn fixture(
                 if on_disk {
                     builder = builder.with_on_disk(true);
                 }
+                if let Some(datatype) = candidate.datatype {
+                    builder = builder.with_datatype(datatype);
+                }
                 let mut params = builder.build();
                 params.multivector_config = Some(MultiVectorConfig::default());
                 dense_vectors.insert(name.to_string(), params);

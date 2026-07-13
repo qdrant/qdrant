@@ -877,19 +877,22 @@ pub(super) fn model_entry_from(vecs: &NamedVectors, payload: &Payload) -> ModelE
     }
 }
 
-/// Predicted engine read-back for `value` stored under `name`. Dense vectors with a lossy
-/// storage datatype must record the storage round-trip instead of the inserted value:
+/// Predicted engine read-back for `value` stored under `name`. Dense and multi-dense
+/// vectors with a lossy storage datatype must record the storage round-trip instead of
+/// the inserted value:
 ///
-/// - Turbo4 stores 4-bit quantized codes and returns the dequantized vector. The
-///   round-trip is deterministic (fixed rotation seeds), shared across segments and
-///   reloads, but not idempotent (re-quantizing a read-back shifts the stored norm), so
-///   canonicalizing at generation time would not converge. The engine still receives the
-///   original vector.
+/// - Turbo4 (dense only) stores 4-bit quantized codes and returns the dequantized
+///   vector. The round-trip is deterministic (fixed rotation seeds), shared across
+///   segments and reloads, but not idempotent (re-quantizing a read-back shifts the
+///   stored norm), so canonicalizing at generation time would not converge. The engine
+///   still receives the original vector.
 /// - Float16 rounds each component through f16; Uint8 truncates with `x as u8`. Both are
 ///   deterministic and idempotent (re-storing a read-back is a no-op), so the model's
 ///   prediction stays exact even across copy-on-write point moves. The prediction goes
 ///   through the engine's own `PrimitiveVectorElement` impls (like Turbo4 reuses
-///   `turbo_storage_roundtrip`) so it tracks the engine by construction.
+///   `turbo_storage_roundtrip`) so it tracks the engine by construction. Multi-dense
+///   storage converts the flattened matrix component-wise (see `from_float_multivector`),
+///   so per-row round-trips predict it exactly.
 pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
     let candidate = candidate_of(name);
     match (candidate.kind, value) {
@@ -905,8 +908,24 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
             }
             Some(Datatype::Float32) | None => value.clone(),
         },
-        (VectorKind::Sparse, VectorValue::Sparse(_))
-        | (VectorKind::MultiDense(_), VectorValue::MultiDense(_)) => value.clone(),
+        (VectorKind::MultiDense(_), VectorValue::MultiDense(rows)) => match candidate.datatype {
+            Some(Datatype::Float16) => VectorValue::MultiDense(
+                rows.iter()
+                    .map(|row| primitive_storage_roundtrip::<VectorElementTypeHalf>(row))
+                    .collect(),
+            ),
+            Some(Datatype::Uint8) => VectorValue::MultiDense(
+                rows.iter()
+                    .map(|row| primitive_storage_roundtrip::<VectorElementTypeByte>(row))
+                    .collect(),
+            ),
+            // Rejected by the compile-time check next to `ALL_CANDIDATES`.
+            Some(Datatype::Turbo4) => {
+                panic!("model_vector: Turbo4 multi-dense has no read-back prediction")
+            }
+            Some(Datatype::Float32) | None => value.clone(),
+        },
+        (VectorKind::Sparse, VectorValue::Sparse(_)) => value.clone(),
         (kind, value) => {
             panic!("model_vector: value/kind mismatch for `{name}` ({kind:?}): {value:?}")
         }
