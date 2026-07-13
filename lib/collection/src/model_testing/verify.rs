@@ -139,8 +139,8 @@ pub(super) type ClockTicks = BTreeMap<ShardId, BTreeMap<(PeerId, u32), u64>>;
 /// submit, so with no op in flight the recovery point is stable.
 ///
 /// Note: the recovery point is derived from the clocks *snapshot* when one is set
-/// (`ClockMap::to_recovery_point`), but only the WAL-less shard-transfer flow sets one — never
-/// this harness — so this always reads the live clocks.
+/// (`ClockMap::to_recovery_point`), but only the WAL-less shard-transfer flow sets one (never
+/// this harness), so this always reads the live clocks.
 pub(super) async fn collect_clock_ticks(collection: &Collection) -> ClockTicks {
     let holder = collection.shards_holder.read().await;
     let mut out = ClockTicks::new();

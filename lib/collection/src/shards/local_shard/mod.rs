@@ -925,18 +925,25 @@ impl LocalShard {
             // runs independently of the `prevent_unoptimized` flag's value: the flag only gates
             // the worker's deferred-points wait, not whether the tail is queued here.
             //
-            // `last_wal_index` is one past the last entry (`first_index + len`), so this range is
-            // end-*exclusive* (`..`) even though the send loop below is `..=`: `read_range` errors
-            // on a missing index, and `..=last_wal_index` would try to read that non-existent entry.
+            // An unreadable entry is logged and skipped (its clock tag is lost, but its op_num is
+            // still enqueued below): the worker re-reads it and tolerates the same failure by
+            // log-and-skip, and failing the whole shard load here would turn a single bad tail
+            // entry into a node that cannot start.
+            //
+            // Two passes because the `read_range` iterator borrows the WAL and is not `Send`,
+            // so it cannot be held across the channel-send await below. The range end is
+            // `last_wal_index` *exclusive*: it is one past the last entry (`first_index + len`).
             for entry in wal.read_range(to..last_wal_index) {
-                let (_op_num, update) = entry.map_err(|e| {
-                    CollectionError::service_error(format!(
-                        "Failed to read WAL tail during recovery of {}: {e}",
+                match entry {
+                    Ok((_op_num, update)) => {
+                        if let Some(clock_tag) = update.clock_tag {
+                            newest_clocks.advance_clock(clock_tag);
+                        }
+                    }
+                    Err(err) => log::error!(
+                        "Failed to read WAL tail entry during recovery of {}: {err}",
                         self.path.display(),
-                    ))
-                })?;
-                if let Some(clock_tag) = update.clock_tag {
-                    newest_clocks.advance_clock(clock_tag);
+                    ),
                 }
             }
             log::info!(
@@ -946,7 +953,7 @@ impl LocalShard {
             let update_sender = self.update_sender.load();
             // TODO use proper collection's hardware measurement
             let hw_measurements = HwMeasurementAcc::disposable();
-            for op_num in to..=last_wal_index {
+            for op_num in to..last_wal_index {
                 update_sender
                     .send(UpdateSignal::Operation(OperationData {
                         op_num,

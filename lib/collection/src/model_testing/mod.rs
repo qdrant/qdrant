@@ -367,8 +367,8 @@ pub async fn run(
             let live = verify::collect_model_from_collection(&collection).await;
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
             // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
-            // (extra/missing ids) is the established postmortem signature for that class — keep
-            // it first so known failures keep their signature. A clocks-only mismatch (data
+            // (extra/missing ids) is the established postmortem signature for that class, so it
+            // stays first and known failures keep their signature. A clocks-only mismatch (data
             // intact, clock state wrong) then surfaces distinctly here.
             let post_clocks = verify::collect_clock_ticks(&collection).await;
             verify::assert_clocks_match(&pre_clocks, &post_clocks, &format!("restart at op:{i}"));
