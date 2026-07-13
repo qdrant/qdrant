@@ -71,6 +71,18 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                     sync_op.points.iter().map(|x| x.id).collect(),
                 ))
             }
+            point_ops::PointOperations::UpsertPointsRaw(points) => {
+                OperationEffectArea::Points(Cow::Owned(points.iter().map(|x| x.id).collect()))
+            }
+            point_ops::PointOperations::SyncPointsRaw(sync_op) => {
+                debug_assert!(
+                    false,
+                    "SyncPointsRaw operation should not be used during transfer"
+                );
+                OperationEffectArea::Points(Cow::Owned(
+                    sync_op.points.iter().map(|x| x.id).collect(),
+                ))
+            }
         }
     }
 }

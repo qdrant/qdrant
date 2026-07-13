@@ -1249,16 +1249,23 @@ pub async fn update(
         wait_override.unwrap_or_else(|| collection::shards::shard_trait::WaitUntil::from(wait));
 
     let shard_selector = match operation {
-        CollectionUpdateOperations::PointOperation(point_ops::PointOperations::SyncPoints(_)) => {
+        CollectionUpdateOperations::PointOperation(
+            point_ops::PointOperations::SyncPoints(_)
+            | point_ops::PointOperations::SyncPointsRaw(_)
+            | point_ops::PointOperations::UpsertPointsRaw(_),
+        ) => {
             debug_assert_eq!(
                 shard_key, None,
-                "Sync points operations can't specify shard key"
+                "Sync points and raw point operations can't specify shard key"
             );
 
             match shard_id {
                 Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
                 None => {
-                    debug_assert!(false, "Sync operation is supposed to select shard directly");
+                    debug_assert!(
+                        false,
+                        "Sync and raw operations are supposed to select shard directly"
+                    );
                     ShardSelectorInternal::Empty
                 }
             }
