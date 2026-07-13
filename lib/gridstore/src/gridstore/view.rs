@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{UniversalRead, UserData};
 
-use super::append_only::AppendOnlyGridstoreView;
+use super::append_only::ArenastoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
@@ -25,7 +25,7 @@ pub struct GridstoreView<'a, V, S: UniversalRead> {
 /// Mode specific implementation of the view, see [`crate::config::Mode`].
 enum ViewVariant<'a, V, S: UniversalRead> {
     Dynamic(DynamicGridstoreView<'a, V, S, ReadOnlyTracker<S>>),
-    AppendOnly(AppendOnlyGridstoreView<'a, V, S>),
+    AppendOnly(ArenastoreView<'a, V, S>),
 }
 
 impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
@@ -35,7 +35,7 @@ impl<'a, V, S: UniversalRead> GridstoreView<'a, V, S> {
         }
     }
 
-    pub(super) fn from_append_only(view: AppendOnlyGridstoreView<'a, V, S>) -> Self {
+    pub(super) fn from_append_only(view: ArenastoreView<'a, V, S>) -> Self {
         Self {
             variant: ViewVariant::AppendOnly(view),
         }

@@ -9,7 +9,7 @@ use common::universal_io::{
     CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 
-use super::append_only::AppendOnlyGridstoreReader;
+use super::append_only::ArenastoreReader;
 use super::view::{DynamicGridstoreView, GridstoreView};
 use crate::Result;
 use crate::blob::Blob;
@@ -35,7 +35,7 @@ pub struct GridstoreReader<V, S: UniversalRead> {
 #[derive(Debug)]
 enum ReaderVariant<V, S: UniversalRead> {
     Dynamic(DynamicGridstoreReader<V, S>),
-    AppendOnly(AppendOnlyGridstoreReader<V, S>),
+    AppendOnly(ArenastoreReader<V, S>),
 }
 
 impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
@@ -62,7 +62,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 // schedule pages
                 Pages::preopen(fs, &base_path, populate)
             }
-            Mode::AppendOnly => AppendOnlyGridstoreReader::<V, S>::preopen(fs, &base_path),
+            Mode::AppendOnly => ArenastoreReader::<V, S>::preopen(fs, &base_path),
         }
     }
 
@@ -88,7 +88,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 })
             }
             Mode::AppendOnly => {
-                let reader = AppendOnlyGridstoreReader::open(fs, base_path, config)?;
+                let reader = ArenastoreReader::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: ReaderVariant::AppendOnly(reader),
                 })

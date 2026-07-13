@@ -57,7 +57,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
         OpenOptions {
             writeable,
             need_sequential: true,
-            // The append-only mode never populates, see [`super::AppendOnlyGridstore::populate`]
+            // The append-only mode never populates, see [`super::Arenastore::populate`]
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Random),
         }

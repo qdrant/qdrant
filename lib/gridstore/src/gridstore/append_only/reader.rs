@@ -9,7 +9,7 @@ use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs, UserDat
 
 use super::page::AppendOnlyPage;
 use super::validate_consistency;
-use super::view::AppendOnlyGridstoreView;
+use super::view::ArenastoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
@@ -21,11 +21,11 @@ use crate::tracker::append_only::AppendOnlyTracker;
 /// Read-only storage for values of type `V`, operating in append-only mode.
 ///
 /// Holds the tracker and page directly (no locks) since it provides only read access.
-/// For read-write access, use [`AppendOnlyGridstore`].
+/// For read-write access, use [`Arenastore`].
 ///
 /// Value data is read through the universal IO backend `S`, the tracker file is read directly.
 #[derive(Debug)]
-pub(crate) struct AppendOnlyGridstoreReader<V, S: UniversalRead> {
+pub(crate) struct ArenastoreReader<V, S: UniversalRead> {
     config: StorageConfig,
     tracker: AppendOnlyTracker,
     page: AppendOnlyPage<S>,
@@ -33,7 +33,7 @@ pub(crate) struct AppendOnlyGridstoreReader<V, S: UniversalRead> {
     _phantom: PhantomData<V>,
 }
 
-impl<V: Blob, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
+impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
     /// universal IO backend, which is only the page file.
     ///
@@ -63,9 +63,9 @@ impl<V: Blob, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
         })
     }
 
-    /// Create a [`AppendOnlyGridstoreView`] borrowing this reader's data.
-    pub(crate) fn view(&self) -> AppendOnlyGridstoreView<'_, V, S> {
-        AppendOnlyGridstoreView::new(&self.config, &self.tracker, &self.page)
+    /// Create an [`ArenastoreView`] borrowing this reader's data.
+    pub(crate) fn view(&self) -> ArenastoreView<'_, V, S> {
+        ArenastoreView::new(&self.config, &self.tracker, &self.page)
     }
 
     /// List all files belonging to this reader (tracker, page, config).
@@ -172,7 +172,7 @@ impl<V: Blob, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
     }
 }
 
-impl<V, S: UniversalRead> AppendOnlyGridstoreReader<V, S> {
+impl<V, S: UniversalRead> ArenastoreReader<V, S> {
     /// Returns `true`: append-only storage always reads from disk, it is never populated into
     /// RAM.
     #[allow(clippy::unused_self)]
