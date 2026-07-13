@@ -230,9 +230,8 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
         cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
         assert len(cluster_info['local_shards']) == 1
 
-    upload_process_1.kill()
-    upload_process_2.kill()
-    sleep(1)
+    stop_update_process(upload_process_1)
+    stop_update_process(upload_process_2)
 
     # Ensure data consistency
     data = []
@@ -349,12 +348,10 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 1)
     wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 0)
 
-    upload_process_1.kill()
-    upload_process_2.kill()
-    upload_process_3.kill()
-    upload_process_4.kill()
-
-    sleep(1)
+    stop_update_process(upload_process_1)
+    stop_update_process(upload_process_2)
+    stop_update_process(upload_process_3)
+    stop_update_process(upload_process_4)
 
     # All nodes must have one shard
     for uri in peer_api_uris:
@@ -484,9 +481,8 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
         cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
         assert len(cluster_info['local_shards']) == 1
 
-    upload_process_1.kill()
-    upload_process_2.kill()
-    sleep(1)
+    stop_update_process(upload_process_1)
+    stop_update_process(upload_process_2)
 
     # Ensure data consistency
     data = []
