@@ -19,7 +19,7 @@ use crate::id_tracker::immutable_id_tracker::versions_storage::version_mapping_p
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
-    fn open_options() -> OpenOptions {
+    pub(super) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,

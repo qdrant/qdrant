@@ -79,6 +79,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
         let changes = self.read_new_mapping_changes()?;
+
+        for change in &changes {
+            log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
+        }
+
         let mut deleted = Vec::new();
         for change in &changes {
             match *change {

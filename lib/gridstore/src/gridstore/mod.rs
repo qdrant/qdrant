@@ -60,7 +60,7 @@ where
     S: UniversalWrite + 'static,
 {
     /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, S>) -> R) -> R {
+    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, S, Tracker<S>>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
         f(GridstoreView::new(&self.config, &tracker, &pages))
@@ -451,7 +451,7 @@ where
             // - https://github.com/qdrant/qdrant/pull/7983
             // - https://github.com/qdrant/qdrant/pull/8248
             self.with_view(|view| -> Result<_, E> {
-                max_offset = view.max_point_offset();
+                max_offset = view.max_point_offset()?;
 
                 if current_offset >= max_offset {
                     return Ok(());

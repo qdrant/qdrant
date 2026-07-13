@@ -13,17 +13,14 @@ impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
     fn live_reload(
         &mut self,
         fs: &S::Fs,
-        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // Reload each flag set's bitmap from the changed points only.
-        self.storage
-            .has_values_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
-        self.storage
-            .is_null_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        // Resync each flag set from its on-disk state; the point deltas are
+        // irrelevant, the flag files are the source of truth.
+        self.storage.has_values_flags.live_reload(fs)?;
+        self.storage.is_null_flags.live_reload(fs)?;
 
         // total_point_count only grows, to cover appended offsets.
         self.total_point_count = new_points

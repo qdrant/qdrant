@@ -27,7 +27,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlySparseVectorStorage<S> {
             .deleted
             .as_bitslice()
             .last_one()
-            .max(Some(self.storage.max_point_offset() as usize))
+            .max(Some(self.storage.max_point_offset()? as usize))
             .unwrap_or_default();
 
         Ok(())

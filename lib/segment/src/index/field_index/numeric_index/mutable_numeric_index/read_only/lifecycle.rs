@@ -57,7 +57,7 @@ where
         let hw_counter = HardwareCounterCell::disposable();
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset(),
+                storage.max_point_offset()?,
                 |idx, values: Vec<T>| {
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)

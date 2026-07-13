@@ -54,7 +54,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         let hw_counter = HardwareCounterCell::disposable();
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset(),
+                storage.max_point_offset()?,
                 |idx, values: Vec<RawGeoPoint>| {
                     let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
                     in_memory_index.add_many_geo_points(idx, geo_points, &hw_counter)?;

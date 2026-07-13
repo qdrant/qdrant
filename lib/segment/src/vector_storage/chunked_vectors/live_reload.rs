@@ -11,10 +11,18 @@ use crate::common::operation_error::OperationResult;
 impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRead<T, S> {
     type Fs = S::Fs;
 
-    /// Open only chunk files appended since the last load; a no-op when the
-    /// length is unchanged. Chunk files are pre-allocated to full size, so the
-    /// chunks already held keep reflecting appended vectors through their mmap.
-    /// Deletions/new points are tracked by callers, so they are unused here.
+    /// Refresh the chunks that can have gained vectors since the last load; a
+    /// no-op when the length is unchanged (the status file is read fresh, so
+    /// it is a reliable change signal).
+    ///
+    /// Chunk files are preallocated to full size, so appended vectors are
+    /// in-place writes *within* the existing file length — which a held
+    /// handle's cached blocks never reflect on caching backends (a block
+    /// fetched earlier extends past the old tail into then-unwritten space).
+    /// So, mirroring `Pages::live_reload`, the last held chunk — the only one
+    /// that can have gained vectors — is dropped and re-opened fresh,
+    /// alongside adopting newly created chunk files. Deletions/new points are
+    /// tracked by callers, so they are unused here.
     fn live_reload(
         &mut self,
         fs: &S::Fs,
@@ -27,14 +35,16 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRea
             return Ok(());
         }
 
+        let reload_from = self.chunks.len().saturating_sub(1);
         let new_chunks = read_chunks_from(
             fs,
             &self.directory,
-            self.chunks.len(),
+            reload_from,
             self.advice,
             self.populate,
             false,
         )?;
+        self.chunks.truncate(reload_from);
         self.chunks.extend(new_chunks);
         self.len = new_len;
         Ok(())

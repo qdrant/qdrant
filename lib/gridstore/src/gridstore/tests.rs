@@ -1133,7 +1133,7 @@ fn test_live_reload() {
     // Step 2: Open a reader
     let mut reader =
         GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
-    assert_eq!(reader.max_point_offset(), 2);
+    assert_eq!(reader.max_point_offset().unwrap(), 2);
 
     // Step 3: Verify reader sees initial data
     let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
@@ -1141,9 +1141,8 @@ fn test_live_reload() {
     let v1 = reader.get_value::<Random>(1, &hw_counter).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
 
-    // Step 4: live_reload when nothing changed should be a no-op
+    // Step 4: live_reload when nothing changed must keep serving the same data
     reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset(), 2);
     let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
 
@@ -1154,12 +1153,9 @@ fn test_live_reload() {
     storage.put_value(3, &payload_3, hw_counter_ref).unwrap();
     storage.flusher()().unwrap();
 
-    // Reader's max_point_offset is stale before live_reload
-    assert_eq!(reader.max_point_offset(), 2);
-
-    // Step 6: live_reload should update max_point_offset and make new data accessible
+    // Step 6: live_reload should make new data accessible
     reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset(), 4);
+    assert_eq!(reader.max_point_offset().unwrap(), 4);
     let v2 = reader.get_value::<Random>(2, &hw_counter).unwrap();
     assert_eq!(v2.as_ref(), Some(&payload_2));
     let v3 = reader.get_value::<Random>(3, &hw_counter).unwrap();
@@ -1170,6 +1166,85 @@ fn test_live_reload() {
     assert_eq!(v0.as_ref(), Some(&payload_0));
     let v1 = reader.get_value::<Random>(1, &hw_counter).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
+}
+
+/// Case-3 regression of the live-reload staleness audit: the reader goes
+/// through a caching backend ([`DiskCacheFs`]) whose `reopen` assumes
+/// append-only files. The tracker file is preallocated and mutated in place
+/// (header rewrites, slot updates), so a held handle would serve the stale
+/// pre-write state forever: the reader would keep reporting values as
+/// missing after a live-reload. [`ReadOnlyTracker::live_reload`] opens a
+/// fresh handle instead.
+///
+/// [`DiskCacheFs`]: common::universal_io::DiskCacheFs
+/// [`ReadOnlyTracker::live_reload`]: crate::tracker::ReadOnlyTracker::live_reload
+#[test]
+fn test_live_reload_disk_cache() {
+    use std::sync::Arc;
+
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, UniversalReadFileOps,
+    };
+
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let remote_root = dir.path().join("remote");
+    let local_root = dir.path().join("local");
+    let path = remote_root.join("storage");
+    fs::create_dir_all(&path).unwrap();
+    fs::create_dir_all(&local_root).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let make_payload = |key: &str, value: &str| -> Payload {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+        payload
+    };
+
+    // The writer works on the "remote" directly; the reader mirrors it into
+    // `local_root` through the disk cache.
+    let mut storage = Gridstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+
+    let payload_0 = make_payload("key", "value_0");
+    storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+    let mut reader = GridstoreReader::<Payload, DiskCache<MmapFile>>::open(
+        &cache_fs,
+        path.clone(),
+        Populate::No,
+    )
+    .unwrap();
+
+    // Read through the cache so the tracker's header/slot blocks are mirrored
+    // locally — the staleness this test guards against only occurs once the
+    // pre-write state is cached.
+    assert_eq!(reader.max_point_offset().unwrap(), 1);
+    let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
+    assert_eq!(v0.as_ref(), Some(&payload_0));
+
+    // Write another value; the tracker header (and slot block 0) are
+    // rewritten in place, the pages grow.
+    let payload_1 = make_payload("key", "value_1");
+    storage.put_value(1, &payload_1, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    reader.live_reload(&cache_fs).unwrap();
+
+    assert_eq!(reader.max_point_offset().unwrap(), 2);
+    let v1 = reader.get_value::<Random>(1, &hw_counter).unwrap();
+    assert_eq!(v1.as_ref(), Some(&payload_1));
+    let v0 = reader.get_value::<Random>(0, &hw_counter).unwrap();
+    assert_eq!(v0.as_ref(), Some(&payload_0));
 }
 
 /// Test that `live_reload` works across page boundaries.
@@ -1210,7 +1285,7 @@ fn test_live_reload_across_pages() {
     // Open reader
     let mut reader =
         GridstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No).unwrap();
-    assert_eq!(reader.max_point_offset(), first_batch);
+    assert_eq!(reader.max_point_offset().unwrap(), first_batch);
 
     // Verify reader can read all initial data
     for i in 0..first_batch {
@@ -1231,12 +1306,17 @@ fn test_live_reload_across_pages() {
         "expected more pages after second batch: {new_pages} vs {initial_pages}"
     );
 
-    // Reader should not see new data yet
-    assert_eq!(reader.max_point_offset(), first_batch);
+    // NOTE: no read of the second batch before the reload — over a
+    // read-through backend (mmap) the tracker already sees the new slots,
+    // whose pointers reference pages the reader has not attached yet.
+    // Reading them would panic on the page index rather than return None.
 
     // Live reload should pick up new pages and data
     reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset(), first_batch + second_batch);
+    assert_eq!(
+        reader.max_point_offset().unwrap(),
+        first_batch + second_batch
+    );
 
     // Verify all data is readable
     for i in 0..(first_batch + second_batch) {

@@ -26,8 +26,12 @@ mod reopen;
 /// blocks on demand from the remote) or eagerly if populate is set. See
 /// [`init`] for the precise lifecycle.
 ///
-/// WARN: There should be only a single instance of DiskCache per path.
-/// Initializing multiple instances will try to re-read from remote.
+/// Every instance mirrors into its own uniquely-named local file (see
+/// [`unique_local_path`](super::fs)), so multiple instances per remote path
+/// are safe — e.g. a live-reload can open a fresh handle while the old one is
+/// still alive. Each instance fetches from the remote independently though,
+/// so per-path handles should not be multiplied without reason. The mirror
+/// file is removed on drop.
 #[derive(Debug)]
 pub struct DiskCache<R>
 where
@@ -133,5 +137,17 @@ where
 
         self.remote_fs
             .open(&self.remote_path, remote_options, self.remote_extra.clone())
+    }
+}
+
+impl<R> Drop for DiskCache<R>
+where
+    R: UniversalRead + 'static,
+{
+    fn drop(&mut self) {
+        // Best-effort mirror cleanup: mirror names are unique per open, so a
+        // file left behind would never be reused. Absent (`Err`) when the
+        // state never materialized a local mirror.
+        let _ = fs_err::remove_file(&self.local_path);
     }
 }

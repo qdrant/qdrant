@@ -44,7 +44,8 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
 
     versions: TypedStorage<S, SeqNumberType>,
     versions_len: u64,
-    /// Kept for per-point `get_bit` and for `live_reload` reopen.
+    /// Kept for per-point `get_bit`; replaced with a freshly opened handle on
+    /// every [`Self::live_reload`].
     deleted_file: StoredBitSlice<S>,
 
     /// Full deleted set. NOT loaded on open or by point lookups. Materialized on
@@ -143,13 +144,29 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// Re-read the on-disk deleted bitslice and report points deleted since the
     /// last reload. Mappings are immutable, so nothing is ever inserted.
     ///
+    /// The deleted file is a fixed-size bitmap whose bits the writer flips in
+    /// place, which the held handle's `reopen()` — an append-only-growth
+    /// contract — never picks up on caching backends. So a *fresh* handle is
+    /// opened instead (a fresh open always mirrors the current remote bytes)
+    /// and swapped in; the per-point `get_bit` lookups read fresh state from
+    /// then on too.
+    ///
     /// The full deleted set (`deleted_full`) doubles as the diff baseline: if it
     /// was materialized (by a prior search/scroll/count/reload) we diff against
     /// it; otherwise this is the first baseline and every currently-deleted
     /// offset is reported (an idempotent replay downstream).
-    pub fn live_reload(&mut self) -> OperationResult<LiveReloadResult> {
-        self.deleted_file.reopen()?;
-        let new: BitVec = self.deleted_file.read_all()?.into_owned();
+    pub fn live_reload(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+    ) -> OperationResult<LiveReloadResult> {
+        let fresh = StoredBitSlice::<S>::open(
+            fs,
+            deleted_path(&self.path),
+            Self::open_options(),
+            Default::default(),
+        )?;
+        let new: BitVec = fresh.read_all()?.into_owned();
+        self.deleted_file = fresh;
 
         let baseline = self.deleted_full.take();
         let deleted: Vec<PointOffsetType> = match baseline {

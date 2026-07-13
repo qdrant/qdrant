@@ -13,24 +13,18 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
     fn live_reload(
         &mut self,
         fs: &S::Fs,
-        deleted_points: &SortedSlice<'_, PointOffsetType>,
-        new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+        _new_points: &SortedSlice<'_, PointOffsetType>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // Reload each flag set's bitmap from the changed points only.
-        self.storage
-            .trues_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
-        self.storage
-            .falses_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        // Resync each flag set from its on-disk state; the point deltas are
+        // irrelevant, the flag files are the source of truth.
+        self.storage.trues_flags.live_reload(fs)?;
+        self.storage.falses_flags.live_reload(fs)?;
 
-        // Re-derive the counts from the just-reloaded bitmaps, but only if they
+        // Re-derive the counts from the just-resynced bitmaps, but only if they
         // were computed before: an untouched index must not pay for the bitmap
         // scan that deriving them would force.
-        //
-        // possible opt: update this using deleted_points and new_points separately,
-        //               so we only process the delta
         self.refresh_counts()?;
 
         Ok(())

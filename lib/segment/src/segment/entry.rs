@@ -359,6 +359,21 @@ impl Segment {
         self.is_appendable() && self.append_only_mutations
     }
 
+    /// Whether point deletions on this segment must be tombstone-only: drop
+    /// from the id tracker, leaving payload rows and field indexes untouched.
+    ///
+    /// Unlike [`Self::is_append_only`], this deliberately does *not* require
+    /// the segment to be appendable. In append-only deployments,
+    /// non-appendable segments are read by live-reload followers too, and
+    /// clearing the payload of a deleted point mutates committed state of an
+    /// offset that stays visible until the id-tracker drop is flushed — a
+    /// follower refreshing in that window observes the point alive with an
+    /// empty payload. Tombstone-only deletion needs nothing from the segment
+    /// but the id tracker, so appendability is irrelevant.
+    pub fn is_append_only_delete(&self) -> bool {
+        self.append_only_mutations
+    }
+
     /// Iterator over all points in segment in ascending order.
     pub fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         let mappings =
@@ -585,7 +600,7 @@ impl NonAppendableSegmentEntry for Segment {
             .id_tracker
             .borrow()
             .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
-        let append_only = self.is_append_only();
+        let append_only = self.is_append_only_delete();
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
