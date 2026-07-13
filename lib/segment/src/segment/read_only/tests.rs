@@ -12,6 +12,7 @@ use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::Builder;
 
+use crate::data_types::load_profile::LoadProfile;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, VectorInternal};
@@ -217,13 +218,52 @@ fn read_only_segment_matches_mutable() {
     let segment_uuid = mutable.uuid;
 
     // Open the very same directory read-only over the universal mmap fs.
-    let read_only = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
-        .expect("read-only open");
+    let read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
+            .expect("read-only open");
 
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
     assert_eq!(read_only.segment_uuid(), segment_uuid);
 
     assert_query_equivalence(&mutable, &read_only);
+}
+
+/// A request-specific [`LoadProfile`] only demotes placement, never disables a
+/// component: whatever the profile, every query the segment can serve must
+/// still answer identically to the mutable reference.
+#[test]
+fn read_only_segment_with_load_profile_matches_mutable() {
+    let segments_dir = Builder::new().prefix("ro_segments_lp").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder_lp").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+
+    let profiles = [
+        // Everything cold: HNSW graph, vector storage and both payload indexes
+        // are all demoted.
+        LoadProfile::for_retrieve(),
+        // Scroll filtered on "kw": vector components and the "num" index are
+        // demoted, the "kw" index and payload storage keep their placement.
+        LoadProfile::for_scroll(Some(&keyword_filter("red")), None, true),
+        // Search on the default vector: payload storage and both payload
+        // indexes are demoted, the vector components keep their placement.
+        LoadProfile::for_search(DEFAULT_VECTOR_NAME, None, false),
+    ];
+    for profile in &profiles {
+        let read_only = ReadOnlySegment::<MmapFile>::open(
+            &MmapFs,
+            &segment_path,
+            segment_uuid,
+            None,
+            Some(profile),
+        )
+        .expect("read-only open with load profile");
+
+        assert_eq!(read_only.available_point_count(), NUM_POINTS);
+        assert_query_equivalence(&mutable, &read_only);
+    }
 }
 
 /// Open a segment straight from an S3-compatible store (rustfs/minio) over
@@ -297,6 +337,7 @@ fn read_only_segment_over_s3() {
         Path::new(&key_prefix),
         segment_uuid,
         None,
+        None,
     )
     .expect("read-only open over S3");
 
@@ -335,7 +376,7 @@ fn read_only_segment_config_reload_payload_index() {
 
     // Open read-only: only `kw` is indexed.
     let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
             .expect("read-only open");
     {
         let payload_index = read_only.payload_index.borrow();
@@ -401,6 +442,7 @@ fn vanished_segment_classifies_not_found() {
         &segments_dir.path().join("no-such-segment"),
         segment_uuid,
         None,
+        None,
     ) else {
         panic!("open of a missing directory must fail");
     };
@@ -409,11 +451,98 @@ fn vanished_segment_classifies_not_found() {
     // Live-reload of a segment whose directory vanished after open (the leader
     // removed it): the first component reopen hits the missing file.
     let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None)
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
             .expect("read-only open");
     fs_err::remove_dir_all(&segment_path).unwrap();
     let err = read_only
         .live_reload(&MmapFs, &HardwareCounterCell::disposable())
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
+}
+
+/// A load profile that never scores a vector defers its HNSW graph load: the
+/// open must not touch the graph files (only the index config, whose absence
+/// it tolerates). Proven by deleting the index directory before the open —
+/// the open and every non-search read still work, and only a search (whose
+/// first use runs the deferred graph load) surfaces the missing files.
+#[test]
+fn deferred_index_reads_nothing_at_open() {
+    use crate::data_types::load_profile::LoadProfile;
+    use crate::segment_constructor::get_vector_index_path;
+
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+    drop(mutable);
+
+    fs_err::remove_dir_all(get_vector_index_path(&segment_path, DEFAULT_VECTOR_NAME)).unwrap();
+
+    let filter = keyword_filter("red");
+    let profile = LoadProfile::for_scroll(Some(&filter), None, true);
+    let read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        Some(&profile),
+    )
+    .expect("open with a deferred index must not read the index files");
+
+    // Non-search reads never touch the deferred index.
+    assert!(!sorted_filtered(&read_only, &filter).is_empty());
+    let hw = HardwareCounterCell::new();
+    assert!(read_only.payload(1.into(), &hw).unwrap() != Default::default());
+
+    // A search runs the deferred open, which now hits the deleted files.
+    let query = QueryVector::Nearest(VectorInternal::Dense(vec![0.5; DIM]));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let result = read_only.search_batch(
+        DEFAULT_VECTOR_NAME,
+        &[&query],
+        &WithPayload::default(),
+        &false.into(),
+        None,
+        NUM_POINTS,
+        None,
+        &sqc,
+    );
+    assert!(
+        result.is_err(),
+        "search over a deferred index with deleted files must fail",
+    );
+}
+
+/// A deferred graph loads transparently on first use: a segment opened under a
+/// scroll profile (every vector cold) answers searches, filtered reads and
+/// payload reads identically to an eagerly opened one.
+#[test]
+fn deferred_index_opens_on_first_search() {
+    use crate::data_types::load_profile::LoadProfile;
+
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+    drop(mutable);
+
+    let eager = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
+        .expect("eager open");
+
+    let profile = LoadProfile::for_scroll(None, None, true);
+    let deferred = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        Some(&profile),
+    )
+    .expect("open with a deferred index");
+
+    assert_query_equivalence(&eager, &deferred);
 }

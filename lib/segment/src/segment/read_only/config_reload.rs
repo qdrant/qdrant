@@ -126,7 +126,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// loading every new or changed vector. Returns `(added, removed)`.
     fn diff_vectors(
         &self,
-        fs: &impl UniversalReadFs<File = S>,
+        fs: &S::Fs,
         new_config: &SegmentConfig,
     ) -> OperationResult<(AddedVectors<S>, Vec<VectorNameBuf>)> {
         let mut added = HashMap::new();
@@ -157,19 +157,22 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Open one dense vector's storage, index and quantized vectors from disk.
     fn load_dense_vector(
         &self,
-        fs: &impl UniversalReadFs<File = S>,
+        fs: &S::Fs,
         name: &VectorName,
         config: &VectorDataConfig,
         new_config: &SegmentConfig,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
-        let storage = VectorStorageReadEnum::open(fs, config, &path)?.ok_or_else(|| {
+        // A config reload follows the new config alone: the request-specific
+        // load profile of the original open (if any) does not outlive it.
+        let storage = VectorStorageReadEnum::open(fs, config, &path, None)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "Read-only dense vector storage '{name}' was not found, or is corrupted.",
             ))
         })?;
         let storage = Arc::new(AtomicRefCell::new(storage));
         ReadOnlyVectorData::open_dense(
+            fs,
             fs,
             &self.segment_path,
             name,
@@ -178,13 +181,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             self.id_tracker.clone(),
             self.payload_index.clone(),
             storage,
+            None,
         )
     }
 
     /// Open one sparse vector's storage and index from disk (never quantized).
     fn load_sparse_vector(
         &self,
-        fs: &impl UniversalReadFs<File = S>,
+        fs: &S::Fs,
         name: &VectorName,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
@@ -198,6 +202,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             self.id_tracker.clone(),
             self.payload_index.clone(),
             storage,
+            None,
         )
     }
 

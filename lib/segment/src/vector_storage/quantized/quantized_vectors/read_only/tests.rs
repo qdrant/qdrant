@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs};
+use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs, Populate};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
@@ -142,6 +142,7 @@ fn read_only_matches_read_write(
         storage.datatype(),
         None,
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -152,6 +153,75 @@ fn read_only_matches_read_write(
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
 
     for _ in 0..20 {
+        let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
+        let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
+
+        let rw_scorer = rw
+            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
+            .unwrap();
+        let ro_scorer = ro
+            .raw_scorer(query, HardwareCounterCell::disposable())
+            .unwrap();
+
+        for &id in &sample {
+            assert_eq!(
+                rw_scorer.score_point(id),
+                ro_scorer.score_point(id),
+                "raw_scorer score mismatch at point {id}",
+            );
+        }
+
+        assert_internal_scorer_eq(&rw, &ro, &sample);
+    }
+}
+
+/// A cold populate override (request-specific load profile) demotes a pinned
+/// storage kind to its mmap counterpart over the same flat files: the open
+/// must not materialize the data in RAM, and scores must stay bit-identical
+/// to the read-write pinned storage.
+#[rstest]
+#[case::scalar_ram(scalar_config(true))]
+#[case::binary_ram(binary_config(true))]
+#[case::product_ram(product_config(true))]
+#[case::turbo_ram(turbo_config(true))]
+fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
+    let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
+    let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+
+    let storage = build_on_disk_storage(dir.path(), &mut rng);
+    let on_disk = storage.is_on_disk();
+
+    let rw = QuantizedVectors::create(
+        &storage,
+        &config,
+        QuantizedVectorsStorageType::Immutable,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        None,
+        on_disk,
+        Some(Populate::No),
+    )
+    .unwrap()
+    .expect("quantization config exists");
+
+    // The pinned (always_ram) config materializes in RAM; the demoted open
+    // stays mmap-backed.
+    assert!(!rw.get_storage().is_on_disk());
+    assert!(ro.is_on_disk());
+
+    let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
+
+    for _ in 0..10 {
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
         let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
 
@@ -224,6 +294,7 @@ fn read_only_matches_read_write_multivector(
         storage.datatype(),
         Some(&multivector_config),
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -285,7 +356,7 @@ fn preopen_and_unlink(
 
     let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
     cached_fs.cache_file_info().unwrap();
-    ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config).unwrap();
+    ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config, None).unwrap();
 
     for entry in fs_err::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -344,6 +415,7 @@ fn preopen_then_open_through_cached_fs(
         storage.datatype(),
         None,
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -418,6 +490,7 @@ fn preopen_then_open_multivector_through_cached_fs(
         storage.datatype(),
         Some(&multivector_config),
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");
@@ -495,6 +568,7 @@ fn live_reload_chunked_preserves_scores() {
         storage.datatype(),
         None,
         on_disk,
+        None,
     )
     .unwrap()
     .expect("quantization config exists");

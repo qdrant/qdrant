@@ -84,6 +84,7 @@ fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
         path,
         LocalSegmentEnumerator::new(path),
         None,
+        None,
     )
     .unwrap()
 }
@@ -173,6 +174,51 @@ fn follower_sees_flushed_data() {
     assert_eq!(exact_count(&follower), leader_exact_count(&leader));
     assert_eq!(scrolled_ids(&follower).len(), 100);
     assert_follower_vectors(&follower, &[1, 50, 100]);
+}
+
+/// A follower opened with the request-derived load profile — the serverless
+/// cold-start path — must serve that request (and any other read) exactly like
+/// a follower opened without one; the profile only demotes placement.
+#[test]
+fn follower_with_load_profile_serves_reads() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-load-profile")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=100);
+    leader.flush();
+
+    let scroll_request = ScrollRequestInternal {
+        offset: None,
+        limit: Some(10_000),
+        filter: None,
+        with_payload: Some(WithPayloadInterface::Bool(false)),
+        with_vector: WithVector::Bool(false),
+        order_by: None,
+    };
+
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        dir.path(),
+        LocalSegmentEnumerator::new(dir.path()),
+        None,
+        Some(scroll_request.load_profile()),
+    )
+    .unwrap();
+
+    let (records, _) = follower.scroll(scroll_request).unwrap();
+    assert_eq!(records.len(), 100);
+    assert_eq!(exact_count(&follower), leader_exact_count(&leader));
+    // Reads outside the profile (vectors are parked cold for a scroll) still work.
+    assert_follower_vectors(&follower, &[1, 50, 100]);
+
+    // Segments discovered by a refresh load under the same profile.
+    upsert(&leader, 101..=150);
+    leader.flush();
+    follower.refresh().unwrap();
+    assert_eq!(exact_count(&follower), 150);
 }
 
 #[test]
@@ -342,6 +388,7 @@ fn provided_config_overrides_tunables_at_open() {
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
         Some(provided),
+        None,
     )
     .unwrap();
 
@@ -411,6 +458,7 @@ fn follower_uses_injected_enumerator() {
             segments_path,
             exclude: hidden,
         },
+        None,
         None,
     )
     .unwrap();

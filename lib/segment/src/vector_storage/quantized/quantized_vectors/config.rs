@@ -68,6 +68,28 @@ pub(in crate::vector_storage::quantized) enum QuantizedStorageKind {
     TqChunked,
 }
 
+impl QuantizedStorageKind {
+    /// The mmap-backed kind over the same flat files, for demoting a pinned placement at
+    /// load time (request-specific load profile): within the immutable layout the RAM and
+    /// mmap loaders share the on-disk format, only how the data is brought into memory
+    /// differs. The mmap kinds are already lazy and the chunked kinds are a distinct
+    /// on-disk layout, so both stay as they are.
+    pub(in crate::vector_storage::quantized) fn demote_ram_to_mmap(self) -> Self {
+        match self {
+            Self::ScalarRam => Self::ScalarMmap,
+            Self::PqRam => Self::PqMmap,
+            Self::BinaryRam => Self::BinaryMmap,
+            Self::TqRam => Self::TqMmap,
+            Self::ScalarMmap
+            | Self::PqMmap
+            | Self::BinaryMmap
+            | Self::BinaryChunked
+            | Self::TqMmap
+            | Self::TqChunked => self,
+        }
+    }
+}
+
 impl QuantizedVectorsConfig {
     /// Size in bytes of a single quantized vector on disk, for this config.
     ///
