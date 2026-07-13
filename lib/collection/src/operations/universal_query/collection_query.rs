@@ -781,9 +781,10 @@ impl CollectionQueryRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use segment::data_types::vectors::VectorStructInternal;
     use shard::retrieve::record_internal::RecordInternal;
+
+    use super::*;
 
     fn create_referenced_vectors(point_id: PointIdType) -> ReferencedVectors {
         let mut referenced = ReferencedVectors::default();
