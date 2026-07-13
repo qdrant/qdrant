@@ -197,7 +197,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         let storage = Arc::new(AtomicRefCell::new(storage));
         ReadOnlyVectorData::open_sparse(
             fs,
-            fs,
             &self.segment_path,
             name,
             self.id_tracker.clone(),

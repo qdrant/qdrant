@@ -141,31 +141,29 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
             ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config, quantized_populate)?;
 
-            // Vector index. A deferred index (see `LoadProfile::vector_index_deferred`)
-            // is not opened at all, so nothing is prefetched for it either.
+            // Vector index. A deferred HNSW graph (see
+            // `LoadProfile::vector_index_deferred`) is not loaded at open, so
+            // only its config is prefetched.
             let index_deferred =
                 load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
-            if !index_deferred {
-                let index_path = get_vector_index_path(segment_path, vector_name);
-                VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, None)?;
-            }
+            let index_path = get_vector_index_path(segment_path, vector_name);
+            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_deferred)?;
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
             ReadOnlySparseVectorStorage::<S>::preopen(fs, &path)?;
 
-            // Sparse vector index; deferred indexes prefetch nothing, as above.
-            let index_deferred =
-                load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
-            if !index_deferred {
-                let index_path = get_vector_index_path(segment_path, vector_name);
-                VectorIndexReadEnum::<S>::preopen_sparse(
-                    fs,
-                    sparse_vector_config,
-                    &index_path,
-                    None,
-                )?;
-            }
+            // Sparse vector index; the sparse open reads lazily, so a profile
+            // that never scores this vector just parks the index data cold.
+            let index_populate =
+                load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
+            let index_path = get_vector_index_path(segment_path, vector_name);
+            VectorIndexReadEnum::<S>::preopen_sparse(
+                fs,
+                sparse_vector_config,
+                &index_path,
+                index_populate,
+            )?;
         }
 
         // Payload indexes
@@ -183,9 +181,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     ///
     /// `fs` is any filesystem producing `S`-typed handles — in production the
     /// per-segment [`CachedReadFs`], whose opens are served from its prefetch
-    /// pool. `raw_fs` is the canonical backend, for the one component that
-    /// stores a filesystem handle to re-open appended files later (the
-    /// appendable id tracker): a caching wrapper's snapshot would go stale.
+    /// pool. `raw_fs` is the canonical backend, for the components that store
+    /// a filesystem handle to read files after this open (the appendable id
+    /// tracker's re-opens, the HNSW index's deferred graph load): a caching
+    /// wrapper's snapshot would go stale.
     ///
     /// `config` and `payload_config` are the ones
     /// [`first_preopen`](Self::first_preopen) already parsed off `fs`, and
@@ -288,7 +287,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_sparse(
                 fs,
-                raw_fs,
                 segment_path,
                 vector_name,
                 id_tracker.clone(),
@@ -323,8 +321,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     /// `load_profile` mirrors the preopen's per-vector placement decisions.
-    /// `raw_fs` is the segment's raw backend, retained by a deferred index for
-    /// its open-on-first-use (the caching `fs` only lives for this open).
+    /// `raw_fs` is the segment's raw backend, retained by the HNSW index for
+    /// a deferred graph load (the caching `fs` only lives for this open).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn open_dense(
         fs: &impl UniversalReadFs<File = S>,
@@ -362,35 +360,24 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         };
         let quantized_vectors = Arc::new(AtomicRefCell::new(quantized_vectors));
 
-        // A profile that never scores this vector defers the index open to its
-        // first use (see `LoadProfile::vector_index_deferred`) — except for the
-        // plain index, which opens no files, so there is nothing to defer.
-        let index_deferred = vector_config.index.is_indexed()
-            && load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
-        let vector_index = if index_deferred {
-            VectorIndexReadEnum::deferred_dense(
-                raw_fs.clone(),
-                vector_index_path,
-                vector_config.clone(),
+        // A profile that never scores this vector defers the HNSW graph load
+        // to its first use (see `LoadProfile::vector_index_deferred`); the
+        // plain index has no graph, so there is nothing to defer.
+        let index_deferred =
+            load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+        let vector_index = VectorIndexReadEnum::open(
+            vector_config,
+            ReadOnlyVectorIndexOpenArgs {
+                fs,
+                path: &vector_index_path,
                 id_tracker,
-                vector_storage.clone(),
+                vector_storage: vector_storage.clone(),
                 payload_index,
-                quantized_vectors.clone(),
-            )
-        } else {
-            VectorIndexReadEnum::open(
-                vector_config,
-                ReadOnlyVectorIndexOpenArgs {
-                    fs,
-                    path: &vector_index_path,
-                    id_tracker,
-                    vector_storage: vector_storage.clone(),
-                    payload_index,
-                    quantized_vectors: quantized_vectors.clone(),
-                },
-                None,
-            )?
-        };
+                quantized_vectors: quantized_vectors.clone(),
+            },
+            raw_fs,
+            index_deferred,
+        )?;
         let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 
         Ok(Self {
@@ -402,12 +389,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
 
     /// Open one sparse vector's index over `fs`, mirroring
     /// `open_sparse_vector_data`. Sparse vectors are never quantized.
-    /// `load_profile` mirrors the preopen's per-vector placement decisions;
-    /// `raw_fs` is retained by a deferred index, as in [`Self::open_dense`].
+    /// `load_profile` mirrors the preopen's per-vector placement decisions.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn open_sparse(
         fs: &impl UniversalReadFs<File = S>,
-        raw_fs: &S::Fs,
         segment_path: &Path,
         vector_name: &VectorName,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
@@ -418,31 +403,22 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
 
-        // A profile that never scores this vector defers the index open to its
-        // first use (see `LoadProfile::vector_index_deferred`).
-        let index_deferred =
-            load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
-        let vector_index = if index_deferred {
-            VectorIndexReadEnum::deferred_sparse(
-                raw_fs.clone(),
-                vector_index_path,
+        // The sparse open reads lazily, so a profile that never scores this
+        // vector just parks the index data cold — no deferral needed (see
+        // `LoadProfile::vector_index_placement`).
+        let index_populate =
+            load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
+        let vector_index = VectorIndexReadEnum::open_sparse(
+            ReadOnlyVectorIndexOpenArgs {
+                fs,
+                path: &vector_index_path,
                 id_tracker,
-                vector_storage.clone(),
+                vector_storage: vector_storage.clone(),
                 payload_index,
-            )
-        } else {
-            VectorIndexReadEnum::open_sparse(
-                ReadOnlyVectorIndexOpenArgs {
-                    fs,
-                    path: &vector_index_path,
-                    id_tracker,
-                    vector_storage: vector_storage.clone(),
-                    payload_index,
-                    quantized_vectors: quantized_vectors.clone(),
-                },
-                None,
-            )?
-        };
+                quantized_vectors: quantized_vectors.clone(),
+            },
+            index_populate,
+        )?;
         let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 
         Ok(Self {

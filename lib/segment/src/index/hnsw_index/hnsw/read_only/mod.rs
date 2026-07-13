@@ -5,7 +5,7 @@
 mod read;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs};
@@ -43,7 +43,21 @@ pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    graph: GraphLayers,
+    /// The graph, loaded at [`Self::open`] — or on first use when a
+    /// request-specific [`LoadProfile`] deferred it (see [`Self::graph`]).
+    ///
+    /// [`OnceLock`] rather than a plain cell because the index is queried
+    /// through `&self` from many threads. On a race both threads may load;
+    /// the first to finish wins and the loser's copy is dropped (same
+    /// arbitration as `ReadOnlyRoaringFlags::bitmap`).
+    ///
+    /// [`LoadProfile`]: crate::data_types::load_profile::LoadProfile
+    graph: OnceLock<GraphLayers>,
+    /// The segment's raw backend, retained for the deferred graph load: the
+    /// caching `fs` the eager open reads through only lives for that open.
+    fs: S::Fs,
+    /// Residency for the (possibly deferred) graph load.
+    residency: GraphLinksResidency,
     searches_telemetry: HNSWSearchesTelemetry,
     is_on_disk: bool,
 }
@@ -72,21 +86,19 @@ type ReadView<'a, S> = HNSWIndexReadView<
 /// flag), degraded at load time by the node-wide low-memory mode. Mirrors the
 /// writable [`HNSWIndex::open`][1].
 ///
-/// A `populate_override` (from a request-specific
-/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) demotes the
-/// effective placement (see [`Memory::with_populate_override`]) — the graph
-/// links support every residency over the same files, so even a `pinned` graph
-/// can be demoted to a lazy cold view. `is_on_disk` stays config-derived: it
+/// A `deferred` graph (a request-specific
+/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile) predicted it
+/// would never be used) loads cold whatever the config says — the graph links
+/// support every residency over the same files, so even a `pinned` graph can
+/// be demoted to a lazy cold view. `is_on_disk` stays config-derived: it
 /// describes the configuration, not the per-open placement.
 ///
 /// [1]: super::super::HNSWIndex::open
-fn graph_residency(
-    hnsw_config: &HnswConfig,
-    populate_override: Option<Populate>,
-) -> (GraphLinksResidency, bool) {
+fn graph_residency(hnsw_config: &HnswConfig, deferred: bool) -> (GraphLinksResidency, bool) {
     let memory = hnsw_config.memory_placement().clamp_to_low_memory();
     let is_on_disk = memory.is_on_disk();
 
+    let populate_override = if deferred { Some(Populate::No) } else { None };
     let residency = match memory.with_populate_override(populate_override) {
         // Keep the links cold: lazily loaded from disk, cached with usage
         Memory::Cold => GraphLinksResidency::Cold,
@@ -101,36 +113,49 @@ fn graph_residency(
 
 impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// A `deferred` graph (see [`Self::open`]) is not loaded at open, so only
+    /// the config is prefetched for it.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         hnsw_config: &HnswConfig,
-        populate_override: Option<Populate>,
+        deferred: bool,
     ) -> OperationResult<()> {
         // Graph config; may legitimately be absent (`open` derives defaults).
         fs.schedule_prefetch(&HnswGraphConfig::get_config_path(path), None, None)
             .ok_not_found()?;
 
         // Graph data and links
-        let (residency, _is_on_disk) = graph_residency(hnsw_config, populate_override);
-        GraphLayers::preopen_universal(fs, path, residency)?;
+        if !deferred {
+            let (residency, _is_on_disk) = graph_residency(hnsw_config, false);
+            GraphLayers::preopen_universal(fs, path, residency)?;
+        }
 
         Ok(())
     }
 
     /// Read-only mirror of `HNSWIndex::open`: loads the graph through `fs`.
-    /// `populate_override` mirrors [`preopen`](Self::preopen): it replaces the
-    /// config-derived residency of the graph links.
+    ///
+    /// A `deferred` graph (a request-specific [`LoadProfile`] predicted this
+    /// vector is never scored) is not loaded here: only the (tiny) config is
+    /// read, and the first use loads the graph through the retained `raw_fs`
+    /// with a cold residency (see [`Self::graph`]). This keeps the profile's
+    /// contract — every request the segment can serve still works, just
+    /// colder — while an unused index costs no graph reads at all.
+    ///
+    /// [`LoadProfile`]: crate::data_types::load_profile::LoadProfile
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &S::Fs,
         path: &Path,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
         quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         hnsw_config: HnswConfig,
-        populate_override: Option<Populate>,
+        deferred: bool,
     ) -> OperationResult<Self>
     where
         // The graph keeps its universal-IO storage handle alive behind a
@@ -167,8 +192,12 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
         // Note that non-borrowable backends materialize the links into heap
         // RAM whatever the residency.
-        let (residency, is_on_disk) = graph_residency(&hnsw_config, populate_override);
-        let graph = GraphLayers::load_universal(fs, path, residency)?;
+        let (residency, is_on_disk) = graph_residency(&hnsw_config, deferred);
+        let graph = if deferred {
+            OnceLock::new()
+        } else {
+            OnceLock::from(GraphLayers::load_universal(fs, path, residency)?)
+        };
 
         Ok(Self {
             id_tracker,
@@ -178,9 +207,35 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             config,
             path: path.to_owned(),
             graph,
+            fs: raw_fs.clone(),
+            residency,
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
         })
+    }
+
+    /// The graph, loading it on the first call when the open deferred it.
+    ///
+    /// The deferral exists because a cold placement is not enough on a remote
+    /// backend: even a cold graph load must mirror the whole links file
+    /// (`GraphLinksView` requires one contiguous slice), so the only way not
+    /// to fetch it is not to load it. The profile predicted this vector would
+    /// never be scored; when a request scores it anyway, it pays the load
+    /// here — through the raw backend, without the open's prefetch pool.
+    fn graph(&self) -> OperationResult<&GraphLayers>
+    where
+        S: 'static,
+    {
+        // `OnceLock::get_or_try_init` is still unstable, so load outside the
+        // lock and let `get_or_init` arbitrate. A racing thread's graph is
+        // simply dropped: both are loaded from the same files.
+        if let Some(graph) = self.graph.get() {
+            return Ok(graph);
+        }
+
+        let graph = GraphLayers::load_universal(&self.fs, &self.path, self.residency)?;
+
+        Ok(self.graph.get_or_init(|| graph))
     }
 
     pub fn is_on_disk(&self) -> bool {
@@ -188,36 +243,48 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     }
 
     /// Read underlying graph data from disk into the disk cache.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.graph.populate()
+    ///
+    /// An explicit warm-up request overrides the deferral: it loads the graph.
+    pub fn populate(&self) -> OperationResult<()>
+    where
+        S: 'static,
+    {
+        self.graph()?.populate()
     }
 
-    /// Drop the graph's disk cache.
+    /// Drop the graph's disk cache. An unloaded graph holds no cache to drop.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.graph.clear_cache()
+        match self.graph.get() {
+            Some(graph) => graph.clear_cache(),
+            None => Ok(()),
+        }
     }
 
     /// Borrow all backing storages and hand a read view to `f`, mirroring
-    /// [`HNSWIndex::with_view`].
+    /// [`HNSWIndex::with_view`]. Loads a deferred graph (see [`Self::graph`]).
     ///
     /// [`HNSWIndex::with_view`]: super::super::HNSWIndex::with_view
-    pub fn with_view<R>(&self, f: impl FnOnce(ReadView<'_, S>) -> R) -> R {
+    pub fn with_view<R>(&self, f: impl FnOnce(ReadView<'_, S>) -> R) -> OperationResult<R>
+    where
+        S: 'static,
+    {
+        let graph = self.graph()?;
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
         let payload_index = self.payload_index.borrow();
 
-        payload_index.with_view(|payload_index_view| {
+        Ok(payload_index.with_view(|payload_index_view| {
             let read_view = HNSWIndexReadView {
                 id_tracker: &*id_tracker,
                 vector_storage: &*vector_storage,
                 quantized_vectors: quantized_vectors.as_ref(),
                 payload_index: payload_index_view,
                 config: &self.config,
-                graph: &self.graph,
+                graph,
                 searches_telemetry: &self.searches_telemetry,
             };
             f(read_view)
-        })
+        }))
     }
 }

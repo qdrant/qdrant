@@ -460,11 +460,11 @@ fn vanished_segment_classifies_not_found() {
     assert!(err.is_not_found(), "expected not-found, got: {err}");
 }
 
-/// A load profile that never scores a vector defers its index: the open must
-/// not touch the index files at all. Proven by deleting the index directory
-/// before the open — the open and every non-search read still work, and only
-/// a search (whose first use runs the deferred open) surfaces the missing
-/// files.
+/// A load profile that never scores a vector defers its HNSW graph load: the
+/// open must not touch the graph files (only the index config, whose absence
+/// it tolerates). Proven by deleting the index directory before the open —
+/// the open and every non-search read still work, and only a search (whose
+/// first use runs the deferred graph load) surfaces the missing files.
 #[test]
 fn deferred_index_reads_nothing_at_open() {
     use crate::data_types::load_profile::LoadProfile;
@@ -516,7 +516,7 @@ fn deferred_index_reads_nothing_at_open() {
     );
 }
 
-/// A deferred index opens transparently on first use: a segment opened under a
+/// A deferred graph loads transparently on first use: a segment opened under a
 /// scroll profile (every vector cold) answers searches, filtered reads and
 /// payload reads identically to an eagerly opened one.
 #[test]

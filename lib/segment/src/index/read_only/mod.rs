@@ -1,8 +1,7 @@
-mod deferred;
 mod live_reload;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -11,8 +10,6 @@ use common::low_memory::low_memory_mode;
 use common::storage_version::VERSION_FILE;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs};
-use deferred::DeferredIndexKind;
-pub(crate) use deferred::DeferredVectorIndex;
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -69,9 +66,6 @@ pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
     SparseCompressedStoredU8(
         Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<QuantizedU8, S>>>,
     ),
-    /// An index a request-specific load profile parked unopened; opened on
-    /// first use (see [`DeferredVectorIndex`]).
-    Deferred(Box<DeferredVectorIndex<S>>),
 }
 
 /// Shared read-only backends plus the `fs`/`path` an index opens its files from.
@@ -93,19 +87,18 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// dispatching on `vector_config` the same way. The plain index opens no
     /// files.
     ///
-    /// A `populate_override` (from a request-specific
-    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces
-    /// the config-derived placement of the index data.
+    /// A `deferred` HNSW graph (see [`Self::open`]) is not loaded at open, so
+    /// only its config is prefetched.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
-        populate_override: Option<Populate>,
+        deferred: bool,
     ) -> OperationResult<()> {
         match &vector_config.index {
             Indexes::Plain {} => Ok(()),
             Indexes::Hnsw(hnsw_config) => {
-                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, populate_override)
+                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, deferred)
             }
         }
     }
@@ -179,11 +172,18 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     }
 
     /// Open the read-only dense vector index from its config (sparse: follow-up).
-    /// `populate_override` mirrors [`preopen`](Self::preopen).
+    ///
+    /// A `deferred` HNSW graph (a request-specific
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile) predicted
+    /// this vector is never scored) is loaded on first use through `raw_fs` —
+    /// the segment's raw backend, which outlives the caching `fs` of this open
+    /// — instead of here (see [`ReadOnlyHNSWIndex::open`]). The plain index
+    /// has no graph, so there is nothing to defer.
     pub fn open<Fs: UniversalReadFs<File = S>>(
         vector_config: &VectorDataConfig,
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
-        populate_override: Option<Populate>,
+        raw_fs: &S::Fs,
+        deferred: bool,
     ) -> OperationResult<Self>
     where
         // The HNSW graph keeps its universal-IO storage handle alive behind a
@@ -207,13 +207,14 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             )?)),
             Indexes::Hnsw(hnsw_config) => Self::Hnsw(Box::new(ReadOnlyHNSWIndex::open(
                 fs,
+                raw_fs,
                 path,
                 id_tracker,
                 vector_storage,
                 quantized_vectors,
                 payload_index,
                 *hnsw_config,
-                populate_override,
+                deferred,
             )?)),
         })
     }
@@ -312,50 +313,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         Ok(index)
     }
 
-    /// A dense index parked unopened by the load profile: [`Self::open`] runs
-    /// on first use instead. `fs` is the segment's raw backend, kept alive for
-    /// that deferred open.
-    pub fn deferred_dense(
-        fs: S::Fs,
-        path: PathBuf,
-        vector_config: VectorDataConfig,
-        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
-        quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
-    ) -> Self {
-        Self::Deferred(Box::new(DeferredVectorIndex::new(
-            fs,
-            path,
-            DeferredIndexKind::Dense(vector_config),
-            id_tracker,
-            vector_storage,
-            payload_index,
-            quantized_vectors,
-        )))
-    }
-
-    /// A sparse index parked unopened by the load profile:
-    /// [`Self::open_sparse`] runs on first use instead.
-    pub fn deferred_sparse(
-        fs: S::Fs,
-        path: PathBuf,
-        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
-    ) -> Self {
-        Self::Deferred(Box::new(DeferredVectorIndex::new(
-            fs,
-            path,
-            DeferredIndexKind::Sparse,
-            id_tracker,
-            vector_storage,
-            payload_index,
-            // Sparse vectors are never quantized.
-            Arc::new(AtomicRefCell::new(None)),
-        )))
-    }
-
     /// Returns true if underlying index files are configured to stay on disk.
     pub fn is_on_disk(&self) -> bool {
         match self {
@@ -367,8 +324,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedStoredF16(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedStoredU8(index) => index.inverted_index().is_on_disk(),
-            // Nothing of an unopened index is in memory.
-            Self::Deferred(deferred) => deferred.opened().is_none_or(|index| index.is_on_disk()),
         }
     }
 
@@ -382,8 +337,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.inverted_index().populate()?,
             Self::SparseCompressedStoredF16(index) => index.inverted_index().populate()?,
             Self::SparseCompressedStoredU8(index) => index.inverted_index().populate()?,
-            // An explicit warm-up request overrides the deferral.
-            Self::Deferred(deferred) => deferred.get()?.populate()?,
         };
         Ok(())
     }
@@ -398,12 +351,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.inverted_index().clear_cache()?,
             Self::SparseCompressedStoredF16(index) => index.inverted_index().clear_cache()?,
             Self::SparseCompressedStoredU8(index) => index.inverted_index().clear_cache()?,
-            // An unopened index holds no cache to clear.
-            Self::Deferred(deferred) => {
-                if let Some(index) = deferred.opened() {
-                    index.clear_cache()?;
-                }
-            }
         };
         Ok(())
     }
@@ -439,13 +386,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredU8(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
-            // A search on a deferred vector opens the index now: the profile
-            // predicted it would never happen, but it must still work.
-            Self::Deferred(deferred) => {
-                deferred
-                    .get()?
-                    .search(vectors, filter, top, params, query_context)
-            }
         }
     }
 
@@ -459,11 +399,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedStoredF16(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedStoredU8(index) => index.get_telemetry_data(detail),
-            // An unopened index has served no searches.
-            Self::Deferred(deferred) => deferred
-                .opened()
-                .map(|index| index.get_telemetry_data(detail))
-                .unwrap_or_default(),
         }
     }
 
@@ -477,11 +412,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.indexed_vector_count(),
             Self::SparseCompressedStoredF16(index) => index.indexed_vector_count(),
             Self::SparseCompressedStoredU8(index) => index.indexed_vector_count(),
-            // Unknown without opening; report the conservative zero rather
-            // than trigger a (potentially remote) open for a statistic.
-            Self::Deferred(deferred) => deferred
-                .opened()
-                .map_or(0, |index| index.indexed_vector_count()),
         }
     }
 
@@ -501,10 +431,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedStoredF16(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedStoredU8(index) => index.size_of_searchable_vectors_in_bytes(),
-            // Unknown without opening; see `indexed_vector_count`.
-            Self::Deferred(deferred) => deferred
-                .opened()
-                .map_or(0, |index| index.size_of_searchable_vectors_in_bytes()),
         }
     }
 
@@ -528,9 +454,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedStoredF16(index) => index.fill_idf_statistics(idf, hw_counter),
             Self::SparseCompressedStoredU8(index) => index.fill_idf_statistics(idf, hw_counter),
-            // IDF statistics precede a sparse search on this vector: open now,
-            // like `search`.
-            Self::Deferred(deferred) => deferred.get()?.fill_idf_statistics(idf, hw_counter),
         }
     }
 
@@ -544,9 +467,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
             Self::SparseCompressedStoredF32(index) => index.is_index(),
             Self::SparseCompressedStoredF16(index) => index.is_index(),
             Self::SparseCompressedStoredU8(index) => index.is_index(),
-            // Deferral only ever wraps a real (HNSW or sparse) index — the
-            // plain index opens no files, so it is never deferred.
-            Self::Deferred(_) => true,
         }
     }
 }

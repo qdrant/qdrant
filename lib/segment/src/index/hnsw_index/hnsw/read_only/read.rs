@@ -13,7 +13,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
 
-impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyHNSWIndex<S> {
+impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -23,7 +23,7 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyHNSWIndex<S> {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // Reuses the shared search logic implemented on the read view.
-        self.with_view(|view| view.search(vectors, filter, top, params, query_context))
+        self.with_view(|view| view.search(vectors, filter, top, params, query_context))?
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -45,8 +45,10 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn indexed_vector_count(&self) -> usize {
         self.config
             .indexed_vector_count
-            // If indexed vector count is unknown, fall back to number of points
-            .unwrap_or_else(|| self.graph.num_points())
+            // If indexed vector count is unknown, fall back to number of
+            // points. A deferred graph reports the conservative zero rather
+            // than trigger a (potentially remote) load for a statistic.
+            .unwrap_or_else(|| self.graph.get().map_or(0, |graph| graph.num_points()))
     }
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
