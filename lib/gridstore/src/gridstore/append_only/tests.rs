@@ -108,7 +108,7 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
     drop(storage);
     let storage =
         Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
-    storage.as_append_only();
+    storage.as_arenastore();
     assert_eq!(storage.max_point_offset(), 100);
     for (point_offset, payload) in &payloads {
         let stored = storage
@@ -525,7 +525,7 @@ fn test_clear_preserves_append_only_mode() {
     drop(storage);
     let storage =
         Gridstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
-    storage.as_append_only();
+    storage.as_arenastore();
     assert_eq!(storage.max_point_offset(), 1);
 }
 
@@ -554,14 +554,14 @@ fn test_open_or_create_keeps_mode_on_disk() {
     };
     let storage =
         Gridstore::<Payload>::open_or_create(MmapFs, path.clone(), options, Populate::No).unwrap();
-    storage.as_append_only();
+    storage.as_arenastore();
     drop(storage);
 
     // Opening again ignores the create options, the mode comes from the persisted config
     let storage =
         Gridstore::<Payload>::open_or_create(MmapFs, path, StorageOptions::default(), Populate::No)
             .unwrap();
-    storage.as_append_only();
+    storage.as_arenastore();
 }
 
 #[test]

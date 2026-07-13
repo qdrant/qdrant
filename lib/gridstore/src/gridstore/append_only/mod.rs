@@ -17,8 +17,8 @@ use common::universal_io::{UniversalRead, UniversalWrite, UserData};
 use fs_err as fs;
 use page::AppendOnlyPage;
 use parking_lot::RwLock;
-pub(super) use reader::AppendOnlyGridstoreReader;
-pub(super) use view::AppendOnlyGridstoreView;
+pub(super) use reader::ArenastoreReader;
+pub(super) use view::ArenastoreView;
 
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
@@ -58,7 +58,7 @@ fn validate_consistency<S: UniversalRead>(
         && max_extent > page.len()
     {
         return Err(GridstoreError::service_error(format!(
-            "Inconsistent append-only gridstore: mappings reference value data up to byte \
+            "Inconsistent Arenastore: mappings reference value data up to byte \
              {max_extent}, but the page file only holds {} bytes",
             page.len(),
         )));
@@ -79,7 +79,7 @@ fn validate_consistency<S: UniversalRead>(
 ///
 /// Uses `Arc<RwLock<...>>` for the page and tracker to support concurrent flushing.
 #[derive(Debug)]
-pub(super) struct AppendOnlyGridstore<V, S>
+pub(super) struct Arenastore<V, S>
 where
     S: UniversalWrite + 'static,
 {
@@ -93,7 +93,7 @@ where
     _phantom: PhantomData<V>,
 }
 
-impl<V, S> AppendOnlyGridstore<V, S>
+impl<V, S> Arenastore<V, S>
 where
     V: Blob,
     S: UniversalWrite + 'static,
@@ -151,12 +151,12 @@ where
         })
     }
 
-    /// Create a [`AppendOnlyGridstoreView`] by locking tracker and page, then call `f` with the
+    /// Create an [`ArenastoreView`] by locking tracker and page, then call `f` with the
     /// view.
-    pub(super) fn with_view<R>(&self, f: impl FnOnce(AppendOnlyGridstoreView<'_, V, S>) -> R) -> R {
+    pub(super) fn with_view<R>(&self, f: impl FnOnce(ArenastoreView<'_, V, S>) -> R) -> R {
         let tracker = self.tracker.read();
         let page = self.page.read();
-        f(AppendOnlyGridstoreView::new(&self.config, &tracker, &page))
+        f(ArenastoreView::new(&self.config, &tracker, &page))
     }
 
     /// Put a value in the storage.
@@ -357,7 +357,7 @@ where
     }
 }
 
-impl<V, S: UniversalWrite + 'static> AppendOnlyGridstore<V, S> {
+impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     ///
     /// Appends all buffered value data to the page file with a single write and syncs it, then

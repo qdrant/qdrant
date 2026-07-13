@@ -20,14 +20,14 @@ use crate::tracker::{PointOffset, ValuePointer};
 /// Holds borrowed references to the tracker and page, and contains all reading logic.
 ///
 /// Value data is read through the universal IO backend `S`, the tracker is read directly.
-pub(crate) struct AppendOnlyGridstoreView<'a, V, S: UniversalRead> {
+pub(crate) struct ArenastoreView<'a, V, S: UniversalRead> {
     config: &'a StorageConfig,
     tracker: &'a AppendOnlyTracker,
     page: &'a AppendOnlyPage<S>,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead> AppendOnlyGridstoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead> ArenastoreView<'a, V, S> {
     pub(super) fn new(
         config: &'a StorageConfig,
         tracker: &'a AppendOnlyTracker,
@@ -60,7 +60,7 @@ impl<'a, V, S: UniversalRead> AppendOnlyGridstoreView<'a, V, S> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead> AppendOnlyGridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
     /// Get the value for a given point offset.
     pub(crate) fn get_value<P: AccessPattern>(
         &self,

@@ -168,7 +168,7 @@ impl AppendOnlyTracker {
     /// than every offset set before it. Skipped offsets are backfilled as `None` entries.
     pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) -> Result<()> {
         // Defensive re-check: the storage validates this before appending any value data, see
-        // AppendOnlyGridstore::put_value
+        // Arenastore::put_value
         let next = self.pointer_count();
         if point_offset < next {
             return Err(GridstoreError::unsupported_operation(format!(

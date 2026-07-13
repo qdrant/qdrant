@@ -8,7 +8,7 @@ mod tests;
 
 use std::path::PathBuf;
 
-use append_only::AppendOnlyGridstore;
+use append_only::Arenastore;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
@@ -52,7 +52,7 @@ where
     S: UniversalWrite + 'static,
 {
     Dynamic(dynamic::Gridstore<V, S>),
-    AppendOnly(AppendOnlyGridstore<V, S>),
+    AppendOnly(Arenastore<V, S>),
 }
 
 impl<V, S> Gridstore<V, S>
@@ -107,7 +107,7 @@ where
                 })
             }
             Mode::AppendOnly => {
-                let storage = AppendOnlyGridstore::new(fs, base_path, options)?;
+                let storage = Arenastore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: GridstoreVariant::AppendOnly(storage),
                 })
@@ -128,7 +128,7 @@ where
                 })
             }
             Mode::AppendOnly => {
-                let storage = AppendOnlyGridstore::open(fs, base_path, config)?;
+                let storage = Arenastore::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: GridstoreVariant::AppendOnly(storage),
                 })
@@ -315,8 +315,8 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
         }
     }
 
-    /// Get the inner append-only storage, panics if the storage is in another mode.
-    fn as_append_only(&self) -> &AppendOnlyGridstore<V, S> {
+    /// Get the inner Arenastore (append-only mode storage), panics if the storage is in another mode.
+    fn as_arenastore(&self) -> &Arenastore<V, S> {
         match &self.variant {
             GridstoreVariant::Dynamic(_) => panic!("storage is not in append-only mode"),
             GridstoreVariant::AppendOnly(storage) => storage,
