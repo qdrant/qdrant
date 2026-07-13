@@ -69,11 +69,16 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     }
 
     /// Reload externally-applied changes, dispatching to the active variant.
-    pub fn live_reload(&mut self) -> OperationResult<LiveReloadResult> {
+    ///
+    /// `fs` refreshes storages that mutate in place (the immutable and disk
+    /// trackers' deleted bitmaps) by opening fresh handles; the appendable
+    /// tracker keeps its own raw fs handle instead (see
+    /// [`Self::detect_and_load`]).
+    pub fn live_reload(&mut self, fs: &S::Fs) -> OperationResult<LiveReloadResult> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.live_reload(),
-            Self::Immutable(id_tracker) => id_tracker.live_reload(),
-            Self::DiskResident(id_tracker) => id_tracker.live_reload(),
+            Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
+            Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }
     }
 }

@@ -1,4 +1,5 @@
 pub mod iter;
+pub mod read_only;
 
 #[cfg(test)]
 mod tests;
@@ -15,6 +16,7 @@ use common::universal_io::{
 use smallvec::SmallVec;
 
 pub use self::iter::{Iter, PointerItem};
+pub use self::read_only::ReadOnlyTracker;
 use crate::Result;
 use crate::error::GridstoreError;
 
@@ -106,6 +108,50 @@ impl ValuePointer {
             length,
         }
     }
+}
+
+/// Read-side interface over the pointer tracker.
+///
+/// Implemented by the writable [`Tracker`] — whose reads see pending
+/// in-memory updates — and by [`ReadOnlyTracker`], which serves plain
+/// on-disk state. [`crate::GridstoreView`] is generic over this trait, so
+/// the same read logic works for both.
+pub trait TrackerRead<S: UniversalRead> {
+    /// Exclusive upper bound of point offsets that may have a pointer, as
+    /// maintained by the writer (in memory for [`Tracker`], in the stored
+    /// header for [`ReadOnlyTracker`]).
+    fn max_point_offset(&self) -> Result<PointOffset>;
+
+    /// Get the page pointer at the given point offset.
+    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>>;
+
+    /// Iterate page pointers for the given point offsets.
+    ///
+    /// Issues batched reads against the underlying storage, so async backends
+    /// can fetch entries in parallel.
+    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffset)>;
+}
+
+/// Read the slot for `point_offset` directly from `storage`.
+///
+/// Offsets beyond the file read as `None`; so do allocated-but-never-written
+/// slots — the file is zero-initialized and all-zeroes is the `None` slot.
+fn read_slot<S: UniversalRead>(
+    storage: &S,
+    point_offset: PointOffset,
+) -> Result<Option<ValuePointer>> {
+    let start_offset =
+        size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
+    let end_offset = start_offset + size_of::<OptionalPointer>();
+    let storage_len = storage.len::<u8>()?;
+    if end_offset as u64 > storage_len {
+        return Ok(None);
+    }
+    let opt = storage.read::<Random, OptionalPointer>(ReadRange::one(start_offset as u64))?[0];
+    Ok(opt.to_option())
 }
 
 /// Pointer updates for a given point offset
@@ -337,52 +383,9 @@ impl<S: UniversalRead> Tracker<S> {
         Ok(storage)
     }
 
-    /// This method reloads the tracker storage from "disk", so that
-    /// it should make newly written data visible to the tracker.
-    ///
-    /// Important assumptions:
-    ///
-    /// - Should only be called on read-only instances of the tracker.
-    /// - Only appending new pointers is supported, not modifications of existing pointers.
-    /// - Partial writes are possible, but ignored. Header is a source of truth.
-    ///
-    /// Returns `true` if there are new changes, `false` if the tracker is already up to date.
-    pub fn live_reload(&mut self) -> Result<bool> {
-        let new_header = Self::read_header(&self.storage)?;
-
-        if new_header.next_pointer_offset < self.next_pointer_offset {
-            Err(GridstoreError::service_error(format!(
-                "live reload cannot decrease pointer count, possible data loss: old count {:#?}, new count {:#?}",
-                self.next_pointer_offset, new_header.next_pointer_offset
-            )))
-        } else if new_header.next_pointer_offset == self.next_pointer_offset {
-            // No new pointers, no need to reload
-            Ok(false)
-        } else {
-            // reopen storage to make new data visible
-            // For some storages it should be a no-op.
-            self.storage.reopen()?;
-
-            // Update in-memory state to reflect new pointers
-            self.header = new_header;
-            self.next_pointer_offset = new_header.next_pointer_offset;
-            Ok(true)
-        }
-    }
-
     /// Get the raw value at the given point offset
     fn get_raw(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        let start_offset =
-            size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
-        let end_offset = start_offset + size_of::<OptionalPointer>();
-        let storage_len = self.storage.len::<u8>()?;
-        if end_offset as u64 > storage_len {
-            return Ok(None);
-        }
-        let opt = self
-            .storage
-            .read::<Random, OptionalPointer>(ReadRange::one(start_offset as u64))?[0];
-        Ok(opt.to_option())
+        read_slot(&self.storage, point_offset)
     }
 
     /// Get the page pointer at the given point offset
@@ -418,6 +421,26 @@ impl<S: UniversalRead> Tracker<S> {
 
     pub fn populate(&self) -> Result<()> {
         self.storage.populate().map_err(Into::into)
+    }
+}
+
+impl<S: UniversalRead> TrackerRead<S> for Tracker<S> {
+    /// Exact for the writable tracker: maintained in memory alongside the
+    /// header (see [`Tracker::pointer_count`]).
+    fn max_point_offset(&self) -> Result<PointOffset> {
+        Ok(self.pointer_count())
+    }
+
+    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        Tracker::get(self, point_offset)
+    }
+
+    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffset)>,
+    {
+        Tracker::iter(self, point_offsets)
     }
 }
 

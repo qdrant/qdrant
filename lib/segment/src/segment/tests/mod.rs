@@ -1037,6 +1037,54 @@ fn test_append_only_clone_stamps_payload_version() {
     assert_eq!(plain.version_tracker.get_payload(), Some(101));
 }
 
+/// In append-only mode a point deletion must be tombstone-only even on a
+/// non-appendable segment: clearing the payload row mutates committed state
+/// of an offset that stays visible to live-reload followers until the
+/// id-tracker drop is flushed — a follower refreshing in that window
+/// observes the point alive with an empty payload. Observed 2026-07-13 on
+/// the CoW-update path, which deletes the old copy from a non-appendable
+/// segment.
+#[test]
+fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
+    use crate::id_tracker::IdTrackerRead as _;
+    use crate::index::PayloadIndexRead as _;
+
+    init_logger();
+    let dir = Builder::new().prefix("segment").tempdir().unwrap();
+    let dim = 4;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    segment
+        .set_full_payload(101, 7.into(), &payload, &hw_counter)
+        .unwrap();
+
+    let internal_id = segment.get_internal_id(7.into()).unwrap();
+
+    // Emulate a non-appendable segment in an append-only deployment.
+    segment.appendable_flag = false;
+    segment.append_only_mutations = true;
+
+    assert!(segment.delete_point(102, 7.into(), &hw_counter).unwrap());
+
+    // The point is masked via the id tracker...
+    assert!(segment.id_tracker.borrow().is_deleted_point(internal_id));
+    // ...but its payload row is untouched: committed state of the old offset
+    // must not be mutated in place while readers may still resolve to it.
+    let stored = segment
+        .payload_index
+        .borrow()
+        .with_view(|view| view.get_payload(internal_id, &hw_counter))
+        .unwrap();
+    assert_eq!(stored, payload);
+}
+
 /// `upsert_moved_point` writes the whole point — raw bytes, decoded overlay,
 /// payload — in one operation, allocating exactly one internal slot where the
 /// separate `upsert_point_raw` + `update_vectors` + `set_full_payload` steps

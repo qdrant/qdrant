@@ -65,7 +65,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        let max_id = self.storage.max_point_offset();
+        let max_id = self.storage.max_point_offset()?;
         self.storage.iter(
             max_id,
             |point_id, payload| callback(point_id, &payload),

@@ -1,6 +1,7 @@
 use std::fmt::Debug;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
@@ -157,6 +158,22 @@ where
     }
 }
 
+/// Make the mirror path unique per open, so concurrently-alive [`DiskCache`]
+/// instances for the same remote path never share (and truncate) each other's
+/// local mirror. This lets callers refresh a file by opening a fresh handle
+/// while the old one is still alive.
+///
+/// The name carries no state across opens: a mirror is truncated when its
+/// [`LocalState`] materializes and removed when its `DiskCache` is dropped.
+fn unique_local_path(mut path: PathBuf) -> PathBuf {
+    static NEXT_MIRROR_ID: AtomicU64 = AtomicU64::new(0);
+    let id = NEXT_MIRROR_ID.fetch_add(1, Ordering::Relaxed);
+    // Process id disambiguates processes sharing a local cache dir.
+    path.as_mut_os_string()
+        .push(format!(".{:x}-{id:x}", std::process::id()));
+    path
+}
+
 impl<R> UniversalReadFs for DiskCacheFs<R>
 where
     R: DiskCacheRemote,
@@ -179,7 +196,7 @@ where
         }
 
         let remote_extra = extra.remote_extra.with_prevent_caching(true);
-        let local_path = self.config.local_path_for(path.as_ref())?;
+        let local_path = unique_local_path(self.config.local_path_for(path.as_ref())?);
 
         let populate = if crate::low_memory::low_memory_mode().skip_populate() {
             Populate::No

@@ -57,7 +57,7 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
         let next_point_offset = deleted
             .as_bitslice()
             .last_one()
-            .max(Some(storage.max_point_offset() as usize))
+            .max(Some(storage.max_point_offset()? as usize))
             .unwrap_or_default();
 
         Ok(Self {

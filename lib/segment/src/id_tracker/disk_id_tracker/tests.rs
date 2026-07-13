@@ -249,7 +249,7 @@ fn deletion_and_live_reload() {
     disk.mapping_flusher()().unwrap();
     disk.versions_flusher()().unwrap();
 
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     let mut reported = result.deleted.clone();
     reported.sort_unstable();
     let mut expected: Vec<u32> = to_delete.iter().map(|(_, offset)| *offset).collect();
@@ -265,6 +265,105 @@ fn deletion_and_live_reload() {
         );
         assert!(read_only.is_deleted_point(*offset));
         assert_eq!(read_only.external_id(*offset), None);
+    }
+}
+
+/// Cases 1+2 regression of the live-reload staleness audit: both trackers'
+/// `deleted` file is a fixed-size bitmap whose bits the writer flips in
+/// place — its length never changes — so a reader over a caching backend
+/// must not rely on `reopen()` (append-only-growth contract): the
+/// pre-deletion state, cached when first scanned, would be served forever
+/// and `live_reload` would never report the deletions. `live_reload` opens a
+/// fresh handle instead; this drives it over `DiskCacheFs`, where the
+/// stale-cache failure actually reproduces (mmap readers are read-through
+/// and can't catch it).
+#[test]
+fn deletion_and_live_reload_disk_cache() {
+    use std::sync::Arc;
+
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+    };
+
+    use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
+
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let remote_root = dir.path().join("remote");
+    let local_root = dir.path().join("local");
+    let immutable_path = remote_root.join("immutable_tracker");
+    let disk_path = remote_root.join("disk_tracker");
+    fs_err::create_dir_all(&immutable_path).unwrap();
+    fs_err::create_dir_all(&disk_path).unwrap();
+    fs_err::create_dir_all(&local_root).unwrap();
+
+    // The writers work on the "remote" directly; the readers mirror it into
+    // `local_root` through the disk cache.
+    let (versions, mappings) = make_data(6);
+    let mut immutable =
+        ImmutableIdTracker::<MmapFile>::new(&MmapFs, &immutable_path, &versions, mappings.clone())
+            .unwrap();
+    let mut disk =
+        DiskIdTracker::<MmapFile>::new(&MmapFs, &disk_path, &versions, mappings).unwrap();
+
+    let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+    // The immutable tracker's `open` reads the whole pre-deletion deleted
+    // bitmap; the disk tracker caches it on the baseline materialization
+    // below — either way, the state this test must escape ends up in the
+    // readers' local caches.
+    let mut read_only_immutable =
+        ReadOnlyImmutableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &immutable_path)
+            .unwrap();
+    let mut read_only_disk =
+        ReadOnlyDiskIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &disk_path).unwrap();
+    // Establish the diff baseline (a search-style access) so the reload
+    // reports only the incremental deletions, not every build-time deletion.
+    let _ = read_only_disk.deleted_point_bitslice();
+
+    let to_delete: Vec<(PointIdType, u32)> = immutable
+        .point_mappings()
+        .iter_from(None)
+        .take(50)
+        .collect();
+    for (external_id, _) in &to_delete {
+        immutable.drop(*external_id).unwrap();
+        disk.drop(*external_id).unwrap();
+    }
+    immutable.mapping_flusher()().unwrap();
+    immutable.versions_flusher()().unwrap();
+    disk.mapping_flusher()().unwrap();
+    disk.versions_flusher()().unwrap();
+
+    let mut expected: Vec<u32> = to_delete.iter().map(|(_, offset)| *offset).collect();
+    expected.sort_unstable();
+
+    for result in [
+        read_only_immutable.live_reload(&cache_fs).unwrap(),
+        read_only_disk.live_reload(&cache_fs).unwrap(),
+    ] {
+        assert_eq!(result.deleted, expected, "live_reload delta mismatch");
+        assert!(result.inserted.is_empty());
+    }
+
+    // After reload, both readers hide the deleted points on every path.
+    for (external_id, offset) in &to_delete {
+        assert_eq!(
+            read_only_immutable
+                .internal_id_with_behavior(*external_id, DeferredBehavior::VisibleOnly),
+            None,
+        );
+        assert!(read_only_immutable.is_deleted_point(*offset));
+        assert_eq!(read_only_immutable.external_id(*offset), None);
+
+        assert_eq!(
+            read_only_disk.internal_id_with_behavior(*external_id, DeferredBehavior::VisibleOnly),
+            None,
+        );
+        assert!(read_only_disk.is_deleted_point(*offset));
+        assert_eq!(read_only_disk.external_id(*offset), None);
     }
 }
 
