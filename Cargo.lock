@@ -7296,6 +7296,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "fnv",
  "fs-err",
  "fs4 1.1.0",
  "indexmap 2.14.0",

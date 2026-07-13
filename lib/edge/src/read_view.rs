@@ -189,6 +189,20 @@ pub trait EdgeShardRead {
         view(self).facet(request)
     }
 
+    fn search_matrix(
+        &self,
+        request: crate::matrix::SearchMatrixRequest,
+    ) -> OperationResult<crate::matrix::SearchMatrixResponse> {
+        view(self).search_matrix(request)
+    }
+
+    fn query_groups(
+        &self,
+        request: crate::grouping::GroupRequest,
+    ) -> OperationResult<Vec<crate::grouping::Group>> {
+        view(self).query_groups(request)
+    }
+
     fn info(&self) -> OperationResult<ShardInfo> {
         view(self).info()
     }

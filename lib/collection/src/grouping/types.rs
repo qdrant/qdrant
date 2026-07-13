@@ -1,32 +1,8 @@
-use ahash::AHashMap;
-use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
-use segment::types::{PointIdType, ScoredPoint};
+use shard::grouping::Group;
 
 use crate::operations::types::PointGroup;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
-
-#[derive(PartialEq, Debug)]
-pub(super) enum AggregatorError {
-    BadKeyType,
-    KeyNotFound,
-}
-#[derive(Debug, Clone)]
-pub(super) struct Group {
-    pub hits: Vec<ScoredPoint>,
-    pub key: GroupId,
-}
-
-impl Group {
-    pub(super) fn hydrate_from(&mut self, map: &AHashMap<PointIdType, ScoredPoint>) {
-        self.hits.iter_mut().for_each(|hit| {
-            if let Some(point) = map.get(&hit.id) {
-                hit.payload.clone_from(&point.payload);
-                hit.vector.clone_from(&point.vector);
-            }
-        });
-    }
-}
 
 impl From<Group> for PointGroup {
     fn from(group: Group) -> Self {

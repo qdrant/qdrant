@@ -115,7 +115,6 @@ impl UniversalReadExt for ReadOnly<MmapFile> {
     fn condition_checker_numeric_uuid    <'a>(i: RangeCC<'a, Self, UuidIntType>)      -> EnumCC<'a> { EnumCC::Dyn(Box::new(i)) }
 }
 
-#[cfg(test)]
 #[rustfmt::skip]
 impl<A: io_bridge_object_store::AsyncRead + Clone> UniversalReadExt for io_bridge_object_store::BlobFile<A> {
     fn condition_checker_bool            <'a>(i: BoolCC<'a, Self>)                    -> EnumCC<'a> { EnumCC::Dyn(Box::new(i)) }

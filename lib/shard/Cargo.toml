@@ -25,6 +25,7 @@ wal = { path = "../wal" }
 
 ahash = { workspace = true }
 chrono = { workspace = true }
+fnv = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
