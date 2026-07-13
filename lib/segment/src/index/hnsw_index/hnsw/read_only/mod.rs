@@ -5,10 +5,11 @@
 mod read;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs};
+use once_cell::sync::OnceCell;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -46,13 +47,14 @@ pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     /// The graph, loaded at [`Self::open`] — or on first use when a
     /// request-specific [`LoadProfile`] deferred it (see [`Self::graph`]).
     ///
-    /// [`OnceLock`] rather than a plain cell because the index is queried
-    /// through `&self` from many threads. On a race both threads may load;
-    /// the first to finish wins and the loser's copy is dropped (same
-    /// arbitration as `ReadOnlyRoaringFlags::bitmap`).
+    /// A blocking [`OnceCell`] (not the std `OnceLock`, whose fallible init
+    /// is still unstable) because the index is queried through `&self` from
+    /// many threads and the load is expensive: concurrent first users block
+    /// while exactly one loads, and a failed load leaves the cell empty so
+    /// the next caller retries.
     ///
     /// [`LoadProfile`]: crate::data_types::load_profile::LoadProfile
-    graph: OnceLock<GraphLayers>,
+    graph: OnceCell<GraphLayers>,
     /// The segment's raw backend, retained for the deferred graph load: the
     /// caching `fs` the eager open reads through only lives for that open.
     fs: S::Fs,
@@ -212,9 +214,9 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         // RAM whatever the residency.
         let (residency, is_on_disk) = graph_residency(&hnsw_config, populate_override);
         let graph = if graph_deferred(populate_override) {
-            OnceLock::new()
+            OnceCell::new()
         } else {
-            OnceLock::from(GraphLayers::load_universal(fs, path, residency)?)
+            OnceCell::with_value(GraphLayers::load_universal(fs, path, residency)?)
         };
 
         Ok(Self {
@@ -240,20 +242,17 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// to fetch it is not to load it. The profile predicted this vector would
     /// never be scored; when a request scores it anyway, it pays the load
     /// here — through the raw backend, without the open's prefetch pool.
+    ///
+    /// The load runs inside the cell's lock: a search burst on a deferred
+    /// vector performs one load while the other callers block on it, rather
+    /// than each fetching the whole graph. A failed load is not cached —
+    /// the next caller retries.
     fn graph(&self) -> OperationResult<&GraphLayers>
     where
         S: 'static,
     {
-        // `OnceLock::get_or_try_init` is still unstable, so load outside the
-        // lock and let `get_or_init` arbitrate. A racing thread's graph is
-        // simply dropped: both are loaded from the same files.
-        if let Some(graph) = self.graph.get() {
-            return Ok(graph);
-        }
-
-        let graph = GraphLayers::load_universal(&self.fs, &self.path, self.residency)?;
-
-        Ok(self.graph.get_or_init(|| graph))
+        self.graph
+            .get_or_try_init(|| GraphLayers::load_universal(&self.fs, &self.path, self.residency))
     }
 
     pub fn is_on_disk(&self) -> bool {

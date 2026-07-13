@@ -74,6 +74,7 @@ geohash = "0.13.2"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
+once_cell = "1.21"
 rand = { workspace = true }
 bitvec = { workspace = true }
 fs_extra = { workspace = true }

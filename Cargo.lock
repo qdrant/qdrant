@@ -6980,6 +6980,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "object_store",
+ "once_cell",
  "ordered-float 5.3.0",
  "parking_lot",
  "posting_list",
