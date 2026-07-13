@@ -3,7 +3,9 @@ use std::ops::Deref;
 use std::path::Path;
 
 use crate::mmap::{Advice, AdviceSetting};
-use crate::universal_io::{OpenOptions, Populate, Result, UniversalRead, UniversalReadFs};
+use crate::universal_io::{
+    CachedReadFs, OpenOptions, Populate, Result, UniversalRead, UniversalReadFs,
+};
 
 /// Thin RAII wrapper around a [`UniversalRead`] handle for a one-shot read.
 ///
@@ -20,18 +22,30 @@ pub struct OneshotFile<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> OneshotFile<S> {
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate,
+            advice: AdviceSetting::Advice(Advice::Sequential),
+        }
+    }
+
+    /// Schedule background prefetch of `path` for a later [`Self::open`].
+    ///
+    /// A one-shot file is always read in full, so the prefetch populates it —
+    /// the fetch overlaps whatever runs between the schedule and the open.
+    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, path: impl AsRef<Path>) -> Result<()> {
+        fs.schedule_prefetch(
+            path.as_ref(),
+            Some(Self::open_options(Populate::PreferBackground)),
+            None,
+        )
+    }
+
     /// Open `path` read-only through `fs` for a single sequential read.
     pub fn open<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: impl AsRef<Path>) -> Result<Self> {
-        let inner = fs.open(
-            path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: true,
-                populate: Populate::No,
-                advice: AdviceSetting::Advice(Advice::Sequential),
-            },
-            Default::default(),
-        )?;
+        let inner = fs.open(path, Self::open_options(Populate::No), Default::default())?;
         Ok(Self { inner })
     }
 

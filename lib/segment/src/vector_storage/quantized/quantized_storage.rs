@@ -9,7 +9,8 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+    UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -70,13 +71,26 @@ pub struct QuantizedStorageBuilder<S> {
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
-    fn open_options() -> OpenOptions {
+    fn open_options(populate: Populate) -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Global,
         }
+    }
+
+    /// Schedule background prefetch of the data file [`Self::from_file`] reads.
+    ///
+    /// The storage reads lazily through its mmap-style handle; `populate`
+    /// warms the parked handle for the `cached` memory placement.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(path, Some(Self::open_options(populate)), None)?;
+        Ok(())
     }
 
     pub fn from_file(
@@ -84,7 +98,12 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(fs, path, Self::open_options(), Default::default())?;
+        let storage = ReadOnly::open(
+            fs,
+            path,
+            Self::open_options(Populate::No),
+            Default::default(),
+        )?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -205,7 +224,12 @@ impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
     fn build(self) -> OperationResult<QuantizedStorage<MmapFile>> {
         self.mmap.flush()?;
 
-        let storage = ReadOnly::open(&MmapFs, &self.path, Self::Storage::open_options(), ())?;
+        let storage = ReadOnly::open(
+            &MmapFs,
+            &self.path,
+            Self::Storage::open_options(Populate::No),
+            (),
+        )?;
 
         Ok(QuantizedStorage {
             storage,

@@ -6,7 +6,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
     UniversalReadFs, UniversalWrite,
 };
 use fs_err as fs;
@@ -46,6 +46,27 @@ impl MultivectorOffsetsStorageRam {
         })
     }
 
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of the offsets file [`Self::open`] reads.
+    ///
+    /// The open reads the whole file, so the prefetch populates it.
+    pub fn preopen(fs: &impl CachedReadFs, path: &Path) -> OperationResult<()> {
+        fs.schedule_prefetch(
+            path,
+            Some(Self::open_options(Populate::PreferBackground)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// Load all offsets into RAM through the provided [`UniversalRead`] filesystem,
     /// performing no writes.
     ///
@@ -56,12 +77,7 @@ impl MultivectorOffsetsStorageRam {
     ) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: true,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(Populate::No),
             Default::default(),
         )?);
         Ok(MultivectorOffsetsStorageRam {
@@ -146,18 +162,35 @@ impl MultivectorOffsetsStorageMmap<MmapFile> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of the offsets file [`Self::open`] reads.
+    ///
+    /// The offsets are read lazily; `populate` warms the parked handle for
+    /// the `cached` memory placement.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        fs.schedule_prefetch(path, Some(Self::open_options(populate)), None)?;
+        Ok(())
+    }
+
     /// Open the offsets file read-only through the provided [`UniversalRead`] filesystem.
     ///
     /// Performs no writes, making this the entry point used by read-only storages.
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(Populate::No),
             Default::default(),
         )?);
 
@@ -375,6 +408,23 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// `populate` warms the parked chunks for the `cached` memory placement;
+    /// the open itself always maps them lazily.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        ChunkedVectorsRead::<MultivectorOffset, S>::preopen(
+            fs,
+            path,
+            AdviceSetting::Global,
+            populate,
+        )
+    }
+
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
         let data = ChunkedVectorsRead::open(
             fs,

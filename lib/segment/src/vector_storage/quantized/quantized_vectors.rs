@@ -202,7 +202,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn construct_vector_parameters(
+    pub(in crate::vector_storage::quantized) fn construct_vector_parameters(
         quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,

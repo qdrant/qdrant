@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -22,6 +22,18 @@ pub struct QuantizedChunkedStorageRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// `populate` warms the parked chunks for the `cached` memory placement;
+    /// the open itself always maps them lazily.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        ChunkedVectorsRead::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate)
+    }
+
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
