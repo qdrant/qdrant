@@ -1,6 +1,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{Memory, QuantizationConfig};
@@ -35,7 +36,7 @@ impl fmt::Debug for QuantizedVectorsConfig {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, Eq, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Eq, PartialEq, Default, EnumIter)]
 pub enum QuantizedVectorsStorageType {
     #[default]
     Immutable,

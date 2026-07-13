@@ -1,15 +1,18 @@
 use std::path::Path;
 
-use common::universal_io::{OkNotFound, UniversalRead, UniversalReadFs, read_json_via};
+use common::universal_io::{
+    CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs, read_json_via,
+};
 use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
+use strum::IntoEnumIterator;
 
 use super::ReadOnlyQuantizedVectors;
 use super::storage::ReadOnlyQuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
-use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
+use crate::types::{Distance, Memory, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorageChunkedRead, MultivectorOffsetsStorageMmap,
@@ -18,17 +21,140 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedStorageKind, QuantizedVectors, QuantizedVectorsConfig,
+    QuantizedStorageKind, QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
 };
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
+    /// Schedule background prefetch of every file [`Self::open`] will read —
+    /// without reading the quantization config first.
+    ///
+    /// Waiting on the config would put a round-trip on the critical path, so
+    /// the persisted layout is probed against the filesystem's listing
+    /// snapshot instead: both layout candidates (the immutable flat files and
+    /// the appendable chunked directories) are scheduled, and a segment only
+    /// ever contains the one the real config selects. The config itself is
+    /// scheduled for `open` to consume; an absent config means quantization
+    /// isn't built, like `open`'s `Ok(None)`.
+    ///
+    /// `vector_config` is the segment-side config of the quantized vector: a
+    /// no-op when it carries no quantization config. Its effective placement
+    /// decides warmth: `pinned` selects the RAM loaders (which read the data
+    /// in full on open), `cached` keeps the data mmap-backed with the page
+    /// cache primed, `cold` reads lazily except the first vector, which the
+    /// load reads to validate the stored vector size.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        vector_config: &VectorDataConfig,
+    ) -> OperationResult<()> {
+        let Some(quantization_config) = &vector_config.quantization_config else {
+            return Ok(());
+        };
+        let multivector = vector_config.multivector_config.is_some();
+        let on_disk_vector_storage = vector_config.storage_type.is_on_disk();
+
+        // Config; `open` reads it off the parked handle.
+        let config_path = QuantizedVectors::get_config_path(path);
+        if fs
+            .schedule_prefetch(&config_path, None, None)
+            .ok_not_found()?
+            .is_none()
+        {
+            return Ok(());
+        }
+
+        // Per-method metadata
+        fs.schedule_prefetch(&QuantizedVectors::get_meta_path(path), None, None)?;
+
+        let placement = QuantizedVectors::memory_placement(
+            quantization_config.memory_placement(),
+            on_disk_vector_storage,
+        );
+        let populate = match placement {
+            Memory::Cached | Memory::Pinned => Populate::PreferBackground,
+            Memory::Cold => Populate::No,
+        };
+
+        // The load reads the first vector off the data (from the first chunk,
+        // in the chunked layout) to validate the stored vector size; populate
+        // that prefix, so the validation doesn't cost a round-trip. The size
+        // is derived from the segment config alone, exactly like the build.
+        let vector_parameters = QuantizedVectors::construct_vector_parameters(
+            quantization_config,
+            vector_config.distance,
+            vector_config.size,
+            // The count is irrelevant to the vector size.
+            0,
+            QuantizedVectorsStorageType::Mutable,
+        );
+        let first_vector_size = QuantizedVectors::quantized_vector_size(
+            quantization_config,
+            &vector_parameters,
+            multivector,
+        );
+        let data_populate = populate.or_partial(0..first_vector_size as u64);
+
+        // Probe the layout candidates of every storage type. The file names
+        // depend only on the storage type — not on the quantization method —
+        // and the exhaustive iteration guarantees full coverage: a storage
+        // type (and so a layout) cannot be added without the compiler
+        // pointing here.
+        for storage_type in QuantizedVectorsStorageType::iter() {
+            let data_path = QuantizedVectors::get_data_path(path, storage_type);
+            let offsets_path = QuantizedVectors::get_offsets_path(path, storage_type);
+            match storage_type {
+                // Immutable (flat) files
+                QuantizedVectorsStorageType::Immutable => {
+                    if fs.exists(&data_path)? {
+                        match placement {
+                            Memory::Pinned => QuantizedRamStorage::preopen(fs, &data_path)?,
+                            Memory::Cached | Memory::Cold => {
+                                QuantizedStorage::<S>::preopen(fs, &data_path, data_populate)?
+                            }
+                        }
+                    }
+                    if multivector && fs.exists(&offsets_path)? {
+                        match placement {
+                            Memory::Pinned => {
+                                MultivectorOffsetsStorageRam::preopen(fs, &offsets_path)?
+                            }
+                            Memory::Cached | Memory::Cold => {
+                                MultivectorOffsetsStorageMmap::<S>::preopen(
+                                    fs,
+                                    &offsets_path,
+                                    populate,
+                                )?
+                            }
+                        }
+                    }
+                }
+                // Appendable (chunked) directories; absent ones are tolerated
+                // — they schedule nothing.
+                QuantizedVectorsStorageType::Mutable => {
+                    QuantizedChunkedStorageRead::<S>::preopen(fs, &data_path, data_populate)
+                        .ok_not_found()?;
+                    if multivector {
+                        MultivectorOffsetsStorageChunkedRead::<S>::preopen(
+                            fs,
+                            &offsets_path,
+                            populate,
+                        )
+                        .ok_not_found()?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Open existing quantized vectors read-only through the [`UniversalRead`] backend `S`.
     ///
     /// Returns `Ok(None)` when no quantization config is present at `path`. Every read —
-    /// config, per-method metadata, quantized data and multivector offsets — goes through `S`;
-    /// nothing is read with direct filesystem access and nothing is written. Both on-disk
-    /// layouts are supported read-only: the immutable flat format and the appendable chunked
-    /// format (the latter only produced by Binary/TurboQuant). Unlike
+    /// config, per-method metadata, quantized data and multivector offsets — goes through
+    /// `S`; nothing is read with direct filesystem access and nothing is written. Both
+    /// on-disk layouts are supported read-only: the immutable flat format and the appendable
+    /// chunked format (the latter only produced by Binary/TurboQuant). Unlike
     /// [`QuantizedVectors::load`], this never creates or quantizes anything.
     ///
     /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
@@ -59,13 +185,18 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             None => Self::open_single(fs, path, &config, on_disk_vector_storage)?,
         };
 
-        Ok(Some(Self::new(
-            storage_impl,
-            config,
-            path.to_path_buf(),
-            distance,
-            datatype,
-        )))
+        let memory_placement = config.memory_placement(on_disk_vector_storage);
+
+        let quantized_vectors =
+            Self::new(storage_impl, config, path.to_path_buf(), distance, datatype);
+
+        // For the cached placement quantized vectors stay mmap-backed, but the
+        // page cache is primed on load — mirroring [`QuantizedVectors::load`].
+        if memory_placement == Memory::Cached {
+            quantized_vectors.populate()?;
+        }
+
+        Ok(Some(quantized_vectors))
     }
 
     fn open_single(

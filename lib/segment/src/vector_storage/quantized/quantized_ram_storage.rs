@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
-use common::universal_io::{OneshotFile, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use fs_err::File;
 
@@ -21,6 +21,17 @@ pub struct QuantizedRamStorage {
 }
 
 impl QuantizedRamStorage {
+    /// Schedule background prefetch of the data file [`Self::from_file`] reads.
+    ///
+    /// The load reads the whole file, so the prefetch populates it.
+    pub fn preopen<S: UniversalRead>(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+    ) -> OperationResult<()> {
+        OneshotFile::<S>::preopen(fs, path)?;
+        Ok(())
+    }
+
     /// Load all quantized vectors into RAM through the provided [`UniversalRead`]
     /// filesystem, performing no writes.
     ///

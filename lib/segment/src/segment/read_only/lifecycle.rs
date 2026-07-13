@@ -118,6 +118,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
             VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path)?;
+
+            // Quantized vectors live in the vector storage directory; a no-op
+            // when quantization isn't configured for this vector.
+            ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config)?;
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
@@ -140,8 +144,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// stores a filesystem handle to re-open appended files later (the
     /// appendable id tracker): a caching wrapper's snapshot would go stale.
     ///
-    /// `config` and `payload_config` are the ones [`first_preopen`](Self::first_preopen)
-    /// already parsed off `fs`.
+    /// `config` and `payload_config` are the ones
+    /// [`first_preopen`](Self::first_preopen) already parsed off `fs`.
     pub(crate) fn open_via(
         fs: &impl CachedReadFs<File = S>,
         raw_fs: &S::Fs,
