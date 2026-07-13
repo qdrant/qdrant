@@ -348,7 +348,7 @@ impl GpuVectorStorage {
             (0..quantized_storage.vectors_count()).map(|id| {
                 let (_, vector) =
                     quantized_storage.get_quantized_vector_offset_and_code(id as PointOffsetType);
-                Cow::Borrowed(vector)
+                vector
             }),
             Some(GpuQuantization::new_sq(device, quantized_storage)?),
             multivectors,
