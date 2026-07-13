@@ -1102,22 +1102,17 @@ impl SegmentHolder {
                             "CoW raw move requires encoding-compatible vector configs on source and destination",
                         );
 
-                        appendable_write_segment.upsert_point_raw(
+                        // One fused write: issuing raw vectors, updated vectors and
+                        // payload as separate operations would clone the point once
+                        // per step on append-only destinations.
+                        appendable_write_segment.upsert_moved_point(
                             op_num,
                             point_id,
                             &raw_vectors,
+                            updated_vectors,
+                            &payload,
                             hw_counter,
                         )?;
-                        if !updated_vectors.is_empty() {
-                            appendable_write_segment.update_vectors(
-                                op_num,
-                                point_id,
-                                updated_vectors,
-                                hw_counter,
-                            )?;
-                        }
-                        appendable_write_segment
-                            .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {

@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::safe_delete_with_suffix;
-use common::types::{DeferredBehavior, TelemetryDetail};
+use common::types::{DeferredBehavior, PointOffsetType, TelemetryDetail};
 use uuid::Uuid;
 
 use super::Segment;
@@ -819,6 +819,77 @@ impl SegmentEntry for Segment {
                 let new_index =
                     segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
                 Ok((false, Some(new_index)))
+            }),
+        }
+    }
+
+    fn upsert_moved_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        mut updated_vectors: NamedVectors,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        debug_assert!(self.is_appendable());
+        for (vector_name, _) in raw_vectors {
+            check_vector_name(vector_name, &self.segment_config)?;
+        }
+        check_named_vectors(&updated_vectors, &self.segment_config)?;
+        // Raw bytes are the stored form, already preprocessed on first
+        // ingestion; only the freshly decoded overlay needs preprocessing.
+        updated_vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
+        let stored_internal_point = self
+            .id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        match stored_internal_point {
+            Some(existing_internal_id) => {
+                let append_only = self.is_append_only();
+                self.handle_point_version_and_failure(
+                    op_num,
+                    point_id,
+                    Some(existing_internal_id),
+                    |segment| {
+                        let internal_id = if append_only {
+                            // The whole point is replaced, so no snapshot of the old
+                            // slot is needed: write the parts at a fresh id and
+                            // repoint last, like `clone_and_replace_point_raw`.
+                            segment.id_tracker.borrow().total_point_count() as PointOffsetType
+                        } else {
+                            existing_internal_id
+                        };
+                        segment.write_point_parts(
+                            internal_id,
+                            op_num,
+                            raw_vectors,
+                            &updated_vectors,
+                            payload,
+                            hw_counter,
+                        )?;
+                        if append_only {
+                            segment
+                                .id_tracker
+                                .borrow_mut()
+                                .set_link(point_id, internal_id)?;
+                        }
+                        Ok((true, Some(internal_id)))
+                    },
+                )
+            }
+            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
+                let new_id = segment.id_tracker.borrow().total_point_count() as PointOffsetType;
+                segment.write_point_parts(
+                    new_id,
+                    op_num,
+                    raw_vectors,
+                    &updated_vectors,
+                    payload,
+                    hw_counter,
+                )?;
+                segment.id_tracker.borrow_mut().set_link(point_id, new_id)?;
+                Ok((false, Some(new_id)))
             }),
         }
     }

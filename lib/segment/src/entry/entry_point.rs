@@ -450,6 +450,27 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
+    /// Upsert a complete point in a single operation: storage-native raw
+    /// vectors (the [`ReadSegmentEntry::retrieve_raw`] form, same contract as
+    /// [`SegmentEntry::upsert_point_raw`]), decoded vectors overriding them
+    /// name-by-name, and the full payload. Named vectors present in neither
+    /// list are deleted.
+    ///
+    /// This is the copy-on-write move primitive: it is equivalent to
+    /// `upsert_point_raw` + `update_vectors` + `set_full_payload`, but writes
+    /// the point once. On append-only segments each of those steps clones the
+    /// whole point to a fresh internal id, so issuing them separately turns
+    /// one moved point into a chain of immediately-dead slots.
+    fn upsert_moved_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: NamedVectors,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     fn update_vectors(
         &mut self,
         op_num: SeqNumberType,

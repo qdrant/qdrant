@@ -300,6 +300,73 @@ fn test_cow_operation() {
     );
 }
 
+/// A CoW move into an append-only destination must allocate exactly one
+/// internal slot: raw vectors, updated vectors and payload travel in one
+/// fused write (`upsert_moved_point`), not one clone per part.
+#[test]
+fn test_cow_move_append_only_single_slot() {
+    use segment::id_tracker::IdTrackerRead as _;
+
+    const PAYLOAD_KEY: &str = "test-value";
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut destination = empty_segment(dir.path());
+    destination.append_only_mutations = true;
+    let destination_id_tracker = destination.id_tracker.clone();
+
+    let mut source = build_segment_1(dir.path());
+    let hw_counter = HardwareCounterCell::new();
+    source
+        .upsert_point(
+            100,
+            123.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let dst_sid = holder.add_new(destination);
+    holder.add_new(source);
+
+    holder
+        .apply_points_with_conditional_move(
+            1010,
+            &[123.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_point_id, _raw_vectors, vectors, payload| {
+                vectors.insert(
+                    DEFAULT_VECTOR_NAME.to_owned(),
+                    VectorInternal::Dense(vec![9.0; 4]),
+                );
+                payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
+            },
+            &hw_counter,
+        )
+        .unwrap();
+
+    // The moved point occupies exactly one slot in the destination, with the
+    // overlaid vector and payload.
+    assert_eq!(destination_id_tracker.borrow().total_point_count(), 1);
+    let locked_destination = holder.get(dst_sid).unwrap().get();
+    let read_destination = locked_destination.read();
+    assert_eq!(
+        read_destination
+            .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(vec![9.0; 4])),
+    );
+    assert_eq!(
+        read_destination
+            .payload(123.into(), &hw_counter)
+            .unwrap()
+            .get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
+        &Value::from(2)
+    );
+}
+
 /// TurboQuant-as-datatype vectors must survive repeated CoW moves between
 /// segments without degrading.
 ///
