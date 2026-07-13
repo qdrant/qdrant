@@ -31,7 +31,7 @@ use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, 
 /// Uses `Arc<RwLock<...>>` for pages and tracker to support concurrent flushing.
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub(super) struct DynamicGridstore<V, S>
+pub(super) struct Gridstore<V, S>
 where
     S: UniversalWrite + 'static,
 {
@@ -49,7 +49,7 @@ where
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl<V, S> DynamicGridstore<V, S>
+impl<V, S> Gridstore<V, S>
 where
     V: Blob,
     S: UniversalWrite + 'static,
@@ -477,7 +477,7 @@ where
     }
 }
 
-impl<V, S: UniversalWrite + 'static> DynamicGridstore<V, S> {
+impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn next_page_id(&self) -> PageId {
         self.pages.read().num_pages() as PageId
     }

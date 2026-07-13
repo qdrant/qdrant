@@ -14,7 +14,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{MmapFile, Populate, UniversalWrite, UniversalWriteFileOps, UserData};
-use dynamic::DynamicGridstore;
 use reader::CONFIG_FILENAME;
 pub use reader::GridstoreReader;
 pub use view::GridstoreView;
@@ -52,7 +51,7 @@ enum GridstoreVariant<V, S>
 where
     S: UniversalWrite + 'static,
 {
-    Dynamic(DynamicGridstore<V, S>),
+    Dynamic(dynamic::Gridstore<V, S>),
     AppendOnly(AppendOnlyGridstore<V, S>),
 }
 
@@ -102,7 +101,7 @@ where
     pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         match options.mode.unwrap_or_default() {
             Mode::Dynamic => {
-                let storage = DynamicGridstore::new(fs, base_path, options)?;
+                let storage = dynamic::Gridstore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: GridstoreVariant::Dynamic(storage),
                 })
@@ -123,7 +122,7 @@ where
         let config = reader::read_config(&fs, &base_path)?;
         match config.mode {
             Mode::Dynamic => {
-                let storage = DynamicGridstore::open(fs, base_path, config, populate)?;
+                let storage = dynamic::Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: GridstoreVariant::Dynamic(storage),
                 })
@@ -300,16 +299,16 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
 
 #[cfg(test)]
 impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
-    /// Get the inner dynamic storage, panics if the storage is in another mode.
-    fn as_dynamic(&self) -> &DynamicGridstore<V, S> {
+    /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
+    fn as_gridstore(&self) -> &dynamic::Gridstore<V, S> {
         match &self.variant {
             GridstoreVariant::Dynamic(storage) => storage,
             GridstoreVariant::AppendOnly(_) => panic!("storage is not in dynamic mode"),
         }
     }
 
-    /// Get the inner dynamic storage, panics if the storage is in another mode.
-    fn as_dynamic_mut(&mut self) -> &mut DynamicGridstore<V, S> {
+    /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
+    fn as_gridstore_mut(&mut self) -> &mut dynamic::Gridstore<V, S> {
         match &mut self.variant {
             GridstoreVariant::Dynamic(storage) => storage,
             GridstoreVariant::AppendOnly(_) => panic!("storage is not in dynamic mode"),

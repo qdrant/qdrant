@@ -226,7 +226,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
 /// Read-only storage for values of type `V`, operating in dynamic mode.
 ///
 /// Holds pages and tracker directly (no locks) since it provides only read access.
-/// For read-write access, use [`super::dynamic::DynamicGridstore`].
+/// For read-write access, use [`super::dynamic::Gridstore`].
 #[derive(Debug)]
 struct DynamicGridstoreReader<V, S: UniversalRead> {
     config: StorageConfig,
