@@ -553,6 +553,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         let data = self.encoded_vectors.get_vector_data(i);
         let (offset, _) = Self::parse_vec_data(&data);
         let dim = self.metadata.actual_dim();
+        debug_assert!(data.len() >= ADDITIONAL_CONSTANT_SIZE + dim);
         // Return the code as a view into `data` itself, so an owned buffer stays alive.
         let code = match data {
             Cow::Borrowed(bytes) => {
