@@ -3,7 +3,9 @@ mod builders;
 pub mod config;
 mod count;
 mod facet;
+mod grouping;
 mod info;
+mod matrix;
 mod optimize;
 mod pool;
 mod query;
@@ -19,6 +21,9 @@ mod types;
 pub use types::*;
 mod update;
 
+#[cfg(test)]
+mod test_helpers;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -30,7 +35,9 @@ pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;
 pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 use fs_err as fs;
+pub use grouping::{Group, GroupRequest};
 pub use info::ShardInfo;
+pub use matrix::{SearchMatrixRequest, SearchMatrixResponse};
 use parking_lot::Mutex;
 pub use read_only::{
     LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,

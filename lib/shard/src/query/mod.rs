@@ -150,6 +150,45 @@ impl ScoringQuery {
     }
 }
 
+/// Returns the expected order of results, depending on the type of query.
+///
+/// `get_distance` resolves the distance of a named vector, for queries scored by raw vector
+/// distance.
+pub fn query_result_order<E>(
+    query: Option<&ScoringQuery>,
+    get_distance: impl FnOnce(&VectorName) -> Result<Distance, E>,
+) -> Result<Option<Order>, E> {
+    let order = match query {
+        Some(scoring_query) => match scoring_query {
+            ScoringQuery::Vector(query_enum) => {
+                if query_enum.is_distance_scored() {
+                    Some(get_distance(query_enum.get_vector_name())?.distance_order())
+                } else {
+                    Some(Order::LargeBetter)
+                }
+            }
+            ScoringQuery::Fusion(fusion) => match fusion {
+                FusionInternal::Rrf { k: _, weights: _ } | FusionInternal::Dbsf => {
+                    Some(Order::LargeBetter)
+                }
+            },
+            // Score boosting formulas are always have descending order,
+            // Euclidean scores can be negated within the formula
+            ScoringQuery::Formula(_formula) => Some(Order::LargeBetter),
+            ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
+            // Random sample does not require ordering
+            ScoringQuery::Sample(SampleInternal::Random) => None,
+            // MMR cannot be reordered
+            ScoringQuery::Mmr(_) => None,
+        },
+        None => {
+            // Order by ID
+            Some(Order::SmallBetter)
+        }
+    };
+    Ok(order)
+}
+
 #[derive(Clone, Debug, PartialEq, Hash, Serialize)]
 pub enum FusionInternal {
     /// Reciprocal Rank Fusion with optional weights per prefetch

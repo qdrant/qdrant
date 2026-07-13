@@ -9,7 +9,7 @@ use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterab
 use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
 use serde_json::Value;
 
-use super::types::{AggregatorError, Group};
+use super::{AggregatorError, Group};
 
 /// Avoid excessive memory allocation and allocation failures when a client supplies a huge
 /// `limit` (number of groups) or `group_size`. Mirrors `SearchResultAggregator` and
@@ -17,7 +17,7 @@ use super::types::{AggregatorError, Group};
 const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
 
 type Hits = AHashMap<PointIdType, ScoredPoint>;
-pub(super) struct GroupsAggregator {
+pub struct GroupsAggregator {
     groups: AHashMap<GroupId, Hits>,
     max_group_size: usize,
     grouped_by: JsonPath,
@@ -29,7 +29,7 @@ pub(super) struct GroupsAggregator {
 }
 
 impl GroupsAggregator {
-    pub(super) fn new(
+    pub fn new(
         groups: usize,
         group_size: usize,
         grouped_by: JsonPath,
@@ -127,7 +127,7 @@ impl GroupsAggregator {
     }
 
     /// Adds multiple points to the group that they correspond to based on the group_by field, assumes that the points always have the grouped_by field, else it just ignores them
-    pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
+    pub fn add_points(&mut self, points: &[ScoredPoint]) {
         for point in points {
             match self.add_point(point) {
                 Ok(()) | Err(AggregatorError::KeyNotFound | AggregatorError::BadKeyType) => {
@@ -160,7 +160,7 @@ impl GroupsAggregator {
     }
 
     /// Gets the keys of the groups that have less than the max group size
-    pub(super) fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
+    pub fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
         let best_group_keys: AHashSet<_> = self.best_group_keys().into_iter().collect();
         best_group_keys
             .difference(&self.full_groups)
@@ -170,23 +170,23 @@ impl GroupsAggregator {
     }
 
     /// Gets the keys of the groups that have reached the max group size
-    pub(super) fn keys_of_filled_groups(&self) -> Vec<Value> {
+    pub fn keys_of_filled_groups(&self) -> Vec<Value> {
         self.full_groups.iter().cloned().map_into().collect()
     }
 
     /// Gets the amount of best groups that have reached the max group size
-    pub(super) fn len_of_filled_best_groups(&self) -> usize {
+    pub fn len_of_filled_best_groups(&self) -> usize {
         let best_group_keys: AHashSet<_> = self.best_group_keys().into_iter().collect();
         best_group_keys.intersection(&self.full_groups).count()
     }
 
     /// Gets the ids of the already present points across all the groups
-    pub(super) fn ids(&self) -> &AHashSet<ExtendedPointId> {
+    pub fn ids(&self) -> &AHashSet<ExtendedPointId> {
         &self.all_ids
     }
 
     /// Returns the best groups sorted by their best hit. The hits are sorted too.
-    pub(super) fn distill(mut self) -> Vec<Group> {
+    pub fn distill(mut self) -> Vec<Group> {
         let best_groups = self.best_group_keys();
         let mut groups = Vec::with_capacity(best_groups.len());
 
