@@ -783,11 +783,9 @@ impl SegmentEntry for Segment {
             .borrow()
             .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         match stored_internal_point {
-            // Not `handle_point_mutate`: its append-only arm snapshots the old
-            // vectors into decoded `NamedVectors`, which cannot carry
-            // storage-native bytes (and would be a lossy read for TurboQuant).
-            // The raw clone path skips the vector snapshot entirely — upsert
-            // discards all old vectors anyway.
+            // Not `handle_point_mutate`: upsert replaces the whole point, so
+            // the raw clone path skips the vector snapshot entirely instead
+            // of reading raw bytes it would immediately discard.
             Some(existing_internal_id) => {
                 let append_only = self.is_append_only();
                 self.handle_point_version_and_failure(

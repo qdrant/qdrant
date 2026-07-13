@@ -1468,9 +1468,10 @@ fn test_upsert_raw_multivec_turbo_bytes() {
 /// TurboQuant-as-datatype vectors must survive append-only mutations that
 /// don't touch them — e.g. payload-only ops — without degrading.
 ///
-/// On an append-only segment every mutating op routes through
-/// `Segment::clone_and_mutate_point`, which rewrites the point at a fresh
-/// internal id. It used to snapshot the point's vectors decoded to `f32`,
+/// On an append-only segment every mutating op (except same-operation
+/// follow-up steps, which mutate the just-written slot in place) routes
+/// through `Segment::clone_and_mutate_point`, which rewrites the point at a
+/// fresh internal id. It used to snapshot the point's vectors decoded to `f32`,
 /// dequantizing and requantizing a TQ-datatype vector on every mutation,
 /// even one that only touched the payload. TurboQuant requantization is not
 /// idempotent — for Dot/L2 the stored per-vector scale factor picks up the

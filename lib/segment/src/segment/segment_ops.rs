@@ -294,7 +294,8 @@ impl Segment {
     ///    (TurboQuant-as-datatype) — and names in neither are inserted as
     ///    `None` (so the slot is grown and marked deleted, matching
     ///    `insert_new_vectors`'s behavior).
-    /// 5. Write the mutated payload at `new_id` (skipped if empty).
+    /// 5. Write the mutated payload at `new_id` — always, even when empty,
+    ///    so every field index covers `new_id` (see the body comment).
     /// 6. `set_link(point_id, new_id)` — auto-tombstones `old_id` in the id
     ///    tracker so it becomes invisible to queries.
     ///
@@ -313,7 +314,9 @@ impl Segment {
     ///
     /// Available for appendable segments only. Callers route into this
     /// helper from the `SegmentEntry` mutation paths when
-    /// [`Segment::is_append_only`] is true.
+    /// [`Segment::is_append_only`] is true — except for slots written by the
+    /// current operation, which are mutated in place instead (see
+    /// [`Segment::handle_point_mutate`]).
     pub(super) fn clone_and_mutate_point<F, R>(
         &mut self,
         op_num: SeqNumberType,
