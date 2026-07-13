@@ -69,6 +69,9 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
 
                 let mut indexes = Vec::with_capacity(indexed.types.len());
                 for index_type in &indexed.types {
+                    // A config reload follows the new config alone: the
+                    // request-specific load profile of the original open (if
+                    // any) does not outlive it.
                     if let Some(index) = ReadOnlyFieldIndex::open(
                         fs,
                         &self.path,
@@ -77,6 +80,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
                         index_type,
                         total_point_count,
                         deleted_points,
+                        None,
                     )? {
                         indexes.push(index);
                     }

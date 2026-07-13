@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 
@@ -57,6 +58,10 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// `provided_config` alone: the CPU-derived default unless explicitly set (see
     /// [`EdgeConfig::search_thread_count`]).
     search_pool: Arc<rayon::ThreadPool>,
+    /// Request-specific load profile this shard was opened with, if any: components the request
+    /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a
+    /// later [`refresh`](Self::refresh) discovers load with the same placement.
+    load_profile: Option<LoadProfile>,
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {

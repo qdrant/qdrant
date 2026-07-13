@@ -3,6 +3,7 @@ pub mod collection_defaults;
 pub mod facets;
 pub mod groups;
 pub mod index;
+pub mod load_profile;
 pub mod manifest;
 pub mod modifier;
 pub mod named_vectors;

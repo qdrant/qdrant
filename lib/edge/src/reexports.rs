@@ -6,6 +6,7 @@ mod reexports_from_qdrant_crates {
         KeywordIndexParams, Language, SnowballLanguage, SnowballParams, StopwordsSet,
         TextIndexParams, TokenizerType, UuidIndexParams,
     };
+    pub use segment::data_types::load_profile::LoadProfile;
     pub use segment::data_types::modifier::Modifier;
     pub use segment::data_types::order_by::{
         Direction, OrderBy, OrderByInterface, OrderValue, StartFrom,

@@ -19,6 +19,7 @@ io_bridge_uio_grpc = { path = "../../../common/io_bridge_uio_grpc" }
 
 fs-err = { workspace = true }
 object_store = { workspace = true }
+rand = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }

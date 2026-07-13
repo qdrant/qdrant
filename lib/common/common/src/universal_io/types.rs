@@ -40,7 +40,7 @@ impl UniversalKind {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Populate {
     /// Let backend choose
     #[default]
@@ -118,7 +118,7 @@ impl OpenOptions {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ReadRange {
     /// Start position in bytes from the beginning of the file/storage.
     pub byte_offset: u64,

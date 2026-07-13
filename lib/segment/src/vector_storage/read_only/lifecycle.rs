@@ -37,12 +37,18 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
     /// Schedule background prefetch of every file [`Self::open`] will read,
     /// dispatching on `vector_config` the same way.
     ///
+    /// A `populate_override` (from a request-specific
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) replaces
+    /// the storage-type-derived populate; the mmap advice stays derived from
+    /// the storage type.
+    ///
     /// Absent files are skipped rather than reported: the subsequent open is
     /// the one to produce the error.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
+        populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         let datatype = vector_config.datatype.unwrap_or_default();
 
@@ -51,6 +57,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
             // No on-disk data to prefetch for these storage types: no-op.
             return Ok(());
         };
+        let populate = populate_override.unwrap_or(populate);
 
         // Multivectors always use the appendable chunked layout.
         if vector_config.multivector_config.is_some() {
@@ -126,6 +133,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         fs: &impl UniversalReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Option<Self>> {
         let dim = vector_config.size;
         let distance = vector_config.distance;
@@ -136,6 +144,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         else {
             return Ok(None);
         };
+        let populate = populate_override.unwrap_or(populate);
 
         // Multivectors always use the appendable chunked layout.
         if let Some(multivector_config) = vector_config.multivector_config {

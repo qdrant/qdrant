@@ -1,6 +1,7 @@
 use common::types::ScoreType;
 #[cfg(feature = "api")]
 use itertools::Itertools as _;
+use segment::data_types::load_profile::LoadProfile;
 #[cfg(feature = "api")]
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
@@ -32,6 +33,27 @@ pub struct CoreSearchRequest {
 }
 
 impl CoreSearchRequest {
+    /// Request-specific [`LoadProfile`] for opening a read-only shard to serve exactly
+    /// this search: only the queried vector's components and the filter's field indexes
+    /// keep their configured placement.
+    pub fn load_profile(&self) -> LoadProfile {
+        let Self {
+            query,
+            filter,
+            params: _,
+            limit: _,
+            offset: _,
+            with_payload,
+            with_vector: _,
+            score_threshold: _,
+        } = self;
+
+        // The `with_payload` default of a search is `false`.
+        let with_payload = with_payload.as_ref().is_some_and(|wp| wp.is_required());
+
+        LoadProfile::for_search(query.get_vector_name(), filter.as_ref(), with_payload)
+    }
+
     pub fn search_rate_cost(&self) -> usize {
         let mut cost = self.query.search_cost();
 

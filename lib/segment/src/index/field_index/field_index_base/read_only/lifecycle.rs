@@ -37,6 +37,24 @@ enum ReadMode {
     Immutable { is_on_disk: bool },
 }
 
+/// Effective read mode under a `populate_override` (from a request-specific
+/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)): the override
+/// re-decides the immutable mode's `is_on_disk` — the flag is a placement
+/// choice over the same on-disk format, so a RAM-loaded index can be demoted to
+/// a lazily-read mmap one. The appendable (Gridstore) mode ignores the
+/// override: its open reconstructs in-memory state and cannot be demoted.
+fn effective_mode(mode: ReadMode, populate_override: Option<Populate>) -> ReadMode {
+    match (mode, populate_override) {
+        (ReadMode::Appendable, _) | (ReadMode::Immutable { .. }, None) => mode,
+        (ReadMode::Immutable { is_on_disk: _ }, Some(populate)) => ReadMode::Immutable {
+            is_on_disk: match populate {
+                Populate::No | Populate::Auto | Populate::Partial(_) => true,
+                Populate::Blocking | Populate::PreferBackground => false,
+            },
+        },
+    }
+}
+
 impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
@@ -44,19 +62,24 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         index_type: &FullPayloadIndexType,
+        populate_override: Option<Populate>,
     ) -> OperationResult<bool> {
         let mode = match index_type.storage_type {
             StorageType::Gridstore => ReadMode::Appendable,
             StorageType::Mmap { is_on_disk } => ReadMode::Immutable { is_on_disk },
         };
+        let mode = effective_mode(mode, populate_override);
 
-        // Derive whether how to populate from the payload schema
+        // Derive whether how to populate from the payload schema; a
+        // `populate_override` replaces the schema-derived decision.
         let schema_populate = || {
-            if payload_schema.memory_placement().populate_on_open() {
-                Populate::PreferBackground
-            } else {
-                Populate::No
-            }
+            populate_override.unwrap_or({
+                if payload_schema.memory_placement().populate_on_open() {
+                    Populate::PreferBackground
+                } else {
+                    Populate::No
+                }
+            })
         };
 
         let preopened = match index_type.index_type {
@@ -198,6 +221,9 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// and null leaves ignore it (a single `open` serves both modes).
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
+    /// `populate_override` mirrors [`preopen`](Self::preopen): it re-decides
+    /// the immutable mode's `is_on_disk` placement.
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
@@ -206,11 +232,13 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         index_type: &FullPayloadIndexType,
         total_point_count: usize,
         deleted_points: &BitSlice,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Option<Self>> {
         let mode = match index_type.storage_type {
             StorageType::Gridstore => ReadMode::Appendable,
             StorageType::Mmap { is_on_disk } => ReadMode::Immutable { is_on_disk },
         };
+        let mode = effective_mode(mode, populate_override);
 
         let index = match index_type.index_type {
             PayloadIndexType::KeywordIndex => match mode {
