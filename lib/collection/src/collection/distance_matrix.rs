@@ -187,6 +187,7 @@ impl Collection {
             params: None,
             with_vector: WithVector::Selector(vec![using.clone()]), // retrieve the vector
             with_payload: Default::default(),
+            dims_explained: None,
         };
 
         let mut sampled_points = self
@@ -244,6 +245,7 @@ impl Collection {
                 with_vector: WithVector::Bool(false),
                 with_payload: WithPayloadInterface::Bool(false),
                 lookup_from: None,
+                dims_explained: None,
             };
 
             queries.push((query_request, shard_selection.clone()));
@@ -304,6 +306,7 @@ mod tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            dims_explained: None,
         }
     }
 

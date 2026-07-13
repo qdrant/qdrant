@@ -18,7 +18,8 @@ use segment::vector_storage::query::{
 use crate::query::formula::*;
 use crate::query::query_enum::*;
 use crate::query::{
-    FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+    DimsFocusInternal, FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardPrefetch,
+    ShardQueryRequest,
 };
 
 impl From<rest::schema::SearchRequestInternal> for ShardQueryRequest {
@@ -46,6 +47,7 @@ impl From<rest::schema::SearchRequestInternal> for ShardQueryRequest {
             params,
             with_vector: with_vector.unwrap_or_default(),
             with_payload: with_payload.unwrap_or_default(),
+            dims_explained: None,
         }
     }
 }
@@ -87,6 +89,9 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
                 .map(WithPayloadInterface::try_from)
                 .transpose()?
                 .unwrap_or(WithPayloadInterface::Bool(true)),
+            // Per-dimension explanations are resolved on the node responding to the user,
+            // so this is not propagated through the internal service.
+            dims_explained: None,
         };
 
         Ok(request)
@@ -105,6 +110,8 @@ impl From<ShardQueryRequest> for grpc::QueryShardPoints {
             params,
             with_vector,
             with_payload,
+            // Resolved on the node responding to the user
+            dims_explained: _,
         } = value;
 
         Self {
@@ -377,6 +384,22 @@ impl ScoringQuery {
                     candidates_limit: candidates_limit as usize,
                 })
             }
+            grpc::query_shard_points::query::Score::DimsFocus(grpc::DimsFocusInternal {
+                vector,
+                dims,
+                candidates_limit,
+            }) => {
+                let vector = vector.ok_or_else(|| {
+                    tonic::Status::invalid_argument("missing field: dims_focus.vector")
+                })?;
+                let vector = VectorInternal::try_from(vector)?;
+                ScoringQuery::DimsFocus(DimsFocusInternal {
+                    vector,
+                    using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
+                    dims,
+                    candidates_limit: candidates_limit as usize,
+                })
+            }
         };
 
         Ok(scoring_query)
@@ -410,6 +433,18 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                 score: Some(Score::Mmr(grpc::MmrInternal {
                     vector: Some(grpc::RawVector::from(vector)),
                     lambda: lambda.into_inner(),
+                    candidates_limit: candidates_limit as u32,
+                })),
+            },
+            ScoringQuery::DimsFocus(DimsFocusInternal {
+                vector,
+                using: _,
+                dims,
+                candidates_limit,
+            }) => Self {
+                score: Some(Score::DimsFocus(grpc::DimsFocusInternal {
+                    vector: Some(grpc::RawVector::from(vector)),
+                    dims,
                     candidates_limit: candidates_limit as u32,
                 })),
             },

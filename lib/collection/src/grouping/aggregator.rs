@@ -230,6 +230,7 @@ mod unit_tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            dims_explained: None,
         }
     }
 
@@ -242,6 +243,7 @@ mod unit_tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            dims_explained: None,
         }
     }
 

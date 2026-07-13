@@ -85,6 +85,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             vector,
             shard_key,
             order_value,
+            dims_explained,
         } = value;
         ScoredPoint {
             id,
@@ -94,6 +95,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             vector: vector.map(VectorStructOutput::from),
             shard_key,
             order_value,
+            dims_explained: dims_explained.map(|dims| dims.into_iter().collect()),
         }
     }
 }
@@ -132,6 +134,7 @@ impl From<QueryInterface> for Query {
             QueryInterface::Nearest(vector) => Query::Nearest(NearestQuery {
                 nearest: vector,
                 mmr: None,
+                focus: None,
             }),
             QueryInterface::Query(query) => query,
         }

@@ -15,6 +15,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedF
 use segment::types::{
     Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::query::dims_focus::dims_focus_rescore;
 use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
@@ -271,6 +272,10 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             },
 
             ScoringQuery::Mmr(mmr) => self.mmr_rescore(sources, mmr, limit, hw_counter_acc),
+
+            ScoringQuery::DimsFocus(focus) => {
+                self.dims_focus_rescore(sources, focus, limit, hw_counter_acc)
+            }
         }
     }
 
@@ -381,6 +386,49 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         }
 
         Ok(top_mmr)
+    }
+
+    /// Re-scores points on a subset of vector dimensions
+    fn dims_focus_rescore(
+        &self,
+        sources: Vec<Vec<ScoredPoint>>,
+        focus: DimsFocusInternal,
+        limit: usize,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let points_with_vector = self
+            .fill_with_payload_or_vectors(
+                sources,
+                false.into(),
+                WithVector::from(focus.using.clone()),
+                hw_measurement_acc.clone(),
+            )?
+            .into_iter()
+            .flatten();
+
+        let vector_data_config = self.config.vector_data_config(&focus.using).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "vector data config for vector {} not found",
+                focus.using,
+            ))
+        })?;
+
+        // Explanations are not attached here, they are resolved at a higher level
+        let mut rescored = dims_focus_rescore(
+            points_with_vector,
+            focus,
+            vector_data_config.distance,
+            None,
+            limit,
+            hw_measurement_acc,
+        )?;
+
+        // strip rescoring vector. We will handle user-requested vectors at root level of request.
+        for point in &mut rescored {
+            point.vector = None;
+        }
+
+        Ok(rescored)
     }
 
     /// This function always filters deferred points.

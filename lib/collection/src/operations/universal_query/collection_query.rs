@@ -19,7 +19,8 @@ use shard::query::query_enum::QueryEnum;
 
 use super::formula::FormulaInternal;
 use super::shard_query::{
-    FusionInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+    DimsExplainedInternal, DimsFocusInternal, FusionInternal, SampleInternal, ScoringQuery,
+    ShardPrefetch, ShardQueryRequest,
 };
 use crate::common::fetch_vectors::ReferencedVectors;
 use crate::lookup::WithLookup;
@@ -44,6 +45,8 @@ pub struct CollectionQueryRequest {
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
     pub lookup_from: Option<LookupLocation>,
+    /// Include per-dimension score explanations into the response.
+    pub dims_explained: Option<DimsExplainedInternal>,
 }
 
 impl CollectionQueryRequest {
@@ -84,6 +87,7 @@ pub struct CollectionQueryGroupsRequest {
     pub group_size: usize,
     pub limit: usize,
     pub with_lookup: Option<WithLookup>,
+    pub dims_explained: Option<DimsExplainedInternal>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -162,6 +166,7 @@ impl VectorInputInternal {
 pub enum VectorQuery<T> {
     Nearest(T),
     NearestWithMmr(NearestWithMmr<T>),
+    NearestWithFocus(NearestWithFocus<T>),
     RecommendAverageVector(RecoQuery<T>),
     RecommendBestScore(RecoQuery<T>),
     RecommendSumScores(RecoQuery<T>),
@@ -176,6 +181,7 @@ impl<T> VectorQuery<T> {
         match self {
             VectorQuery::Nearest(input) => Box::new(std::iter::once(input)),
             VectorQuery::NearestWithMmr(query) => Box::new(std::iter::once(&query.nearest)),
+            VectorQuery::NearestWithFocus(query) => Box::new(std::iter::once(&query.nearest)),
             VectorQuery::RecommendAverageVector(query)
             | VectorQuery::RecommendBestScore(query)
             | VectorQuery::RecommendSumScores(query) => Box::new(query.flat_iter()),
@@ -195,6 +201,20 @@ pub struct NearestWithMmr<T> {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Mmr {
     pub diversity: Option<f32>,
+    pub candidates_limit: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NearestWithFocus<T> {
+    pub nearest: T,
+    pub focus: DimsFocus,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DimsFocus {
+    /// Dimension indexes to focus the scoring on.
+    pub dims: Vec<u32>,
+    /// Maximum number of candidates to preselect using nearest neighbors.
     pub candidates_limit: Option<usize>,
 }
 
@@ -332,6 +352,16 @@ impl VectorQuery<VectorInputInternal> {
 
                 Ok(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
             }
+            VectorQuery::NearestWithFocus(NearestWithFocus { nearest, focus }) => {
+                let nearest = ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, nearest)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
+
+                Ok(VectorQuery::NearestWithFocus(NearestWithFocus {
+                    nearest,
+                    focus,
+                }))
+            }
             VectorQuery::Feedback(FeedbackInternal {
                 target,
                 feedback,
@@ -433,6 +463,9 @@ impl VectorQuery<VectorInternal> {
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
                 nearest.preprocess();
             }
+            VectorQuery::NearestWithFocus(NearestWithFocus { nearest, focus: _ }) => {
+                nearest.preprocess();
+            }
             VectorQuery::Feedback(FeedbackInternal {
                 target,
                 feedback,
@@ -482,6 +515,25 @@ impl VectorQuery<VectorInternal> {
                     vector: nearest,
                     using,
                     lambda: OrderedFloat(diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA)),
+                    candidates_limit: candidates_limit.unwrap_or(request_limit),
+                }));
+            }
+            VectorQuery::NearestWithFocus(NearestWithFocus { nearest, focus }) => {
+                if !matches!(nearest, VectorInternal::Dense(_)) {
+                    return Err(CollectionError::bad_request(
+                        "Focused search on dimensions is only supported for dense vectors.",
+                    ));
+                }
+
+                let DimsFocus {
+                    dims,
+                    candidates_limit,
+                } = focus;
+
+                return Ok(ScoringQuery::DimsFocus(DimsFocusInternal {
+                    vector: nearest,
+                    using,
+                    dims,
                     candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }
@@ -707,6 +759,10 @@ impl CollectionQueryRequest {
 
         let filter = exclude_referenced_ids(referenced_point_ids, self.filter);
 
+        if self.dims_explained.is_some() {
+            Self::validate_dims_explained_query_type(self.query.as_ref())?;
+        }
+
         let query = self
             .query
             .map(|query| {
@@ -726,6 +782,10 @@ impl CollectionQueryRequest {
             .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
             .try_collect()?;
 
+        if self.dims_explained.is_some() {
+            Self::validate_dims_explained_support(query.as_ref())?;
+        }
+
         Ok(ShardQueryRequest {
             prefetches,
             query,
@@ -736,7 +796,52 @@ impl CollectionQueryRequest {
             params: self.params,
             with_vector: self.with_vector,
             with_payload: self.with_payload,
+            dims_explained: self.dims_explained,
         })
+    }
+
+    /// Check that the request query type supports per-dimension score explanations.
+    ///
+    /// This is validated before query conversion, so recommend/discover/etc. are rejected
+    /// even when they would be lowered to a nearest search internally.
+    fn validate_dims_explained_query_type(query: Option<&Query>) -> CollectionResult<()> {
+        let supported = matches!(
+            query,
+            Some(Query::Vector(VectorQuery::Nearest(_)))
+                | Some(Query::Vector(VectorQuery::NearestWithFocus(_)))
+        );
+
+        if !supported {
+            return Err(CollectionError::bad_request(
+                "with_dims_explained is only supported for nearest queries against dense vectors.",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Check that the resolved query supports per-dimension score explanations.
+    ///
+    /// Score decomposition per dimension is only defined for nearest neighbor scoring
+    /// (optionally focused on a subset of dimensions) against dense vectors.
+    fn validate_dims_explained_support(query: Option<&ScoringQuery>) -> CollectionResult<()> {
+        let supported = match query {
+            Some(ScoringQuery::Vector(QueryEnum::Nearest(nearest))) => {
+                matches!(nearest.query, VectorInternal::Dense(_))
+            }
+            Some(ScoringQuery::DimsFocus(focus)) => {
+                matches!(focus.vector, VectorInternal::Dense(_))
+            }
+            _ => false,
+        };
+
+        if !supported {
+            return Err(CollectionError::bad_request(
+                "with_dims_explained is only supported for nearest queries against dense vectors.",
+            ));
+        }
+
+        Ok(())
     }
 
     pub fn validation(

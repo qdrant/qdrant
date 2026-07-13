@@ -45,6 +45,15 @@ impl PyScoredPoint {
         self.0.order_value.map(PyOrderValue::from)
     }
 
+    /// Not a `#[getter]` to keep it out of `__repr__`, which does not support maps
+    /// with non-string keys.
+    pub fn dims_explained(&self) -> Option<std::collections::HashMap<u32, f32>> {
+        self.0
+            .dims_explained
+            .as_ref()
+            .map(|dims| dims.iter().copied().collect())
+    }
+
     pub fn __repr__(&self) -> String {
         self.repr()
     }
@@ -61,6 +70,7 @@ impl PyScoredPoint {
             payload: _,
             shard_key: _, // not relevant for Qdrant Edge
             order_value: _,
+            dims_explained: _,
         } = self.0;
     }
 }

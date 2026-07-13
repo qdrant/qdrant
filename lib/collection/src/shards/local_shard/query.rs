@@ -16,6 +16,7 @@ use shard::query::planned_query::RescoreStages;
 use shard::search::CoreSearchRequestBatch;
 
 use super::LocalShard;
+use crate::collection::dims_explained::dims_focus_rescore;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
@@ -26,7 +27,8 @@ use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, RootPlan, Source,
 };
 use crate::operations::universal_query::shard_query::{
-    FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
+    DimsFocusInternal, FusionInternal, MmrInternal, SampleInternal, ScoringQuery,
+    ShardQueryResponse,
 };
 
 pub enum FetchedSource {
@@ -418,6 +420,17 @@ impl LocalShard {
                 )
                 .await
             }
+            ScoringQuery::DimsFocus(focus) => {
+                self.dims_focus_rescore(
+                    sources,
+                    focus,
+                    limit,
+                    search_runtime_handle,
+                    timeout,
+                    hw_counter_acc,
+                )
+                .await
+            }
         }
     }
 
@@ -496,6 +509,55 @@ impl LocalShard {
         }
 
         Ok(top_mmr)
+    }
+
+    /// Re-scores points on a subset of vector dimensions
+    async fn dims_focus_rescore(
+        &self,
+        sources: Vec<Vec<ScoredPoint>>,
+        focus: DimsFocusInternal,
+        limit: usize,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let start = Instant::now();
+
+        let points_with_vector = self
+            .fill_with_payload_or_vectors(
+                sources,
+                false.into(),
+                WithVector::from(focus.using.clone()),
+                timeout,
+                hw_measurement_acc.clone(),
+            )
+            .await?
+            .into_iter()
+            .flatten();
+
+        let timeout = timeout.saturating_sub(start.elapsed());
+
+        let collection_params = self.collection_config.read().await.params.clone();
+
+        // Explanations, if requested, are attached at collection level
+        let mut rescored = dims_focus_rescore(
+            &collection_params,
+            points_with_vector,
+            focus,
+            None,
+            limit,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+        )
+        .await?;
+
+        // strip rescoring vector. We will handle user-requested vectors at root level of request.
+        for p in &mut rescored {
+            p.vector = None;
+        }
+
+        Ok(rescored)
     }
 }
 

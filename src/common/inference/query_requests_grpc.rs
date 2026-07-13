@@ -4,11 +4,14 @@ use api::grpc::qdrant::query::Variant;
 use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, DimsFocus,
+    FeedbackInternal, FeedbackStrategy, Mmr, NearestWithFocus, NearestWithMmr, Query,
+    VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
-use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
+use collection::operations::universal_query::shard_query::{
+    DimsExplainedInternal, FusionInternal, SampleInternal,
+};
 use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
@@ -48,6 +51,7 @@ pub async fn convert_query_point_groups_from_grpc(
         read_consistency: _,
         timeout: _,
         shard_key_selector: _,
+        with_dims_explained,
     } = query;
 
     let mut batch = BatchAccumGrpc::new();
@@ -101,6 +105,12 @@ pub async fn convert_query_point_groups_from_grpc(
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
         params: params.map(From::from),
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
+        dims_explained: with_dims_explained.map(|params| DimsExplainedInternal {
+            top: params
+                .top
+                .map(|top| top as usize)
+                .unwrap_or(DimsExplainedInternal::DEFAULT_TOP),
+        }),
     };
 
     Ok((request, usage.unwrap_or_default().into()))
@@ -127,6 +137,7 @@ pub async fn convert_query_points_from_grpc(
         shard_key_selector: _,
         lookup_from,
         timeout: _,
+        with_dims_explained,
     } = query;
 
     let mut batch = BatchAccumGrpc::new();
@@ -177,6 +188,12 @@ pub async fn convert_query_points_from_grpc(
                 .transpose()?
                 .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
             lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
+            dims_explained: with_dims_explained.map(|params| DimsExplainedInternal {
+                top: params
+                    .top
+                    .map(|top| top as usize)
+                    .unwrap_or(DimsExplainedInternal::DEFAULT_TOP),
+            }),
         },
         usage.unwrap_or_default().into(),
     ))
@@ -312,6 +329,26 @@ fn convert_query_with_inferred(
             };
 
             Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
+        }
+        Variant::NearestWithFocus(grpc::NearestInputWithFocus { nearest, focus }) => {
+            let nearest =
+                nearest.ok_or_else(|| Status::invalid_argument("nearest vector is missing"))?;
+            let nearest = convert_vector_input_with_inferred(nearest, inferred)?;
+
+            let focus = focus.ok_or_else(|| Status::invalid_argument("focus is missing"))?;
+            let grpc::DimsFocus {
+                dims,
+                candidates_limit,
+            } = focus;
+            let focus = DimsFocus {
+                dims,
+                candidates_limit: candidates_limit.map(|x| x as usize),
+            };
+
+            Query::Vector(VectorQuery::NearestWithFocus(NearestWithFocus {
+                nearest,
+                focus,
+            }))
         }
         Variant::RelevanceFeedback(feedback) => {
             let grpc::RelevanceFeedbackInput {

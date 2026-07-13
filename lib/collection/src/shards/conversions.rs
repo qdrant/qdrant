@@ -555,6 +555,7 @@ pub fn try_scored_point_from_grpc(
         vectors,
         shard_key,
         order_value,
+        dims_explained,
     } = point;
     let id = id
         .ok_or_else(|| Status::invalid_argument("scored point does not have an ID"))?
@@ -580,5 +581,17 @@ pub fn try_scored_point_from_grpc(
         vector,
         shard_key: convert_shard_key_from_grpc_opt(shard_key),
         order_value: order_value.map(TryFrom::try_from).transpose()?,
+        dims_explained: if dims_explained.is_empty() {
+            None
+        } else {
+            let mut dims: Vec<_> = dims_explained.into_iter().collect();
+            // Restore the "sorted by absolute contribution" invariant, lost in the map
+            dims.sort_unstable_by(|(_, a), (_, b)| {
+                b.abs()
+                    .partial_cmp(&a.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            Some(dims)
+        },
     })
 }

@@ -64,6 +64,7 @@ fn test_try_from_double_rescore() {
         }),
         with_vector: WithVector::Bool(true),
         with_payload: WithPayloadInterface::Bool(true),
+        dims_explained: None,
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -170,6 +171,7 @@ fn test_try_from_no_prefetch() {
         params: Some(SearchParams::default()),
         with_vector: WithVector::Bool(true),
         with_payload: WithPayloadInterface::Bool(true),
+        dims_explained: None,
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -257,6 +259,7 @@ fn test_try_from_hybrid_query() {
         params: None,
         with_payload: WithPayloadInterface::Bool(false),
         with_vector: WithVector::Bool(true),
+        dims_explained: None,
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -329,6 +332,7 @@ fn test_try_from_rrf_without_source() {
         params: None,
         with_vector: WithVector::Bool(true),
         with_payload: WithPayloadInterface::Bool(false),
+        dims_explained: None,
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]);
@@ -380,6 +384,7 @@ fn test_base_params_mapping_in_try_from() {
         params: top_level_params,
         with_payload: WithPayloadInterface::Bool(true),
         with_vector: WithVector::Bool(false),
+        dims_explained: None,
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -475,6 +480,7 @@ fn test_detect_max_depth() {
         params: None,
         with_vector: WithVector::Bool(true),
         with_payload: WithPayloadInterface::Bool(false),
+        dims_explained: None,
     };
     assert_eq!(request.prefetches_depth(), 0);
 
@@ -573,6 +579,7 @@ fn test_from_batch_of_requests() {
             params: None,
             with_payload: WithPayloadInterface::Bool(false),
             with_vector: WithVector::Bool(false),
+            dims_explained: None,
         },
         // A no-prefetch scroll query
         ShardQueryRequest {
@@ -585,6 +592,7 @@ fn test_from_batch_of_requests() {
             params: None,
             with_payload: WithPayloadInterface::Bool(false),
             with_vector: WithVector::Bool(false),
+            dims_explained: None,
         },
         // A double fusion query
         ShardQueryRequest {
@@ -613,6 +621,7 @@ fn test_from_batch_of_requests() {
             params: None,
             with_payload: WithPayloadInterface::Bool(true),
             with_vector: WithVector::Bool(true),
+            dims_explained: None,
         },
     ];
 

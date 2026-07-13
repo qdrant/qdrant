@@ -287,6 +287,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             group_size,
             limit,
             with_lookup: with_lookup_interface,
+            dims_explained,
         } = request;
 
         let collection_query_request = CollectionQueryRequest {
@@ -301,6 +302,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             with_vector,
             with_payload,
             lookup_from,
+            dims_explained,
         };
 
         GroupRequest {
@@ -579,6 +581,7 @@ mod tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            dims_explained: None,
         }
     }
 

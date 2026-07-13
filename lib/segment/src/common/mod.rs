@@ -1,5 +1,6 @@
 pub mod anonymize;
 pub mod buffered_update_bitslice;
+pub mod dims_explained;
 pub mod error_logging;
 pub mod flags;
 pub mod live_reload;

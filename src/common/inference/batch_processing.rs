@@ -159,6 +159,7 @@ pub fn collect_query_groups_request(request: &QueryGroupsRequestInternal) -> Bat
         with_vector: _,
         with_payload: _,
         lookup_from: _,
+        with_dims_explained: _,
         group_request: _,
     } = request;
 
@@ -190,6 +191,7 @@ pub fn collect_query_request(request: &QueryRequestInternal) -> BatchAccum {
         with_vector: _,
         with_payload: _,
         lookup_from: _,
+        with_dims_explained: _,
     } = request;
 
     if let Some(query) = query {
@@ -330,6 +332,7 @@ mod tests {
             query: Some(QueryInterface::Query(Query::Nearest(NearestQuery {
                 nearest: VectorInput::Document(create_test_document("test")),
                 mmr: None,
+                focus: None,
             }))),
             prefetch: Some(vec![Prefetch {
                 query: Some(QueryInterface::Query(Query::Discover(DiscoverQuery {

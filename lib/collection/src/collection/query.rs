@@ -14,6 +14,7 @@ use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::collection::dims_explained::dims_focus_rescore;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::batching::{batch_requests, empty_batch_results};
@@ -220,6 +221,8 @@ impl Collection {
             return Ok(empty_batch_results(requests_batch.len()));
         }
 
+        let requests_batch = Arc::new(requests_batch);
+
         let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());
         let with_vectors = requests_batch.iter().all(|s| s.with_vector.is_enabled());
 
@@ -245,19 +248,19 @@ impl Collection {
         let is_required_transfer_large_enough =
             require_transfers > used_transfers.saturating_mul(PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
 
-        if metadata_required && is_required_transfer_large_enough {
+        let results = if metadata_required && is_required_transfer_large_enough {
             // If there is a significant offset, we need to retrieve the whole result
             // set without payload first and then retrieve the payload.
             // It is required to do this because the payload might be too large to send over the
             // network.
             let mut without_payload_requests = Vec::with_capacity(requests_batch.len());
-            for query in &requests_batch {
+            for query in requests_batch.iter() {
                 let mut without_payload_request = query.clone();
                 without_payload_request.with_payload = WithPayloadInterface::Bool(false);
                 without_payload_request.with_vector = WithVector::Bool(false);
                 without_payload_requests.push(without_payload_request);
             }
-            let without_payload_batch = without_payload_requests;
+            let without_payload_batch = Arc::new(without_payload_requests);
             let without_payload_results = self
                 .do_query_batch_impl(
                     without_payload_batch,
@@ -270,38 +273,61 @@ impl Collection {
                 .await?;
             // update timeout
             let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
-            let filled_results = without_payload_results.into_iter().zip(requests_batch).map(
-                |(without_payload_result, req)| {
+            let filled_results = without_payload_results
+                .into_iter()
+                .zip(requests_batch.iter())
+                .map(|(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
-                        Some(req.with_payload),
-                        req.with_vector,
+                        Some(req.with_payload.clone()),
+                        req.with_vector.clone(),
                         read_consistency,
                         routing_token,
                         &shard_selection,
                         timeout,
                         hw_measurement_acc.clone(),
                     )
-                },
-            );
-            future::try_join_all(filled_results).await
+                });
+            future::try_join_all(filled_results).await?
         } else {
             self.do_query_batch_impl(
-                requests_batch,
+                Arc::clone(&requests_batch),
                 read_consistency,
                 routing_token,
                 &shard_selection,
                 timeout,
                 hw_measurement_acc.clone(),
             )
-            .await
+            .await?
+        };
+
+        // Attach per-dimension score explanations, if requested
+        if requests_batch.iter().any(|s| s.dims_explained.is_some()) {
+            let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
+            let explained_results =
+                results
+                    .into_iter()
+                    .zip(requests_batch.iter())
+                    .map(|(result, request)| {
+                        self.fill_results_with_dims_explained(
+                            result,
+                            request,
+                            read_consistency,
+                            &shard_selection,
+                            timeout,
+                            hw_measurement_acc.clone(),
+                        )
+                    });
+            future::try_join_all(explained_results).await
+        } else {
+            Ok(results)
         }
     }
 
     /// This function is used to query the collection. It will return a list of scored points.
     async fn do_query_batch_impl(
         &self,
-        requests_batch: Vec<ShardQueryRequest>,
+        requests_batch: Arc<Vec<ShardQueryRequest>>,
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
@@ -309,8 +335,6 @@ impl Collection {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
-
-        let requests_batch = Arc::new(requests_batch);
 
         let all_shards_results = self
             .batch_query_shards_concurrently(
@@ -374,6 +398,7 @@ impl Collection {
             params: _,
             with_vector,
             with_payload: _,
+            dims_explained,
         } = request;
 
         let result = match query.as_ref() {
@@ -429,6 +454,41 @@ impl Collection {
                     }
                 };
                 mmr_result
+            }
+            Some(ScoringQuery::DimsFocus(focus)) => {
+                let points_with_vector = intermediates.into_iter().flatten();
+
+                let collection_params = self.collection_config.read().await.params.clone();
+                let search_runtime_handle = &self.search_runtime;
+                let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
+                let mut rescored = dims_focus_rescore(
+                    &collection_params,
+                    points_with_vector,
+                    focus.clone(),
+                    *dims_explained,
+                    offset + limit,
+                    search_runtime_handle,
+                    timeout,
+                    hw_measurement_acc,
+                )
+                .await?;
+
+                // strip the vector used for re-scoring if it was not requested
+                match with_vector {
+                    WithVector::Bool(false) => rescored.iter_mut().for_each(|p| {
+                        p.vector.take();
+                    }),
+                    WithVector::Bool(true) => {}
+                    WithVector::Selector(items) => {
+                        if !items.contains(&focus.using) {
+                            rescored.iter_mut().for_each(|p| {
+                                VectorStructInternal::take_opt(&mut p.vector, &focus.using);
+                            })
+                        }
+                    }
+                };
+                rescored
             }
             None
             | Some(ScoringQuery::Vector(_))
@@ -746,6 +806,13 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             vec![IntermediateQueryInfo {
                 scoring_query: request.query.as_ref(),
                 take: *candidates_limit,
+            }]
+        }
+        Some(ScoringQuery::DimsFocus(focus)) => {
+            // Expect a single list with the amount of candidates to re-score
+            vec![IntermediateQueryInfo {
+                scoring_query: request.query.as_ref(),
+                take: focus.candidates_limit,
             }]
         }
         None

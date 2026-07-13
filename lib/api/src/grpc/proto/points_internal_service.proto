@@ -385,6 +385,15 @@ message MmrInternal {
   uint32 candidates_limit = 3;
 }
 
+message DimsFocusInternal {
+  // Query vector to score the points against
+  RawVector vector = 1;
+  // Dimension indexes to focus the scoring on
+  repeated uint32 dims = 2;
+  // Maximum number of candidates to preselect using nearest neighbors
+  uint32 candidates_limit = 3;
+}
+
 message QueryShardPoints {
   message Query {
     oneof score {
@@ -402,6 +411,8 @@ message QueryShardPoints {
       MmrInternal mmr = 6;
       // Parameterized RRF fusion
       Rrf rrf = 7;
+      // Nearest neighbors re-scored on a subset of vector dimensions
+      DimsFocusInternal dims_focus = 8;
     }
   }
 
