@@ -71,10 +71,8 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             on_disk_vector_storage,
         );
         let populate = match placement {
-            Memory::Cached => Populate::PreferBackground,
-            // `Pinned` flat data goes through the RAM loaders below; pinned
-            // chunked data stays mmap-backed and unpopulated, like the open.
-            Memory::Cold | Memory::Pinned => Populate::No,
+            Memory::Cached | Memory::Pinned => Populate::PreferBackground,
+            Memory::Cold => Populate::No,
         };
 
         // The load reads the first vector off the data (from the first chunk,

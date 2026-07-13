@@ -1872,20 +1872,6 @@ impl Default for VectorStorageType {
     }
 }
 
-impl VectorStorageType {
-    /// Whether it is pinned in memory or not.
-    pub fn is_pinned(&self) -> bool {
-        match self {
-            VectorStorageType::Memory
-            | VectorStorageType::InRamMmap
-            | VectorStorageType::InRamChunkedMmap => true,
-            VectorStorageType::Mmap | VectorStorageType::ChunkedMmap | VectorStorageType::Empty => {
-                false
-            }
-        }
-    }
-}
-
 /// Storage types for vectors
 #[derive(
     Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
