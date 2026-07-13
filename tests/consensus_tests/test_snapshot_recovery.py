@@ -150,6 +150,9 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     new_dense_search_result = search(new_url, dense_query_vector, query_city)
     assert len(new_dense_search_result) == len(dense_search_result)
     for i in range(len(new_dense_search_result)):
+        # version is a per-replica WAL op_num; the snapshot was taken on a
+        # different replica than this reference search, so versions may differ
+        new_dense_search_result[i]["version"] = dense_search_result[i]["version"]
         assert new_dense_search_result[i] == dense_search_result[i]
 
     # check that the sparse vectors are still the same
@@ -158,6 +161,8 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     for i in range(len(new_sparse_search_result)):
         # skip score check because it is not deterministic
         new_sparse_search_result[i]["score"] = sparse_search_result[i]["score"]
+        # version is a per-replica WAL op_num (see dense check above)
+        new_sparse_search_result[i]["version"] = sparse_search_result[i]["version"]
         assert new_sparse_search_result[i] == sparse_search_result[i]
 
     new_collection_info = get_collection_info(new_url, COLLECTION_NAME)
