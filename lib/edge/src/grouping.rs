@@ -1,14 +1,10 @@
 use segment::common::operation_error::OperationResult;
 use segment::json_path::JsonPath;
 pub use shard::grouping::Group;
-use shard::grouping::{GroupsAggregator, shape_candidates_query};
+use shard::grouping::{GroupByDriver, RequestBudget};
 use shard::query::{self, ShardQueryRequest};
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
-
-/// Extra candidates fetched per requested `groups * group_size` slot so groups can
-/// fill even when top hits cluster into few distinct group values.
-const OVERFETCH_FACTOR: usize = 4;
 
 /// Group the results of a base query by a payload field.
 pub struct GroupRequest {
@@ -23,29 +19,31 @@ pub struct GroupRequest {
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
         let GroupRequest {
-            mut query,
+            query,
             group_by,
             groups,
             group_size,
         } = request;
-        if groups == 0 || group_size == 0 {
-            return Ok(vec![]);
-        }
 
         let order = query::query_result_order(query.query.as_ref(), |vector_name| {
             self.config.get_distance(vector_name)
         })?;
 
-        let limit = groups
-            .saturating_mul(group_size)
-            .saturating_mul(OVERFETCH_FACTOR);
-        shape_candidates_query(&mut query, &group_by, limit, group_size);
+        let mut driver = GroupByDriver::new(
+            query,
+            group_by,
+            groups,
+            group_size,
+            order,
+            RequestBudget::default(),
+        );
 
-        let points = self.query(query)?;
+        while let Some(request) = driver.next_request() {
+            let points = self.query(request)?;
+            driver.add_points(&points);
+        }
 
-        let mut aggregator = GroupsAggregator::new(groups, group_size, group_by, order);
-        aggregator.add_points(&points);
-        Ok(aggregator.distill())
+        Ok(driver.distill())
     }
 }
 

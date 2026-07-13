@@ -3,6 +3,7 @@
 //! so both interpret group keys and shape candidate queries identically.
 
 pub mod aggregator;
+mod driver;
 
 use ahash::AHashMap;
 use fnv::FnvBuildHasher;
@@ -16,6 +17,7 @@ use segment::types::{
 use serde_json::Value;
 
 pub use self::aggregator::GroupsAggregator;
+pub use self::driver::{GroupByDriver, RequestBudget};
 use crate::query::{ShardPrefetch, ShardQueryRequest};
 
 #[derive(PartialEq, Debug)]
@@ -43,15 +45,23 @@ impl Group {
 }
 
 /// Make `group_by` field selector work with as `with_payload`.
-pub fn group_by_to_payload_selector(group_by: &JsonPath) -> WithPayloadInterface {
+fn group_by_to_payload_selector(group_by: &JsonPath) -> WithPayloadInterface {
     WithPayloadInterface::Fields(vec![group_by.strip_wildcard_suffix()])
+}
+
+/// Merge an extra filter into an optional existing one.
+fn merge_filter(target: &mut Option<Filter>, extra: Filter) {
+    *target = Some(match target.take() {
+        Some(filter) => filter.merge_owned(extra),
+        None => extra,
+    });
 }
 
 /// Rewrite a base scoring query into the query used to fetch group candidates: restrict it to
 /// points that carry the `group_by` field, fetch `limit` candidates with only the `group_by`
 /// payload, and scale nested prefetch limits by `group_size` so enough candidates survive
 /// every rescoring stage.
-pub fn shape_candidates_query(
+fn shape_candidates_query(
     query: &mut ShardQueryRequest,
     group_by: &JsonPath,
     limit: usize,
@@ -65,10 +75,7 @@ pub fn shape_candidates_query(
         .for_each(|prefetch| increase_limit_for_group(prefetch, group_size));
 
     let key_not_empty = Filter::new_must_not(Condition::IsEmpty(group_by.clone().into()));
-    query.filter = Some(match query.filter.take() {
-        Some(filter) => filter.merge_owned(key_not_empty),
-        None => key_not_empty,
-    });
+    merge_filter(&mut query.filter, key_not_empty);
 
     query.with_payload = group_by_to_payload_selector(group_by);
 }
@@ -81,7 +88,7 @@ fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usiz
 }
 
 /// Uses the set of values to create Match::Except's, if possible
-pub fn except_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
+fn except_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
     values_to_any_variants(values)
         .into_iter()
         .map(|v| {
@@ -94,7 +101,7 @@ pub fn except_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
 }
 
 /// Uses the set of values to create Match::Any's, if possible
-pub fn match_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
+fn match_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
     values_to_any_variants(values)
         .into_iter()
         .map(|any_variants| {
