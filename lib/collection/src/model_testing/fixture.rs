@@ -15,12 +15,14 @@ use segment::types::{
     ScalarQuantization, ScalarQuantizationConfig, ScalarType,
 };
 
-use super::{COLLECTION_NAME, INITIAL_ACTIVE, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind, kind_of};
+use super::{
+    COLLECTION_NAME, INITIAL_ACTIVE, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind, candidate_of,
+};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{Datatype, SparseVectorParams, VectorsConfig};
+use crate::operations::types::{SparseVectorParams, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
@@ -60,7 +62,8 @@ pub(super) async fn fixture(
     let mut dense_vectors = BTreeMap::new();
     let mut sparse_vectors = BTreeMap::new();
     for name in INITIAL_ACTIVE {
-        match kind_of(name) {
+        let candidate = candidate_of(name);
+        match candidate.kind {
             VectorKind::Dense(dim) => {
                 let mut builder = VectorParamsBuilder::new(dim, Distance::Dot);
                 // Only override when enabled. Leaving `on_disk` unset (None) preserves the
@@ -69,6 +72,11 @@ pub(super) async fn fixture(
                 // e.g. the config-mismatch optimizer only acts on `Some`).
                 if on_disk {
                     builder = builder.with_on_disk(true);
+                }
+                // Same reasoning for the storage datatype: only set it when the candidate
+                // carries an override, leave it unset when the candidate has `None`.
+                if let Some(datatype) = candidate.datatype {
+                    builder = builder.with_datatype(datatype);
                 }
                 // The inline-storage vector exercises the HNSW `inline_storage` layout, which
                 // stores original + quantized vectors inside the index file and therefore
@@ -109,14 +117,6 @@ pub(super) async fn fixture(
                 let mut params = builder.build();
                 params.multivector_config = Some(MultiVectorConfig::default());
                 dense_vectors.insert(name.to_string(), params);
-            }
-            VectorKind::DenseTurbo(dim) => {
-                let mut builder =
-                    VectorParamsBuilder::new(dim, Distance::Dot).with_datatype(Datatype::Turbo4);
-                if on_disk {
-                    builder = builder.with_on_disk(true);
-                }
-                dense_vectors.insert(name.to_string(), builder.build());
             }
         }
     }
