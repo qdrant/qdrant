@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use fs_err::File;
 
+use crate::blobstore::Flusher;
 use crate::error::GridstoreError;
-use crate::gridstore::Flusher;
 use crate::tracker::{OptionalPointer, PointOffset, ValuePointer};
 use crate::{Result, direct_io};
 

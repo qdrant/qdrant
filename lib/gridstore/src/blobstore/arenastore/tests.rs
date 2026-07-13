@@ -4,10 +4,10 @@ use common::universal_io::{MmapFile, MmapFs, Populate};
 use fs_err as fs;
 use tempfile::TempDir;
 
+use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::{Compression, DEFAULT_BLOCK_SIZE_BYTES, Mode, StorageOptions};
 use crate::error::GridstoreError;
 use crate::fixtures::{Payload, empty_storage_append_only, random_payload};
-use crate::gridstore::reader::CONFIG_FILENAME;
 use crate::tracker::ValuePointer;
 use crate::{Blobstore, BlobstoreReader, direct_io};
 

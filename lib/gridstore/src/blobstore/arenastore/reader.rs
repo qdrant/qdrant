@@ -12,9 +12,9 @@ use super::validate_consistency;
 use super::view::ArenastoreView;
 use crate::Result;
 use crate::blob::Blob;
+use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
-use crate::gridstore::reader::CONFIG_FILENAME;
 use crate::tracker::PointOffset;
 use crate::tracker::append_only::AppendOnlyTracker;
 
