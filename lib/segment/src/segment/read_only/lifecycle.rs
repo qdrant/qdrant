@@ -141,13 +141,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
             ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config, quantized_populate)?;
 
-            // Vector index. A deferred HNSW graph (see
-            // `LoadProfile::vector_index_deferred`) is not loaded at open, so
-            // only its config is prefetched.
-            let index_deferred =
-                load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+            // Vector index. A cold override defers the HNSW graph load (see
+            // `LoadProfile::vector_index_placement`), so only its config is
+            // prefetched.
+            let index_populate =
+                load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
             let index_path = get_vector_index_path(segment_path, vector_name);
-            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_deferred)?;
+            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_populate)?;
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
@@ -360,11 +360,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         };
         let quantized_vectors = Arc::new(AtomicRefCell::new(quantized_vectors));
 
-        // A profile that never scores this vector defers the HNSW graph load
-        // to its first use (see `LoadProfile::vector_index_deferred`); the
-        // plain index has no graph, so there is nothing to defer.
-        let index_deferred =
-            load_profile.is_some_and(|profile| profile.vector_index_deferred(vector_name));
+        // A profile that never scores this vector overrides the placement
+        // cold, which defers the HNSW graph load to its first use (see
+        // `LoadProfile::vector_index_placement`); the plain index has no
+        // graph, so there is nothing to defer.
+        let index_populate =
+            load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
         let vector_index = VectorIndexReadEnum::open(
             vector_config,
             ReadOnlyVectorIndexOpenArgs {
@@ -376,7 +377,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
                 quantized_vectors: quantized_vectors.clone(),
             },
             raw_fs,
-            index_deferred,
+            index_populate,
         )?;
         let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 

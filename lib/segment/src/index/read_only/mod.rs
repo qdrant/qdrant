@@ -87,18 +87,18 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     /// dispatching on `vector_config` the same way. The plain index opens no
     /// files.
     ///
-    /// A `deferred` HNSW graph (see [`Self::open`]) is not loaded at open, so
-    /// only its config is prefetched.
+    /// A cold `populate_override` defers the HNSW graph load (see
+    /// [`Self::open`]), so only its config is prefetched.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
-        deferred: bool,
+        populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         match &vector_config.index {
             Indexes::Plain {} => Ok(()),
             Indexes::Hnsw(hnsw_config) => {
-                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, deferred)
+                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, populate_override)
             }
         }
     }
@@ -173,17 +173,17 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
 
     /// Open the read-only dense vector index from its config (sparse: follow-up).
     ///
-    /// A `deferred` HNSW graph (a request-specific
+    /// A cold `populate_override` (a request-specific
     /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile) predicted
-    /// this vector is never scored) is loaded on first use through `raw_fs` —
-    /// the segment's raw backend, which outlives the caching `fs` of this open
-    /// — instead of here (see [`ReadOnlyHNSWIndex::open`]). The plain index
-    /// has no graph, so there is nothing to defer.
+    /// this vector is never scored) defers the HNSW graph load to first use,
+    /// through `raw_fs` — the segment's raw backend, which outlives the
+    /// caching `fs` of this open (see [`ReadOnlyHNSWIndex::open`]). The plain
+    /// index has no graph, so there is nothing to defer.
     pub fn open<Fs: UniversalReadFs<File = S>>(
         vector_config: &VectorDataConfig,
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
         raw_fs: &S::Fs,
-        deferred: bool,
+        populate_override: Option<Populate>,
     ) -> OperationResult<Self>
     where
         // The HNSW graph keeps its universal-IO storage handle alive behind a
@@ -214,7 +214,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
                 quantized_vectors,
                 payload_index,
                 *hnsw_config,
-                deferred,
+                populate_override,
             )?)),
         })
     }
