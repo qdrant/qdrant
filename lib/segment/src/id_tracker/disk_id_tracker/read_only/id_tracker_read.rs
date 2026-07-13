@@ -84,9 +84,13 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         log_lookup_err(self.resolve_external(internal_id))
     }
 
-    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+    ) -> Vec<Option<PointIdType>> {
+        let internal_ids: Vec<PointOffsetType> = internal_ids.into_iter().collect();
         log_lookup_err_batch(
-            self.resolve_external_batch(internal_ids),
+            self.resolve_external_batch(&internal_ids),
             internal_ids.len(),
         )
     }
@@ -96,8 +100,9 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     /// slots stay `None` (the batch analogue of the single-lookup fallback).
     fn internal_versions_batch(
         &self,
-        internal_ids: &[PointOffsetType],
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
     ) -> Vec<Option<SeqNumberType>> {
+        let internal_ids: Vec<PointOffsetType> = internal_ids.into_iter().collect();
         let mut results: Vec<Option<SeqNumberType>> = vec![None; internal_ids.len()];
 
         let ranges = internal_ids
@@ -128,10 +133,11 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
     fn resolve_external_ids(
         &self,
-        point_ids: &[PointIdType],
+        point_ids: impl IntoIterator<Item = PointIdType>,
         _deferred_behavior: DeferredBehavior,
-    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
-        resolve_external_ids_batch(self, point_ids)
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) {
+        resolve_external_ids_batch(self, point_ids, callback)
     }
 
     fn total_point_count(&self) -> usize {

@@ -68,7 +68,7 @@ impl IdTrackerRead for IdTrackerEnum {
 
     fn internal_versions_batch(
         &self,
-        internal_ids: &[PointOffsetType],
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
     ) -> Vec<Option<SeqNumberType>> {
         match self {
             IdTrackerEnum::MutableIdTracker(t) => t.internal_versions_batch(internal_ids),
@@ -78,7 +78,10 @@ impl IdTrackerRead for IdTrackerEnum {
         }
     }
 
-    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+    ) -> Vec<Option<PointIdType>> {
         match self {
             IdTrackerEnum::MutableIdTracker(t) => t.external_ids_batch(internal_ids),
             IdTrackerEnum::ImmutableIdTracker(t) => t.external_ids_batch(internal_ids),
@@ -89,20 +92,23 @@ impl IdTrackerRead for IdTrackerEnum {
 
     fn resolve_external_ids(
         &self,
-        point_ids: &[PointIdType],
+        point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: common::types::DeferredBehavior,
-    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) {
         match self {
             IdTrackerEnum::MutableIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
             }
             IdTrackerEnum::ImmutableIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
             }
             IdTrackerEnum::InMemoryIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
             }
-            IdTrackerEnum::DiskIdTracker(t) => t.resolve_external_ids(point_ids, deferred_behavior),
+            IdTrackerEnum::DiskIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
         }
     }
 

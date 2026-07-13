@@ -136,7 +136,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
 
     fn internal_versions_batch(
         &self,
-        internal_ids: &[PointOffsetType],
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
     ) -> Vec<Option<SeqNumberType>> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => t.internal_versions_batch(internal_ids),
@@ -145,7 +145,10 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         }
     }
 
-    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+    ) -> Vec<Option<PointIdType>> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => t.external_ids_batch(internal_ids),
             ReadOnlyIdTrackerEnum::Immutable(t) => t.external_ids_batch(internal_ids),
@@ -155,18 +158,19 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
 
     fn resolve_external_ids(
         &self,
-        point_ids: &[PointIdType],
+        point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: common::types::DeferredBehavior,
-    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
             }
             ReadOnlyIdTrackerEnum::Immutable(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
             }
             ReadOnlyIdTrackerEnum::DiskResident(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
             }
         }
     }

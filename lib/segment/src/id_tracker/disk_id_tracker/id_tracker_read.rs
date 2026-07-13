@@ -23,6 +23,10 @@ impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTra
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
         // Resident bitvec, so this never fails; out-of-range offsets are treated
         // as deleted (mirrors the in-RAM tracker).
+        //
+        // `points_deleted_batch` is deliberately NOT overridden: its default loop
+        // hits this resident bitvec, so there is no IO to pipeline. Only the
+        // read-only tracker, whose deleted set stays on disk, batches it.
         Ok(self.deleted.get_bit(offset as usize).unwrap_or(true))
     }
 
@@ -40,6 +44,10 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     }
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+        // Resident versions, mutated in place. `internal_versions_batch` is
+        // deliberately NOT overridden: its default loop hits this resident
+        // store, so there is no IO to pipeline. Only the read-only tracker,
+        // whose versions file stays on disk, batches it.
         self.internal_to_version.get(internal_id)
     }
 
@@ -55,9 +63,13 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
         log_lookup_err(self.resolve_external(internal_id))
     }
 
-    fn external_ids_batch(&self, internal_ids: &[PointOffsetType]) -> Vec<Option<PointIdType>> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+    ) -> Vec<Option<PointIdType>> {
+        let internal_ids: Vec<PointOffsetType> = internal_ids.into_iter().collect();
         log_lookup_err_batch(
-            self.resolve_external_batch(internal_ids),
+            self.resolve_external_batch(&internal_ids),
             internal_ids.len(),
         )
     }
@@ -66,10 +78,11 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
     fn resolve_external_ids(
         &self,
-        point_ids: &[PointIdType],
+        point_ids: impl IntoIterator<Item = PointIdType>,
         _deferred_behavior: DeferredBehavior,
-    ) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
-        resolve_external_ids_batch(self, point_ids)
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) {
+        resolve_external_ids_batch(self, point_ids, callback)
     }
 
     fn total_point_count(&self) -> usize {

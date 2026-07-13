@@ -219,21 +219,23 @@ pub fn log_lookup_err_batch<T>(
 /// pipelined mapping pass plus one deleted pass), with the storage error
 /// swallowed-and-logged at the infallible `IdTrackerRead` boundary.
 ///
+/// The input is buffered once here — the grouped block reads need the whole
+/// batch — so callers can stream ids without pre-collecting. Pairs are
+/// delivered in input order.
+///
 /// The disk mapping never carries deferred mutations, so there is no behavior
 /// argument here — both callers ignore theirs.
 pub fn resolve_external_ids_batch(
     source: &impl DiskMappingsSource,
-    point_ids: &[PointIdType],
-) -> (Vec<PointIdType>, Vec<PointOffsetType>) {
-    let resolved = log_lookup_err_batch(source.resolve_internal_batch(point_ids), point_ids.len());
+    point_ids: impl IntoIterator<Item = PointIdType>,
+    mut callback: impl FnMut(PointIdType, PointOffsetType),
+) {
+    let point_ids: Vec<PointIdType> = point_ids.into_iter().collect();
+    let resolved = log_lookup_err_batch(source.resolve_internal_batch(&point_ids), point_ids.len());
 
-    let mut ids = Vec::with_capacity(point_ids.len());
-    let mut offsets = Vec::with_capacity(point_ids.len());
-    for (&point_id, resolved_offset) in point_ids.iter().zip(resolved) {
+    for (point_id, resolved_offset) in point_ids.into_iter().zip(resolved) {
         if let Some(offset) = resolved_offset {
-            ids.push(point_id);
-            offsets.push(offset);
+            callback(point_id, offset);
         }
     }
-    (ids, offsets)
 }

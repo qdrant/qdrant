@@ -89,10 +89,12 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
         external_ids.push(first);
     }
 
-    let (resolved_ids, resolved_offsets) =
-        tracker.resolve_external_ids(&external_ids, DeferredBehavior::VisibleOnly);
-    let resolved: Vec<(PointIdType, u32)> =
-        resolved_ids.into_iter().zip(resolved_offsets).collect();
+    let mut resolved: Vec<(PointIdType, u32)> = Vec::new();
+    tracker.resolve_external_ids(
+        external_ids.iter().copied(),
+        DeferredBehavior::VisibleOnly,
+        |external_id, offset| resolved.push((external_id, offset)),
+    );
     let expected: Vec<(PointIdType, u32)> = external_ids
         .iter()
         .filter_map(|&external_id| {
@@ -108,8 +110,8 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     let mut offsets: Vec<u32> = (0..tracker.total_point_count() as u32 + 10).collect();
     offsets.push(0);
 
-    let batch_external_ids = tracker.external_ids_batch(&offsets);
-    let batch_versions = tracker.internal_versions_batch(&offsets);
+    let batch_external_ids = tracker.external_ids_batch(offsets.iter().copied());
+    let batch_versions = tracker.internal_versions_batch(offsets.iter().copied());
     assert_eq!(batch_external_ids.len(), offsets.len());
     assert_eq!(batch_versions.len(), offsets.len());
     for (slot, &offset) in offsets.iter().enumerate() {
@@ -126,10 +128,11 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     }
 
     // Empty inputs stay empty.
-    assert_eq!(tracker.external_ids_batch(&[]), vec![]);
-    assert_eq!(tracker.internal_versions_batch(&[]), vec![]);
-    let (ids, offsets) = tracker.resolve_external_ids(&[], DeferredBehavior::VisibleOnly);
-    assert!(ids.is_empty() && offsets.is_empty());
+    assert_eq!(tracker.external_ids_batch(std::iter::empty()), vec![]);
+    assert_eq!(tracker.internal_versions_batch(std::iter::empty()), vec![]);
+    tracker.resolve_external_ids(std::iter::empty(), DeferredBehavior::VisibleOnly, |_, _| {
+        panic!("no pairs expected for empty input")
+    });
 }
 
 #[test]
@@ -297,11 +300,11 @@ fn read_by_id_does_not_materialize_deleted_set() {
     }
 
     // Batch read-by-id must stay lazy as well.
-    let probe_ids: Vec<PointIdType> = live.iter().take(200).map(|&(id, _)| id).collect();
-    let probe_offsets: Vec<u32> = live.iter().take(200).map(|&(_, offset)| offset).collect();
-    let _ = read_only.resolve_external_ids(&probe_ids, DeferredBehavior::VisibleOnly);
-    let _ = read_only.external_ids_batch(&probe_offsets);
-    let _ = read_only.internal_versions_batch(&probe_offsets);
+    let probe_ids = live.iter().take(200).map(|&(id, _)| id);
+    let probe_offsets = live.iter().take(200).map(|&(_, offset)| offset);
+    read_only.resolve_external_ids(probe_ids, DeferredBehavior::VisibleOnly, |_, _| {});
+    let _ = read_only.external_ids_batch(probe_offsets.clone());
+    let _ = read_only.internal_versions_batch(probe_offsets);
 
     assert!(
         !read_only.deleted_full_materialized(),

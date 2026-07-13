@@ -96,10 +96,7 @@ where
         let chunks = internal_ids.chunks(ID_TRACKER_BATCH_SIZE);
         let ids_iterator = chunks
             .into_iter()
-            .flat_map(|chunk| {
-                let internal_ids: Vec<_> = chunk.collect();
-                self.id_tracker.external_ids_batch(&internal_ids)
-            })
+            .flat_map(|chunk| self.id_tracker.external_ids_batch(chunk))
             .flatten()
             .filter(|&external_id| match offset {
                 Some(offset) => external_id >= offset,
