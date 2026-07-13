@@ -33,7 +33,9 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
+use common::universal_io::{
+    CachedReadFs, MmapFs, OpenOptions, Populate, UniversalReadFs, read_bin_via,
+};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -648,6 +650,45 @@ impl GraphLayers {
         Self::load_universal(&MmapFs, dir, residency)
     }
 
+    /// Schedule background prefetch of the files [`Self::load_universal`] will
+    /// read: the graph data plus whichever links format is present, probed in
+    /// the same order as the load.
+    pub fn preopen_universal(
+        fs: &impl CachedReadFs,
+        dir: &Path,
+        residency: GraphLinksResidency,
+    ) -> OperationResult<()> {
+        // Graph data
+        fs.schedule_prefetch(&Self::get_path(dir), None, None)?;
+
+        // The load reads `Cached` links with a *blocking* populate and
+        // materializes `Pinned` links into heap; at prefetch time both become
+        // a background populate so the fetch overlaps the rest of the open.
+        // `Cold` links stay unpopulated, matching the load.
+        let populate = match residency {
+            GraphLinksResidency::Cold => Populate::No,
+            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => Populate::PreferBackground,
+        };
+        let options = OpenOptions {
+            populate,
+            ..GraphLinks::open_options(residency)
+        };
+
+        // Links
+        for format in [
+            GraphLinksFormat::CompressedWithVectors,
+            GraphLinksFormat::Compressed,
+            GraphLinksFormat::Plain,
+        ] {
+            let path = Self::get_links_path(dir, format);
+            if fs.exists(&path)? {
+                fs.schedule_prefetch(&path, Some(options), None)?;
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// Load purely through universal IO, without the format conversion path of
     /// [`Self::load`]. Used by the read-only index.
     ///
@@ -787,6 +828,71 @@ mod tests {
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead};
+
+    /// `preopen_universal` must schedule exactly the files `load_universal`
+    /// goes on to consume.
+    ///
+    /// Merely loading after a `preopen_universal` proves nothing: `CachedFs`
+    /// falls back to a plain inner open for any path that was never scheduled.
+    /// To make the prefetch pool the *only* possible source, the graph
+    /// directory is emptied between the two calls: the already-open handles
+    /// parked in the pool stay readable, while any fallback open hits
+    /// `NotFound`.
+    #[rstest]
+    #[case::uncompressed(GraphLinksFormat::Plain, GraphLinksResidency::Cold)]
+    #[case::compressed(GraphLinksFormat::Compressed, GraphLinksResidency::Cold)]
+    #[case::compressed_cached(GraphLinksFormat::Compressed, GraphLinksResidency::Cached)]
+    fn preopen_then_load_through_cached_fs(
+        #[case] format: GraphLinksFormat,
+        #[case] residency: GraphLinksResidency,
+    ) {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        let num_vectors = 100;
+        let dim = 8;
+        let top = 5;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let dir = Builder::new().prefix("graph_preopen").tempdir().unwrap();
+
+        let (vector_holder, graph_layers_builder) = create_graph_layer_builder_fixture(
+            num_vectors,
+            M,
+            dim,
+            false,
+            false,
+            Distance::Cosine,
+            &mut rng,
+        );
+        let graph_links_vectors = vector_holder.graph_links_vectors();
+        let graph = graph_layers_builder
+            .into_graph_layers(
+                dir.path(),
+                format.with_param_for_tests(graph_links_vectors.as_ref()),
+                false,
+            )
+            .unwrap();
+
+        let query = random_vector(&mut rng, dim);
+        let expected = search_in_graph(&query, top, &vector_holder, &graph);
+        drop(graph);
+
+        // Same order as the segment open path: snapshot, then preopen, then load.
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        GraphLayers::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
+
+        // Everything `load_universal` reads must now come from the prefetch pool.
+        for entry in fs_err::read_dir(dir.path()).unwrap() {
+            fs_err::remove_file(entry.unwrap().path()).unwrap();
+        }
+
+        let graph = GraphLayers::load_universal(&cached_fs, dir.path(), residency).unwrap();
+        assert_eq!(
+            search_in_graph(&query, top, &vector_holder, &graph),
+            expected
+        );
+    }
 
     fn search_in_graph(
         query: &[VectorElementType],
