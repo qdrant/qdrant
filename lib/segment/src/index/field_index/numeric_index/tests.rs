@@ -1067,3 +1067,74 @@ fn test_block_index_fallback_equivalence() {
             .any(|(_, _, _, points)| !points.is_empty())
     );
 }
+
+/// The block-index sidecar must be covered by `preopen`: after
+/// `schedule_prefetch`, `open` must be served from the prefetch pool without
+/// touching the filesystem again. Conversely, an absent sidecar (old segment)
+/// must not fail `preopen` and must open in fallback mode.
+#[test]
+fn test_block_index_preopen() {
+    use common::universal_io::{CachedFs, CachedReadFs as _, MmapFile, Populate, ReadOnly};
+
+    use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
+
+    type Storage = ReadOnly<MmapFile>;
+    type RoFs = <Storage as common::universal_io::UniversalRead>::Fs;
+
+    let (temp_dir, index) = random_index(3000, 2, IndexType::Mmap);
+    drop(index);
+    let block_index_path = temp_dir
+        .path()
+        .join(on_disk_numeric_index::PAIRS_BLOCK_INDEX_PATH);
+    let deleted = empty_deleted();
+
+    // Same order as the segment open path: snapshot, then preopen, then open.
+    use common::universal_io::UniversalReadFileOps as _;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskNumericIndex::<FloatPayloadType, Storage>::preopen(
+            &cached_fs,
+            temp_dir.path(),
+            Populate::PreferBackground,
+        )
+        .unwrap()
+    );
+
+    // The sidecar read of `open` must now come from the prefetch pool.
+    fs_err::remove_file(&block_index_path).unwrap();
+
+    let index = OnDiskNumericIndex::<FloatPayloadType, Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.pairs_block_index.is_some());
+    drop(index);
+
+    // An absent sidecar (segment built before it was introduced): `preopen`
+    // must not fail on the missing file and `open` must fall back.
+    let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskNumericIndex::<FloatPayloadType, Storage>::preopen(
+            &cached_fs,
+            temp_dir.path(),
+            Populate::PreferBackground,
+        )
+        .unwrap()
+    );
+    let index = OnDiskNumericIndex::<FloatPayloadType, Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.pairs_block_index.is_none());
+}

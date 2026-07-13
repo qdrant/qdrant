@@ -1267,3 +1267,71 @@ fn test_block_index_fallback_equivalence() {
             .any(|(_, _, _, points)| !points.is_empty())
     );
 }
+
+/// The block-index sidecars must be covered by `preopen`: after
+/// `schedule_prefetch`, `open` must be served from the prefetch pool without
+/// touching the filesystem again. Conversely, absent sidecars (old segment)
+/// must not fail `preopen` and must open in fallback mode.
+#[test]
+fn test_block_index_preopen() {
+    use common::universal_io::{
+        CachedFs, CachedReadFs as _, Populate, ReadOnly, UniversalRead, UniversalReadFileOps as _,
+    };
+
+    type Storage = ReadOnly<MmapFile>;
+    type RoFs = <Storage as UniversalRead>::Fs;
+
+    let (index, temp_dir, _db) = build_random_index(2000, 5, IndexType::OnDisk);
+    drop(index);
+    let counts_sidecar = temp_dir
+        .path()
+        .join(super::on_disk_geo_index::COUNTS_PER_HASH_BLOCK_INDEX);
+    let points_map_sidecar = temp_dir
+        .path()
+        .join(super::on_disk_geo_index::POINTS_MAP_BLOCK_INDEX);
+    let deleted = empty_deleted();
+
+    // Same order as the segment open path: snapshot, then preopen, then open.
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
+            .unwrap()
+    );
+
+    // The sidecar reads of `open` must now come from the prefetch pool.
+    fs_err::remove_file(&counts_sidecar).unwrap();
+    fs_err::remove_file(&points_map_sidecar).unwrap();
+
+    let index = OnDiskGeoIndex::<Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.counts_per_hash_block_index.is_some());
+    assert!(index.storage.points_map_block_index.is_some());
+    drop(index);
+
+    // Absent sidecars (segment built before they were introduced): `preopen`
+    // must not fail on the missing files and `open` must fall back.
+    let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
+            .unwrap()
+    );
+    let index = OnDiskGeoIndex::<Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.counts_per_hash_block_index.is_none());
+    assert!(index.storage.points_map_block_index.is_none());
+}
