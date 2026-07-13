@@ -10,7 +10,7 @@ use common::universal_io::{
 };
 
 use super::append_only::ArenastoreReader;
-use super::view::{DynamicGridstoreView, GridstoreView};
+use super::view::{BlobstoreView, GridstoreView};
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Mode, StorageConfig};
@@ -25,20 +25,20 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 /// Operates in one of two modes, automatically selected when opening, see [`Mode`].
 ///
 /// Holds its data directly (no locks) since it provides only read access.
-/// For read-write access, use [`super::Gridstore`].
+/// For read-write access, use [`super::Blobstore`].
 #[derive(Debug)]
-pub struct GridstoreReader<V, S: UniversalRead> {
+pub struct BlobstoreReader<V, S: UniversalRead> {
     variant: ReaderVariant<V, S>,
 }
 
 /// Mode specific implementation of the reader, see [`Mode`].
 #[derive(Debug)]
 enum ReaderVariant<V, S: UniversalRead> {
-    Dynamic(DynamicGridstoreReader<V, S>),
-    AppendOnly(ArenastoreReader<V, S>),
+    Gridstore(GridstoreReader<V, S>),
+    Arenastore(ArenastoreReader<V, S>),
 }
 
-impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
+impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads.
     ///
     /// Reads the config first to select the operating mode, like `open`: the mode decides which
@@ -82,36 +82,36 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         let config = read_config(fs, &base_path)?;
         match config.mode {
             Mode::Dynamic => {
-                let reader = DynamicGridstoreReader::open(fs, base_path, config, populate)?;
+                let reader = GridstoreReader::open(fs, base_path, config, populate)?;
                 Ok(Self {
-                    variant: ReaderVariant::Dynamic(reader),
+                    variant: ReaderVariant::Gridstore(reader),
                 })
             }
             Mode::AppendOnly => {
                 let reader = ArenastoreReader::open(fs, base_path, config)?;
                 Ok(Self {
-                    variant: ReaderVariant::AppendOnly(reader),
+                    variant: ReaderVariant::Arenastore(reader),
                 })
             }
         }
     }
 
-    /// Create a [`GridstoreView`] borrowing this reader's data.
-    pub fn view(&self) -> GridstoreView<'_, V, S> {
+    /// Create a [`BlobstoreView`] borrowing this reader's data.
+    pub fn view(&self) -> BlobstoreView<'_, V, S> {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => GridstoreView::from_dynamic(reader.view()),
-            ReaderVariant::AppendOnly(reader) => GridstoreView::from_append_only(reader.view()),
+            ReaderVariant::Gridstore(reader) => BlobstoreView::from_gridstore(reader.view()),
+            ReaderVariant::Arenastore(reader) => BlobstoreView::from_arenastore(reader.view()),
         }
     }
 
     /// List all files belonging to this reader.
     ///
     /// Note: in dynamic mode this does not include bitmask files. Use
-    /// [`super::Gridstore::files`] for the full list.
+    /// [`super::Blobstore::files`] for the full list.
     pub fn files(&self) -> Vec<PathBuf> {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.files(),
-            ReaderVariant::AppendOnly(reader) => reader.files(),
+            ReaderVariant::Gridstore(reader) => reader.files(),
+            ReaderVariant::Arenastore(reader) => reader.files(),
         }
     }
 
@@ -122,8 +122,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.max_point_offset(),
-            ReaderVariant::AppendOnly(reader) => Ok(reader.max_point_offset()),
+            ReaderVariant::Gridstore(reader) => reader.max_point_offset(),
+            ReaderVariant::Arenastore(reader) => Ok(reader.max_point_offset()),
         }
     }
 
@@ -133,8 +133,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.get_value::<P>(point_offset, hw_counter),
-            ReaderVariant::AppendOnly(reader) => reader.get_value::<P>(point_offset, hw_counter),
+            ReaderVariant::Gridstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
+            ReaderVariant::Arenastore(reader) => reader.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -153,8 +153,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         E: From<GridstoreError>,
     {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.iter(max_id, callback, hw_counter),
-            ReaderVariant::AppendOnly(reader) => reader.iter(max_id, callback, hw_counter),
+            ReaderVariant::Gridstore(reader) => reader.iter(max_id, callback, hw_counter),
+            ReaderVariant::Arenastore(reader) => reader.iter(max_id, callback, hw_counter),
         }
     }
 
@@ -170,10 +170,10 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         E: From<GridstoreError>,
     {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => {
+            ReaderVariant::Gridstore(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ReaderVariant::AppendOnly(reader) => {
+            ReaderVariant::Arenastore(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -184,12 +184,12 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Approximate (total page capacity) in dynamic mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.get_storage_size_bytes(),
-            ReaderVariant::AppendOnly(reader) => reader.get_storage_size_bytes(),
+            ReaderVariant::Gridstore(reader) => reader.get_storage_size_bytes(),
+            ReaderVariant::Arenastore(reader) => reader.get_storage_size_bytes(),
         }
     }
 
-    /// This method reloads the Gridstore data from "disk", so that
+    /// This method reloads the Blobstore data from "disk", so that
     /// it should make newly written data is readable.
     ///
     /// Important assumptions:
@@ -199,26 +199,26 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     ///
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         match &mut self.variant {
-            ReaderVariant::Dynamic(reader) => reader.live_reload(fs),
-            ReaderVariant::AppendOnly(reader) => reader.live_reload(),
+            ReaderVariant::Gridstore(reader) => reader.live_reload(fs),
+            ReaderVariant::Arenastore(reader) => reader.live_reload(),
         }
     }
 }
 
-impl<V, S: UniversalRead> GridstoreReader<V, S> {
-    /// Returns `true` if GridstoreReader is on disk, i.e. not populated on start/reload
+impl<V, S: UniversalRead> BlobstoreReader<V, S> {
+    /// Returns `true` if BlobstoreReader is on disk, i.e. not populated on start/reload
     pub fn is_on_disk(&self) -> bool {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.is_on_disk(),
-            ReaderVariant::AppendOnly(reader) => reader.is_on_disk(),
+            ReaderVariant::Gridstore(reader) => reader.is_on_disk(),
+            ReaderVariant::Arenastore(reader) => reader.is_on_disk(),
         }
     }
 
     /// Drop disk cache for pages.
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.variant {
-            ReaderVariant::Dynamic(reader) => reader.clear_cache(),
-            ReaderVariant::AppendOnly(reader) => reader.clear_cache(),
+            ReaderVariant::Gridstore(reader) => reader.clear_cache(),
+            ReaderVariant::Arenastore(reader) => reader.clear_cache(),
         }
     }
 }
@@ -228,7 +228,7 @@ impl<V, S: UniversalRead> GridstoreReader<V, S> {
 /// Holds pages and tracker directly (no locks) since it provides only read access.
 /// For read-write access, use [`super::dynamic::Gridstore`].
 #[derive(Debug)]
-struct DynamicGridstoreReader<V, S: UniversalRead> {
+struct GridstoreReader<V, S: UniversalRead> {
     config: StorageConfig,
     tracker: ReadOnlyTracker<S>,
     pages: Pages<S>,
@@ -238,10 +238,10 @@ struct DynamicGridstoreReader<V, S: UniversalRead> {
     populate: Populate,
 }
 
-impl<V: Blob, S: UniversalRead> DynamicGridstoreReader<V, S> {
-    /// Create a [`DynamicGridstoreView`] borrowing this reader's data.
-    fn view(&self) -> DynamicGridstoreView<'_, V, S, ReadOnlyTracker<S>> {
-        DynamicGridstoreView::new(&self.config, &self.tracker, &self.pages)
+impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
+    /// Create a [`GridstoreView`] borrowing this reader's data.
+    fn view(&self) -> GridstoreView<'_, V, S, ReadOnlyTracker<S>> {
+        GridstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
     /// List all files belonging to this reader (tracker, pages, config).
@@ -366,7 +366,7 @@ impl<V: Blob, S: UniversalRead> DynamicGridstoreReader<V, S> {
 
     /// Return the storage size in bytes (approximate: total page capacity).
     ///
-    /// For the precise used-space calculation, use [`super::Gridstore::get_storage_size_bytes`].
+    /// For the precise used-space calculation, use [`super::Blobstore::get_storage_size_bytes`].
     fn get_storage_size_bytes(&self) -> usize {
         self.view().get_storage_size_bytes()
     }
@@ -391,7 +391,7 @@ impl<V: Blob, S: UniversalRead> DynamicGridstoreReader<V, S> {
     }
 }
 
-impl<V, S: UniversalRead> DynamicGridstoreReader<V, S> {
+impl<V, S: UniversalRead> GridstoreReader<V, S> {
     /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
     fn is_on_disk(&self) -> bool {
         !self.populate.to_bool::<S>()
@@ -414,7 +414,7 @@ impl<V, S: UniversalRead> DynamicGridstoreReader<V, S> {
 
 /// Read the storage config from the base path.
 ///
-/// Shared helper used by the `open` paths of [`GridstoreReader`] and [`super::Gridstore`], which
+/// Shared helper used by the `open` paths of [`BlobstoreReader`] and [`super::Blobstore`], which
 /// read the config first to select the operating mode.
 pub(super) fn read_config<Fs: UniversalReadFs>(
     fs: &Fs,

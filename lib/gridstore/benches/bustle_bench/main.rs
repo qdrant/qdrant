@@ -1,13 +1,13 @@
 //! Implements Bustle traits for comparing performance against other kv stores.
 use bustle::{Mix, Workload};
 use fixture::ArcStorage;
-use gridstore::Gridstore;
+use gridstore::Blobstore;
 use gridstore::fixtures::Payload;
 
 mod fixture;
 mod payload_storage;
 
-type PayloadStorage = Gridstore<Payload>;
+type PayloadStorage = Blobstore<Payload>;
 
 fn default_opts(workload: &mut Workload) -> &mut Workload {
     let seed = [42; 32];

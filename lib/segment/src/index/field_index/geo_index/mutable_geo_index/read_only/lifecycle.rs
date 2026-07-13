@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::GridstoreReader;
+use gridstore::BlobstoreReader;
 
 use super::super::inner::InMemoryGeoIndex;
 use super::ReadOnlyAppendableGeoIndex;
@@ -15,9 +15,9 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
     ///
     /// Returns whether the on-disk directory exists.
     pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
-        // Gridstore reader
+        // Blobstore reader
         Ok(
-            GridstoreReader::<Vec<RawGeoPoint>, S>::preopen(fs, dir, Populate::PreferBackground)
+            BlobstoreReader::<Vec<RawGeoPoint>, S>::preopen(fs, dir, Populate::PreferBackground)
                 .ok_not_found()?
                 .is_some(),
         )
@@ -26,11 +26,11 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
     /// Open the appendable (Gridstore) geo index read-only, threading every
     /// file open through the filesystem handle `fs`.
     ///
-    /// Opens a [`GridstoreReader`] over the generic filesystem object, then
+    /// Opens a [`BlobstoreReader`] over the generic filesystem object, then
     /// rebuilds the in-memory geohash buckets by iterating every stored point
     /// through [`InMemoryGeoIndex::ingest_raw_points`] — the exact
     /// reconstruction the writable [`MutableGeoIndex::open_gridstore`][1]
-    /// performs over a writable `Gridstore`. No write path; the reader is
+    /// performs over a writable `Blobstore`. No write path; the reader is
     /// retained for `files` / `clear_cache`.
     ///
     /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching
@@ -43,7 +43,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         path: PathBuf,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
-            GridstoreReader::<Vec<RawGeoPoint>, S>::open(fs, path, Populate::Blocking)
+            BlobstoreReader::<Vec<RawGeoPoint>, S>::open(fs, path, Populate::Blocking)
                 .ok_not_found()?
         else {
             // Files don't exist, cannot load

@@ -6,7 +6,7 @@ use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
 use crate::config::{Compression, Mode, StorageOptions};
-use crate::{Blob, Gridstore};
+use crate::{Blob, Blobstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Payload(pub Map<String, serde_json::Value>);
@@ -28,23 +28,23 @@ impl Blob for Payload {
 }
 
 /// Create an empty storage with the default configuration
-pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
+pub fn empty_storage() -> (TempDir, Blobstore<Payload>) {
     empty_storage_mode(Mode::Dynamic)
 }
 
 /// Create an empty storage in append-only mode with the default configuration
-pub fn empty_storage_append_only() -> (TempDir, Gridstore<Payload>) {
+pub fn empty_storage_append_only() -> (TempDir, Blobstore<Payload>) {
     empty_storage_mode(Mode::AppendOnly)
 }
 
 /// Create an empty storage in the given mode with the default configuration
-pub fn empty_storage_mode(mode: Mode) -> (TempDir, Gridstore<Payload>) {
+pub fn empty_storage_mode(mode: Mode) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let options = StorageOptions {
         mode: Some(mode),
         ..Default::default()
     };
-    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
 
@@ -52,14 +52,14 @@ pub fn empty_storage_mode(mode: Mode) -> (TempDir, Gridstore<Payload>) {
 pub fn empty_storage_sized(
     page_size: usize,
     compression: Compression,
-) -> (TempDir, Gridstore<Payload>) {
+) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let options = StorageOptions {
         page_size_bytes: Some(page_size),
         compression: Some(compression),
         ..Default::default()
     };
-    let storage = Gridstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
 

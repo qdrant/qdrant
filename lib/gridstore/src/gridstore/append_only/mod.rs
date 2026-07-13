@@ -381,7 +381,7 @@ impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
                 tracker.upgrade(),
                 page.upgrade(),
             ) else {
-                log::trace!("Gridstore was cleared, cancelling flush");
+                log::trace!("Arenastore was cleared, cancelling flush");
                 return Err(GridstoreError::FlushCancelled);
             };
 

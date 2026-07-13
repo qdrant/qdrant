@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use gridstore::config::StorageOptions;
-use gridstore::{Blob, Gridstore};
+use gridstore::{Blob, Blobstore};
 
 use super::Encodable;
 use crate::index::field_index::histogram::Histogram;
@@ -31,7 +31,7 @@ where
     Vec<T>: Blob,
 {
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Gridstore<Vec<T>>,
+    pub(super) storage: Blobstore<Vec<T>>,
     pub(super) in_memory_index: InMemoryNumericIndex<T>,
 }
 

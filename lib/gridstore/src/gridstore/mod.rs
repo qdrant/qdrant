@@ -14,9 +14,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{MmapFile, Populate, UniversalWrite, UniversalWriteFileOps, UserData};
+pub use reader::BlobstoreReader;
 use reader::CONFIG_FILENAME;
-pub use reader::GridstoreReader;
-pub use view::GridstoreView;
+pub use view::BlobstoreView;
 
 use crate::Result;
 use crate::blob::Blob;
@@ -32,30 +32,32 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 ///
 /// Operates in one of two modes, specified on creation and automatically selected when opening:
 ///
-/// - [`Mode::Dynamic`]: values can be updated and deleted, freed blocks are tracked and reused.
-/// - [`Mode::AppendOnly`]: append-only variant for serverless deployments, values cannot be
-///   updated or deleted, and must be put in monotonically increasing point offset order.
+/// - [`Mode::Dynamic`]: backed by the inner `Gridstore` — values can be updated and deleted,
+///   freed blocks are tracked and reused.
+/// - [`Mode::AppendOnly`]: backed by the inner `Arenastore` — append-only variant for serverless
+///   deployments, values cannot be updated or deleted, and must be put in monotonically
+///   increasing point offset order.
 ///
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub struct Gridstore<V, S = MmapFile>
+pub struct Blobstore<V, S = MmapFile>
 where
     S: UniversalWrite + 'static,
 {
-    variant: GridstoreVariant<V, S>,
+    variant: BlobstoreVariant<V, S>,
 }
 
 /// Mode specific implementation of the storage, see [`Mode`].
 #[derive(Debug)]
-enum GridstoreVariant<V, S>
+enum BlobstoreVariant<V, S>
 where
     S: UniversalWrite + 'static,
 {
-    Dynamic(dynamic::Gridstore<V, S>),
-    AppendOnly(Arenastore<V, S>),
+    Gridstore(dynamic::Gridstore<V, S>),
+    Arenastore(Arenastore<V, S>),
 }
 
-impl<V, S> Gridstore<V, S>
+impl<V, S> Blobstore<V, S>
 where
     V: Blob,
     S: UniversalWrite + 'static,
@@ -63,15 +65,15 @@ where
     /// List all files belonging to this storage.
     pub fn files(&self) -> Vec<PathBuf> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.files(),
-            GridstoreVariant::AppendOnly(storage) => storage.files(),
+            BlobstoreVariant::Gridstore(storage) => storage.files(),
+            BlobstoreVariant::Arenastore(storage) => storage.files(),
         }
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.immutable_files(),
-            GridstoreVariant::AppendOnly(storage) => storage.immutable_files(),
+            BlobstoreVariant::Gridstore(storage) => storage.immutable_files(),
+            BlobstoreVariant::Arenastore(storage) => storage.immutable_files(),
         }
     }
 
@@ -103,13 +105,13 @@ where
             Mode::Dynamic => {
                 let storage = dynamic::Gridstore::new(fs, base_path, options)?;
                 Ok(Self {
-                    variant: GridstoreVariant::Dynamic(storage),
+                    variant: BlobstoreVariant::Gridstore(storage),
                 })
             }
             Mode::AppendOnly => {
                 let storage = Arenastore::new(fs, base_path, options)?;
                 Ok(Self {
-                    variant: GridstoreVariant::AppendOnly(storage),
+                    variant: BlobstoreVariant::Arenastore(storage),
                 })
             }
         }
@@ -124,13 +126,13 @@ where
             Mode::Dynamic => {
                 let storage = dynamic::Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self {
-                    variant: GridstoreVariant::Dynamic(storage),
+                    variant: BlobstoreVariant::Gridstore(storage),
                 })
             }
             Mode::AppendOnly => {
                 let storage = Arenastore::open(fs, base_path, config)?;
                 Ok(Self {
-                    variant: GridstoreVariant::AppendOnly(storage),
+                    variant: BlobstoreVariant::Arenastore(storage),
                 })
             }
         }
@@ -149,10 +151,10 @@ where
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
         match &mut self.variant {
-            GridstoreVariant::Dynamic(storage) => {
+            BlobstoreVariant::Gridstore(storage) => {
                 storage.put_value(point_offset, value, hw_counter)
             }
-            GridstoreVariant::AppendOnly(storage) => {
+            BlobstoreVariant::Arenastore(storage) => {
                 storage.put_value(point_offset, value, hw_counter)
             }
         }
@@ -166,8 +168,8 @@ where
     /// Not supported in append-only mode, returns an error.
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
         match &mut self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.delete_value(point_offset),
-            GridstoreVariant::AppendOnly(storage) => storage.delete_value(point_offset),
+            BlobstoreVariant::Gridstore(storage) => storage.delete_value(point_offset),
+            BlobstoreVariant::Arenastore(storage) => storage.delete_value(point_offset),
         }
     }
 
@@ -176,27 +178,27 @@ where
     /// Completely wipes the storage, and recreates it in the same mode.
     pub fn clear(&mut self) -> Result<()> {
         match &mut self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.clear(),
-            GridstoreVariant::AppendOnly(storage) => storage.clear(),
+            BlobstoreVariant::Gridstore(storage) => storage.clear(),
+            BlobstoreVariant::Arenastore(storage) => storage.clear(),
         }
     }
 
     /// Wipe the storage, drop all pages and delete the base directory.
     ///
-    /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
+    /// Takes ownership because this function leaves Blobstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
     pub fn wipe(self) -> Result<()> {
         match self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.wipe(),
-            GridstoreVariant::AppendOnly(storage) => storage.wipe(),
+            BlobstoreVariant::Gridstore(storage) => storage.wipe(),
+            BlobstoreVariant::Arenastore(storage) => storage.wipe(),
         }
     }
 
     /// Return the storage size in bytes.
     pub fn get_storage_size_bytes(&self) -> Result<usize> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.get_storage_size_bytes(),
-            GridstoreVariant::AppendOnly(storage) => storage.get_storage_size_bytes(),
+            BlobstoreVariant::Gridstore(storage) => storage.get_storage_size_bytes(),
+            BlobstoreVariant::Arenastore(storage) => storage.get_storage_size_bytes(),
         }
     }
 
@@ -206,8 +208,10 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.get_value::<P>(point_offset, hw_counter),
-            GridstoreVariant::AppendOnly(storage) => {
+            BlobstoreVariant::Gridstore(storage) => {
+                storage.get_value::<P>(point_offset, hw_counter)
+            }
+            BlobstoreVariant::Arenastore(storage) => {
                 storage.get_value::<P>(point_offset, hw_counter)
             }
         }
@@ -228,10 +232,10 @@ where
         E: From<GridstoreError>,
     {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => {
+            BlobstoreVariant::Gridstore(storage) => {
                 storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            GridstoreVariant::AppendOnly(storage) => {
+            BlobstoreVariant::Arenastore(storage) => {
                 storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -240,15 +244,15 @@ where
     #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.get_pointer(point_offset),
-            GridstoreVariant::AppendOnly(storage) => storage.get_pointer(point_offset),
+            BlobstoreVariant::Gridstore(storage) => storage.get_pointer(point_offset),
+            BlobstoreVariant::Arenastore(storage) => storage.get_pointer(point_offset),
         }
     }
 
     pub fn max_point_offset(&self) -> PointOffset {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.max_point_offset(),
-            GridstoreVariant::AppendOnly(storage) => storage.max_point_offset(),
+            BlobstoreVariant::Gridstore(storage) => storage.max_point_offset(),
+            BlobstoreVariant::Arenastore(storage) => storage.max_point_offset(),
         }
     }
 
@@ -261,18 +265,18 @@ where
         E: From<GridstoreError>,
     {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.iter(callback, hw_counter),
-            GridstoreVariant::AppendOnly(storage) => storage.iter(callback, hw_counter),
+            BlobstoreVariant::Gridstore(storage) => storage.iter(callback, hw_counter),
+            BlobstoreVariant::Arenastore(storage) => storage.iter(callback, hw_counter),
         }
     }
 }
 
-impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
+impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     pub fn flusher(&self) -> Flusher {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.flusher(),
-            GridstoreVariant::AppendOnly(storage) => storage.flusher(),
+            BlobstoreVariant::Gridstore(storage) => storage.flusher(),
+            BlobstoreVariant::Arenastore(storage) => storage.flusher(),
         }
     }
 
@@ -281,8 +285,8 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     /// No-op in append-only mode, which never populates its files into RAM.
     pub fn populate(&self) -> Result<()> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.populate(),
-            GridstoreVariant::AppendOnly(storage) => storage.populate(),
+            BlobstoreVariant::Gridstore(storage) => storage.populate(),
+            BlobstoreVariant::Arenastore(storage) => storage.populate(),
         }
     }
 
@@ -291,35 +295,35 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     /// No-op in append-only mode, which never populates its files into RAM.
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage.clear_cache(),
-            GridstoreVariant::AppendOnly(storage) => storage.clear_cache(),
+            BlobstoreVariant::Gridstore(storage) => storage.clear_cache(),
+            BlobstoreVariant::Arenastore(storage) => storage.clear_cache(),
         }
     }
 }
 
 #[cfg(test)]
-impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
+impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
     /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
     fn as_gridstore(&self) -> &dynamic::Gridstore<V, S> {
         match &self.variant {
-            GridstoreVariant::Dynamic(storage) => storage,
-            GridstoreVariant::AppendOnly(_) => panic!("storage is not in dynamic mode"),
+            BlobstoreVariant::Gridstore(storage) => storage,
+            BlobstoreVariant::Arenastore(_) => panic!("storage is not in dynamic mode"),
         }
     }
 
     /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
     fn as_gridstore_mut(&mut self) -> &mut dynamic::Gridstore<V, S> {
         match &mut self.variant {
-            GridstoreVariant::Dynamic(storage) => storage,
-            GridstoreVariant::AppendOnly(_) => panic!("storage is not in dynamic mode"),
+            BlobstoreVariant::Gridstore(storage) => storage,
+            BlobstoreVariant::Arenastore(_) => panic!("storage is not in dynamic mode"),
         }
     }
 
     /// Get the inner Arenastore (append-only mode storage), panics if the storage is in another mode.
     fn as_arenastore(&self) -> &Arenastore<V, S> {
         match &self.variant {
-            GridstoreVariant::Dynamic(_) => panic!("storage is not in append-only mode"),
-            GridstoreVariant::AppendOnly(storage) => storage,
+            BlobstoreVariant::Gridstore(_) => panic!("storage is not in append-only mode"),
+            BlobstoreVariant::Arenastore(storage) => storage,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Gridstore;
+use gridstore::Blobstore;
 use gridstore::config::StorageOptions;
 
 use super::MutableGeoIndex;
@@ -32,7 +32,7 @@ impl MutableGeoIndex {
     /// loaded.
     pub fn open(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Gridstore::open_or_create(MmapFs, path, GRIDSTORE_OPTIONS, Populate::Blocking).map_err(
+            Blobstore::open_or_create(MmapFs, path, GRIDSTORE_OPTIONS, Populate::Blocking).map_err(
                 |err| {
                     OperationError::service_error(format!(
                         "failed to open mutable geo index on gridstore: {err}"
@@ -40,7 +40,7 @@ impl MutableGeoIndex {
                 },
             )?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable geo index on gridstore: {err}"
                 ))

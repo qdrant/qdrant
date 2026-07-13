@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalWrite};
 use fs_err as fs;
 use gridstore::config::StorageOptions;
-use gridstore::{Blob, Gridstore};
+use gridstore::{Blob, Blobstore};
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -29,7 +29,7 @@ impl Blob for Payload {
 
 #[derive(Debug)]
 pub struct PayloadStorageImpl<S: UniversalWrite + 'static = MmapFile> {
-    storage: Gridstore<Payload, S>,
+    storage: Blobstore<Payload, S>,
     populate: bool,
 }
 
@@ -54,7 +54,7 @@ where
     fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
         // TODO(uio): use Populate as argument and propagate in callers
         let storage =
-            Gridstore::open(S::Fs::default(), path, Populate::from(populate)).map_err(|err| {
+            Blobstore::open(S::Fs::default(), path, Populate::from(populate)).map_err(|err| {
                 OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
             })?;
 
@@ -62,7 +62,7 @@ where
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::new(S::Fs::default(), path, StorageOptions::default())?;
+        let storage = Blobstore::new(S::Fs::default(), path, StorageOptions::default())?;
 
         if populate {
             storage.populate()?;

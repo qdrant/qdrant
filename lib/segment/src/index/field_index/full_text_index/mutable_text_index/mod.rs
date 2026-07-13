@@ -1,4 +1,4 @@
-use gridstore::Gridstore;
+use gridstore::Blobstore;
 use gridstore::config::StorageOptions;
 
 use self::inner::MutableFullTextIndexInner;
@@ -20,5 +20,5 @@ pub(super) const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
 
 pub struct MutableFullTextIndex {
     pub(super) inner: MutableFullTextIndexInner,
-    pub(super) storage: Gridstore<Vec<u8>>,
+    pub(super) storage: Blobstore<Vec<u8>>,
 }
