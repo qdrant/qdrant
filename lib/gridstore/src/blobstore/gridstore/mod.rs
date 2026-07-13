@@ -1,3 +1,6 @@
+mod reader;
+mod view;
+
 use std::cmp;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,10 +14,11 @@ use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{Populate, UniversalWrite, UniversalWriteFileOps, UserData};
 use itertools::Itertools;
 use parking_lot::RwLock;
+pub(super) use reader::GridstoreReader;
+pub(super) use view::GridstoreView;
 
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
-use super::view::GridstoreView;
 use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;

@@ -535,7 +535,7 @@ where
         Ok(old_pointers)
     }
 
-    pub fn flusher(&self) -> crate::gridstore::Flusher {
+    pub fn flusher(&self) -> crate::blobstore::Flusher {
         let inner = self.storage.flusher();
         Box::new(move || inner().map_err(Into::into))
     }

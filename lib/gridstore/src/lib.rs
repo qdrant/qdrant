@@ -1,15 +1,15 @@
 pub mod bitmask;
 pub mod blob;
+mod blobstore;
 pub mod config;
 mod direct_io;
 pub mod error;
 pub mod fixtures;
-mod gridstore;
 mod pages;
 mod tracker;
 
 pub use blob::Blob;
-pub use gridstore::{Blobstore, BlobstoreReader, BlobstoreView};
+pub use blobstore::{Blobstore, BlobstoreReader, BlobstoreView};
 
 use crate::error::GridstoreError;
 

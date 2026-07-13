@@ -1,5 +1,5 @@
-mod append_only;
-mod dynamic;
+mod arenastore;
+mod gridstore;
 mod reader;
 pub(crate) mod view;
 
@@ -8,12 +8,13 @@ mod tests;
 
 use std::path::PathBuf;
 
-use append_only::Arenastore;
+use arenastore::Arenastore;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{MmapFile, Populate, UniversalWrite, UniversalWriteFileOps, UserData};
+use gridstore::Gridstore;
 pub use reader::BlobstoreReader;
 use reader::CONFIG_FILENAME;
 pub use view::BlobstoreView;
@@ -53,7 +54,7 @@ enum BlobstoreVariant<V, S>
 where
     S: UniversalWrite + 'static,
 {
-    Gridstore(dynamic::Gridstore<V, S>),
+    Gridstore(Gridstore<V, S>),
     Arenastore(Arenastore<V, S>),
 }
 
@@ -103,7 +104,7 @@ where
     pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         match options.mode.unwrap_or_default() {
             Mode::Dynamic => {
-                let storage = dynamic::Gridstore::new(fs, base_path, options)?;
+                let storage = Gridstore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
                 })
@@ -124,7 +125,7 @@ where
         let config = reader::read_config(&fs, &base_path)?;
         match config.mode {
             Mode::Dynamic => {
-                let storage = dynamic::Gridstore::open(fs, base_path, config, populate)?;
+                let storage = Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
                 })
@@ -304,7 +305,7 @@ impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
 #[cfg(test)]
 impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
     /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
-    fn as_gridstore(&self) -> &dynamic::Gridstore<V, S> {
+    fn as_gridstore(&self) -> &Gridstore<V, S> {
         match &self.variant {
             BlobstoreVariant::Gridstore(storage) => storage,
             BlobstoreVariant::Arenastore(_) => panic!("storage is not in dynamic mode"),
@@ -312,7 +313,7 @@ impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
     }
 
     /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
-    fn as_gridstore_mut(&mut self) -> &mut dynamic::Gridstore<V, S> {
+    fn as_gridstore_mut(&mut self) -> &mut Gridstore<V, S> {
         match &mut self.variant {
             BlobstoreVariant::Gridstore(storage) => storage,
             BlobstoreVariant::Arenastore(_) => panic!("storage is not in dynamic mode"),

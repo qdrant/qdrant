@@ -9,8 +9,8 @@ use common::universal_io::{
 };
 
 use crate::Result;
+use crate::blobstore::Flusher;
 use crate::error::GridstoreError;
-use crate::gridstore::Flusher;
 use crate::tracker::{BlockOffset, ValuePointer};
 
 /// File name of the append-only page file
