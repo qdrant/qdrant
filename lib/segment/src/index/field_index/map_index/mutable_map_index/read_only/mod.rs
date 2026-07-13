@@ -1,5 +1,5 @@
+use blobstore::{Blob, BlobstoreReader};
 use common::universal_io::UniversalRead;
-use gridstore::{Blob, BlobstoreReader};
 
 use super::super::MapIndexKey;
 use super::in_memory::InMemoryMapIndex;
@@ -12,7 +12,7 @@ mod read_ops;
 ///
 /// Owns the same in-memory state ([`MutableMapIndexInner`]) but is backed by
 /// [`BlobstoreReader`] over generic [`UniversalRead`] instead of a writable
-/// [`gridstore::Blobstore`]. Implements
+/// [`blobstore::Blobstore`]. Implements
 /// [`super::super::read_ops::MapIndexRead`] by forwarding to the inner;
 /// provides no mutation surface.
 ///

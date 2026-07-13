@@ -1,8 +1,8 @@
 //! Implements Bustle traits for comparing performance against other kv stores.
+use blobstore::Blobstore;
+use blobstore::fixtures::Payload;
 use bustle::{Mix, Workload};
 use fixture::ArcStorage;
-use gridstore::Blobstore;
-use gridstore::fixtures::Payload;
 
 mod fixture;
 mod payload_storage;

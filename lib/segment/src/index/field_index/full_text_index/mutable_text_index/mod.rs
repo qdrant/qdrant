@@ -1,5 +1,5 @@
-use gridstore::Blobstore;
-use gridstore::config::StorageOptions;
+use blobstore::Blobstore;
+use blobstore::config::StorageOptions;
 
 use self::inner::MutableFullTextIndexInner;
 
@@ -11,7 +11,7 @@ mod read_ops;
 mod tests;
 
 pub(super) const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
-    compression: Some(gridstore::config::Compression::None),
+    compression: Some(blobstore::config::Compression::None),
     page_size_bytes: None,
     block_size_bytes: None,
     region_size_blocks: None,

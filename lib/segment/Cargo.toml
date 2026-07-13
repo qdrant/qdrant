@@ -104,7 +104,7 @@ charabia = { version = "0.9.9", default-features = false, features = [
     "chinese-normalization",
 ] }
 
-gridstore = { path = "../gridstore" }
+blobstore = { path = "../blobstore" }
 
 common = { path = "../common/common" }
 macros = { path = "../macros" }

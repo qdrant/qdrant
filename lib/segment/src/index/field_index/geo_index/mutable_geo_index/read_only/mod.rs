@@ -1,5 +1,5 @@
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::BlobstoreReader;
 
 use super::inner::InMemoryGeoIndex;
 use crate::types::RawGeoPoint;
@@ -12,7 +12,7 @@ mod read_ops;
 ///
 /// Owns the same in-memory state ([`InMemoryGeoIndex`]) but is backed by
 /// [`BlobstoreReader`] over generic [`UniversalRead`] instead of a writable
-/// [`gridstore::Blobstore`]. Implements
+/// [`blobstore::Blobstore`]. Implements
 /// [`super::super::read_ops::GeoIndexRead`] by forwarding to the inner;
 /// provides no mutation surface.
 ///

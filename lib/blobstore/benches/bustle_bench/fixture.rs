@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
+use blobstore::fixtures::Payload;
 use bustle::CollectionHandle;
-use gridstore::fixtures::Payload;
 use parking_lot::RwLock;
 use serde_json::json;
 use tempfile::TempDir;

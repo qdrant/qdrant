@@ -1,10 +1,10 @@
+use blobstore::Blob;
+use blobstore::error::GridstoreError;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
-use gridstore::error::GridstoreError;
 
 use super::ReadOnlyAppendableNumericIndex;
 use crate::common::operation_error::OperationResult;

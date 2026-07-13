@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
+use blobstore::Blob;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blob;
 use serde_json::Value;
 
 use super::mutable_numeric_index::InMemoryNumericIndex;

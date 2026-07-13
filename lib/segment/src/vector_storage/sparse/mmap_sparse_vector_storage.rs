@@ -3,6 +3,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use blobstore::config::{Compression, StorageOptions};
+use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
@@ -10,8 +12,6 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
-use gridstore::config::{Compression, StorageOptions};
-use gridstore::{Blob, Blobstore};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;

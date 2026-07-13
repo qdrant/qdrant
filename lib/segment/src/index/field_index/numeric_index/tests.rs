@@ -1,10 +1,10 @@
 use std::path::Path;
 
+use blobstore::Blob;
 use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;

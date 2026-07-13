@@ -852,7 +852,7 @@ pub async fn run(
         eprintln!("model_testing: reopening to verify reload...");
     }
     // Finish any background snapshot before closing (it holds an `Arc` clone — see the restart
-    // path), then close and reopen and re-verify — mirrors gridstore tests.rs:488-516.
+    // path), then close and reopen and re-verify — mirrors blobstore tests.rs:488-516.
     drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;

@@ -2,11 +2,11 @@ use std::collections::BTreeSet;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::path::PathBuf;
 
+use blobstore::error::GridstoreError;
+use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate, UniversalRead};
-use gridstore::error::GridstoreError;
-use gridstore::{Blob, Blobstore};
 
 use super::super::Encodable;
 use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};

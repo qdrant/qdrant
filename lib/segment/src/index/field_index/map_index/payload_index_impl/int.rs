@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
+use blobstore::Blob;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;

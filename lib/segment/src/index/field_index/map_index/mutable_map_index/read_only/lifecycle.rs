@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
+use blobstore::error::GridstoreError;
+use blobstore::{Blob, BlobstoreReader};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::error::GridstoreError;
-use gridstore::{Blob, BlobstoreReader};
 
 use super::super::MapIndexKey;
 use super::super::in_memory::InMemoryMapIndex;
@@ -34,7 +34,7 @@ where
     /// rebuilds the in-memory state by feeding every stored value through
     /// [`MutableMapIndexInner::ingest`] — the exact reconstruction the writable
     /// [`MutableMapIndex::open_gridstore`][1] performs over a writable
-    /// [`gridstore::Blobstore`]. No write path; the reader is retained for
+    /// [`blobstore::Blobstore`]. No write path; the reader is retained for
     /// later `files` / `clear_cache` use.
     ///
     /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching

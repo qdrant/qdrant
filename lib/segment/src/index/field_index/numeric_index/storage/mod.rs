@@ -26,7 +26,7 @@ pub mod read_only;
 mod read_ops;
 mod trait_impls;
 
-use gridstore::Blob;
+use blobstore::Blob;
 
 use super::Encodable;
 use super::immutable_numeric_index::ImmutableNumericIndex;

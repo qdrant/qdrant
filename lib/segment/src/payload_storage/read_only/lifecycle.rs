@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
+use blobstore::BlobstoreReader;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use gridstore::BlobstoreReader;
 
 use super::ReadOnlyPayloadStorage;
 use crate::common::operation_error::OperationResult;
