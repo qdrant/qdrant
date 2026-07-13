@@ -221,6 +221,56 @@ impl Segment {
         Ok(new_id)
     }
 
+    /// Write a complete point at `internal_id` in one pass: vectors from a
+    /// mix of storage-native bytes and decoded values, then the payload.
+    ///
+    /// Every configured named vector storage gets touched: a name present in
+    /// `updated_vectors` is written from its decoded value, a name present
+    /// only in `raw_vectors` is written from its bytes, and an absent name is
+    /// written as `None` (the slot is grown and marked deleted), matching
+    /// [`Segment::replace_all_vectors_raw`]'s contract. The payload is
+    /// written last — always, even when empty, for the same null-index
+    /// `total_point_count` bump reason as [`Segment::clone_and_mutate_point`].
+    ///
+    /// `internal_id` may be a fresh id one past the current end: the raw
+    /// write paths grow the storages as needed.
+    ///
+    /// # Warning
+    ///
+    /// Available for appendable segments only.
+    pub(super) fn write_point_parts(
+        &mut self,
+        internal_id: PointOffsetType,
+        op_num: SeqNumberType,
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: &NamedVectors,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        debug_assert!(self.is_appendable());
+        for (vector_name, vector_data) in self.vector_data.iter_mut() {
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            match updated_vectors.get(vector_name) {
+                Some(vector) => {
+                    vector_index.update_vector(internal_id, Some(vector), hw_counter)?;
+                }
+                None => {
+                    let bytes = find_raw_vector(raw_vectors, vector_name);
+                    vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+                }
+            }
+            self.version_tracker.set_vector(vector_name, Some(op_num));
+        }
+        self.payload_index
+            .borrow_mut()
+            .overwrite_payload(internal_id, payload, hw_counter)?;
+        // The overwrite mutated payload storage: stamp it so partial
+        // snapshots re-upload it (the old CoW path bumped this via
+        // `set_full_payload`).
+        self.version_tracker.set_payload(Some(op_num));
+        Ok(())
+    }
+
     /// Append-only update: snapshot the point at `old_id` into owned vectors
     /// and payload, hand them to `mutate` for in-memory modification, then
     /// write the result at a fresh internal id and repoint the id tracker.
@@ -344,7 +394,10 @@ impl Segment {
     ///   [`Segment::clone_and_mutate_point`] with `snapshot_mutate`, which
     ///   sees an owned snapshot of the point's vectors and payload and
     ///   modifies it in memory; the helper writes the result at a fresh
-    ///   internal id and tombstones the old one.
+    ///   internal id and tombstones the old one. Exception: a slot written
+    ///   by the current operation (its version equals `op_num`) is mutated
+    ///   in place — it is not durable yet, so cloning it would only chain
+    ///   dead slots for multi-step point writes.
     ///
     /// Both closures return the op-specific result bool (e.g. "was anything
     /// deleted"). The version-recording offset is chosen automatically:
@@ -366,7 +419,21 @@ impl Segment {
         InPlace: FnOnce(&mut Segment, PointOffsetType) -> OperationResult<bool>,
         SnapshotMutate: FnOnce(&mut NamedVectors<'static>, &mut Payload) -> OperationResult<bool>,
     {
-        let append_only = self.is_append_only();
+        // A slot whose version already equals `op_num` was written by the
+        // current operation (an earlier step of a multi-step point write,
+        // e.g. the upsert preceding this set_full_payload). It cannot be
+        // durable yet: the segment write lock is held across the whole
+        // operation, so no flush — and hence no read-only follower — can
+        // have observed it, and a crash discards it (versions flush last,
+        // WAL replay re-applies the whole operation). Mutating it in place
+        // is therefore invisible to readers and avoids cloning the point
+        // once per step.
+        let same_op_slot = self
+            .id_tracker
+            .borrow()
+            .internal_version(existing_internal_id)
+            .is_some_and(|slot_version| slot_version == op_num);
+        let append_only = self.is_append_only() && !same_op_slot;
         self.handle_point_version_and_failure(
             op_num,
             point_id,

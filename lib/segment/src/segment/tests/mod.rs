@@ -1037,6 +1037,129 @@ fn test_append_only_clone_stamps_payload_version() {
     assert_eq!(plain.version_tracker.get_payload(), Some(101));
 }
 
+/// `upsert_moved_point` writes the whole point — raw bytes, decoded overlay,
+/// payload — in one operation, allocating exactly one internal slot where the
+/// separate `upsert_point_raw` + `update_vectors` + `set_full_payload` steps
+/// would clone the point once per step on an append-only segment.
+#[test]
+fn test_upsert_moved_point_single_slot() {
+    use crate::id_tracker::IdTrackerRead as _;
+
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    dst.append_only_mutations = true;
+    let hw_counter = HardwareCounterCell::new();
+
+    let raw_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    src.upsert_point(100, 7.into(), only_default_vector(&raw_vec), &hw_counter)
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+
+    // Insert path: raw bytes only, exactly one slot.
+    dst.upsert_moved_point(
+        101,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
+        &payload,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(dst.id_tracker.borrow().total_point_count(), 1);
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(raw_vec)),
+    );
+    assert_eq!(dst.payload(7.into(), &hw_counter).unwrap(), payload);
+    // Payload storage was mutated: its snapshot version stamp must move to
+    // this op, or partial snapshots would skip the changed payload files.
+    assert_eq!(dst.version_tracker.get_payload(), Some(101));
+
+    // Replace path with a decoded overlay shadowing the raw bytes: exactly
+    // one fresh slot (the clone), and the overlay wins over the raw bytes.
+    let new_vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    let payload2: Payload = serde_json::from_str(r#"{"color": "blue"}"#).unwrap();
+    dst.upsert_moved_point(
+        102,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes)],
+        only_default_vector(&new_vec),
+        &payload2,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(dst.id_tracker.borrow().total_point_count(), 2);
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(new_vec)),
+    );
+    assert_eq!(dst.payload(7.into(), &hw_counter).unwrap(), payload2);
+    assert_eq!(dst.version_tracker.get_payload(), Some(102));
+}
+
+/// On an append-only segment, the follow-up steps of a multi-step point
+/// write (e.g. the `set_full_payload` after an `upsert_point`, sharing its
+/// `op_num`) must mutate the slot written by the same operation in place
+/// instead of cloning it: one operation allocates exactly one slot.
+#[test]
+fn test_append_only_same_op_multi_step_single_slot() {
+    use crate::id_tracker::IdTrackerRead as _;
+
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    segment.append_only_mutations = true;
+    let hw_counter = HardwareCounterCell::new();
+
+    // New point: insert + payload at the same op_num — one slot.
+    let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+    segment
+        .set_full_payload(100, 7.into(), &payload, &hw_counter)
+        .unwrap();
+    assert_eq!(segment.id_tracker.borrow().total_point_count(), 1);
+
+    // Update of a committed point: the first step clones to a fresh slot,
+    // the second step mutates that same-op slot in place — one new slot.
+    let vec2 = vec![0.1_f32, 0.2, 0.3, 0.4];
+    let payload2: Payload = serde_json::from_str(r#"{"color": "blue"}"#).unwrap();
+    segment
+        .upsert_point(101, 7.into(), only_default_vector(&vec2), &hw_counter)
+        .unwrap();
+    segment
+        .set_full_payload(101, 7.into(), &payload2, &hw_counter)
+        .unwrap();
+    assert_eq!(segment.id_tracker.borrow().total_point_count(), 2);
+    assert_eq!(
+        segment
+            .vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
+            .unwrap(),
+        Some(VectorInternal::Dense(vec2)),
+    );
+    assert_eq!(segment.payload(7.into(), &hw_counter).unwrap(), payload2);
+
+    // A later operation still clones: committed slots are never mutated.
+    let payload3: Payload = serde_json::from_str(r#"{"color": "green"}"#).unwrap();
+    segment
+        .set_full_payload(102, 7.into(), &payload3, &hw_counter)
+        .unwrap();
+    assert_eq!(segment.id_tracker.borrow().total_point_count(), 3);
+    assert_eq!(segment.payload(7.into(), &hw_counter).unwrap(), payload3);
+}
+
 /// Multi-dense raw round-trip: the flattened inner-vector blob must survive
 /// `retrieve_raw` → `upsert_point_raw` byte-identically and decode to the
 /// original multivector.
