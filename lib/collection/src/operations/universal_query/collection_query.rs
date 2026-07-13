@@ -243,7 +243,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendAverageVector(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -254,7 +254,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendBestScore(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -265,7 +265,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendSumScores(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -363,35 +363,32 @@ impl VectorQuery<VectorInputInternal> {
     }
 
     /// Resolves the references in the RecoQuery into actual vectors.
+    /// Returns an error if any referenced point ID cannot be resolved.
     fn resolve_reco_reference(
         reco_query: RecoQuery<VectorInputInternal>,
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
-    ) -> (Vec<VectorInternal>, Vec<VectorInternal>) {
-        let positives = reco_query
+    ) -> CollectionResult<(Vec<VectorInternal>, Vec<VectorInternal>)> {
+        let positives: Vec<VectorInternal> = reco_query
             .positives
             .into_iter()
-            .filter_map(|vector_input| {
-                ids_to_vectors.resolve_reference(
-                    lookup_collection,
-                    lookup_vector_name,
-                    vector_input,
-                )
+            .map(|vector_input| {
+                ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
-            .collect();
-        let negatives = reco_query
+            .collect::<CollectionResult<_>>()?;
+        let negatives: Vec<VectorInternal> = reco_query
             .negatives
             .into_iter()
-            .filter_map(|vector_input| {
-                ids_to_vectors.resolve_reference(
-                    lookup_collection,
-                    lookup_vector_name,
-                    vector_input,
-                )
+            .map(|vector_input| {
+                ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
-            .collect();
-        (positives, negatives)
+            .collect::<CollectionResult<_>>()?;
+        Ok((positives, negatives))
     }
 }
 
@@ -779,5 +776,96 @@ impl CollectionQueryRequest {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::data_types::vectors::VectorStructInternal;
+    use shard::retrieve::record_internal::RecordInternal;
+
+    use super::*;
+
+    fn create_referenced_vectors(point_id: PointIdType) -> ReferencedVectors {
+        let mut referenced = ReferencedVectors::default();
+        let vector = VectorStructInternal::Single(vec![1.0, 2.0, 3.0]);
+        let record = RecordInternal {
+            id: point_id,
+            payload: None,
+            vector: Some(vector),
+            shard_key: None,
+            order_value: None,
+        };
+        referenced.extend(None, vec![(point_id, record)]);
+        referenced
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_missing_point_id() {
+        let referenced = create_referenced_vectors(1u64.into());
+
+        let query = RecoQuery::new(vec![VectorInputInternal::Id(999u64.into())], vec![]);
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when point ID does not exist in ReferencedVectors"
+        );
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_valid_point_id() {
+        let point_id: PointIdType = 1u64.into();
+        let referenced = create_referenced_vectors(point_id);
+
+        let query = RecoQuery::new(vec![VectorInputInternal::Id(point_id)], vec![]);
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Expected success when point ID exists in ReferencedVectors"
+        );
+        let (positives, negatives) = result.unwrap();
+        assert_eq!(positives.len(), 1);
+        assert_eq!(negatives.len(), 0);
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_mixed_point_ids() {
+        let point_id: PointIdType = 1u64.into();
+        let referenced = create_referenced_vectors(point_id);
+
+        // Mix of valid and invalid IDs — should fail on first invalid
+        let query = RecoQuery::new(
+            vec![
+                VectorInputInternal::Id(point_id),
+                VectorInputInternal::Id(999u64.into()),
+            ],
+            vec![],
+        );
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when at least one point ID is missing"
+        );
     }
 }
