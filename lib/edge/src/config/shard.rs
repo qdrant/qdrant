@@ -6,7 +6,8 @@ use std::path::Path;
 use common::fs::{atomic_save_json, read_json};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{
-    HnswConfig, PayloadStorageType, QuantizationConfig, SegmentConfig, VectorNameBuf,
+    Distance, HnswConfig, PayloadStorageType, QuantizationConfig, SegmentConfig, VectorName,
+    VectorNameBuf,
 };
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
@@ -301,6 +302,18 @@ impl EdgeConfig {
         self.vectors
             .get(name)
             .map(|p| p.to_plain_vector_data_config(self.quantization_config.as_ref()))
+    }
+
+    /// Distance of a named vector, mirroring `CollectionParams::get_distance`:
+    /// sparse vectors always score with `Dot`.
+    pub fn get_distance(&self, vector_name: &VectorName) -> OperationResult<Distance> {
+        if let Some(params) = self.vectors.get(vector_name) {
+            Ok(params.distance)
+        } else if self.sparse_vectors.contains_key(vector_name) {
+            Ok(Distance::Dot)
+        } else {
+            Err(OperationError::vector_name_not_exists(vector_name))
+        }
     }
 
     pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {

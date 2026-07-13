@@ -199,7 +199,7 @@ pub trait EdgeShardRead {
     fn query_groups(
         &self,
         request: crate::grouping::GroupRequest,
-    ) -> OperationResult<Vec<crate::grouping::PointGroup>> {
+    ) -> OperationResult<Vec<crate::grouping::Group>> {
         view(self).query_groups(request)
     }
 

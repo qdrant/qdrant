@@ -35,7 +35,7 @@ pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;
 pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 use fs_err as fs;
-pub use grouping::{GroupKey, GroupRequest, PointGroup};
+pub use grouping::{Group, GroupRequest};
 pub use info::ShardInfo;
 pub use matrix::{SearchMatrixRequest, SearchMatrixResponse};
 use parking_lot::Mutex;

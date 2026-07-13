@@ -5,16 +5,10 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use fnv::FnvBuildHasher;
-use indexmap::IndexSet;
 use segment::json_path::JsonPath;
-use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
-    WithVector,
-};
-use serde_json::Value;
+use segment::types::{Condition, Filter, ScoredPoint, WithVector};
+use shard::grouping::{GroupsAggregator, except_on, match_on, shape_candidates_query};
 
-use super::aggregator::GroupsAggregator;
 use super::types::QueryGroupRequest;
 use crate::collection::Collection;
 use crate::common::fetch_vectors;
@@ -29,7 +23,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
-use crate::operations::universal_query::shard_query::{self, ShardPrefetch, ShardQueryRequest};
+use crate::operations::universal_query::shard_query::{self, ShardQueryRequest};
 use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
@@ -141,11 +135,6 @@ impl GroupRequest {
 }
 
 impl QueryGroupRequest {
-    /// Make `group_by` field selector work with as `with_payload`.
-    fn group_by_to_payload_selector(group_by: &JsonPath) -> WithPayloadInterface {
-        WithPayloadInterface::Fields(vec![group_by.strip_wildcard_suffix()])
-    }
-
     async fn r#do(
         &self,
         collection: &Collection,
@@ -157,19 +146,11 @@ impl QueryGroupRequest {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut request = self.source.clone();
 
-        // Adjust limit to fetch enough points to fill groups
-        request.limit = self.groups * self.group_size;
-        request.prefetches.iter_mut().for_each(|prefetch| {
-            increase_limit_for_group(prefetch, self.group_size);
-        });
-
-        let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
-        request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
-
-        let with_group_by_payload = Self::group_by_to_payload_selector(&self.group_by);
+        // Fetch enough points to fill groups
+        let limit = self.groups * self.group_size;
+        shape_candidates_query(&mut request, &self.group_by, limit, self.group_size);
 
         // We're enriching the final results at the end, so we'll keep this minimal
-        request.with_payload = with_group_by_payload;
         request.with_vector = WithVector::Bool(false);
 
         collection
@@ -505,70 +486,13 @@ pub async fn group_by(
     Ok(groups)
 }
 
-/// Uses the set of values to create Match::Except's, if possible
-fn except_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
-    values_to_any_variants(values)
-        .into_iter()
-        .map(|v| {
-            Condition::Field(FieldCondition::new_match(
-                path.clone(),
-                Match::new_except(v),
-            ))
-        })
-        .collect()
-}
-
-/// Uses the set of values to create Match::Any's, if possible
-fn match_on(path: &JsonPath, values: &[Value]) -> Vec<Condition> {
-    values_to_any_variants(values)
-        .into_iter()
-        .map(|any_variants| {
-            Condition::Field(FieldCondition::new_match(
-                path.clone(),
-                Match::new_any(any_variants),
-            ))
-        })
-        .collect()
-}
-
-fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
-    let mut any_variants = Vec::new();
-
-    // gather int values
-    let ints: IndexSet<_, FnvBuildHasher> = values.iter().filter_map(|v| v.as_i64()).collect();
-
-    if !ints.is_empty() {
-        any_variants.push(AnyVariants::Integers(ints));
-    }
-
-    // gather string values
-    let strs: IndexSet<_, FnvBuildHasher> = values
-        .iter()
-        .filter_map(|v| v.as_str().map(Into::into))
-        .collect();
-
-    if !strs.is_empty() {
-        any_variants.push(AnyVariants::Strings(strs));
-    }
-
-    any_variants
-}
-
-fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
-    shard_prefetch.limit *= group_size;
-    shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
-        increase_limit_for_group(prefetch, group_size);
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use ahash::AHashMap;
     use segment::data_types::groups::GroupId;
     use segment::payload_json;
     use segment::types::{Payload, ScoredPoint};
-
-    use crate::grouping::types::Group;
+    use shard::grouping::Group;
 
     fn make_scored_point(id: u64, score: f32, payload: Option<Payload>) -> ScoredPoint {
         ScoredPoint {

@@ -52,6 +52,10 @@ pub(crate) fn point(id: u64) -> PointStructPersisted {
 }
 
 pub(crate) fn point_with_group(id: u64, group: &str) -> PointStructPersisted {
+    point_with_group_values(id, serde_json::json!(group))
+}
+
+pub(crate) fn point_with_group_values(id: u64, group: serde_json::Value) -> PointStructPersisted {
     let payload = serde_json::json!({ "group": group });
     PointStructPersisted {
         id: ExtendedPointId::NumId(id),

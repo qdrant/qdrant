@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use segment::common::operation_error::OperationResult;
 use segment::json_path::JsonPath;
-use segment::types::{Condition, Filter, PayloadContainer, ScoredPoint, WithPayloadInterface};
-use serde_json::Value;
-use shard::query::ShardQueryRequest;
+pub use shard::grouping::Group;
+use shard::grouping::{GroupsAggregator, shape_candidates_query};
+use shard::query::{self, ShardQueryRequest};
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
@@ -22,30 +20,8 @@ pub struct GroupRequest {
     pub group_size: usize,
 }
 
-/// Hashable, scalar group key derived from a payload value.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum GroupKey {
-    Keyword(String),
-    Integer(i64),
-}
-
-impl GroupKey {
-    fn from_value(value: &Value) -> Option<Self> {
-        match value {
-            Value::String(s) => Some(GroupKey::Keyword(s.clone())),
-            Value::Number(n) => n.as_i64().map(GroupKey::Integer),
-            Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
-        }
-    }
-}
-
-pub struct PointGroup {
-    pub key: GroupKey,
-    pub hits: Vec<ScoredPoint>,
-}
-
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
-    pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<PointGroup>> {
+    pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
         let GroupRequest {
             mut query,
             group_by,
@@ -56,66 +32,53 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             return Ok(vec![]);
         }
 
-        // Only points that carry the group field can be grouped.
-        let present = Filter::new_must_not(Condition::IsEmpty(group_by.clone().into()));
-        query.filter = Some(match query.filter.take() {
-            Some(f) => f.merge(&present),
-            None => present,
-        });
-        // The group value has to come back in the payload to bucket on it.
-        query.with_payload = WithPayloadInterface::Fields(vec![group_by.clone()]);
-        query.limit = groups
+        let order = query::query_result_order(query.query.as_ref(), |vector_name| {
+            self.config.get_distance(vector_name)
+        })?;
+
+        let limit = groups
             .saturating_mul(group_size)
             .saturating_mul(OVERFETCH_FACTOR);
-        query.offset = 0;
+        shape_candidates_query(&mut query, &group_by, limit, group_size);
 
         let points = self.query(query)?;
 
-        // Bucket points by group key, preserving first-seen (best-score) order.
-        let mut order: Vec<GroupKey> = Vec::new();
-        let mut buckets: HashMap<GroupKey, Vec<ScoredPoint>> = HashMap::new();
-        for point in points {
-            let Some(payload) = point.payload.as_ref() else {
-                continue;
-            };
-            let keys: Vec<GroupKey> = payload
-                .get_value_cloned(&group_by)
-                .into_iter()
-                .filter_map(|v| GroupKey::from_value(&v))
-                .collect();
-            for key in keys {
-                let bucket = buckets.entry(key.clone()).or_insert_with(|| {
-                    order.push(key.clone());
-                    Vec::new()
-                });
-                if bucket.len() < group_size {
-                    bucket.push(point.clone());
-                }
-            }
-        }
-
-        let result = order
-            .into_iter()
-            .take(groups)
-            .map(|key| {
-                let hits = buckets.remove(&key).unwrap_or_default();
-                PointGroup { key, hits }
-            })
-            .collect();
-        Ok(result)
+        let mut aggregator = GroupsAggregator::new(groups, group_size, group_by, order);
+        aggregator.add_points(&points);
+        Ok(aggregator.distill())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use segment::data_types::groups::GroupId;
     use segment::data_types::vectors::{NamedQuery, VectorInternal};
-    use segment::types::WithVector;
+    use segment::types::{WithPayloadInterface, WithVector};
     use shard::query::ScoringQuery;
     use shard::query::query_enum::QueryEnum;
 
     use super::*;
     use crate::EdgeShardRead;
-    use crate::test_helpers::{VECTOR_NAME, point_with_group, test_config, upsert};
+    use crate::test_helpers::{
+        VECTOR_NAME, point_with_group, point_with_group_values, test_config, upsert,
+    };
+
+    fn base_query() -> ShardQueryRequest {
+        ShardQueryRequest {
+            prefetches: vec![],
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                VectorInternal::from(vec![1.0]),
+                VECTOR_NAME.to_string(),
+            )))),
+            filter: None,
+            score_threshold: None,
+            limit: 0,
+            offset: 0,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+        }
+    }
 
     #[test]
     fn groups_by_payload_field() {
@@ -131,24 +94,9 @@ mod tests {
             ],
         );
 
-        let base = ShardQueryRequest {
-            prefetches: vec![],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
-                VectorInternal::from(vec![1.0]),
-                VECTOR_NAME.to_string(),
-            )))),
-            filter: None,
-            score_threshold: None,
-            limit: 0,
-            offset: 0,
-            params: None,
-            with_vector: WithVector::Bool(false),
-            with_payload: WithPayloadInterface::Bool(false),
-        };
-
         let groups = shard
             .query_groups(GroupRequest {
-                query: base,
+                query: base_query(),
                 group_by: "group".parse().unwrap(),
                 groups: 2,
                 group_size: 5,
@@ -156,8 +104,44 @@ mod tests {
             .unwrap();
 
         assert_eq!(groups.len(), 2);
+        // Test vectors score by dot product with [1.0], so the group holding the
+        // highest-id point comes first.
+        assert_eq!(groups[0].key, GroupId::from("b"));
+        assert_eq!(groups[1].key, GroupId::from("a"));
         for g in &groups {
             assert_eq!(g.hits.len(), 2);
+        }
+    }
+
+    #[test]
+    fn groups_by_multi_valued_payload_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = crate::EdgeShard::new(dir.path(), test_config()).unwrap();
+        upsert(
+            &shard,
+            vec![
+                point_with_group_values(1, serde_json::json!(["a", "b"])),
+                point_with_group(2, "a"),
+                point_with_group(3, "b"),
+            ],
+        );
+
+        let groups = shard
+            .query_groups(GroupRequest {
+                query: base_query(),
+                group_by: "group".parse().unwrap(),
+                groups: 2,
+                group_size: 2,
+            })
+            .unwrap();
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, GroupId::from("b"));
+        assert_eq!(groups[1].key, GroupId::from("a"));
+        // Point 1 carries both group values, so it must land in both groups.
+        for g in &groups {
+            assert_eq!(g.hits.len(), 2);
+            assert!(g.hits.iter().any(|hit| hit.id == 1.into()));
         }
     }
 }
