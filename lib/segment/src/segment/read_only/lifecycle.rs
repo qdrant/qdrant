@@ -72,6 +72,18 @@ fn payload_populate(config: &SegmentConfig) -> Populate {
     }
 }
 
+/// How one sparse vector's storage is brought into memory. Search never reads
+/// it, so it normally stays cold — except when the (non-persisted) mutable-RAM
+/// sparse index is configured: that index is rebuilt from the storage at open,
+/// reading it in full, so the storage is warmed in the background.
+pub(super) fn sparse_storage_populate(sparse_vector_config: &SparseVectorDataConfig) -> Populate {
+    if sparse_vector_config.index.index_type.is_persisted() {
+        Populate::No
+    } else {
+        Populate::PreferBackground
+    }
+}
+
 impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Open the segment over a per-segment [`CachedReadFs`]: known files are
     /// prefetched before the listing snapshot is taken (see
@@ -151,7 +163,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            ReadOnlySparseVectorStorage::<S>::preopen(fs, &path)?;
+            ReadOnlySparseVectorStorage::<S>::preopen(
+                fs,
+                &path,
+                sparse_storage_populate(sparse_vector_config),
+            )?;
 
             // Sparse vector index; the sparse open reads lazily, so a profile
             // that never scores this vector just parks the index data cold.
@@ -248,11 +264,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 })?;
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
-        for vector_name in config.sparse_vector_data.keys() {
+        for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = VectorStorageReadEnum::Sparse(Box::new(
-                ReadOnlySparseVectorStorage::open(fs, &path)?,
-            ));
+            let storage =
+                VectorStorageReadEnum::Sparse(Box::new(ReadOnlySparseVectorStorage::open(
+                    fs,
+                    &path,
+                    sparse_storage_populate(sparse_vector_config),
+                )?));
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
 

@@ -195,8 +195,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         config: &SparseVectorDataConfig,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
-        let storage =
-            VectorStorageReadEnum::Sparse(Box::new(ReadOnlySparseVectorStorage::open(fs, &path)?));
+        let storage = VectorStorageReadEnum::Sparse(Box::new(ReadOnlySparseVectorStorage::open(
+            fs,
+            &path,
+            super::lifecycle::sparse_storage_populate(config),
+        )?));
         let storage = Arc::new(AtomicRefCell::new(storage));
         ReadOnlyVectorData::open_sparse(
             fs,

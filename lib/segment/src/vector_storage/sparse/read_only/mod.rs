@@ -22,7 +22,7 @@ mod tests {
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
-    use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs};
+    use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs, Populate};
     use sparse::common::sparse_vector::SparseVector;
     use tempfile::Builder;
 
@@ -71,7 +71,9 @@ mod tests {
             storage.flusher()().unwrap();
         }
 
-        let storage = ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+        let storage =
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
 
         assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
         assert_eq!(storage.distance(), SPARSE_VECTOR_DISTANCE);
@@ -141,7 +143,8 @@ mod tests {
         // Same order as the segment open path: snapshot, then preopen, then open.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
-        ReadOnlySparseVectorStorage::<MmapFile>::preopen(&cached_fs, dir.path()).unwrap();
+        ReadOnlySparseVectorStorage::<MmapFile>::preopen(&cached_fs, dir.path(), Populate::No)
+            .unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [STORAGE_DIRNAME, DELETED_DIRNAME] {
@@ -149,7 +152,8 @@ mod tests {
         }
 
         let storage =
-            ReadOnlySparseVectorStorage::<MmapFile>::open(&cached_fs, dir.path()).unwrap();
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&cached_fs, dir.path(), Populate::No)
+                .unwrap();
 
         assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
         match storage.get_vector::<Random>(7) {
@@ -187,7 +191,8 @@ mod tests {
         writer.flusher()().unwrap();
 
         let mut reader =
-            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
         assert_eq!(reader.total_vector_count(), first.len());
 
         for (offset, vector) in second.iter().enumerate() {
