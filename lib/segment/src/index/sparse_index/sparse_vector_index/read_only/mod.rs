@@ -5,13 +5,18 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::generic_consts::Sequential;
+use common::sorted_slice::SortedSlice;
 use common::storage_version::StorageVersion as _;
+use common::types::PointOffsetType;
 use common::universal_io::UniversalReadFs;
 use sparse::SearchScratchPool;
+use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::IdTrackerRead;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
@@ -22,6 +27,7 @@ use crate::index::sparse_index::sparse_vector_index::read_view::SparseVectorInde
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
+use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 /// Read-only, generic-over-storage counterpart of [`SparseVectorIndex`].
@@ -171,5 +177,59 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
             indices_tracker,
             search_scratch_pool: SearchScratchPool::new(),
         })
+    }
+
+    /// Fold a live-reload delta into the rebuilt RAM index, mirroring
+    /// [`SparseVectorIndex::update_vector`]'s mutable-RAM path.
+    ///
+    /// Deleted points need no index surgery: their stale postings are filtered
+    /// at search time via the deleted bitslices, which the id-tracker and
+    /// storage reloads refresh.
+    ///
+    /// [`SparseVectorIndex::update_vector`]: super::SparseVectorIndex
+    pub fn live_reload(
+        &mut self,
+        inserted: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let deferred_internal_id = id_tracker.deferred_internal_id();
+
+        // Split borrows for the read callback: it mutates the tracker and the
+        // index while the storage stays borrowed.
+        let indices_tracker = &mut self.indices_tracker;
+        let inverted_index = &mut self.inverted_index;
+
+        let ids = inserted
+            .iter()
+            .copied()
+            .filter(|&id| deferred_internal_id.is_none_or(|deferred| id < deferred))
+            .map(|id| ((), id));
+
+        // One batched, ascending pass (appended offsets are contiguous): the
+        // storage coalesces the reads, so a cold cache costs block reads
+        // instead of a round-trip per point. A point without a vector for
+        // this sparse name is skipped by the storage.
+        let mut result = Ok(());
+        vector_storage.read_vectors::<Sequential, _>(ids, |(), id, vector| {
+            if result.is_err() {
+                return;
+            }
+            let vector: &SparseVector = match vector.as_vec_ref().try_into() {
+                Ok(vector) => vector,
+                Err(err) => {
+                    result = Err(err);
+                    return;
+                }
+            };
+            // do not index empty vectors
+            if vector.is_empty() {
+                return;
+            }
+            indices_tracker.register_indices(vector);
+            let vector = indices_tracker.remap_vector(vector.to_owned());
+            inverted_index.upsert(id, vector, None);
+        });
+        result
     }
 }

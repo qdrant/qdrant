@@ -347,7 +347,9 @@ fn read_only_segment_over_s3() {
 
 /// A `MutableRam` sparse index has no persisted representation: the read-only
 /// open rebuilds it from the sparse vector storage. Sparse searches over the
-/// rebuilt index must match the mutable segment point-for-point.
+/// rebuilt index must match the mutable segment point-for-point — both right
+/// after the open and after a live reload folds in appends, an update and
+/// deletions from the writer.
 #[test]
 fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     use sparse::common::sparse_vector::SparseVector;
@@ -357,6 +359,55 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     use crate::types::{SparseVectorDataConfig, SparseVectorStorageType};
 
     const SPARSE_VECTOR_NAME: &str = "sparse";
+
+    fn sparse_vector(i: usize) -> SparseVector {
+        let indices = vec![(i % 7) as u32, 8 + (i % 15) as u32, 32 + (i % 29) as u32];
+        let values = vec![
+            1.0 + (i % 11) as f32,
+            0.5 + (i % 5) as f32,
+            0.25 + (i % 3) as f32,
+        ];
+        SparseVector::new(indices, values).unwrap()
+    }
+
+    fn assert_sparse_search_matches(
+        reference: &impl ReadSegmentEntry,
+        candidate: &impl ReadSegmentEntry,
+        query: &SparseVector,
+    ) {
+        let query = QueryVector::Nearest(VectorInternal::Sparse(query.clone()));
+        let query_context = QueryContext::default();
+        let sqc = query_context.get_segment_query_context();
+        let reference_hits = reference
+            .search_batch(
+                SPARSE_VECTOR_NAME,
+                &[&query],
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                2 * NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .unwrap();
+        let candidate_hits = candidate
+            .search_batch(
+                SPARSE_VECTOR_NAME,
+                &[&query],
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                2 * NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .unwrap();
+        assert!(!reference_hits[0].is_empty());
+        assert_eq!(
+            reference_hits[0], candidate_hits[0],
+            "sparse search mismatch"
+        );
+    }
 
     let dir = Builder::new().prefix("ro_sparse_mut").tempdir().unwrap();
     let hw = HardwareCounterCell::new();
@@ -379,15 +430,13 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         true,
     )
     .unwrap();
+    // The read-only follower tails the writer's append-only logs; an in-place
+    // update would be invisible to it, so the writer must run append-only
+    // (an update becomes a delete plus an insert at a fresh offset).
+    mutable.append_only_mutations = true;
 
     for i in 0..NUM_POINTS {
-        let indices = vec![(i % 7) as u32, 8 + (i % 15) as u32, 32 + (i % 29) as u32];
-        let values = vec![
-            1.0 + (i % 11) as f32,
-            0.5 + (i % 5) as f32,
-            0.25 + (i % 3) as f32,
-        ];
-        let vector = SparseVector::new(indices, values).unwrap();
+        let vector = sparse_vector(i);
         let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
         mutable
             .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
@@ -395,45 +444,50 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     }
     mutable.flush(true).unwrap();
 
-    let read_only =
+    let mut read_only =
         ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
             .expect("read-only open");
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
 
-    let query = QueryVector::Nearest(VectorInternal::Sparse(
-        SparseVector::new(vec![2, 10, 40], vec![1.0, 0.5, 0.25]).unwrap(),
-    ));
-    let query_context = QueryContext::default();
-    let sqc = query_context.get_segment_query_context();
-    let reference_hits = mutable
-        .search_batch(
-            SPARSE_VECTOR_NAME,
-            &[&query],
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            NUM_POINTS,
-            None,
-            &sqc,
-        )
+    let query = SparseVector::new(vec![2, 10, 40], vec![1.0, 0.5, 0.25]).unwrap();
+    assert_sparse_search_matches(&mutable, &read_only, &query);
+
+    // The writer keeps going: append new points introducing a fresh dimension
+    // (64), re-upsert an existing point (a delete + insert at a new offset) and
+    // delete a couple of points, then flush.
+    let mut op_num = NUM_POINTS as u64 + 1;
+    for i in NUM_POINTS..NUM_POINTS + 20 {
+        let mut vector = sparse_vector(i);
+        vector.indices.push(64);
+        vector.values.push(2.0 + (i % 4) as f32);
+        let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
+        mutable
+            .upsert_point(op_num, (i as u64 + 1).into(), vectors, &hw)
+            .unwrap();
+        op_num += 1;
+    }
+    let updated = sparse_vector(NUM_POINTS + 20);
+    let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&updated));
+    mutable
+        .upsert_point(op_num, 3.into(), vectors, &hw)
         .unwrap();
-    let candidate_hits = read_only
-        .search_batch(
-            SPARSE_VECTOR_NAME,
-            &[&query],
-            &WithPayload::default(),
-            &false.into(),
-            None,
-            NUM_POINTS,
-            None,
-            &sqc,
-        )
-        .unwrap();
-    assert!(!reference_hits[0].is_empty());
-    assert_eq!(
-        reference_hits[0], candidate_hits[0],
-        "sparse search mismatch"
-    );
+    op_num += 1;
+    for point_id in [5, 17] {
+        mutable.delete_point(op_num, point_id.into(), &hw).unwrap();
+        op_num += 1;
+    }
+    mutable.flush(true).unwrap();
+
+    // A live reload folds the delta into the rebuilt sparse index.
+    read_only
+        .live_reload(&MmapFs, &hw)
+        .expect("read-only live reload");
+    assert_eq!(read_only.available_point_count(), NUM_POINTS + 20 - 2);
+
+    assert_sparse_search_matches(&mutable, &read_only, &query);
+    // A query on the fresh dimension only reaches points added after the open.
+    let fresh_dim_query = SparseVector::new(vec![64], vec![1.0]).unwrap();
+    assert_sparse_search_matches(&mutable, &read_only, &fresh_dim_query);
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk

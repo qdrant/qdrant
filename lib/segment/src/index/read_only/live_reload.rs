@@ -10,18 +10,34 @@ use crate::index::UniversalReadExt;
 impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
     type Fs = S::Fs;
 
-    /// No-op for every variant: read-only vector indexes are immutable — the HNSW
-    /// graph and the sparse inverted index are built once, and plain has no index
-    /// files at all. Deletions and newly appended points are served from the
-    /// shared id-tracker and vector storage, which reload separately, so the index
-    /// itself has no on-disk state to refresh.
+    /// No-op for the persisted variants: read-only vector indexes are immutable —
+    /// the HNSW graph and the compressed sparse inverted indexes are built once,
+    /// and plain has no index files at all. Deletions and newly appended points
+    /// are served from the shared id-tracker and vector storage, which reload
+    /// separately, so those indexes have no on-disk state to refresh.
+    ///
+    /// The mutable-RAM sparse index is the exception: it is rebuilt from the
+    /// vector storage at open rather than loaded, so newly appended points must
+    /// be folded into its inverted index to stay searchable. Deletions still
+    /// need no index surgery — stale postings are filtered at search time via
+    /// the deleted bitslices.
     fn live_reload(
         &mut self,
         _fs: &S::Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
-        _new_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        Ok(())
+        match self {
+            Self::SparseMutableRam(index) => index.live_reload(new_points),
+            Self::Plain(_)
+            | Self::Hnsw(_)
+            | Self::SparseCompressedImmutableRamF32(_)
+            | Self::SparseCompressedImmutableRamF16(_)
+            | Self::SparseCompressedImmutableRamU8(_)
+            | Self::SparseCompressedStoredF32(_)
+            | Self::SparseCompressedStoredF16(_)
+            | Self::SparseCompressedStoredU8(_) => Ok(()),
+        }
     }
 }
