@@ -7,8 +7,10 @@
 //!
 //! * `scroll` — paginate over points, optionally filtered.
 //! * `search` — nearest-neighbour search for a query vector, optionally filtered.
+//! * `search-sparse` — nearest-neighbour search for a sparse query vector,
+//!   optionally filtered.
 //!
-//! Both sub-commands accept an arbitrary payload filter as JSON via `--filter`
+//! All sub-commands accept an arbitrary payload filter as JSON via `--filter`
 //! (curl `--data` style: a literal JSON string, `@file` to read from a file, or
 //! `@-` to read from stdin), so any condition expressible in Qdrant's filter DSL
 //! can be used without adding a dedicated flag. A `--filter-key`/`--filter-value`
@@ -46,6 +48,21 @@
 //!     --prefix  collection/0 \
 //!     search \
 //!     --vector @query.json \
+//!     --limit  5
+//! ```
+//!
+//! Example — sparse vector search (sparse vectors are named, so `--using` is
+//! usually required):
+//!
+//! ```sh
+//! cargo run -p edge-shard-query -- \
+//!     --backend  aws \
+//!     --endpoint http://localhost:9000 \
+//!     --bucket   test-bucket \
+//!     --prefix   collection/0 \
+//!     search-sparse \
+//!     --using  text \
+//!     --vector '{"indices": [12, 700, 5301], "values": [0.4, 0.9, 0.2]}' \
 //!     --limit  5
 //! ```
 //!
@@ -91,8 +108,8 @@ use common::universal_io::{
 use edge::{
     Condition, DEFAULT_VECTOR_NAME, EdgeConfig, EdgeShardRead, FieldCondition, Filter, JsonPath,
     LoadProfile, Match, NamedQuery, OrderByInterface, PointId, QueryEnum, ReadOnlyEdgeShard,
-    Record, ScoredPoint, ScrollRequest, SearchParams, SearchRequest, ValueVariants, VectorInternal,
-    WithPayloadInterface,
+    Record, ScoredPoint, ScrollRequest, SearchParams, SearchRequest, SparseVector, ValueVariants,
+    VectorInternal, WithPayloadInterface,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
@@ -273,6 +290,8 @@ enum Command {
     Scroll(ScrollArgs),
     /// Nearest-neighbour search for a query vector, optionally filtered.
     Search(SearchArgs),
+    /// Nearest-neighbour search for a sparse query vector, optionally filtered.
+    SearchSparse(SearchSparseArgs),
 }
 
 /// Filter and result options shared by every sub-command.
@@ -370,6 +389,37 @@ struct SearchArgs {
     exact: bool,
 }
 
+#[derive(ClapArgs, Debug)]
+struct SearchSparseArgs {
+    #[command(flatten)]
+    common: CommonReadArgs,
+
+    /// Sparse query vector. Accepts a JSON object (`{"indices": [12, 700],
+    /// "values": [0.4, 0.9]}`), a comma-separated list of `index:value` pairs
+    /// (`12:0.4,700:0.9`), or `@path`/`@-` to read either form from a file or
+    /// stdin. Indices don't have to be sorted.
+    #[arg(long)]
+    vector: String,
+
+    /// Name of the sparse vector to search. Sparse vectors are named, so this
+    /// is usually required; omit only if the shard stores its sparse vector
+    /// under the default (empty) name.
+    #[arg(long)]
+    using: Option<String>,
+
+    /// Number of results to skip before collecting `--limit` results.
+    #[arg(long, default_value_t = 0)]
+    offset: usize,
+
+    /// Only return results scoring at least this value.
+    #[arg(long)]
+    score_threshold: Option<f32>,
+
+    /// Search exhaustively without the sparse index (slow, exact).
+    #[arg(long, default_value_t = false)]
+    exact: bool,
+}
+
 /// Read a curl `--data`-style argument: a literal value, `@path` to read from a
 /// file, or `@-` to read from stdin.
 fn read_data_arg(raw: &str) -> Result<String> {
@@ -442,6 +492,46 @@ fn parse_vector(raw: &str) -> Result<Vec<f32>> {
             })
             .collect()
     }
+}
+
+/// Parse a sparse query vector from a JSON object (`{"indices": [...],
+/// "values": [...]}`) or a comma-separated list of `index:value` pairs
+/// (`12:0.4,700:0.9`). The result is sorted by indices and validated
+/// (equal lengths, unique indices).
+fn parse_sparse_vector(raw: &str) -> Result<SparseVector> {
+    let data = read_data_arg(raw)?;
+    let trimmed = data.trim();
+
+    let mut vector: SparseVector = if trimmed.starts_with('{') {
+        serde_json::from_str(trimmed).with_context(|| {
+            format!("failed to parse --vector as a JSON sparse vector: {trimmed}")
+        })?
+    } else {
+        let mut indices = Vec::new();
+        let mut values = Vec::new();
+        for pair in trimmed.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let (index, value) = pair
+                .split_once(':')
+                .with_context(|| format!("expected `index:value` in --vector, got {pair:?}"))?;
+            indices.push(
+                index
+                    .trim()
+                    .parse::<u32>()
+                    .with_context(|| format!("invalid index in --vector: {index:?}"))?,
+            );
+            values.push(
+                value
+                    .trim()
+                    .parse::<f32>()
+                    .with_context(|| format!("invalid value in --vector: {value:?}"))?,
+            );
+        }
+        SparseVector { indices, values }
+    };
+
+    vector.sort_by_indices();
+    let SparseVector { indices, values } = vector;
+    SparseVector::new(indices, values).map_err(|err| anyhow!("invalid sparse vector: {err}"))
 }
 
 /// The bucket name, required by the object-storage backends (`uio-grpc` has none).
@@ -626,6 +716,42 @@ impl PreparedRequest {
 
                 let params = (args.hnsw_ef.is_some() || args.exact).then(|| SearchParams {
                     hnsw_ef: args.hnsw_ef,
+                    exact: args.exact,
+                    ..Default::default()
+                });
+
+                Ok(Self::Search(SearchRequest {
+                    query,
+                    filter,
+                    params,
+                    limit: args.common.limit,
+                    offset: args.offset,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: Some(args.common.with_vectors.into()),
+                    score_threshold: args.score_threshold,
+                }))
+            }
+            Command::SearchSparse(args) => {
+                let filter = args.common.resolve_filter()?;
+                match &filter {
+                    Some(filter) => {
+                        log::info!("searching with filter: {}", serde_json::to_string(filter)?)
+                    }
+                    None => log::info!("searching with no filter"),
+                }
+
+                let vector = parse_sparse_vector(&args.vector)?;
+                log::info!(
+                    "sparse query vector has {} non-zero dimension(s)",
+                    vector.indices.len()
+                );
+
+                let query = QueryEnum::Nearest(NamedQuery {
+                    query: VectorInternal::Sparse(vector),
+                    using: args.using.clone(),
+                });
+
+                let params = args.exact.then(|| SearchParams {
                     exact: args.exact,
                     ..Default::default()
                 });
