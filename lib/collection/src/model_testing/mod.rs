@@ -107,18 +107,16 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     },
 ];
 
-// Reject kind/datatype combinations the model cannot predict yet, at compile time
-// rather than as a false-divergence soak panic hours into a run:
-// - MultiDense + Turbo4: `model_vector` predicts Turbo4 via the per-vector
-//   `turbo_storage_roundtrip`; the engine's multivector quantization path differs, so
-//   there is no prediction for it. Float16/Uint8 multi-dense are fine: each row takes
-//   the same per-component round-trip as the dense case.
-// - Sparse + any datatype: the fixture's sparse arm ignores the field entirely
-//   (sparse datatype lives in the sparse index config, which is not modeled).
-const _: () = {
-    let mut i = 0;
-    while i < ALL_CANDIDATES.len() {
-        let c = &ALL_CANDIDATES[i];
+/// Reject kind/datatype combinations the model cannot predict yet, at run startup
+/// rather than as a false-divergence soak panic hours into a run:
+/// - MultiDense + Turbo4: `model_vector` predicts Turbo4 via the per-vector
+///   `turbo_storage_roundtrip`; the engine's multivector quantization path differs, so
+///   there is no prediction for it. Float16/Uint8 multi-dense are fine: each row takes
+///   the same per-component round-trip as the dense case.
+/// - Sparse + any datatype: the fixture's sparse arm ignores the field entirely
+///   (sparse datatype lives in the sparse index config, which is not modeled).
+fn assert_candidates_predictable() {
+    for c in ALL_CANDIDATES {
         let supported = match c.kind {
             VectorKind::Dense(_) => true,
             VectorKind::MultiDense(_) => !matches!(c.datatype, Some(Datatype::Turbo4)),
@@ -126,11 +124,11 @@ const _: () = {
         };
         assert!(
             supported,
-            "unsupported kind/datatype combination in ALL_CANDIDATES (see comment above)"
+            "unsupported kind/datatype combination for `{}` (see comment above)",
+            c.name
         );
-        i += 1;
     }
-};
+}
 
 /// Names present in the collection schema at fixture time.
 pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "c", "i", "s", "m", "q", "h", "y", "w", "z"];
@@ -144,7 +142,7 @@ pub(super) struct VectorCandidate {
     /// Storage datatype override; `None` leaves the schema field unset so the engine's
     /// default (Float32) resolution applies. Supported for `VectorKind::Dense` (all
     /// datatypes) and `VectorKind::MultiDense` (all but Turbo4); enforced by the
-    /// compile-time check next to `ALL_CANDIDATES`.
+    /// startup check (`assert_candidates_predictable`).
     pub(super) datatype: Option<Datatype>,
 }
 
@@ -220,6 +218,8 @@ pub async fn run(
     duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
 ) {
+    assert_candidates_predictable();
+
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,

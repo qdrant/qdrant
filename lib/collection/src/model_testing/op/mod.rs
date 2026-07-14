@@ -900,8 +900,8 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
                 None => value.clone(),
             },
         },
-        // Turbo4 multi-dense is rejected by the compile-time check next to
-        // `ALL_CANDIDATES`, so `scalar_storage_roundtrip`'s panic arm is unreachable here.
+        // Turbo4 multi-dense is rejected at startup (`assert_candidates_predictable`),
+        // so `scalar_storage_roundtrip`'s panic arm is unreachable here.
         (VectorKind::MultiDense(_), VectorValue::MultiDense(rows)) => {
             match scalar_storage_roundtrip(candidate.datatype) {
                 Some(roundtrip) => {
