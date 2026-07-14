@@ -363,7 +363,7 @@ fn test_base_params_mapping_in_try_from() {
                 "dense",
             )))),
             limit: 37,
-            params: dummy_params,
+            params: dummy_params.clone(),
             filter: dummy_filter.clone(),
             score_threshold: Some(OrderedFloat(0.1)),
         }],
@@ -377,7 +377,7 @@ fn test_base_params_mapping_in_try_from() {
         offset: 49,
 
         // these params will be ignored because we have a prefetch
-        params: top_level_params,
+        params: top_level_params.clone(),
         with_payload: WithPayloadInterface::Bool(true),
         with_vector: WithVector::Bool(false),
     };

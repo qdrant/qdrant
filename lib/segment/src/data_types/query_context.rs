@@ -11,16 +11,39 @@ use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::types::{ScoredPoint, VectorName, VectorNameBuf};
+use crate::types::{Filter, ScoredPoint, VectorName, VectorNameBuf};
 
 #[derive(Debug, Default)]
 pub struct QueryIdfStats {
-    /// Statistics of the element frequency,
-    /// collected over all segments.
-    /// Required for processing sparse vector search with `idf-dot` similarity.
+    /// IDF statistics per corpus scope.
+    ///
+    /// Each batch request contributes its query terms to the scope matching
+    /// its IDF corpus, so requests with different corpora get independently
+    /// computed statistics. Typically holds a single (global) entry.
+    pub scopes: Vec<IdfScopeStats>,
+}
+
+impl QueryIdfStats {
+    pub fn scope(&self, corpus: Option<&Filter>) -> Option<&IdfScopeStats> {
+        self.scopes
+            .iter()
+            .find(|scope| scope.corpus.as_ref() == corpus)
+    }
+}
+
+/// Statistics of the element frequency, collected over all segments,
+/// scoped to a single IDF corpus.
+/// Required for processing sparse vector search with `idf-dot` similarity.
+#[derive(Debug)]
+pub struct IdfScopeStats {
+    /// Filter defining the population the statistics are computed over.
+    /// `None` — the whole collection (global statistics).
+    pub corpus: Option<Filter>,
+
+    /// Document frequency per dimension, per vector name.
     pub idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
 
-    /// Number of indexed vectors per vector name.
+    /// Number of documents (indexed vectors within the corpus) per vector name.
     pub indexed_vectors: tiny_map::TinyMap<VectorNameBuf, usize>,
 }
 
@@ -70,6 +93,12 @@ impl QueryContext {
         self
     }
 
+    /// Shared stop flag handle, e.g. to check for cancellation while
+    /// collecting IDF statistics.
+    pub fn is_stopped_handle(&self) -> Arc<AtomicBool> {
+        self.is_stopped.clone()
+    }
+
     /// Returns the amount of available (and visible) points.
     pub fn available_point_count(&self) -> usize {
         self.available_point_count
@@ -85,24 +114,50 @@ impl QueryContext {
 
     /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
     /// with zeros, so the statistics can be collected.
-    pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId]) {
-        self.idf_stats
-            .indexed_vectors
-            .insert(vector_name.to_owned(), 0);
+    ///
+    /// `corpus` defines the population the statistics are computed over,
+    /// `None` for the whole collection. Requests sharing a corpus share
+    /// a statistics scope.
+    pub fn init_idf(
+        &mut self,
+        vector_name: &VectorName,
+        corpus: Option<&Filter>,
+        indices: &[DimId],
+    ) {
+        let scope_index = self
+            .idf_stats
+            .scopes
+            .iter()
+            .position(|scope| scope.corpus.as_ref() == corpus)
+            .unwrap_or_else(|| {
+                self.idf_stats.scopes.push(IdfScopeStats {
+                    corpus: corpus.cloned(),
+                    idf: tiny_map::TinyMap::new(),
+                    indexed_vectors: tiny_map::TinyMap::new(),
+                });
+                self.idf_stats.scopes.len() - 1
+            });
+        let scope = &mut self.idf_stats.scopes[scope_index];
+
+        if scope.indexed_vectors.get(vector_name).is_none() {
+            scope.indexed_vectors.insert(vector_name.to_owned(), 0);
+        }
 
         // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
-        let idf = if let Some(idf) = self.idf_stats.idf.get_mut(vector_name) {
+        let idf = if let Some(idf) = scope.idf.get_mut(vector_name) {
             idf
         } else {
-            self.idf_stats
-                .idf
-                .insert(vector_name.to_owned(), HashMap::default());
-            self.idf_stats.idf.get_mut(vector_name).unwrap()
+            scope.idf.insert(vector_name.to_owned(), HashMap::default());
+            scope.idf.get_mut(vector_name).unwrap()
         };
 
         for index in indices {
             idf.insert(*index, 0);
         }
+    }
+
+    pub fn idf_stats(&self) -> &QueryIdfStats {
+        &self.idf_stats
     }
 
     pub fn mut_idf_stats(&mut self) -> &mut QueryIdfStats {
@@ -142,16 +197,20 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.available_point_count()
     }
 
-    pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext<'_> {
+    /// Vector-level context for the given vector name and IDF corpus
+    /// (`None` corpus — global statistics).
+    pub fn get_vector_context(
+        &self,
+        vector_name: &VectorName,
+        idf_corpus: Option<&Filter>,
+    ) -> VectorQueryContext<'_> {
+        let idf_scope = self.query_context.idf_stats.scope(idf_corpus);
         VectorQueryContext {
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
             is_stopped: Some(&self.query_context.is_stopped),
-            idf: self.query_context.idf_stats.idf.get(vector_name),
-            indexed_vectors: self
-                .query_context
-                .idf_stats
-                .indexed_vectors
-                .get(vector_name)
+            idf: idf_scope.and_then(|scope| scope.idf.get(vector_name)),
+            indexed_vectors: idf_scope
+                .and_then(|scope| scope.indexed_vectors.get(vector_name))
                 .copied(),
             deleted_points: self.deleted_points,
             hardware_counter: self.hardware_counter.fork(),

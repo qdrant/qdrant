@@ -96,7 +96,7 @@ impl PyQueryRequest {
 
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
-        self.0.params.map(PySearchParams)
+        self.0.params.clone().map(PySearchParams)
     }
 
     #[getter]
@@ -183,7 +183,7 @@ impl PyPrefetch {
 
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
-        self.0.params.map(PySearchParams)
+        self.0.params.clone().map(PySearchParams)
     }
 
     #[getter]

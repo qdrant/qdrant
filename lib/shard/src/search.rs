@@ -164,7 +164,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
         Ok(Self {
             query,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
-            params: value.params.map(Into::into),
+            params: value.params.map(TryInto::try_into).transpose()?,
             limit: value.limit as usize,
             offset: value.offset.unwrap_or_default() as usize,
             with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
@@ -232,7 +232,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
         Ok(Self {
             query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
             filter: filter.map(Filter::try_from).transpose()?,
-            params: params.map(SearchParams::from),
+            params: params.map(SearchParams::try_from).transpose()?,
             limit: limit as usize,
             offset: offset.map(|v| v as usize).unwrap_or_default(),
             with_payload: with_payload

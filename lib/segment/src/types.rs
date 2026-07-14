@@ -603,9 +603,7 @@ pub struct AcornSearchParams {
 }
 
 /// Additional parameters of the search
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -635,6 +633,71 @@ pub struct SearchParams {
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acorn: Option<AcornSearchParams>,
+
+    /// Which population sparse vector IDF statistics are computed over.
+    /// By default (or with explicit `"global"`) statistics are collection-wide.
+    /// Only applicable to sparse vectors with the IDF modifier enabled.
+    #[serde(default)]
+    #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idf: Option<IdfParams>,
+}
+
+/// Population over which sparse vector IDF statistics are computed for scoring —
+/// the *IDF corpus*.
+///
+/// - `"global"` — collection-wide statistics, same as omitting the parameter.
+/// - `{ "corpus": <filter> }` — document count and per-term document frequencies
+///   are computed over the points matching the corpus filter only. The corpus is
+///   independent of the retrieval filter and is usually broader than it.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum IdfParams {
+    Scope(IdfScope),
+    Corpus(IdfCorpusParams),
+}
+
+/// Named IDF scope without a corpus filter.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum IdfScope {
+    /// Collection-wide statistics. This is the default behavior.
+    Global,
+}
+
+/// IDF statistics computed over the points matching a corpus filter.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct IdfCorpusParams {
+    /// Filter defining the corpus: IDF statistics are computed over the points
+    /// matching this filter.
+    pub corpus: Filter,
+}
+
+impl IdfParams {
+    /// Corpus filter defining the IDF population, `None` for global statistics.
+    pub fn corpus(&self) -> Option<&Filter> {
+        match self {
+            IdfParams::Scope(IdfScope::Global) => None,
+            IdfParams::Corpus(IdfCorpusParams { corpus }) => Some(corpus),
+        }
+    }
+}
+
+impl Validate for IdfParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            IdfParams::Scope(IdfScope::Global) => Ok(()),
+            IdfParams::Corpus(corpus_params) => corpus_params.validate(),
+        }
+    }
+}
+
+impl Validate for IdfCorpusParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let IdfCorpusParams { corpus } = self;
+        corpus.validate()
+    }
 }
 
 /// Configuration for vectors.
@@ -4671,6 +4734,72 @@ mod tests {
             ..Default::default()
         };
         params.validate().unwrap();
+    }
+
+    fn match_condition(key: &str, value: &str) -> Condition {
+        Condition::Field(FieldCondition::new_match(
+            JsonPath::new(key),
+            value.to_string().into(),
+        ))
+    }
+
+    #[test]
+    fn test_idf_params_json_shapes() {
+        // Explicit global shorthand.
+        let params: IdfParams = serde_json::from_str(r#""global""#).unwrap();
+        assert_eq!(params, IdfParams::Scope(IdfScope::Global));
+        assert_eq!(params.corpus(), None);
+        params.validate().unwrap();
+
+        // Corpus object form.
+        let params: IdfParams = serde_json::from_str(
+            r#"{"corpus": {"must": [{"key": "tenant", "match": {"value": "acme"}}]}}"#,
+        )
+        .unwrap();
+        let expected_corpus = Filter::new_must(match_condition("tenant", "acme"));
+        assert_eq!(params.corpus(), Some(&expected_corpus));
+        params.validate().unwrap();
+
+        // Round-trip both shapes.
+        for params in [
+            IdfParams::Scope(IdfScope::Global),
+            IdfParams::Corpus(IdfCorpusParams {
+                corpus: expected_corpus,
+            }),
+        ] {
+            let json = serde_json::to_string(&params).unwrap();
+            let restored: IdfParams = serde_json::from_str(&json).unwrap();
+            assert_eq!(params, restored);
+        }
+    }
+
+    #[test]
+    fn test_idf_corpus_accepts_any_filter() {
+        let corpus_params = |corpus: Filter| IdfParams::Corpus(IdfCorpusParams { corpus });
+
+        // The corpus is a regular filter — any valid filter shape is accepted.
+        corpus_params(Filter::new_must(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter::new_should(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter::new_must_not(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter::new_must(Condition::Field(
+            FieldCondition::new_range(
+                JsonPath::new("year"),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: Some(OrderedFloat(2024.0)),
+                    lte: None,
+                },
+            ),
+        )))
+        .validate()
+        .unwrap();
     }
 
     #[test]
