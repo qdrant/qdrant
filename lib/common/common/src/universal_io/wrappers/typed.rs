@@ -175,21 +175,24 @@ where
     S: UniversalAppend,
     T: bytemuck::Pod,
 {
-    /// Returns the byte offset at which `data` begins.
+    /// Append `data` at exactly byte offset `offset`, which must equal the
+    /// current end of file.
     #[inline]
-    pub fn append(&mut self, data: &[T]) -> Result<ByteOffset> {
-        self.inner.append::<T>(data)
+    pub fn append(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+        self.inner.append::<T>(offset, data)
     }
 
-    /// Returns the byte offset of the first appended byte.
+    /// Append several buffers contiguously, starting at exactly byte offset
+    /// `offset`, which must equal the current end of file.
     #[inline]
     pub fn append_batch<'a>(
         &mut self,
+        offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<ByteOffset>
+    ) -> Result<()>
     where
         T: 'a,
     {
-        self.inner.append_batch::<T>(items)
+        self.inner.append_batch::<T>(offset, items)
     }
 }

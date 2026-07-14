@@ -7,8 +7,8 @@ use std::path::Path;
 use crate::generic_consts::Random;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalAppend, UniversalFlush as _, UniversalRead as _,
-    UniversalReadFs, UniversalWriteFileOps,
+    OpenOptions, Populate, ReadRange, UniversalAppend, UniversalFlush as _, UniversalIoError,
+    UniversalRead as _, UniversalReadFs, UniversalWriteFileOps,
 };
 
 /// [`OpenOptions`] for conformance runs.
@@ -38,13 +38,13 @@ where
         .open(&path, open_options(true), Fs::OpenExtra::default())
         .unwrap();
 
-    // Empty append on an empty file is a no-op returning the EOF offset.
-    assert_eq!(file.append::<u8>(&[]).unwrap(), 0);
+    // Appending no bytes trivially succeeds, without touching the file.
+    file.append::<u8>(0, &[]).unwrap();
     assert_eq!(file.len::<u8>().unwrap(), 0);
 
-    // Sequential appends return the offset at which each buffer landed.
-    assert_eq!(file.append(b"hello ".as_slice()).unwrap(), 0);
-    assert_eq!(file.append(b"world".as_slice()).unwrap(), 6);
+    // Appends land at exactly the provided offset.
+    file.append(0, b"hello ".as_slice()).unwrap();
+    file.append(6, b"world".as_slice()).unwrap();
     assert_eq!(file.len::<u8>().unwrap(), 11);
 
     // Reads through the same handle observe the appended bytes.
@@ -59,10 +59,23 @@ where
         b"world".as_slice(),
     );
 
-    // A batch lands contiguously, empty buffers are skipped, and the
-    // returned offset is that of the first appended byte.
+    // A wrong offset is rejected outright and writes nothing — so a
+    // duplicate of an already-landed append conflicts instead of appending
+    // twice (idempotency).
+    let err = file.append(6, b"world".as_slice()).unwrap_err();
+    assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
+    let err = file.append(100, b"x".as_slice()).unwrap_err();
+    assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
+    assert_eq!(file.len::<u8>().unwrap(), 11);
+    assert_eq!(
+        file.read_whole::<u8>().unwrap().as_ref(),
+        b"hello world".as_slice(),
+    );
+
+    // A batch lands contiguously at the provided offset; empty buffers are
+    // skipped.
     let batch: [&[u8]; 4] = [b"ab", b"", b"cde", b"f"];
-    assert_eq!(file.append_batch(batch).unwrap(), 11);
+    file.append_batch(11, batch).unwrap();
     assert_eq!(file.len::<u8>().unwrap(), 17);
     assert_eq!(
         file.read::<Random, u8>(ReadRange::new(11, 6))
@@ -71,18 +84,15 @@ where
         b"abcdef".as_slice(),
     );
 
-    // An empty batch is a no-op returning the EOF offset.
-    assert_eq!(file.append_batch::<u8>(std::iter::empty()).unwrap(), 17);
+    // An empty batch trivially succeeds.
+    file.append_batch::<u8>(17, std::iter::empty()).unwrap();
 
     // Batches larger than IOV_MAX (1024) still land contiguously and in
     // order across the multiple underlying operations.
     let buffers: Vec<Vec<u8>> = (0..1500u32).map(|i| i.to_le_bytes().to_vec()).collect();
     let expected: Vec<u8> = buffers.concat();
-    assert_eq!(
-        file.append_batch(buffers.iter().map(Vec::as_slice))
-            .unwrap(),
-        17,
-    );
+    file.append_batch(17, buffers.iter().map(Vec::as_slice))
+        .unwrap();
     assert_eq!(
         file.read::<Random, u8>(ReadRange::new(17, expected.len() as u64))
             .unwrap()
@@ -97,7 +107,7 @@ where
         .open(&path, open_options(false), Fs::OpenExtra::default())
         .unwrap();
     assert_eq!(reader.len::<u8>().unwrap(), eof);
-    assert_eq!(file.append(b"tail".as_slice()).unwrap(), eof);
+    file.append(eof, b"tail".as_slice()).unwrap();
     reader.reopen().unwrap();
     assert_eq!(reader.len::<u8>().unwrap(), eof + 4);
     assert_eq!(

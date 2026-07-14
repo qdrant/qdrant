@@ -528,37 +528,37 @@ mod tests {
         let store = Arc::new(InMemory::new());
         let mut file = make_file(runtime, store, "log");
 
-        // Create-on-first-append, offsets, single-request batches.
-        assert_eq!(file.append(b"hello ".as_slice()).unwrap(), 0);
-        assert_eq!(file.append(b"world".as_slice()).unwrap(), 6);
+        // Create-on-first-append at offset 0, then single-request batches.
+        file.append(0, b"hello ".as_slice()).unwrap();
+        file.append(6, b"world".as_slice()).unwrap();
         let batch: [&[u8]; 2] = [b"!", b"?"];
-        assert_eq!(file.append_batch(batch).unwrap(), 11);
+        file.append_batch(11, batch).unwrap();
 
         let bytes = file.read_whole::<u8>().unwrap();
         assert_eq!(&bytes[..], b"hello world!?");
     }
 
-    /// Two handles appending to the same object: the one with a stale
-    /// cached offset gets a conflict, recovers via `reopen()`, and its
-    /// retry lands after the winner's bytes.
+    /// Two handles appending to the same object: the one with the stale
+    /// offset gets a conflict and nothing lands twice; re-deriving the
+    /// offset from the actual length recovers.
     #[test]
-    fn append_conflict_recovers_after_reopen() {
+    fn append_conflict_recovery() {
         let runtime = BridgeRuntime::global();
         let store = Arc::new(InMemory::new());
         let mut first = make_file(runtime.clone(), store.clone(), "log");
         let mut second = make_file(runtime, store, "log");
 
-        assert_eq!(first.append(b"aaa".as_slice()).unwrap(), 0);
-        assert_eq!(second.append(b"bbb".as_slice()).unwrap(), 3);
+        first.append(0, b"aaa".as_slice()).unwrap();
+        second.append(3, b"bbb".as_slice()).unwrap();
 
-        let err = first.append(b"ccc".as_slice()).unwrap_err();
+        let err = first.append(3, b"ccc".as_slice()).unwrap_err();
         assert!(matches!(
             err,
             UniversalIoError::AppendOffsetConflict { offset: 3, .. }
         ));
 
-        first.reopen().unwrap();
-        assert_eq!(first.append(b"ccc".as_slice()).unwrap(), 6);
+        let eof = first.len::<u8>().unwrap();
+        first.append(eof, b"ccc".as_slice()).unwrap();
 
         let bytes = first.read_whole::<u8>().unwrap();
         assert_eq!(&bytes[..], b"aaabbbccc");

@@ -21,7 +21,7 @@ fn append_grows_regular_file() {
         let mut file = fs
             .open(path, open_options(true), Fs::OpenExtra::default())
             .unwrap();
-        assert_eq!(file.append(b"appended".as_slice()).unwrap(), 9);
+        file.append(9, b"appended".as_slice()).unwrap();
 
         assert_eq!(fs_err::read(path).unwrap(), b"existing appended".as_slice());
     }
@@ -67,7 +67,7 @@ fn mmap_append_requires_writeable() {
     MmapFs.create(&path, 0).unwrap();
 
     let mut file = MmapFs.open(&path, open_options(false), ()).unwrap();
-    assert!(file.append(b"x".as_slice()).is_err());
+    assert!(file.append(0, b"x".as_slice()).is_err());
 }
 
 /// Append is the only growth path: positioned writes beyond the end-of-file
@@ -85,7 +85,7 @@ fn write_beyond_eof_still_errors() {
         let mut file = fs
             .open(path, open_options(true), Fs::OpenExtra::default())
             .unwrap();
-        assert_eq!(file.append(b"abc".as_slice()).unwrap(), 0);
+        file.append(0, b"abc".as_slice()).unwrap();
 
         // Within bounds: fine.
         file.write(0, b"xyz".as_slice()).unwrap();
@@ -128,7 +128,7 @@ fn io_uring_append_rejects_direct_io() {
         return;
     };
 
-    let err = file.append(b"x".as_slice()).unwrap_err();
+    let err = file.append(0, b"x".as_slice()).unwrap_err();
     let UniversalIoError::Io(err) = err else {
         panic!("expected io error, got {err:?}");
     };

@@ -125,8 +125,9 @@ fn test_not_found() {
 }
 
 /// End-to-end native append flow against a real append-capable store:
-/// create-on-first-append, sequential appends, read-back, stale-offset
-/// conflict, and reopen recovery.
+/// create-on-first-append at offset 0, sequential appends, read-back, and a
+/// stale-offset conflict that writes nothing, recovered by re-deriving the
+/// offset from the actual length.
 #[test]
 #[ignore]
 fn test_native_append_flow() {
@@ -145,12 +146,9 @@ fn test_native_append_flow() {
         key.as_str(),
     )
     .expect("open");
-    assert_eq!(
-        file.append(b"hello ".as_slice())
-            .expect("first append creates the object"),
-        0,
-    );
-    assert_eq!(file.append(b"world".as_slice()).expect("append"), 6);
+    file.append(0, b"hello ".as_slice())
+        .expect("first append creates the object");
+    file.append(6, b"world".as_slice()).expect("append");
 
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello world");
@@ -159,13 +157,15 @@ fn test_native_append_flow() {
     let mut interloper =
         BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, key.as_str())
             .expect("open");
-    assert_eq!(interloper.append(b"A".as_slice()).expect("append"), 11);
+    interloper.append(11, b"A".as_slice()).expect("append");
 
-    // ...so the stale cached offset conflicts, and reopen() recovers.
-    let err = file.append(b"B".as_slice()).unwrap_err();
+    // ...so an append at the stale offset conflicts without writing, and
+    // re-deriving the offset from the actual length recovers.
+    let err = file.append(11, b"B".as_slice()).unwrap_err();
     assert_matches!(err, UniversalIoError::AppendOffsetConflict { .. });
-    file.reopen().expect("reopen");
-    assert_eq!(file.append(b"B".as_slice()).expect("append"), 12);
+    let eof = file.len::<u8>().expect("len");
+    assert_eq!(eof, 12);
+    file.append(eof, b"B".as_slice()).expect("append");
 
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello worldAB");

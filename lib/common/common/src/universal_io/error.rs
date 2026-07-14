@@ -98,9 +98,9 @@ pub enum UniversalIoError {
     #[error("Request queue is full")]
     QueueIsFull,
 
-    /// The backend rejected an append because `offset` no longer matches the
-    /// file's size (another writer appended, or the handle's cached length is
-    /// stale). Reopen the handle and retry.
+    /// The append was rejected because the file's end is not at the provided
+    /// `offset` (the append already landed, or the caller's view of the file
+    /// is stale). Re-check the length before appending anew.
     #[error("append offset conflict at {path}: expected end-of-file offset {offset}")]
     AppendOffsetConflict { path: PathBuf, offset: u64 },
 

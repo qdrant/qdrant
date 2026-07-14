@@ -327,18 +327,19 @@ impl UniversalFlush for IoUringFile {
 }
 
 impl UniversalAppend for IoUringFile {
-    fn append<T: bytemuck::Pod>(&mut self, data: &[T]) -> Result<ByteOffset> {
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         let mut slices = [io::IoSlice::new(bytes)];
-        self.append_slices(&mut slices, bytes.len())
+        self.append_slices(offset, &mut slices, bytes.len())
     }
 
     fn append_batch<'a, T: bytemuck::Pod>(
         &mut self,
+        offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<ByteOffset> {
+    ) -> Result<()> {
         let (mut slices, total) = local_file_ops::collect_append_slices(items);
-        self.append_slices(&mut slices, total)
+        self.append_slices(offset, &mut slices, total)
     }
 }
 
@@ -392,14 +393,16 @@ impl IoUringFile {
     /// offsets unknowable — the sync syscall is the right primitive here.
     ///
     /// `slices` must not contain empty slices (an all-empty head would
-    /// report a spurious `WriteZero` error). Returns the byte offset at
-    /// which the first byte was appended.
-    fn append_slices(&self, slices: &mut [io::IoSlice<'_>], total: usize) -> Result<ByteOffset> {
-        // Exact under the single-writer contract: nothing else grows the
-        // file between this fstat and the writes below.
-        let offset = self.file.metadata()?.len();
+    /// report a spurious `WriteZero` error); their bytes land at exactly
+    /// `offset`, which must equal the current end of file.
+    fn append_slices(
+        &self,
+        offset: ByteOffset,
+        slices: &mut [io::IoSlice<'_>],
+        total: usize,
+    ) -> Result<()> {
         if total == 0 {
-            return Ok(offset);
+            return Ok(());
         }
 
         if self.direct_io {
@@ -409,8 +412,19 @@ impl IoUringFile {
             )));
         }
 
+        // The append precondition: the file must currently end at `offset`.
+        // Exact under the single-writer contract: nothing else grows the
+        // file between this fstat and the writes below.
+        let file_len = self.file.metadata()?.len();
+        if file_len != offset {
+            return Err(UniversalIoError::AppendOffsetConflict {
+                path: self.file.path().to_path_buf(),
+                offset,
+            });
+        }
+
         local_file_ops::write_all_vectored(AppendWriter { file: &self.file }, slices)?;
 
-        Ok(offset)
+        Ok(())
     }
 }

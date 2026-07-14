@@ -6,8 +6,8 @@ use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    ByteOffset, Flusher, IsNotFound as _, Item, Result, UniversalAppend, UniversalFlush,
-    UniversalIoError, UniversalKind, UniversalRead, UserData,
+    ByteOffset, Flusher, Item, Result, UniversalAppend, UniversalFlush, UniversalIoError,
+    UniversalKind, UniversalRead, UserData,
 };
 
 use crate::fs::BlobFs;
@@ -31,11 +31,6 @@ pub struct BlobFile<A: AsyncRead> {
     /// are writeable; [`BlobFs::open`] feeds `OpenOptions::writeable`
     /// through [`Self::with_writeable`].
     writeable: bool,
-    /// Object size cached for [`UniversalAppend`]: the end-of-file offset
-    /// this handle believes to be current. `None` until the first append
-    /// (or after [`UniversalRead::reopen`]), then maintained locally under
-    /// the single-writer contract to avoid a HEAD per append.
-    append_len: Option<u64>,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
@@ -44,14 +39,12 @@ impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
             runtime,
             path,
             writeable,
-            append_len,
             inner: _,
         } = self;
         f.debug_struct("BlobFile")
             .field("runtime", runtime)
             .field("path", path)
             .field("writeable", writeable)
-            .field("append_len", append_len)
             .finish_non_exhaustive()
     }
 }
@@ -63,7 +56,6 @@ impl<A: AsyncRead> BlobFile<A> {
             runtime,
             path: path.into(),
             writeable: true,
-            append_len: None,
         }
     }
 
@@ -107,10 +99,6 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         U: UserData;
 
     fn reopen(&mut self) -> Result<()> {
-        // Drop the cached append offset so the next append re-probes the
-        // backend — the documented recovery path after
-        // `AppendOffsetConflict`.
-        self.append_len = None;
         Ok(())
     }
 
@@ -188,25 +176,14 @@ impl<A: AsyncAppend + Clone> UniversalFlush for BlobFile<A> {
 }
 
 impl<A: AsyncAppend + Clone> BlobFile<A> {
-    /// The end-of-file offset this handle believes to be current, probing
-    /// the backend on first use. A missing object counts as empty
-    /// (create-on-first-append).
-    fn append_offset(&mut self) -> Result<u64> {
-        if let Some(len) = self.append_len {
-            return Ok(len);
+    /// One append RPC at exactly `offset`; the backend itself validates the
+    /// offset against the current object size (the compare-and-swap), so no
+    /// local length tracking is needed.
+    fn append_bytes(&self, offset: ByteOffset, data: Bytes) -> Result<()> {
+        if data.is_empty() {
+            return Ok(());
         }
 
-        let len = match self.runtime.block_on(self.inner.len(&self.path)) {
-            Ok(len) => len,
-            Err(err) if err.is_not_found() => 0,
-            Err(err) => return Err(err),
-        };
-        self.append_len = Some(len);
-
-        Ok(len)
-    }
-
-    fn append_bytes(&mut self, data: Bytes) -> Result<ByteOffset> {
         if !self.writeable {
             return Err(UniversalIoError::Io(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
@@ -214,38 +191,22 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
             )));
         }
 
-        let offset = self.append_offset()?;
-        if data.is_empty() {
-            return Ok(offset);
-        }
-
-        match self
-            .runtime
+        self.runtime
             .block_on(self.inner.append(&self.path, offset, data))
-        {
-            Ok(new_len) => {
-                self.append_len = Some(new_len);
-                Ok(offset)
-            }
-            Err(err) => {
-                // Force a fresh size probe on the next attempt; combined
-                // with `reopen()` this is the documented conflict recovery.
-                self.append_len = None;
-                Err(err)
-            }
-        }
+            .map(drop)
     }
 }
 
 impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
-    fn append<T: bytemuck::Pod>(&mut self, data: &[T]) -> Result<ByteOffset> {
-        self.append_bytes(Bytes::copy_from_slice(bytemuck::cast_slice(data)))
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+        self.append_bytes(offset, Bytes::copy_from_slice(bytemuck::cast_slice(data)))
     }
 
     fn append_batch<'a, T: bytemuck::Pod>(
         &mut self,
+        offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<ByteOffset> {
+    ) -> Result<()> {
         // Concatenate into a single buffer so the whole batch lands in one
         // request.
         let slices: Vec<&[u8]> = items
@@ -258,7 +219,7 @@ impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
             buffer.extend_from_slice(slice);
         }
 
-        self.append_bytes(Bytes::from(buffer))
+        self.append_bytes(offset, Bytes::from(buffer))
     }
 }
 
@@ -565,23 +526,10 @@ mod tests {
         assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
         assert!(source.content().is_none());
 
-        assert_eq!(file.append(b"abc".as_slice()).unwrap(), 0);
-        assert_eq!(file.append(b"de".as_slice()).unwrap(), 3);
+        file.append(0, b"abc".as_slice()).unwrap();
+        file.append(3, b"de".as_slice()).unwrap();
         assert_eq!(source.content().unwrap(), b"abcde");
         assert_eq!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).unwrap(), 5);
-    }
-
-    #[test]
-    fn append_probes_length_once() {
-        let source = MutableMockSource::default();
-        let mut file = mutable_file(&source);
-
-        for _ in 0..5 {
-            file.append(b"x".as_slice()).unwrap();
-        }
-
-        let len_calls = source.len_calls.load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(len_calls, 1);
     }
 
     #[test]
@@ -589,9 +537,9 @@ mod tests {
         let source = MutableMockSource::default();
         let mut file = mutable_file(&source);
 
-        file.append(b"start".as_slice()).unwrap();
+        file.append(0, b"start".as_slice()).unwrap();
         let batch: [&[u8]; 3] = [b"ab", b"cd", b"ef"];
-        assert_eq!(file.append_batch(batch).unwrap(), 5);
+        file.append_batch(5, batch).unwrap();
 
         let append_calls = source
             .append_calls
@@ -601,13 +549,13 @@ mod tests {
     }
 
     #[test]
-    fn empty_append_returns_eof_without_request() {
+    fn empty_append_succeeds_without_request() {
         let source = MutableMockSource::default();
         let mut file = mutable_file(&source);
 
-        file.append(b"abc".as_slice()).unwrap();
-        assert_eq!(file.append::<u8>(&[]).unwrap(), 3);
-        assert_eq!(file.append_batch::<u8>(std::iter::empty()).unwrap(), 3);
+        file.append(0, b"abc".as_slice()).unwrap();
+        file.append::<u8>(3, &[]).unwrap();
+        file.append_batch::<u8>(3, std::iter::empty()).unwrap();
 
         let append_calls = source
             .append_calls
@@ -615,26 +563,26 @@ mod tests {
         assert_eq!(append_calls, 1);
     }
 
-    /// Two handles appending to the same object: the loser gets an offset
-    /// conflict, recovers via `reopen()`, and its retry lands after the
-    /// winner's bytes.
+    /// Two handles appending to the same object: the one with the stale
+    /// offset gets a conflict and nothing lands twice; re-deriving the
+    /// offset from the actual length recovers.
     #[test]
-    fn append_conflict_recovers_after_reopen() {
+    fn append_conflict_recovery() {
         let source = MutableMockSource::default();
         let mut first = mutable_file(&source);
         let mut second = mutable_file(&source);
 
-        assert_eq!(first.append(b"aaa".as_slice()).unwrap(), 0);
-        assert_eq!(second.append(b"bbb".as_slice()).unwrap(), 3);
+        first.append(0, b"aaa".as_slice()).unwrap();
+        second.append(3, b"bbb".as_slice()).unwrap();
 
-        let err = first.append(b"ccc".as_slice()).unwrap_err();
+        let err = first.append(3, b"ccc".as_slice()).unwrap_err();
         assert!(matches!(
             err,
             UniversalIoError::AppendOffsetConflict { offset: 3, .. }
         ));
 
-        first.reopen().unwrap();
-        assert_eq!(first.append(b"ccc".as_slice()).unwrap(), 6);
+        let eof = <BlobFile<_> as UniversalRead>::len::<u8>(&first).unwrap();
+        first.append(eof, b"ccc".as_slice()).unwrap();
         assert_eq!(source.content().unwrap(), b"aaabbbccc");
     }
 
@@ -652,7 +600,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(file.append(b"x".as_slice()).is_err());
+        assert!(file.append(0, b"x".as_slice()).is_err());
     }
 
     #[test]
@@ -660,7 +608,7 @@ mod tests {
         let source = MutableMockSource::default();
         let mut file = mutable_file(&source);
 
-        file.append(b"abc".as_slice()).unwrap();
+        file.append(0, b"abc".as_slice()).unwrap();
         (file.flusher())().unwrap();
     }
 

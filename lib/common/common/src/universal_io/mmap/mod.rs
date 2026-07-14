@@ -306,47 +306,43 @@ impl UniversalFlush for MmapFile {
 }
 
 impl UniversalAppend for MmapFile {
-    fn append<T: bytemuck::Pod>(&mut self, data: &[T]) -> Result<ByteOffset> {
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         if bytes.is_empty() {
-            return Ok(self.len as ByteOffset);
+            return Ok(());
         }
 
-        let new_len = {
+        {
             let mut fd = self.append_fd()?;
+            self.check_append_offset(fd, offset)?;
             io::Write::write_all(&mut fd, bytes)?;
-            // One fstat on the already-open fd (not the open+fstat+close of
-            // a full reopen): the mapping length can be stale when the file
-            // grew externally, while the fd sees where the bytes landed.
-            fd.metadata()?.len()
-        };
+        }
 
         // Remap so reads and `len` through this handle see the growth.
-        self.grow_mapping(new_len)?;
+        self.grow_mapping(offset + bytes.len() as u64)?;
 
-        Ok(new_len - bytes.len() as u64)
+        Ok(())
     }
 
     fn append_batch<'a, T: bytemuck::Pod>(
         &mut self,
+        offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<ByteOffset> {
+    ) -> Result<()> {
         let (mut slices, total) = local_file_ops::collect_append_slices(items);
         if total == 0 {
-            return Ok(self.len as ByteOffset);
+            return Ok(());
         }
 
-        let new_len = {
+        {
             let fd = self.append_fd()?;
+            self.check_append_offset(fd, offset)?;
             local_file_ops::write_all_vectored(fd, &mut slices)?;
-            // See `append` on why the fd is statted rather than trusting
-            // the mapping length.
-            fd.metadata()?.len()
-        };
+        }
 
-        self.grow_mapping(new_len)?;
+        self.grow_mapping(offset + total as u64)?;
 
-        Ok(new_len - total as u64)
+        Ok(())
     }
 }
 
@@ -430,6 +426,21 @@ impl MmapFile {
         self.ptr = ptr;
         self.ptr_seq = ptr_seq;
         self.len = len;
+
+        Ok(())
+    }
+
+    /// The append precondition: the file must currently end at `offset`.
+    /// The fd is statted — not the mapping length, which can be stale when
+    /// the file grew externally — so a stale handle gets a clean conflict.
+    fn check_append_offset(&self, fd: &fs_err::File, offset: ByteOffset) -> Result<()> {
+        let file_len = fd.metadata()?.len();
+        if file_len != offset {
+            return Err(UniversalIoError::AppendOffsetConflict {
+                path: self.path.clone(),
+                offset,
+            });
+        }
 
         Ok(())
     }
@@ -650,7 +661,7 @@ mod tests {
         let clone = file.clone();
         let flusher = clone.flusher();
 
-        file.append(b"tail".as_slice()).unwrap();
+        file.append(0, b"tail".as_slice()).unwrap();
 
         // The append fd is visible through the sibling clone, and the
         // pre-created flusher takes the fdatasync path.
