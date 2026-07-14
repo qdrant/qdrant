@@ -12,7 +12,7 @@ use crate::error::GridstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
-/// A non-owning view into gridstore data in mutable mode.
+/// A non-owning view into gridstore data.
 ///
 /// Holds borrowed references to pages and tracker, and contains all reading logic.
 /// Generic over the storage backend `S` (same as [`Pages<S>`]) and over the

@@ -15,7 +15,7 @@ use crate::error::GridstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
 
-/// A non-owning view into gridstore data in append-only mode.
+/// A non-owning view into arenastore data.
 ///
 /// Holds borrowed references to the tracker and pages, and contains all reading logic.
 ///

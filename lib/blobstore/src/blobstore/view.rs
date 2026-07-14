@@ -12,7 +12,7 @@ use crate::blob::Blob;
 use crate::error::GridstoreError;
 use crate::tracker::{PointOffset, ReadOnlyTracker, ValuePointer};
 
-/// A non-owning view into gridstore data.
+/// A non-owning view into blobstore data.
 ///
 /// Holds borrowed references to the underlying storage, and contains all reading logic.
 ///
