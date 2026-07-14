@@ -173,7 +173,7 @@ where
     /// rejected, the storage is append-only.
     ///
     /// Always returns false on success, as values can never be updated.
-    // Takes &mut self for signature parity with the dynamic variant
+    // Takes &mut self for signature parity with the mutable variant
     #[allow(clippy::needless_pass_by_ref_mut)]
     pub(super) fn put_value(
         &mut self,
@@ -214,7 +214,7 @@ where
     }
 
     /// Deleting values is not supported in append-only mode.
-    // Takes &mut self for signature parity with the dynamic variant
+    // Takes &mut self for signature parity with the mutable variant
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     pub(super) fn delete_value(&mut self, _point_offset: PointOffset) -> Result<Option<V>> {
         Err(GridstoreError::unsupported_operation("deleting values"))
@@ -262,7 +262,7 @@ where
     }
 
     /// Return the storage size in bytes (precise, the exact amount of appended value data).
-    // Wrapped in Result for signature parity with the dynamic variant
+    // Wrapped in Result for signature parity with the mutable variant
     #[allow(clippy::unnecessary_wraps)]
     pub(super) fn get_storage_size_bytes(&self) -> Result<usize> {
         Ok(self.with_view(|view| view.get_storage_size_bytes()))
@@ -412,7 +412,7 @@ impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
     /// Populating is a no-op in append-only mode.
     ///
     /// Files are never populated into RAM, the OS page cache manages caching.
-    // Signature parity with the dynamic variant
+    // Signature parity with the mutable variant
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     pub(super) fn populate(&self) -> Result<()> {
         Ok(())
@@ -421,7 +421,7 @@ impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
     /// Dropping disk cache is a no-op in append-only mode.
     ///
     /// Files are never populated into RAM, the OS page cache manages caching.
-    // Signature parity with the dynamic variant
+    // Signature parity with the mutable variant
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     pub(super) fn clear_cache(&self) -> crate::Result<()> {
         Ok(())

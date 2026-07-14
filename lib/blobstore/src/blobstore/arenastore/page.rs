@@ -16,7 +16,7 @@ use crate::tracker::{BlockOffset, PageId, ValuePointer};
 
 /// File name prefix of the append-only page files, followed by `{id}.dat`
 ///
-/// Deliberately different from the dynamic page file names (`page_{id}.dat`), so that one mode
+/// Deliberately different from the mutable mode page file names (`page_{id}.dat`), so that one mode
 /// never attempts to load the incompatible file format of the other.
 const PAGE_FILE_NAME_PREFIX: &str = "append_only_page_";
 

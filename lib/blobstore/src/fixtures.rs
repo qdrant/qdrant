@@ -29,7 +29,7 @@ impl Blob for Payload {
 
 /// Create an empty storage with the default configuration
 pub fn empty_storage() -> (TempDir, Blobstore<Payload>) {
-    empty_storage_mode(Mode::Dynamic)
+    empty_storage_mode(Mode::Mutable)
 }
 
 /// Create an empty storage in append-only mode with the default configuration

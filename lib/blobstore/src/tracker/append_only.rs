@@ -10,7 +10,7 @@ use crate::{Result, direct_io};
 
 /// File name of the append-only tracker file
 ///
-/// Deliberately different from the dynamic tracker file name, so that one mode never attempts to
+/// Deliberately different from the mutable mode tracker file name, so that one mode never attempts to
 /// load the incompatible file format of the other.
 const FILE_NAME: &str = "append_only_tracker.dat";
 

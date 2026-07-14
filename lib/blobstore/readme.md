@@ -5,7 +5,7 @@ Storage for variable-sized values, provided by the outer `Blobstore` type.
 Operates in one of two modes, specified when creating a storage and selected
 automatically when opening one, based on the persisted config:
 
-- **dynamic** (default, the `Gridstore` variant): read-write storage with
+- **mutable** (default, the `Gridstore` variant): read-write storage with
   in-place space reuse, backed by memory mapped files.
 - **append-only** (the `Arenastore` variant): append-only storage for
   serverless deployments, reading and writing files directly.
@@ -16,11 +16,11 @@ Concepts shared by both modes:
 - Value data is stored in page files.
 - Values are compressed with lz4 (configurable).
 - A tracker maps each point offset to page + offset within the page + value
-  length. The offset counts blocks in dynamic mode and bytes in append-only
+  length. The offset counts blocks in mutable mode and bytes in append-only
   mode. The tracker is updated in-memory, and only persisted on flush.
 - Supports multiple threads reading and single thread writing.
 
-## Dynamic mode (`Gridstore`)
+## Mutable mode (`Gridstore`)
 
 ![Storage concepts](./storage-concepts.svg)
 
@@ -41,7 +41,7 @@ Concepts shared by both modes:
 
 | file          | content                                                     |
 |---------------|-------------------------------------------------------------|
-| `config.json` | storage config, `"mode": "dynamic"`                         |
+| `config.json` | storage config, `"mode": "mutable"`                         |
 | `tracker.dat` | header with mapping count + mapping slots, preallocated     |
 | `page_{n}.dat`| value data, preallocated to the page size                   |
 | `bitmask.dat` | one bit per block: used or free                             |
@@ -82,7 +82,7 @@ tracker file is read and written directly on the local filesystem.
   entry size, the trailing partial entry is ignored when reading, and
   truncated away when opening writable.
 - One file per page, one tracker file and one config file, with names
-  distinct from the dynamic mode so that one mode never attempts to load the
+  distinct from the mutable mode so that one mode never attempts to load the
   incompatible file format of the other:
 
 | file                       | content                                        |

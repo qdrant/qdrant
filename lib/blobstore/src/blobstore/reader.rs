@@ -55,7 +55,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         fs.schedule_prefetch(&config_path, None, None)?;
 
         match config.mode {
-            Mode::Dynamic => {
+            Mode::Mutable => {
                 // schedule tracker
                 Tracker::<S>::preopen(fs, &base_path, populate)?;
 
@@ -81,7 +81,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     ) -> Result<Self> {
         let config = read_config(fs, &base_path)?;
         match config.mode {
-            Mode::Dynamic => {
+            Mode::Mutable => {
                 let reader = GridstoreReader::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: ReaderVariant::Gridstore(reader),
@@ -106,7 +106,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 
     /// List all files belonging to this reader.
     ///
-    /// Note: in dynamic mode this does not include bitmask files. Use
+    /// Note: in mutable mode this does not include bitmask files. Use
     /// [`super::Blobstore::files`] for the full list.
     pub fn files(&self) -> Vec<PathBuf> {
         match &self.variant {
@@ -117,7 +117,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 
     /// Exclusive upper bound of point offsets that may have a value.
     ///
-    /// In dynamic mode this is the writer-maintained count read from the stored tracker header,
+    /// In mutable mode this is the writer-maintained count read from the stored tracker header,
     /// as of the last [`Self::live_reload`] — see
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
     pub fn max_point_offset(&self) -> Result<PointOffset> {
@@ -181,7 +181,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 
     /// Return the storage size in bytes.
     ///
-    /// Approximate (total page capacity) in dynamic mode, exact in append-only mode.
+    /// Approximate (total page capacity) in mutable mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.get_storage_size_bytes(),

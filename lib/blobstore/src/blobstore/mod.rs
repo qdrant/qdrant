@@ -33,7 +33,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 ///
 /// Operates in one of two modes, specified on creation and automatically selected when opening:
 ///
-/// - [`Mode::Dynamic`]: backed by the inner `Gridstore` — values can be updated and deleted,
+/// - [`Mode::Mutable`]: backed by the inner `Gridstore` — values can be updated and deleted,
 ///   freed blocks are tracked and reused.
 /// - [`Mode::AppendOnly`]: backed by the inner `Arenastore` — append-only variant for serverless
 ///   deployments, values cannot be updated or deleted, and must be put in monotonically
@@ -103,7 +103,7 @@ where
     /// It should exist already.
     pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         match options.mode.unwrap_or_default() {
-            Mode::Dynamic => {
+            Mode::Mutable => {
                 let storage = Gridstore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
@@ -124,7 +124,7 @@ where
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
         let config = reader::read_config(&fs, &base_path)?;
         match config.mode {
-            Mode::Dynamic => {
+            Mode::Mutable => {
                 let storage = Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
@@ -304,19 +304,19 @@ impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
 
 #[cfg(test)]
 impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
-    /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
+    /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
     fn as_gridstore(&self) -> &Gridstore<V, S> {
         match &self.variant {
             BlobstoreVariant::Gridstore(storage) => storage,
-            BlobstoreVariant::Arenastore(_) => panic!("storage is not in dynamic mode"),
+            BlobstoreVariant::Arenastore(_) => panic!("storage is not in mutable mode"),
         }
     }
 
-    /// Get the inner Gridstore (dynamic mode storage), panics if the storage is in another mode.
+    /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
     fn as_gridstore_mut(&mut self) -> &mut Gridstore<V, S> {
         match &mut self.variant {
             BlobstoreVariant::Gridstore(storage) => storage,
-            BlobstoreVariant::Arenastore(_) => panic!("storage is not in dynamic mode"),
+            BlobstoreVariant::Arenastore(_) => panic!("storage is not in mutable mode"),
         }
     }
 

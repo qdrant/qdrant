@@ -52,7 +52,7 @@ pub enum Mode {
     /// Read-write storage. Values can be updated and deleted, freed blocks are tracked and
     /// reused (bitmask, gaps and regions).
     #[default]
-    Dynamic,
+    Mutable,
     /// Append-only storage for serverless deployments. Files are only ever appended to, existing
     /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
     /// monotonically increasing point offset order.
@@ -72,7 +72,7 @@ pub enum Mode {
 pub struct StorageOptions {
     /// Size of a page in bytes.
     ///
-    /// In dynamic mode, must be a multiple of (`block_size_bytes` * `region_size_blocks`). In
+    /// In mutable mode, must be a multiple of (`block_size_bytes` * `region_size_blocks`). In
     /// append-only mode, the capacity at which a page rolls over to the next one.
     ///
     /// Default is 32MB
@@ -95,7 +95,7 @@ pub struct StorageOptions {
 
     /// Operating mode of the storage
     ///
-    /// Default is dynamic
+    /// Default is mutable
     pub mode: Option<Mode>,
 }
 
@@ -124,7 +124,7 @@ pub(crate) struct StorageConfig {
 
     /// Operating mode of the storage
     ///
-    /// Configs written before this field existed default to dynamic
+    /// Configs written before this field existed default to mutable
     #[serde(default)]
     pub mode: Mode,
 }
@@ -171,9 +171,9 @@ impl TryFrom<StorageOptions> for StorageConfig {
 
         let mode = options.mode.unwrap_or_default();
 
-        // Blocks and regions are dynamic mode concepts: the append-only mode packs values back
+        // Blocks and regions are mutable mode concepts: the append-only mode packs values back
         // to back and only uses the page size as the rollover capacity
-        if mode == Mode::Dynamic {
+        if mode == Mode::Mutable {
             let region_size_bytes = block_size_bytes * region_size_blocks;
 
             if page_size_bytes < region_size_bytes {
@@ -213,9 +213,9 @@ impl From<&StorageConfig> for StorageOptions {
 mod tests {
     use super::*;
 
-    /// Configs written before the `mode` field existed must load as dynamic.
+    /// Configs written before the `mode` field existed must load as mutable.
     #[test]
-    fn test_config_without_mode_is_dynamic() {
+    fn test_config_without_mode_is_mutable() {
         let json = r#"{
             "page_size_bytes": 33554432,
             "block_size_bytes": 128,
@@ -223,15 +223,15 @@ mod tests {
             "compression": "LZ4"
         }"#;
         let config: StorageConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.mode, Mode::Dynamic);
+        assert_eq!(config.mode, Mode::Mutable);
     }
 
-    /// The mode is always serialized explicitly, even for the dynamic default.
+    /// The mode is always serialized explicitly, even for the mutable default.
     #[test]
     fn test_config_serializes_mode() {
         let config = StorageConfig::try_from(StorageOptions::default()).unwrap();
         let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains(r#""mode":"dynamic""#));
+        assert!(json.contains(r#""mode":"mutable""#));
 
         let options = StorageOptions {
             mode: Some(Mode::AppendOnly),
