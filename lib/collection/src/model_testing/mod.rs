@@ -25,9 +25,9 @@ use crate::shards::shard::PeerId;
 const PEER_ID: PeerId = 1;
 const COLLECTION_NAME: &str = "test";
 
-/// Static metadata for every vector name the test might ever activate. Ten names start
-/// active in the fixture ("a", "b", "i", "s", "m", "q", "h", "y", "w", "z", see
-/// `INITIAL_ACTIVE`); "c" and "u" are reachable through `Op::CreateVectorName`.
+/// Static metadata for every vector name the test might ever activate. Eleven names start
+/// active in the fixture (see `INITIAL_ACTIVE`); "u" is reachable through
+/// `Op::CreateVectorName`.
 pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "a",
@@ -133,7 +133,7 @@ const _: () = {
 };
 
 /// Names present in the collection schema at fixture time.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m", "q", "h", "y", "w", "z"];
+pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "c", "i", "s", "m", "q", "h", "y", "w", "z"];
 
 /// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
 pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
@@ -162,10 +162,6 @@ pub(super) fn candidate_of(name: &str) -> &'static VectorCandidate {
         .iter()
         .find(|c| c.name == name)
         .unwrap_or_else(|| panic!("unknown vector name: {name}"))
-}
-
-pub(super) fn datatype_of(name: &str) -> Option<Datatype> {
-    candidate_of(name).datatype
 }
 
 // BTreeMap for deterministic iteration order — several op generators sample from `model.keys()`

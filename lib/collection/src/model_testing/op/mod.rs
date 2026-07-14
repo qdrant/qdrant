@@ -33,9 +33,7 @@ use segment::types::{
 use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::{
-    ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue, candidate_of, datatype_of,
-};
+use super::{ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue, candidate_of};
 use crate::operations::point_ops::UpdateMode;
 use crate::operations::types::Datatype;
 
@@ -603,21 +601,18 @@ impl Op {
                 let pick = inactive.choose(rng).unwrap();
                 let datatype = pick.datatype.map(VectorStorageDatatype::from);
                 let config = match pick.kind {
-                    VectorKind::Dense(dim) => VectorNameConfig::dense(DenseVectorConfig {
-                        size: dim as usize,
-                        distance: Distance::Dot,
-                        multivector_config: None,
-                        datatype,
-                    }),
+                    VectorKind::Dense(dim) | VectorKind::MultiDense(dim) => {
+                        VectorNameConfig::dense(DenseVectorConfig {
+                            size: dim as usize,
+                            distance: Distance::Dot,
+                            multivector_config: matches!(pick.kind, VectorKind::MultiDense(_))
+                                .then(MultiVectorConfig::default),
+                            datatype,
+                        })
+                    }
                     VectorKind::Sparse => VectorNameConfig::sparse(SparseVectorConfig {
                         modifier: None,
                         datatype: None,
-                    }),
-                    VectorKind::MultiDense(dim) => VectorNameConfig::dense(DenseVectorConfig {
-                        size: dim as usize,
-                        distance: Distance::Dot,
-                        multivector_config: Some(MultiVectorConfig::default()),
-                        datatype,
                     }),
                 };
                 Op::CreateVectorName {
@@ -900,35 +895,40 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
             // Every fixture vector uses Dot (see `fixture::fixture` and the
             // CreateVectorName generator arm above).
             Some(Datatype::Turbo4) => VectorValue::Dense(turbo_storage_roundtrip(v, Distance::Dot)),
-            Some(Datatype::Float16) => {
-                VectorValue::Dense(primitive_storage_roundtrip::<VectorElementTypeHalf>(v))
-            }
-            Some(Datatype::Uint8) => {
-                VectorValue::Dense(primitive_storage_roundtrip::<VectorElementTypeByte>(v))
-            }
-            Some(Datatype::Float32) | None => value.clone(),
+            datatype => match scalar_storage_roundtrip(datatype) {
+                Some(roundtrip) => VectorValue::Dense(roundtrip(v)),
+                None => value.clone(),
+            },
         },
-        (VectorKind::MultiDense(_), VectorValue::MultiDense(rows)) => match candidate.datatype {
-            Some(Datatype::Float16) => VectorValue::MultiDense(
-                rows.iter()
-                    .map(|row| primitive_storage_roundtrip::<VectorElementTypeHalf>(row))
-                    .collect(),
-            ),
-            Some(Datatype::Uint8) => VectorValue::MultiDense(
-                rows.iter()
-                    .map(|row| primitive_storage_roundtrip::<VectorElementTypeByte>(row))
-                    .collect(),
-            ),
-            // Rejected by the compile-time check next to `ALL_CANDIDATES`.
-            Some(Datatype::Turbo4) => {
-                panic!("model_vector: Turbo4 multi-dense has no read-back prediction")
+        // Turbo4 multi-dense is rejected by the compile-time check next to
+        // `ALL_CANDIDATES`, so `scalar_storage_roundtrip`'s panic arm is unreachable here.
+        (VectorKind::MultiDense(_), VectorValue::MultiDense(rows)) => {
+            match scalar_storage_roundtrip(candidate.datatype) {
+                Some(roundtrip) => {
+                    VectorValue::MultiDense(rows.iter().map(|row| roundtrip(row)).collect())
+                }
+                None => value.clone(),
             }
-            Some(Datatype::Float32) | None => value.clone(),
-        },
+        }
         (VectorKind::Sparse, VectorValue::Sparse(_)) => value.clone(),
         (kind, value) => {
             panic!("model_vector: value/kind mismatch for `{name}` ({kind:?}): {value:?}")
         }
+    }
+}
+
+/// Per-slice storage round-trip for the scalar datatypes: `Some` for the lossy
+/// Float16/Uint8 conversions, `None` where storage is exact (explicit Float32 or
+/// unset). Turbo4 is whole-vector quantization, not a per-component conversion;
+/// callers handle it separately.
+type SliceRoundtrip = fn(&[f32]) -> Vec<f32>;
+
+fn scalar_storage_roundtrip(datatype: Option<Datatype>) -> Option<SliceRoundtrip> {
+    match datatype {
+        Some(Datatype::Float16) => Some(primitive_storage_roundtrip::<VectorElementTypeHalf>),
+        Some(Datatype::Uint8) => Some(primitive_storage_roundtrip::<VectorElementTypeByte>),
+        Some(Datatype::Float32) | None => None,
+        Some(Datatype::Turbo4) => panic!("Turbo4 has no per-component scalar round-trip"),
     }
 }
 
@@ -954,7 +954,7 @@ pub(super) fn dense_matches(name: &str, actual: &[f32], expected: &[f32]) -> boo
     if actual.len() != expected.len() {
         return false;
     }
-    match datatype_of(name) {
+    match candidate_of(name).datatype {
         Some(Datatype::Turbo4) => actual.iter().zip(expected).all(|(&a, &e)| {
             let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
             (a - e).abs() <= tol
