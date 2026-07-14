@@ -1,6 +1,5 @@
 use common::types::ScoreType;
 use half::f16;
-use num_traits::Float;
 
 use crate::data_types::vectors::{DenseVector, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
@@ -63,6 +62,6 @@ pub fn manhattan_similarity_half(
 ) -> ScoreType {
     -v1.iter()
         .zip(v2)
-        .map(|(a, b)| f16::to_f32((a - b).abs()))
+        .map(|(a, b)| (f16::to_f32(*a) - f16::to_f32(*b)).abs())
         .sum::<f32>()
 }
