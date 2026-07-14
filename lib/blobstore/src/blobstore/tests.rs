@@ -142,11 +142,7 @@ fn test_storage_files(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
             "bitmask.dat",
             "gaps.dat",
         ],
-        Mode::AppendOnly => &[
-            "append_only_tracker.dat",
-            "append_only_page_0.dat",
-            "config.json",
-        ],
+        Mode::AppendOnly => &["arena_tracker.dat", "arena_page_0.dat", "config.json"],
     };
     assert_eq!(
         files.len(),
@@ -1789,7 +1785,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Mutable, Mode::AppendOnl
     // directly from disk, not through the backend, so it must stay.
     let backend_read_files: &[&str] = match mode {
         Mode::Mutable => &["config.json", "tracker.dat", "page_0.dat"],
-        Mode::AppendOnly => &["config.json", "append_only_page_0.dat"],
+        Mode::AppendOnly => &["config.json", "arena_page_0.dat"],
     };
     for file in backend_read_files {
         fs::remove_file(dir.path().join(file)).unwrap();
