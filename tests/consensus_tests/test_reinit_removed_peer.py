@@ -17,6 +17,13 @@ def test_reinit_removed_peer(tmp_path: pathlib.Path):
     entry it gets replayed on top of the reset single-voter config on startup,
     and consensus initialization panics with "removed all voters", so the node
     can never come back.
+
+    Also covers `--reinit` dropping the stale `first_voter` and address book
+    of the old cluster (simulating the peer being killed before it applied
+    `RemoveNode(self)`, which would have pruned the addresses): both leak into
+    peers that later bootstrap onto the reinitialized cluster, and a stale
+    `first_voter` corrupts their voter set so they never become ready. The old
+    first peer stays alive throughout to catch any such leak.
     """
     assert_project_root()
 
@@ -43,6 +50,27 @@ def test_reinit_removed_peer(tmp_path: pathlib.Path):
     removed_peer_process.kill()
     processes.remove(removed_peer_process)
 
+    # Deterministically simulate the peer being killed after `RemoveNode(self)`
+    # was committed (guaranteed to be in its WAL, see above) but before it
+    # applied *any* of the old cluster's log: the address book still holds the
+    # old first peer, `first_voter` still points at it (nothing resets it on
+    # removal, so it is stale either way), and no entry is applied. `--reinit`
+    # must drop the stale `first_voter` and address book. Both are served to
+    # peers bootstrapping onto the reinitialized cluster; with nothing applied
+    # the reinitialized leader replicates its log as plain entries (no
+    # snapshot), so a stale `first_voter` seeds the joining peer's initial
+    # `conf_state` with a peer of the *old* cluster and permanently corrupts
+    # its voter set - its `/readyz` then waits for the old cluster's commit
+    # index, which its own consensus never reaches.
+    first_peer_id = get_cluster_info(peer_api_uris[0])["peer_id"]
+    raft_state_path = removed_peer_dir / "storage" / "raft_state.json"
+    raft_state = json.loads(raft_state_path.read_text())
+    raft_state["peer_address_by_id"][str(first_peer_id)] = bootstrap_uri
+    raft_state["first_voter"] = first_peer_id
+    raft_state["apply_progress_queue"] = None
+    raft_state["state"]["hard_state"]["commit"] = 0
+    raft_state_path.write_text(json.dumps(raft_state))
+
     # Reinitialize the removed peer as a fresh first peer, reusing its data
     # directory. Before the fix this panicked on startup with:
     #   Can't initialize consensus: Failed to apply configuration change entry
@@ -58,6 +86,10 @@ def test_reinit_removed_peer(tmp_path: pathlib.Path):
     wait_for(leader_is_defined, reinit_api_uri)
     leader = get_leader(reinit_api_uri)
 
+    # The old cluster's peers are not part of the reinitialized cluster: the
+    # stale address injected above must have been dropped by `--reinit`.
+    assert check_cluster_size(reinit_api_uri, 1)
+
     # It must also still be usable as a cluster seed: a fresh peer can bootstrap
     # onto it, which requires the reinitialized peer to serve a snapshot (the
     # entry at the commit index is kept as the snapshot anchor by the fix).
@@ -69,22 +101,20 @@ def test_reinit_removed_peer(tmp_path: pathlib.Path):
 
 def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     """
-    Regression test for `/readyz` of a reinitialized peer racing against the
-    old cluster.
+    Regression test for `/readyz` treating a stale address-book entry as a
+    cluster member.
 
-    Applying `RemoveNode(self)` prunes all other peers from the removed peer's
-    persisted address book. But the peer may be killed after the removal is
-    committed and *before it applied the entry* - then the old first peer's
-    address survives in `raft_state.json`. After `--reinit` the health checker
-    used to treat every address-book entry as a cluster member and would wait
-    for the reinitialized peer to reach the *old* cluster's commit index - a
-    foreign consensus it can never catch up with, so `/readyz` never passed.
+    `peer_address_by_id` can hold addresses of peers that are not part of this
+    peer's consensus. The health checker used to treat every address-book
+    entry as a cluster member and would wait for this peer to reach the
+    *foreign* peer's commit index, which its own consensus can never catch up
+    with, so `/readyz` never passed. It must rely on `conf_state` membership
+    instead and ignore the foreign peer.
 
-    The kill-before-apply race is simulated by putting the old first peer's
-    address back into the killed peer's persisted state, and the old cluster's
-    commit index is pushed ahead so the reinitialized single-voter consensus
-    stays behind it. `/readyz` must rely on `conf_state` (reset to a single
-    voter by `--reinit`) and ignore the old peer.
+    Since `--reinit` itself now prunes the address book, the stale address is
+    injected on a plain restart (no `--reinit`) of a previously reinitialized
+    single-voter peer, and the foreign (old) cluster's commit index is pushed
+    ahead so this peer's consensus stays behind it.
     """
     assert_project_root()
 
@@ -103,16 +133,30 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     removed_peer_process.kill()
     processes.remove(removed_peer_process)
 
-    # Simulate the killed peer not having applied `RemoveNode(self)` yet: the
-    # old first peer's address is still in its persisted address book.
+    # Reinitialize the removed peer as a fresh single-voter first peer.
+    reinit_api_uri, _reinit_bootstrap_uri = start_first_peer(
+        removed_peer_dir, "removed_peer_reinit.log", reinit=True,
+    )
+    wait_for_peer_online(reinit_api_uri)
+
+    # Stop it again to inject the stale address below.
+    reinit_peer_process = processes[1]
+    reinit_peer_process.kill()
+    processes.remove(reinit_peer_process)
+
+    # Put the old first peer's address into the persisted address book, while
+    # `conf_state` remains this peer only. It doesn't matter how a real
+    # cluster ends up in this state (e.g. a peer killed mid-removal and
+    # restarted without `--reinit`) - `/readyz` must not treat address-book
+    # entries outside `conf_state` as cluster members.
     raft_state_path = removed_peer_dir / "storage" / "raft_state.json"
     raft_state = json.loads(raft_state_path.read_text())
     raft_state["peer_address_by_id"][str(first_peer_id)] = bootstrap_uri
     raft_state_path.write_text(json.dumps(raft_state))
 
-    # Push the old cluster's commit index well ahead of anything the removed
-    # peer has in its WAL. Each collection creation commits several consensus
-    # entries on the (now single-node) old cluster.
+    # Push the old cluster's commit index well ahead of anything the
+    # single-voter peer has in its WAL. Each collection creation commits
+    # several consensus entries on the (now single-node) old cluster.
     for i in range(3):
         res = requests.put(
             f"{peer_api_uris[0]}/collections/ahead_{i}?timeout=60",
@@ -122,16 +166,17 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
 
     old_commit = get_cluster_info(peer_api_uris[0])["raft_info"]["commit"]
 
-    # Reinitialize the removed peer as a fresh first peer, with the old first
-    # peer still alive and reachable. Its own single-voter consensus can never
-    # reach `old_commit`, so `/readyz` must not depend on it.
-    reinit_api_uri, _reinit_bootstrap_uri = start_first_peer(
-        removed_peer_dir, "removed_peer_reinit.log", reinit=True,
+    # Restart the single-voter peer (no `--reinit`), with the old first peer
+    # still alive and reachable at the injected address. This peer's own
+    # consensus can never reach `old_commit`, so `/readyz` must not depend
+    # on it.
+    restart_api_uri, _restart_bootstrap_uri = start_first_peer(
+        removed_peer_dir, "removed_peer_restart.log",
     )
 
-    wait_for_peer_online(reinit_api_uri)
+    wait_for_peer_online(restart_api_uri)
 
-    # The readiness race is only exercised while the reinitialized peer's own
-    # commit index stays behind the old cluster's.
-    reinit_commit = get_cluster_info(reinit_api_uri)["raft_info"]["commit"]
-    assert reinit_commit < old_commit
+    # The readiness race is only exercised while this peer's own commit index
+    # stays behind the old cluster's.
+    restart_commit = get_cluster_info(restart_api_uri)["raft_info"]["commit"]
+    assert restart_commit < old_commit

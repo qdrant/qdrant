@@ -149,6 +149,23 @@ impl Persistent {
                 state.state.conf_state.voters = vec![state.this_peer_id];
                 state.state.conf_state.learners = vec![];
                 state.state.hard_state.vote = state.this_peer_id;
+                // If this peer was removed from the old cluster but killed before it
+                // applied `RemoveNode(self)`, `first_voter` and the address book still
+                // describe the old cluster. This peer now starts a brand-new cluster,
+                // of which it is the first voter and the only member. Both values are
+                // served to peers bootstrapping onto this cluster: a stale `first_voter`
+                // seeds their initial `conf_state` with a peer of the old cluster,
+                // permanently corrupting their voter set, and stale addresses make
+                // `/readyz` wait for the commit index of a foreign consensus.
+                // `first_voter` must be reset to this peer rather than cleared:
+                // `recover_first_voter` would re-derive the old first voter from the
+                // retained Raft log.
+                let this_peer_id = state.this_peer_id;
+                state.first_voter = Some(this_peer_id);
+                state
+                    .peer_address_by_id
+                    .write()
+                    .retain(|&peer_id, _| peer_id == this_peer_id);
                 state.save()?;
                 state
             } else {
@@ -468,4 +485,57 @@ struct ConfStateDef {
     voters_outgoing: Vec<u64>,
     learners_next: Vec<u64>,
     auto_leave: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reinitializing a removed peer as a first peer must drop every trace of the
+    /// old cluster: `conf_state`, `first_voter` and the address book. Peers
+    /// bootstrapping onto the new cluster seed their initial `conf_state` with
+    /// `first_voter` and their address book with the served addresses, so stale
+    /// values corrupt the new cluster's configuration.
+    #[test]
+    fn reinit_first_peer_forgets_old_cluster() {
+        let dir = tempfile::Builder::new()
+            .prefix("consensus_state")
+            .tempdir()
+            .unwrap();
+
+        let this_peer_id = 1;
+        let old_first_peer_id = 2;
+
+        // The peer as a member of the old cluster: it joined via `old_first_peer_id`
+        // and knows both addresses.
+        let mut state =
+            Persistent::load_or_init(dir.path(), false, false, Some(this_peer_id)).unwrap();
+        state
+            .insert_peer(this_peer_id, "http://127.0.0.1:6335".parse().unwrap())
+            .unwrap();
+        state
+            .insert_peer(old_first_peer_id, "http://127.0.0.1:7335".parse().unwrap())
+            .unwrap();
+        state.set_first_voter(old_first_peer_id).unwrap();
+        state
+            .apply_state_update(|state| {
+                state.conf_state.voters = vec![old_first_peer_id, this_peer_id];
+            })
+            .unwrap();
+        drop(state);
+
+        let state = Persistent::load_or_init(dir.path(), true, true, None).unwrap();
+
+        assert_eq!(state.this_peer_id(), this_peer_id);
+        assert_eq!(state.state().conf_state.voters, vec![this_peer_id]);
+        assert_eq!(state.first_voter(), Some(this_peer_id));
+        assert_eq!(
+            state
+                .peer_address_by_id()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![this_peer_id],
+        );
+    }
 }
