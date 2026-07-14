@@ -142,8 +142,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         keys: &[PointOffsetType],
         mut f: F,
     ) -> OperationResult<()> {
-        #[cfg(target_os = "linux")]
-        if TypedStorage::<ReadOnly<S>, T>::kind() == common::universal_io::UniversalKind::IoUring {
+        if TypedStorage::<ReadOnly<S>, T>::kind().can_be_async() {
             return self.for_each_in_batch_async(keys, f);
         }
 

@@ -211,8 +211,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
     where
         F: FnMut(usize, &[T]),
     {
-        #[cfg(target_os = "linux")]
-        if TypedStorage::<S, T>::kind() == common::universal_io::UniversalKind::IoUring {
+        if TypedStorage::<S, T>::kind().can_be_async() {
             let point_offsets = keys
                 .iter()
                 .copied()

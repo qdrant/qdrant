@@ -38,6 +38,19 @@ impl UniversalKind {
             | UniversalKind::UioGrpc => false,
         }
     }
+
+    pub fn can_be_async(self) -> bool {
+        match self {
+            UniversalKind::Mmap => false,
+            UniversalKind::IoUring
+            | UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::UioGrpc => true,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
