@@ -428,15 +428,15 @@ impl TurboQuantizer {
             }
             DistanceType::L1 => {
                 // Fallback case for L1, where we need to fully dequantize both vectors.
-                let mut deq_v1: Vec<f64> = self.dequantize(v1);
-                self.apply_inverse_rotation(deq_v1.as_mut_slice());
-                let mut deq_v2: Vec<f64> = self.dequantize(v2);
-                self.apply_inverse_rotation(deq_v2.as_mut_slice());
-                deq_v1
-                    .iter()
-                    .zip(deq_v2.iter())
-                    .map(|(&x, &y)| (x - y).abs() as f32)
-                    .sum()
+                // The rotation is linear, so `|R⁻¹d1 - R⁻¹d2| = |R⁻¹(d1 - d2)|`:
+                // subtracting in rotated space needs one inverse rotation, not two.
+                let deq_v1: Vec<f64> = self.dequantize(v1);
+                let mut diff: Vec<f64> = self.dequantize(v2);
+                for (d, &x) in diff.iter_mut().zip(&deq_v1) {
+                    *d = x - *d;
+                }
+                self.apply_inverse_rotation(diff.as_mut_slice());
+                diff.iter().map(|&x| x.abs() as f32).sum()
             }
         }
     }
