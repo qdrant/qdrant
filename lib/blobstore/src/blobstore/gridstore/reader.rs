@@ -1,11 +1,11 @@
 use std::cmp;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -14,7 +14,7 @@ use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PageId, PointOffset, ReadOnlyTracker};
+use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
 
 /// Read-only storage for values of type `V`, operating in mutable mode.
 ///
@@ -58,6 +58,23 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
     pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
         self.view().max_point_offset()
+    }
+
+    /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
+    /// universal IO backend: the tracker and the pages.
+    ///
+    /// The config file is scheduled by the mode dispatching reader, which reads it first to
+    /// select the operating mode.
+    pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        base_path: &Path,
+        populate: Populate,
+    ) -> Result<()> {
+        // schedule tracker
+        Tracker::<S>::preopen(fs, base_path, populate)?;
+
+        // schedule pages
+        Pages::preopen(fs, base_path, populate)
     }
 
     /// Open an existing read-only storage at the given path, with the already read config.

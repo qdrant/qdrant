@@ -15,8 +15,7 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Mode, StorageConfig};
 use crate::error::GridstoreError;
-use crate::pages::Pages;
-use crate::tracker::{PointOffset, Tracker};
+use crate::tracker::PointOffset;
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -55,13 +54,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         fs.schedule_prefetch(&config_path, None, None)?;
 
         match config.mode {
-            Mode::Mutable => {
-                // schedule tracker
-                Tracker::<S>::preopen(fs, &base_path, populate)?;
-
-                // schedule pages
-                Pages::preopen(fs, &base_path, populate)
-            }
+            Mode::Mutable => GridstoreReader::<V, S>::preopen(fs, &base_path, populate),
             Mode::AppendOnly => ArenastoreReader::<V, S>::preopen(fs, &base_path),
         }
     }
