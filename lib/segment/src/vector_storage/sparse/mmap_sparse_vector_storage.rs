@@ -78,6 +78,7 @@ impl MmapSparseVectorStorage {
         let next_point_offset = deleted
             .get_bitslice()
             .last_one()
+            .map(|i| i + 1)
             .max(Some(storage.max_point_offset() as usize))
             .unwrap_or_default();
 
@@ -449,6 +450,42 @@ mod test {
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
 
         assert_eq!(storage_files, existing_files);
+    }
+
+    #[test]
+    fn test_reload_counts_trailing_deleted_offset() {
+        use std::borrow::Cow;
+        use std::sync::atomic::AtomicBool;
+
+        let temp_dir = tempfile::Builder::new()
+            .prefix("test_storage_trailing_deleted")
+            .tempdir()
+            .unwrap();
+
+        let vector = sparse_vector::SparseVector {
+            indices: vec![1, 2, 3],
+            values: vec![0.1, 0.2, 0.3],
+        };
+        {
+            let mut storage = MmapSparseVectorStorage::open_or_create(temp_dir.path()).unwrap();
+            let stopped = AtomicBool::new(false);
+
+            let mut entries = vec![
+                (Cow::Owned(vector.clone()), false),
+                (Cow::Owned(vector.clone()), true),
+            ]
+            .into_iter();
+            storage.update_from(&mut entries, &stopped).unwrap();
+            assert_eq!(storage.total_vector_count(), 2); // correct in-session
+            storage.flusher()().unwrap();
+        }
+        // On reload it must still be 2 (it returned 1 before the fix)
+        let storage = MmapSparseVectorStorage::open(temp_dir.path()).unwrap();
+        assert_eq!(
+            storage.total_vector_count(),
+            2,
+            "reload must count the trailing deleted-only offset"
+        );
     }
 
     #[test]
