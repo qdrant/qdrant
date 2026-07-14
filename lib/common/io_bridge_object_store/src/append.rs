@@ -105,8 +105,7 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
         async move {
             let Some(context) = context else {
                 return Err(UniversalIoError::S3Config {
-                    description: "append requires a source constructed from an AwsConfig \
-                                  (append context missing)"
+                    description: "append is not supported for this S3 backend/config (append context missing)"
                         .to_string(),
                 });
             };
@@ -200,8 +199,14 @@ async fn append_request(
             let object_size = response
                 .headers()
                 .get(OBJECT_SIZE_HEADER)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.parse::<u64>().ok());
+                .map(|value| {
+                    value
+                        .to_str()
+                        .map_err(UniversalIoError::s3)?
+                        .parse::<u64>()
+                        .map_err(UniversalIoError::s3)
+                })
+                .transpose()?;
 
             return match object_size {
                 Some(new_len) => Ok(new_len),
