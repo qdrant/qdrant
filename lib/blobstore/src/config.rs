@@ -49,10 +49,14 @@ pub(crate) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
+    /// Use Gridstore
+    ///
     /// Read-write storage. Values can be updated and deleted, freed blocks are tracked and
     /// reused (bitmask, gaps and regions).
     #[default]
     Mutable,
+    /// Use Arenastore
+    ///
     /// Append-only storage for serverless deployments. Files are only ever appended to, existing
     /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
     /// monotonically increasing point offset order.
