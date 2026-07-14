@@ -18,7 +18,7 @@ use crate::tracker::{BlockOffset, PageId, ValuePointer};
 ///
 /// Deliberately different from the mutable mode page file names (`page_{id}.dat`), so that one mode
 /// never attempts to load the incompatible file format of the other.
-const PAGE_FILE_NAME_PREFIX: &str = "append_only_page_";
+const PAGE_FILE_NAME_PREFIX: &str = "arena_page_";
 
 fn page_file_name(dir: &Path, page_id: PageId) -> PathBuf {
     dir.join(format!("{PAGE_FILE_NAME_PREFIX}{page_id}.dat"))
@@ -479,7 +479,7 @@ mod tests {
 
         // Nothing was written or buffered, and the tracked length is unchanged
         assert_eq!(
-            fs::metadata(dir.path().join("append_only_page_0.dat"))
+            fs::metadata(dir.path().join("arena_page_0.dat"))
                 .unwrap()
                 .len(),
             0,

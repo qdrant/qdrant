@@ -12,7 +12,7 @@ use crate::{Result, direct_io};
 ///
 /// Deliberately different from the mutable mode tracker file name, so that one mode never attempts to
 /// load the incompatible file format of the other.
-const FILE_NAME: &str = "append_only_tracker.dat";
+const FILE_NAME: &str = "arena_tracker.dat";
 
 /// Size in bytes of a single mapping entry in the tracker file
 const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
