@@ -173,6 +173,10 @@ async fn test_wait_deferred_does_not_block_update_worker() {
 
     // Build up deferred state so that when A is processed, `has_deferred_points`
     // is already true and the worker enters the deferred-wait branch.
+    //
+    // `WaitUntil::Wal` only waits for the WAL write, not for the update worker to
+    // apply operations. Drain the queue before the A/B race so B is not stuck
+    // behind a backlog of setup upserts (observed as a 5 s timeout on slow CI).
     for i in 1..=NUM_POINTS {
         shard
             .update(
@@ -184,6 +188,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
             .await
             .unwrap();
     }
+    shard.plunge_async().await.unwrap().await.unwrap();
 
     // Spawn A on a separate task so its future (and thus its feedback receiver)
     // stays alive while B races. If dropped, the worker would detect the closed
