@@ -572,6 +572,10 @@ async fn test_wal_replay_loads_pending_to_queue() {
         tokio::time::sleep(poll_interval).await;
     }
 
+    // Channel length reaching zero only means the last operation was received,
+    // not that it finished applying; wait for the worker to go idle.
+    shard.plunge_async().await.unwrap().await.unwrap();
+
     // Verify all points are present after processing
     let info = shard.info().await.unwrap();
     let points_count = info.points_count.unwrap_or(0);
@@ -705,6 +709,10 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
         );
         tokio::time::sleep(poll_interval).await;
     }
+
+    // Channel length reaching zero only means the last operation was received,
+    // not that it finished applying; wait for the worker to go idle.
+    shard.plunge_async().await.unwrap().await.unwrap();
 
     // Every readable operation around the corrupt entry is applied.
     let info = shard.info().await.unwrap();
@@ -846,6 +854,10 @@ async fn test_wal_replay_with_smaller_queue_size() {
         );
         tokio::time::sleep(poll_interval).await;
     }
+
+    // Channel length reaching zero only means the last operation was received,
+    // not that it finished applying; wait for the worker to go idle.
+    shard.plunge_async().await.unwrap().await.unwrap();
 
     // Verify all points are present after processing
     let info = shard.info().await.unwrap();
