@@ -99,6 +99,56 @@ pub enum SparseOpenPlan {
     },
 }
 
+/// Build the (type-agnostic) RAM inverted index and indices tracker from the
+/// vector storage.
+///
+/// Generic over the read halves of the id tracker and vector storage, so the
+/// mutable [`SparseVectorIndex`] and its read-only counterpart build through
+/// the same code.
+fn build_ram_index(
+    id_tracker: &impl IdTrackerRead,
+    vector_storage: &impl VectorStorageRead,
+    stopped: &AtomicBool,
+    mut tick_progress: impl FnMut(),
+) -> OperationResult<(InvertedIndexRam, IndicesTracker)> {
+    let deleted_bitslice = vector_storage.deleted_vector_bitslice();
+
+    let mut ram_index_builder = InvertedIndexBuilder::new();
+    let mut indices_tracker = IndicesTracker::default();
+    for id in id_tracker
+        .point_mappings()
+        .iter_internal_excluding(deleted_bitslice)
+    {
+        check_process_stopped(stopped)?;
+        // It is possible that the vector is not present in the storage in case of crash.
+        // Because:
+        // - the `id_tracker` is flushed before the `vector_storage`
+        // - the sparse index is built *before* recovering the WAL when loading a segment
+        match vector_storage.get_vector_opt::<Random>(id) {
+            None => {
+                // the vector was lost in a crash but will be recovered by the WAL
+                let point_id = id_tracker.external_id(id);
+                let point_version = id_tracker.internal_version(id);
+                log::debug!(
+                    "Sparse vector with id {id} is not found, external_id: {point_id:?}, version: {point_version:?}",
+                )
+            }
+            Some(vector) => {
+                let vector: &SparseVector = vector.as_vec_ref().try_into()?;
+                // do not index empty vectors
+                if vector.is_empty() {
+                    continue;
+                }
+                indices_tracker.register_indices(vector);
+                let vector = indices_tracker.remap_vector(vector.to_owned());
+                ram_index_builder.add(id, vector);
+            }
+        }
+        tick_progress();
+    }
+    Ok((ram_index_builder.build(), indices_tracker))
+}
+
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Open a sparse vector index at a given path
     pub fn open<F: FnMut()>(args: SparseVectorIndexOpenArgs<'_, MmapFs, F>) -> OperationResult<Self>
@@ -189,8 +239,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         if !config.index_type.is_persisted() {
             // RAM mutable case - build from scratch, keep the provided config, do not persist.
             fs::create_dir_all(path)?;
-            let (ram_index, indices_tracker) =
-                Self::build_ram_index(id_tracker, vector_storage, stopped, tick_progress)?;
+            let (ram_index, indices_tracker) = build_ram_index(
+                &*id_tracker.borrow(),
+                &*vector_storage.borrow(),
+                stopped,
+                tick_progress,
+            )?;
             return Ok(SparseOpenPlan::Build {
                 config,
                 ram_index,
@@ -218,62 +272,18 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             fs::remove_dir_all(path)?;
         }
         fs::create_dir_all(path)?;
-        let (ram_index, indices_tracker) =
-            Self::build_ram_index(id_tracker, vector_storage, stopped, tick_progress)?;
+        let (ram_index, indices_tracker) = build_ram_index(
+            &*id_tracker.borrow(),
+            &*vector_storage.borrow(),
+            stopped,
+            tick_progress,
+        )?;
         Ok(SparseOpenPlan::Build {
             config,
             ram_index,
             indices_tracker,
             persist: true,
         })
-    }
-
-    /// Build the (type-agnostic) RAM inverted index and indices tracker from the
-    /// vector storage.
-    fn build_ram_index(
-        id_tracker: &AtomicRefCell<IdTrackerEnum>,
-        vector_storage: &AtomicRefCell<VectorStorageEnum>,
-        stopped: &AtomicBool,
-        mut tick_progress: impl FnMut(),
-    ) -> OperationResult<(InvertedIndexRam, IndicesTracker)> {
-        let borrowed_vector_storage = vector_storage.borrow();
-        let borrowed_id_tracker = id_tracker.borrow();
-        let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
-
-        let mut ram_index_builder = InvertedIndexBuilder::new();
-        let mut indices_tracker = IndicesTracker::default();
-        for id in borrowed_id_tracker
-            .point_mappings()
-            .iter_internal_excluding(deleted_bitslice)
-        {
-            check_process_stopped(stopped)?;
-            // It is possible that the vector is not present in the storage in case of crash.
-            // Because:
-            // - the `id_tracker` is flushed before the `vector_storage`
-            // - the sparse index is built *before* recovering the WAL when loading a segment
-            match borrowed_vector_storage.get_vector_opt::<Random>(id) {
-                None => {
-                    // the vector was lost in a crash but will be recovered by the WAL
-                    let point_id = borrowed_id_tracker.external_id(id);
-                    let point_version = borrowed_id_tracker.internal_version(id);
-                    log::debug!(
-                        "Sparse vector with id {id} is not found, external_id: {point_id:?}, version: {point_version:?}",
-                    )
-                }
-                Some(vector) => {
-                    let vector: &SparseVector = vector.as_vec_ref().try_into()?;
-                    // do not index empty vectors
-                    if vector.is_empty() {
-                        continue;
-                    }
-                    indices_tracker.register_indices(vector);
-                    let vector = indices_tracker.remap_vector(vector.to_owned());
-                    ram_index_builder.add(id, vector);
-                }
-            }
-            tick_progress();
-        }
-        Ok((ram_index_builder.build(), indices_tracker))
     }
 
     pub fn inverted_index(&self) -> &TInvertedIndex {

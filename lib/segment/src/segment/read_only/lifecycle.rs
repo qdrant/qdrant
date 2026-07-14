@@ -24,8 +24,8 @@ use crate::segment_constructor::{
     get_payload_index_path, get_vector_index_path, get_vector_storage_path,
 };
 use crate::types::{
-    PayloadStorageType, SegmentConfig, SegmentState, SegmentType, VectorDataConfig, VectorName,
-    VectorNameBuf,
+    PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SparseVectorDataConfig,
+    VectorDataConfig, VectorName, VectorNameBuf,
 };
 use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
@@ -283,12 +283,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             )?;
             vector_data.insert(vector_name.clone(), data);
         }
-        for vector_name in config.sparse_vector_data.keys() {
+        for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_sparse(
                 fs,
                 segment_path,
                 vector_name,
+                sparse_vector_config,
                 id_tracker.clone(),
                 payload_index.clone(),
                 vector_storage,
@@ -396,6 +397,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         vector_name: &VectorName,
+        sparse_vector_config: &SparseVectorDataConfig,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -410,6 +412,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         let index_populate =
             load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
         let vector_index = VectorIndexReadEnum::open_sparse(
+            sparse_vector_config,
             ReadOnlyVectorIndexOpenArgs {
                 fs,
                 path: &vector_index_path,

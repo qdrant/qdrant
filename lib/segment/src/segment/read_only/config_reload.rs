@@ -13,7 +13,8 @@ use crate::index::struct_payload_index::read_only::PayloadIndexReloadDiff;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
 use crate::segment_constructor::{get_payload_index_path, get_vector_storage_path};
 use crate::types::{
-    SegmentConfig, SegmentState, SegmentType, VectorDataConfig, VectorName, VectorNameBuf,
+    SegmentConfig, SegmentState, SegmentType, SparseVectorDataConfig, VectorDataConfig, VectorName,
+    VectorNameBuf,
 };
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
@@ -146,7 +147,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             &new_config.sparse_vector_data,
         );
         for name in load {
-            let data = self.load_sparse_vector(fs, &name)?;
+            let config = &new_config.sparse_vector_data[&name];
+            let data = self.load_sparse_vector(fs, &name, config)?;
             added.insert(name, data);
         }
         removed.extend(drop);
@@ -190,6 +192,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         &self,
         fs: &S::Fs,
         name: &VectorName,
+        config: &SparseVectorDataConfig,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
         let storage =
@@ -199,6 +202,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             fs,
             &self.segment_path,
             name,
+            config,
             self.id_tracker.clone(),
             self.payload_index.clone(),
             storage,

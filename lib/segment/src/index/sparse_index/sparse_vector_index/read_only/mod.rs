@@ -2,11 +2,13 @@ mod read;
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion as _;
 use common::universal_io::UniversalReadFs;
 use sparse::SearchScratchPool;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -134,6 +136,40 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
                 search_scratch_pool: &self.search_scratch_pool,
             };
             f(read_view)
+        })
+    }
+}
+
+impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
+    /// Build the mutable-RAM variant in place from the read-only id tracker and
+    /// vector storage, mirroring [`SparseVectorIndex::plan`]'s non-persisted
+    /// branch: `MutableRam` has no persisted representation, so its inverted
+    /// index is rebuilt from the vector storage on every open.
+    ///
+    /// [`SparseVectorIndex::plan`]: super::SparseVectorIndex::plan
+    pub fn build_mutable_ram(
+        config: SparseIndexConfig,
+        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    ) -> OperationResult<Self> {
+        // The read-only open path carries no cancellation flag.
+        let stopped = AtomicBool::new(false);
+        let (inverted_index, indices_tracker) = super::build_ram_index(
+            &*id_tracker.borrow(),
+            &*vector_storage.borrow(),
+            &stopped,
+            || (),
+        )?;
+        Ok(Self {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            inverted_index,
+            searches_telemetry: SparseSearchesTelemetry::new(),
+            indices_tracker,
+            search_scratch_pool: SearchScratchPool::new(),
         })
     }
 }

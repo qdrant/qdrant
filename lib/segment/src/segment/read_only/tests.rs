@@ -345,6 +345,97 @@ fn read_only_segment_over_s3() {
     assert_query_equivalence(&mutable, &read_only);
 }
 
+/// A `MutableRam` sparse index has no persisted representation: the read-only
+/// open rebuilds it from the sparse vector storage. Sparse searches over the
+/// rebuilt index must match the mutable segment point-for-point.
+#[test]
+fn read_only_segment_sparse_mutable_ram_matches_mutable() {
+    use sparse::common::sparse_vector::SparseVector;
+
+    use crate::data_types::vectors::VectorRef;
+    use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+    use crate::types::{SparseVectorDataConfig, SparseVectorStorageType};
+
+    const SPARSE_VECTOR_NAME: &str = "sparse";
+
+    let dir = Builder::new().prefix("ro_sparse_mut").tempdir().unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: Default::default(),
+            sparse_vector_data: HashMap::from([(
+                SPARSE_VECTOR_NAME.to_owned(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
+                    storage_type: SparseVectorStorageType::default(),
+                    modifier: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    for i in 0..NUM_POINTS {
+        let indices = vec![(i % 7) as u32, 8 + (i % 15) as u32, 32 + (i % 29) as u32];
+        let values = vec![
+            1.0 + (i % 11) as f32,
+            0.5 + (i % 5) as f32,
+            0.25 + (i % 3) as f32,
+        ];
+        let vector = SparseVector::new(indices, values).unwrap();
+        let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
+        mutable
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+
+    let query = QueryVector::Nearest(VectorInternal::Sparse(
+        SparseVector::new(vec![2, 10, 40], vec![1.0, 0.5, 0.25]).unwrap(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let reference_hits = mutable
+        .search_batch(
+            SPARSE_VECTOR_NAME,
+            &[&query],
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            NUM_POINTS,
+            None,
+            &sqc,
+        )
+        .unwrap();
+    let candidate_hits = read_only
+        .search_batch(
+            SPARSE_VECTOR_NAME,
+            &[&query],
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            NUM_POINTS,
+            None,
+            &sqc,
+        )
+        .unwrap();
+    assert!(!reference_hits[0].is_empty());
+    assert_eq!(
+        reference_hits[0], candidate_hits[0],
+        "sparse search mismatch"
+    );
+}
+
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
 /// payload config (the `num` field index) while its index files stay in place,
 /// and assert the read-only segment loads/drops the field index accordingly and
