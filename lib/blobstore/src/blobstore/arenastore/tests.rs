@@ -5,7 +5,7 @@ use fs_err as fs;
 use tempfile::TempDir;
 
 use crate::blobstore::reader::CONFIG_FILENAME;
-use crate::config::{Compression, DEFAULT_BLOCK_SIZE_BYTES, Mode, StorageOptions};
+use crate::config::{Compression, Mode, StorageOptions};
 use crate::error::GridstoreError;
 use crate::fixtures::{Payload, empty_storage_append_only, random_payload};
 use crate::tracker::ValuePointer;
@@ -148,7 +148,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
 
     // The buffered values are still fully readable, served from memory
     assert_eq!(storage.max_point_offset(), 3);
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 128 + 100);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 3 * 100);
     for point_offset in 0..3 {
         assert_eq!(
             storage
@@ -162,7 +162,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     storage.flusher()().unwrap();
     assert_eq!(
         fs::metadata(&page_path).unwrap().len(),
-        2 * 128 + 100,
+        3 * 100,
         "the page file must hold exactly the appended values",
     );
     assert_eq!(
@@ -219,7 +219,7 @@ fn test_put_rejects_out_of_order_point_offsets() {
     assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
 
     // Rejected puts must not append any value data
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 128 + 100);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 100);
 
     // The stored values are unaffected
     assert_eq!(
@@ -335,26 +335,26 @@ fn test_skipped_point_offsets_read_as_none() {
 }
 
 #[test]
-fn test_values_are_block_aligned() {
+fn test_values_are_byte_packed() {
     let (_dir, mut storage) = empty_byte_storage(Compression::None);
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
-    // Each value starts at a block boundary (128 byte default), without trailing padding
+    // Each value starts right after the previous one, without blocks or alignment
     storage.put_value(0, &vec![1; 100], hw_counter_ref).unwrap();
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 100);
     storage.put_value(1, &vec![2; 50], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 128 + 50);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 100 + 50);
     storage.put_value(2, &vec![3; 300], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 256 + 300);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 100 + 50 + 300);
 
     let pointer = storage.get_pointer(1).unwrap();
     assert_eq!(pointer.page_id, 0);
-    assert_eq!(pointer.block_offset, 1);
+    assert_eq!(pointer.block_offset, 100);
     assert_eq!(pointer.length, 50);
     let pointer = storage.get_pointer(2).unwrap();
-    assert_eq!(pointer.block_offset, 2);
+    assert_eq!(pointer.block_offset, 150);
 
     for (point_offset, value) in [(0, vec![1; 100]), (1, vec![2; 50]), (2, vec![3; 300])] {
         assert_eq!(
@@ -381,7 +381,7 @@ fn test_empty_and_huge_values() {
         Some(vec![]),
     );
 
-    // A huge value simply grows the single page file, values never span pages
+    // A huge value simply grows the page file, values never span pages
     let huge = (0..2_000_000).map(|i| i as u8).collect::<Vec<u8>>();
     storage.put_value(1, &huge, hw_counter_ref).unwrap();
     assert_eq!(storage.get_storage_size_bytes().unwrap(), huge.len());
@@ -589,8 +589,8 @@ fn test_reader_on_append_only_storage() {
             .unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 5);
     assert!(reader.is_on_disk());
-    // Three values, packed at consecutive blocks: point offset gaps take no page space
-    assert_eq!(reader.get_storage_size_bytes(), 2 * 128 + 10);
+    // Three values, packed back to back: point offset gaps take no page space
+    assert_eq!(reader.get_storage_size_bytes(), 3 * 10);
     reader.clear_cache().unwrap();
 
     assert_eq!(
@@ -636,7 +636,7 @@ fn test_reader_on_append_only_storage() {
 
     let view = reader.view();
     assert_eq!(view.max_point_offset().unwrap(), 5);
-    assert_eq!(view.get_storage_size_bytes(), 2 * 128 + 10);
+    assert_eq!(view.get_storage_size_bytes(), 3 * 10);
     assert_eq!(
         view.get_value::<Random>(4, &hw_counter).unwrap(),
         Some(vec![4; 10]),
@@ -681,7 +681,7 @@ fn test_reader_live_reload() {
 
     reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 6);
-    assert_eq!(reader.get_storage_size_bytes(), 5 * 128 + 10);
+    assert_eq!(reader.get_storage_size_bytes(), 6 * 10);
     for point_offset in 0..6 {
         assert_eq!(
             reader
@@ -696,7 +696,7 @@ fn test_reader_live_reload() {
     storage.put_value(6, &vec![6; 10], hw_counter_ref).unwrap();
     reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 6);
-    assert_eq!(reader.get_storage_size_bytes(), 5 * 128 + 10);
+    assert_eq!(reader.get_storage_size_bytes(), 6 * 10);
 }
 
 #[test]
@@ -1020,10 +1020,10 @@ fn test_tracker_pads_mapping_gap_with_zeroes() {
     );
 }
 
-/// Values are packed back to back at block aligned offsets: each value starts at the block
-/// boundary right after the previous value, and the page file ends exactly at the last value.
+/// Values are packed back to back: each value starts at the byte right after the previous
+/// value, without blocks or alignment, and the page file ends exactly at the last value.
 #[test]
-fn test_values_are_packed_block_aligned() {
+fn test_values_are_packed_back_to_back() {
     let (dir, mut storage) = empty_byte_storage(Compression::None);
 
     let hw_counter = HardwareCounterCell::new();
@@ -1038,18 +1038,17 @@ fn test_values_are_packed_block_aligned() {
     }
     storage.flusher()().unwrap();
 
-    // Each value starts at the block boundary right after the previous value
-    let block_size = DEFAULT_BLOCK_SIZE_BYTES as u64;
+    // Each value starts at the byte right after the previous value
     let mut expected_start = 0;
     for point_offset in 0..num_values {
         let pointer = storage.get_pointer(point_offset).unwrap();
         assert_eq!(pointer.page_id, 0);
         assert_eq!(
-            u64::from(pointer.block_offset) * block_size,
+            u64::from(pointer.block_offset),
             expected_start,
             "value {point_offset} must start right after the previous one",
         );
-        expected_start = (expected_start + u64::from(pointer.length)).next_multiple_of(block_size);
+        expected_start += u64::from(pointer.length);
 
         assert_eq!(
             storage
@@ -1061,8 +1060,7 @@ fn test_values_are_packed_block_aligned() {
 
     // The page file ends exactly at the last value, without trailing padding
     let last_pointer = storage.get_pointer(num_values - 1).unwrap();
-    let last_end =
-        u64::from(last_pointer.block_offset) * block_size + u64::from(last_pointer.length);
+    let last_end = u64::from(last_pointer.block_offset) + u64::from(last_pointer.length);
     let page_len = fs::metadata(dir.path().join("append_only_page_0.dat"))
         .unwrap()
         .len();
@@ -1142,7 +1140,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
     // The page file holds exactly the extent of the values covered by the flusher
     let covered_pointer = storage.get_pointer(2).unwrap();
     let covered_extent =
-        u64::from(covered_pointer.block_offset) * 128 + u64::from(covered_pointer.length);
+        u64::from(covered_pointer.block_offset) + u64::from(covered_pointer.length);
     assert_eq!(
         fs::metadata(dir.path().join("append_only_page_0.dat"))
             .unwrap()
@@ -1501,7 +1499,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
             .checked_sub(1)
             .and_then(|last| storage.get_pointer(last as u32))
             .map_or(0, |pointer| {
-                u64::from(pointer.block_offset) * 128 + u64::from(pointer.length)
+                u64::from(pointer.block_offset) + u64::from(pointer.length)
             });
         assert_eq!(
             fs::metadata(path.join("append_only_page_0.dat"))
@@ -1529,4 +1527,290 @@ fn test_reopen_always_exposes_flushed_prefix() {
             "unflushed values must be gone after reopen",
         );
     }
+}
+
+/// Create an empty append-only storage of raw byte values with a small page size, so a few
+/// small values roll over to new pages.
+fn small_page_storage(dir: &TempDir, page_size_bytes: usize) -> Blobstore<Vec<u8>> {
+    let options = StorageOptions {
+        page_size_bytes: Some(page_size_bytes),
+        compression: Some(Compression::None),
+        mode: Some(Mode::AppendOnly),
+        ..Default::default()
+    };
+    Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap()
+}
+
+/// Once a page is full, the next value starts a new page: values are packed back to back
+/// within a page, and a value that does not fit rolls over to a freshly created page file.
+#[test]
+fn test_full_page_rolls_over_to_new_page() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // Two 100 byte values fit in the first page, the third one starts the second page
+    for point_offset in 0..5 {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
+            .unwrap();
+    }
+
+    for (point_offset, page_id, offset) in
+        [(0, 0, 0), (1, 0, 100), (2, 1, 0), (3, 1, 100), (4, 2, 0)]
+    {
+        let pointer = storage.get_pointer(point_offset).unwrap();
+        assert_eq!(
+            (pointer.page_id, pointer.block_offset),
+            (page_id, offset),
+            "value {point_offset} must land at page {page_id} offset {offset}",
+        );
+    }
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 5 * 100);
+
+    // All values are readable, before and after a flush, and after a reopen
+    let assert_all_readable = |storage: &Blobstore<Vec<u8>>| {
+        for point_offset in 0..5 {
+            assert_eq!(
+                storage
+                    .get_value::<Random>(point_offset, &hw_counter)
+                    .unwrap(),
+                Some(vec![point_offset as u8; 100]),
+            );
+        }
+    };
+    assert_all_readable(&storage);
+
+    // A single flush lands the values buffered across the pages, each page file holds exactly
+    // its values
+    storage.flusher()().unwrap();
+    assert_all_readable(&storage);
+    for (page_id, len) in [(0u32, 200u64), (1, 200), (2, 100)] {
+        assert_eq!(
+            fs::metadata(dir.path().join(format!("append_only_page_{page_id}.dat")))
+                .unwrap()
+                .len(),
+            len,
+            "page {page_id} must hold exactly its values",
+        );
+    }
+
+    // All page files are reported, in order
+    let files = storage.files();
+    let file_names: Vec<_> = files
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        file_names,
+        [
+            "append_only_tracker.dat",
+            "append_only_page_0.dat",
+            "append_only_page_1.dat",
+            "append_only_page_2.dat",
+            "config.json",
+        ],
+    );
+
+    // Everything is still there after reopening, appends continue on the last page
+    drop(storage);
+    let mut storage =
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert_all_readable(&storage);
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 5 * 100);
+
+    storage.put_value(5, &vec![5; 100], hw_counter_ref).unwrap();
+    let pointer = storage.get_pointer(5).unwrap();
+    assert_eq!((pointer.page_id, pointer.block_offset), (2, 100));
+}
+
+/// A value larger than the page size gets a page of its own: values never span pages, and the
+/// next value starts yet another page.
+#[test]
+fn test_value_larger_than_page_gets_own_page() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let huge = (0..1000).map(|i| i as u8).collect::<Vec<u8>>();
+    storage.put_value(0, &vec![1; 100], hw_counter_ref).unwrap();
+    storage.put_value(1, &huge, hw_counter_ref).unwrap();
+    storage.put_value(2, &vec![2; 100], hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    for (point_offset, page_id) in [(0, 0), (1, 1), (2, 2)] {
+        let pointer = storage.get_pointer(point_offset).unwrap();
+        assert_eq!((pointer.page_id, pointer.block_offset), (page_id, 0));
+    }
+
+    assert_eq!(
+        fs::metadata(dir.path().join("append_only_page_1.dat"))
+            .unwrap()
+            .len(),
+        huge.len() as u64,
+        "the oversized value must get a page of its own",
+    );
+
+    assert_eq!(
+        storage.get_value::<Random>(1, &hw_counter).unwrap(),
+        Some(huge),
+    );
+    assert_eq!(
+        storage.get_value::<Random>(2, &hw_counter).unwrap(),
+        Some(vec![2; 100]),
+    );
+}
+
+/// The reader reads values across all pages, and a live reload adopts page files that were
+/// created after it opened the storage.
+#[test]
+fn test_reader_reads_across_pages_and_adopts_new_pages() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // Three values spanning two pages
+    for point_offset in 0..3 {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    let mut reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    assert_eq!(reader.get_storage_size_bytes(), 3 * 100);
+    for point_offset in 0..3 {
+        assert_eq!(
+            reader
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            Some(vec![point_offset as u8; 100]),
+        );
+    }
+
+    // Reader files match the writer files, including all pages
+    let mut reader_files = reader.files();
+    let mut writer_files = storage.files();
+    reader_files.sort();
+    writer_files.sort();
+    assert_eq!(reader_files, writer_files);
+
+    // The writer appends more values, rolling over to pages the reader has never seen
+    for point_offset in 3..7 {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    reader.live_reload(&MmapFs).unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 7);
+    assert_eq!(reader.get_storage_size_bytes(), 7 * 100);
+    for point_offset in 0..7 {
+        assert_eq!(
+            reader
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            Some(vec![point_offset as u8; 100]),
+            "value {point_offset} must be readable after the live reload",
+        );
+    }
+
+    // Batched reads cross page boundaries too
+    let mut collected = Vec::new();
+    reader
+        .read_values::<Random, _, GridstoreError>(
+            (0..7).map(|point_offset| (point_offset, point_offset)),
+            |_, point_offset, value| {
+                collected.push((point_offset, value.unwrap()));
+                Ok(())
+            },
+            hw_counter.payload_io_read_counter(),
+        )
+        .unwrap();
+    assert_eq!(collected.len(), 7);
+    for (point_offset, value) in collected {
+        assert_eq!(value, vec![point_offset as u8; 100]);
+    }
+}
+
+/// Opening fails when mappings reference a page file that is missing, like after a partial
+/// copy of the storage directory.
+#[test]
+fn test_open_rejects_missing_page_file() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    for point_offset in 0..5 {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Remove a page in the middle, like a partial copy would
+    fs::remove_file(dir.path().join("append_only_page_1.dat")).unwrap();
+
+    assert!(Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
+    assert!(
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(
+            &MmapFs,
+            dir.path().to_path_buf(),
+            Populate::No,
+        )
+        .is_err()
+    );
+}
+
+/// A page rollover only creates the new, empty page file: the buffered values still land on
+/// disk in a single append per page at the next flush.
+#[test]
+fn test_rollover_writes_no_value_data_before_flush() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    for point_offset in 0..3 {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
+            .unwrap();
+    }
+
+    // The rollover created the second page file, but no value data is on disk yet
+    for page_id in 0..2 {
+        assert_eq!(
+            fs::metadata(dir.path().join(format!("append_only_page_{page_id}.dat")))
+                .unwrap()
+                .len(),
+            0,
+            "no value data must land on disk before the flush",
+        );
+    }
+
+    storage.flusher()().unwrap();
+    assert_eq!(
+        fs::metadata(dir.path().join("append_only_page_0.dat"))
+            .unwrap()
+            .len(),
+        200,
+    );
+    assert_eq!(
+        fs::metadata(dir.path().join("append_only_page_1.dat"))
+            .unwrap()
+            .len(),
+        100,
+    );
 }

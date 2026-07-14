@@ -7,7 +7,7 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{UniversalRead, UserData};
 
-use super::page::AppendOnlyPage;
+use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
@@ -17,13 +17,13 @@ use crate::tracker::{PointOffset, ValuePointer};
 
 /// A non-owning view into gridstore data in append-only mode.
 ///
-/// Holds borrowed references to the tracker and page, and contains all reading logic.
+/// Holds borrowed references to the tracker and pages, and contains all reading logic.
 ///
 /// Value data is read through the universal IO backend `S`, the tracker is read directly.
 pub(crate) struct ArenastoreView<'a, V, S: UniversalRead> {
     config: &'a StorageConfig,
     tracker: &'a AppendOnlyTracker,
-    page: &'a AppendOnlyPage<S>,
+    pages: &'a AppendOnlyPages<S>,
     _phantom: PhantomData<V>,
 }
 
@@ -31,12 +31,12 @@ impl<'a, V, S: UniversalRead> ArenastoreView<'a, V, S> {
     pub(super) fn new(
         config: &'a StorageConfig,
         tracker: &'a AppendOnlyTracker,
-        page: &'a AppendOnlyPage<S>,
+        pages: &'a AppendOnlyPages<S>,
     ) -> Self {
         Self {
             config,
             tracker,
-            page,
+            pages,
             _phantom: PhantomData,
         }
     }
@@ -47,16 +47,15 @@ impl<'a, V, S: UniversalRead> ArenastoreView<'a, V, S> {
 
     /// Return the storage size in bytes (precise, the exact amount of appended value data).
     pub(crate) fn get_storage_size_bytes(&self) -> usize {
-        self.page.len() as usize
+        self.pages.len() as usize
     }
 
     /// Read the raw value bytes at the given pointer.
-    pub(crate) fn read_from_page<P: AccessPattern>(
+    pub(crate) fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
     ) -> Result<Cow<'_, [u8]>> {
-        self.page
-            .read_value::<P>(pointer, self.config.block_size_bytes as u64)
+        self.pages.read_value::<P>(pointer)
     }
 }
 
@@ -71,7 +70,7 @@ impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
             return Ok(None);
         };
 
-        let raw = self.read_from_page::<P>(pointer)?;
+        let raw = self.read_from_pages::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.config.compression.decompress(raw);
@@ -96,7 +95,7 @@ impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
             let value = match self.tracker.get(point_offset).map_err(E::from)? {
                 None => None,
                 Some(pointer) => {
-                    let raw = self.read_from_page::<P>(pointer).map_err(E::from)?;
+                    let raw = self.read_from_pages::<P>(pointer).map_err(E::from)?;
                     hw_counter_cell.incr_delta(raw.len());
 
                     let decompressed = self.config.compression.decompress(raw);
@@ -138,7 +137,7 @@ impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
             };
 
             let raw = self
-                .read_from_page::<Sequential>(pointer)
+                .read_from_pages::<Sequential>(pointer)
                 .map_err(E::from)?;
             hw_counter.incr_delta(raw.len());
 

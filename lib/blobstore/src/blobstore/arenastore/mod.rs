@@ -15,7 +15,7 @@ use common::generic_consts::AccessPattern;
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{UniversalRead, UniversalWrite, UserData};
 use fs_err as fs;
-use page::AppendOnlyPage;
+use page::AppendOnlyPages;
 use parking_lot::RwLock;
 pub(super) use reader::ArenastoreReader;
 pub(super) use view::ArenastoreView;
@@ -29,39 +29,39 @@ use crate::error::GridstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
 
-/// Number of most recent mappings validated against the page file length when opening
+/// Number of most recent mappings validated against the page file lengths when opening
 const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 
-/// Check that the most recently persisted mappings point at value data within the page file.
+/// Check that the most recently persisted mappings point at value data within the page files.
 ///
-/// Guards against a page file that is shorter than what the tracker references, for example
-/// after a partial copy or restore of the storage directory. Only the most recent mappings are
-/// checked to keep opening cheap.
+/// Guards against page files that are missing or shorter than what the tracker references, for
+/// example after a partial copy or restore of the storage directory. Only the most recent
+/// mappings are checked to keep opening cheap.
 fn validate_consistency<S: UniversalRead>(
     tracker: &AppendOnlyTracker,
-    page: &AppendOnlyPage<S>,
-    config: &StorageConfig,
+    pages: &AppendOnlyPages<S>,
 ) -> Result<()> {
     let count = tracker.pointer_count();
     let start = count.saturating_sub(OPEN_CHECK_MAPPINGS);
-    let max_extent = tracker
-        .get_range(start..count)?
-        .into_iter()
-        .flatten()
-        .map(|pointer| {
-            u64::from(pointer.block_offset) * config.block_size_bytes as u64
-                + u64::from(pointer.length)
-        })
-        .max();
-
-    if let Some(max_extent) = max_extent
-        && max_extent > page.len()
-    {
-        return Err(GridstoreError::service_error(format!(
-            "Inconsistent Arenastore: mappings reference value data up to byte \
-             {max_extent}, but the page file only holds {} bytes",
-            page.len(),
-        )));
+    for pointer in tracker.get_range(start..count)?.into_iter().flatten() {
+        let extent = u64::from(pointer.block_offset) + u64::from(pointer.length);
+        match pages.page_len(pointer.page_id) {
+            None => {
+                return Err(GridstoreError::service_error(format!(
+                    "Inconsistent Arenastore: a mapping references value data in page {}, \
+                     but the page file does not exist",
+                    pointer.page_id,
+                )));
+            }
+            Some(page_len) if extent > page_len => {
+                return Err(GridstoreError::service_error(format!(
+                    "Inconsistent Arenastore: a mapping references value data up to byte \
+                     {extent} in page {}, but the page file only holds {page_len} bytes",
+                    pointer.page_id,
+                )));
+            }
+            Some(_) => {}
+        }
     }
 
     Ok(())
@@ -70,14 +70,17 @@ fn validate_consistency<S: UniversalRead>(
 /// Read-write storage for values of type `V`, operating in append-only mode.
 ///
 /// Append-only variant for serverless deployments, which restrict IO to appending to files:
-/// existing bytes can never be rewritten. To use as few files as possible, all value data is
-/// stored in a single page file, next to a single tracker file and the storage config.
+/// existing bytes can never be rewritten. To use as few files as possible, value data is packed
+/// back to back in page files, without blocks or alignment, next to a single tracker file and
+/// the storage config. Once a page reaches the configured page size, a new page is started,
+/// bounding the size of and the number of appends to each file (object stores limit appends per
+/// object).
 ///
 /// Values cannot be updated or deleted, and must be put at monotonically increasing point
 /// offsets. Value data is read and written through the universal IO backend `S`; the tracker
 /// file is read and written directly.
 ///
-/// Uses `Arc<RwLock<...>>` for the page and tracker to support concurrent flushing.
+/// Uses `Arc<RwLock<...>>` for the pages and tracker to support concurrent flushing.
 #[derive(Debug)]
 pub(super) struct Arenastore<V, S>
 where
@@ -86,7 +89,7 @@ where
     fs: S::Fs,
     pub(super) config: StorageConfig,
     tracker: Arc<RwLock<AppendOnlyTracker>>,
-    page: Arc<RwLock<AppendOnlyPage<S>>>,
+    pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     is_alive_flush_lock: IsAliveLock,
@@ -98,10 +101,10 @@ where
     V: Blob,
     S: UniversalWrite + 'static,
 {
-    /// List all files belonging to this storage (tracker, page, config).
+    /// List all files belonging to this storage (tracker, pages, config).
     pub(super) fn files(&self) -> Vec<PathBuf> {
         let mut paths = self.tracker.read().files();
-        paths.extend(self.page.read().files());
+        paths.extend(self.pages.read().files());
         paths.push(self.base_path.join(CONFIG_FILENAME));
         paths
     }
@@ -118,7 +121,7 @@ where
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
 
         let tracker = AppendOnlyTracker::new(&base_path)?;
-        let page = AppendOnlyPage::new(&fs, &base_path)?;
+        let pages = AppendOnlyPages::new(&fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
         common::fs::atomic_save_json(&config_path, &config)?;
@@ -127,7 +130,7 @@ where
             fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
-            page: Arc::new(RwLock::new(page)),
+            pages: Arc::new(RwLock::new(pages)),
             base_path,
             is_alive_flush_lock: IsAliveLock::new(),
             _phantom: PhantomData,
@@ -137,32 +140,33 @@ where
     /// Open an existing storage at the given path, with the already read config.
     pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: StorageConfig) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, true)?;
-        let page = AppendOnlyPage::open(&fs, &base_path, true)?;
-        validate_consistency(&tracker, &page, &config)?;
+        let pages = AppendOnlyPages::open(&fs, &base_path, true)?;
+        validate_consistency(&tracker, &pages)?;
 
         Ok(Self {
             fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
-            page: Arc::new(RwLock::new(page)),
+            pages: Arc::new(RwLock::new(pages)),
             base_path,
             is_alive_flush_lock: IsAliveLock::new(),
             _phantom: PhantomData,
         })
     }
 
-    /// Create an [`ArenastoreView`] by locking tracker and page, then call `f` with the
+    /// Create an [`ArenastoreView`] by locking tracker and pages, then call `f` with the
     /// view.
     pub(super) fn with_view<R>(&self, f: impl FnOnce(ArenastoreView<'_, V, S>) -> R) -> R {
         let tracker = self.tracker.read();
-        let page = self.page.read();
-        f(ArenastoreView::new(&self.config, &tracker, &page))
+        let pages = self.pages.read();
+        f(ArenastoreView::new(&self.config, &tracker, &pages))
     }
 
     /// Put a value in the storage.
     ///
     /// Both the value data and its mapping are buffered in memory until the next flush, which
     /// batches them into a single write per file. Reads transparently serve buffered values.
+    /// Only a page rollover touches disk before the flush, by creating the new, empty page file.
     ///
     /// Values must be put at monotonically increasing point offsets: each offset must be larger
     /// than every offset put before it. Putting a value twice or at an old point offset is
@@ -196,15 +200,15 @@ where
         let value_size = u32::try_from(value_size)
             .map_err(|_| GridstoreError::service_error("value is too large"))?;
 
-        let block_size_bytes = self.config.block_size_bytes as u64;
-        let block_offset = self
-            .page
-            .write()
-            .append_value(&comp_value, block_size_bytes)?;
+        let page_capacity_bytes = self.config.page_size_bytes as u64;
+        let (page_id, offset) =
+            self.pages
+                .write()
+                .append_value(&self.fs, &comp_value, page_capacity_bytes)?;
 
         self.tracker
             .write()
-            .set(point_offset, ValuePointer::new(0, block_offset, value_size))?;
+            .set(point_offset, ValuePointer::new(page_id, offset, value_size))?;
 
         Ok(false)
     }
@@ -234,7 +238,7 @@ where
         Ok(())
     }
 
-    /// Wipe the storage, drop the tracker and page and delete the base directory.
+    /// Wipe the storage, drop the tracker and pages and delete the base directory.
     ///
     /// Takes ownership because this function leaves the storage in an inconsistent state which
     /// does not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the
@@ -244,14 +248,14 @@ where
             fs: _,
             config: _,
             tracker,
-            page,
+            pages,
             base_path,
             is_alive_flush_lock,
             _phantom,
         } = self;
 
         is_alive_flush_lock.blocking_mark_dead();
-        drop((tracker, page));
+        drop((tracker, pages));
 
         fs::remove_dir_all(&base_path)?;
         Ok(())
@@ -360,37 +364,37 @@ where
 impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     ///
-    /// Appends all buffered value data to the page file with a single write and syncs it, then
-    /// does the same for the pending mappings in the tracker file. This order guarantees that a
-    /// mapping on disk never points at value data that is not durable yet.
+    /// Appends all buffered value data to the page files with a single write per page and syncs
+    /// them, then does the same for the pending mappings in the tracker file. This order
+    /// guarantees that a mapping on disk never points at value data that is not durable yet.
     pub(super) fn flusher(&self) -> Flusher {
         // Only values and mappings put up to this point are persisted, puts made during the
         // flush stay buffered for the next flush. The two watermarks are consistent with each
         // other: puts take &mut self, so no put can happen between capturing them.
         let target = self.tracker.read().pointer_count();
-        let target_page_len = self.page.read().len();
+        let target_page_lens = self.pages.read().page_lens();
 
         let fs = self.fs.clone();
         let tracker = Arc::downgrade(&self.tracker);
-        let page = Arc::downgrade(&self.page);
+        let pages = Arc::downgrade(&self.pages);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            let (Some(is_alive_flush_guard), Some(tracker), Some(page)) = (
+            let (Some(is_alive_flush_guard), Some(tracker), Some(pages)) = (
                 is_alive_flush_lock.lock_if_alive(),
                 tracker.upgrade(),
-                page.upgrade(),
+                pages.upgrade(),
             ) else {
                 log::trace!("Arenastore was cleared, cancelling flush");
                 return Err(GridstoreError::FlushCancelled);
             };
 
-            let page_flusher = {
-                let mut page_guard = page.write();
-                page_guard.write_pending(&fs, target_page_len)?;
-                page_guard.flusher()
+            let pages_flusher = {
+                let mut pages_guard = pages.write();
+                pages_guard.write_pending(&fs, &target_page_lens)?;
+                pages_guard.flusher()
             };
-            page_flusher()?;
+            pages_flusher()?;
 
             let tracker_flusher = {
                 let mut tracker_guard = tracker.write();

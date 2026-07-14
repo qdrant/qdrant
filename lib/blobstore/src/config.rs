@@ -57,6 +57,10 @@ pub enum Mode {
     /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
     /// monotonically increasing point offset order.
     ///
+    /// Values are packed back to back in page files, without blocks or alignment. Once a page
+    /// reaches the configured page size, a new page is started, bounding the size of and the
+    /// number of appends to each file (object stores limit appends per object).
+    ///
     /// Puts buffer both the value data and the mapping in memory; each flush batches them into a
     /// single append per file. Value data goes through the configured universal IO backend, the
     /// tracker file is read and written directly on the local filesystem.
@@ -66,7 +70,10 @@ pub enum Mode {
 /// Configuration options for the storage
 #[derive(Debug, Default)]
 pub struct StorageOptions {
-    /// Size of a page in bytes. Must be a multiple of (`block_size_bytes` * `region_size_blocks`).
+    /// Size of a page in bytes.
+    ///
+    /// In dynamic mode, must be a multiple of (`block_size_bytes` * `region_size_blocks`). In
+    /// append-only mode, the capacity at which a page rolls over to the next one.
     ///
     /// Default is 32MB
     pub page_size_bytes: Option<usize>,
@@ -162,14 +169,22 @@ impl TryFrom<StorageOptions> for StorageConfig {
             return Err("Page size must be greater than 0");
         }
 
-        let region_size_bytes = block_size_bytes * region_size_blocks;
+        let mode = options.mode.unwrap_or_default();
 
-        if page_size_bytes < region_size_bytes {
-            return Err("Page size must be greater than or equal to (block size * region size)");
-        }
+        // Blocks and regions are dynamic mode concepts: the append-only mode packs values back
+        // to back and only uses the page size as the rollover capacity
+        if mode == Mode::Dynamic {
+            let region_size_bytes = block_size_bytes * region_size_blocks;
 
-        if !page_size_bytes.is_multiple_of(region_size_bytes) {
-            return Err("Page size must be a multiple of (block size * region size)");
+            if page_size_bytes < region_size_bytes {
+                return Err(
+                    "Page size must be greater than or equal to (block size * region size)",
+                );
+            }
+
+            if !page_size_bytes.is_multiple_of(region_size_bytes) {
+                return Err("Page size must be a multiple of (block size * region size)");
+            }
         }
 
         Ok(Self {
@@ -177,7 +192,7 @@ impl TryFrom<StorageOptions> for StorageConfig {
             block_size_bytes,
             region_size_blocks,
             compression: options.compression.unwrap_or_default(),
-            mode: options.mode.unwrap_or_default(),
+            mode,
         })
     }
 }
