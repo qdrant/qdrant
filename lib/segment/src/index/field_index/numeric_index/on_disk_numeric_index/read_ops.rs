@@ -144,12 +144,35 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     ///
     /// Returns `Ok(index)` if the element is found, `Err(index)` if not
     /// (where `index` is where the element would be inserted).
+    ///
+    /// With a block index available, this costs a single contiguous read of
+    /// one block; without one it falls back to `O(log n)` random reads spread
+    /// across the whole storage.
     fn binary_search_pairs(
         &self,
         bound: &Point<T>,
         lo: usize,
         hi: usize,
     ) -> OperationResult<Result<usize, usize>> {
+        if let Some(block_index) = &self.storage.pairs_block_index {
+            let block = block_index.find_block(|elem| elem.cmp(bound));
+            let block_lo = lo.max(block.start);
+            let block_hi = hi.min(block.end);
+            if block_lo >= block_hi {
+                // The block does not intersect `[lo, hi)`, so the answer
+                // saturates to the boundary the block lies beyond.
+                return Ok(Err(if block.end <= lo { lo } else { hi }));
+            }
+            let elems = self.storage.pairs.read::<Random>(ReadRange {
+                byte_offset: (block_lo * size_of::<Point<T>>()) as u64,
+                length: (block_hi - block_lo) as u64,
+            })?;
+            return Ok(elems
+                .binary_search(bound)
+                .map(|idx| idx + block_lo)
+                .map_err(|idx| idx + block_lo));
+        }
+
         let mut left = lo;
         let mut right = hi;
         while left < right {

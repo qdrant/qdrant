@@ -472,3 +472,119 @@ fn payload_index_files_are_immutable_after_build() {
         "after delete + flush on reloaded segment",
     );
 }
+
+/// End-to-end snapshot round-trip for the optional block-index sidecar files
+/// written by the on-disk numeric and geo indexes: `files()` must include
+/// them in the snapshot tar, restore must bring them back byte-for-byte, and
+/// the restored segment must answer indexed queries identically.
+#[rstest::rstest]
+#[case::regular(crate::types::SnapshotFormat::Regular)]
+#[case::streamable(crate::types::SnapshotFormat::Streamable)]
+fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types::SnapshotFormat) {
+    use common::tar_ext;
+    use common::tar_unpack::tar_unpack_file;
+    use fs_err::File;
+
+    use crate::entry::snapshot_entry::SnapshotEntry as _;
+
+    fn block_index_sidecars(payload_index_dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        snapshot_dir(payload_index_dir)
+            .into_iter()
+            .filter(|(path, _)| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with("_block_index.bin")
+            })
+            .collect()
+    }
+
+    let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("builder_tmp").tempdir().unwrap();
+
+    let segment =
+        build_immutable_segment_with_indexed_payload(segments_dir.path(), temp_dir.path());
+    let payload_index_dir = segment.data_path().join("payload_index");
+
+    // The on-disk numeric indexes (int, float, datetime) write one sidecar
+    // each, the geo index writes two.
+    let built_sidecars = block_index_sidecars(&payload_index_dir);
+    assert_eq!(
+        built_sidecars.len(),
+        5,
+        "expected block-index sidecars after build, got {:?}",
+        built_sidecars.keys().collect::<Vec<_>>(),
+    );
+
+    let queries = indexed_queries();
+    let live = vec![true; NUM_POINTS];
+    assert_query_counts(&segment, &live, &queries, "before snapshot");
+
+    segment.flush(true).unwrap();
+
+    // Snapshot into a parent tar, unpack, restore in place, reload — the same
+    // sequence as collection snapshot recovery.
+    let snapshot_temp = Builder::new().prefix("snapshot_temp").tempdir().unwrap();
+    let parent_snapshot_tar = Builder::new()
+        .prefix("parent_snapshot")
+        .suffix(".tar")
+        .tempfile()
+        .unwrap();
+    let tar =
+        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    segment
+        .take_snapshot(snapshot_temp.path(), &tar, format, None)
+        .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
+    tar_unpack_file(parent_snapshot_tar.path(), unpacked.path()).unwrap();
+    let mut entries = fs_err::read_dir(unpacked.path()).unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    assert!(entries.next().is_none());
+
+    Segment::restore_snapshot_in_place(&entry.path()).unwrap();
+
+    // For the Regular format, restore replaces the `.tar` entry with the
+    // unpacked segment directory — re-read it.
+    let mut entries = fs_err::read_dir(unpacked.path()).unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    assert!(entries.next().is_none());
+    assert!(entry.path().is_dir());
+
+    let restored = load_segment(
+        &entry.path(),
+        uuid::Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    // The sidecars survived the round trip byte-for-byte...
+    let restored_sidecars = block_index_sidecars(&entry.path().join("payload_index"));
+    assert_eq!(
+        restored_sidecars
+            .keys()
+            .map(|path| path.file_name().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        built_sidecars
+            .keys()
+            .map(|path| path.file_name().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        "block-index sidecars lost in the snapshot round trip",
+    );
+    for ((restored_path, restored_bytes), (built_path, built_bytes)) in
+        restored_sidecars.iter().zip(built_sidecars.iter())
+    {
+        assert_eq!(
+            restored_bytes,
+            built_bytes,
+            "sidecar content changed in the snapshot round trip: {} vs {}",
+            restored_path.display(),
+            built_path.display(),
+        );
+    }
+
+    // ...and the restored segment answers every indexed query correctly.
+    assert_query_counts(&restored, &live, &queries, "after restore");
+}
