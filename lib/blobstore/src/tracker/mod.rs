@@ -96,7 +96,7 @@ pub struct ValuePointer {
 
     /// Start offset of the value within the page
     ///
-    /// Counted in blocks in dynamic mode, in bytes in append-only mode (which packs values
+    /// Counted in blocks in mutable mode, in bytes in append-only mode (which packs values
     /// without blocks or alignment).
     pub block_offset: BlockOffset,
 

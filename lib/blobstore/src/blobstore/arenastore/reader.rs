@@ -183,7 +183,7 @@ impl<V, S: UniversalRead> ArenastoreReader<V, S> {
     /// Dropping disk cache is a no-op in append-only mode.
     ///
     /// Files are never populated into RAM, the OS page cache manages caching.
-    // Signature parity with the dynamic variant
+    // Signature parity with the mutable variant
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     pub(crate) fn clear_cache(&self) -> crate::Result<()> {
         Ok(())

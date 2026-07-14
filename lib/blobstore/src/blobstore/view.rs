@@ -42,7 +42,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
 
     /// Exclusive upper bound of point offsets that may have a value.
     ///
-    /// In dynamic mode this is the stored header count as of the last reload —
+    /// In mutable mode this is the stored header count as of the last reload —
     /// see [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
@@ -53,7 +53,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
 
     /// Return the storage size in bytes.
     ///
-    /// Approximate (total page capacity) in dynamic mode, exact in append-only mode.
+    /// Approximate (total page capacity) in mutable mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.get_storage_size_bytes(),

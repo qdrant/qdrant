@@ -27,7 +27,7 @@ use crate::error::GridstoreError;
 use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
-/// Read-write storage for values of type `V`, operating in dynamic mode.
+/// Read-write storage for values of type `V`, operating in mutable mode.
 ///
 /// Values can be updated and deleted. Freed blocks are tracked with a bitmask, gaps and
 /// regions, so that the space can be reused.

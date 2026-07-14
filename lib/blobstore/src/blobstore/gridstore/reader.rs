@@ -16,7 +16,7 @@ use crate::error::GridstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker};
 
-/// Read-only storage for values of type `V`, operating in dynamic mode.
+/// Read-only storage for values of type `V`, operating in mutable mode.
 ///
 /// Holds pages and tracker directly (no locks) since it provides only read access.
 /// For read-write access, use [`super::Gridstore`].

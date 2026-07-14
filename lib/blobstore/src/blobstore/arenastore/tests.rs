@@ -1068,7 +1068,7 @@ fn test_values_are_packed_back_to_back() {
     assert_eq!(storage.get_storage_size_bytes().unwrap() as u64, last_end);
 }
 
-/// Append-only mode never creates or reports the block flag files of the dynamic mode.
+/// Append-only mode never creates or reports the block flag files of the mutable mode.
 #[test]
 fn test_has_no_block_flag_files() {
     let (dir, mut storage) = empty_storage_append_only();
@@ -1179,8 +1179,8 @@ fn test_flusher_persists_mappings_up_to_creation() {
 /// The two modes have deliberately distinct file names, so a config that claims the wrong
 /// mode fails loudly instead of loading the incompatible file format of the other mode.
 #[rstest::rstest]
-#[case(Mode::Dynamic, Mode::AppendOnly)]
-#[case(Mode::AppendOnly, Mode::Dynamic)]
+#[case(Mode::Mutable, Mode::AppendOnly)]
+#[case(Mode::AppendOnly, Mode::Mutable)]
 fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
@@ -1207,7 +1207,7 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
     let mut config: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(&config_json).unwrap();
     let mode_name = match tampered {
-        Mode::Dynamic => "dynamic",
+        Mode::Mutable => "mutable",
         Mode::AppendOnly => "append_only",
     };
     config.insert("mode".to_string(), mode_name.into());

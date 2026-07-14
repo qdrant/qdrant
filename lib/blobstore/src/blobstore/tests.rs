@@ -28,7 +28,7 @@ use crate::fixtures::{
 };
 
 #[rstest]
-fn test_empty_payload_storage(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_empty_payload_storage(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let hw_counter = HardwareCounterCell::new();
     let (_dir, storage) = empty_storage_mode(mode);
     let payload = storage.get_value::<Random>(0, &hw_counter).unwrap();
@@ -37,7 +37,7 @@ fn test_empty_payload_storage(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: M
 }
 
 #[rstest]
-fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_put_single_empty_value(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
     let hw_counter = HardwareCounterCell::new();
@@ -47,7 +47,7 @@ fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: 
     let payload = Payload::default();
     storage.put_value(0, &payload, hw_counter).unwrap();
     assert_eq!(storage.max_point_offset(), 1);
-    if mode == Mode::Dynamic {
+    if mode == Mode::Mutable {
         assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
         assert_eq!(
             storage.as_gridstore().tracker.read().mapping_len().unwrap(),
@@ -63,14 +63,14 @@ fn test_put_single_empty_value(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: 
     let size = storage.get_storage_size_bytes().unwrap();
     match mode {
         // Values occupy whole blocks
-        Mode::Dynamic => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
+        Mode::Mutable => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
         // Values are packed exactly, this is the compressed payload size
         Mode::AppendOnly => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
     }
 }
 
 #[rstest]
-fn test_put_single_payload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_put_single_payload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
     let mut payload = Payload::default();
@@ -84,7 +84,7 @@ fn test_put_single_payload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode
 
     storage.put_value(0, &payload, hw_counter).unwrap();
     assert_eq!(storage.max_point_offset(), 1);
-    if mode == Mode::Dynamic {
+    if mode == Mode::Mutable {
         assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
         assert_eq!(
             storage.as_gridstore().tracker.read().mapping_len().unwrap(),
@@ -104,14 +104,14 @@ fn test_put_single_payload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode
     let size = storage.get_storage_size_bytes().unwrap();
     match mode {
         // Values occupy whole blocks
-        Mode::Dynamic => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
+        Mode::Mutable => assert_eq!(size, DEFAULT_BLOCK_SIZE_BYTES),
         // Values are packed exactly, this is the compressed payload size
         Mode::AppendOnly => assert!(size > 0 && size < DEFAULT_BLOCK_SIZE_BYTES),
     }
 }
 
 #[rstest]
-fn test_storage_files(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_storage_files(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (dir, mut storage) = empty_storage_mode(mode);
 
     let mut payload = Payload::default();
@@ -135,7 +135,7 @@ fn test_storage_files(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
     );
 
     let expected_files: &[&str] = match mode {
-        Mode::Dynamic => &[
+        Mode::Mutable => &[
             "tracker.dat",
             "page_0.dat",
             "config.json",
@@ -165,7 +165,7 @@ fn test_storage_files(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
 fn test_put_payload(
     #[case] num_payloads: u32,
     #[case] payload_size_factor: usize,
-    #[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode,
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
 ) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
@@ -290,7 +290,7 @@ fn test_write_across_pages() {
         block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
         region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         compression: Compression::None,
-        mode: Mode::Dynamic,
+        mode: Mode::Mutable,
     };
 
     storage.as_gridstore_mut().create_new_page().unwrap();
@@ -685,7 +685,7 @@ fn test_handle_huge_payload() {
 }
 
 #[rstest]
-fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_storage_persistence_basic(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -726,9 +726,9 @@ fn test_storage_persistence_basic(#[values(Mode::Dynamic, Mode::AppendOnly)] mod
     assert_eq!(stored_payload.unwrap(), payload);
 }
 
-/// Configs written before the `mode` field existed must open in dynamic mode.
+/// Configs written before the `mode` field existed must open in mutable mode.
 #[test]
-fn test_open_config_without_mode_as_dynamic() {
+fn test_open_config_without_mode_as_mutable() {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -749,11 +749,11 @@ fn test_open_config_without_mode_as_dynamic() {
         serde_json::from_str(&config_json).unwrap();
     assert_eq!(
         config.remove("mode"),
-        Some(serde_json::Value::String("dynamic".into())),
+        Some(serde_json::Value::String("mutable".into())),
     );
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
-    // Both the storage and the reader open it in dynamic mode
+    // Both the storage and the reader open it in mutable mode
     let storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     storage.as_gridstore();
     assert_eq!(
@@ -771,7 +771,7 @@ fn test_open_config_without_mode_as_dynamic() {
 /// A corrupt config with zero sized blocks must be rejected when opening, it would otherwise
 /// break pointer arithmetic.
 #[rstest]
-fn test_open_rejects_corrupt_config(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_open_rejects_corrupt_config(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -937,7 +937,7 @@ fn test_payload_compression() {
 #[case(512)]
 fn test_different_block_sizes(
     #[case] block_size_bytes: usize,
-    #[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode,
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
 ) {
     use crate::fixtures::minimal_payload;
 
@@ -966,7 +966,7 @@ fn test_different_block_sizes(
     let last_pointer = storage.get_pointer(last_point_id).unwrap();
     match mode {
         // Each value occupies one block, spilling over into a new page every blocks_per_page
-        Mode::Dynamic => {
+        Mode::Mutable => {
             assert_eq!(storage.as_gridstore().pages.read().num_pages(), 4);
             assert_eq!(last_pointer.block_offset, 0);
             assert_eq!(last_pointer.page_id, 3);
@@ -1271,7 +1271,7 @@ fn test_deferred_flush_with_delete() {
 /// 5. Call `live_reload` on reader, verify it sees new data.
 /// 6. Also test that live_reload is a no-op when nothing changed.
 #[rstest]
-fn test_live_reload(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_live_reload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let path = dir.path().to_path_buf();
 
@@ -1647,7 +1647,7 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
 /// silently skipped (matching `get_value`'s `Ok(None)`).
 #[rstest]
 fn test_for_each_in_batch_congruent_with_get_value(
-    #[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode,
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
 ) {
     let (_dir, mut storage) = empty_storage_mode(mode);
 
@@ -1674,7 +1674,7 @@ fn test_for_each_in_batch_congruent_with_get_value(
     }
 
     // Delete a few values to create gaps.
-    if mode == Mode::Dynamic {
+    if mode == Mode::Mutable {
         for &id in &missing {
             storage.delete_value(id).unwrap();
         }
@@ -1757,7 +1757,7 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
 /// paths that were never scheduled. Instead, delete the backend-read files after the preopen —
 /// the open can then only succeed if it is served from the prefetch pool.
 #[rstest]
-fn test_preopen_schedules_files_for_open(#[values(Mode::Dynamic, Mode::AppendOnly)] mode: Mode) {
+fn test_preopen_schedules_files_for_open(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     use common::universal_io::{
         CachedFs, CachedReadFs, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
     };
@@ -1788,7 +1788,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Dynamic, Mode::AppendOnl
     // Delete everything `open` reads through the backend. The append-only tracker is read
     // directly from disk, not through the backend, so it must stay.
     let backend_read_files: &[&str] = match mode {
-        Mode::Dynamic => &["config.json", "tracker.dat", "page_0.dat"],
+        Mode::Mutable => &["config.json", "tracker.dat", "page_0.dat"],
         Mode::AppendOnly => &["config.json", "append_only_page_0.dat"],
     };
     for file in backend_read_files {
