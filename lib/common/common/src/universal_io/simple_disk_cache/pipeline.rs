@@ -185,15 +185,17 @@ where
     R: UniversalRead + 'file,
     U: UserData,
 {
-    fn get_or_init_remote_pipeline(
-        &mut self,
-    ) -> universal_io::Result<&mut RemotePipeline<'file, R>> {
-        if self.remote_pipeline.get().is_none() {
+    /// Takes the field instead of `&mut self` so callers can keep disjoint
+    /// borrows of other fields (see the `vacant_entry` in `schedule`).
+    fn get_or_init_remote_pipeline<'a>(
+        remote_pipeline: &'a mut OnceCell<RemotePipeline<'file, R>>,
+    ) -> universal_io::Result<&'a mut RemotePipeline<'file, R>> {
+        if remote_pipeline.get().is_none() {
             let remote = R::ReadPipeline::new()?;
-            // We just observed the cell as empty and hold `&mut self`, so set cannot fail.
-            let _ = self.remote_pipeline.set(remote);
+            // We just observed the cell as empty and hold `&mut`, so set cannot fail.
+            let _ = remote_pipeline.set(remote);
         }
-        Ok(self.remote_pipeline.get_mut().expect("just initialized"))
+        Ok(remote_pipeline.get_mut().expect("just initialized"))
     }
 
     /// Number of remote fetches currently in flight.
@@ -259,20 +261,19 @@ where
                     return Ok(());
                 }
 
-                // Peek the slot `in_flight` would assign next, without
-                // consuming it: a failed remote schedule must leave no trace,
-                // and only the `insert` below actually commits a slot. Since
-                // nothing else touches `in_flight` in between, `insert` is
-                // guaranteed to land on this same key.
-                let id = self.in_flight.vacant_entry().key() as u64;
-                let remote_pipeline = self.get_or_init_remote_pipeline()?;
+                // Reserve the slot without occupying it: only the
+                // `entry.insert` below commits it, so a failed remote schedule
+                // leaves no trace, and inserting through the entry guarantees
+                // the fetch lands on the key the remote read was tagged with.
+                let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
+                let entry = self.in_flight.vacant_entry();
                 remote_pipeline.schedule::<P>(
-                    id,
+                    entry.key() as u64,
                     state.remote,
                     blocks_byte_range,
                     REMOTE_READ_ALIGNMENT,
                 )?;
-                self.in_flight.insert(InFlightFetch {
+                entry.insert(InFlightFetch {
                     file,
                     blocks_range,
                     reads: vec![(user_data, range)],
