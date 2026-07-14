@@ -13,7 +13,7 @@ use rand::prelude::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::fixtures::payload_fixtures::{FLT_KEY, INT_KEY};
-use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::payload_json;
 use segment::payload_storage::PayloadStorage;
@@ -70,8 +70,8 @@ fn range_filtering(c: &mut Criterion) {
         id_tracker.clone(),
         std::collections::HashMap::new(),
         dir.path(),
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 
@@ -148,8 +148,8 @@ fn range_filtering(c: &mut Criterion) {
         id_tracker,
         std::collections::HashMap::new(),
         dir.path(),
-        false,
-        true,
+        StorageType::NonAppendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 

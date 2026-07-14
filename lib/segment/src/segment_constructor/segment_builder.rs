@@ -39,7 +39,7 @@ use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerRead, for_each_unique_point};
 use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -673,8 +673,8 @@ impl SegmentBuilder {
                 id_tracker_arc.clone(),
                 vector_storages_arc.clone(),
                 &payload_index_path,
-                appendable_flag,
-                true,
+                StorageType::from_appendable(appendable_flag),
+                IndexLoadMode::CreateIfMissing,
             )?;
             for (field, payload_schema, progress) in indexed_fields {
                 progress.start();

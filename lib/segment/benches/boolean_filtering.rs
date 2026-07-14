@@ -11,7 +11,7 @@ use segment::fixtures::payload_context_fixture::{
     create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::BOOL_KEY;
-use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::types::{Condition, FieldCondition, Filter, Match, PayloadSchemaType, ValueVariants};
 use tempfile::Builder;
@@ -108,8 +108,8 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         id_tracker,
         std::collections::HashMap::new(),
         dir.path(),
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 

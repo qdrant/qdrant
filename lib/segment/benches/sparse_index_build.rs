@@ -20,7 +20,7 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::types::VectorStorageDatatype;
 use segment::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
@@ -53,8 +53,8 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir.path(),
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));

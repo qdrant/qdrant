@@ -250,7 +250,7 @@ fn drop_index_if_incompatible_keeps_non_appendable_index_on_on_disk_only_change(
 
     use atomic_refcell::AtomicRefCell;
 
-    use super::StructPayloadIndex;
+    use super::{IndexLoadMode, StorageType, StructPayloadIndex};
     use crate::data_types::index::IntegerIndexParams;
     use crate::fixtures::payload_context_fixture::{
         create_id_tracker_fixture, create_payload_storage_fixture,
@@ -272,8 +272,8 @@ fn drop_index_if_incompatible_keeps_non_appendable_index_on_on_disk_only_change(
         id_tracker,
         HashMap::new(),
         dir.path(),
-        false,
-        true,
+        StorageType::NonAppendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 
@@ -349,7 +349,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
 
     use atomic_refcell::AtomicRefCell;
 
-    use super::StructPayloadIndex;
+    use super::{IndexLoadMode, StorageType, StructPayloadIndex};
     use crate::data_types::index::IntegerIndexParams;
     use crate::fixtures::payload_context_fixture::{
         create_id_tracker_fixture, create_payload_storage_fixture,
@@ -371,8 +371,8 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         id_tracker,
         HashMap::new(),
         dir.path(),
-        false,
-        true,
+        StorageType::NonAppendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 

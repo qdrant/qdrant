@@ -7,7 +7,7 @@ use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
-use segment::index::struct_payload_index::StructPayloadIndex;
+use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use segment::index::{PayloadIndex, PayloadIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
@@ -79,8 +79,8 @@ fn test_filtering_context_consistency() {
         id_tracker,
         HashMap::new(),
         dir.path(),
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 
