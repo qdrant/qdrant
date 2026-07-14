@@ -234,7 +234,7 @@ pub(super) fn random_scroll_filter(
 fn random_dense_vec(rng: &mut impl Rng, dim: u64, datatype: Option<Datatype>) -> Vec<f32> {
     let upper = match datatype {
         Some(Datatype::Uint8) => 256.0,
-        _ => 1.0,
+        None | Some(Datatype::Float32 | Datatype::Float16 | Datatype::Turbo4) => 1.0,
     };
     (0..dim).map(|_| rng.random_range(0.0..upper)).collect()
 }
