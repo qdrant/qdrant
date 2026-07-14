@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use common::bitvec::DeletedBitVec;
-use common::universal_io::{MmapFile, TypedStorage, UniversalRead};
+use common::universal_io::{MmapFile, SortedBlockIndex, TypedStorage, UniversalRead};
 
 use super::Encodable;
 use crate::index::field_index::histogram::Histogram;
@@ -13,6 +13,7 @@ mod live_reload;
 mod read_ops;
 
 pub(super) const PAIRS_PATH: &str = "data.bin";
+pub(super) const PAIRS_BLOCK_INDEX_PATH: &str = "data_block_index.bin";
 pub(super) const DELETED_PATH: &str = "deleted.bin";
 pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
@@ -45,6 +46,10 @@ pub(in super::super) struct Storage<
     pub(super) deleted: DeletedBitVec,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pub(super) pairs: TypedStorage<S, Point<T>>,
+    /// Optional in-RAM block index over `pairs`: locating a pair costs one
+    /// block read instead of `O(log n)` random reads. Absent on segments
+    /// built before the sidecar file was introduced.
+    pub(super) pairs_block_index: Option<SortedBlockIndex<Point<T>>>,
     pub(in super::super) point_to_values: OnDiskPointToValues<T, S>,
 }
 
@@ -53,9 +58,15 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         let Self {
             deleted,
             pairs,
+            pairs_block_index,
             point_to_values,
         } = self;
 
-        deleted.ram_usage_bytes() + pairs.ram_usage_bytes() + point_to_values.ram_usage_bytes()
+        deleted.ram_usage_bytes()
+            + pairs.ram_usage_bytes()
+            + pairs_block_index
+                .as_ref()
+                .map_or(0, |index| index.ram_usage_bytes())
+            + point_to_values.ram_usage_bytes()
     }
 }

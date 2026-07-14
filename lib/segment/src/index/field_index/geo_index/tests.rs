@@ -1182,3 +1182,156 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     let hits = filtered_points(&new_index, &field_condition);
     assert_eq!(hits, vec![2, 4]);
 }
+
+/// The optional block-index sidecars over `counts_per_hash` and `points_map`
+/// must be pure accelerators: cardinality estimates and filter results must
+/// be identical with the sidecars present and after deleting them (which
+/// falls back to plain binary search over the storage).
+#[test]
+fn test_block_index_fallback_equivalence() {
+    fn collect_results(
+        index: &GeoIndex,
+        conditions: &[FieldCondition],
+    ) -> Vec<(usize, usize, usize, Vec<PointOffsetType>)> {
+        let hw_counter = HardwareCounterCell::new();
+        conditions
+            .iter()
+            .map(|condition| {
+                let estimation = index
+                    .estimate_cardinality(condition, &hw_counter)
+                    .unwrap()
+                    .unwrap();
+                let points = filtered_points(index, condition);
+                (estimation.min, estimation.exp, estimation.max, points)
+            })
+            .collect()
+    }
+
+    let (index, temp_dir, _db) = build_random_index(2000, 5, IndexType::OnDisk);
+    drop(index);
+
+    let counts_sidecar = temp_dir
+        .path()
+        .join(super::on_disk_geo_index::COUNTS_PER_HASH_BLOCK_INDEX);
+    let points_map_sidecar = temp_dir
+        .path()
+        .join(super::on_disk_geo_index::POINTS_MAP_BLOCK_INDEX);
+    assert!(counts_sidecar.exists());
+    assert!(points_map_sidecar.exists());
+
+    // Radius queries around random centers (the payload fixture spreads
+    // points across the whole globe) plus the named cities, with radii from
+    // tight to continent-scale.
+    let mut rnd = StdRng::seed_from_u64(7);
+    let mut conditions = Vec::new();
+    for i in 0..50 {
+        let center = GeoPoint::new_unchecked(
+            rand::RngExt::random_range(&mut rnd, LON_RANGE),
+            rand::RngExt::random_range(&mut rnd, LAT_RANGE),
+        );
+        let radius_meters = 1_000.0 * 10_f64.powi(i % 4);
+        conditions.push(condition_for_geo_radius(
+            "test",
+            GeoRadius {
+                center,
+                radius: OrderedFloat(radius_meters),
+            },
+        ));
+    }
+    for city in [NYC, BERLIN, POTSDAM, TOKYO, LOS_ANGELES] {
+        conditions.push(condition_for_geo_radius(
+            "test",
+            GeoRadius {
+                center: city,
+                radius: OrderedFloat(500_000.0),
+            },
+        ));
+    }
+
+    let deleted = empty_deleted();
+
+    let with_block_index = reload_index(IndexType::OnDisk, &temp_dir, &deleted);
+    let with_results = collect_results(&with_block_index, &conditions);
+    drop(with_block_index);
+
+    fs_err::remove_file(&counts_sidecar).unwrap();
+    fs_err::remove_file(&points_map_sidecar).unwrap();
+    let without_block_index = reload_index(IndexType::OnDisk, &temp_dir, &deleted);
+    let without_results = collect_results(&without_block_index, &conditions);
+
+    assert_eq!(with_results, without_results);
+    // Sanity: the query mix actually matches points.
+    assert!(
+        with_results
+            .iter()
+            .any(|(_, _, _, points)| !points.is_empty())
+    );
+}
+
+/// The block-index sidecars must be covered by `preopen`: after
+/// `schedule_prefetch`, `open` must be served from the prefetch pool without
+/// touching the filesystem again. Conversely, absent sidecars (old segment)
+/// must not fail `preopen` and must open in fallback mode.
+#[test]
+fn test_block_index_preopen() {
+    use common::universal_io::{
+        CachedFs, CachedReadFs as _, Populate, ReadOnly, UniversalRead, UniversalReadFileOps as _,
+    };
+
+    type Storage = ReadOnly<MmapFile>;
+    type RoFs = <Storage as UniversalRead>::Fs;
+
+    let (index, temp_dir, _db) = build_random_index(2000, 5, IndexType::OnDisk);
+    drop(index);
+    let counts_sidecar = temp_dir
+        .path()
+        .join(super::on_disk_geo_index::COUNTS_PER_HASH_BLOCK_INDEX);
+    let points_map_sidecar = temp_dir
+        .path()
+        .join(super::on_disk_geo_index::POINTS_MAP_BLOCK_INDEX);
+    let deleted = empty_deleted();
+
+    // Same order as the segment open path: snapshot, then preopen, then open.
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
+            .unwrap()
+    );
+
+    // The sidecar reads of `open` must now come from the prefetch pool.
+    fs_err::remove_file(&counts_sidecar).unwrap();
+    fs_err::remove_file(&points_map_sidecar).unwrap();
+
+    let index = OnDiskGeoIndex::<Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.counts_per_hash_block_index.is_some());
+    assert!(index.storage.points_map_block_index.is_some());
+    drop(index);
+
+    // Absent sidecars (segment built before they were introduced): `preopen`
+    // must not fail on the missing files and `open` must fall back.
+    let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
+            .unwrap()
+    );
+    let index = OnDiskGeoIndex::<Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.counts_per_hash_block_index.is_none());
+    assert!(index.storage.points_map_block_index.is_none());
+}

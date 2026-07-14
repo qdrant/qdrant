@@ -8,8 +8,8 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead,
-    UniversalReadFs, read_json_via,
+    CachedReadFs, MmapFs, OkNotFound, OpenOptions, Populate, SortedBlockIndex, TypedStorage,
+    UniversalRead, UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;
-use super::{CONFIG_PATH, DELETED_PATH, OnDiskNumericIndex, PAIRS_PATH, Storage};
+use super::{
+    CONFIG_PATH, DELETED_PATH, OnDiskNumericIndex, PAIRS_BLOCK_INDEX_PATH, PAIRS_PATH, Storage,
+};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
@@ -76,6 +78,8 @@ where
             for (src, dst) in in_memory_index.map.iter().zip(pairs.iter_mut()) {
                 *dst = *src;
             }
+
+            SortedBlockIndex::write(&path.join(PAIRS_BLOCK_INDEX_PATH), &pairs)?;
         }
 
         {
@@ -150,6 +154,11 @@ where
         let pairs_path = path.join(PAIRS_PATH);
         fs.schedule_prefetch(&pairs_path, Some(Self::open_options(populate)), None)?;
 
+        // Block index over the value pairs; optional, absent on old segments
+        let _ = fs
+            .schedule_prefetch(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None)
+            .ok_not_found()?;
+
         // Point to values
         OnDiskPointToValues::<T, S>::preopen(fs, path, populate)?;
 
@@ -190,6 +199,12 @@ where
             Default::default(),
         )?);
 
+        let pairs_block_index = SortedBlockIndex::open(
+            fs,
+            &path.join(PAIRS_BLOCK_INDEX_PATH),
+            pairs.len()? as usize,
+        )?;
+
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
@@ -214,6 +229,7 @@ where
             storage: Storage {
                 deleted: DeletedBitVec::new(deleted),
                 pairs,
+                pairs_block_index,
                 point_to_values,
             },
             histogram,
@@ -245,6 +261,9 @@ where
             self.path.join(DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
+        if self.storage.pairs_block_index.is_some() {
+            files.push(self.path.join(PAIRS_BLOCK_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.files());
         files.extend(Histogram::<T>::files(&self.path));
         files
@@ -256,6 +275,9 @@ where
             self.path.join(DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
+        if self.storage.pairs_block_index.is_some() {
+            files.push(self.path.join(PAIRS_BLOCK_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.immutable_files());
         files.extend(Histogram::<T>::immutable_files(&self.path));
         files
@@ -294,9 +316,13 @@ where
         let Storage {
             deleted: _,
             pairs,
+            pairs_block_index,
             point_to_values,
         } = storage;
         pairs.clear_ram_cache()?;
+        if pairs_block_index.is_some() {
+            clear_disk_cache(&path.join(PAIRS_BLOCK_INDEX_PATH))?;
+        }
         clear_disk_cache(&path.join(DELETED_PATH))?;
         point_to_values.clear_cache()?;
         Ok(())
