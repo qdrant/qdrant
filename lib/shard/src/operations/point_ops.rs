@@ -447,7 +447,7 @@ impl PointStructPersisted {
             return false;
         }
 
-        let self_vectors = self.get_vectors().into_owned_map();
+        let self_vectors = self.get_vectors();
 
         if let Some(segment_vectors) = vectors {
             if self_vectors.len() != segment_vectors.len() {
