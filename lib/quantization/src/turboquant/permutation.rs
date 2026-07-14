@@ -16,6 +16,8 @@ impl ReversibleLcg {
     /// Knuth's MMIX increment.
     const C: u64 = 1_442_695_040_888_963_407;
     /// Modular multiplicative inverse of A mod 2^64: A * A_INV ≡ 1 (mod 2^64).
+    /// Only the test-only reverse pass steps backward.
+    #[cfg(test)]
     const A_INV: u64 = 13_877_824_140_714_322_085;
 
     fn new(seed: u64) -> Self {
@@ -33,6 +35,7 @@ impl Iterator for ReversibleLcg {
     }
 }
 
+#[cfg(test)]
 impl DoubleEndedIterator for ReversibleLcg {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
@@ -53,15 +56,20 @@ pub struct Permutation {
     seed: u64,
     count: usize,
     /// LCG state after all forward-pass random draws, used as starting
-    /// point for the reverse pass.
+    /// point for the reverse pass. Only the test-only reverse path reads it.
+    #[cfg(test)]
     end_state: Option<u64>,
 }
 
 impl Permutation {
     /// Create a new permutation for `count` elements seeded by `seed`.
     ///
-    /// Unlike [`Self::new_one_way`], the result supports [`Self::unpermute`].
+    /// Unlike [`Self::new_one_way`], the result supports `unpermute`.
     /// Both constructors produce identical output from [`Self::permute`] for the same seed.
+    ///
+    /// Test-only: production code inverts a materialized index map instead of
+    /// replaying the shuffle backward (see `HadamardRotation::new`).
+    #[cfg(test)]
     pub fn new_reversible(seed: u64, count: usize) -> Self {
         Self {
             seed,
@@ -70,6 +78,7 @@ impl Permutation {
         }
     }
 
+    #[cfg(test)]
     fn calculate_end_state(seed: u64, count: usize) -> u64 {
         let mut rng = ReversibleLcg::new(seed);
 
@@ -81,20 +90,22 @@ impl Permutation {
     }
 
     /// Create a forward-only permutation. Skips the O(`count`) LCG warm-up
-    /// that [`Self::new_reversible`] does to record `end_state`. Intended for
-    /// [`Self::permute`]; calling [`Self::unpermute`] still works but pays the
-    /// warm-up lazily (and trips a `debug_assert` to flag the mismatch).
+    /// that `new_reversible` does to record `end_state`. Intended for
+    /// [`Self::permute`]; calling the test-only `unpermute` still works but
+    /// pays the warm-up lazily (and trips a `debug_assert` to flag the
+    /// mismatch).
     #[inline]
     pub fn new_one_way(seed: u64, count: usize) -> Self {
         Self {
             seed,
             count,
+            #[cfg(test)]
             end_state: None,
         }
     }
 
     /// Apply the forward permutation in-place (Fisher-Yates replay).
-    pub fn permute(&self, arr: &mut [f64]) {
+    pub fn permute<T>(&self, arr: &mut [T]) {
         debug_assert_eq!(arr.len(), self.count);
         let rng = ReversibleLcg::new(self.seed);
         for (i, rand) in ((1..self.count).rev()).zip(rng) {
@@ -108,6 +119,9 @@ impl Permutation {
     /// If this permutation was created with [`Self::new_one_way`], the missing
     /// `end_state` is recomputed on demand at O(`count`) extra cost. A
     /// `debug_assert` flags the unexpected path in debug builds.
+    ///
+    /// Test-only; see [`Self::new_reversible`].
+    #[cfg(test)]
     pub fn unpermute(&self, arr: &mut [f64]) {
         debug_assert_eq!(arr.len(), self.count);
 
