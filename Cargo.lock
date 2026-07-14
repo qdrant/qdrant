@@ -3803,7 +3803,6 @@ dependencies = [
  "http 1.4.2",
  "io_bridge",
  "object_store",
- "tempfile",
  "tokio",
  "url",
 ]

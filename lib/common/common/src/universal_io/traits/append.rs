@@ -28,9 +28,9 @@ use crate::universal_io::{ByteOffset, Result};
 ///   object-store backends are durable when `append` returns `Ok` (their
 ///   flusher is a no-op).
 /// - An `Err` does not guarantee nothing was appended: with remote backends
-///   the operation may have durably completed (a lost acknowledgement, or a
-///   cache layer failing after its remote committed). [`reopen`] and
-///   re-check the length before retrying, or the retry may duplicate data.
+///   the operation may have durably completed (e.g. a lost
+///   acknowledgement). [`reopen`] and re-check the length before retrying,
+///   or the retry may duplicate data.
 /// - Requires a handle opened with `writeable: true`. Not supported on
 ///   `prevent_caching` (`O_DIRECT`) handles.
 /// - Appending no bytes is a no-op returning this handle's view of the
