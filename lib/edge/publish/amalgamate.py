@@ -37,7 +37,7 @@ PACKAGES_TO_INCLUDE = [
     "bm25",
     "common",
     "edge",
-    "gridstore",
+    "blobstore",
     "posting_list",
     "quantization",
     "segment",
