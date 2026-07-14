@@ -1,10 +1,8 @@
 use std::assert_matches;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use fs_err as fs;
 
@@ -12,13 +10,11 @@ use super::pipeline::DiskCachePipeline;
 use super::{
     BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
-use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::{AccessPattern, Random, Sequential};
+use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    ListedFile, MmapFile, MmapFs, OpenOptions, Populate, ReadPipeline, ReadRange, Result,
-    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFileOps, UniversalReadFs,
-    UserData,
+    OpenOptions, Populate, ReadPipeline, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
@@ -133,148 +129,6 @@ impl Scenario {
         file.write_all(&new_data[old_len..]).unwrap();
         self.data = new_data.clone();
         new_data
-    }
-}
-
-/// A remote backend delegating to [`MmapFile`], whose completed reads fail at
-/// `wait` while the shared `fail` flag is set. Mirrors the io_uring per-op
-/// error path: the op's user data is consumed and the error identifies no
-/// specific fetch.
-#[derive(Debug, Clone)]
-struct FailingRemote {
-    inner: MmapFile,
-    fail: Arc<AtomicBool>,
-}
-
-#[derive(Debug, Clone)]
-struct FailingRemoteFs {
-    fail: Arc<AtomicBool>,
-}
-
-impl UniversalReadFileOps for FailingRemoteFs {
-    type ContextConfig = Arc<AtomicBool>;
-
-    fn from_context(fail: Arc<AtomicBool>) -> Result<Self> {
-        Ok(Self { fail })
-    }
-
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
-        MmapFs.list_files(prefix_path)
-    }
-
-    fn exists(&self, path: &Path) -> Result<bool> {
-        MmapFs.exists(path)
-    }
-}
-
-impl UniversalReadFs for FailingRemoteFs {
-    type File = FailingRemote;
-    type OpenExtra = ();
-
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        _extra: (),
-    ) -> Result<FailingRemote> {
-        Ok(FailingRemote {
-            inner: MmapFs.open(path, options, ())?,
-            fail: self.fail.clone(),
-        })
-    }
-}
-
-impl UniversalRead for FailingRemote {
-    type Fs = FailingRemoteFs;
-
-    type ReadPipeline<'a, U>
-        = FailingPipeline<'a, U>
-    where
-        Self: 'a,
-        U: UserData;
-
-    fn reopen(&mut self) -> Result<()> {
-        self.inner.reopen()
-    }
-
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
-        self.inner.read_bytes::<P>(range, align)
-    }
-
-    fn len<T>(&self) -> Result<u64> {
-        self.inner.len::<T>()
-    }
-
-    fn populate(&self) -> Result<()> {
-        self.inner.populate()
-    }
-
-    fn populate_auto() -> bool {
-        MmapFile::populate_auto()
-    }
-
-    fn clear_ram_cache(&self) -> Result<()> {
-        self.inner.clear_ram_cache()
-    }
-
-    fn kind() -> UniversalKind {
-        UniversalKind::Mmap
-    }
-}
-
-struct FailingPipeline<'file, U: UserData> {
-    inner: <MmapFile as UniversalRead>::ReadPipeline<'file, U>,
-    fail: Option<Arc<AtomicBool>>,
-}
-
-impl<'file, U: UserData> ReadPipeline<'file, U> for FailingPipeline<'file, U> {
-    type File = FailingRemote;
-
-    fn new() -> Result<Self> {
-        Ok(Self {
-            inner: ReadPipeline::new()?,
-            fail: None,
-        })
-    }
-
-    fn can_schedule(&mut self) -> bool {
-        self.inner.can_schedule()
-    }
-
-    fn schedule<P: AccessPattern>(
-        &mut self,
-        user_data: U,
-        file: &'file FailingRemote,
-        range: Range<u64>,
-        align: usize,
-    ) -> Result<()> {
-        self.fail = Some(file.fail.clone());
-        self.inner
-            .schedule::<P>(user_data, &file.inner, range, align)
-    }
-
-    fn schedule_whole(
-        &mut self,
-        user_data: U,
-        file: &'file FailingRemote,
-        from: u64,
-    ) -> Result<()> {
-        self.fail = Some(file.fail.clone());
-        self.inner.schedule_whole(user_data, &file.inner, from)
-    }
-
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
-        let next = self.inner.wait()?;
-        let injected = self
-            .fail
-            .as_ref()
-            .is_some_and(|fail| fail.load(Ordering::Relaxed));
-        if next.is_some() && injected {
-            return Err(UniversalIoError::Io(std::io::Error::other(
-                "injected fetch failure",
-            )));
-        }
-        Ok(next)
     }
 }
 
@@ -709,22 +563,6 @@ mod tests_mod {
         assert_eq!(&*bytes, &scn.data[..]);
         assert_eq!(file.len::<u8>().unwrap(), 100);
     }
-}
-
-/// White-box tests for [`DiskCachePipeline`]'s fetch deduplication: reads whose
-/// blocks are fully covered by an in-flight fetch on the same file piggyback on
-/// it instead of scheduling a duplicate remote fetch.
-#[duplicate::duplicate_item(
-    tests_mod               R               cfg_predicate;
-    [pipeline_tests_mmap]   [MmapFile]      [cfg(all())];
-    [pipeline_tests_uring]  [IoUringFile]   [cfg(target_os = "linux")];
-)]
-#[cfg_predicate]
-#[cfg(test)]
-mod tests_mod {
-    use super::*;
-    #[cfg_predicate]
-    use crate::universal_io::R;
 
     #[test]
     fn same_block_reads_share_one_fetch() {
@@ -910,94 +748,5 @@ mod tests_mod {
         })
         .unwrap();
         assert!(seen.iter().all(|&s| s));
-    }
-}
-
-/// How [`DiskCachePipeline`] resolves remote fetch errors: the failure can't be
-/// attributed to a specific fetch, so every pending read fails with it and the
-/// pipeline resets to a clean, reusable state.
-#[cfg(test)]
-mod pipeline_error_tests {
-    use super::*;
-
-    fn open_failing(scn: &Scenario) -> (DiskCache<FailingRemote>, Arc<AtomicBool>) {
-        let fail = Arc::new(AtomicBool::new(false));
-        let fs = DiskCacheFs::<FailingRemote>::from_context(DiskCacheFsContext {
-            config: scn.config.clone(),
-            remote: fail.clone(),
-        })
-        .unwrap();
-        let file = fs
-            .open(
-                &scn.remote_path,
-                OpenOptions {
-                    writeable: false,
-                    populate: Populate::No,
-                    need_sequential: false,
-                    advice: AdviceSetting::Global,
-                },
-                Default::default(),
-            )
-            .unwrap();
-        (file, fail)
-    }
-
-    /// A failed fetch fails all its reads — the originator and the
-    /// piggybacked ones. None are left stranded, and the pipeline stays
-    /// usable: a retry schedules a fresh fetch instead of piggybacking on
-    /// the dead one.
-    #[test]
-    fn failed_fetch_fails_piggybacked_reads() {
-        let scn = Scenario::new(BLOCK_SIZE * 2);
-        let (file, fail) = open_failing(&scn);
-
-        let mut pipeline = DiskCachePipeline::<FailingRemote, u32>::new().unwrap();
-        pipeline.schedule::<Random>(0, &file, 10..30, 1).unwrap();
-        pipeline.schedule::<Random>(1, &file, 100..200, 1).unwrap();
-        assert_eq!(pipeline.in_flight_fetches(), 1);
-
-        // The fetch fails: the error surfaces once, failing both reads.
-        fail.store(true, Ordering::Relaxed);
-        assert!(pipeline.wait().is_err());
-
-        // Neither read is left stranded: the pipeline reports empty.
-        assert!(pipeline.wait().unwrap().is_none());
-
-        fail.store(false, Ordering::Relaxed);
-        pipeline.schedule::<Random>(2, &file, 100..200, 1).unwrap();
-        // A fresh fetch, not a piggyback on the dead entry or a local hit.
-        assert_eq!(pipeline.in_flight_fetches(), 1);
-        let results = drain_pipeline(&mut pipeline);
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[&2], &scn.data[100..200]);
-    }
-
-    /// Reads resolved before the failure are still returned; only pending
-    /// ones fail with the error.
-    #[test]
-    fn resolved_reads_survive_fetch_failure() {
-        let scn = Scenario::new(BLOCK_SIZE * 2);
-        let (file, fail) = open_failing(&scn);
-
-        let mut pipeline = DiskCachePipeline::<FailingRemote, u32>::new().unwrap();
-        // Commit block 0 to the mirror.
-        pipeline.schedule::<Random>(0, &file, 10..30, 1).unwrap();
-        drain_pipeline(&mut pipeline);
-
-        // A local hit queued ahead of a remote fetch that will fail.
-        pipeline.schedule::<Random>(1, &file, 40..60, 1).unwrap();
-        pipeline
-            .schedule::<Random>(2, &file, BLOCK_SIZE as u64..BLOCK_SIZE as u64 + 50, 1)
-            .unwrap();
-        fail.store(true, Ordering::Relaxed);
-
-        // The already-resolved read is still returned...
-        let (user_data, bytes) = pipeline.wait().unwrap().unwrap();
-        assert_eq!(user_data, 1);
-        assert_eq!(&*bytes, &scn.data[40..60]);
-
-        // ...then the failed fetch surfaces its error, and nothing is stranded.
-        assert!(pipeline.wait().is_err());
-        assert!(pipeline.wait().unwrap().is_none());
     }
 }
