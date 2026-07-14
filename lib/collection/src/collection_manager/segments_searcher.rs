@@ -197,7 +197,7 @@ impl SegmentsSearcher {
                     .map(|params| params.modifier == Some(Modifier::Idf))
                     .unwrap_or(false)
             },
-        );
+        )?;
         let is_stopped = is_stopped_guard.get_is_stopped().clone();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {

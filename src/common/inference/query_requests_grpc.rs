@@ -99,7 +99,7 @@ pub async fn convert_query_point_groups_from_grpc(
         limit: limit
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        params: params.map(From::from),
+        params: params.map(TryFrom::try_from).transpose()?,
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
     };
 
@@ -168,7 +168,7 @@ pub async fn convert_query_points_from_grpc(
             offset: offset
                 .map(|o| o as usize)
                 .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
-            params: params.map(From::from),
+            params: params.map(TryFrom::try_from).transpose()?,
             with_vector: with_vectors
                 .map(From::from)
                 .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
@@ -215,7 +215,7 @@ fn convert_prefetch_with_inferred(
         limit: limit
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        params: params.map(SearchParams::from),
+        params: params.map(SearchParams::try_from).transpose()?,
         lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     })
 }

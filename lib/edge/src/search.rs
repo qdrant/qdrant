@@ -32,7 +32,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     .get(vector_name)
                     .is_some_and(|v| v.modifier == Some(Modifier::Idf))
             },
-        );
+        )?;
         let [search] = searches;
         let Some(context) = fill_query_context_over(
             query_context,

@@ -60,10 +60,15 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn fill_idf_statistics(
         &self,
         _idf: &mut HashMap<DimId, usize>,
+        corpus: Option<&Filter>,
+        _is_stopped: &std::sync::atomic::AtomicBool,
         _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        // HNSW (dense) index doesn't track IDF.
-        Ok(())
+    ) -> OperationResult<usize> {
+        // HNSW (dense) index doesn't track IDF and contributes no df counts.
+        Ok(match corpus {
+            None => self.indexed_vector_count(),
+            Some(_) => 0,
+        })
     }
 
     fn is_index(&self) -> bool {

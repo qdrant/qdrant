@@ -56,16 +56,16 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     AcornSearchParams, CollectionDescription, CollectionOperationResponse, Condition, Distance,
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
-    HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition,
-    ListCollectionsResponse, ListShardKeysResponse, Match, MinShould, NamedVectors,
-    NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
-    PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
-    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
-    QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, ShardKeyDescription, StopwordsSet,
-    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
-    with_vectors_selector,
+    HealthCheckReply, HnswConfigDiff, IdfParams, IntegerIndexParams, IsEmptyCondition,
+    IsNullCondition, ListCollectionsResponse, ListShardKeysResponse, Match, MinShould,
+    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
+    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct,
+    PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
+    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
+    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, ShardKeyDescription,
+    StopwordsSet, StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult,
+    UpdateResultInternal, ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    shard_key, with_vectors_selector,
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
@@ -1000,22 +1000,26 @@ impl From<segment::types::AcornSearchParams> for AcornSearchParams {
     }
 }
 
-impl From<SearchParams> for segment::types::SearchParams {
-    fn from(params: SearchParams) -> Self {
+impl TryFrom<SearchParams> for segment::types::SearchParams {
+    type Error = Status;
+
+    fn try_from(params: SearchParams) -> Result<Self, Self::Error> {
         let SearchParams {
             hnsw_ef,
             exact,
             quantization,
             indexed_only,
             acorn,
+            idf,
         } = params;
-        Self {
+        Ok(Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
             exact: exact.unwrap_or(false),
             quantization: quantization.map(QuantizationSearchParams::into),
             indexed_only: indexed_only.unwrap_or(false),
             acorn: acorn.map(segment::types::AcornSearchParams::from),
-        }
+            idf: idf.map(segment::types::IdfParams::try_from).transpose()?,
+        })
     }
 }
 
@@ -1027,6 +1031,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             quantization,
             indexed_only,
             acorn,
+            idf,
         } = params;
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as u64),
@@ -1034,7 +1039,34 @@ impl From<segment::types::SearchParams> for SearchParams {
             quantization: quantization.map(Into::into),
             indexed_only: Some(indexed_only),
             acorn: acorn.map(AcornSearchParams::from),
+            idf: idf.map(IdfParams::from),
         }
+    }
+}
+
+impl TryFrom<IdfParams> for segment::types::IdfParams {
+    type Error = Status;
+
+    fn try_from(params: IdfParams) -> Result<Self, Self::Error> {
+        let IdfParams { corpus } = params;
+        Ok(match corpus {
+            None => segment::types::IdfParams::Scope(segment::types::IdfScope::Global),
+            Some(corpus) => segment::types::IdfParams::Corpus(segment::types::IdfCorpusParams {
+                corpus: corpus.try_into()?,
+            }),
+        })
+    }
+}
+
+impl From<segment::types::IdfParams> for IdfParams {
+    fn from(params: segment::types::IdfParams) -> Self {
+        let corpus = match params {
+            segment::types::IdfParams::Scope(segment::types::IdfScope::Global) => None,
+            segment::types::IdfParams::Corpus(segment::types::IdfCorpusParams { corpus }) => {
+                Some(Filter::from(corpus))
+            }
+        };
+        Self { corpus }
     }
 }
 
@@ -3187,7 +3219,7 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
         Ok(Self {
             vector,
             filter: filter.map(|f| f.try_into()).transpose()?,
-            params: params.map(SearchParams::into),
+            params: params.map(SearchParams::try_into).transpose()?,
             limit: limit as usize,
             offset: offset.map(|x| x as usize),
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,

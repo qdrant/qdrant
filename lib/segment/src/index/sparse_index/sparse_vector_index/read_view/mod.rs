@@ -1,3 +1,4 @@
+mod idf;
 mod search;
 
 use sparse::SearchScratchPool;

@@ -397,7 +397,9 @@ impl StrictModeVerification for SearchParams {
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
-        None
+        // The IDF corpus filter is evaluated on the read path and must obey
+        // the same unindexed-field restrictions as a search filter.
+        self.idf.as_ref().and_then(|idf| idf.corpus())
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {

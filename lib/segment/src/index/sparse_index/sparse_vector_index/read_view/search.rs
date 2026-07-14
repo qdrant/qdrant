@@ -1,11 +1,8 @@
-use std::collections::HashMap;
-
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
-use sparse::common::types::DimId;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
@@ -80,24 +77,6 @@ where
 
     pub fn size_of_searchable_vectors_in_bytes(&self) -> usize {
         self.inverted_index.total_sparse_vectors_size()
-    }
-
-    /// Update statistics for idf-dot similarity.
-    pub fn fill_idf_statistics(
-        &self,
-        idf: &mut HashMap<DimId, usize>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        let iter = idf.iter_mut().filter_map(|(dim_id, count)| {
-            let offset = self.indices_tracker.remap_index(*dim_id)?;
-            Some((count, offset))
-        });
-        self.inverted_index
-            .posting_list_len_batch(iter, hw_counter, |count, len| {
-                *count += len;
-                Ok(())
-            })?;
-        Ok(())
     }
 
     fn get_query_cardinality(

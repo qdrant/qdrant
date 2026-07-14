@@ -193,7 +193,7 @@ impl PlannedQuery {
                 rescore: query.clone().unwrap(),
                 limit,
                 score_threshold: score_threshold.map(OrderedFloat),
-                params,
+                params: params.clone(),
             })),
         };
 
@@ -253,7 +253,7 @@ impl PlannedQuery {
                     ))),
                     limit: *candidates_limit,
                     score_threshold: score_threshold.map(OrderedFloat),
-                    params,
+                    params: params.clone(),
                 };
 
                 let collection_level = RescoreParams {
