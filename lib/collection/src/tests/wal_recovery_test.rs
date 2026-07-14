@@ -10,6 +10,7 @@ use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
+use shard::wal::{SerdeWal, WalRawRecord};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -577,6 +578,140 @@ async fn test_wal_replay_loads_pending_to_queue() {
     assert_eq!(
         points_count, total_ops as usize,
         "All {total_ops} points should be present after WAL replay and update queue processing",
+    );
+
+    shard.stop_gracefully().await;
+}
+
+/// A deferred-tail WAL entry that fails deserialization must not fail shard load.
+///
+/// `load_from_wal` reads the tail past `applied_seq` to advance the newest clocks before
+/// queueing it to the update worker. That pass must log-and-skip an unreadable entry (the
+/// worker tolerates the same failure when it re-reads the entry), not propagate it: failing
+/// there turns one bad tail record into a shard, and by default a node, that cannot start.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_replay_tolerates_corrupt_tail_entry() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    let config = create_collection_config();
+
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shared_storage_config = Arc::new(SharedStorageConfig {
+        update_queue_size: 10_000,
+        ..Default::default()
+    });
+
+    // We need WAL length > applied_seq + 65 to trigger the queue loading path
+    let total_ops = 500u64;
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        shared_storage_config.clone(),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Stop flush worker to prevent automatic WAL truncation.
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Insert all operations
+    for i in 0..total_ops {
+        let point = PointStructPersisted {
+            id: i.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await
+            .unwrap();
+    }
+
+    // Stop the shard without flush to preserve WAL.
+    shard.stop_gracefully().await;
+
+    // Lower applied_seq (as in `test_wal_replay_loads_pending_to_queue`) so the entries past it
+    // are deferred to the update queue instead of replayed synchronously.
+    let applied_seq_handler = AppliedSeqHandler::load_or_init(collection_dir.path(), total_ops);
+    let current_applied_seq = applied_seq_handler.op_num().unwrap_or(0);
+    let low_applied_seq = total_ops.saturating_sub(100);
+    if current_applied_seq > low_applied_seq {
+        applied_seq_handler
+            .force_set_and_persist(low_applied_seq)
+            .unwrap();
+    }
+
+    // Append a record that fails `OperationWithClockTag` deserialization into the deferred tail:
+    // a CBOR-encoded string gets valid WAL framing, but decodes as neither of the record codecs.
+    {
+        let wal_path = LocalShard::wal_path(collection_dir.path());
+        let mut raw_wal: SerdeWal<String> =
+            SerdeWal::new(&wal_path, (&config.wal_config).into()).unwrap();
+        raw_wal
+            .write(&WalRawRecord::new(&"not an operation".to_string()).unwrap())
+            .unwrap();
+    }
+
+    // Shard load must survive the corrupt tail entry.
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        shared_storage_config,
+        payload_index_schema,
+        false,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .expect("shard load must tolerate a corrupt WAL entry in the deferred tail");
+
+    // The update worker must drain the queued tail past the corrupt entry (it skips it the same
+    // way: log and continue).
+    let timeout = std::time::Duration::from_secs(2);
+    let start = std::time::Instant::now();
+    let poll_interval = std::time::Duration::from_millis(10);
+
+    while shard.local_update_queue_info().await.length > 0 {
+        assert!(
+            start.elapsed() <= timeout,
+            "Timeout waiting for update queue to empty"
+        );
+        tokio::time::sleep(poll_interval).await;
+    }
+
+    // Every readable operation around the corrupt entry is applied.
+    let info = shard.info().await.unwrap();
+    let points_count = info.points_count.unwrap_or(0);
+    assert_eq!(
+        points_count, total_ops as usize,
+        "All {total_ops} points should be present after WAL replay with a corrupt tail entry",
     );
 
     shard.stop_gracefully().await;

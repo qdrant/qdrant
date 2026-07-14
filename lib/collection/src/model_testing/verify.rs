@@ -11,6 +11,7 @@ use super::op::{canonical_sparse, dense_diff, dense_matches};
 use super::{Model, ModelEntry, VectorValue};
 use crate::collection::Collection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
+use crate::shards::shard::{PeerId, ShardId};
 
 pub(super) async fn collect_model_from_collection(collection: &Collection) -> Model {
     let scroll = collection
@@ -121,6 +122,58 @@ pub(super) fn assert_matches_model(actual: &Model, expected: &Model, ctx: &str) 
             "{ctx}: payload mismatch for id {id:?}",
         );
     }
+}
+
+/// Per-shard newest-clocks recovery point, flattened to `(peer_id, clock_id) -> tick`.
+///
+/// Captured on both sides of a close+reopen boundary (see [`collect_clock_ticks`] /
+/// [`assert_clocks_match`]). Tokens are deliberately dropped: the tick is the semantic content
+/// of a clock, tokens only disambiguate same-tick echoes. `BTreeMap`s keep the
+/// `assert_clocks_match` panic output deterministically ordered.
+pub(super) type ClockTicks = BTreeMap<ShardId, BTreeMap<(PeerId, u32), u64>>;
+
+/// Snapshot every local shard's newest-clocks recovery point.
+///
+/// Only meaningful at a quiescent boundary (op loop idle, background snapshot drained, and,
+/// post-reload, background WAL-tail updates plunged): clock ticks advance synchronously at update
+/// submit, so with no op in flight the recovery point is stable.
+///
+/// Note: the recovery point is derived from the clocks *snapshot* when one is set
+/// (`ClockMap::to_recovery_point`), but only the WAL-less shard-transfer flow sets one (never
+/// this harness), so this always reads the live clocks.
+pub(super) async fn collect_clock_ticks(collection: &Collection) -> ClockTicks {
+    let holder = collection.shards_holder.read().await;
+    let mut out = ClockTicks::new();
+    for (shard_id, replica_set) in holder.get_shards() {
+        let recovery_point = replica_set
+            .shard_recovery_point()
+            .await
+            .expect("shard_recovery_point failed");
+        let ticks = recovery_point
+            .iter_as_clock_tags()
+            .map(|tag| ((tag.peer_id, tag.clock_id), tag.clock_tick))
+            .collect();
+        out.insert(shard_id, ticks);
+    }
+    out
+}
+
+/// Assert the newest-clocks recovery point survived a graceful close+reopen *exactly*.
+///
+/// The reopened shard reconstructs it from the persisted clock-map file plus WAL replay, and
+/// both directions of a mismatch are bugs:
+/// - a tick **lost** across reload means clock durability broke (the tick reached neither the
+///   stored clock map nor a replayable WAL entry), so the node would under-report what it has
+///   seen when negotiating a WAL delta;
+/// - a tick **gained** means the reload path over-advanced a clock, claiming ops this node never
+///   applied, so a future WAL-delta transfer would silently skip them.
+pub(super) fn assert_clocks_match(pre: &ClockTicks, post: &ClockTicks, ctx: &str) {
+    assert_eq!(
+        pre, post,
+        "{ctx}: newest-clocks recovery point changed across close+reopen \
+         (left = pre-close, right = post-reload, keyed shard_id -> (peer_id, clock_id) -> tick); \
+         lost ticks = clock durability broke, gained ticks = replay over-advanced a clock",
+    );
 }
 
 /// Returns `(segment_count, total_optimized_points)` summed across every local shard.
