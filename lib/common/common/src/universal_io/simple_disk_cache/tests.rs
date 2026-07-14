@@ -1,17 +1,20 @@
 use std::assert_matches;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use fs_err as fs;
 
+use super::pipeline::DiskCachePipeline;
 use super::{
     BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
-use crate::generic_consts::Sequential;
+use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    OpenOptions, Populate, ReadPipeline, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs,
 };
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
@@ -107,6 +110,11 @@ impl Scenario {
         .unwrap()
     }
 
+    /// Slice of the remote data corresponding to `range`.
+    fn slice(&self, range: &std::ops::Range<u64>) -> &[u8] {
+        &self.data[range.start as usize..range.end as usize]
+    }
+
     /// Append `additional_bytes` bytes to the remote file in-place.
     /// Returns the full new remote contents.
     fn grow_remote(&mut self, additional_bytes: usize) -> Vec<u8> {
@@ -122,6 +130,18 @@ impl Scenario {
         self.data = new_data.clone();
         new_data
     }
+}
+
+/// Drain `pipeline` until `wait` returns `None`, collecting results by user data.
+fn drain_pipeline<R: DiskCacheRemote>(
+    pipeline: &mut DiskCachePipeline<'_, R, u32>,
+) -> HashMap<u32, Vec<u8>> {
+    let mut results = HashMap::new();
+    while let Some((user_data, bytes)) = pipeline.wait().unwrap() {
+        let previous = results.insert(user_data, bytes.to_vec());
+        assert!(previous.is_none(), "duplicate result for {user_data}");
+    }
+    results
 }
 
 #[duplicate::duplicate_item(
@@ -542,5 +562,191 @@ mod tests_mod {
             .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
         assert_eq!(file.len::<u8>().unwrap(), 100);
+    }
+
+    #[test]
+    fn same_block_reads_share_one_fetch() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<R>(false);
+
+        let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+        pipeline.schedule::<Random>(0, &file, 10..30, 1).unwrap();
+        // Same block as above: piggybacks even if the remote queue is full.
+        pipeline.schedule::<Random>(1, &file, 100..200, 1).unwrap();
+        assert_eq!(pipeline.in_flight_fetches(), 1);
+
+        let results = drain_pipeline(&mut pipeline);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[&0], &scn.data[10..30]);
+        assert_eq!(results[&1], &scn.data[100..200]);
+    }
+
+    #[test]
+    fn spanning_fetch_covers_contained_reads() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<R>(false);
+
+        let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+        // Spans blocks 0..2.
+        let spanning = (BLOCK_SIZE - 50) as u64..(BLOCK_SIZE + 50) as u64;
+        // Contained in block 1.
+        let contained = (BLOCK_SIZE + 100) as u64..(BLOCK_SIZE + 200) as u64;
+        pipeline
+            .schedule::<Random>(0, &file, spanning.clone(), 1)
+            .unwrap();
+        pipeline
+            .schedule::<Random>(1, &file, contained.clone(), 1)
+            .unwrap();
+        assert_eq!(pipeline.in_flight_fetches(), 1);
+
+        let results = drain_pipeline(&mut pipeline);
+        assert_eq!(results[&0], scn.slice(&spanning));
+        assert_eq!(results[&1], scn.slice(&contained));
+    }
+
+    /// Piggybacked reads may themselves span multiple blocks, as long as the
+    /// in-flight fetch fully covers them — including reads reaching into the
+    /// EOF-clamped partial tail block.
+    #[test]
+    fn multi_block_reads_share_one_fetch() {
+        // Three full blocks plus a 100-byte partial tail block.
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<R>(false);
+        let eof = scn.data.len() as u64;
+
+        let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+        // Spans all four blocks; the fetch's byte range is clamped to EOF.
+        let spanning = 100u64..eof - 10;
+        // Crosses the block 1/2 boundary.
+        let middle = (BLOCK_SIZE + 200) as u64..(BLOCK_SIZE * 2 + 200) as u64;
+        // Reaches the partial tail block, ending exactly at EOF.
+        let tail = (BLOCK_SIZE * 3 - 50) as u64..eof;
+        pipeline
+            .schedule::<Random>(0, &file, spanning.clone(), 1)
+            .unwrap();
+        pipeline
+            .schedule::<Random>(1, &file, middle.clone(), 1)
+            .unwrap();
+        pipeline
+            .schedule::<Random>(2, &file, tail.clone(), 1)
+            .unwrap();
+        assert_eq!(pipeline.in_flight_fetches(), 1);
+
+        let results = drain_pipeline(&mut pipeline);
+        assert_eq!(results[&0], scn.slice(&spanning));
+        assert_eq!(results[&1], scn.slice(&middle));
+        assert_eq!(results[&2], scn.slice(&tail));
+    }
+
+    /// A read only partially covered by an in-flight fetch must not piggyback
+    /// on it: it goes to the remote queue like any other fetch — never
+    /// resolving against blocks the in-flight fetch doesn't cover.
+    #[test]
+    fn partially_covered_read_does_not_piggyback() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<R>(false);
+
+        let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+        // Fetch covers blocks 0..2.
+        let first = (BLOCK_SIZE - 50) as u64..(BLOCK_SIZE + 50) as u64;
+        // Needs blocks 1..3: block 2 is not covered by the fetch above.
+        let second = (BLOCK_SIZE + 100) as u64..(BLOCK_SIZE * 2 + 100) as u64;
+        pipeline
+            .schedule::<Random>(0, &file, first.clone(), 1)
+            .unwrap();
+
+        let mut results = HashMap::new();
+        match pipeline.schedule::<Random>(1, &file, second.clone(), 1) {
+            // Queued backends: a separate fetch was scheduled.
+            Ok(()) => assert_eq!(pipeline.in_flight_fetches(), 2),
+            // Single-slot backends (mmap remote): the read went for the remote
+            // queue and found it full — either way, it did not piggyback.
+            Err(UniversalIoError::QueueIsFull) => {
+                assert_eq!(pipeline.in_flight_fetches(), 1);
+                // Free the queue and retry; the retried read must still fetch,
+                // as block 2 is not local even after the first fetch commits.
+                results.extend(drain_pipeline(&mut pipeline));
+                pipeline
+                    .schedule::<Random>(1, &file, second.clone(), 1)
+                    .unwrap();
+                assert_eq!(pipeline.in_flight_fetches(), 1);
+            }
+            Err(err) => panic!("unexpected error: {err}"),
+        }
+
+        results.extend(drain_pipeline(&mut pipeline));
+        assert_eq!(results[&0], scn.slice(&first));
+        assert_eq!(results[&1], scn.slice(&second));
+    }
+
+    /// Reads on different files never share a fetch, even for identical ranges.
+    #[test]
+    fn different_files_do_not_share_fetches() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file_a = scn.open::<R>(false);
+        let file_b = scn.open::<R>(false);
+
+        let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+        pipeline.schedule::<Random>(0, &file_a, 10..30, 1).unwrap();
+        match pipeline.schedule::<Random>(1, &file_b, 10..30, 1) {
+            Ok(()) => assert_eq!(pipeline.in_flight_fetches(), 2),
+            // Single-slot backends: the identical range on another file went
+            // to the remote queue instead of piggybacking on `file_a`'s fetch.
+            Err(UniversalIoError::QueueIsFull) => {
+                assert_eq!(pipeline.in_flight_fetches(), 1);
+            }
+            Err(err) => panic!("unexpected error: {err}"),
+        }
+
+        let results = drain_pipeline(&mut pipeline);
+        assert_eq!(results[&0], &scn.data[10..30]);
+    }
+
+    /// Once a fetch commits its blocks to the mirror, later reads of those
+    /// blocks are served locally without scheduling another fetch.
+    #[test]
+    fn committed_blocks_serve_later_reads_locally() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = scn.open::<R>(false);
+
+        let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+        pipeline.schedule::<Random>(0, &file, 10..30, 1).unwrap();
+        let results = drain_pipeline(&mut pipeline);
+        assert_eq!(results[&0], &scn.data[10..30]);
+
+        pipeline.schedule::<Random>(1, &file, 40..60, 1).unwrap();
+        // Served locally: no remote fetch in flight.
+        assert_eq!(pipeline.in_flight_fetches(), 0);
+        let results = drain_pipeline(&mut pipeline);
+        assert_eq!(results[&1], &scn.data[40..60]);
+    }
+
+    /// End-to-end `read_batch` with many reads clustered in shared blocks:
+    /// every read resolves with its own user data and correct bytes.
+    #[test]
+    fn read_batch_with_shared_blocks_resolves_every_read() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<R>(false);
+
+        let ranges: Vec<(usize, ReadRange)> = (0..64)
+            .map(|i| {
+                let range = ReadRange {
+                    byte_offset: (i * 700) as u64,
+                    length: 100,
+                };
+                (i, range)
+            })
+            .collect();
+
+        let mut seen = vec![false; ranges.len()];
+        file.read_batch::<Random, u8, usize>(ranges.clone(), |i, bytes| {
+            let start = ranges[i].1.byte_offset as usize;
+            assert_eq!(bytes, &scn.data[start..start + 100]);
+            assert!(!seen[i]);
+            seen[i] = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(seen.iter().all(|&s| s));
     }
 }
