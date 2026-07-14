@@ -30,10 +30,31 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{Memory, PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
-#[derive(Debug)]
-enum StorageType {
+/// Desired storage type for payload indices of a segment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StorageType {
     Appendable,
     NonAppendable,
+}
+
+impl StorageType {
+    /// Storage type for payload indices of a segment, given whether the segment is appendable.
+    pub fn from_appendable(appendable: bool) -> Self {
+        if appendable {
+            StorageType::Appendable
+        } else {
+            StorageType::NonAppendable
+        }
+    }
+}
+
+/// Whether opening a payload index may create missing index data or must only load existing data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexLoadMode {
+    /// Create missing index data while loading.
+    CreateIfMissing,
+    /// Only load existing index data.
+    LoadExisting,
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -203,8 +224,8 @@ impl StructPayloadIndex {
         id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
-        is_appendable: bool,
-        create: bool,
+        storage_type: StorageType,
+        load_mode: IndexLoadMode,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -212,12 +233,6 @@ impl StructPayloadIndex {
             PayloadConfig::load(&config_path)?
         } else {
             PayloadConfig::default()
-        };
-
-        let storage_type = if is_appendable {
-            StorageType::Appendable
-        } else {
-            StorageType::NonAppendable
         };
 
         let mut index = StructPayloadIndex {
@@ -236,7 +251,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields(create)?;
+        index.load_all_fields(load_mode == IndexLoadMode::CreateIfMissing)?;
 
         Ok(index)
     }

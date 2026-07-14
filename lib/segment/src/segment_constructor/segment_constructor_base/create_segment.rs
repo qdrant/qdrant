@@ -23,7 +23,7 @@ use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerFormat, IdTrackerRead};
 use crate::index::VectorIndexEnum;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::segment::{Segment, VectorData};
 use crate::types::{
     SegmentConfig, SegmentType, SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName,
@@ -35,8 +35,8 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 ///
 /// Opens the payload storage, id tracker, every (dense and sparse) vector
 /// storage, the payload index, and finally each vector's index, wiring them all
-/// into a [`Segment`]. Used by both [`super::load_segment`] (`create = false`)
-/// and [`super::build_segment`] (`create = true`).
+/// into a [`Segment`]. Used by both [`super::load_segment`] (`LoadExisting`)
+/// and [`super::build_segment`] (`CreateIfMissing`).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn create_segment(
     initial_version: Option<SeqNumberType>,
@@ -46,7 +46,7 @@ pub(super) fn create_segment(
     deferred_internal_id: Option<PointOffsetType>,
     config: &SegmentConfig,
     stopped: &AtomicBool,
-    create: bool,
+    load_mode: IndexLoadMode,
 ) -> OperationResult<Segment> {
     let started = Instant::now();
     let payload_storage = sp(create_payload_storage(segment_path, config)?);
@@ -103,8 +103,8 @@ pub(super) fn create_segment(
         id_tracker.clone(),
         vector_storages.clone(),
         &payload_index_path,
-        appendable_flag,
-        create,
+        StorageType::from_appendable(appendable_flag),
+        load_mode,
     )?);
     log_load_timing(segment_path, "payload_index", started);
 

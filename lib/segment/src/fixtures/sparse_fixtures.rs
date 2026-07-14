@@ -19,7 +19,7 @@ use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseI
 use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
@@ -47,8 +47,8 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir,
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 

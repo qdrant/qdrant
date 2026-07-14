@@ -16,7 +16,7 @@ use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::PayloadIndex;
 use crate::index::plain_payload_index::PlainPayloadIndex;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
@@ -111,8 +111,8 @@ pub fn create_struct_payload_index(
         id_tracker,
         std::collections::HashMap::new(),
         path,
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 

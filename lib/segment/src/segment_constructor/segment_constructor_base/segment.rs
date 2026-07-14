@@ -14,6 +14,7 @@ use uuid::Uuid;
 use super::create_segment::create_segment;
 use super::legacy_state::{load_segment_state_v3, load_segment_state_v5};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::struct_payload_index::IndexLoadMode;
 use crate::segment::{Segment, SegmentVersion};
 use crate::types::SegmentConfig;
 
@@ -161,7 +162,7 @@ pub fn load_segment(
         deferred_internal_id,
         &segment_state.config,
         stopped,
-        false,
+        IndexLoadMode::LoadExisting,
     )?;
 
     log_load_timing(path, "total", total_started);
@@ -202,7 +203,7 @@ pub fn build_segment(
         deferred_internal_id,
         config,
         &stopped,
-        true,
+        IndexLoadMode::CreateIfMissing,
     )?;
     segment.save_current_state()?;
 
