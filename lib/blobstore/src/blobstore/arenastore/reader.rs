@@ -7,7 +7,7 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs, UserData};
 
-use super::page::AppendOnlyPage;
+use super::page::AppendOnlyPages;
 use super::validate_consistency;
 use super::view::ArenastoreView;
 use crate::Result;
@@ -20,7 +20,7 @@ use crate::tracker::append_only::AppendOnlyTracker;
 
 /// Read-only storage for values of type `V`, operating in append-only mode.
 ///
-/// Holds the tracker and page directly (no locks) since it provides only read access.
+/// Holds the tracker and pages directly (no locks) since it provides only read access.
 /// For read-write access, use [`Arenastore`].
 ///
 /// Value data is read through the universal IO backend `S`, the tracker file is read directly.
@@ -28,20 +28,20 @@ use crate::tracker::append_only::AppendOnlyTracker;
 pub(crate) struct ArenastoreReader<V, S: UniversalRead> {
     config: StorageConfig,
     tracker: AppendOnlyTracker,
-    page: AppendOnlyPage<S>,
+    pages: AppendOnlyPages<S>,
     base_path: PathBuf,
     _phantom: PhantomData<V>,
 }
 
 impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
-    /// universal IO backend, which is only the page file.
+    /// universal IO backend, which is only the page files.
     ///
     /// The tracker file is read directly, not through the backend, so there is nothing to
     /// schedule for it. The config file is scheduled by the mode dispatching reader, which reads
     /// it first to select the operating mode.
     pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, base_path: &Path) -> Result<()> {
-        AppendOnlyPage::<S>::preopen(fs, base_path)
+        AppendOnlyPages::<S>::preopen(fs, base_path)
     }
 
     /// Open an existing read-only storage at the given path, with the already read config.
@@ -51,13 +51,13 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
         config: StorageConfig,
     ) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, false)?;
-        let page = AppendOnlyPage::open(fs, &base_path, false)?;
-        validate_consistency(&tracker, &page, &config)?;
+        let pages = AppendOnlyPages::open(fs, &base_path, false)?;
+        validate_consistency(&tracker, &pages)?;
 
         Ok(Self {
             config,
             tracker,
-            page,
+            pages,
             base_path,
             _phantom: PhantomData,
         })
@@ -65,13 +65,13 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
 
     /// Create an [`ArenastoreView`] borrowing this reader's data.
     pub(crate) fn view(&self) -> ArenastoreView<'_, V, S> {
-        ArenastoreView::new(&self.config, &self.tracker, &self.page)
+        ArenastoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
-    /// List all files belonging to this reader (tracker, page, config).
+    /// List all files belonging to this reader (tracker, pages, config).
     pub(crate) fn files(&self) -> Vec<PathBuf> {
         let mut paths = self.tracker.files();
-        paths.extend(self.page.files());
+        paths.extend(self.pages.files());
         paths.push(self.base_path.join(CONFIG_FILENAME));
         paths
     }
@@ -158,15 +158,15 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     /// - Data is append-only, existing mappings and value data never change.
     /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
     ///   counted.
-    pub(crate) fn live_reload(&mut self) -> Result<()> {
+    pub(crate) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         self.tracker.live_reload()?;
 
-        // Reload the page after the tracker: newly loaded mappings only reference value data
-        // that was appended before the mappings were written, so reloading the page last
-        // guarantees it covers all of them. Reload it even without new mappings, unflushed
-        // value data may have been appended already and counts towards the reported storage
-        // size.
-        self.page.live_reload()?;
+        // Reload the pages after the tracker: newly loaded mappings only reference value data
+        // that was appended (and whose page file was created) before the mappings were written,
+        // so reloading the pages last guarantees they cover all of them. Reload them even
+        // without new mappings, unflushed value data may have been appended already and counts
+        // towards the reported storage size.
+        self.pages.live_reload(fs)?;
 
         Ok(())
     }

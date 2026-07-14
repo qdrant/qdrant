@@ -971,10 +971,19 @@ fn test_different_block_sizes(
             assert_eq!(last_pointer.block_offset, 0);
             assert_eq!(last_pointer.page_id, 3);
         }
-        // A single ever growing page, values are packed at consecutive blocks
+        // Values are packed back to back in bytes, blocks don't apply; pages roll over at
+        // the configured page size
         Mode::AppendOnly => {
-            assert_eq!(last_pointer.block_offset, last_point_id);
-            assert_eq!(last_pointer.page_id, 0);
+            let value_len = u64::from(last_pointer.length);
+            let values_per_page = DEFAULT_PAGE_SIZE_BYTES as u64 / value_len;
+            assert_eq!(
+                u64::from(last_pointer.page_id),
+                u64::from(last_point_id) / values_per_page,
+            );
+            assert_eq!(
+                u64::from(last_pointer.block_offset),
+                u64::from(last_point_id) % values_per_page * value_len,
+            );
         }
     }
 

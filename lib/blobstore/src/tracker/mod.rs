@@ -94,7 +94,10 @@ pub struct ValuePointer {
     /// Which page the value is stored in
     pub page_id: PageId,
 
-    /// Start offset (in blocks) of the value
+    /// Start offset of the value within the page
+    ///
+    /// Counted in blocks in dynamic mode, in bytes in append-only mode (which packs values
+    /// without blocks or alignment).
     pub block_offset: BlockOffset,
 
     /// Length in bytes of the value

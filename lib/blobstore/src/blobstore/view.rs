@@ -68,7 +68,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     ) -> Result<Cow<'_, [u8]>> {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.read_from_pages::<P>(pointer),
-            ViewVariant::Arenastore(view) => view.read_from_page::<P>(pointer),
+            ViewVariant::Arenastore(view) => view.read_from_pages::<P>(pointer),
         }
     }
 }

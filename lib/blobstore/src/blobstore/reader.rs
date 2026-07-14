@@ -200,7 +200,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         match &mut self.variant {
             ReaderVariant::Gridstore(reader) => reader.live_reload(fs),
-            ReaderVariant::Arenastore(reader) => reader.live_reload(),
+            ReaderVariant::Arenastore(reader) => reader.live_reload(fs),
         }
     }
 }
