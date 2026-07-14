@@ -15,9 +15,7 @@ use segment::types::{
     ScalarQuantization, ScalarQuantizationConfig, ScalarType,
 };
 
-use super::{
-    COLLECTION_NAME, INITIAL_ACTIVE, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind, candidate_of,
-};
+use super::{ALL_CANDIDATES, COLLECTION_NAME, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::config_diff::HnswConfigDiff;
@@ -81,15 +79,15 @@ pub(super) async fn fixture(
     // inactive) candidates are reachable through `Op::CreateVectorName` later in the run.
     let mut dense_vectors = BTreeMap::new();
     let mut sparse_vectors = BTreeMap::new();
-    for name in INITIAL_ACTIVE {
-        let candidate = candidate_of(name);
+    for candidate in ALL_CANDIDATES.iter().filter(|c| c.initially_active) {
+        let name = candidate.name;
         match candidate.kind {
             VectorKind::Dense(dim) => {
                 let mut builder = dense_params_builder(dim, on_disk, candidate.datatype);
                 // The inline-storage vector exercises the HNSW `inline_storage` layout, which
                 // stores original + quantized vectors inside the index file and therefore
                 // requires quantization. Pair it with scalar quantization.
-                if *name == INLINE_STORAGE_VECTOR {
+                if name == INLINE_STORAGE_VECTOR {
                     builder = builder
                         .with_quantization_config(QuantizationConfig::Scalar(ScalarQuantization {
                             scalar: ScalarQuantizationConfig {

@@ -25,19 +25,21 @@ use crate::shards::shard::PeerId;
 const PEER_ID: PeerId = 1;
 const COLLECTION_NAME: &str = "test";
 
-/// Static metadata for every vector name the test might ever activate. Eleven names start
-/// active in the fixture (see `INITIAL_ACTIVE`); "u" is reachable through
+/// Static metadata for every vector name the test might ever activate. All names but "u"
+/// start active in the fixture (`initially_active`); inactive ones are reachable through
 /// `Op::CreateVectorName`.
 pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "a",
         kind: VectorKind::Dense(4),
         datatype: None,
+        initially_active: true,
     },
     VectorCandidate {
         name: "b",
         kind: VectorKind::Dense(6),
         datatype: None,
+        initially_active: true,
     },
     // Explicit `Some(Float32)` rather than the unset default: exercises schema configs that
     // spell the default datatype out (config serialization + any `None` vs `Some` comparison
@@ -46,6 +48,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "c",
         kind: VectorKind::Dense(5),
         datatype: Some(Datatype::Float32),
+        initially_active: true,
     },
     // Dense vector configured with HNSW `inline_storage` (original + quantized vectors stored
     // inside the HNSW index file) backed by scalar quantization. From the model's perspective
@@ -54,21 +57,25 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "i",
         kind: VectorKind::Dense(4),
         datatype: None,
+        initially_active: true,
     },
     VectorCandidate {
         name: "s",
         kind: VectorKind::Sparse,
         datatype: None,
+        initially_active: true,
     },
     VectorCandidate {
         name: "u",
         kind: VectorKind::Sparse,
         datatype: None,
+        initially_active: false,
     },
     VectorCandidate {
         name: "m",
         kind: VectorKind::MultiDense(4),
         datatype: None,
+        initially_active: true,
     },
     // TurboQuant 4-bit compressed storage, the primary quantized datatype, applied to
     // appendable segments too. Lossy: the model records the dequantized read-back
@@ -77,6 +84,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "q",
         kind: VectorKind::Dense(8),
         datatype: Some(Datatype::Turbo4),
+        initially_active: true,
     },
     // Half-precision storage. Lossy but deterministic and idempotent: the model records
     // the f32 -> f16 -> f32 round-trip and compares exactly.
@@ -84,6 +92,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "h",
         kind: VectorKind::Dense(6),
         datatype: Some(Datatype::Float16),
+        initially_active: true,
     },
     // Unsigned-byte storage. The engine truncates each component with `x as u8`; the
     // generator draws components from `0.0..256.0` so values don't collapse to 0/1,
@@ -92,6 +101,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "y",
         kind: VectorKind::Dense(4),
         datatype: Some(Datatype::Uint8),
+        initially_active: true,
     },
     // Multi-vector variants of the lossy-but-idempotent datatypes: each stored row goes
     // through the same per-component round-trip as its dense counterpart ("h" / "y").
@@ -99,11 +109,13 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "w",
         kind: VectorKind::MultiDense(5),
         datatype: Some(Datatype::Float16),
+        initially_active: true,
     },
     VectorCandidate {
         name: "z",
         kind: VectorKind::MultiDense(3),
         datatype: Some(Datatype::Uint8),
+        initially_active: true,
     },
 ];
 
@@ -130,9 +142,6 @@ fn assert_candidates_predictable() {
     }
 }
 
-/// Names present in the collection schema at fixture time.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "c", "i", "s", "m", "q", "h", "y", "w", "z"];
-
 /// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
 pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
 
@@ -144,6 +153,10 @@ pub(super) struct VectorCandidate {
     /// datatypes) and `VectorKind::MultiDense` (all but Turbo4); enforced by the
     /// startup check (`assert_candidates_predictable`).
     pub(super) datatype: Option<Datatype>,
+    /// Whether the name is present in the collection schema at fixture time. Inactive
+    /// names are only reachable through `Op::CreateVectorName`, which is FORCE_OFF by
+    /// default, so a candidate gets default-soak coverage only when this is true.
+    pub(super) initially_active: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -257,8 +270,11 @@ pub async fn run(
     );
 
     let mut model: Model = Model::new();
-    let mut active_names: BTreeSet<VectorNameBuf> =
-        INITIAL_ACTIVE.iter().map(|s| s.to_string()).collect();
+    let mut active_names: BTreeSet<VectorNameBuf> = ALL_CANDIDATES
+        .iter()
+        .filter(|c| c.initially_active)
+        .map(|c| c.name.to_string())
+        .collect();
     // In-flight background snapshot task, if any (at most one at a time). A `CreateSnapshot` op
     // spawns it; the loop reaps it on completion each iteration and drains it before any
     // close+reopen. `None` when no snapshot is running. See [`drain_snapshot`].
