@@ -345,6 +345,10 @@ pub async fn run(
             // the task ends — and reopening the same dir with the old collection still open is
             // unsafe.
             drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
+            // Newest-clocks recovery point must survive the close+reopen exactly; captured here
+            // (snapshot drained, op loop idle) and compared after the reload below. See
+            // [`verify::assert_clocks_match`] for why both mismatch directions are bugs.
+            let pre_clocks = verify::collect_clock_ticks(&collection).await;
             collection.stop_gracefully().await;
             // `into_inner` makes the invariant checked, not assumed: if any background task still
             // holds an `Arc` clone here, panic loudly instead of reopening the same dir while the
@@ -362,6 +366,12 @@ pub async fn run(
             verify::wait_for_pending_updates(&collection).await;
             let live = verify::collect_model_from_collection(&collection).await;
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
+            // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
+            // (extra/missing ids) is the established postmortem signature for that class, so it
+            // stays first and known failures keep their signature. A clocks-only mismatch (data
+            // intact, clock state wrong) then surfaces distinctly here.
+            let post_clocks = verify::collect_clock_ticks(&collection).await;
+            verify::assert_clocks_match(&pre_clocks, &post_clocks, &format!("restart at op:{i}"));
             eprintln!();
             bar.set_draw_target(ProgressDrawTarget::stderr());
         } else {
@@ -461,6 +471,8 @@ pub async fn run(
     // Finish any background snapshot before closing (it holds an `Arc` clone — see the restart
     // path), then close and reopen and re-verify — mirrors gridstore tests.rs:488-516.
     drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
+    // Same clock-durability capture as the mid-run restart path, for the final reload.
+    let pre_clocks = verify::collect_clock_ticks(&collection).await;
     collection.stop_gracefully().await;
     // Checked close-before-reopen, same as the mid-run restart path.
     drop(
@@ -481,6 +493,9 @@ pub async fn run(
         &reload_missing,
     );
     verify::assert_matches_model(&reloaded, &model, "reloaded");
+    // After the model check, same as the restart path (see the comment there for ordering).
+    let post_clocks = verify::collect_clock_ticks(&collection).await;
+    verify::assert_clocks_match(&pre_clocks, &post_clocks, "reloaded");
 }
 
 /// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung

@@ -914,6 +914,38 @@ impl LocalShard {
 
         // Send remaining pending WAL elements to the update channel
         if to < last_wal_index {
+            // The update worker applies these queued tail entries but discards their clock tags
+            // (it deserializes only the operation), so advance the newest clocks here, exactly
+            // like the synchronous replay above. These operations are durably in the WAL, which
+            // is what the recovery point tracks; skipping them would let the recovery point
+            // regress across a restart, and the first post-restart updates would then reuse
+            // clock ticks that earlier WAL entries already carry for different operations.
+            //
+            // This tail is queued whenever the persisted `applied_seq` lags the WAL end, so it
+            // runs independently of the `prevent_unoptimized` flag's value: the flag only gates
+            // the worker's deferred-points wait, not whether the tail is queued here.
+            //
+            // An unreadable entry is logged and skipped (its clock tag is lost, but its op_num is
+            // still enqueued below): the worker re-reads it and tolerates the same failure by
+            // log-and-skip, and failing the whole shard load here would turn a single bad tail
+            // entry into a node that cannot start.
+            //
+            // Two passes because the `read_range` iterator borrows the WAL and is not `Send`,
+            // so it cannot be held across the channel-send await below. The range end is
+            // `last_wal_index` *exclusive*: it is one past the last entry (`first_index + len`).
+            for entry in wal.read_range(to..last_wal_index) {
+                match entry {
+                    Ok((_op_num, update)) => {
+                        if let Some(clock_tag) = update.clock_tag {
+                            newest_clocks.advance_clock(clock_tag);
+                        }
+                    }
+                    Err(err) => log::error!(
+                        "Failed to read WAL tail entry during recovery of {}: {err}",
+                        self.path.display(),
+                    ),
+                }
+            }
             log::info!(
                 "Loading remaining {} WAL entries from:{to} into update queue",
                 last_wal_index - to
@@ -921,7 +953,7 @@ impl LocalShard {
             let update_sender = self.update_sender.load();
             // TODO use proper collection's hardware measurement
             let hw_measurements = HwMeasurementAcc::disposable();
-            for op_num in to..=last_wal_index {
+            for op_num in to..last_wal_index {
                 update_sender
                     .send(UpdateSignal::Operation(OperationData {
                         op_num,
