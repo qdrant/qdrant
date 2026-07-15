@@ -80,7 +80,6 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
         .count()
 }
 
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
 #[case::nearest_binary_dot(
     QueryVariant::Nearest,
@@ -219,6 +218,10 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     32, // dim
     32, // ef
     70., // min_acc out of 100
+)]
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
 )]
 #[case::nearest_turbo_turbo_manhattan(
     QueryVariant::Nearest,
