@@ -1435,6 +1435,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
+ "static_assertions",
  "strum",
  "tango-bench",
  "tap",

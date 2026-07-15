@@ -13,9 +13,16 @@ use super::{
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenOptions, Populate, ReadPipeline, ReadRange, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend, UniversalFlush,
+    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
 };
+
+// The disk cache is strictly read-only: mutating it must stay a
+// compile-time error, on top of writeable opens being rejected at runtime
+// (covered per backend variant below).
+static_assertions::assert_not_impl_any!(
+    DiskCache<MmapFile>: UniversalAppend, UniversalFlush, UniversalWrite
+);
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()
