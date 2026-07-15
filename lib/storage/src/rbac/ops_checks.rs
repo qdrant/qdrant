@@ -797,7 +797,7 @@ mod tests_ops {
                 let op = CollectionUpdateOperations::PointOperation(
                     PointOperations::UpsertPointsRaw(vec![PointStructRawPersisted {
                         id: ExtendedPointId::NumId(12345),
-                        vectors: vec![("dense".to_string(), vec![0, 1, 2, 3])],
+                        vectors: vec![("dense".to_string(), vec![0, 1, 2, 3])].into(),
                         payload: None,
                     }]),
                 );

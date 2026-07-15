@@ -662,7 +662,7 @@ where
                 // vectors and payload, carry the incoming bytes verbatim.
                 let point = points_map[&id];
                 raw_vectors.clear();
-                raw_vectors.extend_from_slice(&point.vectors);
+                raw_vectors.extend(point.vectors.iter().cloned());
                 *payload = point.payload.clone().unwrap_or_default();
             },
             hw_counter,
@@ -1438,12 +1438,12 @@ mod test {
         let points = [
             PointStructRawPersisted {
                 id: 1.into(),
-                vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())],
+                vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
                 payload: Some(payload.clone()),
             },
             PointStructRawPersisted {
                 id: 100.into(),
-                vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())],
+                vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
                 payload: None,
             },
         ];
@@ -1462,7 +1462,7 @@ mod test {
                 .unwrap_or_else(|| panic!("point {point_id} must be in the appendable segment"));
             let vectors = record.vectors.expect("vectors were requested");
             assert_eq!(
-                vectors,
+                vectors.to_vec(),
                 vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())],
                 "raw bytes of point {point_id} must round-trip exactly",
             );
@@ -1497,11 +1497,11 @@ mod test {
             .iter()
             .flat_map(|v| v.to_le_bytes())
             .collect();
-        point_3.vectors = vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())];
+        point_3.vectors = vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into();
 
         let point_100 = PointStructRawPersisted {
             id: 100.into(),
-            vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())],
+            vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into(),
             payload: None,
         };
 
@@ -1537,7 +1537,7 @@ mod test {
 
         let record = retrieve_raw_record(&holder, sid, 3).unwrap();
         assert_eq!(
-            record.vectors.unwrap(),
+            record.vectors.unwrap().to_vec(),
             vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes)],
         );
     }

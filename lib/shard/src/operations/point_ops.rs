@@ -17,6 +17,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use sparse::common::types::{DimId, DimWeight};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationErrors};
@@ -322,6 +323,8 @@ pub struct PointSyncRawOperation {
     pub points: Vec<PointStructRawPersisted>,
 }
 
+pub type RawVectorsPersisted = SmallVec<[(VectorNameBuf, Vec<u8>); 1]>;
+
 /// A point with vectors as storage-native bytes, as it is persisted in WAL.
 #[derive(Clone, PartialEq, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -330,7 +333,7 @@ pub struct PointStructRawPersisted {
     pub id: PointIdType,
     /// All named vectors of the point, storage-native bytes per vector name
     #[serde(with = "raw_vectors_serde")]
-    pub vectors: Vec<(VectorNameBuf, Vec<u8>)>,
+    pub vectors: RawVectorsPersisted,
     /// Payload values (optional)
     pub payload: Option<Payload>,
 }
@@ -347,6 +350,8 @@ mod raw_vectors_serde {
     use segment::types::VectorNameBuf;
     use serde::de::{self, Deserializer, SeqAccess, Visitor};
     use serde::ser::{SerializeSeq, Serializer};
+
+    use super::RawVectorsPersisted;
 
     /// Upper bound for the capacity we pre-allocate from an untrusted `size_hint`
     /// when deserializing a single vector's raw bytes.
@@ -419,7 +424,7 @@ mod raw_vectors_serde {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<Vec<(VectorNameBuf, Vec<u8>)>, D::Error> {
+    ) -> Result<RawVectorsPersisted, D::Error> {
         let raw: Vec<(VectorNameBuf, ByteVec)> = serde::Deserialize::deserialize(deserializer)?;
         Ok(raw
             .into_iter()
@@ -1107,7 +1112,7 @@ mod tests {
         let blob: Vec<u8> = (0..4096u32).map(|i| i as u8).collect();
         let point = PointStructRawPersisted {
             id: 1.into(),
-            vectors: vec![("dense".to_string(), blob.clone())],
+            vectors: vec![("dense".to_string(), blob.clone())].into(),
             payload: None,
         };
 
