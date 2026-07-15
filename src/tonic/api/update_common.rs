@@ -18,7 +18,9 @@ use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, Vect
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::conversions::try_points_selector_from_grpc;
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
+use collection::operations::point_ops::{
+    self, PointOperations, PointStructRawPersisted, PointSyncOperation, PointSyncRawOperation,
+};
 use collection::operations::vector_ops::DeleteVectors;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
@@ -851,6 +853,7 @@ pub async fn sync(
         collection_name,
         wait,
         points,
+        raw_points,
         from_id,
         to_id,
         ordering,
@@ -859,21 +862,48 @@ pub async fn sync(
 
     let timing = Instant::now();
 
-    let point_structs: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
+    let from_id = from_id.map(|x| x.try_into()).transpose()?;
+    let to_id = to_id.map(|x| x.try_into()).transpose()?;
 
-    // No actual inference should happen here, as we are just syncing existing points
-    // So, this function is used for consistency only
-    let (points, usage) =
-        convert_point_struct(point_structs?, InferenceType::Update, inference_params).await?;
+    let (operation, usage) = if !raw_points.is_empty() {
+        if !points.is_empty() {
+            return Err(Status::invalid_argument(
+                "A sync request must carry either `points` or `raw_points`, never both",
+            ));
+        }
 
-    let operation = PointSyncOperation {
-        points,
-        from_id: from_id.map(|x| x.try_into()).transpose()?,
-        to_id: to_id.map(|x| x.try_into()).transpose()?,
+        let points: Result<Vec<PointStructRawPersisted>, _> =
+            raw_points.into_iter().map(TryFrom::try_from).collect();
+
+        let operation = PointSyncRawOperation {
+            points: points?,
+            from_id,
+            to_id,
+        };
+
+        let operation =
+            CollectionUpdateOperations::PointOperation(PointOperations::SyncPointsRaw(operation));
+
+        (operation, None)
+    } else {
+        let point_structs: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
+
+        // No actual inference should happen here, as we are just syncing existing points
+        // So, this function is used for consistency only
+        let (points, usage) =
+            convert_point_struct(point_structs?, InferenceType::Update, inference_params).await?;
+
+        let operation = PointSyncOperation {
+            points,
+            from_id,
+            to_id,
+        };
+
+        let operation =
+            CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
+
+        (operation, usage)
     };
-
-    let operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
 
     let result = update(
         &toc,
@@ -889,6 +919,44 @@ pub async fn sync(
 
     let response = points_operation_response_internal(timing, result, None);
     Ok(Response::new((response, usage.unwrap_or_default().into())))
+}
+
+/// Upsert points carrying storage-native (raw bytes) vectors.
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_raw(
+    toc: Arc<TableOfContent>,
+    collection_name: String,
+    raw_points: Vec<grpc::qdrant::PointStructRaw>,
+    wait: Option<bool>,
+    ordering: Option<grpc::qdrant::WriteOrdering>,
+    timeout: Option<u64>,
+    internal_params: InternalUpdateParams,
+    auth: Auth,
+    request_hw_counter: RequestHwCounter,
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
+    let timing = Instant::now();
+
+    let points: Result<Vec<PointStructRawPersisted>, _> =
+        raw_points.into_iter().map(TryFrom::try_from).collect();
+
+    let operation =
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(points?));
+
+    let result = update(
+        &toc,
+        &collection_name,
+        operation,
+        internal_params,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
+        None,
+        auth,
+        request_hw_counter.get_counter(),
+    )
+    .await?;
+
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+    Ok(Response::new(response))
 }
 
 pub fn points_operation_response_internal_with_inference_usage(

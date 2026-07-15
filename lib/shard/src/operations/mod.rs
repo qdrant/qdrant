@@ -73,6 +73,12 @@ impl CollectionUpdateOperations {
                 PointOperations::SyncPoints(op) => {
                     Some(op.points.iter().map(|point| point.id).collect())
                 }
+                PointOperations::UpsertPointsRaw(points) => {
+                    Some(points.iter().map(|point| point.id).collect())
+                }
+                PointOperations::SyncPointsRaw(op) => {
+                    Some(op.points.iter().map(|point| point.id).collect())
+                }
             },
             Self::VectorOperation(_) => None,
             Self::PayloadOperation(_) => None,
@@ -379,11 +385,28 @@ mod tests {
                 points: Vec::new(),
             });
 
+            // Use a non-empty raw point so the byte-blob path is actually exercised
+            let raw_point = PointStructRawPersisted {
+                id: 1.into(),
+                vectors: vec![("dense".to_string(), vec![0, 1, 2, 3, 255])].into(),
+                payload: None,
+            };
+
+            let upsert_raw = Self::UpsertPointsRaw(vec![raw_point.clone()]);
+
+            let sync_raw = Self::SyncPointsRaw(PointSyncRawOperation {
+                from_id: Some(1.into()),
+                to_id: None,
+                points: vec![raw_point],
+            });
+
             prop_oneof![
                 Just(upsert),
                 Just(delete),
                 Just(delete_by_filter),
                 Just(sync),
+                Just(upsert_raw),
+                Just(sync_raw),
             ]
             .boxed()
         }

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "points.proto";
 import "qdrant_common.proto";
+import "json_with_int.proto";
 
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
@@ -45,6 +46,12 @@ service PointsInternal {
   rpc Facet(FacetCountsInternal) returns (FacetResponseInternal) {}
 }
 
+message PointStructRaw {
+  PointId id = 1;
+  map<string, bytes> vectors = 2;
+  map<string, Value> payload = 3;
+}
+
 message SyncPoints {
   // name of the collection
   string collection_name = 1;
@@ -58,6 +65,8 @@ message SyncPoints {
   optional WriteOrdering ordering = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
+  // Points with storage-native (raw bytes) vectors
+  repeated PointStructRaw raw_points = 8;
 }
 
 message SyncPointsInternal {
@@ -76,6 +85,8 @@ message UpsertPointsInternal {
   // When present, overrides the `wait` parameter of the wrapped public message.
   // When absent, falls back to `wait` (backward compatible with older nodes).
   optional WaitUntil wait_override = 4;
+  // Points with storage-native (raw bytes) vectors
+  repeated PointStructRaw raw_points = 5;
 }
 
 message DeletePointsInternal {

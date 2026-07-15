@@ -371,8 +371,8 @@ mod tests_ops {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, ConditionalInsertOperationInternal,
         PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
-        PointOperationsDiscriminants, PointStructPersisted, PointSyncOperation,
-        VectorStructPersisted,
+        PointOperationsDiscriminants, PointStructPersisted, PointStructRawPersisted,
+        PointSyncOperation, PointSyncRawOperation, VectorStructPersisted,
     };
     use collection::operations::query_enum::QueryEnum;
     use collection::operations::types::{ContextExamplePair, RecommendExample, UsingVector};
@@ -790,6 +790,28 @@ mod tests_ops {
                         points: Vec::new(),
                     },
                 ));
+                assert_requires_whole_write_access(&op);
+            }
+
+            PointOperationsDiscriminants::UpsertPointsRaw => {
+                let op = CollectionUpdateOperations::PointOperation(
+                    PointOperations::UpsertPointsRaw(vec![PointStructRawPersisted {
+                        id: ExtendedPointId::NumId(12345),
+                        vectors: vec![("dense".to_string(), vec![0, 1, 2, 3])].into(),
+                        payload: None,
+                    }]),
+                );
+                assert_requires_whole_write_access(&op);
+            }
+
+            PointOperationsDiscriminants::SyncPointsRaw => {
+                let op = CollectionUpdateOperations::PointOperation(
+                    PointOperations::SyncPointsRaw(PointSyncRawOperation {
+                        from_id: None,
+                        to_id: None,
+                        points: Vec::new(),
+                    }),
+                );
                 assert_requires_whole_write_access(&op);
             }
         });

@@ -19,7 +19,7 @@ use segment::types::{
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointOperations,
-    PointStructPersisted, UpdateMode,
+    PointStructPersisted, PointStructRawPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 use crate::operations::{
@@ -53,6 +53,25 @@ pub fn process_point_operation(
         }
         PointOperations::SyncPoints(operation) => {
             let (deleted, new, updated) = sync_points(
+                segments,
+                op_num,
+                operation.from_id,
+                operation.to_id,
+                &operation.points,
+                hw_counter,
+            )?;
+            Ok(deleted + new + updated)
+        }
+        PointOperations::UpsertPointsRaw(points) => {
+            if points.is_empty() {
+                // An empty upsert touches no segment; bump so WAL can acknowledge it.
+                segments.bump_max_segment_version_overwrite(op_num);
+            }
+            let res = upsert_points_raw(segments, op_num, points.iter(), hw_counter)?;
+            Ok(res)
+        }
+        PointOperations::SyncPointsRaw(operation) => {
+            let (deleted, new, updated) = sync_points_raw(
                 segments,
                 op_num,
                 operation.from_id,
@@ -616,6 +635,166 @@ pub fn sync_points(
     Ok((deleted, num_new, num_updated))
 }
 
+pub fn upsert_points_raw<'a, T>(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: T,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize>
+where
+    T: IntoIterator<Item = &'a PointStructRawPersisted>,
+{
+    let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
+    let ids: Vec<PointIdType> = points_map.keys().copied().collect();
+
+    let mut res = 0;
+
+    for ids_chunk in ids.chunks(UPDATE_OP_CHUNK_SIZE) {
+        // Replace points which are already present in some writable segment
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            ids_chunk,
+            |id, write_segment| {
+                upsert_raw_with_payload(write_segment, op_num, points_map[&id], hw_counter)
+            },
+            |id, raw_vectors, _updated_vectors, payload| {
+                // A raw upsert replaces the whole point: drop the old raw
+                // vectors and payload, carry the incoming bytes verbatim.
+                let point = points_map[&id];
+                raw_vectors.clear();
+                raw_vectors.extend(point.vectors.iter().cloned());
+                *payload = point.payload.clone().unwrap_or_default();
+            },
+            hw_counter,
+        )?;
+
+        res += updated_points.len();
+        // Insert new points, which was not updated or existed
+        let new_point_ids = ids_chunk
+            .iter()
+            .copied()
+            .filter(|x| !updated_points.contains(x));
+
+        {
+            let default_write_segment =
+                segments.smallest_appendable_segment().ok_or_else(|| {
+                    OperationError::service_error(
+                        "No appendable segments exist, expected at least one",
+                    )
+                })?;
+
+            let segment_arc = default_write_segment.get();
+            let mut write_segment = segment_arc.write();
+            for point_id in new_point_ids {
+                res += usize::from(upsert_raw_with_payload(
+                    &mut write_segment,
+                    op_num,
+                    points_map[&point_id],
+                    hw_counter,
+                )?);
+            }
+            RwLockWriteGuard::unlock_fair(write_segment);
+        };
+    }
+
+    Ok(res)
+}
+
+fn upsert_raw_with_payload(
+    segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
+    op_num: SeqNumberType,
+    point: &PointStructRawPersisted,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<bool> {
+    let mut res = segment.upsert_point_raw(op_num, point.id, &point.vectors, hw_counter)?;
+    if let Some(full_payload) = &point.payload {
+        res &= segment.set_full_payload(op_num, point.id, full_payload, hw_counter)?;
+    } else {
+        res &= segment.clear_payload(op_num, point.id, hw_counter)?;
+    }
+    debug_assert!(
+        segment.has_point(point.id, DeferredBehavior::WithDeferred),
+        "the point {} should be present immediately after the upsert",
+        point.id,
+    );
+    Ok(res)
+}
+
+pub fn sync_points_raw(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    from_id: Option<PointIdType>,
+    to_id: Option<PointIdType>,
+    points: &[PointStructRawPersisted],
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(usize, usize, usize)> {
+    let id_to_point: AHashMap<PointIdType, _> = points.iter().map(|p| (p.id, p)).collect();
+    let sync_points: AHashSet<_> = points.iter().map(|p| p.id).collect();
+    // 1. Retrieve existing points for a range
+    let stored_point_ids: AHashSet<_> = segments
+        .iter()
+        .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id))
+        .collect();
+    // 2. Remove points, which are not present in the sync operation
+    let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
+    let deleted = delete_points(segments, op_num, points_to_remove.as_slice(), hw_counter)?;
+    // 3. Retrieve overlapping points, detect which one of them are changed
+    let existing_point_ids: Vec<_> = stored_point_ids
+        .intersection(&sync_points)
+        .copied()
+        .collect();
+
+    let mut points_to_update: Vec<_> = Vec::new();
+    // we don’t want to cancel this filtered read
+    let is_stopped = AtomicBool::new(false);
+    let _num_updated = segments.read_points(
+        existing_point_ids.as_slice(),
+        &is_stopped,
+        DeferredBehavior::WithDeferred,
+        |ids, segment| {
+            let with_vector = WithVector::Bool(true);
+            let with_payload = WithPayload::from(true);
+            // Since we retrieve points, which we already know exist, we expect all of them to be found
+            let stored_records = segment.retrieve_raw(
+                ids,
+                &with_payload,
+                &with_vector,
+                hw_counter,
+                &is_stopped,
+                DeferredBehavior::WithDeferred,
+            )?;
+            let mut updated = 0;
+
+            for (id, stored_record) in stored_records {
+                let point = id_to_point.get(&id).unwrap();
+                if !point.is_equal_to(&stored_record) {
+                    points_to_update.push(*point);
+                    updated += 1;
+                }
+            }
+
+            Ok(updated)
+        },
+    )?;
+
+    // 4. Select new points
+    let num_updated = points_to_update.len();
+    let mut num_new = 0;
+    sync_points.difference(&stored_point_ids).for_each(|id| {
+        num_new += 1;
+        points_to_update.push(*id_to_point.get(id).unwrap());
+    });
+
+    // 5. Upsert points which differ from the stored ones
+    let num_replaced = upsert_points_raw(segments, op_num, points_to_update, hw_counter)?;
+    debug_assert!(
+        num_replaced <= num_updated,
+        "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})",
+    );
+
+    Ok((deleted, num_new, num_updated))
+}
+
 /// Batch size when modifying vector
 const VECTOR_OP_BATCH_SIZE: usize = 32;
 
@@ -1158,11 +1337,12 @@ mod test {
     use crate::fixtures::{
         build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
     };
+    use crate::operations::point_ops::PointStructRawPersisted;
     use crate::segment_holder::{FlushMode, SegmentHolder};
     use crate::update::{
         clear_payload_by_filter, create_field_index, delete_payload_by_filter,
         delete_points_by_filter, delete_vectors_by_filter, overwrite_payload_by_filter,
-        set_payload_by_filter,
+        set_payload_by_filter, sync_points_raw, upsert_points_raw,
     };
 
     #[test]
@@ -1214,6 +1394,152 @@ mod test {
         // delete operation in WAL.
         assert_eq!(old_version + 1, new_version);
         assert_eq!(new_version, DELETE_OP_NUM);
+    }
+
+    fn retrieve_raw_record(
+        holder: &SegmentHolder,
+        segment_id: crate::segment_holder::SegmentId,
+        point_id: u64,
+    ) -> Option<segment::data_types::segment_record::SegmentRecordRaw> {
+        let hw_counter = HardwareCounterCell::new();
+        let is_stopped = std::sync::atomic::AtomicBool::new(false);
+        let segment = holder.get(segment_id).unwrap().get();
+        let segment = segment.read();
+        segment
+            .retrieve_raw(
+                &[point_id.into()],
+                &segment::types::WithPayload::from(true),
+                &segment::types::WithVector::Bool(true),
+                &hw_counter,
+                &is_stopped,
+                common::types::DeferredBehavior::WithDeferred,
+            )
+            .unwrap()
+            .remove(&point_id.into())
+    }
+
+    #[test]
+    fn test_upsert_points_raw_moves_point_from_non_appendable() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut non_appendable = build_segment_1(dir.path()); // points 1-5
+        non_appendable.appendable_flag = false;
+        let appendable = empty_segment(dir.path());
+
+        let mut holder = SegmentHolder::default();
+        let sid_non_app = holder.add_new(non_appendable);
+        let sid_app = holder.add_new(appendable);
+
+        let new_vector: Vec<f32> = vec![9.0, 8.0, 7.0, 6.0];
+        let new_bytes: Vec<u8> = new_vector.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
+
+        let points = [
+            PointStructRawPersisted {
+                id: 1.into(),
+                vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
+                payload: Some(payload.clone()),
+            },
+            PointStructRawPersisted {
+                id: 100.into(),
+                vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
+                payload: None,
+            },
+        ];
+
+        let updated = upsert_points_raw(&holder, 100, points.iter(), &hw_counter).unwrap();
+        assert_eq!(updated, 1);
+
+        {
+            let non_app = holder.get(sid_non_app).unwrap().get();
+            let non_app = non_app.read();
+            assert!(!non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred));
+        }
+
+        for point_id in [1, 100] {
+            let record = retrieve_raw_record(&holder, sid_app, point_id)
+                .unwrap_or_else(|| panic!("point {point_id} must be in the appendable segment"));
+            let vectors = record.vectors.expect("vectors were requested");
+            assert_eq!(
+                vectors.to_vec(),
+                vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())],
+                "raw bytes of point {point_id} must round-trip exactly",
+            );
+        }
+
+        let record = retrieve_raw_record(&holder, sid_app, 1).unwrap();
+        assert_eq!(record.payload, Some(payload));
+        let record = retrieve_raw_record(&holder, sid_app, 100).unwrap();
+        assert_eq!(record.payload.filter(|p| !p.is_empty()), None);
+    }
+
+    #[test]
+    fn test_sync_points_raw() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let segment = build_segment_1(dir.path()); // points 1-5
+        let mut holder = SegmentHolder::default();
+        let sid = holder.add_new(segment);
+
+        let point_2 = PointStructRawPersisted::from(retrieve_raw_record(&holder, sid, 2).unwrap());
+        let point_2_version_before = holder
+            .get(sid)
+            .unwrap()
+            .get()
+            .read()
+            .point_version(2.into());
+
+        let mut point_3 =
+            PointStructRawPersisted::from(retrieve_raw_record(&holder, sid, 3).unwrap());
+        let changed_bytes: Vec<u8> = [9.0f32, 8.0, 7.0, 6.0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        point_3.vectors = vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into();
+
+        let point_100 = PointStructRawPersisted {
+            id: 100.into(),
+            vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into(),
+            payload: None,
+        };
+
+        let (deleted, new, updated) = sync_points_raw(
+            &holder,
+            100,
+            None,
+            None,
+            &[point_2, point_3, point_100],
+            &hw_counter,
+        )
+        .unwrap();
+
+        assert_eq!(deleted, 3, "points 1, 4 and 5 are not in the sync set");
+        assert_eq!(new, 1, "point 100 is new");
+        assert_eq!(updated, 1, "only point 3 has different bytes");
+
+        {
+            let segment = holder.get(sid).unwrap().get();
+            let segment = segment.read();
+            for point_id in [1, 4, 5] {
+                assert!(
+                    !segment.has_point(
+                        point_id.into(),
+                        common::types::DeferredBehavior::WithDeferred
+                    ),
+                    "point {point_id} must be deleted",
+                );
+            }
+            assert_eq!(segment.point_version(2.into()), point_2_version_before);
+            assert_eq!(segment.point_version(3.into()), Some(100));
+        }
+
+        let record = retrieve_raw_record(&holder, sid, 3).unwrap();
+        assert_eq!(
+            record.vectors.unwrap().to_vec(),
+            vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes)],
+        );
     }
 
     /// Helper: creates a non-appendable segment with a single point at the given version and city payload.
