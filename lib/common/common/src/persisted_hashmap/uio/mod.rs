@@ -20,7 +20,8 @@ mod random_reader;
 /// If entries are smaller than that, it's likely more efficient to read them sequentially.
 const SEQUENTIAL_READ_THRESHOLD: u64 = 8 * 1024;
 
-const HEADER_AND_BASIC_PHF_SIZE: u64 = size_of::<Header>() as u64 + 16 * 1024; // header + 16KB
+/// Covers header + ~380k items worth of phf.
+const HEADER_AND_BASIC_PHF_SIZE: u64 = size_of::<Header>() as u64 + 128 * 1024;
 
 /// On-disk hash map accessed via [`UniversalRead`].
 pub struct UniversalHashMap<K, V, S>
