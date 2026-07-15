@@ -1777,8 +1777,8 @@ fn test_points_deduplication_with_deferred_randomized() {
         // (there must be another deferred copy remaining)
         for &(seg_idx, _, deferred) in &copies {
             if deferred && to_remove.contains(&(id, seg_idx)) {
-                assert!(
-                    remaining_deferred == 1,
+                assert_eq!(
+                    remaining_deferred, 1,
                     "Point {id}: deferred copy removed from seg {seg_idx} but no deferred copy remains"
                 );
             }
