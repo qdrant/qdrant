@@ -21,7 +21,7 @@ mod random_reader;
 const SEQUENTIAL_READ_THRESHOLD: u64 = 8 * 1024;
 
 /// Covers header + ~380k items worth of phf.
-const HEADER_AND_BASIC_PHF_SIZE: u64 = size_of::<Header>() as u64 + 128 * 1024; // header + 128KB
+const HEADER_AND_BASIC_PHF_SIZE: u64 = size_of::<Header>() as u64 + 128 * 1024;
 
 /// On-disk hash map accessed via [`UniversalRead`].
 pub struct UniversalHashMap<K, V, S>
