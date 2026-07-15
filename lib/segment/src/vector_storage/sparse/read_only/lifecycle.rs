@@ -12,20 +12,25 @@ use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
 impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
+    /// `populate` decides whether the vector data is warmed: search doesn't
+    /// read the sparse storage (`Populate::No` suffices), but a mutable-RAM
+    /// sparse index is rebuilt from it at open, reading it in full — the
+    /// caller warms it then.
+    ///
     /// Absent files are skipped rather than reported: the subsequent open is
     /// the one to produce the error.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path) -> OperationResult<()> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
         // Gridstore reader
-        GridstoreReader::<StoredSparseVector, S>::preopen(
-            fs,
-            path.join(STORAGE_DIRNAME),
-            Populate::No,
-        )
-        .map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to preopen read-only sparse vector storage: {err}"
-            ))
-        })?;
+        GridstoreReader::<StoredSparseVector, S>::preopen(fs, path.join(STORAGE_DIRNAME), populate)
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to preopen read-only sparse vector storage: {err}"
+                ))
+            })?;
 
         // Deleted flags
         InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIRNAME))?;
@@ -35,12 +40,15 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
 
     /// Open the read-only counterpart of the mmap sparse storage at `path`,
     /// threading every file open through `fs`; reads the existing layout but
-    /// creates and writes nothing. `next_point_offset` is reconstructed like the
+    /// creates and writes nothing. `populate` mirrors [`Self::preopen`].
+    /// `next_point_offset` is reconstructed like the
     /// writable storage on reopen: the highest deleted id or the Gridstore
     /// pointer count, whichever is larger.
-    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
-        // Sparse vector storage is not used during search
-        let populate = Populate::No;
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<Self> {
         let storage = GridstoreReader::<StoredSparseVector, S>::open(
             fs,
             path.join(STORAGE_DIRNAME),
