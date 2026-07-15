@@ -1434,6 +1434,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
+ "static_assertions",
  "strum",
  "tango-bench",
  "tap",
@@ -3782,6 +3783,7 @@ version = "0.0.0"
 dependencies = [
  "ahash",
  "aligned-vec",
+ "bytemuck",
  "bytes",
  "common",
  "futures",
@@ -3798,8 +3800,11 @@ dependencies = [
  "bytes",
  "common",
  "futures",
+ "http 1.4.2",
  "io_bridge",
  "object_store",
+ "tokio",
+ "url",
 ]
 
 [[package]]

@@ -13,9 +13,16 @@ use super::{
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenOptions, Populate, ReadPipeline, ReadRange, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend, UniversalFlush,
+    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
 };
+
+// The disk cache is strictly read-only: mutating it must stay a
+// compile-time error, on top of writeable opens being rejected at runtime
+// (covered per backend variant below).
+static_assertions::assert_not_impl_any!(
+    DiskCache<MmapFile>: UniversalAppend, UniversalFlush, UniversalWrite
+);
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()
@@ -56,6 +63,18 @@ impl Scenario {
         self.config.local_path_for(&self.remote_path).unwrap()
     }
 
+    fn fs<R>(&self) -> DiskCacheFs<R>
+    where
+        R: DiskCacheRemote,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    {
+        DiskCacheFs::<R>::from_context(DiskCacheFsContext {
+            config: self.config.clone(),
+            remote: Default::default(),
+        })
+        .unwrap()
+    }
+
     fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
         R: DiskCacheRemote,
@@ -67,22 +86,18 @@ impl Scenario {
             Populate::No
         };
 
-        let fs = DiskCacheFs::<R>::from_context(DiskCacheFsContext {
-            config: self.config.clone(),
-            remote: Default::default(),
-        })
-        .unwrap();
-        fs.open(
-            &self.remote_path,
-            OpenOptions {
-                writeable: false,
-                populate,
-                need_sequential: false,
-                advice: AdviceSetting::Global,
-            },
-            Default::default(),
-        )
-        .unwrap()
+        self.fs()
+            .open(
+                &self.remote_path,
+                OpenOptions {
+                    writeable: false,
+                    populate,
+                    need_sequential: false,
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .unwrap()
     }
 
     /// Open with [`Populate::Partial`] over `range`, prefetching just that
@@ -748,5 +763,31 @@ mod tests_mod {
         })
         .unwrap();
         assert!(seen.iter().all(|&s| s));
+    }
+
+    /// The cache is strictly read-only: writeable opens (the append
+    /// vehicle on other backends) are rejected outright — appends must go
+    /// directly to the backing storage.
+    #[test]
+    fn writeable_open_is_rejected() {
+        let scn = Scenario::new(10);
+
+        let err = scn
+            .fs::<R>()
+            .open(
+                &scn.remote_path,
+                OpenOptions {
+                    writeable: true,
+                    populate: Populate::No,
+                    need_sequential: false,
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .unwrap_err();
+        assert_matches!(
+            err,
+            crate::universal_io::UniversalIoError::Uninitialized { .. },
+        );
     }
 }

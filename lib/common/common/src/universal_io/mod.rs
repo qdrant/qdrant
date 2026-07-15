@@ -14,6 +14,11 @@ mod traits;
 mod types;
 mod wrappers;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod conformance;
+#[cfg(test)]
+mod tests;
+
 pub use self::cached_fs::{CachedFs, CachedReadFsContext};
 pub use self::error::{IsNotFound, OkNotFound, UniversalIoError};
 #[cfg(target_os = "linux")]
@@ -25,8 +30,9 @@ pub use self::simple_disk_cache::{
 };
 pub use self::sorted_block_index::SortedBlockIndex;
 pub use self::traits::{
-    CachedReadFs, Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UniversalWriteFileOps, UserData,
+    CachedReadFs, Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalAppend, UniversalFlush,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
+    UserData,
 };
 pub use self::types::{
     ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,

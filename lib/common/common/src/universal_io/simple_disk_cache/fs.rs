@@ -95,7 +95,6 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         path: impl AsRef<Path>,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
     ) -> Result<R> {
-        let extra = extra.with_prevent_caching(true);
         self.remote_fs.open(
             path.as_ref(),
             OpenOptions {
@@ -187,6 +186,8 @@ where
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> Result<DiskCache<R>> {
+        // The cache is strictly read-only: appends (and any other writes)
+        // must go directly to the backing storage, not through the cache.
         if options.writeable {
             return Err(UniversalIoError::Uninitialized {
                 description:

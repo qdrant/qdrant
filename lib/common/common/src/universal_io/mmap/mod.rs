@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::{fs, io, slice};
 
 use memmap2::MmapRaw;
@@ -68,16 +68,32 @@ impl UniversalReadFs for MmapFs {
     }
 }
 
+/// A memory-mapped local file handle.
+///
+/// # Clones share the mapping
+///
+/// Clones share the underlying mapping but keep their own raw `ptr`/`len`
+/// copies. Growing the file through one handle ([`UniversalAppend::append`],
+/// or [`UniversalRead::reopen`] after external growth) remaps the shared
+/// mapping, which may move or replace it — the sibling clones' cached
+/// pointers then dangle. Reading through such a clone is undefined behavior
+/// (not merely a stale view), even long after the growing call returned,
+/// until that clone calls [`UniversalRead::reopen`] itself.
 #[derive(Debug, Clone)]
 pub struct MmapFile {
     path: PathBuf,
 
-    #[cfg_attr(target_os = "linux", expect(dead_code))]
     writeable: bool,
-    #[cfg_attr(target_os = "linux", expect(dead_code))]
     populate: bool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
+
+    /// Dedicated `O_APPEND` fd, lazily opened on the first
+    /// [`UniversalAppend::append`]. Kept separate from the mmap so appends
+    /// cannot disturb the mapping, and shared across clones so every
+    /// handle's flusher fdatasyncs appended growth — regardless of which
+    /// clone appended, or in which order clones and flushers were created.
+    append_file: Arc<OnceLock<fs_err::File>>,
 
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<Mutex<MmapRaw>>,
@@ -139,6 +155,7 @@ impl MmapFile {
             writeable,
             populate,
             advice,
+            append_file: Arc::new(OnceLock::new()),
             mmap: Arc::new(Mutex::new(mmap)),
             mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
             len,
@@ -177,60 +194,7 @@ impl UniversalRead for MmapFile {
             return Ok(());
         }
 
-        let mut mmap = self.mmap.lock();
-        let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
-        cfg_select! {
-            // in linux, we can use `MmapRaw::remap`
-            target_os = "linux" => {
-                // SAFETY:
-                // We use may_move = true, since `remap` can fail if we don't allow it.
-                // It is safe to allow moving since we are holding `&mut self`
-                let remap_options = memmap2::RemapOptions::new().may_move(true);
-                unsafe {
-                    mmap.remap(new_len as usize, remap_options)?;
-                    mmap_seq.as_mut().map(|m| m.remap(new_len as usize, remap_options)).transpose()?;
-                };
-
-                // Whether or not `remap` moved the memory region let's update the pointers
-                let ptr = SendSyncPtr(mmap.as_mut_ptr());
-                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
-                let len = new_len as usize;
-            }
-            // otherwise, let's open again
-            _ => {
-                *mmap = open_mmap(
-                    self.path.as_ref(),
-                    self.writeable,
-                    self.populate,
-                    self.advice,
-                )?;
-                let ptr = SendSyncPtr(mmap.as_mut_ptr());
-
-                let ptr_seq;
-                let len;
-                if let Some(mmap_seq) = mmap_seq.as_mut() {
-                    let mmap_seq_ = open_mmap(
-                        self.path(),
-                        false,
-                        false,
-                        AdviceSetting::Advice(Advice::Sequential),
-                    )?;
-                    **mmap_seq = mmap_seq_;
-
-                    len = std::cmp::min(mmap.len(), mmap_seq.len());
-                    ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
-                } else {
-                    len = mmap.len();
-                    ptr_seq = ptr;
-                }
-            }
-        }
-
-        self.ptr = ptr;
-        self.ptr_seq = ptr_seq;
-        self.len = len;
-
-        Ok(())
+        self.remap_to(new_len as usize, self.populate)
     }
 
     fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, _align: usize) -> Result<ACow<'_>> {
@@ -310,20 +274,202 @@ impl UniversalWrite for MmapFile {
 
         Ok(())
     }
+}
 
+impl UniversalFlush for MmapFile {
     fn flusher(&self) -> Flusher {
         let mmap = self.mmap.clone();
+        let append_file = self.append_file.clone();
         let flusher = move || {
-            // flushing empty mmap returns error on some platforms
-            let mmap = mmap.lock();
-            if mmap.len() > 0 {
-                mmap.flush()?;
+            {
+                // flushing empty mmap returns error on some platforms
+                let mmap = mmap.lock();
+                if mmap.len() > 0 {
+                    mmap.flush()?;
+                }
+            }
+
+            // Appends change the file size, and `msync` alone does not
+            // persist size metadata — also fdatasync when any handle of
+            // this file has appended. The shared cell is read at flush
+            // time, so appends through clones, or appends made after this
+            // flusher was created, are covered too.
+            if let Some(file) = append_file.get() {
+                file.sync_data()?;
             }
 
             Ok(())
         };
 
         Box::new(flusher)
+    }
+}
+
+impl UniversalAppend for MmapFile {
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        if bytes.is_empty() {
+            return Ok(());
+        }
+
+        {
+            let mut fd = self.append_fd()?;
+            self.check_append_offset(fd, offset)?;
+            io::Write::write_all(&mut fd, bytes)?;
+        }
+
+        // Remap so reads and `len` through this handle see the growth.
+        self.grow_mapping(offset + bytes.len() as u64)?;
+
+        Ok(())
+    }
+
+    fn append_batch<'a, T: bytemuck::Pod>(
+        &mut self,
+        offset: ByteOffset,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> Result<()> {
+        let (mut slices, total) = local_file_ops::collect_append_slices(items);
+        if total == 0 {
+            return Ok(());
+        }
+
+        {
+            let fd = self.append_fd()?;
+            self.check_append_offset(fd, offset)?;
+            local_file_ops::write_all_vectored(fd, &mut slices)?;
+        }
+
+        self.grow_mapping(offset + total as u64)?;
+
+        Ok(())
+    }
+}
+
+impl MmapFile {
+    /// Grow the mapping to `new_len` without consulting the filesystem: the
+    /// caller already knows the file's new length (an append it just made,
+    /// or a `set_len` it just issued), so the `open`+`fstat`+`close` of a
+    /// full [`reopen`](UniversalRead::reopen) is skipped. Unlike a reopen,
+    /// the non-Linux re-mmap never re-populates: growth is mapping
+    /// maintenance, and re-faulting the whole file would make each append
+    /// O(file size) for handles opened with [`Populate::Blocking`].
+    pub(crate) fn grow_mapping(&mut self, new_len: u64) -> Result<()> {
+        debug_assert!(new_len as usize >= self.len, "grow_mapping cannot shrink");
+        if new_len as usize == self.len {
+            return Ok(());
+        }
+
+        self.remap_to(new_len as usize, false)
+    }
+
+    /// Remap both mmaps to `new_len` and refresh the cached pointers.
+    ///
+    /// `populate` only applies to the non-Linux path, which rebuilds the
+    /// mapping from scratch; the Linux `mremap` keeps residency as is.
+    fn remap_to(&mut self, new_len: usize, populate: bool) -> Result<()> {
+        let mut mmap = self.mmap.lock();
+        let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
+        cfg_select! {
+            // in linux, we can use `MmapRaw::remap`
+            target_os = "linux" => {
+                let _ = populate;
+
+                // SAFETY:
+                // We use may_move = true, since `remap` can fail if we don't allow it.
+                // Moving is sound for *this* handle: `&mut self` keeps its reads out
+                // while the cached pointers below are refreshed. Clones share this
+                // mapping but keep their own pointer copies — per the contract
+                // documented on `MmapFile` they must `reopen()` before reading after
+                // any growth, so no live reference into the old location exists.
+                let remap_options = memmap2::RemapOptions::new().may_move(true);
+                unsafe {
+                    mmap.remap(new_len, remap_options)?;
+                    mmap_seq.as_mut().map(|m| m.remap(new_len, remap_options)).transpose()?;
+                };
+
+                // Whether or not `remap` moved the memory region let's update the pointers
+                let ptr = SendSyncPtr(mmap.as_mut_ptr());
+                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
+                let len = new_len;
+            }
+            // otherwise, let's open again
+            _ => {
+                *mmap = open_mmap(
+                    self.path.as_ref(),
+                    self.writeable,
+                    populate,
+                    self.advice,
+                )?;
+                let ptr = SendSyncPtr(mmap.as_mut_ptr());
+
+                let ptr_seq;
+                let len;
+                if let Some(mmap_seq) = mmap_seq.as_mut() {
+                    let mmap_seq_ = open_mmap(
+                        self.path(),
+                        false,
+                        false,
+                        AdviceSetting::Advice(Advice::Sequential),
+                    )?;
+                    **mmap_seq = mmap_seq_;
+
+                    len = std::cmp::min(mmap.len(), mmap_seq.len());
+                    ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
+                } else {
+                    len = mmap.len();
+                    ptr_seq = ptr;
+                }
+            }
+        }
+
+        self.ptr = ptr;
+        self.ptr_seq = ptr_seq;
+        self.len = len;
+
+        Ok(())
+    }
+
+    /// The append precondition: the file must currently end at `offset`.
+    /// The fd is statted — not the mapping length, which can be stale when
+    /// the file grew externally — so a stale handle gets a clean conflict.
+    fn check_append_offset(&self, fd: &fs_err::File, offset: ByteOffset) -> Result<()> {
+        let file_len = fd.metadata()?.len();
+        if file_len != offset {
+            return Err(UniversalIoError::AppendOffsetConflict {
+                path: self.path.clone(),
+                offset,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Lazily open (and cache) a dedicated `O_APPEND` fd used exclusively for
+    /// appends. Every `write(2)`/`writev(2)` through it is an atomic
+    /// grow+write at the file's current end, so growth cannot leave a
+    /// zero-filled window behind.
+    fn append_fd(&self) -> Result<&fs_err::File> {
+        if !self.writeable {
+            return Err(UniversalIoError::Io(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "append requires a handle opened with writeable=true",
+            )));
+        }
+
+        if let Some(file) = self.append_file.get() {
+            return Ok(file);
+        }
+
+        let file = fs_err::OpenOptions::new()
+            .append(true)
+            .open(&self.path)
+            .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
+
+        // A clone may have raced the initialization (concurrent appenders
+        // are out of contract, but stay sound): exactly one fd is kept, a
+        // losing one is dropped.
+        Ok(self.append_file.get_or_init(|| file))
     }
 }
 
@@ -423,10 +569,14 @@ impl MmapFile {
         } else {
             self.ptr
         };
+        // SAFETY: `ptr`/`len` match the shared mapping unless this handle
+        // missed a growth through a sibling clone — excluded by the
+        // reopen-before-read contract documented on `MmapFile`.
         unsafe { slice::from_raw_parts(ptr.0, self.len) }
     }
 
     fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: see `as_bytes`.
         unsafe { slice::from_raw_parts_mut(self.ptr.0, self.len) }
     }
 }
@@ -487,4 +637,35 @@ where
     mmap.copy_from_slice(bytes);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The append fd is shared across clones, so a flusher from any clone —
+    /// even one created before the first append — fdatasyncs the growth.
+    #[test]
+    fn clone_flusher_sees_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("append.dat");
+        MmapFs.create(&path, 0).unwrap();
+
+        let options = OpenOptions {
+            writeable: true,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mut file = MmapFs.open(&path, options, ()).unwrap();
+        let clone = file.clone();
+        let flusher = clone.flusher();
+
+        file.append(0, b"tail".as_slice()).unwrap();
+
+        // The append fd is visible through the sibling clone, and the
+        // pre-created flusher takes the fdatasync path.
+        assert!(clone.append_file.get().is_some());
+        flusher().unwrap();
+    }
 }

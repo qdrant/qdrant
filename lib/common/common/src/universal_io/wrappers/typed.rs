@@ -7,8 +7,8 @@ use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalKind,
-    UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalAppend,
+    UniversalFlush, UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -147,11 +147,6 @@ where
     }
 
     #[inline]
-    pub fn flusher(&self) -> Flusher {
-        self.inner.flusher()
-    }
-
-    #[inline]
     pub fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
@@ -160,5 +155,44 @@ where
         T: 'a,
     {
         S::write_multi::<T>(Self::peel_slice_mut(files), writes)
+    }
+}
+
+// On `UniversalFlush` rather than `UniversalWrite` so append-only storages
+// can run their durability flusher through the wrapper too.
+impl<S, T> TypedStorage<S, T>
+where
+    S: UniversalFlush,
+{
+    #[inline]
+    pub fn flusher(&self) -> Flusher {
+        self.inner.flusher()
+    }
+}
+
+impl<S, T> TypedStorage<S, T>
+where
+    S: UniversalAppend,
+    T: bytemuck::Pod,
+{
+    /// Append `data` at exactly byte offset `offset`, which must equal the
+    /// current end of file.
+    #[inline]
+    pub fn append(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+        self.inner.append::<T>(offset, data)
+    }
+
+    /// Append several buffers contiguously, starting at exactly byte offset
+    /// `offset`, which must equal the current end of file.
+    #[inline]
+    pub fn append_batch<'a>(
+        &mut self,
+        offset: ByteOffset,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> Result<()>
+    where
+        T: 'a,
+    {
+        self.inner.append_batch::<T>(offset, items)
     }
 }
