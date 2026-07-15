@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use segment::types::{Payload, PointIdType, VectorNameBuf};
+use segment::types::{Distance, Payload, PointIdType, VectorNameBuf};
 use sparse::common::sparse_vector::SparseVector;
 use tokio::task::JoinHandle;
 
@@ -33,12 +33,14 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "a",
         kind: VectorKind::Dense(4),
         datatype: None,
+        distance: Distance::Dot,
         initially_active: true,
     },
     VectorCandidate {
         name: "b",
         kind: VectorKind::Dense(6),
         datatype: None,
+        distance: Distance::Dot,
         initially_active: true,
     },
     // Explicit `Some(Float32)` rather than the unset default: exercises schema configs that
@@ -48,6 +50,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "c",
         kind: VectorKind::Dense(5),
         datatype: Some(Datatype::Float32),
+        distance: Distance::Dot,
         initially_active: true,
     },
     // Dense vector configured with HNSW `inline_storage` (original + quantized vectors stored
@@ -57,24 +60,28 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "i",
         kind: VectorKind::Dense(4),
         datatype: None,
+        distance: Distance::Dot,
         initially_active: true,
     },
     VectorCandidate {
         name: "s",
         kind: VectorKind::Sparse,
         datatype: None,
+        distance: Distance::Dot,
         initially_active: true,
     },
     VectorCandidate {
         name: "u",
         kind: VectorKind::Sparse,
         datatype: None,
+        distance: Distance::Dot,
         initially_active: false,
     },
     VectorCandidate {
         name: "m",
         kind: VectorKind::MultiDense(4),
         datatype: None,
+        distance: Distance::Dot,
         initially_active: true,
     },
     // TurboQuant 4-bit compressed storage, the primary quantized datatype, applied to
@@ -84,6 +91,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "q",
         kind: VectorKind::Dense(8),
         datatype: Some(Datatype::Turbo4),
+        distance: Distance::Dot,
         initially_active: true,
     },
     // Half-precision storage. Lossy but deterministic and idempotent: the model records
@@ -92,6 +100,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "h",
         kind: VectorKind::Dense(6),
         datatype: Some(Datatype::Float16),
+        distance: Distance::Dot,
         initially_active: true,
     },
     // Unsigned-byte storage. The engine truncates each component with `x as u8`; the
@@ -101,6 +110,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "y",
         kind: VectorKind::Dense(4),
         datatype: Some(Datatype::Uint8),
+        distance: Distance::Dot,
         initially_active: true,
     },
     // Multi-vector variants of the lossy-but-idempotent datatypes: each stored row goes
@@ -109,17 +119,78 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         name: "w",
         kind: VectorKind::MultiDense(5),
         datatype: Some(Datatype::Float16),
+        distance: Distance::Dot,
         initially_active: true,
     },
     VectorCandidate {
         name: "z",
         kind: VectorKind::MultiDense(3),
         datatype: Some(Datatype::Uint8),
+        distance: Distance::Dot,
+        initially_active: true,
+    },
+    // Cosine candidates. The engine normalizes Cosine vectors once, at first ingestion
+    // (`Metric::preprocess`, dispatched per storage datatype); every later move
+    // (optimizer rebuilds, copy-on-write point moves, `upsert_moved_point`) transfers the
+    // stored form as raw bytes without re-preprocessing, so the model records
+    // normalize-then-datatype-round-trip and compares exactly (Turbo4: usual tolerance).
+    VectorCandidate {
+        name: "e",
+        kind: VectorKind::Dense(5),
+        datatype: None,
+        distance: Distance::Cosine,
+        initially_active: true,
+    },
+    // Per-row normalization: each stored row of the matrix is preprocessed like a dense
+    // Cosine vector.
+    VectorCandidate {
+        name: "n",
+        kind: VectorKind::MultiDense(4),
+        datatype: None,
+        distance: Distance::Cosine,
+        initially_active: true,
+    },
+    // Ordering coverage: normalization happens in f32 first, then the f16 storage
+    // round-trip. The f16-rounded unit vector is stored as-is (raw-byte moves), so the
+    // prediction stays exact even though its norm is no longer 1.0 within f16 precision.
+    VectorCandidate {
+        name: "x",
+        kind: VectorKind::Dense(6),
+        datatype: Some(Datatype::Float16),
+        distance: Distance::Cosine,
+        initially_active: true,
+    },
+    // TurboQuant's dedicated Cosine mode: the l2 length is not stored (forced to 1.0,
+    // recovered via the centroid-norm recompute at dequantize), plus zero-vector guards.
+    // Same padding-free dim as "q" so the CoW re-quantization fixed point holds.
+    VectorCandidate {
+        name: "o",
+        kind: VectorKind::Dense(8),
+        datatype: Some(Datatype::Turbo4),
+        distance: Distance::Cosine,
+        initially_active: true,
+    },
+    // Euclid / Manhattan candidates. Both metrics' ingestion preprocess is an identity
+    // (like Dot), so the model's read-back prediction needs no distance-specific logic;
+    // their coverage value is on the engine side: `Order::SmallBetter` comparator paths
+    // in search/HNSW that Dot and Cosine never exercise.
+    VectorCandidate {
+        name: "j",
+        kind: VectorKind::Dense(6),
+        datatype: None,
+        distance: Distance::Euclid,
+        initially_active: true,
+    },
+    VectorCandidate {
+        name: "k",
+        kind: VectorKind::Dense(4),
+        datatype: None,
+        distance: Distance::Manhattan,
         initially_active: true,
     },
 ];
 
-/// Reject kind/datatype combinations the model cannot predict yet, at run startup
+/// Reject kind/datatype/distance combinations the model cannot predict yet, at run startup
 /// rather than as a false-divergence soak panic hours into a run:
 /// - MultiDense + Turbo4: `model_vector` predicts Turbo4 via the per-vector
 ///   `turbo_storage_roundtrip`; the engine's multivector quantization path differs, so
@@ -127,16 +198,25 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 ///   the same per-component round-trip as the dense case.
 /// - Sparse + any datatype: the fixture's sparse arm ignores the field entirely
 ///   (sparse datatype lives in the sparse index config, which is not modeled).
+/// - Sparse + non-Dot distance: sparse schemas have no distance parameter (the fixture's
+///   sparse arm ignores the field), so anything but `Dot` would silently not apply.
+/// - Turbo4 + Euclid/Manhattan: TQ's L1/L2 modes store vector lengths differently from
+///   Dot/Cosine (dedicated `l2_length` field / scaling-factor-as-length), and the
+///   copy-on-write re-quantization fixed point that `dense_matches`' ulp tolerance
+///   relies on has only been soak-validated for Dot and Cosine.
 fn assert_candidates_predictable() {
     for c in ALL_CANDIDATES {
+        let turbo4 = matches!(c.datatype, Some(Datatype::Turbo4));
         let supported = match c.kind {
-            VectorKind::Dense(_) => true,
-            VectorKind::MultiDense(_) => !matches!(c.datatype, Some(Datatype::Turbo4)),
-            VectorKind::Sparse => c.datatype.is_none(),
+            VectorKind::Dense(_) => {
+                !turbo4 || matches!(c.distance, Distance::Dot | Distance::Cosine)
+            }
+            VectorKind::MultiDense(_) => !turbo4,
+            VectorKind::Sparse => c.datatype.is_none() && c.distance == Distance::Dot,
         };
         assert!(
             supported,
-            "unsupported kind/datatype combination for `{}` (see comment above)",
+            "unsupported kind/datatype/distance combination for `{}` (see comment above)",
             c.name
         );
     }
@@ -153,6 +233,13 @@ pub(super) struct VectorCandidate {
     /// datatypes) and `VectorKind::MultiDense` (all but Turbo4); enforced by the
     /// startup check (`assert_candidates_predictable`).
     pub(super) datatype: Option<Datatype>,
+    /// Distance metric for dense / multi-dense storage. Cosine vectors are normalized by
+    /// the engine at first ingestion; `model_vector` mirrors that (per-datatype dispatch:
+    /// the byte metric's Cosine preprocess is an identity, so Uint8 is stored
+    /// un-normalized). Sparse candidates must use `Dot` — sparse schemas carry no
+    /// distance and score as dot product by construction — enforced by
+    /// `assert_candidates_predictable`.
+    pub(super) distance: Distance,
     /// Whether the name is present in the collection schema at fixture time. Inactive
     /// names are only reachable through `Op::CreateVectorName`, which is FORCE_OFF by
     /// default, so a candidate gets default-soak coverage only when this is true.
