@@ -48,14 +48,14 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         if let Some(value) = self.pending_updates.read().get(&index) {
             Some(*value)
         } else {
-            match self.bitslice.read().get_bit(index as u64) {
-                Ok(value) => value,
-                Err(err) => {
+            self.bitslice
+                .read()
+                .get_bit(index as u64)
+                .unwrap_or_else(|err| {
                     log::error!("Error reading bit at index {index}: {err}");
                     debug_assert!(false, "Error reading bit at index {index}: {err}");
                     None
-                }
-            }
+                })
         }
     }
 

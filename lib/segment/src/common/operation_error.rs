@@ -369,7 +369,7 @@ pub struct CancelledError;
 pub type CancellableResult<T> = Result<T, CancelledError>;
 
 impl From<CancelledError> for OperationError {
-    fn from(CancelledError: CancelledError) -> Self {
+    fn from(_cancelled_error: CancelledError) -> Self {
         Self::cancelled(PROCESS_CANCELLED_BY_SERVICE_MESSAGE)
     }
 }

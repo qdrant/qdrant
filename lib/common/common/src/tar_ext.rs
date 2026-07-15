@@ -24,7 +24,7 @@ type BorrowedOutput<'a> = Box<dyn WriteSeek + 'a>;
 pub trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-/// A wrapper around [`tar::Builder<FusedWriteSeek>`] that disables
+/// A wrapper around [`tar::Builder<FusedWriteSeek<W>>`] that disables
 /// [`FusedWriteSeek`] when it is dropped.
 ///
 /// Disabling the [`FusedWriteSeek`] is a workaround for the inconvenient

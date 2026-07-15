@@ -205,10 +205,11 @@ fn assert_snapshots_equal(
             "[{label}] file size changed for {}",
             path.display(),
         );
-        assert!(
-            before_bytes == after_bytes,
+        assert_eq!(
+            before_bytes,
+            after_bytes,
             "[{label}] file content changed for {}",
-            path.display(),
+            path.display()
         );
     }
 }

@@ -108,7 +108,7 @@ impl Permutation {
     pub fn permute<T>(&self, arr: &mut [T]) {
         debug_assert_eq!(arr.len(), self.count);
         let rng = ReversibleLcg::new(self.seed);
-        for (i, rand) in ((1..self.count).rev()).zip(rng) {
+        for (i, rand) in (1..self.count).rev().zip(rng) {
             let j = Self::bounded_rand(rand, i as u64 + 1) as usize;
             arr.swap(i, j);
         }

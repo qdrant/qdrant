@@ -140,9 +140,9 @@ pub(super) async fn apply_retrieve(
     for id in ids {
         let in_model = model.contains_key(id);
         let in_returned = returned.contains(id);
-        assert!(
-            in_model == in_returned,
-            "{ctx} membership mismatch for id {id:?}: model={in_model}, returned={in_returned}",
+        assert_eq!(
+            in_model, in_returned,
+            "{ctx} membership mismatch for id {id:?}: model={in_model}, returned={in_returned}"
         );
     }
     for record in &records {
@@ -194,9 +194,9 @@ pub(super) async fn apply_retrieve_selective(
     for id in ids {
         let in_model = model.contains_key(id);
         let in_returned = returned.contains(id);
-        assert!(
-            in_model == in_returned,
-            "RetrieveSelective membership mismatch for id {id:?}: model={in_model}, returned={in_returned}",
+        assert_eq!(
+            in_model, in_returned,
+            "RetrieveSelective membership mismatch for id {id:?}: model={in_model}, returned={in_returned}"
         );
     }
 

@@ -67,7 +67,7 @@ impl LiveVectorNamesProvider {
     }
 
     pub fn get(&self) -> HashSet<VectorNameBuf> {
-        (self.0)()
+        self.0()
     }
 }
 

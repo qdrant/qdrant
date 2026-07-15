@@ -87,7 +87,6 @@ tempfile = { workspace = true }
 sha2 = { workspace = true }
 bytes = { workspace = true }
 fnv = { workspace = true }
-indexmap = { workspace = true }
 ringbuffer = "0.16.0"
 strum = { workspace = true }
 urlencoding = { workspace = true }
