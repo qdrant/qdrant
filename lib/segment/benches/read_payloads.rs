@@ -6,7 +6,7 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
-use common::universal_io::{MmapFile, UniversalWrite};
+use common::universal_io::{MmapFile, UniversalAppend, UniversalWrite};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::{SliceRandom, SmallRng};
 use rand::{RngExt, SeedableRng};
@@ -78,7 +78,7 @@ fn tmpdir() -> TempDir {
 
 fn storage<S>(path: &Path) -> PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
     let storage_exists = storage_dir(path).exists();

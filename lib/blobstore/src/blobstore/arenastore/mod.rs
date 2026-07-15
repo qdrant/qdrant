@@ -13,7 +13,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{UniversalRead, UniversalWrite, UserData};
+use common::universal_io::{UniversalAppend, UniversalRead, UserData};
 use fs_err as fs;
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
@@ -84,7 +84,7 @@ fn validate_consistency<S: UniversalRead>(
 #[derive(Debug)]
 pub(super) struct Arenastore<V, S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalAppend + 'static,
 {
     fs: S::Fs,
     pub(super) config: StorageConfig,
@@ -99,7 +99,7 @@ where
 impl<V, S> Arenastore<V, S>
 where
     V: Blob,
-    S: UniversalWrite + 'static,
+    S: UniversalAppend + 'static,
 {
     /// List all files belonging to this storage (tracker, pages, config).
     pub(super) fn files(&self) -> Vec<PathBuf> {
@@ -361,12 +361,13 @@ where
     }
 }
 
-impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
+impl<V, S: UniversalAppend + 'static> Arenastore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     ///
-    /// Appends all buffered value data to the page files with a single write per page and syncs
-    /// them, then does the same for the pending mappings in the tracker file. This order
-    /// guarantees that a mapping on disk never points at value data that is not durable yet.
+    /// Appends all buffered value data to the page files with a single atomic append per page
+    /// and syncs them, then does the same for the pending mappings in the tracker file. This
+    /// order guarantees that a mapping on disk never points at value data that is not durable
+    /// yet.
     pub(super) fn flusher(&self) -> Flusher {
         // Only values and mappings put up to this point are persisted, puts made during the
         // flush stay buffered for the next flush. The two watermarks are consistent with each
@@ -374,7 +375,6 @@ impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
         let target = self.tracker.read().pointer_count();
         let target_page_lens = self.pages.read().page_lens();
 
-        let fs = self.fs.clone();
         let tracker = Arc::downgrade(&self.tracker);
         let pages = Arc::downgrade(&self.pages);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
@@ -391,7 +391,7 @@ impl<V, S: UniversalWrite + 'static> Arenastore<V, S> {
 
             let pages_flusher = {
                 let mut pages_guard = pages.write();
-                pages_guard.write_pending(&fs, &target_page_lens)?;
+                pages_guard.write_pending(&target_page_lens)?;
                 pages_guard.flusher()
             };
             pages_flusher()?;

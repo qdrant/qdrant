@@ -5,7 +5,7 @@ use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, Populate, UniversalWrite};
+use common::universal_io::{MmapFile, Populate, UniversalAppend, UniversalWrite};
 use fs_err as fs;
 use serde_json::Value;
 
@@ -28,14 +28,14 @@ impl Blob for Payload {
 }
 
 #[derive(Debug)]
-pub struct PayloadStorageImpl<S: UniversalWrite + 'static = MmapFile> {
+pub struct PayloadStorageImpl<S: UniversalWrite + UniversalAppend + 'static = MmapFile> {
     storage: Blobstore<Payload, S>,
     populate: bool,
 }
 
 impl<S> PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
     pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
@@ -87,7 +87,7 @@ where
 
 impl<S> PayloadStorageRead for PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
     fn get(
@@ -161,7 +161,7 @@ where
 
 impl<S> PayloadStorage for PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
     fn overwrite(
