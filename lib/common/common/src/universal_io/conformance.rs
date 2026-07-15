@@ -120,4 +120,37 @@ where
 
     // The durability hook runs cleanly after appends.
     (file.flusher())().unwrap();
+
+    // Two writeable handles on the same file: the handle holding a stale
+    // offset gets a clean conflict and writes nothing — the check runs
+    // against the file, not the handle's possibly-stale view.
+    let conflict_path = dir.join("append_conflict.dat");
+    fs.create(&conflict_path, 0).unwrap();
+    let mut first = fs
+        .open(&conflict_path, open_options(true), Fs::OpenExtra::default())
+        .unwrap();
+    let mut second = fs
+        .open(&conflict_path, open_options(true), Fs::OpenExtra::default())
+        .unwrap();
+
+    first.append(0, b"aaa".as_slice()).unwrap();
+    second.append(3, b"bbb".as_slice()).unwrap();
+
+    // `first` still believes the file ends at 3.
+    let err = first.append(3, b"ccc".as_slice()).unwrap_err();
+    assert!(matches!(
+        err,
+        UniversalIoError::AppendOffsetConflict { offset: 3, .. }
+    ));
+
+    // Recovery per the contract: reopen the stale handle, re-check the
+    // length to learn the true end of file, and append there.
+    first.reopen().unwrap();
+    let eof = first.len::<u8>().unwrap();
+    assert_eq!(eof, 6);
+    first.append(eof, b"ccc".as_slice()).unwrap();
+    assert_eq!(
+        first.read_whole::<u8>().unwrap().as_ref(),
+        b"aaabbbccc".as_slice(),
+    );
 }

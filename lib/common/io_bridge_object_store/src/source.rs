@@ -537,30 +537,4 @@ mod tests {
         let bytes = file.read_whole::<u8>().unwrap();
         assert_eq!(&bytes[..], b"hello world!?");
     }
-
-    /// Two handles appending to the same object: the one with the stale
-    /// offset gets a conflict and nothing lands twice; re-deriving the
-    /// offset from the actual length recovers.
-    #[test]
-    fn append_conflict_recovery() {
-        let runtime = BridgeRuntime::global();
-        let store = Arc::new(InMemory::new());
-        let mut first = make_file(runtime.clone(), store.clone(), "log");
-        let mut second = make_file(runtime, store, "log");
-
-        first.append(0, b"aaa".as_slice()).unwrap();
-        second.append(3, b"bbb".as_slice()).unwrap();
-
-        let err = first.append(3, b"ccc".as_slice()).unwrap_err();
-        assert!(matches!(
-            err,
-            UniversalIoError::AppendOffsetConflict { offset: 3, .. }
-        ));
-
-        let eof = first.len::<u8>().unwrap();
-        first.append(eof, b"ccc".as_slice()).unwrap();
-
-        let bytes = first.read_whole::<u8>().unwrap();
-        assert_eq!(&bytes[..], b"aaabbbccc");
-    }
 }
