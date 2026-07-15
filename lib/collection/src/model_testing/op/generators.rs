@@ -13,9 +13,10 @@ use segment::types::{
 use serde_json::{Map, Value};
 use sparse::common::sparse_vector::SparseVector;
 
-use super::super::{Model, VectorKind, VectorValue, kind_of};
+use super::super::{Model, VectorKind, VectorValue, candidate_of};
 use super::{NamedVectors, Op, Prefetch, ScrollFilter, canonical_sparse};
 use crate::operations::point_ops::UpdateMode;
+use crate::operations::types::Datatype;
 
 // ───── payload value pools ────────────────────────────────────────────────
 //
@@ -226,8 +227,16 @@ pub(super) fn random_scroll_filter(
 
 // ───── vector generators ────────────────────────────────────────────────────
 
-fn random_dense_vec(rng: &mut impl Rng, dim: u64) -> Vec<f32> {
-    (0..dim).map(|_| rng.random_range(0.0..1.0)).collect()
+/// Uniform components in `0.0..1.0`, except Uint8-backed names: their storage truncates
+/// each component with `x as u8`, so a unit-range draw would collapse every vector to
+/// zeros. Draw from the full byte range instead (the model records the truncated
+/// read-back, see `model_vector`).
+fn random_dense_vec(rng: &mut impl Rng, dim: u64, datatype: Option<Datatype>) -> Vec<f32> {
+    let upper = match datatype {
+        Some(Datatype::Uint8) => 256.0,
+        None | Some(Datatype::Float32 | Datatype::Float16 | Datatype::Turbo4) => 1.0,
+    };
+    (0..dim).map(|_| rng.random_range(0.0..upper)).collect()
 }
 
 fn random_sparse_vector(rng: &mut impl Rng) -> SparseVector {
@@ -266,20 +275,25 @@ pub(super) fn random_partial_named_vectors(
 
 /// Build a random vector matching the kind metadata associated with `name`.
 fn random_vector_for_name(rng: &mut impl Rng, name: &str) -> VectorValue {
-    match kind_of(name) {
-        VectorKind::Dense(dim) | VectorKind::DenseTurbo(dim) => {
-            VectorValue::Dense(random_dense_vec(rng, dim))
+    let candidate = candidate_of(name);
+    match candidate.kind {
+        VectorKind::Dense(dim) => {
+            VectorValue::Dense(random_dense_vec(rng, dim, candidate.datatype))
         }
         VectorKind::Sparse => VectorValue::Sparse(random_sparse_vector(rng)),
-        VectorKind::MultiDense(dim) => VectorValue::MultiDense(random_multi_dense(rng, dim)),
+        VectorKind::MultiDense(dim) => {
+            VectorValue::MultiDense(random_multi_dense(rng, dim, candidate.datatype))
+        }
     }
 }
 
 /// 2-4 rows of `dim`-wide dense vectors. Row count varies per point — exercises the
 /// engine's variable-length matrix storage.
-fn random_multi_dense(rng: &mut impl Rng, dim: u64) -> Vec<Vec<f32>> {
+fn random_multi_dense(rng: &mut impl Rng, dim: u64, datatype: Option<Datatype>) -> Vec<Vec<f32>> {
     let rows = rng.random_range(2..=4);
-    (0..rows).map(|_| random_dense_vec(rng, dim)).collect()
+    (0..rows)
+        .map(|_| random_dense_vec(rng, dim, datatype))
+        .collect()
 }
 
 /// Random 1-2 distinct names from the active set (callers gate on `active` being non-empty).

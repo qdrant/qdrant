@@ -15,7 +15,7 @@ use segment::types::{
     ScalarQuantization, ScalarQuantizationConfig, ScalarType,
 };
 
-use super::{COLLECTION_NAME, INITIAL_ACTIVE, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind, kind_of};
+use super::{ALL_CANDIDATES, COLLECTION_NAME, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::config_diff::HnswConfigDiff;
@@ -28,6 +28,26 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::shards::shard::{PeerId, ShardId};
+
+/// Shared builder plumbing for dense and multi-dense fixture params. Only override when
+/// enabled/present: leaving `on_disk` and `datatype` unset (None) preserves the engine's
+/// default resolution, so no-flag runs stay byte-identical to before these overrides
+/// existed (`None` and `Some(false)` aren't equivalent everywhere: the
+/// config-mismatch optimizer, for one, only acts on `Some`).
+fn dense_params_builder(
+    dim: u64,
+    on_disk: bool,
+    datatype: Option<Datatype>,
+) -> VectorParamsBuilder {
+    let mut builder = VectorParamsBuilder::new(dim, Distance::Dot);
+    if on_disk {
+        builder = builder.with_on_disk(true);
+    }
+    if let Some(datatype) = datatype {
+        builder = builder.with_datatype(datatype);
+    }
+    builder
+}
 
 /// Build a fresh soak collection rooted at `storage_path`. Creates `collection/` and
 /// `snapshots/` subdirs, wiping any pre-existing contents — each soak run starts from a
@@ -59,21 +79,15 @@ pub(super) async fn fixture(
     // inactive) candidates are reachable through `Op::CreateVectorName` later in the run.
     let mut dense_vectors = BTreeMap::new();
     let mut sparse_vectors = BTreeMap::new();
-    for name in INITIAL_ACTIVE {
-        match kind_of(name) {
+    for candidate in ALL_CANDIDATES.iter().filter(|c| c.initially_active) {
+        let name = candidate.name;
+        match candidate.kind {
             VectorKind::Dense(dim) => {
-                let mut builder = VectorParamsBuilder::new(dim, Distance::Dot);
-                // Only override when enabled. Leaving `on_disk` unset (None) preserves the
-                // engine's default resolution, so no-flag runs stay byte-identical to before
-                // this flag existed (`None` and `Some(false)` aren't equivalent everywhere —
-                // e.g. the config-mismatch optimizer only acts on `Some`).
-                if on_disk {
-                    builder = builder.with_on_disk(true);
-                }
+                let mut builder = dense_params_builder(dim, on_disk, candidate.datatype);
                 // The inline-storage vector exercises the HNSW `inline_storage` layout, which
                 // stores original + quantized vectors inside the index file and therefore
                 // requires quantization. Pair it with scalar quantization.
-                if *name == INLINE_STORAGE_VECTOR {
+                if name == INLINE_STORAGE_VECTOR {
                     builder = builder
                         .with_quantization_config(QuantizationConfig::Scalar(ScalarQuantization {
                             scalar: ScalarQuantizationConfig {
@@ -102,21 +116,9 @@ pub(super) async fn fixture(
             VectorKind::MultiDense(dim) => {
                 // The builder has no `with_multivector_config`; set the field on the built
                 // `VectorParams` directly to mark this dense slot as a ColBERT-style multi-vec.
-                let mut builder = VectorParamsBuilder::new(dim, Distance::Dot);
-                if on_disk {
-                    builder = builder.with_on_disk(true);
-                }
-                let mut params = builder.build();
+                let mut params = dense_params_builder(dim, on_disk, candidate.datatype).build();
                 params.multivector_config = Some(MultiVectorConfig::default());
                 dense_vectors.insert(name.to_string(), params);
-            }
-            VectorKind::DenseTurbo(dim) => {
-                let mut builder =
-                    VectorParamsBuilder::new(dim, Distance::Dot).with_datatype(Datatype::Turbo4);
-                if on_disk {
-                    builder = builder.with_on_disk(true);
-                }
-                dense_vectors.insert(name.to_string(), builder.build());
             }
         }
     }

@@ -19,27 +19,36 @@ use tokio::task::JoinHandle;
 
 use crate::collection::Collection;
 use crate::operations::snapshot_ops::SnapshotDescription;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionResult, Datatype};
 use crate::shards::shard::PeerId;
 
 const PEER_ID: PeerId = 1;
 const COLLECTION_NAME: &str = "test";
 
-/// Static metadata for every vector name the test might ever activate. Six names start
-/// active in the fixture ("a", "b", "i", "s", "m", "q", see `INITIAL_ACTIVE`); "c" and
-/// "u" are reachable through `Op::CreateVectorName`.
+/// Static metadata for every vector name the test might ever activate. All names but "u"
+/// start active in the fixture (`initially_active`); inactive ones are reachable through
+/// `Op::CreateVectorName`.
 pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "a",
         kind: VectorKind::Dense(4),
+        datatype: None,
+        initially_active: true,
     },
     VectorCandidate {
         name: "b",
         kind: VectorKind::Dense(6),
+        datatype: None,
+        initially_active: true,
     },
+    // Explicit `Some(Float32)` rather than the unset default: exercises schema configs that
+    // spell the default datatype out (config serialization + any `None` vs `Some` comparison
+    // logic), a path the `datatype: None` candidates never hit. Storage-wise identical to them.
     VectorCandidate {
         name: "c",
         kind: VectorKind::Dense(5),
+        datatype: Some(Datatype::Float32),
+        initially_active: true,
     },
     // Dense vector configured with HNSW `inline_storage` (original + quantized vectors stored
     // inside the HNSW index file) backed by scalar quantization. From the model's perspective
@@ -47,27 +56,91 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     VectorCandidate {
         name: "i",
         kind: VectorKind::Dense(4),
+        datatype: None,
+        initially_active: true,
     },
     VectorCandidate {
         name: "s",
         kind: VectorKind::Sparse,
+        datatype: None,
+        initially_active: true,
     },
     VectorCandidate {
         name: "u",
         kind: VectorKind::Sparse,
+        datatype: None,
+        initially_active: false,
     },
     VectorCandidate {
         name: "m",
         kind: VectorKind::MultiDense(4),
+        datatype: None,
+        initially_active: true,
     },
+    // TurboQuant 4-bit compressed storage, the primary quantized datatype, applied to
+    // appendable segments too. Lossy: the model records the dequantized read-back
+    // (see `model_vector`) and compares with a few-ulp tolerance (see `dense_matches`).
     VectorCandidate {
         name: "q",
-        kind: VectorKind::DenseTurbo(8),
+        kind: VectorKind::Dense(8),
+        datatype: Some(Datatype::Turbo4),
+        initially_active: true,
+    },
+    // Half-precision storage. Lossy but deterministic and idempotent: the model records
+    // the f32 -> f16 -> f32 round-trip and compares exactly.
+    VectorCandidate {
+        name: "h",
+        kind: VectorKind::Dense(6),
+        datatype: Some(Datatype::Float16),
+        initially_active: true,
+    },
+    // Unsigned-byte storage. The engine truncates each component with `x as u8`; the
+    // generator draws components from `0.0..256.0` so values don't collapse to 0/1,
+    // and the model records the truncated read-back and compares exactly.
+    VectorCandidate {
+        name: "y",
+        kind: VectorKind::Dense(4),
+        datatype: Some(Datatype::Uint8),
+        initially_active: true,
+    },
+    // Multi-vector variants of the lossy-but-idempotent datatypes: each stored row goes
+    // through the same per-component round-trip as its dense counterpart ("h" / "y").
+    VectorCandidate {
+        name: "w",
+        kind: VectorKind::MultiDense(5),
+        datatype: Some(Datatype::Float16),
+        initially_active: true,
+    },
+    VectorCandidate {
+        name: "z",
+        kind: VectorKind::MultiDense(3),
+        datatype: Some(Datatype::Uint8),
+        initially_active: true,
     },
 ];
 
-/// Names present in the collection schema at fixture time.
-pub(super) const INITIAL_ACTIVE: &[&str] = &["a", "b", "i", "s", "m", "q"];
+/// Reject kind/datatype combinations the model cannot predict yet, at run startup
+/// rather than as a false-divergence soak panic hours into a run:
+/// - MultiDense + Turbo4: `model_vector` predicts Turbo4 via the per-vector
+///   `turbo_storage_roundtrip`; the engine's multivector quantization path differs, so
+///   there is no prediction for it. Float16/Uint8 multi-dense are fine: each row takes
+///   the same per-component round-trip as the dense case.
+/// - Sparse + any datatype: the fixture's sparse arm ignores the field entirely
+///   (sparse datatype lives in the sparse index config, which is not modeled).
+fn assert_candidates_predictable() {
+    for c in ALL_CANDIDATES {
+        let supported = match c.kind {
+            VectorKind::Dense(_) => true,
+            VectorKind::MultiDense(_) => !matches!(c.datatype, Some(Datatype::Turbo4)),
+            VectorKind::Sparse => c.datatype.is_none(),
+        };
+        assert!(
+            supported,
+            "unsupported kind/datatype combination for `{}` (see comment above)",
+            c.name
+        );
+    }
+}
 
 /// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
 pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
@@ -75,6 +148,15 @@ pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
 pub(super) struct VectorCandidate {
     pub(super) name: &'static str,
     pub(super) kind: VectorKind,
+    /// Storage datatype override; `None` leaves the schema field unset so the engine's
+    /// default (Float32) resolution applies. Supported for `VectorKind::Dense` (all
+    /// datatypes) and `VectorKind::MultiDense` (all but Turbo4); enforced by the
+    /// startup check (`assert_candidates_predictable`).
+    pub(super) datatype: Option<Datatype>,
+    /// Whether the name is present in the collection schema at fixture time. Inactive
+    /// names are only reachable through `Op::CreateVectorName`, which is FORCE_OFF by
+    /// default, so a candidate gets default-soak coverage only when this is true.
+    pub(super) initially_active: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -84,16 +166,12 @@ pub(super) enum VectorKind {
     /// ColBERT-style multi-vector: each point stores a matrix of `dim`-wide rows. Scoring
     /// uses MaxSim across query rows × stored rows.
     MultiDense(u64),
-    /// Dense vector stored with the `Turbo4` (TurboQuant 4-bit) storage datatype, the
-    /// primary quantized storage, applied to appendable segments too.
-    DenseTurbo(u64),
 }
 
-pub(super) fn kind_of(name: &str) -> VectorKind {
+pub(super) fn candidate_of(name: &str) -> &'static VectorCandidate {
     ALL_CANDIDATES
         .iter()
         .find(|c| c.name == name)
-        .map(|c| c.kind)
         .unwrap_or_else(|| panic!("unknown vector name: {name}"))
 }
 
@@ -153,6 +231,8 @@ pub async fn run(
     duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
 ) {
+    assert_candidates_predictable();
+
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -190,8 +270,11 @@ pub async fn run(
     );
 
     let mut model: Model = Model::new();
-    let mut active_names: BTreeSet<VectorNameBuf> =
-        INITIAL_ACTIVE.iter().map(|s| s.to_string()).collect();
+    let mut active_names: BTreeSet<VectorNameBuf> = ALL_CANDIDATES
+        .iter()
+        .filter(|c| c.initially_active)
+        .map(|c| c.name.to_string())
+        .collect();
     // In-flight background snapshot task, if any (at most one at a time). A `CreateSnapshot` op
     // spawns it; the loop reaps it on completion each iteration and drains it before any
     // close+reopen. `None` when no snapshot is running. See [`drain_snapshot`].
