@@ -3899,8 +3899,15 @@ impl<'de> serde::Deserialize<'de> for Condition {
         // Special case: FieldCondition first to surface datetime parse errors.
         // Untagged enum would swallow these errors with generic message.
         if let serde_value::Value::Map(obj) = &value
-            && obj.contains_key(&serde_value::Value::String("key".into()))
+            && let Some(key) = obj.get(&serde_value::Value::String("key".into()))
         {
+            // Reject non-string `key` upfront, the deserialization error for it
+            // would not mention which field is invalid.
+            if !matches!(key, serde_value::Value::String(_)) {
+                return Err(serde::de::Error::custom(
+                    "Filter condition 'key' must be a string",
+                ));
+            }
             return value
                 .deserialize_into()
                 .map(Condition::Field)
@@ -4860,6 +4867,24 @@ mod tests {
         assert!(err.contains("RFC3339"), "err was: {err}");
         assert!(err.contains("2014-01-01T00:00:00BAD"), "err was: {err}");
         assert!(err.contains("Example"), "err was: {err}");
+    }
+
+    #[test]
+    fn test_condition_non_string_key_returns_clear_error() {
+        for json in [
+            r#"{"key": null, "match": {"value": "A"}}"#,
+            r#"{"key": 42, "match": {"value": "A"}}"#,
+            r#"{"key": ["a"], "match": {"value": "A"}}"#,
+        ] {
+            let err = serde_json::from_str::<Condition>(json)
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                err.contains("Filter condition 'key' must be a string"),
+                "err was: {err}"
+            );
+        }
     }
 
     /// Regression test: DateTimePayloadType binary serialization roundtrip.
