@@ -1698,16 +1698,10 @@ mod tests {
         assert_matches_model(&dst, &model, &oracle, "dst after reload");
     }
 
-    // This model test is significantly slower on Windows CI runners (>60s, often
-    // >240s, marked SLOW by nextest). Reduce the number of randomized scenarios
-    // there to keep the run within the slow-timeout while preserving full coverage
-    // on Linux/macOS.
-    #[cfg(not(windows))]
     const SEEDS_PER_CELL: u64 = 16;
-    #[cfg(windows)]
-    const SEEDS_PER_CELL: u64 = 3;
     const OPS: usize = 200;
 
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn turbo_multi_model_test_random_ops_dot() {
         for dim in [1usize, 4, 127, 128] {
@@ -1720,6 +1714,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
     fn turbo_multi_model_test_random_ops_cosine() {
         for dim in [1usize, 4, 127, 128] {
