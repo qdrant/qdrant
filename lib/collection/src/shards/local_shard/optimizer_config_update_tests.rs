@@ -255,8 +255,12 @@ mod tests {
             let _ = release_tx.send(());
         });
 
+        // Generous timeout: the two-shard stop/rebuild cycle can exceed 5s on loaded
+        // CI runners (notably Windows). The regression check is not weakened by this:
+        // if join_all drops the sibling restart again, the paused shard is never
+        // released and the timeout still fails the test.
         let result = tokio::time::timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(30),
             future::join_all(vec![
                 paused_shard.on_optimizer_config_update(),
                 failing_shard.on_optimizer_config_update(),
