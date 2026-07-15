@@ -12,6 +12,7 @@ use crate::id_tracker::disk_id_tracker::DiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
+use crate::id_tracker::point_id_batch::PointIdBatch;
 use crate::types::{PointIdType, SeqNumberType};
 
 #[derive(Debug)]
@@ -92,7 +93,7 @@ impl IdTrackerRead for IdTrackerEnum {
 
     fn resolve_external_ids(
         &self,
-        point_ids: impl IntoIterator<Item = PointIdType>,
+        point_ids: impl PointIdBatch,
         deferred_behavior: common::types::DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) {

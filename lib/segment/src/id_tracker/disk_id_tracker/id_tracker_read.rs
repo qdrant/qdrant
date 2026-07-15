@@ -10,7 +10,7 @@ use super::mappings::{
 };
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTracker<S> {
@@ -78,7 +78,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
     fn resolve_external_ids(
         &self,
-        point_ids: impl IntoIterator<Item = PointIdType>,
+        point_ids: impl PointIdBatch,
         _deferred_behavior: DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) {

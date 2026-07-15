@@ -1,7 +1,7 @@
 //! Point lookups: sparse-index binary search plus one data-block read.
 
-use ahash::AHashMap;
 use common::types::PointOffsetType;
+use uuid::Uuid;
 use common::universal_io::{ReadRange, UniversalRead};
 
 use super::DiskMappingReader;
@@ -9,6 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::on_disk_format::{
     NUM_ENTRY_SIZE, UUID_ENTRY_SIZE, decode_external, decode_num_block, decode_uuid_block,
 };
+use crate::id_tracker::PointIdBatch;
 use crate::types::PointIdType;
 
 impl<S: UniversalRead> DiskMappingReader<S> {
@@ -111,80 +112,68 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         }
     }
 
-    /// Batch counterpart of [`lookup`](Self::lookup): keys are grouped by the
-    /// e2i block that can contain them, every unique block is read once through
-    /// a single pipelined [`read_batch`](UniversalRead::read_batch) pass, and
-    /// each key is binary-searched within its block.
+    /// Batch counterpart of [`lookup`](Self::lookup): one pipelined
+    /// [`read_batch`](UniversalRead::read_batch) read per id for the e2i block
+    /// that can contain it, then a binary search within that block.
     ///
-    /// Results are returned in input order; absent ids yield `None`. Deletion
-    /// is NOT applied (same contract as `lookup`); storage errors propagate.
+    /// Only ids that resolve are yielded, as `(id, offset)` pairs; absent ids
+    /// are dropped. Pairs come out in read-completion order, not input order —
+    /// the id is carried alongside its offset so callers never need the input
+    /// position. Deletion is NOT applied (same contract as `lookup`); storage
+    /// errors propagate.
+    ///
+    /// Ids are not grouped by block up front: a block is one ~16 KiB DiskCache
+    /// block, so reads landing in the same block are deduplicated by the cache
+    /// (piggybacked while in flight, a plain hit once resident). Grouping here
+    /// would only re-implement that at the cost of an up-front index.
     pub fn lookup_batch(
         &self,
-        external_ids: &[PointIdType],
-    ) -> OperationResult<Vec<Option<PointOffsetType>>> {
-        let mut results: Vec<Option<PointOffsetType>> = vec![None; external_ids.len()];
-
-        // Group `(input index, key)` by `(run, block)`, in first-seen order so
-        // the read schedule is deterministic.
-        let mut group_slots: AHashMap<(bool, u64), usize> = AHashMap::new();
-        let mut groups: Vec<BlockLookupGroup> = Vec::new();
-        for (idx, &external_id) in external_ids.iter().enumerate() {
-            let (is_uuid, key, block) = match external_id {
+        external_ids: impl PointIdBatch,
+    ) -> OperationResult<Vec<(PointIdType, PointOffsetType)>> {
+        // Each read is tagged with `(is_uuid, key)` so the callback can pick the
+        // decoder, binary-search, and rebuild the id. Ids outside every block
+        // are dropped here; the range iterator stays lazy (no collect).
+        let ranges = external_ids
+            .iter_ids()
+            .filter_map(|external_id| match external_id {
                 PointIdType::NumId(num) => {
-                    let Some(block) = self.num_block_of(num) else {
-                        continue;
-                    };
-                    (false, u128::from(num), block)
+                    let block = self.num_block_of(num)?;
+                    Some(((false, u128::from(num)), self.num_block_range(block)))
                 }
                 PointIdType::Uuid(uuid) => {
                     let key = uuid.as_u128();
-                    let Some(block) = self.uuid_block_of(key) else {
-                        continue;
-                    };
-                    (true, key, block)
+                    let block = self.uuid_block_of(key)?;
+                    Some(((true, key), self.uuid_block_range(block)))
                 }
-            };
-            let slot = *group_slots.entry((is_uuid, block)).or_insert_with(|| {
-                groups.push(BlockLookupGroup {
-                    is_uuid,
-                    block,
-                    keys: Vec::new(),
-                });
-                groups.len() - 1
             });
-            groups[slot].keys.push((idx, key));
-        }
 
-        let ranges = groups.iter().enumerate().map(|(slot, group)| {
-            let range = if group.is_uuid {
-                self.uuid_block_range(group.block)
-            } else {
-                self.num_block_range(group.block)
-            };
-            (slot, range)
-        });
+        // At most one hit per input id; reserve up front so the found buffer
+        // never reallocates as reads resolve.
+        let mut found: Vec<(PointIdType, PointOffsetType)> =
+            Vec::with_capacity(external_ids.num_ids());
+
         self.e2i
-            .read_batch::<common::generic_consts::Random, u8, usize>(ranges, |slot, bytes| {
-                let BlockLookupGroup {
-                    is_uuid,
-                    block: _,
-                    keys,
-                } = &groups[slot];
-                let entries = if *is_uuid {
-                    decode_uuid_block(bytes)
-                } else {
-                    decode_num_block(bytes)
-                };
-                for &(idx, key) in keys {
-                    results[idx] = entries
-                        .binary_search_by_key(&key, |(k, _)| *k)
-                        .ok()
-                        .map(|pos| entries[pos].1);
-                }
-                Ok(())
-            })?;
+            .read_batch::<common::generic_consts::Random, u8, (bool, u128)>(
+                ranges,
+                |(is_uuid, key), bytes| {
+                    let entries = if is_uuid {
+                        decode_uuid_block(bytes)
+                    } else {
+                        decode_num_block(bytes)
+                    };
+                    if let Ok(pos) = entries.binary_search_by_key(&key, |(k, _)| *k) {
+                        let id = if is_uuid {
+                            PointIdType::Uuid(Uuid::from_u128(key))
+                        } else {
+                            PointIdType::NumId(key as u64)
+                        };
+                        found.push((id, entries[pos].1));
+                    }
+                    Ok(())
+                },
+            )?;
 
-        Ok(results)
+        Ok(found)
     }
 
     /// Internal→external lookup ignoring deletion. `Ok(None)` for out-of-range
@@ -272,13 +261,4 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         let within = entries.partition_point(|(k, _)| *k < key) as u64;
         Ok(block * u64::from(self.e2i_header.uuid_block_size) + within)
     }
-}
-
-/// Keys routed to one e2i block during [`DiskMappingReader::lookup_batch`]:
-/// the block is read once and every key is binary-searched within it.
-struct BlockLookupGroup {
-    is_uuid: bool,
-    block: u64,
-    /// `(input index, key)` pairs to search within the block.
-    keys: Vec<(usize, u128)>,
 }

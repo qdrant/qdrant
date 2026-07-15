@@ -6,12 +6,14 @@ pub mod immutable_id_tracker;
 pub mod in_memory_id_tracker;
 mod memory_reporter;
 pub mod mutable_id_tracker;
+pub mod point_id_batch;
 pub mod point_mappings;
 
 use common::types::PointOffsetType;
 pub use format_detection::IdTrackerFormat;
 pub use id_tracker_base::*;
 use itertools::Itertools as _;
+pub use point_id_batch::PointIdBatch;
 
 use crate::types::{ExtendedPointId, PointIdType};
 

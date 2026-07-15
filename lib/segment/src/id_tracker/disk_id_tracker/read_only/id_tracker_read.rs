@@ -11,7 +11,7 @@ use crate::id_tracker::disk_id_tracker::mappings::{
     DiskMappingsSource, log_lookup_err, log_lookup_err_batch, resolve_external_ids_batch,
 };
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
@@ -34,8 +34,11 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
     /// One pipelined pass over the on-disk deleted file (shared `u64` elements
     /// deduplicated) instead of a `get_bit` round-trip per point. Still no
     /// full-set load. Out-of-range offsets are treated as deleted.
-    fn points_deleted_batch(&self, offsets: &[PointOffsetType]) -> OperationResult<Vec<bool>> {
-        let bit_indices: Vec<u64> = offsets.iter().map(|&offset| u64::from(offset)).collect();
+    fn points_deleted_batch(
+        &self,
+        offsets: impl ExactSizeIterator<Item = PointOffsetType>,
+    ) -> OperationResult<Vec<bool>> {
+        let bit_indices: Vec<u64> = offsets.map(u64::from).collect();
         Ok(self
             .deleted_file
             .get_bits_batch(&bit_indices)?
@@ -133,7 +136,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
     fn resolve_external_ids(
         &self,
-        point_ids: impl IntoIterator<Item = PointIdType>,
+        point_ids: impl PointIdBatch,
         _deferred_behavior: DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) {

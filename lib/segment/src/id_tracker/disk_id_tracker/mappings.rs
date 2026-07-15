@@ -8,6 +8,7 @@ use common::universal_io::UniversalRead;
 
 use super::reader::{self, DiskMappingReader};
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::PointIdBatch;
 use crate::types::PointIdType;
 
 /// The state a disk-resident mapping needs to answer reads: the lazy mapping
@@ -71,36 +72,33 @@ pub trait DiskMappingsSource {
     /// order. The default loops over the single check (fine for the writable
     /// tracker's resident bitvec); the read-only tracker overrides it with one
     /// pipelined pass over the on-disk deleted file.
-    fn points_deleted_batch(&self, offsets: &[PointOffsetType]) -> OperationResult<Vec<bool>> {
-        offsets
-            .iter()
-            .map(|&offset| self.point_deleted(offset))
-            .collect()
+    ///
+    /// Takes the offsets as an iterator so callers can stream them straight out
+    /// of a `(id, offset)` buffer without first copying them into a slice.
+    fn points_deleted_batch(
+        &self,
+        offsets: impl ExactSizeIterator<Item = PointOffsetType>,
+    ) -> OperationResult<Vec<bool>> {
+        offsets.map(|offset| self.point_deleted(offset)).collect()
     }
 
     /// Batch counterpart of [`resolve_internal`](Self::resolve_internal): one
     /// pipelined mapping-lookup pass plus one deleted-check pass, instead of
-    /// two serial reads per point. Results are in input order.
+    /// two serial reads per point. Yields the live `(id, offset)` pairs in
+    /// read-completion order (absent and deleted ids are dropped).
     fn resolve_internal_batch(
         &self,
-        external_ids: &[PointIdType],
-    ) -> OperationResult<Vec<Option<PointOffsetType>>> {
-        let mut resolved = self.mapping_reader().lookup_batch(external_ids)?;
+        external_ids: impl PointIdBatch,
+    ) -> OperationResult<Vec<(PointIdType, PointOffsetType)>> {
+        let mut found = self.mapping_reader().lookup_batch(external_ids)?;
 
-        // The immutable runs still carry points deleted after build; re-check.
-        let found: Vec<PointOffsetType> = resolved.iter().copied().flatten().collect();
-        let deleted = self.points_deleted_batch(&found)?;
+        // The immutable runs still carry points deleted after build; re-check
+        // and drop the deleted pairs in place (one flag per found pair).
+        let deleted = self.points_deleted_batch(found.iter().map(|(_, offset)| *offset))?;
         let mut deleted = deleted.into_iter();
-        for slot in resolved.iter_mut().filter(|slot| slot.is_some()) {
-            if deleted
-                .next()
-                .expect("one deleted flag per resolved offset")
-            {
-                *slot = None;
-            }
-        }
+        found.retain(|_| !deleted.next().expect("one deleted flag per resolved point"));
 
-        Ok(resolved)
+        Ok(found)
     }
 
     /// Batch counterpart of [`resolve_external`](Self::resolve_external): one
@@ -110,7 +108,7 @@ pub trait DiskMappingsSource {
         &self,
         offsets: &[PointOffsetType],
     ) -> OperationResult<Vec<Option<PointIdType>>> {
-        let deleted = self.points_deleted_batch(offsets)?;
+        let deleted = self.points_deleted_batch(offsets.iter().copied())?;
 
         let live: Vec<PointOffsetType> = offsets
             .iter()
@@ -219,23 +217,25 @@ pub fn log_lookup_err_batch<T>(
 /// pipelined mapping pass plus one deleted pass), with the storage error
 /// swallowed-and-logged at the infallible `IdTrackerRead` boundary.
 ///
-/// The input is buffered once here — the grouped block reads need the whole
-/// batch — so callers can stream ids without pre-collecting. Pairs are
-/// delivered in input order.
+/// The `point_ids` batch is walked without being collected; each surviving
+/// `(id, offset)` is handed to `callback` in read-completion order (not input
+/// order — the id travels with the offset, so callers never need the position).
 ///
 /// The disk mapping never carries deferred mutations, so there is no behavior
 /// argument here — both callers ignore theirs.
 pub fn resolve_external_ids_batch(
     source: &impl DiskMappingsSource,
-    point_ids: impl IntoIterator<Item = PointIdType>,
+    point_ids: impl PointIdBatch,
     mut callback: impl FnMut(PointIdType, PointOffsetType),
 ) {
-    let point_ids: Vec<PointIdType> = point_ids.into_iter().collect();
-    let resolved = log_lookup_err_batch(source.resolve_internal_batch(&point_ids), point_ids.len());
+    let resolved = source
+        .resolve_internal_batch(point_ids)
+        .unwrap_or_else(|err| {
+            log::error!("disk id tracker batch lookup failed: {err}");
+            Vec::new()
+        });
 
-    for (point_id, resolved_offset) in point_ids.into_iter().zip(resolved) {
-        if let Some(offset) = resolved_offset {
-            callback(point_id, offset);
-        }
+    for (point_id, offset) in resolved {
+        callback(point_id, offset);
     }
 }
