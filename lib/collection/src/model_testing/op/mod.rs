@@ -1,5 +1,6 @@
 mod generators;
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use ahash::AHashSet;
@@ -18,9 +19,11 @@ use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{Rng, RngExt};
 use segment::data_types::index::{KeywordIndexParams, KeywordIndexType};
 use segment::data_types::order_by::Direction;
+use segment::data_types::primitive::PrimitiveVectorElement;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
+use segment::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf};
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
@@ -30,8 +33,9 @@ use segment::types::{
 use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::{ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue, kind_of};
+use super::{ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue, candidate_of};
 use crate::operations::point_ops::UpdateMode;
+use crate::operations::types::Datatype;
 
 /// Operations driven against both the live `Collection` and the model.
 #[derive(Debug, Clone)]
@@ -595,28 +599,20 @@ impl Op {
                     return upsert_fallback(rng, active, id_pool);
                 }
                 let pick = inactive.choose(rng).unwrap();
+                let datatype = pick.datatype.map(VectorStorageDatatype::from);
                 let config = match pick.kind {
-                    VectorKind::Dense(dim) => VectorNameConfig::dense(DenseVectorConfig {
-                        size: dim as usize,
-                        distance: Distance::Dot,
-                        multivector_config: None,
-                        datatype: None,
-                    }),
+                    VectorKind::Dense(dim) | VectorKind::MultiDense(dim) => {
+                        VectorNameConfig::dense(DenseVectorConfig {
+                            size: dim as usize,
+                            distance: Distance::Dot,
+                            multivector_config: matches!(pick.kind, VectorKind::MultiDense(_))
+                                .then(MultiVectorConfig::default),
+                            datatype,
+                        })
+                    }
                     VectorKind::Sparse => VectorNameConfig::sparse(SparseVectorConfig {
                         modifier: None,
                         datatype: None,
-                    }),
-                    VectorKind::MultiDense(dim) => VectorNameConfig::dense(DenseVectorConfig {
-                        size: dim as usize,
-                        distance: Distance::Dot,
-                        multivector_config: Some(MultiVectorConfig::default()),
-                        datatype: None,
-                    }),
-                    VectorKind::DenseTurbo(dim) => VectorNameConfig::dense(DenseVectorConfig {
-                        size: dim as usize,
-                        distance: Distance::Dot,
-                        multivector_config: None,
-                        datatype: Some(VectorStorageDatatype::Turbo4),
                     }),
                 };
                 Op::CreateVectorName {
@@ -876,32 +872,76 @@ pub(super) fn model_entry_from(vecs: &NamedVectors, payload: &Payload) -> ModelE
     }
 }
 
-/// Predicted engine read-back for `value` stored under `name`. Turbo4-backed dense
-/// vectors are lossy: the engine stores 4-bit quantized codes and returns the
-/// dequantized vector, so the model must record that round-trip instead of the inserted
-/// value. The round-trip is deterministic (fixed rotation seeds), shared across
-/// segments and reloads. The engine still receives the original vector: the round-trip
-/// is not idempotent (re-quantizing a read-back shifts the stored norm), so
-/// canonicalizing at generation time would not converge.
+/// Predicted engine read-back for `value` stored under `name`. Dense and multi-dense
+/// vectors with a lossy storage datatype must record the storage round-trip instead of
+/// the inserted value:
+///
+/// - Turbo4 (dense only) stores 4-bit quantized codes and returns the dequantized
+///   vector. The round-trip is deterministic (fixed rotation seeds), shared across
+///   segments and reloads, but not idempotent (re-quantizing a read-back shifts the
+///   stored norm), so canonicalizing at generation time would not converge. The engine
+///   still receives the original vector.
+/// - Float16 rounds each component through f16; Uint8 truncates with `x as u8`. Both are
+///   deterministic and idempotent (re-storing a read-back is a no-op), so the model's
+///   prediction stays exact even across copy-on-write point moves. The prediction goes
+///   through the engine's own `PrimitiveVectorElement` impls (like Turbo4 reuses
+///   `turbo_storage_roundtrip`) so it tracks the engine by construction. Multi-dense
+///   storage converts the flattened matrix component-wise (see `from_float_multivector`),
+///   so per-row round-trips predict it exactly.
 pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
-    match (kind_of(name), value) {
-        (VectorKind::DenseTurbo(_), VectorValue::Dense(v)) => {
+    let candidate = candidate_of(name);
+    match (candidate.kind, value) {
+        (VectorKind::Dense(_), VectorValue::Dense(v)) => match candidate.datatype {
             // Every fixture vector uses Dot (see `fixture::fixture` and the
             // CreateVectorName generator arm above).
-            VectorValue::Dense(turbo_storage_roundtrip(v, Distance::Dot))
+            Some(Datatype::Turbo4) => VectorValue::Dense(turbo_storage_roundtrip(v, Distance::Dot)),
+            datatype => match scalar_storage_roundtrip(datatype) {
+                Some(roundtrip) => VectorValue::Dense(roundtrip(v)),
+                None => value.clone(),
+            },
+        },
+        // Turbo4 multi-dense is rejected at startup (`assert_candidates_predictable`),
+        // so `scalar_storage_roundtrip`'s panic arm is unreachable here.
+        (VectorKind::MultiDense(_), VectorValue::MultiDense(rows)) => {
+            match scalar_storage_roundtrip(candidate.datatype) {
+                Some(roundtrip) => {
+                    VectorValue::MultiDense(rows.iter().map(|row| roundtrip(row)).collect())
+                }
+                None => value.clone(),
+            }
         }
-        (
-            VectorKind::Dense(_) | VectorKind::Sparse | VectorKind::MultiDense(_),
-            VectorValue::Dense(_) | VectorValue::Sparse(_) | VectorValue::MultiDense(_),
-        ) => value.clone(),
-        (VectorKind::DenseTurbo(_), VectorValue::Sparse(_) | VectorValue::MultiDense(_)) => {
-            panic!("model_vector: non-dense value for Turbo4 name `{name}`: {value:?}")
+        (VectorKind::Sparse, VectorValue::Sparse(_)) => value.clone(),
+        (kind, value) => {
+            panic!("model_vector: value/kind mismatch for `{name}` ({kind:?}): {value:?}")
         }
     }
 }
 
+/// Per-slice storage round-trip for the scalar datatypes: `Some` for the lossy
+/// Float16/Uint8 conversions, `None` where storage is exact (explicit Float32 or
+/// unset). Turbo4 is whole-vector quantization, not a per-component conversion;
+/// callers handle it separately.
+type SliceRoundtrip = fn(&[f32]) -> Vec<f32>;
+
+fn scalar_storage_roundtrip(datatype: Option<Datatype>) -> Option<SliceRoundtrip> {
+    match datatype {
+        Some(Datatype::Float16) => Some(primitive_storage_roundtrip::<VectorElementTypeHalf>),
+        Some(Datatype::Uint8) => Some(primitive_storage_roundtrip::<VectorElementTypeByte>),
+        Some(Datatype::Float32) | None => None,
+        Some(Datatype::Turbo4) => panic!("Turbo4 has no per-component scalar round-trip"),
+    }
+}
+
+/// f32 -> storage element -> f32 through the engine's own conversion impls
+/// (`lib/segment/src/data_types/primitive.rs`).
+fn primitive_storage_roundtrip<T: PrimitiveVectorElement>(v: &[f32]) -> Vec<f32> {
+    let stored = T::slice_from_float_cow(Cow::Borrowed(v));
+    T::slice_to_float_cow(stored).into_owned()
+}
+
 /// Compare a returned dense vector against the model's prediction for `name`.
-/// Exact for full-precision names. Turbo4 read-backs are compared with a tiny
+/// Exact for all names except Turbo4 (including the lossy-but-idempotent Float16
+/// and Uint8 datatypes). Turbo4 read-backs are compared with a tiny
 /// relative tolerance: a copy-on-write point move re-quantizes the dequantized
 /// read-back, and although the codes and the centroid norm are reproduced, the
 /// re-measured stored norm passes through two f64 rotation round-trips and can
@@ -914,12 +954,14 @@ pub(super) fn dense_matches(name: &str, actual: &[f32], expected: &[f32]) -> boo
     if actual.len() != expected.len() {
         return false;
     }
-    match kind_of(name) {
-        VectorKind::DenseTurbo(_) => actual.iter().zip(expected).all(|(&a, &e)| {
+    match candidate_of(name).datatype {
+        Some(Datatype::Turbo4) => actual.iter().zip(expected).all(|(&a, &e)| {
             let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
             (a - e).abs() <= tol
         }),
-        VectorKind::Dense(_) | VectorKind::Sparse | VectorKind::MultiDense(_) => actual == expected,
+        // Float16 / Uint8 read-backs are exact: `model_vector` records the storage
+        // round-trip, and re-storing a read-back reproduces it bit-for-bit.
+        Some(Datatype::Float16 | Datatype::Uint8 | Datatype::Float32) | None => actual == expected,
     }
 }
 
