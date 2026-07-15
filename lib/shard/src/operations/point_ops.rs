@@ -13,7 +13,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
-    MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
+    MultiDenseVectorInternal, VectorInternal, VectorRef, VectorStructInternal,
 };
 use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
@@ -447,14 +447,14 @@ impl PointStructPersisted {
             return false;
         }
 
-        let self_vectors = self.get_vectors().into_owned_map();
+        let self_vectors = self.get_vectors();
 
         if let Some(segment_vectors) = vectors {
             if self_vectors.len() != segment_vectors.len() {
                 return false;
             }
             for (name, vec) in segment_vectors {
-                if self_vectors.get(name) != Some(vec) {
+                if self_vectors.get(name) != Some(VectorRef::from(vec)) {
                     return false;
                 }
             }

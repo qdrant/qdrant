@@ -996,7 +996,7 @@ impl SegmentHolder {
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
         G: FnMut(
             PointIdType,
-            &mut Vec<(VectorNameBuf, Vec<u8>)>,
+            &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
             &mut NamedVectors<'op>,
             &mut Payload,
         ),
