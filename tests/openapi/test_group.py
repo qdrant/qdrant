@@ -509,3 +509,37 @@ def test_search_groups_with_full_lookup(collection_name, lookup_collection_name)
         lookup = group["lookup"]
         assert lookup["payload"]
         assert lookup["vector"]
+
+def test_query_and_recommend_groups_missing_lookup_from_collection(collection_name):
+    missing_collection = "missing_lookup_from_collection"
+    lookup_from = {"collection": missing_collection, "vector": "default"}
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "group_by": "docId",
+            "group_size": 3,
+            "lookup_from": lookup_from,
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [[1.0, 0.0, 0.0, 0.0]],
+            "limit": 10,
+            "group_by": "docId",
+            "group_size": 3,
+            "lookup_from": lookup_from,
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]

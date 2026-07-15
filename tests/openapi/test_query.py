@@ -664,3 +664,56 @@ def test_score_threshold(body, collection_name):
     assert len(points) < 8
     for point in points:
         assert point["score"] >= score_threshold
+
+def test_query_missing_lookup_from_collection(collection_name):
+    missing_collection = "missing_lookup_from_collection"
+    lookup_from = {"collection": missing_collection, "vector": "default"}
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": [0.1, 0.2, 0.3, 0.4],
+            "limit": 3,
+            "lookup_from": lookup_from,
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "query": [0.1, 0.2, 0.3, 0.4],
+                    "limit": 3,
+                    "lookup_from": lookup_from,
+                }
+            ]
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": [0.1, 0.2, 0.3, 0.4],
+                    "limit": 3,
+                    "lookup_from": lookup_from,
+                }
+            ],
+            "query": {"fusion": "rrf"},
+            "limit": 3,
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]

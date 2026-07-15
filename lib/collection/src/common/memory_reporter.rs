@@ -219,7 +219,7 @@ pub fn measure_component(
 
     for entry in files {
         let ComponentFileEntry { path, intent } = &entry;
-        if let Ok(meta) = std::fs::metadata(path) {
+        if let Ok(meta) = fs_err::metadata(path) {
             disk_bytes += meta.len();
             if *intent == FileStorageIntent::Cached {
                 expected_cache_bytes += meta.len();
