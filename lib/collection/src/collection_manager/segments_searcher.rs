@@ -12,6 +12,7 @@ use ordered_float::Float;
 use segment::common::operation_error::OperationError;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use segment::data_types::segment_record::SegmentRecordRaw;
 use segment::data_types::vectors::QueryVector;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, VectorName,
@@ -22,7 +23,7 @@ use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
-use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blocking};
 use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -403,6 +404,43 @@ impl SegmentsSearcher {
             // TODO create one Task per segment level retrieve
             move || {
                 retrieve_blocking(
+                    segments,
+                    &points,
+                    &with_payload,
+                    &with_vector,
+                    timeout,
+                    &is_stopped,
+                    hw_measurement_acc,
+                    deferred_behavior,
+                )
+            }
+        });
+        Ok(AbortOnDropHandle::new(points).await??)
+    }
+
+    /// Byte-blob analogue of [`Self::retrieve`]: returns vectors as
+    /// storage-native bytes ([`SegmentRecordRaw`]), avoiding a lossy
+    /// quantization round-trip when relocating points during shard transfer.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn retrieve_raw(
+        segments: LockedSegmentHolder,
+        points: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<AHashMap<PointIdType, SegmentRecordRaw>> {
+        let stopping_guard = StoppingGuard::new();
+        let points = runtime_handle.spawn_blocking({
+            let segments = segments.clone();
+            let points = points.to_vec();
+            let with_payload = with_payload.clone();
+            let with_vector = with_vector.clone();
+            let is_stopped = stopping_guard.get_is_stopped();
+            move || {
+                retrieve_raw_blocking(
                     segments,
                     &points,
                     &with_payload,
