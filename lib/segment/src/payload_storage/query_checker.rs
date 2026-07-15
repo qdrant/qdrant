@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -107,13 +108,13 @@ where
 
 pub fn select_nested_indexes<'a, R, FI>(
     nested_path: &PayloadKeyType,
-    field_indexes: &'a HashMap<PayloadKeyType, R>,
-) -> HashMap<PayloadKeyType, &'a Vec<FI>>
+    field_indexes: &'a AHashMap<PayloadKeyType, R>,
+) -> AHashMap<PayloadKeyType, &'a Vec<FI>>
 where
     FI: FieldIndexRead,
     R: AsRef<Vec<FI>>,
 {
-    let nested_indexes: HashMap<_, _> = field_indexes
+    let nested_indexes: AHashMap<_, _> = field_indexes
         .iter()
         .filter_map(|(key, indexes)| {
             key.strip_prefix(nested_path)
@@ -129,7 +130,7 @@ pub fn check_payload<'a, R, FI>(
     vector_storages: &HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     query: &Filter,
     point_id: PointOffsetType,
-    field_indexes: &HashMap<PayloadKeyType, R>,
+    field_indexes: &AHashMap<PayloadKeyType, R>,
     hw_counter: &HardwareCounterCell,
 ) -> bool
 where
@@ -200,7 +201,7 @@ pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &impl Payload
 pub fn check_field_condition<R, FI>(
     field_condition: &FieldCondition,
     payload: &impl PayloadContainer,
-    field_indexes: &HashMap<PayloadKeyType, R>,
+    field_indexes: &AHashMap<PayloadKeyType, R>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool>
 where
@@ -719,7 +720,7 @@ mod tests {
         // The key must include the `[]` wildcard so that
         // `select_nested_indexes` can strip the `items[]` prefix and pass the
         // index under key `title` into the nested `check_payload`.
-        let field_indexes: HashMap<PayloadKeyType, Vec<FieldIndex>> = HashMap::from([(
+        let field_indexes: IndexesMap = AHashMap::from([(
             JsonPath::new("items[].title"),
             vec![FieldIndex::FullTextIndex(ft_index)],
         )]);

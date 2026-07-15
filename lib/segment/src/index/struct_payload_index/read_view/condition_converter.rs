@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use atomic_refcell::AtomicRefCell;
 use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -171,7 +171,7 @@ where
 
 /// For [`Condition::Field`], [`Condition::IsEmpty`] and [`Condition::IsNull`].
 fn field_condition_checker<'a>(
-    field_indexes: &'a HashMap<JsonPath, Vec<impl FieldIndexRead>>,
+    field_indexes: &'a AHashMap<JsonPath, Vec<impl FieldIndexRead>>,
     key: &JsonPath,
     hw_counter: &HardwareCounterCell,
     field_condition: &FieldCondition,
