@@ -72,7 +72,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
             let total_point_count = id_tracker.total_point_count();
             let deleted_points = id_tracker.deleted_point_bitslice();
 
-            let mut field_indexes: ReadOnlyIndexesMap<S> = HashMap::new();
+            let mut field_indexes: ReadOnlyIndexesMap<S> = Default::default();
             for (field, indexed) in config.indices.iter() {
                 let populate_override =
                     load_profile.and_then(|profile| profile.payload_index_placement(field));

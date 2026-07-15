@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -55,7 +54,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         new_config: PayloadConfig,
     ) -> OperationResult<PayloadIndexReloadDiff<S>> {
-        let mut added: ReadOnlyIndexesMap<S> = HashMap::new();
+        let mut added: ReadOnlyIndexesMap<S> = Default::default();
         {
             let id_tracker = self.id_tracker.borrow();
             let total_point_count = id_tracker.total_point_count();

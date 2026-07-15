@@ -12,6 +12,7 @@ mod tests;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 
 use crate::id_tracker::IdTrackerRead;
@@ -54,7 +55,7 @@ where
     pub(crate) payload: &'a Arc<AtomicRefCell<P>>,
     pub(crate) id_tracker: &'a I,
     pub(crate) vector_storages: &'a HashMap<VectorNameBuf, Arc<AtomicRefCell<V>>>,
-    pub(crate) field_indexes: &'a HashMap<PayloadKeyType, Vec<F>>,
+    pub(crate) field_indexes: &'a AHashMap<PayloadKeyType, Vec<F>>,
     pub(crate) config: &'a PayloadConfig,
     pub(crate) visited_pool: &'a VisitedPool,
 }

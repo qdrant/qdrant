@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -14,7 +13,7 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::types::PayloadContainer;
 
 pub(super) fn variable_retriever<'a, 'q, P, F>(
-    indices: &'a HashMap<JsonPath, Vec<F>>,
+    indices: &'a AHashMap<JsonPath, Vec<F>>,
     json_path: &JsonPath,
     payload_provider: PayloadProvider<P>,
     hw_counter: &'q HardwareCounterCell,
@@ -84,9 +83,9 @@ fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
 #[cfg(test)]
 #[cfg(feature = "testing")]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Arc;
 
+    use ahash::AHashMap;
     use atomic_refcell::AtomicRefCell;
     use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
@@ -159,7 +158,7 @@ mod tests {
         let payload_provider = fixture_payload_provider();
 
         // No indices — pick FieldIndex as the concrete F for type inference.
-        let no_indices: HashMap<_, Vec<FieldIndex>> = Default::default();
+        let no_indices: AHashMap<_, Vec<FieldIndex>> = Default::default();
 
         let hw_counter = Default::default();
 
@@ -256,7 +255,7 @@ mod tests {
         let datetime_index = builder.finalize().unwrap();
         let datetime_index = FieldIndex::DatetimeIndex(datetime_index);
 
-        let mut indices = HashMap::new();
+        let mut indices = AHashMap::new();
         indices.insert("value".try_into().unwrap(), vec![numeric_index]);
         indices.insert("location".try_into().unwrap(), vec![geo_index]);
         indices.insert("creation".try_into().unwrap(), vec![datetime_index]);
