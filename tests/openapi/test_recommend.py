@@ -261,3 +261,37 @@ def test_raw_vectors(collection_name):
     assert len(response_raw.json()["result"]) == 4
 
     assert response_ids.json()["result"] == response_raw.json()["result"]
+
+def test_recommend_missing_lookup_from_collection_with_raw_vector(collection_name):
+    missing_collection = "missing_lookup_from_collection"
+    lookup_from = {"collection": missing_collection, "vector": "default"}
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [[0.1, 0.2, 0.3, 0.4]],
+            "limit": 3,
+            "lookup_from": lookup_from,
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "positive": [[0.1, 0.2, 0.3, 0.4]],
+                    "limit": 3,
+                    "lookup_from": lookup_from,
+                }
+            ]
+        },
+    )
+    assert response.status_code == 404, response.text
+    assert missing_collection in response.json()["status"]["error"]
