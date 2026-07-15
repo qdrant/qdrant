@@ -1,4 +1,5 @@
-//! [`DiskCache`]: a lazily-populated local mirror of an immutable remote file.
+//! [`DiskCache`]: a lazily-populated local mirror of an append-only remote
+//! file.
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -17,10 +18,14 @@ mod init;
 mod read;
 mod reopen;
 
-/// A lazily-populated local mirror of an immutable remote file.
+/// A lazily-populated local mirror of an append-only remote file.
 ///
-/// The remote is assumed to be immutable for the lifetime of the file;
-/// this type implements [`UniversalRead`] only, but not [`UniversalWrite`].
+/// The remote's existing bytes are assumed to be immutable for the lifetime
+/// of the file: it may grow externally (picked up by [`reopen`]), but never
+/// shrink or change in place. This type implements [`UniversalRead`] only —
+/// appends are deliberately not supported through the cache (append
+/// directly to the backing storage instead), and random-offset writes stay
+/// unsupported.
 ///
 /// The local mirror can either be initialized lazily on first read (filling
 /// blocks on demand from the remote) or eagerly if populate is set. See

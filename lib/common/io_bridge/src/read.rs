@@ -23,7 +23,11 @@ use futures::stream::BoxStream;
 /// the [`BridgeRuntime`](crate::BridgeRuntime) and is responsible for executing
 /// these futures.
 ///
-/// A future `AsyncWrite` trait will live next to this one in `write.rs`.
+/// The write-side counterparts ([`AsyncWrite`], [`AsyncAppend`]) live next
+/// to this one in `write.rs`.
+///
+/// [`AsyncAppend`]: crate::AsyncAppend
+/// [`AsyncWrite`]: crate::AsyncWrite
 pub trait AsyncRead: Send + Sync + Sized + 'static {
     type Config;
 

@@ -104,6 +104,7 @@ mod fs;
 mod pipeline;
 mod read;
 mod runtime;
+mod write;
 
 /// Dedicated log target for the blob-backend latency traces emitted across this
 /// crate. All of them are `trace!` under this single target, so they are silent
@@ -120,3 +121,4 @@ pub use fs::BlobFs;
 pub use pipeline::BlobReadPipeline;
 pub use read::AsyncRead;
 pub use runtime::BridgeRuntime;
+pub use write::{AsyncAppend, AsyncWrite};

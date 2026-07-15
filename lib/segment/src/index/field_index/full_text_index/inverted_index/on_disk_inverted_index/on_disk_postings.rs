@@ -3,7 +3,9 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::{OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+};
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
 

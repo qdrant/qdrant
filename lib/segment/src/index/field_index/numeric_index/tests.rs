@@ -49,6 +49,7 @@ enum IndexType {
     RamMmap,
 }
 
+#[expect(clippy::large_enum_variant)]
 enum IndexBuilder {
     MutableGridstore(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
     Mmap(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),

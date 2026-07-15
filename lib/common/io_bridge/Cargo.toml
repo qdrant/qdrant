@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 common = { path = "../common" }
+bytemuck = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 slab = { workspace = true }

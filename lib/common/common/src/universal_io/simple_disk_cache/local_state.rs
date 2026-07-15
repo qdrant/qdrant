@@ -92,7 +92,9 @@ impl LocalState {
 
         file.set_len(new_len)?;
 
-        mmap.reopen()?;
+        // We just sized the file ourselves — no need for a full `reopen`
+        // that stats it again.
+        mmap.grow_mapping(new_len)?;
 
         *self.fully_populated.get_mut() = false;
 
@@ -137,14 +139,17 @@ impl LocalState {
     }
 
     /// # Safety
-    /// `DiskCache` is only used in immutable files. Since `blocks_range` can include already-fetched
-    /// data, it is possible that some sections get overwritten; however, it should be the same data,
-    /// so it is fine.
+    /// `DiskCache` is only used for append-only remotes with an immutable
+    /// prefix, so every fetch of `blocks_range` yields the same bytes the
+    /// mirror already holds for it. Since `blocks_range` can include
+    /// already-fetched data, it is possible that some sections get
+    /// overwritten; however, it is the same data, so it is fine.
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
     pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
         // SAFETY:
-        // 1. The remote file is immutable, so worst case, same data is overwritten.
+        // 1. The remote's existing bytes are immutable, so worst case, same
+        //    data is overwritten.
         // 2. The `fetched` bitmap should track which blocks are already present.
         let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
         if self.fully_populated.load(Ordering::Acquire) {

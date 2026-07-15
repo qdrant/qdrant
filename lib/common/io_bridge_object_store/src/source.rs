@@ -22,9 +22,10 @@ use std::time::SystemTime;
 use bytes::Bytes;
 use common::universal_io::{ListedFile, Result, UniversalIoError, UniversalKind};
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
-use io_bridge::AsyncRead;
-use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
+use io_bridge::{AsyncRead, AsyncWrite};
+use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt, PutPayload};
 
+use crate::append::AppendContext;
 use crate::backend::BlobBackend;
 
 /// [`AsyncRead`] handle over an object store. Holds the store as `Arc<S>` so it
@@ -34,23 +35,49 @@ use crate::backend::BlobBackend;
 /// foreign [`AsyncRead`] trait for an object-store backend (the orphan rule
 /// forbids a blanket impl on `Arc<S>` from a crate that owns neither `Arc` nor
 /// `AsyncRead`).
-pub struct ObjectStoreSource<S>(Arc<S>);
+pub struct ObjectStoreSource<S> {
+    store: Arc<S>,
+    /// Context for the native append RPC, when the backend supports it and
+    /// this source was built from a config (see
+    /// [`BlobBackend::append_context`]).
+    append: Option<AppendContext>,
+}
 
 impl<S> Clone for ObjectStoreSource<S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            store: self.store.clone(),
+            append: self.append.clone(),
+        }
     }
 }
 
 impl<S> ObjectStoreSource<S> {
     /// Wrap an already-built object store as an [`AsyncRead`] handle.
+    ///
+    /// Sources built this way have no [`AppendContext`] — construct from a
+    /// config ([`AsyncRead::open`]) or chain
+    /// [`with_append_context`](Self::with_append_context) to enable appends.
     pub fn new(store: Arc<S>) -> Self {
-        Self(store)
+        Self {
+            store,
+            append: None,
+        }
+    }
+
+    /// Attach an [`AppendContext`] enabling the native append RPC.
+    pub fn with_append_context(mut self, context: AppendContext) -> Self {
+        self.append = Some(context);
+        self
     }
 
     /// Borrow the underlying object store.
     pub fn store(&self) -> &Arc<S> {
-        &self.0
+        &self.store
+    }
+
+    pub(crate) fn append_context(&self) -> Option<&AppendContext> {
+        self.append.as_ref()
     }
 }
 
@@ -58,14 +85,17 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     type Config = S::Config;
 
     fn open(config: &Self::Config) -> Result<Self> {
-        Ok(Self(Arc::new(S::build_store(config)?)))
+        Ok(Self {
+            store: Arc::new(S::build_store(config)?),
+            append: S::append_context(config)?,
+        })
     }
 
     fn list_files(
         &self,
         prefix: &Path,
     ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
-        let store = self.0.clone();
+        let store = self.store.clone();
         let prefix_path = prefix.to_path_buf();
         // object_store lists by whole path segment; emulate the byte-prefix
         // contract (list the parent dir, then filter) — see `local_list_files`.
@@ -103,7 +133,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     }
 
     fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
-        let store = self.0.clone();
+        let store = self.store.clone();
         let key = build_key(path);
 
         async move {
@@ -120,7 +150,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         path: &Path,
         range: Range<u64>,
     ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
-        let store = self.0.clone();
+        let store = self.store.clone();
         let key = build_key(path);
         async move {
             let opts = GetOptions {
@@ -143,7 +173,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         from: u64,
     ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
     {
-        let store = self.0.clone();
+        let store = self.store.clone();
         let key = build_key(path);
         async move {
             // `from == 0` is a plain whole-object GET; a positive offset asks the
@@ -167,7 +197,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     }
 
     fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
-        let store = self.0.clone();
+        let store = self.store.clone();
         let key = build_key(path);
         async move {
             store
@@ -188,7 +218,48 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     }
 }
 
-fn build_key(path: &Path) -> object_store::path::Path {
+impl<S: BlobBackend> AsyncWrite for ObjectStoreSource<S> {
+    fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.store.clone();
+        let key = build_key(path);
+        async move {
+            // An empty whole-object put both creates and truncates.
+            store
+                .put(&key, PutPayload::default())
+                .await
+                .map(drop)
+                .map_err(UniversalIoError::s3)
+        }
+    }
+
+    fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.store.clone();
+        let key = build_key(path);
+        async move {
+            store.delete(&key).await.map_err(|err| match err {
+                object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
+                    path: PathBuf::from(key.to_string()),
+                },
+                other => UniversalIoError::s3(other),
+            })
+        }
+    }
+
+    fn save(&self, path: &Path, bytes: Bytes) -> impl Future<Output = Result<()>> + Send + 'static {
+        let store = self.store.clone();
+        let key = build_key(path);
+        async move {
+            // A whole-object put is atomic on object stores.
+            store
+                .put(&key, bytes.into())
+                .await
+                .map(drop)
+                .map_err(UniversalIoError::s3)
+        }
+    }
+}
+
+pub(crate) fn build_key(path: &Path) -> object_store::path::Path {
     object_store::path::Path::from(path.to_string_lossy().as_ref())
 }
 
@@ -205,9 +276,10 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use common::universal_io::{ListedFile, ReadRange, UniversalRead};
+    use common::universal_io::{ListedFile, ReadRange, UniversalAppend, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
     use object_store::memory::InMemory;
+    use object_store::{PutMode, UpdateVersion};
 
     use super::*;
 
@@ -226,6 +298,78 @@ mod tests {
 
         fn kind() -> UniversalKind {
             UniversalKind::S3
+        }
+    }
+
+    /// TEST-ONLY emulation of the native append RPC over [`InMemory`]: a
+    /// head + get + conditional-put CAS loop. Production backends must be
+    /// single-request (see [`crate::append`]); this exists so the `BlobFile`
+    /// append stack can be exercised hermetically.
+    impl io_bridge::AsyncAppend for ObjectStoreSource<InMemory> {
+        fn append(
+            &self,
+            path: &Path,
+            offset: u64,
+            data: Bytes,
+        ) -> impl Future<Output = Result<u64>> + Send + 'static {
+            let store = self.store().clone();
+            let key = build_key(path);
+
+            async move {
+                let conflict = || UniversalIoError::AppendOffsetConflict {
+                    path: PathBuf::from(key.to_string()),
+                    offset,
+                };
+
+                loop {
+                    match store.head(&key).await {
+                        Ok(meta) => {
+                            if meta.size != offset {
+                                return Err(conflict());
+                            }
+
+                            let existing = store
+                                .get(&key)
+                                .await
+                                .map_err(UniversalIoError::s3)?
+                                .bytes()
+                                .await
+                                .map_err(UniversalIoError::s3)?;
+                            let mut combined = Vec::with_capacity(existing.len() + data.len());
+                            combined.extend_from_slice(&existing);
+                            combined.extend_from_slice(&data);
+
+                            let update = PutMode::Update(UpdateVersion {
+                                e_tag: meta.e_tag.clone(),
+                                version: meta.version.clone(),
+                            });
+                            match store.put_opts(&key, combined.into(), update.into()).await {
+                                Ok(_) => return Ok(offset + data.len() as u64),
+                                // Lost a race; retry from a fresh head.
+                                Err(object_store::Error::Precondition { .. }) => {}
+                                Err(other) => return Err(UniversalIoError::s3(other)),
+                            }
+                        }
+                        Err(object_store::Error::NotFound { .. }) => {
+                            if offset != 0 {
+                                return Err(conflict());
+                            }
+
+                            let create = PutMode::Create;
+                            match store
+                                .put_opts(&key, data.clone().into(), create.into())
+                                .await
+                            {
+                                Ok(_) => return Ok(data.len() as u64),
+                                // Lost a race; retry from a fresh head.
+                                Err(object_store::Error::AlreadyExists { .. }) => {}
+                                Err(other) => return Err(UniversalIoError::s3(other)),
+                            }
+                        }
+                        Err(other) => return Err(UniversalIoError::s3(other)),
+                    }
+                }
+            }
         }
     }
 
@@ -363,5 +507,34 @@ mod tests {
         use common::universal_io::ReadOnly;
         fn assert_universal_read<R: UniversalRead>() {}
         assert_universal_read::<ReadOnly<BlobFile<InMemorySource>>>();
+    }
+
+    /// The backend-generic append battery from `common`, run over the S3
+    /// stack (`BlobFs`/`BlobFile` over an object store) via the in-memory
+    /// append emulation. The real write-offset RPC is covered by the gated
+    /// `test_native_append_flow` integration test.
+    #[test]
+    fn append_conformance_over_object_store() {
+        let fs = io_bridge::BlobFs::new(
+            ObjectStoreSource::new(Arc::new(InMemory::new())),
+            BridgeRuntime::global(),
+        );
+        common::universal_io::conformance::run_append_conformance(&fs, Path::new("conformance"));
+    }
+
+    #[test]
+    fn append_through_blob_file() {
+        let runtime = BridgeRuntime::global();
+        let store = Arc::new(InMemory::new());
+        let mut file = make_file(runtime, store, "log");
+
+        // Create-on-first-append at offset 0, then single-request batches.
+        file.append(0, b"hello ".as_slice()).unwrap();
+        file.append(6, b"world".as_slice()).unwrap();
+        let batch: [&[u8]; 2] = [b"!", b"?"];
+        file.append_batch(11, batch).unwrap();
+
+        let bytes = file.read_whole::<u8>().unwrap();
+        assert_eq!(&bytes[..], b"hello world!?");
     }
 }

@@ -60,6 +60,7 @@ criterion = { workspace = true }
 duplicate = "2.0.1"
 fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
+static_assertions = "1.1.0"
 tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
