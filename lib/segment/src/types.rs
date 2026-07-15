@@ -4869,7 +4869,6 @@ mod tests {
         assert!(err.contains("Example"), "err was: {err}");
     }
 
-
     #[test]
     fn test_condition_non_string_key_returns_clear_error() {
         for json in [
