@@ -118,7 +118,7 @@ impl UpdateWorkers {
                 },
                 // Flush at the configured flush interval
                 _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => {},
-            };
+            }
 
             let segments_clone = segments.clone();
             let wal_clone = wal.clone();

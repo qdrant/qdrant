@@ -1322,7 +1322,6 @@ dependencies = [
  "futures",
  "hashring",
  "http 1.4.2",
- "indexmap 2.14.0",
  "indicatif",
  "issues",
  "itertools 0.15.0",

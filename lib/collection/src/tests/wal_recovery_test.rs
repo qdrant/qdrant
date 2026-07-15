@@ -372,7 +372,7 @@ async fn test_truncate_unapplied_wal() {
         .unwrap();
 
     let applied_count = retrieved.len();
-    let truncated_count = removed_records as usize;
+    let truncated_count = removed_records;
     let total_pushed = num_points as usize;
     let missing_count = total_pushed.saturating_sub(applied_count + truncated_count);
 
@@ -419,7 +419,7 @@ async fn test_truncate_unapplied_wal() {
     // Verify the shard is still functional
     let info = shard.info().await.unwrap();
     assert_eq!(
-        info.points_count.unwrap_or(0) as usize,
+        info.points_count.unwrap_or(0),
         applied_count + 1,
         "Shard should have applied_count + 1 points after update"
     );

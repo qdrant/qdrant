@@ -1,5 +1,5 @@
-//! Storage-agnostic bitslice backed by any [`UniversalRead<u64>`] /
-//! [`UniversalWrite<u64>`] backend.
+//! Storage-agnostic bitslice backed by any [`UniversalRead`] /
+//! [`UniversalWrite`] backend.
 //!
 //! Provides [`BitSliceStorage`], a wrapper that interprets the underlying
 //! `u64`-element storage as a sequence of bits, supporting both read and write
@@ -52,7 +52,7 @@ pub type MmapBitSlice = StoredBitSlice<crate::universal_io::MmapFile>;
 
 /// A storage-agnostic bitslice that supports both reading and writing bits.
 ///
-/// Wraps any [`UniversalRead<u64>`] / [`UniversalWrite<u64>`] backend and
+/// Wraps any [`UniversalRead`] / [`UniversalWrite`] backend and
 /// interprets the underlying `u64` elements as a sequence of bits.
 /// Bit-level operations are translated to element-level reads and writes
 /// on the backend.
