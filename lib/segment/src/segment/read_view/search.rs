@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
@@ -119,7 +120,7 @@ where
             .map(|&id| {
                 let record = SegmentRecordGeneric {
                     id,
-                    vectors: needs_vectors.then(Vec::new),
+                    vectors: needs_vectors.then(SmallVec::new),
                     payload: None,
                 };
                 (id, record)

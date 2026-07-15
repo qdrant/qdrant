@@ -766,8 +766,9 @@ impl SegmentEntry for Segment {
                     segment.replace_all_vectors(internal_id, op_num, &vectors, hw_counter)?;
                     Ok(true)
                 },
-                |snapshot_vectors, _payload| {
-                    *snapshot_vectors = vectors.clone().into_owned();
+                |raw_vectors, updated_vectors, _payload| {
+                    raw_vectors.clear();
+                    *updated_vectors = vectors.clone().into_owned();
                     Ok(true)
                 },
             ),
@@ -797,11 +798,9 @@ impl SegmentEntry for Segment {
             .borrow()
             .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
         match stored_internal_point {
-            // Not `handle_point_mutate`: its append-only arm snapshots the old
-            // vectors into decoded `NamedVectors`, which cannot carry
-            // storage-native bytes (and would be a lossy read for TurboQuant).
-            // The raw clone path skips the vector snapshot entirely — upsert
-            // discards all old vectors anyway.
+            // Not `handle_point_mutate`: upsert replaces the whole point, so
+            // the raw clone path skips the vector snapshot entirely instead
+            // of reading raw bytes it would immediately discard.
             Some(existing_internal_id) => {
                 let append_only = self.is_append_only();
                 self.handle_point_version_and_failure(
@@ -936,8 +935,8 @@ impl SegmentEntry for Segment {
                 segment.update_vectors(internal_id, op_num, vectors.clone(), hw_counter)?;
                 Ok(true)
             },
-            |snapshot_vectors, _payload| {
-                snapshot_vectors.merge(vectors.clone().into_owned());
+            |_raw_vectors, updated_vectors, _payload| {
+                *updated_vectors = vectors.clone().into_owned();
                 Ok(true)
             },
         )
@@ -982,8 +981,8 @@ impl SegmentEntry for Segment {
                 let mut vector_storage = vector_data.vector_storage.borrow_mut();
                 vector_storage.delete_vector(internal_id)
             },
-            |snapshot_vectors, _payload| {
-                snapshot_vectors.remove_ref(vector_name);
+            |raw_vectors, _updated_vectors, _payload| {
+                raw_vectors.remove(vector_name);
                 Ok(was_present)
             },
         )?;
@@ -1028,7 +1027,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 *snapshot_payload = full_payload.clone();
                 Ok(true)
             },
@@ -1067,7 +1066,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 match key {
                     Some(k) => snapshot_payload.merge_by_key(payload, k),
                     None => snapshot_payload.merge(payload),
@@ -1106,7 +1105,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 snapshot_payload.remove(key);
                 Ok(true)
             },
@@ -1141,7 +1140,7 @@ impl SegmentEntry for Segment {
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
-            |_vectors, snapshot_payload| {
+            |_raw_vectors, _updated_vectors, snapshot_payload| {
                 *snapshot_payload = Payload::default();
                 Ok(true)
             },
