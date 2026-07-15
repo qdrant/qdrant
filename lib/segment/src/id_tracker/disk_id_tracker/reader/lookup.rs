@@ -116,11 +116,11 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// [`read_batch`](UniversalRead::read_batch) read per id for the e2i block
     /// that can contain it, then a binary search within that block.
     ///
-    /// Only ids that resolve are yielded, as `(id, offset)` pairs; absent ids
-    /// are dropped. Pairs come out in read-completion order, not input order —
-    /// the id is carried alongside its offset so callers never need the input
-    /// position. Deletion is NOT applied (same contract as `lookup`); storage
-    /// errors propagate.
+    /// Each resolved `(id, offset)` is handed to `on_found` as its block
+    /// completes; absent ids are dropped. Delivery is in read-completion order,
+    /// not input order — the id is rebuilt from `is_uuid` + key, so callers
+    /// never need the input position. Deletion is NOT applied (same contract as
+    /// `lookup`); storage errors propagate.
     ///
     /// Ids are not grouped by block up front: a block is one ~16 KiB DiskCache
     /// block, so reads landing in the same block are deduplicated by the cache
@@ -129,7 +129,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     pub fn lookup_batch(
         &self,
         external_ids: impl PointIdBatch,
-    ) -> OperationResult<Vec<(PointIdType, PointOffsetType)>> {
+        mut on_found: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
         // Each read is tagged with `(is_uuid, key)` so the callback can pick the
         // decoder, binary-search, and rebuild the id. Ids outside every block
         // are dropped here; the range iterator stays lazy (no collect).
@@ -147,11 +148,6 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 }
             });
 
-        // At most one hit per input id; reserve up front so the found buffer
-        // never reallocates as reads resolve.
-        let mut found: Vec<(PointIdType, PointOffsetType)> =
-            Vec::with_capacity(external_ids.num_ids());
-
         self.e2i
             .read_batch::<common::generic_consts::Random, u8, (bool, u128)>(
                 ranges,
@@ -167,13 +163,13 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                         } else {
                             PointIdType::NumId(key as u64)
                         };
-                        found.push((id, entries[pos].1));
+                        on_found(id, entries[pos].1);
                     }
                     Ok(())
                 },
             )?;
 
-        Ok(found)
+        Ok(())
     }
 
     /// Internal→external lookup ignoring deletion. `Ok(None)` for out-of-range

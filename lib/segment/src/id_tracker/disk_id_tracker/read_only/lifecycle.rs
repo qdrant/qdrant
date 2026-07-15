@@ -25,6 +25,17 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         }
     }
 
+    /// Open options for the deleted flags: unlike the mapping/versions files
+    /// (read per-point, left lazy), the deleted set is read whole — per-point
+    /// deleted checks plus full materialization for search — so it is populated
+    /// as a whole, keeping those reads off remote storage.
+    fn deleted_open_options() -> OpenOptions {
+        OpenOptions {
+            populate: Populate::PreferBackground,
+            ..Self::open_options()
+        }
+    }
+
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)
     /// will read. Returns `false` (nothing scheduled) when the tracker is not
     /// in the on-disk format.
@@ -37,9 +48,12 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         }
 
         let options = Self::open_options();
-
         fs.schedule_prefetch(&version_mapping_path(segment_path), Some(options), None)?;
-        fs.schedule_prefetch(&deleted_path(segment_path), Some(options), None)?;
+        fs.schedule_prefetch(
+            &deleted_path(segment_path),
+            Some(Self::deleted_open_options()),
+            None,
+        )?;
 
         Ok(true)
     }
@@ -77,8 +91,12 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         )?);
         let versions_len = versions.len()?;
 
-        let deleted_file =
-            StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
+        let deleted_file = StoredBitSlice::open(
+            fs,
+            deleted_path(segment_path),
+            Self::deleted_open_options(),
+            Default::default(),
+        )?;
 
         Ok(Some(Self {
             path: segment_path.to_path_buf(),

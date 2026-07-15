@@ -23,10 +23,6 @@ impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTra
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
         // Resident bitvec, so this never fails; out-of-range offsets are treated
         // as deleted (mirrors the in-RAM tracker).
-        //
-        // `points_deleted_batch` is deliberately NOT overridden: its default loop
-        // hits this resident bitvec, so there is no IO to pipeline. Only the
-        // read-only tracker, whose deleted set stays on disk, batches it.
         Ok(self.deleted.get_bit(offset as usize).unwrap_or(true))
     }
 

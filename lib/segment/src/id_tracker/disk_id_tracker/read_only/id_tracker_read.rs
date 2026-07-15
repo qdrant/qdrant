@@ -31,22 +31,6 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
             .unwrap_or(true))
     }
 
-    /// One pipelined pass over the on-disk deleted file (shared `u64` elements
-    /// deduplicated) instead of a `get_bit` round-trip per point. Still no
-    /// full-set load. Out-of-range offsets are treated as deleted.
-    fn points_deleted_batch(
-        &self,
-        offsets: impl ExactSizeIterator<Item = PointOffsetType>,
-    ) -> OperationResult<Vec<bool>> {
-        let bit_indices: Vec<u64> = offsets.map(u64::from).collect();
-        Ok(self
-            .deleted_file
-            .get_bits_batch(&bit_indices)?
-            .into_iter()
-            .map(|bit| bit.unwrap_or(true))
-            .collect())
-    }
-
     fn deleted_bitslice(&self) -> OperationResult<&BitSlice> {
         Ok(self.deleted_full()?.as_bitslice())
     }
