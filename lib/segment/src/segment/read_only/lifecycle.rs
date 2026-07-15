@@ -24,8 +24,8 @@ use crate::segment_constructor::{
     get_payload_index_path, get_vector_index_path, get_vector_storage_path,
 };
 use crate::types::{
-    PayloadStorageType, SegmentConfig, SegmentState, SegmentType, VectorDataConfig, VectorName,
-    VectorNameBuf,
+    PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SparseVectorDataConfig,
+    VectorDataConfig, VectorName, VectorNameBuf,
 };
 use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
@@ -69,6 +69,18 @@ fn payload_populate(config: &SegmentConfig) -> Populate {
     match config.payload_storage_type {
         PayloadStorageType::InRamMmap => Populate::PreferBackground,
         PayloadStorageType::Mmap => Populate::No,
+    }
+}
+
+/// How one sparse vector's storage is brought into memory. Search never reads
+/// it, so it normally stays cold — except when the (non-persisted) mutable-RAM
+/// sparse index is configured: that index is rebuilt from the storage at open,
+/// reading it in full, so the storage is warmed in the background.
+pub(super) fn sparse_storage_populate(sparse_vector_config: &SparseVectorDataConfig) -> Populate {
+    if sparse_vector_config.index.index_type.is_persisted() {
+        Populate::No
+    } else {
+        Populate::PreferBackground
     }
 }
 
@@ -151,7 +163,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            ReadOnlySparseVectorStorage::<S>::preopen(fs, &path)?;
+            ReadOnlySparseVectorStorage::<S>::preopen(
+                fs,
+                &path,
+                sparse_storage_populate(sparse_vector_config),
+            )?;
 
             // Sparse vector index; the sparse open reads lazily, so a profile
             // that never scores this vector just parks the index data cold.
@@ -248,11 +264,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 })?;
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
-        for vector_name in config.sparse_vector_data.keys() {
+        for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = VectorStorageReadEnum::Sparse(Box::new(
-                ReadOnlySparseVectorStorage::open(fs, &path)?,
-            ));
+            let storage =
+                VectorStorageReadEnum::Sparse(Box::new(ReadOnlySparseVectorStorage::open(
+                    fs,
+                    &path,
+                    sparse_storage_populate(sparse_vector_config),
+                )?));
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
 
@@ -283,12 +302,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             )?;
             vector_data.insert(vector_name.clone(), data);
         }
-        for vector_name in config.sparse_vector_data.keys() {
+        for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_sparse(
                 fs,
                 segment_path,
                 vector_name,
+                sparse_vector_config,
                 id_tracker.clone(),
                 payload_index.clone(),
                 vector_storage,
@@ -396,6 +416,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         vector_name: &VectorName,
+        sparse_vector_config: &SparseVectorDataConfig,
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -410,6 +431,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
         let index_populate =
             load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
         let vector_index = VectorIndexReadEnum::open_sparse(
+            sparse_vector_config,
             ReadOnlyVectorIndexOpenArgs {
                 fs,
                 path: &vector_index_path,

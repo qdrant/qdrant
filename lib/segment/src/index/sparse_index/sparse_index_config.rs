@@ -27,26 +27,37 @@ pub enum SparseIndexType {
 
 impl SparseIndexType {
     pub fn is_appendable(self) -> bool {
-        self == Self::MutableRam
+        match self {
+            Self::MutableRam => true,
+            Self::ImmutableRam | Self::Mmap => false,
+        }
     }
 
     pub fn is_immutable(self) -> bool {
-        self != Self::MutableRam
+        match self {
+            Self::ImmutableRam | Self::Mmap => true,
+            Self::MutableRam => false,
+        }
     }
 
     pub fn is_on_disk(self) -> bool {
-        self == Self::Mmap
+        match self {
+            Self::Mmap => true,
+            Self::MutableRam | Self::ImmutableRam => false,
+        }
     }
 
     pub fn is_persisted(self) -> bool {
-        self == Self::Mmap || self == Self::ImmutableRam
+        match self {
+            Self::Mmap | Self::ImmutableRam => true,
+            Self::MutableRam => false,
+        }
     }
 
     pub fn from_on_disk(on_disk: bool) -> Self {
-        if on_disk {
-            Self::Mmap
-        } else {
-            Self::MutableRam
+        match on_disk {
+            true => Self::Mmap,
+            false => Self::MutableRam,
         }
     }
 }

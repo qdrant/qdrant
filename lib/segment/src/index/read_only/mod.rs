@@ -16,6 +16,7 @@ use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::Inve
 use sparse::index::inverted_index::inverted_index_compressed_mmap::{
     self as inverted_index_compressed_mmap, InvertedIndexCompressedMmap,
 };
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -43,11 +44,12 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// Read-only counterpart of [`super::VectorIndexEnum`].
 ///
 /// Wraps each read-capable index type with its read-only newtype. The mutable
-/// RAM sparse index is intentionally absent because it has no persisted
-/// read-only representation.
+/// RAM sparse index has no persisted representation, so its read-only variant
+/// is rebuilt from the vector storage at open time.
 pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
     Plain(Box<ReadOnlyPlainVectorIndex<S>>),
     Hnsw(Box<ReadOnlyHNSWIndex<S>>),
+    SparseMutableRam(Box<ReadOnlySparseVectorIndex<S, InvertedIndexRam>>),
     SparseCompressedImmutableRamF32(
         Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedImmutableRam<f32>>>,
     ),
@@ -105,12 +107,14 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
 
     /// Schedule background prefetch of every file [`Self::open_sparse`] will
     /// read: the sparse index config, the inverted index, its version file
-    /// and the indices tracker. All readable variants share the
+    /// and the indices tracker. All persisted variants share the
     /// compressed-mmap on-disk format, so the datatype plays no role here;
     /// the (effective) index type only decides whether the index data is
     /// populated by the prefetch (the immutable-RAM open reads it in full) or
     /// parked cold (the mmap open reads it lazily) — and it comes from the
     /// segment config's `sparse_vector_config`, so nothing is read here.
+    /// `MutableRam` is never persisted — `open_sparse` rebuilds it from the
+    /// vector storage — so nothing is scheduled for it.
     ///
     /// An absent index config file means the index isn't persisted: nothing
     /// is scheduled, and `open_sparse` is the one to report it.
@@ -120,6 +124,14 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         path: &Path,
         populate_override: Option<Populate>,
     ) -> OperationResult<()> {
+        // MutableRam has no persisted representation: `open_sparse` rebuilds
+        // it from the vector storage (prefetched separately), so there are no
+        // index files to schedule.
+        match sparse_vector_config.index.index_type {
+            SparseIndexType::MutableRam => return Ok(()),
+            SparseIndexType::ImmutableRam | SparseIndexType::Mmap => {}
+        }
+
         // Sparse index config; `open_sparse` reads it off the parked handle.
         let config_path = SparseIndexConfig::get_config_path(path);
         if fs
@@ -128,16 +140,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             .is_none()
         {
             return Ok(());
-        }
-
-        // MutableRam has no persisted representation; mirror `open_sparse`.
-        match sparse_vector_config.index.index_type {
-            SparseIndexType::MutableRam => {
-                return Err(OperationError::service_error(
-                    "MutableRam sparse index has no read-only representation",
-                ));
-            }
-            SparseIndexType::ImmutableRam | SparseIndexType::Mmap => {}
         }
 
         // The effective placement (structural index type refined by the
@@ -221,10 +223,13 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
 
     /// Open the read-only sparse vector index from its persisted [`SparseIndexConfig`],
     /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
-    /// `MutableRam` has no read-only representation.
+    /// `MutableRam` is never persisted, so it is rebuilt from the vector storage
+    /// instead of loaded — `sparse_vector_config` (from the segment config) is
+    /// what says so, as the persisted config doesn't exist for it.
     /// `populate_override` mirrors [`preopen_sparse`](Self::preopen_sparse): a cold
     /// override downgrades `ImmutableRam` to the lazy `Mmap` open, like low-memory mode.
     pub fn open_sparse<Fs: UniversalReadFs<File = S>>(
+        sparse_vector_config: &SparseVectorDataConfig,
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
         populate_override: Option<Populate>,
     ) -> OperationResult<Self> {
@@ -236,6 +241,20 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             payload_index,
             quantized_vectors: _,
         } = args;
+
+        // MutableRam has no persisted representation: rebuild the RAM index
+        // from the (read-only) vector storage, mirroring
+        // `SparseVectorIndex::plan`'s non-persisted branch.
+        if !sparse_vector_config.index.index_type.is_persisted() {
+            return Ok(Self::SparseMutableRam(Box::new(
+                ReadOnlySparseVectorIndex::build_mutable_ram(
+                    sparse_vector_config.index,
+                    id_tracker,
+                    vector_storage,
+                    payload_index,
+                )?,
+            )));
+        }
 
         let config =
             SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
@@ -280,7 +299,8 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         let index = match (effective_index_type, config.datatype.unwrap_or_default()) {
             (SparseIndexType::MutableRam, _) => {
                 return Err(OperationError::service_error(
-                    "MutableRam sparse index has no read-only representation",
+                    "MutableRam sparse index is never persisted, \
+                     but its config was found on disk",
                 ));
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
@@ -318,6 +338,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         match self {
             Self::Plain(_) => false,
             Self::Hnsw(index) => index.is_on_disk(),
+            Self::SparseMutableRam(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_on_disk(),
@@ -331,6 +352,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         match self {
             Self::Plain(_) => {}
             Self::Hnsw(index) => index.populate()?,
+            Self::SparseMutableRam(_) => {}
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
@@ -345,6 +367,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         match self {
             Self::Plain(_) => {}
             Self::Hnsw(index) => index.clear_cache()?,
+            Self::SparseMutableRam(_) => {}
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
@@ -368,6 +391,9 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         match self {
             Self::Plain(index) => index.search(vectors, filter, top, params, query_context),
             Self::Hnsw(index) => index.search(vectors, filter, top, params, query_context),
+            Self::SparseMutableRam(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
@@ -393,6 +419,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         match self {
             Self::Plain(index) => index.get_telemetry_data(detail),
             Self::Hnsw(index) => index.get_telemetry_data(detail),
+            Self::SparseMutableRam(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedImmutableRamF32(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedImmutableRamF16(index) => index.get_telemetry_data(detail),
             Self::SparseCompressedImmutableRamU8(index) => index.get_telemetry_data(detail),
@@ -406,6 +433,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         match self {
             Self::Plain(index) => index.indexed_vector_count(),
             Self::Hnsw(index) => index.indexed_vector_count(),
+            Self::SparseMutableRam(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
@@ -419,6 +447,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         match self {
             Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseMutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.size_of_searchable_vectors_in_bytes()
             }
@@ -444,6 +473,9 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         match self {
             Self::Plain(index) => index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter),
             Self::Hnsw(index) => index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter),
+            Self::SparseMutableRam(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+            }
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
             }
@@ -469,6 +501,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         match self {
             Self::Plain(index) => index.is_index(),
             Self::Hnsw(index) => index.is_index(),
+            Self::SparseMutableRam(index) => index.is_index(),
             Self::SparseCompressedImmutableRamF32(index) => index.is_index(),
             Self::SparseCompressedImmutableRamF16(index) => index.is_index(),
             Self::SparseCompressedImmutableRamU8(index) => index.is_index(),

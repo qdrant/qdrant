@@ -88,6 +88,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
             quantized_vectors,
         } = self;
 
+        // Storage strictly before index: the mutable-RAM sparse index reads
+        // the newly inserted vectors from this very storage to fold them into
+        // its inverted index (see `ReadOnlySparseVectorIndex::live_reload`).
         vector_storage
             .borrow_mut()
             .live_reload(fs, deleted, inserted, hw_counter)?;
