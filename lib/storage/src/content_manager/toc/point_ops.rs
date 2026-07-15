@@ -710,8 +710,13 @@ impl TableOfContent {
         &self,
         collection_name: &str,
     ) -> StorageResult<()> {
-        self.get_collection_unchecked(collection_name).await?;
-        Ok(())
+        match self.get_collection_unchecked(collection_name).await {
+            Ok(_) => Ok(()),
+            Err(StorageError::NotFound { .. }) => Err(StorageError::not_found(format!(
+                "Collection {collection_name} not found"
+            ))),
+            Err(err) => Err(err),
+        }
     }
 
     async fn validate_recommend_lookup_from(
