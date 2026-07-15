@@ -13,7 +13,9 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{MmapFile, Populate, UniversalWrite, UniversalWriteFileOps, UserData};
+use common::universal_io::{
+    MmapFile, Populate, UniversalAppend, UniversalWrite, UniversalWriteFileOps, UserData,
+};
 use gridstore::Gridstore;
 pub use reader::BlobstoreReader;
 use reader::CONFIG_FILENAME;
@@ -43,7 +45,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 #[derive(Debug)]
 pub struct Blobstore<V, S = MmapFile>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
 {
     variant: BlobstoreVariant<V, S>,
 }
@@ -52,7 +54,7 @@ where
 #[derive(Debug)]
 enum BlobstoreVariant<V, S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
 {
     Gridstore(Gridstore<V, S>),
     Arenastore(Arenastore<V, S>),
@@ -61,7 +63,7 @@ where
 impl<V, S> Blobstore<V, S>
 where
     V: Blob,
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
 {
     /// List all files belonging to this storage.
     pub fn files(&self) -> Vec<PathBuf> {
@@ -272,7 +274,7 @@ where
     }
 }
 
-impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
+impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     pub fn flusher(&self) -> Flusher {
         match &self.variant {
@@ -303,7 +305,7 @@ impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
 }
 
 #[cfg(test)]
-impl<V, S: UniversalWrite + 'static> Blobstore<V, S> {
+impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
     fn as_gridstore(&self) -> &Gridstore<V, S> {
         match &self.variant {

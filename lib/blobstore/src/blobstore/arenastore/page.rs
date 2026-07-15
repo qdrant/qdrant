@@ -5,8 +5,8 @@ use ahash::HashSet;
 use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadRange, UniversalAppend, UniversalIoError,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
 };
 
 use crate::Result;
@@ -156,7 +156,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
     }
 }
 
-impl<S: UniversalWrite> AppendOnlyPages<S> {
+impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// Create a new empty page 0 in the given directory, truncating it if it already exists.
     ///
     /// The directory must exist already.
@@ -215,9 +215,9 @@ impl<S: UniversalWrite> AppendOnlyPages<S> {
     /// gained data since; for the older, sealed pages a stale target is a no-op.
     ///
     /// This does not sync the files to disk, use [`flusher`](Self::flusher) afterwards.
-    pub(super) fn write_pending(&mut self, fs: &S::Fs, targets: &[u64]) -> Result<()> {
+    pub(super) fn write_pending(&mut self, targets: &[u64]) -> Result<()> {
         for (page, target_len) in self.pages.iter_mut().zip(targets) {
-            page.write_pending(fs, *target_len)?;
+            page.write_pending(*target_len)?;
         }
         Ok(())
     }
@@ -359,7 +359,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
     }
 }
 
-impl<S: UniversalWrite> AppendOnlyPage<S> {
+impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// Create a new empty page file at the given path, truncating it if it already exists.
     ///
     /// The directory must exist already.
@@ -395,23 +395,21 @@ impl<S: UniversalWrite> AppendOnlyPage<S> {
 
     /// Append buffered values for file offsets up to, but excluding, `target_len` to the file.
     ///
-    /// All buffered value data is written with a single write at the end of the file. The
-    /// `target_len` is captured through [`len`](Self::len) when a flusher is created, so that
-    /// values appended while a flush is in progress stay buffered.
+    /// All buffered value data lands with a single atomic append at the end of the file: one
+    /// grow+write syscall on local backends, one RPC on object stores. The `target_len` is
+    /// captured through [`len`](Self::len) when a flusher is created, so that values appended
+    /// while a flush is in progress stay buffered.
     ///
     /// A stale flush, with a `target_len` at or below what a more recent flush already
     /// persisted, is a no-op: bytes that were appended before must never be written again.
     ///
-    /// Universal IO writes cannot grow a file, so the file is extended to its new length first
-    /// and the handle is reopened to make the appended range accessible. Backends resize an
-    /// existing file in place, preserving its content.
+    /// The append offset doubles as a compare-and-swap token: if a previous flush appended
+    /// these bytes but its acknowledgement was lost, the retry conflicts instead of appending
+    /// twice, and the bytes are adopted as persisted when the file ends exactly where this
+    /// append would have ended.
     ///
     /// This does not sync the file to disk, use [`flusher`](Self::flusher) afterwards.
-    //
-    // TODO(serverless): the append-only mode must grow the file and write the appended bytes in a single
-    // syscall, growing the file before writing to it is not allowed. Universal IO has no such
-    // append operation yet, replace the separate grow and write steps with it once it exists.
-    fn write_pending(&mut self, fs: &S::Fs, target_len: u64) -> Result<()> {
+    fn write_pending(&mut self, target_len: u64) -> Result<()> {
         if target_len <= self.persisted_len {
             return Ok(());
         }
@@ -422,28 +420,31 @@ impl<S: UniversalWrite> AppendOnlyPage<S> {
             "flush target exceeds buffered value data",
         );
         let count = count.min(self.pending.len());
+        let end = self.persisted_len + count as u64;
 
-        if let Err(err) = self.grow_and_write(fs, count) {
-            // Best effort: drop partially appended bytes, so that the file stays consistent
-            // with the persisted length and a retried flush never rewrites existing bytes
-            let _ = fs.create(&self.path, self.persisted_len as usize);
-            return Err(err);
+        match self.file.append(self.persisted_len, &self.pending[..count]) {
+            Ok(()) => {}
+            // A retried append after a lost acknowledgement conflicts instead of appending
+            // twice. If the file ends exactly where this append would have ended, the bytes
+            // landed before; adopt them as persisted. Any other length means the file was
+            // modified outside this writer.
+            Err(UniversalIoError::AppendOffsetConflict { .. }) => {
+                self.file.reopen()?;
+                let len = self.file.len::<u8>()?;
+                if len != end {
+                    return Err(GridstoreError::service_error(format!(
+                        "append-only page file {} was modified outside this writer: it ends \
+                         at byte {len}, expected {} before or {end} after the append",
+                        self.path.display(),
+                        self.persisted_len,
+                    )));
+                }
+            }
+            Err(err) => return Err(err.into()),
         }
 
         self.pending.drain(..count);
-        self.persisted_len += count as u64;
-
-        Ok(())
-    }
-
-    /// Grow the page file by `count` buffered bytes, then write those bytes at its old end.
-    fn grow_and_write(&mut self, fs: &S::Fs, count: usize) -> Result<()> {
-        let end = self.persisted_len + count as u64;
-        fs.create(&self.path, end as usize)?;
-        self.file.reopen()?;
-
-        self.file
-            .write(self.persisted_len, &self.pending[..count])?;
+        self.persisted_len = end;
 
         Ok(())
     }
@@ -486,5 +487,50 @@ mod tests {
         );
         assert!(page.pending.is_empty());
         assert_eq!(page.len(), u64::from(u32::MAX) + 1);
+    }
+
+    /// A conflicting append whose bytes already landed — a retried flush after a lost
+    /// acknowledgement — is adopted as persisted instead of appending twice.
+    #[test]
+    fn test_write_pending_adopts_lost_append_on_conflict() {
+        let dir = TempDir::new().unwrap();
+        let path = page_file_name(dir.path(), 0);
+        let mut page = AppendOnlyPage::<MmapFile>::new(&MmapFs, path.clone()).unwrap();
+
+        page.append_value(&[1, 2, 3, 4]).unwrap();
+
+        // Simulate a flush that landed but was never acknowledged: the bytes are in the
+        // (previously empty) file, but the page still counts them as pending
+        fs::write(&path, [1, 2, 3, 4]).unwrap();
+
+        page.write_pending(4).unwrap();
+        assert_eq!(page.persisted_len, 4);
+        assert!(page.pending.is_empty());
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            [1, 2, 3, 4],
+            "the bytes must not be appended twice",
+        );
+    }
+
+    /// A conflicting append against a file that does not end where the append would have
+    /// ended fails: the file was modified outside this writer.
+    #[test]
+    fn test_write_pending_rejects_foreign_growth() {
+        let dir = TempDir::new().unwrap();
+        let path = page_file_name(dir.path(), 0);
+        let mut page = AppendOnlyPage::<MmapFile>::new(&MmapFs, path.clone()).unwrap();
+
+        page.append_value(&[1, 2, 3, 4]).unwrap();
+
+        // Something else grew the (previously empty) file to an unexpected length
+        fs::write(&path, [9; 7]).unwrap();
+
+        let err = page.write_pending(4).unwrap_err();
+        assert!(matches!(err, GridstoreError::ServiceError { .. }));
+
+        // Nothing was adopted, the pending bytes are kept for a later flush
+        assert_eq!(page.persisted_len, 0);
+        assert_eq!(page.pending, [1, 2, 3, 4]);
     }
 }
