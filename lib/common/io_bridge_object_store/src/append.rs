@@ -209,7 +209,17 @@ async fn append_request(
                 .transpose()?;
 
             return match object_size {
-                Some(new_len) => Ok(new_len),
+                Some(new_len) if new_len == offset + data_len => Ok(new_len),
+                // The store confirmed the append but reports a final size
+                // that disagrees with `offset + data`: either the write
+                // offset was not honored or the single-writer contract was
+                // violated — fail instead of returning a length that
+                // disagrees with the object.
+                Some(new_len) => Err(UniversalIoError::s3(std::io::Error::other(format!(
+                    "append to {key} at offset {offset} reported object size {new_len}, \
+                     expected {expected}",
+                    expected = offset + data_len,
+                )))),
                 // At offset 0 the append is equivalent to a whole-object
                 // write, so even a store without write-offset support
                 // produced the right object.
