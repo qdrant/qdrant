@@ -1513,6 +1513,115 @@ fn test_upsert_raw_multivec_turbo_bytes() {
     );
 }
 
+/// TurboQuant-as-datatype vectors must survive append-only mutations that
+/// don't touch them — e.g. payload-only ops — without degrading.
+///
+/// On an append-only segment every mutating op (except same-operation
+/// follow-up steps, which mutate the just-written slot in place) routes
+/// through `Segment::clone_and_mutate_point`, which rewrites the point at a
+/// fresh internal id. It used to snapshot the point's vectors decoded to `f32`,
+/// dequantizing and requantizing a TQ-datatype vector on every mutation,
+/// even one that only touched the payload. TurboQuant requantization is not
+/// idempotent — for Dot/L2 the stored per-vector scale factor picks up the
+/// centroid-norm bias on every cycle — so each op degraded the vector a
+/// little further beyond the initial (expected, one-off) quantization loss.
+/// Vectors the op doesn't overwrite now travel to the fresh id as
+/// storage-native bytes, verbatim; this test guards that.
+///
+/// This is the segment-level analogue of the segment-holder test
+/// `test_cow_move_does_not_degrade_turbo_vectors` (CoW moves between
+/// segments); here the clone-and-tombstone cycle happens within one segment.
+///
+/// The test applies repeated payload-only ops to one point on an append-only
+/// TQ segment and asserts the decoded vector never drifts from its
+/// first-generation value (the read-back right after initial ingestion).
+#[test]
+fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
+    init_logger();
+    const DIM: usize = 128;
+    const ROUNDS: u64 = 32;
+
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    segment.append_only_mutations = true;
+
+    let hw_counter = HardwareCounterCell::new();
+    let point_id: PointIdType = 7.into();
+    let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
+    segment
+        .upsert_point(100, point_id, only_default_vector(&original), &hw_counter)
+        .unwrap();
+
+    let read_dense = |segment: &Segment| -> Vec<f32> {
+        match segment
+            .vector(DEFAULT_VECTOR_NAME, point_id, &hw_counter)
+            .unwrap()
+            .unwrap()
+        {
+            VectorInternal::Dense(vector) => vector,
+            VectorInternal::Sparse(_) | VectorInternal::MultiDense(_) => {
+                panic!("expected a dense vector")
+            }
+        }
+    };
+
+    // First-generation read-back: the original vector after its initial
+    // (expected, one-off) quantization. Payload ops must preserve it exactly.
+    let first_generation = read_dense(&segment);
+
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+
+    // L2 distance of each round's read-back from the first generation.
+    let mut drift = Vec::new();
+    for round in 0..ROUNDS {
+        let old_internal_id = segment
+            .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+            .unwrap();
+        segment
+            .set_payload(101 + round, point_id, &payload, &None, &hw_counter)
+            .unwrap();
+
+        // The op must have taken the append-only clone-and-tombstone path
+        // (fresh internal id), not the in-place path.
+        let new_internal_id = segment
+            .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+            .unwrap();
+        assert_ne!(old_internal_id, new_internal_id);
+
+        let read_back = read_dense(&segment);
+        drift.push(
+            first_generation
+                .iter()
+                .zip(&read_back)
+                .map(|(&a, &b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt(),
+        );
+    }
+
+    assert!(
+        drift.iter().all(|&distance| distance == 0.0),
+        "TurboQuant vector degraded across append-only payload ops; L2 \
+         distance from the first-generation read-back after each op: {drift:?}",
+    );
+}
+
 /// Tests segment functions to ensure invalid requests do error
 #[test]
 fn test_vector_compatibility_checks() {
