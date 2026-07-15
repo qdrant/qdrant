@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
@@ -24,7 +25,7 @@ mod lifecycle;
 
 pub use config_reload::PayloadIndexReloadDiff;
 
-type ReadOnlyIndexesMap<S> = HashMap<PayloadKeyType, Vec<ReadOnlyFieldIndex<S>>>;
+type ReadOnlyIndexesMap<S> = AHashMap<PayloadKeyType, Vec<ReadOnlyFieldIndex<S>>>;
 
 pub struct ReadOnlyStructPayloadIndex<S: UniversalReadExt> {
     /// Payload storage

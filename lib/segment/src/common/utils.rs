@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use ahash::AHashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +12,7 @@ use crate::data_types::vectors::VectorInternal;
 use crate::index::field_index::FieldIndex;
 use crate::types::{PayloadKeyType, VectorNameBuf};
 
-pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
+pub type IndexesMap = AHashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// A container for JSON values, optimized for the common case of a single value.
 pub type MultiValue<T> = SmallVec<[T; 1]>;
