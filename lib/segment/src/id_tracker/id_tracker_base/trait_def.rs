@@ -142,20 +142,24 @@ pub trait IdTrackerRead {
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
-    /// Batch counterpart of [`internal_version`](Self::internal_version): one
-    /// result slot per input id, in input order.
+    /// Batch counterpart of [`internal_version`](Self::internal_version):
+    /// `callback` receives each `(internal_id, version)` as it resolves; ids
+    /// without a version (e.g. out of range) are skipped.
     ///
-    /// The default streams the iterator through the single lookup, which is
-    /// what in-RAM trackers want; disk-resident trackers override it to
-    /// pipeline the reads (buffering the input once internally).
+    /// The in-RAM default streams the single lookup; disk-resident trackers
+    /// pipeline the reads and propagate any storage error. Neither buffers —
+    /// the input is walked once and the pairs go straight to `callback`.
     fn internal_versions_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<SeqNumberType>> {
-        internal_ids
-            .into_iter()
-            .map(|internal_id| self.internal_version(internal_id))
-            .collect()
+        mut callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        for internal_id in internal_ids {
+            if let Some(version) = self.internal_version(internal_id) {
+                callback(internal_id, version);
+            }
+        }
+        Ok(())
     }
 
     /// Returns the internal ID of the point under explicit deferred

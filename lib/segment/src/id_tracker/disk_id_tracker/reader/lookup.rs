@@ -1,15 +1,15 @@
 //! Point lookups: sparse-index binary search plus one data-block read.
 
 use common::types::PointOffsetType;
-use uuid::Uuid;
 use common::universal_io::{ReadRange, UniversalRead};
+use uuid::Uuid;
 
 use super::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::PointIdBatch;
 use crate::id_tracker::disk_id_tracker::on_disk_format::{
     NUM_ENTRY_SIZE, UUID_ENTRY_SIZE, decode_external, decode_num_block, decode_uuid_block,
 };
-use crate::id_tracker::PointIdBatch;
 use crate::types::PointIdType;
 
 impl<S: UniversalRead> DiskMappingReader<S> {
@@ -207,11 +207,15 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             });
 
         self.i2e
-            .read_batch::<common::generic_consts::Random, u8, usize>(data_ranges, |idx, bytes| {
-                let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-                results[idx] = Some(decode_external(value, self.is_uuid.contains(offsets[idx])));
-                Ok(())
-            })?;
+            .read_batch::<common::generic_consts::Random, u8, usize>(
+                data_ranges,
+                |idx, bytes| {
+                    let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
+                    results[idx] =
+                        Some(decode_external(value, self.is_uuid.contains(offsets[idx])));
+                    Ok(())
+                },
+            )?;
 
         Ok(results)
     }

@@ -137,11 +137,18 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
     fn internal_versions_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<SeqNumberType>> {
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(t) => t.internal_versions_batch(internal_ids),
-            ReadOnlyIdTrackerEnum::Immutable(t) => t.internal_versions_batch(internal_ids),
-            ReadOnlyIdTrackerEnum::DiskResident(t) => t.internal_versions_batch(internal_ids),
+            ReadOnlyIdTrackerEnum::Appendable(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs};
 use rand::SeedableRng as _;
@@ -113,9 +114,13 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     offsets.push(0);
 
     let batch_external_ids = tracker.external_ids_batch(offsets.iter().copied());
-    let batch_versions = tracker.internal_versions_batch(offsets.iter().copied());
+    let mut batch_versions: AHashMap<u32, SeqNumberType> = AHashMap::new();
+    tracker
+        .internal_versions_batch(offsets.iter().copied(), |internal_id, version| {
+            batch_versions.insert(internal_id, version);
+        })
+        .unwrap();
     assert_eq!(batch_external_ids.len(), offsets.len());
-    assert_eq!(batch_versions.len(), offsets.len());
     for (slot, &offset) in offsets.iter().enumerate() {
         assert_eq!(
             batch_external_ids[slot],
@@ -123,7 +128,7 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
             "external_ids_batch mismatch at {offset}",
         );
         assert_eq!(
-            batch_versions[slot],
+            batch_versions.get(&offset).copied(),
             tracker.internal_version(offset),
             "internal_versions_batch mismatch at {offset}",
         );
@@ -131,7 +136,11 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
 
     // Empty inputs stay empty.
     assert_eq!(tracker.external_ids_batch(std::iter::empty()), vec![]);
-    assert_eq!(tracker.internal_versions_batch(std::iter::empty()), vec![]);
+    tracker
+        .internal_versions_batch(std::iter::empty(), |_, _| {
+            panic!("no versions expected for empty input")
+        })
+        .unwrap();
     let no_ids: &[PointIdType] = &[];
     tracker
         .resolve_external_ids(no_ids, DeferredBehavior::VisibleOnly, |_, _| {
@@ -315,7 +324,9 @@ fn read_by_id_does_not_materialize_deleted_set() {
         )
         .unwrap();
     let _ = read_only.external_ids_batch(probe_offsets.clone());
-    let _ = read_only.internal_versions_batch(probe_offsets);
+    read_only
+        .internal_versions_batch(probe_offsets, |_, _| {})
+        .unwrap();
 
     assert!(
         !read_only.deleted_full_materialized(),

@@ -70,12 +70,17 @@ impl IdTrackerRead for IdTrackerEnum {
     fn internal_versions_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<SeqNumberType>> {
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(t) => t.internal_versions_batch(internal_ids),
-            IdTrackerEnum::ImmutableIdTracker(t) => t.internal_versions_batch(internal_ids),
-            IdTrackerEnum::InMemoryIdTracker(t) => t.internal_versions_batch(internal_ids),
-            IdTrackerEnum::DiskIdTracker(t) => t.internal_versions_batch(internal_ids),
+            IdTrackerEnum::MutableIdTracker(t) => t.internal_versions_batch(internal_ids, callback),
+            IdTrackerEnum::ImmutableIdTracker(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            IdTrackerEnum::InMemoryIdTracker(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            IdTrackerEnum::DiskIdTracker(t) => t.internal_versions_batch(internal_ids, callback),
         }
     }
 
