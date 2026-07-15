@@ -38,11 +38,13 @@ pub fn is_filter_resolving(operation: &CollectionUpdateOperations) -> bool {
             PointOperations::UpsertPointsConditional(_) => true,
             PointOperations::DeletePointsByFilter(_) => true,
             PointOperations::UpsertPoints(_)
+            | PointOperations::UpsertPointsRaw(_)
             | PointOperations::DeletePoints { .. }
             // `SyncPoints` reads current state too, but every point it touches
             // is alive and version-guarded, so its replay is protected by the
             // per-point version checks.
-            | PointOperations::SyncPoints(_) => false,
+            | PointOperations::SyncPoints(_)
+            | PointOperations::SyncPointsRaw(_) => false,
         },
         CollectionUpdateOperations::VectorOperation(op) => match op {
             VectorOperations::UpdateVectors(update) => update.update_filter.is_some(),
@@ -95,8 +97,10 @@ pub fn resolve_operation(
                     resolve_conditional_upsert(segments, op, hw_counter)?
                 }
                 op @ (PointOperations::UpsertPoints(_)
+                | PointOperations::UpsertPointsRaw(_)
                 | PointOperations::DeletePoints { .. }
-                | PointOperations::SyncPoints(_)) => op,
+                | PointOperations::SyncPoints(_)
+                | PointOperations::SyncPointsRaw(_)) => op,
             })
         }
         CollectionUpdateOperations::VectorOperation(op) => {

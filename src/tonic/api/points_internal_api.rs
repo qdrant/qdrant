@@ -99,9 +99,35 @@ impl PointsInternalService {
             shard_id,
             clock_tag,
             wait_override,
+            raw_points,
         } = upsert_points_internal;
 
         let upsert_points = extract_internal_request(upsert_points)?;
+
+        if !raw_points.is_empty() {
+            if !upsert_points.points.is_empty() {
+                return Err(Status::invalid_argument(
+                    "An upsert request must carry either `points` or `raw_points`, never both",
+                ));
+            }
+
+            let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+                upsert_points.collection_name.clone(),
+            );
+
+            return upsert_raw(
+                self.toc.clone(),
+                upsert_points.collection_name,
+                raw_points,
+                upsert_points.wait,
+                upsert_points.ordering,
+                upsert_points.timeout,
+                InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
+                auth,
+                hw_metrics,
+            )
+            .await;
+        }
 
         let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
             upsert_points.collection_name.clone(),

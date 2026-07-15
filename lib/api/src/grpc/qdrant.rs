@@ -10557,6 +10557,19 @@ pub mod points_server {
     }
 }
 #[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointStructRaw {
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    #[prost(map = "string, bytes", tag = "2")]
+    pub vectors: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
+    #[prost(map = "string, message", tag = "3")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncPoints {
@@ -10583,6 +10596,9 @@ pub struct SyncPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Points with storage-native (raw bytes) vectors
+    #[prost(message, repeated, tag = "8")]
+    pub raw_points: ::prost::alloc::vec::Vec<PointStructRaw>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -10615,6 +10631,9 @@ pub struct UpsertPointsInternal {
     /// When absent, falls back to `wait` (backward compatible with older nodes).
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
+    /// Points with storage-native (raw bytes) vectors
+    #[prost(message, repeated, tag = "5")]
+    pub raw_points: ::prost::alloc::vec::Vec<PointStructRaw>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]

@@ -69,8 +69,8 @@ use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_create_vector_name, internal_delete_index, internal_delete_payload,
     internal_delete_points, internal_delete_points_by_filter, internal_delete_vector_name,
-    internal_set_payload, internal_sync_points, internal_upsert_points, try_scored_point_from_grpc,
-    wait_override_to_proto,
+    internal_set_payload, internal_sync_points, internal_sync_points_raw, internal_upsert_points,
+    internal_upsert_points_raw, try_scored_point_from_grpc, wait_override_to_proto,
 };
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -310,6 +310,30 @@ impl RemoteShard {
                             None, // TODO!?
                             collection_name.clone(),
                             operation,
+                            wait,
+                            timeout,
+                            ordering,
+                        )?;
+                        Update::Sync(request)
+                    }
+                    PointOperations::UpsertPointsRaw(points) => {
+                        let request = internal_upsert_points_raw(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            points,
+                            wait,
+                            timeout,
+                            ordering,
+                        )?;
+                        Update::Upsert(request)
+                    }
+                    PointOperations::SyncPointsRaw(sync_operation) => {
+                        let request = internal_sync_points_raw(
+                            shard_id,
+                            None,
+                            collection_name.clone(),
+                            sync_operation,
                             wait,
                             timeout,
                             ordering,
@@ -633,6 +657,38 @@ impl RemoteShard {
                     let request = &internal_sync_points(
                         shard_id,
                         None, // TODO!?
+                        collection_name,
+                        operation,
+                        wait,
+                        timeout,
+                        ordering,
+                    )?;
+                    self.with_points_client(|mut client| async move {
+                        client.sync(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                PointOperations::UpsertPointsRaw(points) => {
+                    let request = &internal_upsert_points_raw(
+                        shard_id,
+                        operation.clock_tag,
+                        collection_name,
+                        points,
+                        wait,
+                        timeout,
+                        ordering,
+                    )?;
+                    self.with_points_client(|mut client| async move {
+                        client.upsert(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                PointOperations::SyncPointsRaw(operation) => {
+                    let request = &internal_sync_points_raw(
+                        shard_id,
+                        None,
                         collection_name,
                         operation,
                         wait,

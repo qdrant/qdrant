@@ -4,8 +4,8 @@ use serde_json::Value;
 use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use shard::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, ConditionalInsertOperationInternal,
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointSyncOperation,
-    VectorPersisted, VectorStructPersisted,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointStructRawPersisted,
+    PointSyncOperation, PointSyncRawOperation, VectorPersisted, VectorStructPersisted,
 };
 use shard::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 use shard::operations::{CollectionUpdateOperations, FieldIndexOperations, VectorNameOperations};
@@ -71,6 +71,48 @@ impl Generalizer for PointOperations {
             PointOperations::SyncPoints(sync_operation) => {
                 PointOperations::SyncPoints(sync_operation.remove_details())
             }
+            PointOperations::UpsertPointsRaw(points) => PointOperations::UpsertPointsRaw(
+                points.iter().map(|point| point.remove_details()).collect(),
+            ),
+            PointOperations::SyncPointsRaw(sync_operation) => {
+                PointOperations::SyncPointsRaw(sync_operation.remove_details())
+            }
+        }
+    }
+}
+
+impl Generalizer for PointSyncRawOperation {
+    fn remove_details(&self) -> Self {
+        let Self {
+            from_id,
+            to_id,
+            points,
+        } = self;
+
+        Self {
+            from_id: *from_id,
+            to_id: *to_id,
+            points: points.iter().map(|point| point.remove_details()).collect(),
+        }
+    }
+}
+
+impl Generalizer for PointStructRawPersisted {
+    fn remove_details(&self) -> Self {
+        let Self {
+            id: _, // ignore actual id for generalization
+            vectors,
+            payload,
+        } = self;
+
+        Self {
+            id: PointIdType::NumId(0),
+            // Keep only the vector names and byte lengths
+            vectors: vectors
+                .iter()
+                .map(|(name, bytes)| (name.clone(), (bytes.len() as u64).to_le_bytes().to_vec()))
+                .collect(),
+            payload: payload.as_ref().map(|p| p.remove_details()),
         }
     }
 }
