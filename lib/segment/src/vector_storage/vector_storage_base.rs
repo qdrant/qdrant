@@ -446,17 +446,38 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
             .map_err(|_| OperationError::service_error("Layout is too big"))
     }
 
-    /// Run given function for each vector in the dense batch.
-    ///
-    /// Implementation can assume that the keys are consecutive
+    /// Run given function for each vector in the batch, batching the
+    /// underlying reads where the storage supports it (io_uring submission
+    /// batching / mmap prefetch for on-disk storages).
     fn for_each_in_dense_tq_batch<F: FnMut(usize, &[u8])>(
         &self,
         keys: &[PointOffsetType],
         mut f: F,
-    ) {
+    ) -> OperationResult<()> {
         for (idx, &key) in keys.iter().enumerate() {
             f(idx, &self.get_dense_tq::<Random>(key));
         }
+        Ok(())
+    }
+
+    /// Batched byte counterpart of [`VectorStorageRead::read_vectors`]: calls
+    /// `callback` with the raw encoded bytes of each vector. TQ counterpart of
+    /// [`DenseVectorStorageRead::read_dense_bytes`], with the same valid-keys
+    /// precondition.
+    ///
+    /// The default reads one vector at a time; storages with batched readers
+    /// override this so bulk byte reads keep the same read pipelining as
+    /// `read_vectors` (io_uring submission batching for on-disk storages).
+    fn read_dense_tq_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        for (user_data, key) in keys {
+            let bytes = self.get_dense_tq::<P>(key);
+            callback(user_data, key, bytes.to_vec());
+        }
+        Ok(())
     }
 }
 
@@ -1083,10 +1104,10 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 v.read_dense_bytes::<P, U>(keys, callback)
             }
-            // No batched byte readers here (yet): turbo, sparse and
-            // multi-dense read one vector at a time.
-            VectorStorageEnum::DenseTurbo(_)
-            | VectorStorageEnum::SparseVolatile(_)
+            VectorStorageEnum::DenseTurbo(v) => v.read_dense_tq_bytes::<P, U>(keys, callback),
+            // No batched byte readers here (yet): sparse and multi-dense read
+            // one vector at a time.
+            VectorStorageEnum::SparseVolatile(_)
             | VectorStorageEnum::SparseMmap(_)
             | VectorStorageEnum::MultiDenseVolatile(_)
             | VectorStorageEnum::MultiDenseAppendableMemmap(_)
