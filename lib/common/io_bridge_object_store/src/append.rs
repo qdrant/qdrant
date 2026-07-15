@@ -289,6 +289,11 @@ async fn append_request(
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+    use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::Mutex;
+
     use object_store::aws::AmazonS3Builder;
 
     use super::*;
@@ -338,5 +343,374 @@ mod tests {
         context.client().unwrap();
         assert!(context.client.get().is_some());
         context.client().unwrap();
+    }
+
+    /// Canned response served by [`stub_server`].
+    struct StubResponse {
+        status: u16,
+        headers: Vec<(&'static str, String)>,
+        body: &'static str,
+    }
+
+    impl StubResponse {
+        fn new(status: u16) -> Self {
+            Self {
+                status,
+                headers: Vec::new(),
+                body: "",
+            }
+        }
+
+        fn header(mut self, name: &'static str, value: impl ToString) -> Self {
+            self.headers.push((name, value.to_string()));
+            self
+        }
+
+        fn body(mut self, body: &'static str) -> Self {
+            self.body = body;
+            self
+        }
+    }
+
+    /// One request as observed by [`stub_server`].
+    struct SeenRequest {
+        method: String,
+        path: String,
+        write_offset: Option<String>,
+        signed: bool,
+        body: Vec<u8>,
+    }
+
+    /// Minimal local HTTP/1.1 server: serves the canned responses in order,
+    /// one connection per response (every response carries
+    /// `connection: close`, so retries and the `head()` reconciliation
+    /// arrive as fresh connections), recording each request. The listener
+    /// stops after the last response, so an unexpected extra request fails
+    /// to connect instead of hanging the test.
+    fn stub_server(responses: Vec<StubResponse>) -> (String, Arc<Mutex<Vec<SeenRequest>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+
+        let seen_in_server = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for response in responses {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let Some(request) = read_request(&mut stream) else {
+                    return;
+                };
+                seen_in_server.lock().unwrap().push(request);
+
+                let mut payload = format!("HTTP/1.1 {} Stub\r\n", response.status);
+                for (name, value) in &response.headers {
+                    payload += &format!("{name}: {value}\r\n");
+                }
+                // A HEAD response declares a length without carrying a body.
+                let has_length = response
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("content-length"));
+                if !has_length {
+                    payload += &format!("content-length: {}\r\n", response.body.len());
+                }
+                payload += "connection: close\r\n\r\n";
+                payload += response.body;
+                let _ = stream.write_all(payload.as_bytes());
+            }
+        });
+
+        (endpoint, seen)
+    }
+
+    fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
+        let mut reader = BufReader::new(stream);
+
+        let mut request_line = String::new();
+        reader.read_line(&mut request_line).ok()?;
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next()?.to_string();
+        let path = parts.next()?.to_string();
+
+        let mut content_length = 0;
+        let mut write_offset = None;
+        let mut signed = false;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).ok()?;
+            let line = line.trim_end();
+            if line.is_empty() {
+                break;
+            }
+            let (name, value) = line.split_once(':')?;
+            let value = value.trim().to_string();
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = value.parse().ok()?;
+            } else if name.eq_ignore_ascii_case(WRITE_OFFSET_HEADER) {
+                write_offset = Some(value);
+            } else if name.eq_ignore_ascii_case("authorization") {
+                signed = true;
+            }
+        }
+
+        let mut body = vec![0; content_length];
+        reader.read_exact(&mut body).ok()?;
+
+        Some(SeenRequest {
+            method,
+            path,
+            write_offset,
+            signed,
+            body,
+        })
+    }
+
+    /// Append `b"data"` at `offset` to `dir/append.dat` via the stub, so a
+    /// consistent store would report a new object size of `offset + 4`.
+    fn append_data_at(endpoint: &str, offset: u64) -> Result<u64> {
+        let store = Arc::new(
+            AmazonS3Builder::new()
+                .with_bucket_name("bucket")
+                .with_region("us-east-1")
+                .with_access_key_id("id")
+                .with_secret_access_key("secret")
+                .with_endpoint(endpoint)
+                .with_allow_http(true)
+                .build()
+                .unwrap(),
+        );
+        let context = AppendContext::new(
+            true,
+            Url::parse(&format!("{endpoint}/bucket")).unwrap(),
+            "us-east-1".to_string(),
+        );
+        let key = object_store::path::Path::from("dir/append.dat");
+
+        io_bridge::BridgeRuntime::global().block_on(append_request(
+            &store,
+            &context,
+            &key,
+            offset,
+            Bytes::from_static(b"data"),
+        ))
+    }
+
+    fn success_with_size(size: u64) -> StubResponse {
+        StubResponse::new(200).header(OBJECT_SIZE_HEADER, size)
+    }
+
+    fn write_offset_conflict() -> StubResponse {
+        StubResponse::new(400).body("<Error><Code>InvalidWriteOffset</Code></Error>")
+    }
+
+    /// A `head()` response; object metadata is parsed from the headers.
+    fn head_with_size(size: u64) -> StubResponse {
+        StubResponse::new(200)
+            .header("content-length", size)
+            .header("last-modified", "Tue, 14 Jul 2026 12:00:00 GMT")
+            .header("etag", "\"stub\"")
+    }
+
+    #[test]
+    fn append_sends_a_signed_write_offset_put_and_returns_the_new_size() {
+        let (endpoint, seen) = stub_server(vec![success_with_size(9)]);
+        assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
+
+        let seen = seen.lock().unwrap();
+        let [request] = &seen[..] else {
+            panic!("expected exactly one request");
+        };
+        assert_eq!(request.method, "PUT");
+        assert_eq!(request.path, "/bucket/dir/append.dat");
+        assert_eq!(request.write_offset.as_deref(), Some("5"));
+        assert!(request.signed);
+        assert_eq!(request.body, b"data");
+    }
+
+    /// A success whose size header disagrees with `offset + data` means the
+    /// write did not land as the single append we requested; the reported
+    /// size must not be trusted.
+    #[test]
+    fn success_with_a_mismatching_size_is_an_error() {
+        let (endpoint, _seen) = stub_server(vec![success_with_size(42)]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+        assert!(err.to_string().contains("expected 9"), "{err}");
+    }
+
+    #[test]
+    fn success_with_an_unparseable_size_is_an_error() {
+        let (endpoint, _seen) = stub_server(vec![
+            StubResponse::new(200).header(OBJECT_SIZE_HEADER, "over 9000"),
+        ]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+    }
+
+    /// At offset 0 an append equals a whole-object write, so a store that
+    /// accepted the PUT without the size header still produced the right
+    /// object.
+    #[test]
+    fn success_without_the_size_header_at_offset_zero_is_a_whole_object_write() {
+        let (endpoint, _seen) = stub_server(vec![StubResponse::new(200)]);
+
+        assert_eq!(append_data_at(&endpoint, 0).unwrap(), 4);
+    }
+
+    /// Past offset 0 the missing size header is the replaced-not-appended
+    /// signature of a store without write-offset support.
+    #[test]
+    fn success_without_the_size_header_at_a_nonzero_offset_is_an_error() {
+        let (endpoint, _seen) = stub_server(vec![StubResponse::new(200)]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+        assert!(err.to_string().contains(OBJECT_SIZE_HEADER), "{err}");
+    }
+
+    /// A first-attempt conflict is returned as-is: no reconciliation
+    /// `head()` is issued, since no earlier attempt of ours can have landed.
+    #[test]
+    fn invalid_write_offset_is_a_conflict() {
+        let (endpoint, seen) = stub_server(vec![write_offset_conflict()]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        );
+        assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    /// Some S3-compatibles report the offset mismatch as 412 instead of
+    /// AWS's 400 `InvalidWriteOffset`.
+    #[test]
+    fn precondition_failed_is_a_conflict() {
+        let (endpoint, _seen) = stub_server(vec![StubResponse::new(412)]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        );
+    }
+
+    /// Only the `InvalidWriteOffset` error code makes a 400 a conflict;
+    /// other bad requests must not masquerade as recoverable.
+    #[test]
+    fn bad_request_without_the_conflict_code_is_not_a_conflict() {
+        let (endpoint, _seen) = stub_server(vec![
+            StubResponse::new(400).body("<Code>MissingHeader</Code>"),
+        ]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+    }
+
+    /// A missing object under a nonzero offset is a stale view of the
+    /// object (deleted behind our back): the same recovery as an offset
+    /// mismatch.
+    #[test]
+    fn not_found_at_a_nonzero_offset_is_a_conflict() {
+        let (endpoint, _seen) = stub_server(vec![StubResponse::new(404)]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        );
+    }
+
+    /// At offset 0 a 404 is a genuine missing target (e.g. missing bucket).
+    #[test]
+    fn not_found_at_offset_zero_is_not_found() {
+        let (endpoint, _seen) = stub_server(vec![StubResponse::new(404)]);
+
+        let err = append_data_at(&endpoint, 0).unwrap_err();
+        let UniversalIoError::NotFound { path } = err else {
+            panic!("expected NotFound, got {err:?}");
+        };
+        assert_eq!(path, PathBuf::from("dir/append.dat"));
+    }
+
+    /// Transient failures are retried at the same offset — the offset acts
+    /// as a compare-and-swap, so the retry cannot double-append.
+    #[test]
+    fn transient_failures_are_retried_at_the_same_offset() {
+        let (endpoint, seen) = stub_server(vec![StubResponse::new(429), success_with_size(9)]);
+
+        assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert!(
+            seen.iter()
+                .all(|request| request.method == "PUT"
+                    && request.write_offset.as_deref() == Some("5")),
+        );
+    }
+
+    #[test]
+    fn persistent_server_errors_fail_after_max_attempts() {
+        let responses = (0..MAX_ATTEMPTS).map(|_| StubResponse::new(503)).collect();
+        let (endpoint, seen) = stub_server(responses);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+        assert!(err.to_string().contains("503"), "{err}");
+        assert_eq!(seen.lock().unwrap().len(), MAX_ATTEMPTS as usize);
+    }
+
+    /// Lost acknowledgement: the first attempt landed but its response was
+    /// lost, so the retry conflicts. A `head()` showing the object ends
+    /// exactly at `offset + data` proves the tail is ours (single-writer
+    /// contract) and the append reports success.
+    #[test]
+    fn retried_conflict_reconciles_via_head_when_the_tail_landed() {
+        let (endpoint, seen) = stub_server(vec![
+            StubResponse::new(503),
+            write_offset_conflict(),
+            head_with_size(9),
+        ]);
+
+        assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 3);
+        assert_eq!(seen[2].method, "HEAD");
+    }
+
+    /// The reconciliation only accepts the exact expected size: any other
+    /// length means the conflict is real (someone else grew the object).
+    #[test]
+    fn retried_conflict_with_a_foreign_head_size_stays_a_conflict() {
+        let (endpoint, _seen) = stub_server(vec![
+            StubResponse::new(503),
+            write_offset_conflict(),
+            head_with_size(7),
+        ]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        );
+    }
+
+    /// Unexpected failure statuses surface the status and an excerpt of the
+    /// response body for diagnosis.
+    #[test]
+    fn failure_status_surfaces_the_body_excerpt() {
+        let (endpoint, _seen) =
+            stub_server(vec![StubResponse::new(403).body("AccessDenied by stub")]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+        let message = err.to_string();
+        assert!(message.contains("403"), "{message}");
+        assert!(message.contains("AccessDenied by stub"), "{message}");
     }
 }
