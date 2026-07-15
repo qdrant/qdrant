@@ -125,7 +125,7 @@ where
                     &*point_ids,
                     deferred_behavior,
                     |_, offset| resolved_point_offsets.push(offset),
-                );
+                )?;
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {

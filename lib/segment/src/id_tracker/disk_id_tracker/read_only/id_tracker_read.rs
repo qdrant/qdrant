@@ -7,9 +7,7 @@ use common::universal_io::{ReadRange, UniversalRead};
 
 use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::disk_id_tracker::mappings::{
-    DiskMappingsSource, log_lookup_err, log_lookup_err_batch, resolve_external_ids_batch,
-};
+use crate::id_tracker::disk_id_tracker::mappings::{DiskMappingsSource, log_lookup_err, log_lookup_err_batch};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -123,8 +121,8 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         point_ids: impl PointIdBatch,
         _deferred_behavior: DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
-    ) {
-        resolve_external_ids_batch(self, point_ids, callback)
+    ) -> OperationResult<()> {
+        self.resolve_internal_batch(point_ids, callback)
     }
 
     fn total_point_count(&self) -> usize {

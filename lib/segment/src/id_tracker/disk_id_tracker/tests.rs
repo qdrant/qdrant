@@ -90,11 +90,13 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     }
 
     let mut resolved: Vec<(PointIdType, u32)> = Vec::new();
-    tracker.resolve_external_ids(
-        external_ids.as_slice(),
-        DeferredBehavior::VisibleOnly,
-        |external_id, offset| resolved.push((external_id, offset)),
-    );
+    tracker
+        .resolve_external_ids(
+            external_ids.as_slice(),
+            DeferredBehavior::VisibleOnly,
+            |external_id, offset| resolved.push((external_id, offset)),
+        )
+        .unwrap();
     let expected: Vec<(PointIdType, u32)> = external_ids
         .iter()
         .filter_map(|&external_id| {
@@ -131,9 +133,11 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     assert_eq!(tracker.external_ids_batch(std::iter::empty()), vec![]);
     assert_eq!(tracker.internal_versions_batch(std::iter::empty()), vec![]);
     let no_ids: &[PointIdType] = &[];
-    tracker.resolve_external_ids(no_ids, DeferredBehavior::VisibleOnly, |_, _| {
-        panic!("no pairs expected for empty input")
-    });
+    tracker
+        .resolve_external_ids(no_ids, DeferredBehavior::VisibleOnly, |_, _| {
+            panic!("no pairs expected for empty input")
+        })
+        .unwrap();
 }
 
 #[test]
@@ -303,11 +307,13 @@ fn read_by_id_does_not_materialize_deleted_set() {
     // Batch read-by-id must stay lazy as well.
     let probe_ids: Vec<PointIdType> = live.iter().take(200).map(|&(id, _)| id).collect();
     let probe_offsets = live.iter().take(200).map(|&(_, offset)| offset);
-    read_only.resolve_external_ids(
-        probe_ids.as_slice(),
-        DeferredBehavior::VisibleOnly,
-        |_, _| {},
-    );
+    read_only
+        .resolve_external_ids(
+            probe_ids.as_slice(),
+            DeferredBehavior::VisibleOnly,
+            |_, _| {},
+        )
+        .unwrap();
     let _ = read_only.external_ids_batch(probe_offsets.clone());
     let _ = read_only.internal_versions_batch(probe_offsets);
 

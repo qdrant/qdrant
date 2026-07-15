@@ -44,11 +44,14 @@ where
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let mut resolved_ids = Vec::with_capacity(point_ids.len());
         let mut resolved_offsets = Vec::with_capacity(point_ids.len());
-        self.id_tracker
-            .resolve_external_ids(point_ids, deferred_behavior, |point_id, offset| {
+        self.id_tracker.resolve_external_ids(
+            point_ids,
+            deferred_behavior,
+            |point_id, offset| {
                 resolved_ids.push(point_id);
                 resolved_offsets.push(offset);
-            });
+            },
+        )?;
 
         // One blank record per resolved point; `vectors` is `Some` only when
         // vectors were requested, so the `WithVector::Bool(false)` path needs
@@ -109,13 +112,13 @@ where
         let mut resolved_ids = Vec::with_capacity(point_ids.len());
         let mut resolved_offsets = Vec::with_capacity(point_ids.len());
         self.id_tracker.resolve_external_ids(
-            point_ids.iter().copied(),
+            point_ids,
             deferred_behavior,
             |point_id, offset| {
                 resolved_ids.push(point_id);
                 resolved_offsets.push(offset);
             },
-        );
+        )?;
 
         // One blank record per resolved point; `vectors` is `Some` only when
         // vectors were requested, so the `WithVector::Bool(false)` path needs

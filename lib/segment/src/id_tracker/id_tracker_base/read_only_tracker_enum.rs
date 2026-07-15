@@ -161,7 +161,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         point_ids: impl PointIdBatch,
         deferred_behavior: common::types::DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
-    ) {
+    ) -> OperationResult<()> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => {
                 t.resolve_external_ids(point_ids, deferred_behavior, callback)

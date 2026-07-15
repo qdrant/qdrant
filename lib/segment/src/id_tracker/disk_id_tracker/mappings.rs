@@ -83,9 +83,7 @@ pub trait DiskMappingsSource {
         external_ids: impl PointIdBatch,
         mut on_live: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
-        // `point_deleted` is fallible but runs inside `lookup_batch`'s infallible
-        // per-found callback, so capture the first error out of band and surface
-        // it once the pass completes.
+        // Use `first_err` instead of `?` to avoid UniversalIoError vs OperationResult problems
         let mut first_err = None;
         self.mapping_reader()
             .lookup_batch(external_ids, |id, offset| {
@@ -216,25 +214,4 @@ pub fn log_lookup_err_batch<T>(
         log::error!("disk id tracker batch lookup failed: {err}");
         std::iter::repeat_with(|| None).take(len).collect()
     })
-}
-
-/// Shared [`resolve_external_ids`](crate::id_tracker::IdTrackerRead::resolve_external_ids)
-/// body for the disk trackers: batched external→internal resolution (one
-/// pipelined mapping pass plus a per-point deleted check), with the storage
-/// error swallowed-and-logged at the infallible `IdTrackerRead` boundary.
-///
-/// The `point_ids` batch is walked without being collected; each surviving
-/// `(id, offset)` is handed to `callback` in read-completion order (not input
-/// order — the id travels with the offset, so callers never need the position).
-///
-/// The disk mapping never carries deferred mutations, so there is no behavior
-/// argument here — both callers ignore theirs.
-pub fn resolve_external_ids_batch(
-    source: &impl DiskMappingsSource,
-    point_ids: impl PointIdBatch,
-    callback: impl FnMut(PointIdType, PointOffsetType),
-) {
-    if let Err(err) = source.resolve_internal_batch(point_ids, callback) {
-        log::error!("disk id tracker batch lookup failed: {err}");
-    }
 }

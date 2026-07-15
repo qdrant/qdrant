@@ -96,7 +96,7 @@ impl IdTrackerRead for IdTrackerEnum {
         point_ids: impl PointIdBatch,
         deferred_behavior: common::types::DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
-    ) {
+    ) -> OperationResult<()> {
         match self {
             IdTrackerEnum::MutableIdTracker(t) => {
                 t.resolve_external_ids(point_ids, deferred_behavior, callback)

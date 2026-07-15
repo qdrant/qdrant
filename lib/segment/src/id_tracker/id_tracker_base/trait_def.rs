@@ -265,18 +265,18 @@ pub trait IdTrackerRead {
     }
 
     /// Translate external point ids into `(id, offset)` pairs, delivered
-    /// through `callback` in input order, in a single pass.
+    /// through `callback` as they resolve, in a single pass.
     ///
     /// Applies deferred filtering according to `deferred_behavior` inline
     /// (no separate `point_is_deferred` lookup); missing points are skipped
-    /// (no callback invocation).
+    /// (no callback invocation). Order is unspecified — the id travels with the
+    /// offset, so callers that need the input position carry it themselves.
     ///
-    /// The iterator-in/callback-out shape lets callers stream ids from any
+    /// The batch-in/callback-out shape lets callers stream ids from any
     /// collection and sink the pairs into any shape (parallel vectors, a set,
-    /// ...) without intermediate allocations. The default streams the single
-    /// lookup, which is what in-RAM trackers want; disk-resident trackers
-    /// override it to pipeline the reads (buffering the input once
-    /// internally).
+    /// ...) without intermediate allocations. The in-RAM default streams the
+    /// single lookup; disk-resident trackers stream the pipelined batch read
+    /// and propagate any storage error to the caller.
     ///
     /// Centralising this here keeps the deferred threshold from leaking out
     /// of the id tracker — callers go through this entry point instead of
@@ -286,7 +286,7 @@ pub trait IdTrackerRead {
         point_ids: impl PointIdBatch,
         deferred_behavior: DeferredBehavior,
         mut callback: impl FnMut(PointIdType, PointOffsetType),
-    ) {
+    ) -> OperationResult<()> {
         // For VisibleOnly, the deferred-aware lookup returns the active head
         // only — there's no need for the post-lookup cutoff filter the
         // old impl carried. For WithDeferred, the lookup prefers the
@@ -297,5 +297,6 @@ pub trait IdTrackerRead {
                 callback(point_id, internal_id);
             }
         }
+        Ok(())
     }
 }
