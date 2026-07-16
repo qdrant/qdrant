@@ -114,35 +114,29 @@ impl<'a, S: UniversalRead> DiskMappingsRef<'a, S> {
         self.deleted
     }
 
-    pub fn iter_external(self) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
-        Box::new(
-            self.reader
-                .iter_from(None)
-                .filter(live_filter(self.deleted))
-                .map(|(external_id, _)| external_id),
-        )
+    pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
+        self.reader
+            .iter_from(None)
+            .filter(live_filter(self.deleted))
+            .map(|(external_id, _)| external_id)
     }
 
-    pub fn iter_internal(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    pub fn iter_internal(self) -> impl Iterator<Item = PointOffsetType> + 'a {
         let deleted = self.deleted;
         let total = self.reader.total_point_count() as PointOffsetType;
-        Box::new(
-            (0..total).filter(move |&offset| !deleted.get_bit(offset as usize).unwrap_or(false)),
-        )
+        (0..total).filter(move |&offset| !deleted.get_bit(offset as usize).unwrap_or(false))
     }
 
     pub fn iter_from(
         self,
         external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
-        Box::new(
-            self.reader
-                .iter_from(external_id)
-                .filter(live_filter(self.deleted)),
-        )
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        self.reader
+            .iter_from(external_id)
+            .filter(live_filter(self.deleted))
     }
 
-    pub fn iter_random(self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
+    pub fn iter_random(self) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         reader::iter_random(self.reader, self.deleted)
     }
 }

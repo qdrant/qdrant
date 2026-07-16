@@ -83,6 +83,17 @@ impl<S: UniversalRead> StoredBitmask<S> {
                 format_args!("unknown stored bitmask encoding {}", header.encoding),
             ));
         };
+        // Mirrors the write-side validation; also keeps every position
+        // representable as `u32` for [`Self::read_ones`].
+        if header.logical_len > u64::from(u32::MAX) + 1 {
+            return Err(invalid_data(
+                path,
+                format_args!(
+                    "bitmask of {} bits exceeds the u32 position space",
+                    header.logical_len,
+                ),
+            ));
+        }
         // `file_len >= HEADER_SIZE` was checked above, so the subtraction
         // cannot underflow; phrasing it this way avoids overflowing on a
         // corrupted `payload_len` near `u64::MAX`.
@@ -144,6 +155,27 @@ impl<S: UniversalRead> StoredBitmask<S> {
             }
             Encoding::RoaringOnes => Ok(BitmaskContent::Ones(self.decode_roaring(&payload)?)),
             Encoding::RoaringZeros => Ok(BitmaskContent::Zeros(self.decode_roaring(&payload)?)),
+        }
+    }
+
+    /// Read and decode the payload into a bitmap of the set positions,
+    /// normalizing away the stored encoding/polarity.
+    pub fn read_ones(&self) -> Result<RoaringBitmap> {
+        match self.read()? {
+            BitmaskContent::Dense(bits) => Ok(bits
+                .iter_ones()
+                .map(|idx| idx as u32)
+                .collect::<RoaringBitmap>()),
+            BitmaskContent::Ones(ones) => Ok(ones),
+            BitmaskContent::Zeros(zeros) => {
+                let mut ones = RoaringBitmap::new();
+                if let Some(last) = self.logical_len.checked_sub(1) {
+                    // `logical_len <= u32::MAX + 1` was validated at open.
+                    ones.insert_range(0..=last as u32);
+                    ones -= zeros;
+                }
+                Ok(ones)
+            }
         }
     }
 

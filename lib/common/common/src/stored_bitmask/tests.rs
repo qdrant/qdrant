@@ -145,6 +145,34 @@ fn unaligned_length() {
 }
 
 #[test]
+fn read_ones_normalizes_every_encoding() {
+    // One mask per encoding, plus the empty edge cases: `read_ones` must
+    // return the original set positions regardless of the stored polarity.
+    let sparse = RoaringBitmap::from_sorted_iter([1u32, 7, 63, 64, 100_000]).unwrap();
+    let mut mostly_ones = RoaringBitmap::new();
+    mostly_ones.insert_range(0..1_000_000u32);
+    for zero in [3u32, 500, 65_536, 999_999] {
+        mostly_ones.remove(zero);
+    }
+    let alternating =
+        RoaringBitmap::from_sorted_iter((0..100_000u32).filter(|i| i % 2 == 0)).unwrap();
+    let empty = RoaringBitmap::new();
+
+    for (len, ones, expected_encoding) in [
+        (1_000_000u64, &sparse, Encoding::RoaringOnes),
+        (1_000_000, &mostly_ones, Encoding::RoaringZeros),
+        (100_000, &alternating, Encoding::Dense),
+        // Zero-length mask: the empty dense payload (0 bytes) beats roaring.
+        (0, &empty, Encoding::Dense),
+        (12_345, &empty, Encoding::RoaringOnes),
+    ] {
+        let (mask, _dir) = roundtrip(len, ones);
+        assert_eq!(mask.encoding, expected_encoding);
+        assert_eq!(&mask.read_ones().unwrap(), ones);
+    }
+}
+
+#[test]
 fn overwrite_replaces_previous_snapshot() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("mask.bin");

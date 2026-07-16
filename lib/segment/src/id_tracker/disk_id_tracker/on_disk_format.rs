@@ -2,12 +2,16 @@
 //! layout that lets the tracker answer lookups without holding the mapping in
 //! RAM.
 //!
-//! Two files hold the mapping (alongside the reused `id_tracker.versions` and
-//! `id_tracker.deleted`):
+//! Three files hold the mapping (alongside the reused `id_tracker.versions`
+//! and `id_tracker.deleted`):
 //!
-//! - [`I2E_FILE_NAME`] — internal→external as a fixed-width `u128` array plus an
-//!   `is_uuid` bit per slot (a direct transcription of
-//!   [`CompressedInternalToExternal`]). `external_id(offset)` is one 16-byte read.
+//! - [`I2E_FILE_NAME`] — internal→external as a fixed-width `u128` array (a
+//!   direct transcription of [`CompressedInternalToExternal`]).
+//!   `external_id(offset)` is one 16-byte read.
+//! - [`IS_UUID_FILE_NAME`] — the `is_uuid` flag of every i2e slot, as a compact
+//!   [`StoredBitmask`](common::stored_bitmask::StoredBitmask). Always loaded
+//!   fully into RAM (a [`RoaringBitmap`]) on open, so decoding an i2e slot
+//!   never touches this file again.
 //! - [`E2I_FILE_NAME`] — external→internal as two sorted, fixed-width runs
 //!   (`(u64, u32)` for numeric ids, then `(u128, u32)` for UUIDs — the section
 //!   order encodes "any UUID sorts after any numeric id"), preceded by a sparse
@@ -21,8 +25,10 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use common::bitvec::{BitSlice, BitSliceExt as _, BitVec};
+use common::stored_bitmask::save_bitmask;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalWriteFileOps;
+use roaring::RoaringBitmap;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -33,6 +39,7 @@ type Endian = LittleEndian;
 
 pub const I2E_FILE_NAME: &str = "id_tracker.i2e";
 pub const E2I_FILE_NAME: &str = "id_tracker.e2i";
+pub const IS_UUID_FILE_NAME: &str = "id_tracker.is_uuid";
 
 pub fn i2e_path(base: &Path) -> PathBuf {
     base.join(I2E_FILE_NAME)
@@ -42,8 +49,17 @@ pub fn e2i_path(base: &Path) -> PathBuf {
     base.join(E2I_FILE_NAME)
 }
 
+pub fn is_uuid_path(base: &Path) -> PathBuf {
+    base.join(IS_UUID_FILE_NAME)
+}
+
 /// On-disk format version, stored in each file header for forward compatibility.
-pub const ON_DISK_FORMAT_VERSION: u32 = 1;
+///
+/// Version history:
+/// - 1 — `is_uuid` bits packed at the tail of the i2e file.
+/// - 2 — `is_uuid` moved to its own [`IS_UUID_FILE_NAME`] stored-bitmask file;
+///   the i2e file holds only the `u128` array.
+pub const ON_DISK_FORMAT_VERSION: u32 = 2;
 
 const I2E_MAGIC: u64 = 0x5144_5F49_3245_0001;
 const E2I_MAGIC: u64 = 0x5144_5F45_3249_0001;
@@ -88,8 +104,9 @@ fn encode_external(id: PointIdType) -> (u128, bool) {
     }
 }
 
-/// Decode a `(u128, is_uuid)` slot back into a [`PointIdType`].
-fn decode_external(value: u128, is_uuid: bool) -> PointIdType {
+/// Decode a `(u128, is_uuid)` slot back into a [`PointIdType`]. The value comes
+/// from an i2e 16-byte slot; the flag from the RAM-resident `is_uuid` bitmap.
+pub(super) fn decode_external(value: u128, is_uuid: bool) -> PointIdType {
     if is_uuid {
         PointIdType::Uuid(Uuid::from_u128(value))
     } else {
@@ -101,22 +118,11 @@ fn decode_external(value: u128, is_uuid: bool) -> PointIdType {
     }
 }
 
-/// Pack a bit slice into bytes, LSB-first within each byte (bit `i` lives in byte
-/// `i / 8` at position `i % 8`). Matches the single-bit read in the reader.
-fn pack_bits(bits: &BitSlice) -> Vec<u8> {
-    let mut bytes = vec![0u8; bits.len().div_ceil(8)];
-    for i in 0..bits.len() {
-        if bits.get_bit(i).unwrap_or(false) {
-            bytes[i / 8] |= 1 << (i % 8);
-        }
-    }
-    bytes
-}
-
 /// Serialize the internal→external mapping (`id_tracker.i2e`).
 ///
-/// Layout: header, then `total` little-endian `u128` values in offset order,
-/// then the packed `is_uuid` bit array (`ceil(total / 8)` bytes).
+/// Layout: header, then `total` little-endian `u128` values in offset order.
+/// The `is_uuid` flag of every slot lives in the separate
+/// [`store_is_uuid`]-written file.
 pub fn store_i2e<W: Write>(
     mappings: &CompressedPointMappings,
     mut writer: W,
@@ -129,15 +135,34 @@ pub fn store_i2e<W: Write>(
     writer.write_u64::<Endian>(total as u64)?;
     writer.write_u64::<Endian>(0)?; // reserved, pads header to SECTION_ALIGN
 
-    let mut is_uuid = BitVec::with_capacity(total);
-    for (offset, external_id) in mappings.iter_internal_raw() {
-        debug_assert_eq!(offset as usize, is_uuid.len(), "i2e entries out of order");
-        let (value, uuid_flag) = encode_external(external_id);
+    for (_offset, external_id) in mappings.iter_internal_raw() {
+        let (value, _is_uuid) = encode_external(external_id);
         writer.write_u128::<Endian>(value)?;
-        is_uuid.push(uuid_flag);
     }
 
-    writer.write_all(&pack_bits(&is_uuid))?;
+    Ok(())
+}
+
+/// Persist the `is_uuid` flag of every i2e slot (`id_tracker.is_uuid`) as a
+/// compact stored bitmask over internal offsets, written atomically.
+pub fn store_is_uuid(
+    fs: &impl UniversalWriteFileOps,
+    segment_path: &Path,
+    mappings: &CompressedPointMappings,
+) -> OperationResult<()> {
+    let uuid_offsets = RoaringBitmap::from_sorted_iter(mappings.iter_internal_raw().filter_map(
+        |(offset, external_id)| match external_id {
+            PointIdType::Uuid(_) => Some(offset),
+            PointIdType::NumId(_) => None,
+        },
+    ))
+    .expect("iter_internal_raw yields ascending offsets");
+    save_bitmask(
+        fs,
+        &is_uuid_path(segment_path),
+        mappings.total_point_count() as u64,
+        uuid_offsets,
+    )?;
     Ok(())
 }
 
@@ -210,14 +235,12 @@ fn inconsistent(msg: impl Into<String>) -> OperationError {
     OperationError::inconsistent_storage(msg.into())
 }
 
-/// Parsed i2e header plus the byte offset where the `is_uuid` bit array begins.
+/// Parsed i2e header plus the byte offset of the data array.
 #[derive(Copy, Clone, Debug)]
 pub struct I2eHeader {
     pub total: u64,
     /// Byte offset of the `u128` data array (right after the header).
     pub data_offset: u64,
-    /// Byte offset of the packed `is_uuid` bit array.
-    pub is_uuid_offset: u64,
 }
 
 impl I2eHeader {
@@ -247,21 +270,10 @@ impl I2eHeader {
             .read_u64::<Endian>()
             .map_err(|e| inconsistent(format!("i2e header: {e}")))?;
 
-        let data_offset = I2E_HEADER_SIZE;
-        let is_uuid_offset = data_offset + total * 16;
         Ok(Self {
             total,
-            data_offset,
-            is_uuid_offset,
+            data_offset: I2E_HEADER_SIZE,
         })
-    }
-
-    /// Decode one `(u128, is_uuid)` slot from the raw 16 data bytes and the byte
-    /// holding this slot's `is_uuid` bit.
-    pub fn decode_slot(offset: PointOffsetType, data16: &[u8], is_uuid_byte: u8) -> PointIdType {
-        let value = u128::from_le_bytes(data16.try_into().expect("16 data bytes"));
-        let is_uuid = (is_uuid_byte >> (offset as usize % 8)) & 1 == 1;
-        decode_external(value, is_uuid)
     }
 }
 

@@ -1,6 +1,8 @@
 //! Disk-resident id tracker: keeps the point-id mapping on disk (the
 //! [on-disk format](on_disk_format) `i2e`/`e2i` files) instead of loading it into
-//! RAM, so resident memory does not scale with point count.
+//! RAM, so resident memory does not scale with point count. Only the small
+//! `is_uuid` sidecar file is always loaded whole into RAM (as a roaring
+//! bitmap inside the [`reader`] core).
 //!
 //! Two trackers share the [`reader`] core:
 //!
@@ -38,7 +40,7 @@ use fs_err::File;
 
 pub use self::mappings::DiskMappingsSource;
 use self::mappings::log_lookup_err;
-use self::on_disk_format::{e2i_path, i2e_path, store_e2i, store_i2e};
+use self::on_disk_format::{e2i_path, i2e_path, is_uuid_path, store_e2i, store_i2e, store_is_uuid};
 pub use self::read_only::ReadOnlyDiskIdTracker;
 use self::reader::DiskMappingReader;
 use crate::common::Flusher;
@@ -78,18 +80,21 @@ impl<S> DiskIdTracker<S>
 where
     S: UniversalWrite + Send + Sync + 'static,
 {
-    /// Approximate resident RAM: versions + deleted bitvec. The mapping stays on
+    /// Approximate resident RAM: versions + deleted bitvec + the reader's
+    /// resident parts (sparse index, `is_uuid` bitmap). The mapping stays on
     /// disk and is not counted here.
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
             path: _,
-            reader: _, // headers + sparse index only; negligible, on-disk mapping not counted
+            reader,
             deleted,
             deleted_wrapper: _, // mmap-backed, accounted via files
             internal_to_version,
             internal_to_version_wrapper: _, // mmap-backed, accounted via files
         } = self;
-        internal_to_version.ram_usage_bytes() + deleted.capacity().div_ceil(u8::BITS as usize)
+        internal_to_version.ram_usage_bytes()
+            + deleted.capacity().div_ceil(u8::BITS as usize)
+            + reader.ram_usage_bytes()
     }
 
     pub fn from_in_memory_tracker(
@@ -215,9 +220,10 @@ where
         let internal_to_version_wrapper =
             SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
-        // Mapping files (immutable): i2e + e2i.
+        // Mapping files (immutable): i2e + e2i + the is_uuid sidecar.
         write_mapping_file(i2e_path(path), |writer| store_i2e(&mappings, writer))?;
         write_mapping_file(e2i_path(path), |writer| store_e2i(&mappings, writer))?;
+        store_is_uuid(fs, path, &mappings)?;
 
         deleted_wrapper.flusher()()?;
         internal_to_version_wrapper.flusher()()?;
@@ -235,7 +241,11 @@ where
     }
 
     fn mapping_files(&self) -> Vec<PathBuf> {
-        vec![i2e_path(&self.path), e2i_path(&self.path)]
+        vec![
+            i2e_path(&self.path),
+            e2i_path(&self.path),
+            is_uuid_path(&self.path),
+        ]
     }
 }
 
@@ -316,8 +326,8 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(self.internal_to_version.iter())
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        Ok(Box::new(self.internal_to_version.iter()))
     }
 }
 
@@ -386,7 +396,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
     fn clear_cache(&self) -> OperationResult<()> {
         let Self {
             path,
-            reader: _,  // i2e/e2i mmap pages dropped via `mapping_files` below
+            reader: _,  // i2e/e2i/is_uuid file pages dropped via `mapping_files` below
             deleted: _, // kept in RAM
             deleted_wrapper,
             internal_to_version: _, // kept in RAM

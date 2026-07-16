@@ -160,6 +160,21 @@ fn detect_and_load_selects_disk_format() {
 }
 
 #[test]
+fn is_uuid_sidecar_written_and_listed() {
+    let (versions, mappings) = make_data(8);
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+
+    let is_uuid_file = super::on_disk_format::is_uuid_path(dir.path());
+    assert!(is_uuid_file.is_file());
+    assert!(disk.files().contains(&is_uuid_file));
+    assert!(disk.immutable_files().contains(&is_uuid_file));
+
+    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    assert!(read_only.files().contains(&is_uuid_file));
+}
+
+#[test]
 fn iter_random_yields_all_live_points() {
     use std::collections::HashSet;
 
@@ -390,10 +405,9 @@ fn on_disk_sections_are_aligned() {
         store_i2e(&mappings, &mut i2e_bytes).unwrap();
         let i2e = I2eHeader::parse(&i2e_bytes).unwrap();
         assert_eq!(i2e.data_offset % SECTION_ALIGN, 0);
-        assert_eq!(i2e.is_uuid_offset % SECTION_ALIGN, 0);
         assert_eq!(
             i2e_bytes.len() as u64,
-            i2e.is_uuid_offset + i2e.total.div_ceil(8),
+            i2e.data_offset + i2e.total * 16,
             "i2e file length must match the parsed layout",
         );
 

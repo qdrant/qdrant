@@ -71,7 +71,7 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
         // We return those points to the caller to clean up the storage.
         let mut to_return = Vec::new();
 
-        for (internal_id, version) in self.iter_internal_versions() {
+        for (internal_id, version) in self.iter_internal_versions()? {
             if version != DELETED_POINT_VERSION && self.external_id(internal_id).is_none() {
                 to_return.push(internal_id);
             }
@@ -206,9 +206,12 @@ pub trait IdTrackerRead {
 
     /// Iterate over all stored internal versions, even if they were deleted
     /// Required for cleanup on segment open
+    ///
+    /// Disk-resident trackers read the versions from storage here, so the
+    /// read error surfaces instead of truncating the iteration.
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>>;
 
     /// Internal-id threshold above which points are hidden from reads.
     ///
