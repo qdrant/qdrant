@@ -1,4 +1,4 @@
-mod gridstore;
+pub(crate) mod gridstore;
 mod logstore;
 mod reader;
 pub(crate) mod view;

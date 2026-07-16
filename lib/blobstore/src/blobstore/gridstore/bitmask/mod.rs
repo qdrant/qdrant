@@ -579,7 +579,7 @@ mod tests {
     use proptest::prelude::*;
     use rand::{RngExt, rng};
 
-    use crate::bitmask::MmapBitmask;
+    use super::MmapBitmask;
     use crate::config::{DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
 
     #[test]
