@@ -200,6 +200,26 @@ pub fn process_field_index_operation(
 /// parallel read operations are not starved.
 const UPDATE_OP_CHUNK_SIZE: usize = 32;
 
+/// Guard for the insert loops: with a size cap configured on the holder, refuse to insert into a
+/// destination segment that already reached it. The resulting
+/// [`OperationError::OutOfAppendableCapacity`] lets the caller provision a fresh appendable
+/// segment and re-apply; points inserted so far are then skipped by their point version.
+fn check_insert_capacity(
+    segments: &SegmentHolder,
+    write_segment: &RwLockWriteGuard<dyn SegmentEntry>,
+) -> OperationResult<()> {
+    let Some(max_segment_size_bytes) = segments.max_segment_size_bytes() else {
+        return Ok(());
+    };
+    let size = write_segment.max_available_vectors_size_in_bytes()?;
+    if size >= max_segment_size_bytes.get() {
+        return Err(OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: max_segment_size_bytes.get(),
+        });
+    }
+    Ok(())
+}
+
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
@@ -254,16 +274,12 @@ where
             .filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+            let default_write_segment = segments.smallest_appendable_segment()?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
             for point_id in new_point_ids {
+                check_insert_capacity(segments, &write_segment)?;
                 let point = points_map[&point_id];
                 res += usize::from(upsert_with_payload(
                     &mut write_segment,
@@ -676,16 +692,12 @@ where
             .filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+            let default_write_segment = segments.smallest_appendable_segment()?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
             for point_id in new_point_ids {
+                check_insert_capacity(segments, &write_segment)?;
                 res += usize::from(upsert_raw_with_payload(
                     &mut write_segment,
                     op_num,
@@ -1321,6 +1333,7 @@ fn check_unprocessed_points(
 
 #[cfg(test)]
 mod test {
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
@@ -1330,7 +1343,8 @@ mod test {
     use segment::entry::entry_point::SegmentEntry as _;
     use segment::payload_json;
     use segment::types::{
-        Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, ValueVariants,
+        Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, PointIdType,
+        ValueVariants,
     };
     use tempfile::Builder;
 
@@ -1342,7 +1356,7 @@ mod test {
     use crate::update::{
         clear_payload_by_filter, create_field_index, delete_payload_by_filter,
         delete_points_by_filter, delete_vectors_by_filter, overwrite_payload_by_filter,
-        set_payload_by_filter, sync_points_raw, upsert_points_raw,
+        set_payload, set_payload_by_filter, sync_points_raw, upsert_points_raw,
     };
 
     #[test]
@@ -2224,6 +2238,52 @@ mod test {
         assert!(
             hits.is_empty(),
             "filtered reads must agree with payload storage: the row was cleared",
+        );
+    }
+
+    /// Fixtures use dim-4 f32 vectors: 16 bytes per point.
+    const TEST_POINT_SIZE_BYTES: usize = 16;
+
+    #[test]
+    fn test_capacity_error_when_all_appendable_at_cap() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut non_appendable = build_segment_1(dir.path()); // points 1-5
+        non_appendable.appendable_flag = false;
+        let appendable = empty_segment(dir.path());
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+
+        // Setting payload on all 5 points CoW-moves them out of the non-appendable segment, but
+        // only 2 fit under the cap: the operation must fail with the recoverable capacity error
+        // instead of overgrowing the destination.
+        let points: Vec<PointIdType> = (1..=5).map(Into::into).collect();
+        let err = set_payload(
+            &holder,
+            100,
+            &payload_json! {"town": "Amsterdam"},
+            &points,
+            &None,
+            &hw_counter,
+        )
+        .expect_err("the appendable segment cannot hold all 5 moved points");
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "expected OutOfAppendableCapacity, got: {err}",
+        );
+
+        // The destination filled up to the cap exactly; the insert path now reports the same
+        // error instead of writing past it.
+        let err = holder
+            .smallest_appendable_segment()
+            .expect_err("even the smallest appendable segment is at the cap");
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "expected OutOfAppendableCapacity, got: {err}",
         );
     }
 }
