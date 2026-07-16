@@ -14,7 +14,7 @@ use super::view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Mode, StorageConfig};
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
@@ -143,7 +143,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.iter(max_id, callback, hw_counter),
@@ -160,7 +160,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => {
@@ -226,9 +226,9 @@ pub(super) fn read_config<Fs: UniversalReadFs>(
 ) -> Result<StorageConfig> {
     let config_path = base_path.join(CONFIG_FILENAME);
     let config =
-        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(GridstoreError::from)?;
+        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(BlobstoreError::from)?;
     config.validate().map_err(|message| {
-        GridstoreError::service_error(format!(
+        BlobstoreError::service_error(format!(
             "Invalid blobstore config at {}: {message}",
             config_path.display(),
         ))

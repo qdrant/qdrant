@@ -12,7 +12,7 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::StorageConfig;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
 
@@ -129,7 +129,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         let max_id = cmp::min(max_id, self.max_point_offset()?);
 
@@ -160,7 +160,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         self.view().read_values::<P, _, _>(
             point_offsets,

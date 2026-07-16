@@ -11,7 +11,7 @@ use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
 
@@ -89,7 +89,7 @@ impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         for (user_data, point_offset) in point_offsets {
             let value = match self.tracker.get(point_offset).map_err(E::from)? {
@@ -126,7 +126,7 @@ impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
     ) -> Result<bool, E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         let start = point_offsets.start;
         let pointers = self.tracker.get_range(point_offsets).map_err(E::from)?;

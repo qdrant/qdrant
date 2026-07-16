@@ -440,7 +440,7 @@ fn test_behave_like_hashmap(
             Operation::Iter(limit) => {
                 log::debug!("op:{i} ITER limit:{limit}");
                 storage
-                    .iter::<_, GridstoreError>(
+                    .iter::<_, BlobstoreError>(
                         |point_offset, payload| {
                             if point_offset >= limit {
                                 return Ok(false); // shortcut iteration
@@ -498,7 +498,7 @@ fn test_behave_like_hashmap(
                 log::debug!("op:{i} GET_BATCH size:{}", point_offsets.len());
                 let mut batch_results: Vec<Option<Payload>> = vec![None; point_offsets.len()];
                 storage
-                    .read_values::<Random, _, GridstoreError>(
+                    .read_values::<Random, _, BlobstoreError>(
                         point_offsets.iter().copied().enumerate(),
                         |idx, _, value| {
                             batch_results[idx] = value;
@@ -1555,7 +1555,7 @@ fn test_skip_deferred_flush_after_clear() {
 
     // Flusher is invalidated and does nothing
     // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
-    assert!(flusher().is_err_and(|err| matches!(err, GridstoreError::FlushCancelled)));
+    assert!(flusher().is_err_and(|err| matches!(err, BlobstoreError::FlushCancelled)));
 
     drop(storage_arcs);
 
@@ -1618,7 +1618,7 @@ fn test_read_batch_from_pages_congruent_with_read_from_pages() {
     let mut batch_results: Vec<Option<Vec<u8>>> = vec![None; pointers.len()];
 
     pages
-        .read_batch_from_pages::<Random, _, GridstoreError>(
+        .read_batch_from_pages::<Random, _, BlobstoreError>(
             &storage.as_gridstore().config,
             pointers.into_iter().enumerate(),
             |idx, bytes| {
@@ -1689,7 +1689,7 @@ fn test_for_each_in_batch_congruent_with_get_value(
 
     let mut batch_results: Vec<Option<Payload>> = vec![None; offsets.len()];
     storage
-        .read_values::<Random, _, GridstoreError>(
+        .read_values::<Random, _, BlobstoreError>(
             offsets.iter().copied().enumerate(),
             |idx, _, value| {
                 batch_results[idx] = value;
@@ -1732,7 +1732,7 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
 
     let mut batch = [Some(Payload::default())];
     storage
-        .read_values::<Random, _, GridstoreError>(
+        .read_values::<Random, _, BlobstoreError>(
             std::iter::once((0usize, 0u32)),
             |idx, _, value| {
                 batch[idx] = value;

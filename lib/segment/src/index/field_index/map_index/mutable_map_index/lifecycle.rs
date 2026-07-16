@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use blobstore::config::StorageOptions;
-use blobstore::error::GridstoreError;
+use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -67,7 +67,7 @@ where
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
-            .iter::<_, GridstoreError>(
+            .iter::<_, BlobstoreError>(
                 |idx, values: Vec<_>| {
                     in_memory_index.add_many_to_map(idx, values);
                     Ok(true)

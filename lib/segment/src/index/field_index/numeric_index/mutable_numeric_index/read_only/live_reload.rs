@@ -1,5 +1,5 @@
 use blobstore::Blob;
-use blobstore::error::GridstoreError;
+use blobstore::error::BlobstoreError;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
@@ -36,7 +36,7 @@ where
 
         self.storage
             .view()
-            .read_values::<Sequential, _, GridstoreError>(
+            .read_values::<Sequential, _, BlobstoreError>(
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();

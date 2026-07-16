@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::{Compression, Mode, StorageOptions};
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::fixtures::{Payload, empty_storage_append_only, random_payload};
 use crate::tracker::ValuePointer;
 use crate::{Blobstore, BlobstoreReader, direct_io};
@@ -208,7 +208,7 @@ fn test_put_rejects_out_of_order_point_offsets() {
     let err = storage
         .put_value(0, &vec![2; 100], hw_counter_ref)
         .unwrap_err();
-    assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
+    assert!(matches!(err, BlobstoreError::UnsupportedOperation { .. }));
 
     storage.put_value(2, &vec![3; 100], hw_counter_ref).unwrap();
 
@@ -216,7 +216,7 @@ fn test_put_rejects_out_of_order_point_offsets() {
     let err = storage
         .put_value(1, &vec![4; 100], hw_counter_ref)
         .unwrap_err();
-    assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
+    assert!(matches!(err, BlobstoreError::UnsupportedOperation { .. }));
 
     // Rejected puts must not append any value data
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 100);
@@ -243,7 +243,7 @@ fn test_delete_is_rejected() {
         .unwrap();
 
     let err = storage.delete_value(0).unwrap_err();
-    assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
+    assert!(matches!(err, BlobstoreError::UnsupportedOperation { .. }));
 
     // The value is still there
     assert_eq!(
@@ -281,7 +281,7 @@ fn test_skipped_point_offsets_read_as_none() {
         .iter(
             |point_offset, value: Vec<u8>| {
                 collected.push((point_offset, value));
-                Ok::<_, GridstoreError>(true)
+                Ok::<_, BlobstoreError>(true)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
@@ -302,7 +302,7 @@ fn test_skipped_point_offsets_read_as_none() {
         .iter(
             |_, _: Vec<u8>| {
                 count += 1;
-                Ok::<_, GridstoreError>(false)
+                Ok::<_, BlobstoreError>(false)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
@@ -312,7 +312,7 @@ fn test_skipped_point_offsets_read_as_none() {
     // Batched reads yield None for gaps and out of range point offsets
     let mut collected = Vec::new();
     storage
-        .read_values::<Random, _, GridstoreError>(
+        .read_values::<Random, _, BlobstoreError>(
             [0, 1, 5, 10, 3, 20].iter().map(|&offset| ((), offset)),
             |_, point_offset, value| {
                 collected.push((point_offset, value));
@@ -496,7 +496,7 @@ fn test_flusher_after_clear_is_cancelled() {
     storage.clear().unwrap();
 
     let err = flusher().unwrap_err();
-    assert!(matches!(err, GridstoreError::FlushCancelled));
+    assert!(matches!(err, BlobstoreError::FlushCancelled));
 }
 
 #[test]
@@ -613,7 +613,7 @@ fn test_reader_on_append_only_storage() {
             4,
             |point_offset, value: Vec<u8>| {
                 collected.push((point_offset, value));
-                Ok::<_, GridstoreError>(true)
+                Ok::<_, BlobstoreError>(true)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
@@ -623,7 +623,7 @@ fn test_reader_on_append_only_storage() {
     // Batched reads through the reader and its view
     let mut collected = Vec::new();
     reader
-        .read_values::<Random, _, GridstoreError>(
+        .read_values::<Random, _, BlobstoreError>(
             [(0, 0), (1, 3), (2, 4)].iter().copied(),
             |user_data, point_offset, value| {
                 collected.push((user_data, point_offset, value.is_some()));
@@ -737,7 +737,7 @@ fn test_reader_iter_many_values() {
                 assert_eq!(point_offset, expected);
                 assert_eq!(value, point_offset.to_le_bytes().to_vec());
                 expected += 1;
-                Ok::<_, GridstoreError>(true)
+                Ok::<_, BlobstoreError>(true)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
@@ -751,7 +751,7 @@ fn test_reader_iter_many_values() {
             COUNT,
             |_, _: Vec<u8>| {
                 count += 1;
-                Ok::<_, GridstoreError>(count < 300)
+                Ok::<_, BlobstoreError>(count < 300)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
@@ -813,7 +813,7 @@ fn test_read_from_pages_rejects_unknown_page() {
     let view = reader.view();
     let pointer = ValuePointer::new(1, 0, 8);
     let err = view.read_from_pages::<Random>(pointer).unwrap_err();
-    assert!(matches!(err, GridstoreError::PageNotFound { page_id: 1 },));
+    assert!(matches!(err, BlobstoreError::PageNotFound { page_id: 1 },));
 }
 
 /// All writes must be pure appends: the tracker and page files only ever grow, and
@@ -1253,7 +1253,7 @@ fn test_replayed_puts_leave_storage_intact() {
         let err = storage
             .put_value(point_offset as u32, payload, hw_counter_ref)
             .unwrap_err();
-        assert!(matches!(err, GridstoreError::UnsupportedOperation { .. }));
+        assert!(matches!(err, BlobstoreError::UnsupportedOperation { .. }));
     }
 
     // The rejected replays must not have appended any value data or mappings
@@ -1428,7 +1428,7 @@ fn test_reader_never_writes() {
             u32::MAX,
             |_, _: Payload| {
                 count += 1;
-                Ok::<_, GridstoreError>(true)
+                Ok::<_, BlobstoreError>(true)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
@@ -1722,7 +1722,7 @@ fn test_reader_reads_across_pages_and_adopts_new_pages() {
     // Batched reads cross page boundaries too
     let mut collected = Vec::new();
     reader
-        .read_values::<Random, _, GridstoreError>(
+        .read_values::<Random, _, BlobstoreError>(
             (0..7).map(|point_offset| (point_offset, point_offset)),
             |_, point_offset, value| {
                 collected.push((point_offset, value.unwrap()));

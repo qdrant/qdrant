@@ -14,7 +14,7 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::StorageConfig;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 use crate::tracker::append_only::AppendOnlyTracker;
 
@@ -100,7 +100,7 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         let max_id = max_id.min(self.max_point_offset());
         let view = self.view();
@@ -131,7 +131,7 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         self.view().read_values::<P, _, _>(
             point_offsets,

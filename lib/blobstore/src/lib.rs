@@ -11,6 +11,6 @@ mod tracker;
 pub use blob::Blob;
 pub use blobstore::{Blobstore, BlobstoreReader, BlobstoreView};
 
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 
-pub(crate) type Result<T, E = GridstoreError> = std::result::Result<T, E>;
+pub(crate) type Result<T, E = BlobstoreError> = std::result::Result<T, E>;

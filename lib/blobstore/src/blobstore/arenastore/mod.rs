@@ -25,7 +25,7 @@ use super::reader::CONFIG_FILENAME;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
 
@@ -47,14 +47,14 @@ fn validate_consistency<S: UniversalRead>(
         let extent = u64::from(pointer.block_offset) + u64::from(pointer.length);
         match pages.page_len(pointer.page_id) {
             None => {
-                return Err(GridstoreError::service_error(format!(
+                return Err(BlobstoreError::service_error(format!(
                     "Inconsistent Arenastore: a mapping references value data in page {}, \
                      but the page file does not exist",
                     pointer.page_id,
                 )));
             }
             Some(page_len) if extent > page_len => {
-                return Err(GridstoreError::service_error(format!(
+                return Err(BlobstoreError::service_error(format!(
                     "Inconsistent Arenastore: a mapping references value data up to byte \
                      {extent} in page {}, but the page file only holds {page_len} bytes",
                     pointer.page_id,
@@ -118,7 +118,7 @@ where
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
     pub(super) fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
+        let config = StorageConfig::try_from(options).map_err(BlobstoreError::service_error)?;
 
         let tracker = AppendOnlyTracker::new(&base_path)?;
         let pages = AppendOnlyPages::new(&fs, &base_path)?;
@@ -184,7 +184,7 @@ where
         // Validate before buffering anything, a rejected put must not leave data behind
         let next = self.tracker.read().pointer_count();
         if point_offset < next {
-            return Err(GridstoreError::unsupported_operation(format!(
+            return Err(BlobstoreError::unsupported_operation(format!(
                 "cannot put value at point offset {point_offset}, the storage is append-only: \
                  values cannot be overwritten and must be put at monotonically increasing point \
                  offsets, the next allowed point offset is {next}",
@@ -198,7 +198,7 @@ where
         hw_counter.incr_delta(value_size);
 
         let value_size = u32::try_from(value_size)
-            .map_err(|_| GridstoreError::service_error("value is too large"))?;
+            .map_err(|_| BlobstoreError::service_error("value is too large"))?;
 
         let page_capacity_bytes = self.config.page_size_bytes as u64;
         let (page_id, offset) =
@@ -217,7 +217,7 @@ where
     // Takes &mut self for signature parity with the mutable variant
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     pub(super) fn delete_value(&mut self, _point_offset: PointOffset) -> Result<Option<V>> {
-        Err(GridstoreError::unsupported_operation("deleting values"))
+        Err(BlobstoreError::unsupported_operation("deleting values"))
     }
 
     /// Clear the storage, going back to the initial state.
@@ -287,7 +287,7 @@ where
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         self.with_view(|view| {
             view.read_values::<P, _, _>(
@@ -322,7 +322,7 @@ where
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         let mut current_offset = 0;
         let mut max_offset = PointOffset::MAX;
@@ -386,7 +386,7 @@ impl<V, S: UniversalAppend + 'static> Arenastore<V, S> {
                 pages.upgrade(),
             ) else {
                 log::trace!("Arenastore was cleared, cancelling flush");
-                return Err(GridstoreError::FlushCancelled);
+                return Err(BlobstoreError::FlushCancelled);
             };
 
             let pages_flusher = {

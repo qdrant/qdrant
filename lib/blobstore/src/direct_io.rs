@@ -9,7 +9,7 @@ use std::path::Path;
 use fs_err as fs;
 use fs_err::File;
 
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 
 /// Create a new empty file, truncating it if it already exists.
 pub(crate) fn create_new(path: &Path) -> io::Result<File> {
@@ -37,12 +37,12 @@ pub(crate) fn open_existing(
             if err.kind() == io::ErrorKind::NotFound {
                 // If config exists and this file doesn't,
                 // it should be treated as inconsistent storage rather than a missing one
-                GridstoreError::service_error(format!(
+                BlobstoreError::service_error(format!(
                     "{description} file does not exist: {}",
                     path.display(),
                 ))
             } else {
-                GridstoreError::from(err)
+                BlobstoreError::from(err)
             }
         })
 }
