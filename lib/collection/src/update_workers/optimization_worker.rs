@@ -70,6 +70,13 @@ impl UpdateWorkers {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let num_indexing_threads = some_optimizer.num_indexing_threads();
 
+        // For failed-operation recovery: re-applied operations must be able to provision fresh
+        // appendable segments, just like the regular update path.
+        let recovery_provisioning = SegmentProvisioning::from_optimizer(
+            some_optimizer.as_ref(),
+            payload_index_schema.clone(),
+        );
+
         // Asynchronous task to trigger optimizers once CPU budget is available again
         let mut resource_available_trigger: Option<JoinHandle<()>> = None;
 
@@ -140,6 +147,7 @@ impl UpdateWorkers {
             if Self::try_recover(
                 segments.clone(),
                 wal.clone(),
+                Some(&recovery_provisioning),
                 update_operation_lock.clone(),
                 update_tracker.clone(),
             )
@@ -492,6 +500,7 @@ impl UpdateWorkers {
     async fn try_recover(
         segments: LockedSegmentHolder,
         wal: LockedWal,
+        provisioning: Option<&SegmentProvisioning>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
@@ -509,6 +518,7 @@ impl UpdateWorkers {
                     })?;
                     CollectionUpdater::update(
                         &segments,
+                        provisioning,
                         op_num,
                         operation.operation,
                         update_operation_lock.clone(),

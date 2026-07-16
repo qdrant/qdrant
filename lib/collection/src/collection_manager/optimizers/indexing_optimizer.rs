@@ -628,7 +628,8 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         process_point_operation(
-            &locked_holder.read(),
+            &locked_holder,
+            None,
             opnum.next().unwrap(),
             insert_point_ops,
             &hw_counter,
@@ -693,7 +694,8 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         process_point_operation(
-            &locked_holder.read(),
+            &locked_holder,
+            None,
             opnum.next().unwrap(),
             insert_point_ops,
             &hw_counter,

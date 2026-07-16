@@ -20,15 +20,20 @@ impl EdgeShard {
         let hw_counter = HardwareCounterCell::disposable();
         let _update_guard = self.segments.acquire_updates_lock();
 
-        let segments_guard = self.segments.read();
-
+        // No segment provisioning: the edge shard configures no appendable size cap, so updates
+        // never report `OutOfAppendableCapacity` and run in a single attempt.
         let result = match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(&segments_guard, operation_id, point_operation, &hw_counter)
-            }
+            CollectionUpdateOperations::PointOperation(point_operation) => process_point_operation(
+                &self.segments,
+                None,
+                operation_id,
+                point_operation,
+                &hw_counter,
+            ),
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
                 process_vector_operation(
-                    &segments_guard,
+                    &self.segments,
+                    None,
                     operation_id,
                     vector_operation,
                     &hw_counter,
@@ -36,7 +41,8 @@ impl EdgeShard {
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                 process_payload_operation(
-                    &segments_guard,
+                    &self.segments,
+                    None,
                     operation_id,
                     payload_operation,
                     &hw_counter,
@@ -44,7 +50,7 @@ impl EdgeShard {
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
                 process_field_index_operation(
-                    &segments_guard,
+                    &self.segments.read(),
                     operation_id,
                     &index_operation,
                     &hw_counter,
@@ -52,7 +58,7 @@ impl EdgeShard {
             }
             CollectionUpdateOperations::VectorNameOperation(ref vector_name_operation) => {
                 let result = process_vector_name_operation(
-                    &segments_guard,
+                    &self.segments.read(),
                     operation_id,
                     vector_name_operation,
                 );
@@ -65,7 +71,7 @@ impl EdgeShard {
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(staging_operation) => {
                 shard::update::process_staging_operation(
-                    &segments_guard,
+                    &self.segments.read(),
                     operation_id,
                     staging_operation,
                 )

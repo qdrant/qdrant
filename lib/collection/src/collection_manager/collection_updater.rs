@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::types::SeqNumberType;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::provisioning::SegmentProvisioning;
 use shard::update::*;
 
 use crate::operations::CollectionUpdateOperations;
@@ -40,6 +41,7 @@ impl CollectionUpdater {
 
     pub fn update(
         segments: &LockedSegmentHolder,
+        provisioning: Option<&SegmentProvisioning>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
@@ -58,18 +60,33 @@ impl CollectionUpdater {
             // Needs to be acquired before locking segments.
             let _another_update_lock = segments.acquire_updates_lock();
 
-            let segments_guard = segments.read();
-
+            // Operations that may CoW-move or insert points receive the segment holder lock
+            // itself (plus provisioning): when all appendable segments hit `max_segment_size`,
+            // they provision a fresh one — which needs the holder write lock — and re-apply.
+            // Operations that cannot grow appendable segments just take a read guard here.
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(&segments_guard, op_num, point_operation, hw_counter)
+                    process_point_operation(
+                        segments,
+                        provisioning,
+                        op_num,
+                        point_operation,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(&segments_guard, op_num, vector_operation, hw_counter)
+                    process_vector_operation(
+                        segments,
+                        provisioning,
+                        op_num,
+                        vector_operation,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                     process_payload_operation(
-                        &segments_guard,
+                        segments,
+                        provisioning,
                         op_num,
                         payload_operation,
                         hw_counter,
@@ -77,19 +94,19 @@ impl CollectionUpdater {
                 }
                 CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
                     process_field_index_operation(
-                        &segments_guard,
+                        &segments.read(),
                         op_num,
                         &index_operation,
                         hw_counter,
                     )
                 }
                 CollectionUpdateOperations::VectorNameOperation(vector_name_operation) => {
-                    process_vector_name_operation(&segments_guard, op_num, &vector_name_operation)
+                    process_vector_name_operation(&segments.read(), op_num, &vector_name_operation)
                 }
                 #[cfg(feature = "staging")]
                 CollectionUpdateOperations::StagingOperation(staging_operation) => {
                     shard::update::process_staging_operation(
-                        &segments_guard,
+                        &segments.read(),
                         op_num,
                         staging_operation,
                     )
@@ -246,7 +263,8 @@ mod tests {
         }
 
         process_point_operation(
-            &segments.read(),
+            &segments,
+            None,
             101,
             PointOperations::DeletePoints {
                 ids: vec![500.into()],
@@ -287,7 +305,8 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         process_payload_operation(
-            &segments.read(),
+            &segments,
+            None,
             100,
             PayloadOps::SetPayload(SetPayloadOp {
                 payload,
@@ -327,7 +346,8 @@ mod tests {
 
         // Test payload delete
         process_payload_operation(
-            &segments.read(),
+            &segments,
+            None,
             101,
             PayloadOps::DeletePayload(DeletePayloadOp {
                 points: Some(vec![3.into()]),
@@ -375,7 +395,8 @@ mod tests {
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
         process_payload_operation(
-            &segments.read(),
+            &segments,
+            None,
             102,
             PayloadOps::ClearPayload {
                 points: vec![2.into()],
@@ -444,7 +465,8 @@ mod tests {
         let points = vec![11.into(), 12.into(), 13.into()];
 
         process_payload_operation(
-            &segments.read(),
+            &segments,
+            None,
             102,
             PayloadOps::SetPayload(SetPayloadOp {
                 payload,
@@ -508,7 +530,8 @@ mod tests {
         let payload: Payload = serde_json::from_str(r#"{ "color":"blue"}"#).unwrap();
 
         process_payload_operation(
-            &segments.read(),
+            &segments,
+            None,
             103,
             PayloadOps::SetPayload(SetPayloadOp {
                 payload,
