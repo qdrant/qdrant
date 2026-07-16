@@ -20,10 +20,11 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 /// Immutable map index served directly from a [`UniversalRead`] storage backend.
 ///
-/// On-disk state (`values_to_points.bin`, `deleted.bin`, `point_to_values.*`,
-/// `mmap_field_index_config.json`) is written once during [`Self::build`] and
-/// not mutated afterwards: `deleted.bin` records only the points whose payload
-/// was empty at build time.
+/// On-disk state (`values_to_points.bin`, `deleted_mask.bin`,
+/// `point_to_values.*`, `mmap_field_index_config.json`) is written once during
+/// [`Self::build`] and not mutated afterwards: `deleted_mask.bin` (legacy
+/// `deleted.bin` on older segments) records only the points whose payload was
+/// empty at build time.
 ///
 /// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
 /// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
@@ -34,14 +35,17 @@ pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     pub(super) path: PathBuf,
     pub(super) storage: Storage<N, S>,
     pub(super) total_key_value_pairs: usize,
+    /// Whether the "no values" mask was read from the compact
+    /// `deleted_mask.bin` or the legacy `deleted.bin`.
+    pub(super) compact_deleted_mask: bool,
 }
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) value_to_points: UniversalHashMap<N, PointOffsetType, S>,
     pub(super) point_to_values: OnDiskPointToValues<N, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
-    /// the build-time empty-payload bits read from `deleted.bin` and the
-    /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
+    /// the build-time empty-payload mask read from disk and the segment-level
+    /// deleted bitslice supplied by the id-tracker. Not persisted.
     pub(super) deleted: DeletedBitVec,
     /// Sorted key dictionary for prefix queries. Present only when the index
     /// was built with the `prefix` option (signalled by the presence of its

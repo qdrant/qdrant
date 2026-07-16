@@ -41,8 +41,12 @@ pub struct FeatureFlags {
     /// appends instead. Intended for testing the append-only storage path.
     pub append_only_mutations: bool,
 
-    /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`] and
-    /// [`Self::append_only_mutations`].
+    /// Persist write-once bitmasks in the compact `StoredBitmask` format instead of raw dense
+    /// bitslices. Only gates writing: both formats are always readable.
+    pub compact_bitmask: bool,
+
+    /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
+    /// [`Self::append_only_mutations`] and [`Self::compact_bitmask`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     serverless_compatible: bool,
@@ -58,6 +62,7 @@ impl Default for FeatureFlags {
             async_payload_storage: false,
             write_segment_manifest: false,
             append_only_mutations: false,
+            compact_bitmask: false,
             serverless_compatible: false,
         }
     }
@@ -86,6 +91,7 @@ impl FeatureFlags {
             // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
             // mutation semantics, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
+            compact_bitmask: true,
             serverless_compatible: false,
         }
     }
@@ -101,6 +107,7 @@ impl FeatureFlags {
             self.serverless_compatible = true;
             self.write_segment_manifest = true;
             self.append_only_mutations = true;
+            self.compact_bitmask = true;
         }
 
         self
@@ -153,6 +160,7 @@ mod tests {
 
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
+        assert!(flags.compact_bitmask);
     }
 
     #[test]
@@ -166,5 +174,6 @@ mod tests {
 
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
+        assert!(flags.compact_bitmask);
     }
 }

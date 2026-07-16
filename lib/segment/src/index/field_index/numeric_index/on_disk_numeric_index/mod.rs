@@ -20,9 +20,10 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 /// Immutable numeric index served directly from a [`UniversalRead`] storage
 /// backend.
 ///
-/// On-disk state (`data.bin`, `deleted.bin`, `point_to_values.*`, etc.) is
-/// written once during [`Self::build`] and not mutated afterwards: `deleted.bin`
-/// records only the points whose payload was empty at build time.
+/// On-disk state (`data.bin`, `deleted_mask.bin`, `point_to_values.*`, etc.)
+/// is written once during [`Self::build`] and not mutated afterwards:
+/// `deleted_mask.bin` (legacy `deleted.bin` on older segments) records only
+/// the points whose payload was empty at build time.
 ///
 /// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
 /// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
@@ -37,6 +38,9 @@ pub struct OnDiskNumericIndex<
     pub(super) storage: Storage<T, S>,
     pub(super) histogram: Histogram<T>,
     pub(super) max_values_per_point: usize,
+    /// Whether the "no values" mask was read from the compact
+    /// `deleted_mask.bin` or the legacy `deleted.bin`.
+    pub(super) compact_deleted_mask: bool,
 }
 
 pub(in super::super) struct Storage<
