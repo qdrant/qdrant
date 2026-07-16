@@ -25,13 +25,20 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements, Auth};
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
 use crate::common::validate_vectors::validate_vector_dimensions;
+
+fn validate_timeout(duration: &Duration) -> Result<(), ValidationError> {
+    if duration.as_secs() < 1 {
+        return Err(ValidationError::new("timeout must be at least 1 second"));
+    }
+    Ok(())
+}
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
@@ -41,6 +48,7 @@ pub struct UpdateParams {
     #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde_as(as = "Option<DurationSeconds<String>>")]
+    #[validate(custom(function = "validate_timeout"))]
     pub timeout: Option<Duration>,
 }
 
@@ -1338,5 +1346,54 @@ fn get_shard_selector_for_update(
         }
         (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
         (None, None) => ShardSelectorInternal::Empty,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_update_params_timeout_validation_valid() {
+        // Valid timeout values (>= 1 second)
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_secs(1)),
+        };
+        assert!(params.validate().is_ok());
+
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_secs(60)),
+        };
+        assert!(params.validate().is_ok());
+
+        // None timeout should be valid
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: None,
+        };
+        assert!(params.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_params_timeout_validation_invalid() {
+        // timeout = 0 should be invalid
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_secs(0)),
+        };
+        let result = params.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("timeout must be at least 1 second")
+        );
     }
 }
