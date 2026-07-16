@@ -17,14 +17,14 @@ use common::universal_io::{UniversalAppend, UniversalRead, UserData};
 use fs_err as fs;
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
-pub(super) use reader::ArenastoreReader;
-pub(super) use view::ArenastoreView;
+pub(super) use reader::LogstoreReader;
+pub(super) use view::LogstoreView;
 
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{ArenastoreConfig, StorageConfig};
+use crate::config::{LogstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
@@ -48,14 +48,14 @@ fn validate_consistency<S: UniversalRead>(
         match pages.page_len(pointer.page_id) {
             None => {
                 return Err(BlobstoreError::service_error(format!(
-                    "Inconsistent Arenastore: a mapping references value data in page {}, \
+                    "Inconsistent Logstore: a mapping references value data in page {}, \
                      but the page file does not exist",
                     pointer.page_id,
                 )));
             }
             Some(page_len) if extent > page_len => {
                 return Err(BlobstoreError::service_error(format!(
-                    "Inconsistent Arenastore: a mapping references value data up to byte \
+                    "Inconsistent Logstore: a mapping references value data up to byte \
                      {extent} in page {}, but the page file only holds {page_len} bytes",
                     pointer.page_id,
                 )));
@@ -82,12 +82,12 @@ fn validate_consistency<S: UniversalRead>(
 ///
 /// Uses `Arc<RwLock<...>>` for the pages and tracker to support concurrent flushing.
 #[derive(Debug)]
-pub(super) struct Arenastore<V, S>
+pub(super) struct Logstore<V, S>
 where
     S: UniversalAppend + 'static,
 {
     fs: S::Fs,
-    pub(super) config: ArenastoreConfig,
+    pub(super) config: LogstoreConfig,
     tracker: Arc<RwLock<AppendOnlyTracker>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
@@ -96,7 +96,7 @@ where
     _phantom: PhantomData<V>,
 }
 
-impl<V, S> Arenastore<V, S>
+impl<V, S> Logstore<V, S>
 where
     V: Blob,
     S: UniversalAppend + 'static,
@@ -117,7 +117,7 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: ArenastoreConfig) -> Result<Self> {
+    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
         let tracker = AppendOnlyTracker::new(&base_path)?;
         let pages = AppendOnlyPages::new(&fs, &base_path)?;
 
@@ -136,7 +136,7 @@ where
     }
 
     /// Open an existing storage at the given path, with the already read config.
-    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: ArenastoreConfig) -> Result<Self> {
+    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, true)?;
         let pages = AppendOnlyPages::open(&fs, &base_path, true)?;
         validate_consistency(&tracker, &pages)?;
@@ -152,12 +152,12 @@ where
         })
     }
 
-    /// Create an [`ArenastoreView`] by locking tracker and pages, then call `f` with the
+    /// Create an [`LogstoreView`] by locking tracker and pages, then call `f` with the
     /// view.
-    pub(super) fn with_view<R>(&self, f: impl FnOnce(ArenastoreView<'_, V, S>) -> R) -> R {
+    pub(super) fn with_view<R>(&self, f: impl FnOnce(LogstoreView<'_, V, S>) -> R) -> R {
         let tracker = self.tracker.read();
         let pages = self.pages.read();
-        f(ArenastoreView::new(&self.config, &tracker, &pages))
+        f(LogstoreView::new(&self.config, &tracker, &pages))
     }
 
     /// Put a value in the storage.
@@ -355,7 +355,7 @@ where
     }
 }
 
-impl<V, S: UniversalAppend + 'static> Arenastore<V, S> {
+impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     ///
     /// Appends all buffered value data to the page files with a single atomic append per page
@@ -379,7 +379,7 @@ impl<V, S: UniversalAppend + 'static> Arenastore<V, S> {
                 tracker.upgrade(),
                 pages.upgrade(),
             ) else {
-                log::trace!("Arenastore was cleared, cancelling flush");
+                log::trace!("Logstore was cleared, cancelling flush");
                 return Err(BlobstoreError::FlushCancelled);
             };
 

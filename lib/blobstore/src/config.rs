@@ -55,7 +55,7 @@ pub enum Mode {
     /// reused (bitmask, gaps and regions).
     #[default]
     Mutable,
-    /// Use Arenastore
+    /// Use Logstore
     ///
     /// Append-only storage for serverless deployments. Files are only ever appended to, existing
     /// bytes are never rewritten. Values cannot be updated or deleted, and must be put in
@@ -174,14 +174,14 @@ impl TryFrom<StorageOptions> for GridstoreConfig {
     }
 }
 
-/// Configuration of an Arenastore, the append-only mode storage.
+/// Configuration of a Logstore, the append-only mode storage.
 ///
 /// The append-only mode has no blocks or regions: values are packed back to back in page files.
 ///
 /// The serde representation is the persisted config format, see [`StorageConfig`], so the field
 /// names must not change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ArenastoreConfig {
+pub(crate) struct LogstoreConfig {
     /// Capacity in bytes at which a page rolls over to the next one
     ///
     /// Persisted as `page_size_bytes`, the field name shared with the mutable mode.
@@ -193,7 +193,7 @@ pub(crate) struct ArenastoreConfig {
     pub compression: Compression,
 }
 
-impl ArenastoreConfig {
+impl LogstoreConfig {
     /// Validate the configured sizes.
     fn validate(&self) -> Result<(), String> {
         if self.page_capacity_bytes == 0 {
@@ -204,7 +204,7 @@ impl ArenastoreConfig {
     }
 }
 
-impl TryFrom<StorageOptions> for ArenastoreConfig {
+impl TryFrom<StorageOptions> for LogstoreConfig {
     type Error = String;
 
     fn try_from(options: StorageOptions) -> Result<Self, Self::Error> {
@@ -228,7 +228,7 @@ impl TryFrom<StorageOptions> for ArenastoreConfig {
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub(crate) enum StorageConfig {
     Mutable(GridstoreConfig),
-    AppendOnly(ArenastoreConfig),
+    AppendOnly(LogstoreConfig),
 }
 
 impl StorageConfig {
@@ -291,7 +291,7 @@ mod tests {
         assert!(json.contains(r#""mode":"mutable""#));
         assert!(json.contains(r#""block_size_bytes""#));
 
-        let config = ArenastoreConfig::try_from(StorageOptions::default()).unwrap();
+        let config = LogstoreConfig::try_from(StorageOptions::default()).unwrap();
         let json = serde_json::to_string(&StorageConfig::AppendOnly(config)).unwrap();
         assert!(json.contains(r#""mode":"append_only""#));
         assert!(json.contains(r#""page_size_bytes""#));
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(restored.block_size_bytes, config.block_size_bytes);
         assert_eq!(restored.region_size_blocks, config.region_size_blocks);
 
-        let config = ArenastoreConfig::try_from(StorageOptions::default()).unwrap();
+        let config = LogstoreConfig::try_from(StorageOptions::default()).unwrap();
         let json = serde_json::to_vec(&StorageConfig::AppendOnly(config.clone())).unwrap();
         let StorageConfig::AppendOnly(restored) = StorageConfig::from_json(&json).unwrap() else {
             panic!("expected an append-only config");

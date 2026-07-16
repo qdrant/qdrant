@@ -18,7 +18,7 @@ use crate::tracker::{BlockOffset, PageId, ValuePointer};
 ///
 /// Deliberately different from the mutable mode page file names (`page_{id}.dat`), so that one mode
 /// never attempts to load the incompatible file format of the other.
-const PAGE_FILE_NAME_PREFIX: &str = "arena_page_";
+const PAGE_FILE_NAME_PREFIX: &str = "log_page_";
 
 fn page_file_name(dir: &Path, page_id: PageId) -> PathBuf {
     dir.join(format!("{PAGE_FILE_NAME_PREFIX}{page_id}.dat"))
@@ -264,7 +264,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
         OpenOptions {
             writeable,
             need_sequential: true,
-            // The append-only mode never populates, see [`super::Arenastore::populate`]
+            // The append-only mode never populates, see [`super::Logstore::populate`]
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Random),
         }
@@ -480,7 +480,7 @@ mod tests {
 
         // Nothing was written or buffered, and the tracked length is unchanged
         assert_eq!(
-            fs::metadata(dir.path().join("arena_page_0.dat"))
+            fs::metadata(dir.path().join("log_page_0.dat"))
                 .unwrap()
                 .len(),
             0,

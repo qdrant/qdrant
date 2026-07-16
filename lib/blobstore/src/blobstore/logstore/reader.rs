@@ -9,11 +9,11 @@ use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs, UserDat
 
 use super::page::AppendOnlyPages;
 use super::validate_consistency;
-use super::view::ArenastoreView;
+use super::view::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
-use crate::config::ArenastoreConfig;
+use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 use crate::tracker::append_only::AppendOnlyTracker;
@@ -21,19 +21,19 @@ use crate::tracker::append_only::AppendOnlyTracker;
 /// Read-only storage for values of type `V`, operating in append-only mode.
 ///
 /// Holds the tracker and pages directly (no locks) since it provides only read access.
-/// For read-write access, use [`Arenastore`].
+/// For read-write access, use [`Logstore`].
 ///
 /// Value data is read through the universal IO backend `S`, the tracker file is read directly.
 #[derive(Debug)]
-pub(crate) struct ArenastoreReader<V, S: UniversalRead> {
-    config: ArenastoreConfig,
+pub(crate) struct LogstoreReader<V, S: UniversalRead> {
+    config: LogstoreConfig,
     tracker: AppendOnlyTracker,
     pages: AppendOnlyPages<S>,
     base_path: PathBuf,
     _phantom: PhantomData<V>,
 }
 
-impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
+impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
     /// universal IO backend, which is only the page files.
     ///
@@ -48,7 +48,7 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,
-        config: ArenastoreConfig,
+        config: LogstoreConfig,
     ) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, false)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false)?;
@@ -63,9 +63,9 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
         })
     }
 
-    /// Create an [`ArenastoreView`] borrowing this reader's data.
-    pub(crate) fn view(&self) -> ArenastoreView<'_, V, S> {
-        ArenastoreView::new(&self.config, &self.tracker, &self.pages)
+    /// Create an [`LogstoreView`] borrowing this reader's data.
+    pub(crate) fn view(&self) -> LogstoreView<'_, V, S> {
+        LogstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
     /// List all files belonging to this reader (tracker, pages, config).
@@ -172,7 +172,7 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     }
 }
 
-impl<V, S: UniversalRead> ArenastoreReader<V, S> {
+impl<V, S: UniversalRead> LogstoreReader<V, S> {
     /// Returns `true`: append-only storage always reads from disk, it is never populated into
     /// RAM.
     #[allow(clippy::unused_self)]
