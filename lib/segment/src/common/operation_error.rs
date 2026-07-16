@@ -82,6 +82,13 @@ pub enum OperationError {
     },
     #[error("The expression {expression} produced a non-finite number")]
     NonFiniteNumber { expression: String },
+    /// All appendable segments reached `max_segment_size`, so there is no valid destination for
+    /// new or moved points. Recoverable by provisioning a fresh appendable segment and re-applying
+    /// the operation; already-applied points are skipped by their point version.
+    #[error(
+        "All appendable segments reached the maximum segment size of {max_segment_size_bytes} bytes"
+    )]
+    OutOfAppendableCapacity { max_segment_size_bytes: usize },
 }
 
 impl OperationError {
@@ -126,6 +133,32 @@ impl OperationError {
         }
     }
 
+    /// Whether this error signals that all appendable segments are at `max_segment_size` capacity,
+    /// so the operation can be re-applied after provisioning a fresh appendable segment.
+    pub fn is_out_of_appendable_capacity(&self) -> bool {
+        match self {
+            Self::OutOfAppendableCapacity { .. } => true,
+            Self::WrongVectorDimension { .. }
+            | Self::VectorNameNotExists { .. }
+            | Self::PointIdError { .. }
+            | Self::TypeError { .. }
+            | Self::TypeInferenceError { .. }
+            | Self::ServiceError { .. }
+            | Self::InconsistentStorage { .. }
+            | Self::FileNotFound { .. }
+            | Self::OutOfMemory { .. }
+            | Self::Cancelled { .. }
+            | Self::Timeout { .. }
+            | Self::ValidationError { .. }
+            | Self::WrongSparse
+            | Self::WrongMulti
+            | Self::MissingRangeIndexForOrderBy { .. }
+            | Self::MissingMapIndexForFacet { .. }
+            | Self::VariableTypeError { .. }
+            | Self::NonFiniteNumber { .. } => false,
+        }
+    }
+
     pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(
@@ -160,7 +193,8 @@ impl IsNotFound for OperationError {
             | Self::MissingRangeIndexForOrderBy { .. }
             | Self::MissingMapIndexForFacet { .. }
             | Self::VariableTypeError { .. }
-            | Self::NonFiniteNumber { .. } => false,
+            | Self::NonFiniteNumber { .. }
+            | Self::OutOfAppendableCapacity { .. } => false,
         }
     }
 }
