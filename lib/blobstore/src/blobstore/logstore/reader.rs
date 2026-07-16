@@ -23,24 +23,24 @@ use crate::tracker::append_only::AppendOnlyTracker;
 /// Holds the tracker and pages directly (no locks) since it provides only read access.
 /// For read-write access, use [`Logstore`].
 ///
-/// Value data is read through the universal IO backend `S`, the tracker file is read directly.
+/// All data is read through the universal IO backend `S`.
 #[derive(Debug)]
 pub(crate) struct LogstoreReader<V, S: UniversalRead> {
     config: LogstoreConfig,
-    tracker: AppendOnlyTracker,
+    tracker: AppendOnlyTracker<S>,
     pages: AppendOnlyPages<S>,
     base_path: PathBuf,
     _phantom: PhantomData<V>,
 }
 
 impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
-    /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
-    /// universal IO backend, which is only the page files.
+    /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads: the tracker
+    /// file and the page files.
     ///
-    /// The tracker file is read directly, not through the backend, so there is nothing to
-    /// schedule for it. The config file is scheduled by the mode dispatching reader, which reads
-    /// it first to select the operating mode.
+    /// The config file is scheduled by the mode dispatching reader, which reads it first to
+    /// select the operating mode.
     pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, base_path: &Path) -> Result<()> {
+        AppendOnlyTracker::<S>::preopen(fs, base_path)?;
         AppendOnlyPages::<S>::preopen(fs, base_path)
     }
 
@@ -50,7 +50,7 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         base_path: PathBuf,
         config: LogstoreConfig,
     ) -> Result<Self> {
-        let tracker = AppendOnlyTracker::open(&base_path, false)?;
+        let tracker = AppendOnlyTracker::open_read_only(fs, &base_path)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false)?;
         validate_consistency(&tracker, &pages)?;
 

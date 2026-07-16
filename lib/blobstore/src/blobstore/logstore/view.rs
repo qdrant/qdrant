@@ -19,10 +19,10 @@ use crate::tracker::{PointOffset, ValuePointer};
 ///
 /// Holds borrowed references to the tracker and pages, and contains all reading logic.
 ///
-/// Value data is read through the universal IO backend `S`, the tracker is read directly.
+/// All data is read through the universal IO backend `S`.
 pub(crate) struct LogstoreView<'a, V, S: UniversalRead> {
     config: &'a LogstoreConfig,
-    tracker: &'a AppendOnlyTracker,
+    tracker: &'a AppendOnlyTracker<S>,
     pages: &'a AppendOnlyPages<S>,
     _phantom: PhantomData<V>,
 }
@@ -30,7 +30,7 @@ pub(crate) struct LogstoreView<'a, V, S: UniversalRead> {
 impl<'a, V, S: UniversalRead> LogstoreView<'a, V, S> {
     pub(super) fn new(
         config: &'a LogstoreConfig,
-        tracker: &'a AppendOnlyTracker,
+        tracker: &'a AppendOnlyTracker<S>,
         pages: &'a AppendOnlyPages<S>,
     ) -> Self {
         Self {
@@ -66,7 +66,7 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        let Some(pointer) = self.tracker.get(point_offset)? else {
+        let Some(pointer) = self.tracker.get::<P>(point_offset)? else {
             return Ok(None);
         };
 
@@ -92,7 +92,7 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         E: From<BlobstoreError>,
     {
         for (user_data, point_offset) in point_offsets {
-            let value = match self.tracker.get(point_offset).map_err(E::from)? {
+            let value = match self.tracker.get::<P>(point_offset).map_err(E::from)? {
                 None => None,
                 Some(pointer) => {
                     let raw = self.read_from_pages::<P>(pointer).map_err(E::from)?;
@@ -129,7 +129,10 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         E: From<BlobstoreError>,
     {
         let start = point_offsets.start;
-        let pointers = self.tracker.get_range(point_offsets).map_err(E::from)?;
+        let pointers = self
+            .tracker
+            .get_range::<Sequential>(point_offsets)
+            .map_err(E::from)?;
 
         for (index, pointer) in pointers.into_iter().enumerate() {
             let Some(pointer) = pointer else {

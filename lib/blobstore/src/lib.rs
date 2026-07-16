@@ -1,7 +1,6 @@
 pub mod blob;
 mod blobstore;
 pub mod config;
-mod direct_io;
 pub mod error;
 pub mod fixtures;
 mod tracker;
