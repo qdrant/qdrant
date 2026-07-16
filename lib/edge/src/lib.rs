@@ -196,16 +196,16 @@ impl EdgeShard {
             return Ok(());
         };
 
-        let current = {
+        let rebuilt = {
             let holder = self.segments.read();
-            SegmentsManifest::from_segment_holder(&holder).preserving(&manifest.read())
+            SegmentsManifest::from_segment_holder(&holder)
         };
-        if *manifest.read() == current {
-            return Ok(());
-        }
-
+        // Merge under the write lock (see `SegmentsManifest::sync`).
         manifest
-            .write(|manifest| *manifest = current)
+            .write_optional(|previous| {
+                let current = rebuilt.preserving(previous);
+                (*previous != current).then_some(current)
+            })
             .map_err(|err| OperationError::service_error(err.to_string()))?;
         Ok(())
     }

@@ -137,18 +137,21 @@ impl SegmentsManifest {
             return Ok(());
         };
 
-        let mut current = Self::from_segment_holder(holder).preserving(&manifest.read());
+        let mut rebuilt = Self::from_segment_holder(holder);
         if let Some(uuid) = extra_segment {
-            current.set(uuid, SegmentManifestState::Active);
+            rebuilt.set(uuid, SegmentManifestState::Active);
         }
 
-        if *manifest.read() == current {
-            return Ok(());
-        }
-
-        manifest.write(|m| *m = current).map_err(|err| {
-            OperationError::service_error(format!("failed to persist segment manifest: {err}"))
-        })?;
+        // Merge under the write lock, so a concurrent rebuild cannot slip between a
+        // read and a write and erase preserved marks.
+        manifest
+            .write_optional(|previous| {
+                let current = rebuilt.preserving(previous);
+                (*previous != current).then_some(current)
+            })
+            .map_err(|err| {
+                OperationError::service_error(format!("failed to persist segment manifest: {err}"))
+            })?;
         Ok(())
     }
 
