@@ -11,7 +11,7 @@ use super::view::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
-use crate::config::StorageConfig;
+use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
@@ -22,7 +22,7 @@ use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
 /// For read-write access, use [`super::Gridstore`].
 #[derive(Debug)]
 pub(crate) struct GridstoreReader<V, S: UniversalRead> {
-    config: StorageConfig,
+    config: GridstoreConfig,
     tracker: ReadOnlyTracker<S>,
     pages: Pages<S>,
     base_path: PathBuf,
@@ -83,7 +83,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,
-        config: StorageConfig,
+        config: GridstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
         // A reader only reads, so open pages and tracker non-writable. This

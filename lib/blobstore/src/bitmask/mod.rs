@@ -12,7 +12,7 @@ use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
 use crate::Result;
-use crate::config::StorageConfig;
+use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::{BlockOffset, PageId};
 
@@ -34,7 +34,7 @@ pub type MmapBitmask = Bitmask<MmapFile>;
 
 #[derive(Debug)]
 pub struct Bitmask<S> {
-    config: StorageConfig,
+    config: GridstoreConfig,
 
     /// A summary of every 1KB (8_192 bits) of contiguous zeros in the bitmask, or less if it is the last region.
     regions_gaps: BitmaskGaps<S>,
@@ -65,7 +65,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Calculate the amount of bytes needed for covering the blocks of a page.
-    fn length_for_page(config: &StorageConfig) -> usize {
+    fn length_for_page(config: &GridstoreConfig) -> usize {
         assert_eq!(
             config.page_size_bytes % config.block_size_bytes,
             0,
@@ -80,7 +80,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Create a bitmask for one page
-    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
+    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
         debug_assert!(
             config.page_size_bytes % config.block_size_bytes * config.region_size_blocks == 0,
             "Page size must be a multiple of block size * region size"
@@ -111,7 +111,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         })
     }
 
-    pub(crate) fn open(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
+    pub(crate) fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes

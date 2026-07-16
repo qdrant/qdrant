@@ -5,7 +5,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
+    CachedReadFs, Populate, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
+    read_whole_via,
 };
 
 use super::arenastore::ArenastoreReader;
@@ -13,7 +14,7 @@ use super::gridstore::GridstoreReader;
 use super::view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{Mode, StorageConfig};
+use crate::config::StorageConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 
@@ -21,7 +22,8 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 
 /// Read-only storage for values of type `V`.
 ///
-/// Operates in one of two modes, automatically selected when opening, see [`Mode`].
+/// Operates in one of two modes, automatically selected when opening, see
+/// [`Mode`](crate::config::Mode).
 ///
 /// Holds its data directly (no locks) since it provides only read access.
 /// For read-write access, use [`super::Blobstore`].
@@ -30,7 +32,7 @@ pub struct BlobstoreReader<V, S: UniversalRead> {
     variant: ReaderVariant<V, S>,
 }
 
-/// Mode specific implementation of the reader, see [`Mode`].
+/// Mode specific implementation of the reader, see [`Mode`](crate::config::Mode).
 #[derive(Debug)]
 enum ReaderVariant<V, S: UniversalRead> {
     Gridstore(GridstoreReader<V, S>),
@@ -53,9 +55,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         let config_path = base_path.join(CONFIG_FILENAME);
         fs.schedule_prefetch(&config_path, None, None)?;
 
-        match config.mode {
-            Mode::Mutable => GridstoreReader::<V, S>::preopen(fs, &base_path, populate),
-            Mode::AppendOnly => ArenastoreReader::<V, S>::preopen(fs, &base_path),
+        match config {
+            StorageConfig::Mutable(_) => GridstoreReader::<V, S>::preopen(fs, &base_path, populate),
+            StorageConfig::AppendOnly(_) => ArenastoreReader::<V, S>::preopen(fs, &base_path),
         }
     }
 
@@ -72,15 +74,14 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         base_path: PathBuf,
         populate: Populate,
     ) -> Result<Self> {
-        let config = read_config(fs, &base_path)?;
-        match config.mode {
-            Mode::Mutable => {
+        match read_config(fs, &base_path)? {
+            StorageConfig::Mutable(config) => {
                 let reader = GridstoreReader::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: ReaderVariant::Gridstore(reader),
                 })
             }
-            Mode::AppendOnly => {
+            StorageConfig::AppendOnly(config) => {
                 let reader = ArenastoreReader::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: ReaderVariant::Arenastore(reader),
@@ -216,7 +217,7 @@ impl<V, S: UniversalRead> BlobstoreReader<V, S> {
     }
 }
 
-/// Read the storage config from the base path.
+/// Read and validate the storage config from the base path.
 ///
 /// Shared helper used by the `open` paths of [`BlobstoreReader`] and [`super::Blobstore`], which
 /// read the config first to select the operating mode.
@@ -225,13 +226,20 @@ pub(super) fn read_config<Fs: UniversalReadFs>(
     base_path: &std::path::Path,
 ) -> Result<StorageConfig> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config =
-        read_json_via::<Fs, StorageConfig>(fs, &config_path).map_err(BlobstoreError::from)?;
-    config.validate().map_err(|message| {
-        BlobstoreError::service_error(format!(
-            "Invalid blobstore config at {}: {message}",
-            config_path.display(),
-        ))
-    })?;
+    let config = read_whole_via(fs, &config_path, |bytes| {
+        StorageConfig::from_json(&bytes).map_err(UniversalIoError::from)
+    })
+    .map_err(BlobstoreError::from)?;
+    config
+        .validate()
+        .map_err(|message| invalid_config_error(base_path, message))?;
     Ok(config)
+}
+
+/// Error for a persisted config with invalid values.
+fn invalid_config_error(base_path: &std::path::Path, message: String) -> BlobstoreError {
+    BlobstoreError::service_error(format!(
+        "Invalid blobstore config at {}: {message}",
+        base_path.join(CONFIG_FILENAME).display(),
+    ))
 }

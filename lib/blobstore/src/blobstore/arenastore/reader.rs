@@ -13,7 +13,7 @@ use super::view::ArenastoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
-use crate::config::StorageConfig;
+use crate::config::ArenastoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 use crate::tracker::append_only::AppendOnlyTracker;
@@ -26,7 +26,7 @@ use crate::tracker::append_only::AppendOnlyTracker;
 /// Value data is read through the universal IO backend `S`, the tracker file is read directly.
 #[derive(Debug)]
 pub(crate) struct ArenastoreReader<V, S: UniversalRead> {
-    config: StorageConfig,
+    config: ArenastoreConfig,
     tracker: AppendOnlyTracker,
     pages: AppendOnlyPages<S>,
     base_path: PathBuf,
@@ -48,7 +48,7 @@ impl<V: Blob, S: UniversalRead> ArenastoreReader<V, S> {
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,
-        config: StorageConfig,
+        config: ArenastoreConfig,
     ) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, false)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false)?;
