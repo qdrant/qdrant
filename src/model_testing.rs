@@ -48,9 +48,19 @@ struct Args {
     #[clap(long, default_value_t = 3, value_parser = clap::value_parser!(u32).range(1..))]
     shard_count: u32,
 
-    /// Size of the point ID space (ids are drawn uniformly from 0..id_pool).
+    /// Size of the point ID space (ids are drawn uniformly from a pool of this many ids,
+    /// precomputed at startup; see `--uuid-id-fraction` for the numeric/UUID split).
     #[clap(long, default_value_t = 500, value_parser = clap::value_parser!(u64).range(1..))]
     id_pool: u64,
+
+    /// Fraction (0.0..=1.0) of the id pool backed by UUID point ids instead of numeric ones,
+    /// exercising the UUID side of the id tracker, WAL round-tripping and shard routing. The
+    /// UUID slots are well-formed v4 ids drawn once at startup from the seeded rng, so the
+    /// pool is stable for the run, `--seed` reproduces it exactly, and ids keep their
+    /// upsert-overwrite / delete-hits-live-point reuse semantics. 0.0 consumes no rng draws
+    /// and reproduces the numeric-only op stream of builds without UUID support.
+    #[clap(long, default_value_t = 0.5)]
+    uuid_id_fraction: f64,
 
     /// Where to write the collection + snapshots data. Wiped at the start of each run;
     /// copy the directory out beforehand to preserve a previous run for post-mortem.
@@ -200,6 +210,13 @@ async fn run_main(args: Args) {
         );
         std::process::exit(2);
     }
+    if !(0.0..=1.0).contains(&args.uuid_id_fraction) {
+        eprintln!(
+            "model_testing: --uuid-id-fraction must be in [0.0, 1.0], got {}",
+            args.uuid_id_fraction,
+        );
+        std::process::exit(2);
+    }
     // Process-global flag, read when each on-disk dense vector storage is opened — set it before
     // the fixture builds any segments.
     segment::vector_storage::common::set_async_scorer(args.async_scorer);
@@ -209,14 +226,15 @@ async fn run_main(args: Args) {
         None => format!("op_num={}", args.op_num),
     };
     println!(
-        "model_testing: seed={} {stop} shard_count={} id_pool={} storage_path={} \
-         disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
+        "model_testing: seed={} {stop} shard_count={} id_pool={} uuid_id_fraction={} \
+         storage_path={} disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
          flush_interval_sec={} restart_probability={} swarm_interval={} \
          on_disk={} async_scorer={} pre_restart_check={} enable_force_off={} \
          disable_snapshots={}",
         args.seed,
         args.shard_count,
         args.id_pool,
+        args.uuid_id_fraction,
         args.storage_path.display(),
         args.disable_optimizer,
         args.max_segment_size_kb,
@@ -236,6 +254,7 @@ async fn run_main(args: Args) {
         args.op_num as usize,
         args.shard_count,
         args.id_pool,
+        args.uuid_id_fraction,
         &args.storage_path,
         args.disable_optimizer,
         args.max_segment_size_kb as usize,
