@@ -749,11 +749,16 @@ impl LocalShard {
         );
 
         let to = cmp::min(to, last_wal_index);
-        debug_assert!(
-            from <= to,
-            "WAL first_index ({from}) is ahead of replay target ({to}) (last_wal_index:{last_wal_index} op_num_upper_bound:{op_num_upper_bound:?})"
-        );
-        let wal_entries_to_replay = to.saturating_sub(from);
+
+        // The WAL is only truncated past operations whose segment flush was confirmed, so
+        // `first_index` is itself a durable lower bound on the applied sequence and nothing
+        // before it ever needs replay. The persisted applied_seq can legitimately lag behind
+        // it: it is saved every `APPLIED_SEQ_SAVE_INTERVAL` update-worker calls from a counter
+        // that restarts at zero on every process start, and the synchronous replay below never
+        // feeds it. Without this clamp, a replay target computed from such a stale applied_seq
+        // would sit before `first_index`, targeting already-truncated entries.
+        let to = cmp::max(to, from);
+        let wal_entries_to_replay = to - from;
 
         assert!(
             last_wal_index - to <= update_queue_size as u64,
