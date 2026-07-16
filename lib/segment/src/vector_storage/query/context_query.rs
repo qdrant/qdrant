@@ -110,10 +110,11 @@ impl<T, U> TransformInto<ContextQuery<U>, T, U> for ContextQuery<T> {
 
 impl<T> Query<T> for ContextQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
-        self.pairs
-            .iter()
-            .map(|pair| pair.loss_by(&similarity))
-            .sum()
+        let mut sum = 0.0;
+        for pair in &self.pairs {
+            sum += pair.loss_by(&similarity);
+        }
+        sum
     }
 }
 

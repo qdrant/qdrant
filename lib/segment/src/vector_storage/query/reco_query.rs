@@ -63,19 +63,22 @@ impl From<RecoBestScoreQuery<VectorInternal>> for QueryVector {
 impl<T> Query<T> for RecoBestScoreQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // get similarities to all positives
-        let positive_similarities = self.0.positives.iter().map(&similarity);
+        let mut max_positive = ScoreType::NEG_INFINITY;
+        for vector in &self.0.positives {
+            let score = similarity(vector);
+            if score.total_cmp(&max_positive).is_gt() {
+                max_positive = score;
+            }
+        }
 
         // and all negatives
-        let negative_similarities = self.0.negatives.iter().map(&similarity);
-
-        // get max similarity to positives and max to negatives
-        let max_positive = positive_similarities
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(ScoreType::NEG_INFINITY);
-
-        let max_negative = negative_similarities
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(ScoreType::NEG_INFINITY);
+        let mut max_negative = ScoreType::NEG_INFINITY;
+        for vector in &self.0.negatives {
+            let score = similarity(vector);
+            if score.total_cmp(&max_negative).is_gt() {
+                max_negative = score;
+            }
+        }
 
         if max_positive > max_negative {
             scaled_fast_sigmoid(max_positive)
@@ -112,10 +115,16 @@ impl From<RecoSumScoresQuery<VectorInternal>> for QueryVector {
 impl<T> Query<T> for RecoSumScoresQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // Sum all positive vectors scores
-        let positive_score: ScoreType = self.0.positives.iter().map(&similarity).sum();
+        let mut positive_score: ScoreType = 0.0;
+        for vector in &self.0.positives {
+            positive_score += similarity(vector);
+        }
 
         // Sum all negative vectors scores
-        let negative_score: ScoreType = self.0.negatives.iter().map(&similarity).sum();
+        let mut negative_score: ScoreType = 0.0;
+        for vector in &self.0.negatives {
+            negative_score += similarity(vector);
+        }
 
         // Subtract
         positive_score - negative_score

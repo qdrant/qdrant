@@ -42,11 +42,11 @@ impl<T> DiscoverQuery<T> {
     }
 
     fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
-        self.pairs
-            .iter()
-            .map(|pair| pair.rank_by(&similarity))
-            // get overall rank
-            .sum()
+        let mut rank = 0;
+        for pair in &self.pairs {
+            rank += pair.rank_by(&similarity);
+        }
+        rank
     }
 }
 
