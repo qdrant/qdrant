@@ -49,6 +49,19 @@ pub(super) struct BitmaskHeader {
     pub(super) payload_len: u64,
 }
 
+impl BitmaskHeader {
+    pub(super) fn new(logical_len: u64, encoding: Encoding, payload_len: u64) -> Self {
+        Self {
+            magic: MAGIC,
+            version: VERSION,
+            logical_len,
+            encoding: encoding as u32,
+            _reserved: 0,
+            payload_len,
+        }
+    }
+}
+
 /// Decoded mask contents, in the stored polarity: the bitmap always holds the
 /// minority positions, so iterating it is never worse than the dense scan.
 pub enum BitmaskContent<'a> {
