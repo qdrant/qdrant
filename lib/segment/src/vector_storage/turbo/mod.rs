@@ -22,7 +22,7 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
@@ -232,20 +232,57 @@ impl std::fmt::Debug for TurboVectorStorage {
     }
 }
 
-/// Open (create-or-load) a TurboQuant vector storage backed by a single mmap file (non-appendable).
-/// Counterpart to `open_dense_vector_storage`.
+/// Open (create-or-load) a TurboQuant vector storage backed by a single file (non-appendable).
+/// Counterpart to `open_dense_vector_storage`: reads go through io_uring when the
+/// async scorer is enabled (Linux), plain mmap otherwise.
 pub fn open_turbo_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
     populate: bool,
 ) -> OperationResult<TurboVectorStorage> {
+    #[cfg(target_os = "linux")]
+    let with_uring = crate::vector_storage::common::get_async_scorer();
+
+    #[cfg(not(target_os = "linux"))]
+    let with_uring = false;
+
+    open_turbo_vector_storage_with_uring(path, dim, distance, populate, with_uring)
+}
+
+/// [`open_turbo_vector_storage`] with an explicit backend choice instead of the
+/// global async-scorer flag. Falls back to mmap (with an error log) if the
+/// io_uring backend cannot be opened.
+pub fn open_turbo_vector_storage_with_uring(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    populate: bool,
+    with_uring: bool,
+) -> OperationResult<TurboVectorStorage> {
+    // prevent "unused variable" warning
+    let _ = with_uring;
+
     open_turbo_vector_storage_impl(
         path,
         dim,
         distance,
         populate,
         |vectors_path, quantized_vector_size| {
+            #[cfg(target_os = "linux")]
+            if with_uring {
+                match TurboEncodedVectorStorage::open_uring(
+                    vectors_path,
+                    quantized_vector_size,
+                    populate,
+                ) {
+                    Ok(storage) => return Ok(storage),
+                    Err(err) => {
+                        log::error!("Failed to open io_uring based TurboQuant storage: {err}");
+                    }
+                }
+            }
+
             TurboEncodedVectorStorage::open_mmap(vectors_path, quantized_vector_size, populate)
         },
     )
@@ -365,6 +402,24 @@ impl VectorStorageRead for TurboVectorStorage {
         self.dequantize_vector(self.storage.get_quantized_vector(key))
     }
 
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        // Split into parallel arrays in one pass (mirrors the dense storages):
+        // `for_each_in_batch` needs an offsets slice for batched reads, but we
+        // still want `user_data[idx]` available inside the callback.
+        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
+
+        self.storage
+            .for_each_in_batch(&point_offsets, |idx, bytes| {
+                let vector = self.dequantize_vector(Cow::Borrowed(bytes));
+                callback(user_data[idx], point_offsets[idx], vector);
+            })
+            .expect("read TQ vectors");
+    }
+
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         Some(self.dequantize_vector(self.storage.get_quantized_vector_opt(key)?))
     }
@@ -441,6 +496,28 @@ impl DenseTQVectorStorage for TurboVectorStorage {
 
     fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_quantized_vector(key)
+    }
+
+    fn for_each_in_dense_tq_batch<F: FnMut(usize, &[u8])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        self.storage.for_each_in_batch(keys, f)
+    }
+
+    fn read_dense_tq_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        // Same parallel-arrays split as `read_vectors`, minus the dequantization.
+        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
+
+        self.storage
+            .for_each_in_batch(&point_offsets, |idx, bytes| {
+                callback(user_data[idx], point_offsets[idx], bytes.to_vec());
+            })
     }
 
     fn update_from<'a>(
@@ -1656,5 +1733,338 @@ mod tests {
                 run_model_scenario(dim, Distance::Cosine, seed, OPS);
             }
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // io_uring backend + batched reads.
+    // ---------------------------------------------------------------------
+
+    /// Build a flushed single-file storage at `dir` from oracle-encoded
+    /// `inputs`, exactly as the optimizer does, then drop it — leaving the
+    /// directory ready to be reopened by either single-file backend.
+    fn build_single_file(dir: &Path, inputs: &[DenseVector], dim: usize, distance: Distance) {
+        let oracle = Oracle::new(dim, distance);
+        let stopped = AtomicBool::new(false);
+        let encoded: Vec<Vec<u8>> = inputs.iter().map(|v| oracle.encode(v)).collect();
+
+        let mut storage =
+            open_turbo_vector_storage_with_uring(dir, dim, distance, false, false).unwrap();
+        let mut it = encoded.iter().map(|b| (Cow::from(b.as_slice()), false));
+        storage.update_from(&mut it, &stopped).unwrap();
+        storage.flusher()().unwrap();
+    }
+
+    /// The io_uring backend must read back exactly what the mmap backend and
+    /// the independent oracle see: byte-identical encoded vectors and f32-exact
+    /// dequantized reads.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn uring_backend_matches_mmap_and_oracle() {
+        const COUNT: usize = 80;
+
+        for (seed, dim) in [(SEEDS[0], 127), (SEEDS[1], 128), (SEEDS[2], 1024)] {
+            let distance = Distance::Dot;
+            let dir = Builder::new()
+                .prefix("turbo_uring_parity")
+                .tempdir()
+                .unwrap();
+            let inputs = make_vectors(dim, COUNT, seed);
+            build_single_file(dir.path(), &inputs, dim, distance);
+
+            let mmap =
+                open_turbo_vector_storage_with_uring(dir.path(), dim, distance, false, false)
+                    .unwrap();
+            let uring =
+                open_turbo_vector_storage_with_uring(dir.path(), dim, distance, false, true)
+                    .unwrap();
+
+            // The uring open must not have silently fallen back to mmap — a
+            // fallback would make every check below vacuous.
+            assert!(
+                matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
+                "io_uring backend unavailable in this environment (dim {dim})",
+            );
+
+            assert_eq!(uring.total_vector_count(), COUNT);
+            assert_eq!(uring.deleted_vector_count(), 0);
+
+            let oracle = Oracle::new(dim, distance);
+            for (i, input) in inputs.iter().enumerate() {
+                let key = i as PointOffsetType;
+                let expected = oracle.encode(input);
+
+                let uring_bytes = uring.get_quantized_vector(key);
+                assert_eq!(
+                    uring_bytes.as_ref(),
+                    expected.as_slice(),
+                    "uring encoded bytes diverge from oracle at {i} (dim {dim})",
+                );
+                assert_eq!(
+                    uring_bytes.as_ref(),
+                    mmap.get_quantized_vector(key).as_ref(),
+                    "uring encoded bytes diverge from mmap at {i} (dim {dim})",
+                );
+
+                let via_uring = DenseVector::try_from(uring.get_vector::<Random>(key)).unwrap();
+                let via_mmap = DenseVector::try_from(mmap.get_vector::<Random>(key)).unwrap();
+                assert_eq!(
+                    via_uring, via_mmap,
+                    "dequantized read diverges between backends at {i} (dim {dim})",
+                );
+            }
+        }
+    }
+
+    /// `score_stored_batch` must agree exactly with per-point `score_stored`
+    /// on every backend and both scorers. Keys are shuffled, contain
+    /// duplicates, and exceed `VECTOR_READ_BATCH_SIZE`, so chunking and the
+    /// idx→key mapping are actually exercised.
+    #[test]
+    fn score_stored_batch_matches_score_stored() {
+        use rand::seq::SliceRandom;
+
+        use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
+        use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
+
+        const DIM: usize = 128;
+        const COUNT: usize = 100;
+
+        let distance = Distance::Dot;
+        let seed = SEEDS[0];
+        let inputs = make_vectors(DIM, COUNT, seed);
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
+            .chain(0..(COUNT / 2) as PointOffsetType)
+            .collect();
+        ids.shuffle(&mut rng);
+
+        // Backends under test: appendable chunked, single-file mmap, and (on
+        // Linux) single-file uring.
+        let chunked_dir = Builder::new()
+            .prefix("turbo_batch_chunked")
+            .tempdir()
+            .unwrap();
+        let mut chunked =
+            open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, true).unwrap();
+        insert_all(&mut chunked, &inputs, &hw_counter);
+
+        let single_dir = Builder::new()
+            .prefix("turbo_batch_single")
+            .tempdir()
+            .unwrap();
+        build_single_file(single_dir.path(), &inputs, DIM, distance);
+        let mmap =
+            open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, false)
+                .unwrap();
+
+        let mut storages = vec![("chunked", chunked), ("mmap", mmap)];
+
+        #[cfg(target_os = "linux")]
+        {
+            let uring =
+                open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, true)
+                    .unwrap();
+            assert!(
+                matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
+                "io_uring backend unavailable in this environment",
+            );
+            storages.push(("uring", uring));
+        }
+
+        for (backend, storage) in &storages {
+            let nearest =
+                TurboQueryScorer::new(inputs[0].clone(), storage, HardwareCounterCell::new());
+            let reco = TurboCustomQueryScorer::new(
+                RecoBestScoreQuery::from(RecoQuery::new(
+                    vec![inputs[1].clone()],
+                    vec![inputs[2].clone()],
+                )),
+                storage,
+                HardwareCounterCell::new(),
+            );
+
+            let mut nearest_scores = vec![0.0; ids.len()];
+            nearest.score_stored_batch(&ids, &mut nearest_scores);
+            let mut reco_scores = vec![0.0; ids.len()];
+            reco.score_stored_batch(&ids, &mut reco_scores);
+
+            for (idx, &id) in ids.iter().enumerate() {
+                assert_eq!(
+                    nearest_scores[idx],
+                    nearest.score_stored(id),
+                    "nearest batch score diverges at idx {idx} (key {id}, {backend})",
+                );
+                assert_eq!(
+                    reco_scores[idx],
+                    reco.score_stored(id),
+                    "reco batch score diverges at idx {idx} (key {id}, {backend})",
+                );
+            }
+        }
+    }
+
+    /// The batched retrieval readers (`read_vectors` and `read_dense_tq_bytes`)
+    /// must agree exactly with their per-point counterparts on every backend,
+    /// thread user data to the right offset, and visit each key exactly once.
+    /// Keys are shuffled, contain duplicates, and exceed
+    /// `VECTOR_READ_BATCH_SIZE`, so chunking and the idx→key mapping are
+    /// actually exercised.
+    #[test]
+    fn batched_retrieval_matches_per_point_reads() {
+        use rand::seq::SliceRandom;
+
+        const DIM: usize = 128;
+        const COUNT: usize = 100;
+
+        let distance = Distance::Dot;
+        let seed = SEEDS[1];
+        let inputs = make_vectors(DIM, COUNT, seed);
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
+            .chain(0..(COUNT / 2) as PointOffsetType)
+            .collect();
+        ids.shuffle(&mut rng);
+
+        let chunked_dir = Builder::new()
+            .prefix("turbo_retr_chunked")
+            .tempdir()
+            .unwrap();
+        let mut chunked =
+            open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, true).unwrap();
+        insert_all(&mut chunked, &inputs, &hw_counter);
+
+        let single_dir = Builder::new()
+            .prefix("turbo_retr_single")
+            .tempdir()
+            .unwrap();
+        build_single_file(single_dir.path(), &inputs, DIM, distance);
+        let mmap =
+            open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, false)
+                .unwrap();
+
+        let mut storages = vec![("chunked", chunked), ("mmap", mmap)];
+
+        #[cfg(target_os = "linux")]
+        {
+            let uring =
+                open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, true)
+                    .unwrap();
+            assert!(
+                matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
+                "io_uring backend unavailable in this environment",
+            );
+            storages.push(("uring", uring));
+        }
+
+        // Tag each key with its input position so the threading is checkable.
+        let keys: Vec<(usize, PointOffsetType)> = ids.iter().copied().enumerate().collect();
+
+        for (backend, storage) in &storages {
+            // Decoded path: `read_vectors` ≡ `get_vector`, tags ride along.
+            let mut seen = vec![false; keys.len()];
+            storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                assert_eq!(
+                    ids[tag], offset,
+                    "user data not threaded to its offset ({backend})",
+                );
+                assert!(
+                    !seen[tag],
+                    "key at position {tag} visited twice ({backend})"
+                );
+                seen[tag] = true;
+                let direct = storage.get_vector::<Random>(offset);
+                assert_eq!(
+                    DenseVector::try_from(vector).unwrap(),
+                    DenseVector::try_from(direct).unwrap(),
+                    "read_vectors disagrees with get_vector at {offset} ({backend})",
+                );
+            });
+            assert!(
+                seen.iter().all(|&s| s),
+                "not every key was visited ({backend})",
+            );
+
+            // Raw-bytes path: `read_dense_tq_bytes` ≡ `get_dense_tq`.
+            let mut seen = vec![false; keys.len()];
+            storage
+                .read_dense_tq_bytes::<Random, usize>(keys.iter().copied(), |tag, offset, bytes| {
+                    assert_eq!(
+                        ids[tag], offset,
+                        "user data not threaded to its offset ({backend})",
+                    );
+                    assert!(
+                        !seen[tag],
+                        "key at position {tag} visited twice ({backend})"
+                    );
+                    seen[tag] = true;
+                    assert_eq!(
+                        bytes.as_slice(),
+                        storage.get_dense_tq::<Random>(offset).as_ref(),
+                        "read_dense_tq_bytes disagrees with get_dense_tq at {offset} ({backend})",
+                    );
+                })
+                .unwrap();
+            assert!(
+                seen.iter().all(|&s| s),
+                "not every key was visited ({backend})",
+            );
+        }
+    }
+
+    /// Batch scoring must accrue exactly the same hardware-counter totals as
+    /// scoring the same keys one by one.
+    #[test]
+    fn batch_scoring_accumulates_same_hw_counters() {
+        use common::counter::hardware_accumulator::HwMeasurementAcc;
+
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
+
+        const DIM: usize = 128;
+        const COUNT: usize = 100;
+
+        let distance = Distance::Dot;
+        let inputs = make_vectors(DIM, COUNT, SEEDS[0]);
+
+        // On-disk single-file storage, so the vector-io-read multiplier is active
+        // and IO accounting is part of the comparison.
+        let dir = Builder::new().prefix("turbo_batch_hw").tempdir().unwrap();
+        build_single_file(dir.path(), &inputs, DIM, distance);
+        let storage =
+            open_turbo_vector_storage_with_uring(dir.path(), DIM, distance, false, false).unwrap();
+
+        let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
+
+        let per_point_acc = HwMeasurementAcc::new();
+        {
+            let scorer = TurboQueryScorer::new(
+                inputs[0].clone(),
+                &storage,
+                per_point_acc.get_counter_cell(),
+            );
+            for &id in &ids {
+                scorer.score_stored(id);
+            }
+        }
+
+        let batch_acc = HwMeasurementAcc::new();
+        {
+            let scorer =
+                TurboQueryScorer::new(inputs[0].clone(), &storage, batch_acc.get_counter_cell());
+            let mut scores = vec![0.0; ids.len()];
+            scorer.score_stored_batch(&ids, &mut scores);
+        }
+
+        assert_eq!(batch_acc.get_cpu(), per_point_acc.get_cpu());
+        assert_eq!(
+            batch_acc.get_vector_io_read(),
+            per_point_acc.get_vector_io_read(),
+        );
     }
 }

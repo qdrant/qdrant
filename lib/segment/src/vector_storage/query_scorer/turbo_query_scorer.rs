@@ -53,6 +53,20 @@ impl QueryScorer for TurboQueryScorer<'_> {
         self.storage.score_query_bytes(&self.query, &bytes)
     }
 
+    #[inline]
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert_eq!(ids.len(), scores.len());
+
+        self.hardware_counter.vector_io_read().incr_delta(ids.len());
+        self.hardware_counter.cpu_counter().incr_delta(ids.len());
+
+        self.storage
+            .for_each_in_dense_tq_batch(ids, |idx, bytes| {
+                scores[idx] = self.storage.score_query_bytes(&self.query, bytes);
+            })
+            .expect("read TQ vectors");
+    }
+
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
         self.storage.score_internal_encoded(point_a, point_b)

@@ -7,7 +7,9 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs};
+#[cfg(target_os = "linux")]
+use common::universal_io::{IoUringFile, IoUringFs};
+use common::universal_io::{MmapFile, MmapFs, UniversalRead};
 use quantization::EncodedStorage;
 
 use crate::common::operation_error::{OperationResult, check_process_stopped};
@@ -18,6 +20,10 @@ use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 pub(super) enum TurboEncodedVectorStorage {
     /// Single mem-mapped file of encoded vectors.
     Mmap(QuantizedStorage<MmapFile>),
+
+    /// Single file of encoded vectors, read through io_uring (non-appendable).
+    #[cfg(target_os = "linux")]
+    Uring(QuantizedStorage<IoUringFile>),
 
     /// Chunked mem-mapped encoded vectors (appendable).
     ChunkedMmap(QuantizedChunkedStorage<MmapFile>),
@@ -32,6 +38,21 @@ impl TurboEncodedVectorStorage {
     ) -> OperationResult<Self> {
         Ok(Self::Mmap(QuantizedStorage::<MmapFile>::open(
             &MmapFs,
+            path,
+            quantized_vector_size,
+            populate,
+        )?))
+    }
+
+    /// Open (create-or-load) the single-file io_uring backend (non-appendable).
+    #[cfg(target_os = "linux")]
+    pub(super) fn open_uring(
+        path: &Path,
+        quantized_vector_size: usize,
+        populate: bool,
+    ) -> OperationResult<Self> {
+        Ok(Self::Uring(QuantizedStorage::<IoUringFile>::open(
+            &IoUringFs,
             path,
             quantized_vector_size,
             populate,
@@ -56,6 +77,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         match self {
             Self::Mmap(s) => s.get_vector_data(key),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.get_vector_data(key),
             Self::ChunkedMmap(s) => s.get_vector_data(key),
         }
     }
@@ -64,7 +87,30 @@ impl TurboEncodedVectorStorage {
     pub(super) fn get_quantized_vector_opt(&self, key: PointOffsetType) -> Option<Cow<'_, [u8]>> {
         match self {
             Self::Mmap(s) => s.get_vector_data_opt(key),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.get_vector_data_opt(key),
             Self::ChunkedMmap(s) => s.get_vector_data_opt(key),
+        }
+    }
+
+    /// Run `f` for each vector in the batch, batching the underlying reads
+    /// (io_uring submission batching / mmap prefetch on the single-file
+    /// backends; the appendable chunked backend reads one record at a time).
+    pub(super) fn for_each_in_batch<F: FnMut(usize, &[u8])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mmap(s) => s.for_each_in_batch(keys, f),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.for_each_in_batch(keys, f),
+            Self::ChunkedMmap(s) => {
+                for (idx, &key) in keys.iter().enumerate() {
+                    f(idx, &s.get_vector_data(key));
+                }
+                Ok(())
+            }
         }
     }
 
@@ -72,6 +118,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn vectors_count(&self) -> usize {
         match self {
             Self::Mmap(s) => s.vectors_count(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.vectors_count(),
             Self::ChunkedMmap(s) => s.vectors_count(),
         }
     }
@@ -79,6 +127,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn is_on_disk(&self) -> bool {
         match self {
             Self::Mmap(s) => s.is_on_disk(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.is_on_disk(),
             Self::ChunkedMmap(s) => s.is_on_disk(),
         }
     }
@@ -87,6 +137,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match self {
             Self::Mmap(s) => s.files(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.files(),
             Self::ChunkedMmap(s) => s.files(),
         }
     }
@@ -94,6 +146,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn immutable_files(&self) -> Vec<PathBuf> {
         match self {
             Self::Mmap(s) => s.immutable_files(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.immutable_files(),
             Self::ChunkedMmap(s) => s.immutable_files(),
         }
     }
@@ -101,6 +155,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn flusher(&self) -> MmapFlusher {
         match self {
             Self::Mmap(s) => s.flusher(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.flusher(),
             Self::ChunkedMmap(s) => s.flusher(),
         }
     }
@@ -109,6 +165,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn populate(&self) -> OperationResult<()> {
         match self {
             Self::Mmap(s) => s.populate(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.populate(),
             Self::ChunkedMmap(s) => s.populate()?,
         }
         Ok(())
@@ -118,6 +176,8 @@ impl TurboEncodedVectorStorage {
     pub(super) fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Mmap(s) => s.clear_cache(),
+            #[cfg(target_os = "linux")]
+            Self::Uring(s) => s.clear_cache(),
             Self::ChunkedMmap(s) => s.clear_cache()?,
         }
         Ok(())
@@ -135,6 +195,10 @@ impl TurboEncodedVectorStorage {
                 // Therefore, we don't assume it's read-only here and pretend to write.
                 storage.upsert_vector(id, vector, hw_counter)
             }
+            #[cfg(target_os = "linux")]
+            TurboEncodedVectorStorage::Uring(storage) => {
+                storage.upsert_vector(id, vector, hw_counter)
+            }
             TurboEncodedVectorStorage::ChunkedMmap(storage) => {
                 storage.upsert_vector(id, vector, hw_counter)
             }
@@ -148,15 +212,23 @@ impl TurboEncodedVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
-            Self::Mmap(storage) => Self::update_from_mmap(storage, vectors, stopped),
+            Self::Mmap(storage) => {
+                Self::update_from_single_file(storage, &MmapFs, vectors, stopped)
+            }
+            #[cfg(target_os = "linux")]
+            Self::Uring(storage) => {
+                Self::update_from_single_file(storage, &IoUringFs, vectors, stopped)
+            }
             Self::ChunkedMmap(storage) => Self::update_from_chunked(storage, vectors, stopped),
         }
     }
 
-    /// Single-file backend: bulk-append encoded bytes to the file, then re-mmap once
-    /// (mirrors `DenseVectorStorageImpl::update_from`).
-    fn update_from_mmap<'a>(
-        storage: &mut QuantizedStorage<MmapFile>,
+    /// Single-file backends: bulk-append encoded bytes to the file, then reopen once
+    /// through `fs` so reads observe the appended vectors (mirrors
+    /// `DenseVectorStorageImpl::update_from`).
+    fn update_from_single_file<'a, S: UniversalRead>(
+        storage: &mut QuantizedStorage<S>,
+        fs: &S::Fs,
         vectors: impl Iterator<Item = Cow<'a, [u8]>>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
@@ -170,13 +242,13 @@ impl TurboEncodedVectorStorage {
             end_index += 1;
         }
 
-        // Persist + re-mmap so reads observe the appended vectors.
+        // Persist + reopen so reads observe the appended vectors.
         writer.flush()?;
         let file = writer
             .into_inner()
             .map_err(io::IntoInnerError::into_error)?;
         file.sync_data()?;
-        storage.reload()?;
+        storage.reload(fs)?;
 
         Ok(start_index..end_index)
     }

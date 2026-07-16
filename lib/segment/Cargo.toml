@@ -129,6 +129,10 @@ name = "vector_search"
 harness = false
 
 [[bench]]
+name = "turbo_vector_search"
+harness = false
+
+[[bench]]
 name = "read_vectors"
 harness = false
 
