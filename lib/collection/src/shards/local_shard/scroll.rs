@@ -16,6 +16,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
+use shard::operations::point_ops::PointStructRawPersisted;
 use shard::retrieve::record_internal::RecordInternal;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -226,6 +227,107 @@ impl LocalShard {
             .iter()
             // Use remove to avoid cloning, we take each point ID only once
             .filter_map(|point_id| records_map.remove(point_id))
+            .collect();
+
+        Ok(ordered_records)
+    }
+
+    /// Byte-blob analogue of [`Self::internal_scroll_by_id`]: reads points as
+    /// storage-native raw vector bytes ([`PointStructRawPersisted`]) instead of
+    /// decoded records, avoiding a lossy quantization round-trip during shard
+    /// transfer. Point-id selection is identical to the decoded twin.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn internal_scroll_by_id_raw(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<PointStructRawPersisted>> {
+        let start = Instant::now();
+        let stopping_guard = StoppingGuard::new();
+        let update_operation_lock = self.update_operation_lock.read().await;
+        let segments = self.segments.clone();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(
+                    timeout,
+                    "internal_scroll_by_id_raw",
+                ));
+            };
+            segments_guard.split_segments()
+        };
+        let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
+            let filter = filter.cloned();
+            let is_stopped = stopping_guard.get_is_stopped();
+            let cpu_utilization = hw_counter.cpu_utilization();
+            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let work = || {
+                    segment.get().read().read_filtered(
+                        offset,
+                        Some(limit),
+                        filter.as_ref(),
+                        &is_stopped,
+                        &hw_counter,
+                        deferred_behavior,
+                    )
+                };
+                match cpu_utilization {
+                    Some(cu) => cu.measure(work),
+                    None => work(),
+                }
+            });
+            AbortOnDropHandle::new(task)
+        };
+
+        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let all_reads = tokio::time::timeout(
+            timeout,
+            try_join_all(
+                non_appendable
+                    .into_iter()
+                    .chain(appendable)
+                    .map(|segment| read_filtered(segment, hw_counter.fork())),
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "scroll_by_id_raw"))??;
+
+        let point_ids = all_reads
+            .into_iter()
+            .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
+
+        let with_payload = WithPayload::from(with_payload_interface);
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+        let mut records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve_raw(
+                segments,
+                &point_ids,
+                &with_payload,
+                with_vector,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                deferred_behavior,
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "retrieve_raw"))??;
+
+        drop(update_operation_lock);
+
+        let ordered_records = point_ids
+            .iter()
+            // Use remove to avoid cloning, we take each point ID only once
+            .filter_map(|point_id| records_map.remove(point_id))
+            .map(PointStructRawPersisted::from)
             .collect();
 
         Ok(ordered_records)

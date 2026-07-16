@@ -21,6 +21,7 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
+use crate::operations::point_ops::PointStructRawPersisted;
 use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, PointRequestInternal,
@@ -611,5 +612,82 @@ impl ShardOperation for LocalShard {
         self.is_gracefully_stopped = true;
 
         drop(self);
+    }
+}
+
+/// Byte-blob (raw vector bytes) analogues of the `retrieve` / `local_scroll_by_id`
+/// shard ops, used by shard transfer to relocate points without a lossy
+/// quantization round-trip. They mirror the decoded twins above but read
+/// storage-native bytes ([`PointStructRawPersisted`]) via `retrieve_raw`.
+impl LocalShard {
+    /// Byte-blob analogue of [`ShardOperation::retrieve`] for an explicit id set:
+    /// returns storage-native raw vector bytes for shard transfer. Preserves
+    /// input id order and silently drops ids not found (like `retrieve`).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn retrieve_raw(
+        &self,
+        ids: &[ExtendedPointId],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<PointStructRawPersisted>> {
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        let mut records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve_raw(
+                self.segments.clone(),
+                ids,
+                with_payload,
+                with_vector,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                deferred_behavior,
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "retrieve_raw"))??;
+
+        let ordered_records = ids
+            .iter()
+            // Use remove to avoid cloning, we take each point ID only once
+            .filter_map(|id| records_map.remove(id))
+            .map(PointStructRawPersisted::from)
+            .collect();
+
+        Ok(ordered_records)
+    }
+
+    /// Byte-blob analogue of `local_scroll_by_id`: resolves the default search
+    /// timeout and delegates to [`Self::internal_scroll_by_id_raw`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn local_scroll_by_id_raw(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<PointStructRawPersisted>> {
+        let timeout = self.timeout_or_default_search_timeout(timeout);
+        self.internal_scroll_by_id_raw(
+            offset,
+            limit,
+            with_payload_interface,
+            with_vector,
+            filter,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+            deferred_behavior,
+        )
+        .await
     }
 }
