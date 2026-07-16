@@ -1,3 +1,4 @@
+pub mod bitmask;
 mod reader;
 mod view;
 
@@ -17,10 +18,10 @@ use parking_lot::RwLock;
 pub(super) use reader::GridstoreReader;
 pub(super) use view::GridstoreView;
 
+use self::bitmask::Bitmask;
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
 use crate::Result;
-use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{GridstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
