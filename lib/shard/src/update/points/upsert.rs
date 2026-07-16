@@ -123,7 +123,7 @@ pub fn conditional_upsert(
 /// A point struct that can be written into a segment as a whole-point
 /// replacement: nothing of a previously stored point (vectors or payload)
 /// survives an upsert, whichever write path it takes.
-trait PointToUpsert {
+pub(super) trait PointToUpsert {
     fn id(&self) -> PointIdType;
 
     /// Upsert in place into a writable segment: vectors plus full payload.
@@ -159,7 +159,7 @@ trait PointToUpsert {
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into the smallest appendable segment.
 /// Returns: number of updated points.
-fn upsert_points_impl<'a, P>(
+pub(super) fn upsert_points_impl<'a, P>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: impl IntoIterator<Item = &'a P>,
