@@ -5,11 +5,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{UniversalRead, UserData};
 
+use super::pages::Pages;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
-use crate::pages::Pages;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
 /// A non-owning view into gridstore data.

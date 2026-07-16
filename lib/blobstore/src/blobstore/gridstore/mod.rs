@@ -1,4 +1,5 @@
 pub mod bitmask;
+pub(super) mod pages;
 mod reader;
 mod view;
 
@@ -19,13 +20,13 @@ pub(super) use reader::GridstoreReader;
 pub(super) use view::GridstoreView;
 
 use self::bitmask::Bitmask;
+use self::pages::{Pages, page_path};
 use super::Flusher;
 use super::reader::CONFIG_FILENAME;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{GridstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
-use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
 /// Read-write storage for values of type `V`, operating in mutable mode.
