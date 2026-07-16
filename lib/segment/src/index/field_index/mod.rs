@@ -6,6 +6,7 @@ use common::types::PointOffsetType;
 use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
 
 pub mod bool_index;
+mod deleted_mask;
 pub(super) mod facet_index;
 mod field_index_base;
 pub mod full_text_index;

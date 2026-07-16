@@ -790,6 +790,82 @@ fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexTyp
     assert_eq!(index.inner().get_points_count(), 7);
 }
 
+/// An index whose "no values" mask is stored in the compact `StoredBitmask`
+/// format (written when the `compact_bitmask` feature flag is on) must open
+/// and filter identically to one with the legacy dense bitslice.
+///
+/// Tests run with default feature flags, so the build above writes the legacy
+/// file; convert it to the compact format by hand and reopen.
+#[rstest]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_numeric_index_open_compact_deleted_mask(#[case] index_type: IndexType) {
+    use common::stored_bitmask::save_bitmask;
+    use common::universal_io::MmapFs;
+    use roaring::RoaringBitmap;
+
+    use crate::index::field_index::deleted_mask::{DELETED_MASK_FILE, deleted_mask_path};
+
+    let (temp_dir, mut index_builder) = get_index_builder(index_type);
+
+    // Same setup as `test_numeric_index_reload_short_deleted_bitslice`:
+    // point 4 has an empty payload, so the build marks it in the mask.
+    let values: Vec<Vec<f64>> = vec![
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![], // empty payload at id 4
+        vec![1.0],
+        vec![2.0],
+        vec![2.5],
+        vec![2.6],
+        vec![3.0],
+    ];
+
+    let hw_counter = HardwareCounterCell::new();
+    values.into_iter().enumerate().for_each(|(idx, values)| {
+        let values = values.iter().map(|v| Value::from(*v)).collect_vec();
+        let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        index_builder
+            .add_point(new_idx, &values, &hw_counter)
+            .unwrap();
+    });
+    let index = index_builder.finalize().unwrap();
+    drop(index);
+
+    // Convert the legacy dense mask into the compact format: same bits
+    // (offset 0 = no point at internal id 0, offset 4 = the empty-payload
+    // point), 10 logical flags.
+    // The legacy file only exists when the build ran with `compact_bitmask`
+    // off (the default in tests); tolerate either so a future flag-default
+    // change doesn't break the test.
+    let legacy_path = temp_dir.path().join("deleted.bin");
+    if legacy_path.exists() {
+        fs_err::remove_file(&legacy_path).unwrap();
+    }
+    let ones = RoaringBitmap::from_sorted_iter([0u32, 4]).unwrap();
+    save_bitmask(&MmapFs, &deleted_mask_path(temp_dir.path()), 10, ones).unwrap();
+    assert!(temp_dir.path().join(DELETED_MASK_FILE).exists());
+
+    let mut short_deleted = BitVec::repeat(false, 3);
+    short_deleted.set(1, true);
+    let index = open_index_from_disk(temp_dir.path(), index_type, &short_deleted);
+
+    // Same expectations as the legacy-format test.
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![2, 3, 5, 6, 7, 8, 9],
+    );
+    assert_eq!(index.inner().get_points_count(), 7);
+}
+
 fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,

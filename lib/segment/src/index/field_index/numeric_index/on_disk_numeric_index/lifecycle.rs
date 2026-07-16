@@ -1,15 +1,13 @@
 use std::borrow::Borrow;
-use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
-use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFs, OkNotFound, OpenOptions, Populate, SortedBlockIndex, TypedStorage,
-    UniversalRead, UniversalReadFs, read_json_via,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, SortedBlockIndex, TypedStorage, UniversalRead,
+    UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -22,6 +20,9 @@ use super::{
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::deleted_mask::{
+    bitor_deleted_mask, deleted_mask_file, preopen_deleted_mask, save_deleted_mask,
+};
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::{OnDiskPointToValues, StoredValue};
@@ -47,7 +48,6 @@ where
         fs::create_dir_all(path)?;
 
         let pairs_path = path.join(PAIRS_PATH);
-        let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         atomic_save_json(
@@ -82,36 +82,17 @@ where
             SortedBlockIndex::write(&path.join(PAIRS_BLOCK_INDEX_PATH), &pairs)?;
         }
 
-        {
-            let deleted_flags_count = in_memory_index.point_to_values.len();
-            let _ = create_and_ensure_length(
-                &deleted_path,
-                deleted_flags_count
-                    .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(size_of::<u64>()),
-            )?;
-
-            let mut deleted = MmapBitSlice::open(
-                &MmapFs,
-                &deleted_path,
-                OpenOptions {
-                    writeable: true,
-                    need_sequential: false,
-                    populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                },
-                (),
-            )?;
-            deleted.set_ascending_bits_batch(
-                in_memory_index
-                    .point_to_values
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, values)| values.is_empty())
-                    .map(|(idx, _)| (idx as u64, true)),
-            )?;
-            deleted.flusher()()?;
-        }
+        save_deleted_mask(
+            path,
+            DELETED_PATH,
+            in_memory_index.point_to_values.len(),
+            in_memory_index
+                .point_to_values
+                .iter()
+                .enumerate()
+                .filter(|(_, values)| values.is_empty())
+                .map(|(idx, _)| idx as PointOffsetType),
+        )?;
 
         Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalNumericIndex after building it")
@@ -162,12 +143,12 @@ where
         // Point to values
         OnDiskPointToValues::<T, S>::preopen(fs, path, populate)?;
 
-        // Deleted bitslice
-        let deleted_path = path.join(DELETED_PATH);
-        fs.schedule_prefetch(
-            &deleted_path,
-            Some(Self::open_options(Populate::PreferBackground)),
-            None,
+        // "No values" mask
+        preopen_deleted_mask(
+            fs,
+            path,
+            DELETED_PATH,
+            Self::open_options(Populate::PreferBackground),
         )?;
 
         Ok(true)
@@ -181,7 +162,6 @@ where
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
-        let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         let Some(config) =
@@ -208,21 +188,19 @@ where
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let mut deleted = deleted_points.to_owned();
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
-            &deleted_path,
-            Self::open_options(Populate::Auto),
-            Default::default(),
-        )?;
-        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
-
         // `deleted` length must match `point_to_values.len()` because it only
         // tracks the index's contents. The id-tracker's deleted mask can be
         // shorter or longer; if shorter, the missing entries default to live
         // (the id-tracker is the source of truth for deletions, and a shorter
         // mask just means it doesn't yet know about those higher offsets).
         deleted.resize(point_to_values.len(), false);
-        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
+        let compact_deleted_mask = bitor_deleted_mask(
+            fs,
+            path,
+            DELETED_PATH,
+            Self::open_options(Populate::Auto),
+            &mut deleted,
+        )?;
 
         Ok(Some(Self {
             path: path.to_path_buf(),
@@ -234,6 +212,7 @@ where
             },
             histogram,
             max_values_per_point: config.max_values_per_point,
+            compact_deleted_mask,
         }))
     }
 }
@@ -258,7 +237,7 @@ where
     pub fn files(&self) -> Vec<PathBuf> {
         let mut files = vec![
             self.path.join(PAIRS_PATH),
-            self.path.join(DELETED_PATH),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
         if self.storage.pairs_block_index.is_some() {
@@ -272,7 +251,7 @@ where
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = vec![
             self.path.join(PAIRS_PATH),
-            self.path.join(DELETED_PATH),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
         if self.storage.pairs_block_index.is_some() {
@@ -312,6 +291,7 @@ where
             storage,
             histogram: _,
             max_values_per_point: _,
+            compact_deleted_mask,
         } = self;
         let Storage {
             deleted: _,
@@ -323,7 +303,11 @@ where
         if pairs_block_index.is_some() {
             clear_disk_cache(&path.join(PAIRS_BLOCK_INDEX_PATH))?;
         }
-        clear_disk_cache(&path.join(DELETED_PATH))?;
+        clear_disk_cache(&deleted_mask_file(
+            path,
+            *compact_deleted_mask,
+            DELETED_PATH,
+        ))?;
         point_to_values.clear_cache()?;
         Ok(())
     }
@@ -334,6 +318,7 @@ where
             storage,
             histogram,
             max_values_per_point: _,
+            compact_deleted_mask: _,
         } = self;
 
         histogram.ram_usage_bytes() + storage.ram_usage_bytes()
