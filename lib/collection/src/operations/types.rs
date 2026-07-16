@@ -1171,6 +1171,12 @@ impl From<OperationError> for CollectionError {
             OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(err.to_string()),
             OperationError::VariableTypeError { .. } => Self::bad_input(err.to_string()),
             OperationError::NonFiniteNumber { .. } => Self::bad_input(err.to_string()),
+            // Normally handled by segment provisioning before reaching this conversion; if it
+            // leaks, stay transient so failed-operation recovery re-applies the operation.
+            OperationError::OutOfAppendableCapacity { .. } => Self::ServiceError {
+                error: err.to_string(),
+                backtrace: None,
+            },
         }
     }
 }
