@@ -34,7 +34,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         self.vectors.for_each_in_batch(&keys, |idx, dense| {
             let user_data = user_datas[idx];
             let key = keys[idx];
-            callback(user_data, key, bytemuck::cast_slice(&dense).to_vec());
+            callback(user_data, key, bytemuck::cast_slice(dense).to_vec());
         })
     }
 
