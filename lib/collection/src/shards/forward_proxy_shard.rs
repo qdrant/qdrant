@@ -28,7 +28,8 @@ use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointSyncOperation,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointStructRawPersisted,
+    PointSyncOperation, PointSyncRawOperation,
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
@@ -207,32 +208,78 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let update_lock = self.update_lock.clone().lock_owned().await;
 
+        // When any named vector uses a TurboQuant (`Turbo4`) storage datatype,
+        // ship storage-native (raw) vector bytes instead of decoded floats.
+        // This avoids a lossy TQ decode -> encode round-trip on the receiving
+        // node, which would drift the encoding and degrade recall.
+        let transfer_raw = self
+            .wrapped_shard
+            .collection_config
+            .read()
+            .await
+            .has_turbo_vector_storage();
+
         let read_start = Instant::now();
-        let (points, next_page_offset) = match hashring_filter {
-            Some(hashring_filter) => {
-                self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
+        let (point_operation, next_page_offset, count) = if transfer_raw {
+            let (points, next_page_offset) = match hashring_filter {
+                Some(hashring_filter) => {
+                    self.read_batch_with_hashring_raw(
+                        offset,
+                        batch_size,
+                        hashring_filter,
+                        runtime_handle,
+                    )
                     .await?
-            }
-            None => {
-                self.read_batch(offset, batch_size, self.filter.as_deref(), runtime_handle)
+                }
+                None => {
+                    self.read_batch_raw(offset, batch_size, self.filter.as_deref(), runtime_handle)
+                        .await?
+                }
+            };
+            let count = points.len();
+            let point_operation = if !merge_points {
+                PointOperations::SyncPointsRaw(PointSyncRawOperation {
+                    from_id: offset,
+                    to_id: next_page_offset,
+                    points,
+                })
+            } else {
+                PointOperations::UpsertPointsRaw(points)
+            };
+            (point_operation, next_page_offset, count)
+        } else {
+            let (points, next_page_offset) = match hashring_filter {
+                Some(hashring_filter) => {
+                    self.read_batch_with_hashring(
+                        offset,
+                        batch_size,
+                        hashring_filter,
+                        runtime_handle,
+                    )
                     .await?
-            }
+                }
+                None => {
+                    self.read_batch(offset, batch_size, self.filter.as_deref(), runtime_handle)
+                        .await?
+                }
+            };
+            let count = points.len();
+            let point_operation = if !merge_points {
+                PointOperations::SyncPoints(PointSyncOperation {
+                    from_id: offset,
+                    to_id: next_page_offset,
+                    points,
+                })
+            } else {
+                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+            };
+            (point_operation, next_page_offset, count)
         };
         let read_duration = read_start.elapsed();
 
         // Only wait on last batch
         let wait = next_page_offset.is_none();
-        let count = points.len();
 
-        let point_operation = if !merge_points {
-            PointOperations::SyncPoints(PointSyncOperation {
-                from_id: offset,
-                to_id: next_page_offset,
-                points,
-            })
-        } else {
-            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
-        };
         let operation = CollectionUpdateOperations::PointOperation(point_operation);
 
         Ok(PreparedTransferBatch {
@@ -382,6 +429,105 @@ impl ForwardProxyShard {
             .into_iter()
             .map(PointStructPersisted::try_from)
             .collect::<Result<Vec<PointStructPersisted>, String>>()?;
+
+        Ok((points, next_page_offset))
+    }
+
+    /// Byte-blob analogue of [`Self::read_batch`]: reads a transfer batch as
+    /// storage-native raw vector bytes. Used when the collection has a
+    /// TurboQuant storage, to avoid a lossy quantization round-trip.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn read_batch_raw(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        filter: Option<&Filter>,
+        runtime_handle: &AdaptiveSearchHandle,
+    ) -> CollectionResult<(Vec<PointStructRawPersisted>, Option<PointIdType>)> {
+        let limit = batch_size + 1;
+
+        let mut batch = self
+            .wrapped_shard
+            .local_scroll_by_id_raw(
+                offset,
+                limit,
+                &WithPayloadInterface::Bool(true),
+                &WithVector::Bool(true),
+                filter,
+                runtime_handle,
+                None,                           // No timeout
+                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll operation.
+            )
+            .await?;
+
+        let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
+
+        Ok((batch, next_page_offset))
+    }
+
+    /// Byte-blob analogue of [`Self::read_batch_with_hashring`]. See
+    /// [`Self::read_batch_raw`].
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn read_batch_with_hashring_raw(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        hashring_filter: &HashRingRouter,
+        runtime_handle: &AdaptiveSearchHandle,
+    ) -> CollectionResult<(Vec<PointStructRawPersisted>, Option<PointIdType>)> {
+        // Oversample batch size to account for points that will be filtered out by the hash ring
+        let oversample_factor = match &hashring_filter {
+            HashRingRouter::Single(_) => 1,
+            HashRingRouter::Resharding { old: _, new } => new.len().max(1),
+        };
+        let limit = (batch_size * oversample_factor) + 1;
+
+        // Read only point IDs without point data, then apply the hash ring filter, then read the
+        // actual (raw) point data for the preselection only. See `read_batch_with_hashring`.
+        let mut batch = self
+            .wrapped_shard
+            .local_scroll_by_id(
+                offset,
+                limit,
+                &WithPayloadInterface::Bool(false),
+                &WithVector::Bool(false),
+                None,
+                runtime_handle,
+                None,                           // No timeout
+                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll op.
+            )
+            .await?;
+
+        let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
+
+        // Make preselection of point IDs by hash ring
+        let ids: Vec<PointIdType> = batch
+            .into_iter()
+            .map(|point| point.id)
+            .filter(|point_id| hashring_filter.is_in_shard(point_id, self.remote_shard.id))
+            .collect();
+
+        // Read actual raw vectors and payloads for preselection of points
+        let points = self
+            .wrapped_shard
+            .retrieve_raw(
+                &ids,
+                &WithPayload::from(true),
+                &WithVector::Bool(true),
+                runtime_handle,
+                None,                           // No timeout
+                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                DeferredBehavior::WithDeferred,
+            )
+            .await?;
 
         Ok((points, next_page_offset))
     }

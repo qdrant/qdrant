@@ -347,6 +347,15 @@ pub struct CollectionConfigInternal {
 }
 
 impl CollectionConfigInternal {
+    /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
+    /// storage datatype.
+    ///
+    /// Used to decide whether shard transfer should ship storage-native (raw)
+    /// vector bytes instead of decoded floats, avoiding a lossy TQ round-trip.
+    pub fn has_turbo_vector_storage(&self) -> bool {
+        self.params.has_turbo_vector_storage()
+    }
+
     pub fn to_bytes(&self) -> CollectionResult<Vec<u8>> {
         serde_json::to_vec(self).map_err(|err| CollectionError::service_error(err.to_string()))
     }
@@ -422,6 +431,19 @@ impl CollectionConfigInternal {
 }
 
 impl CollectionParams {
+    /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
+    /// storage datatype.
+    ///
+    /// Its primary vector storage keeps TurboQuant-encoded codes in-place, so
+    /// reading storage-native bytes yields those codes. Relocating them verbatim
+    /// (raw shard transfer) avoids a lossy decode→encode round-trip that would
+    /// otherwise drift the encoding.
+    pub fn has_turbo_vector_storage(&self) -> bool {
+        self.vectors
+            .params_iter()
+            .any(|(_, params)| matches!(params.datatype, Some(Datatype::Turbo4)))
+    }
+
     pub fn empty() -> Self {
         CollectionParams {
             vectors: Default::default(),
@@ -731,5 +753,56 @@ impl CollectionParams {
             sparse_vector_data,
             payload_storage_type,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::types::Distance;
+
+    use super::*;
+    use crate::operations::types::{Datatype, VectorsConfig};
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+    fn single(datatype: Option<Datatype>) -> CollectionParams {
+        let mut builder = VectorParamsBuilder::new(4, Distance::Dot);
+        if let Some(datatype) = datatype {
+            builder = builder.with_datatype(datatype);
+        }
+        let mut params = CollectionParams::empty();
+        params.vectors = VectorsConfig::Single(builder.build());
+        params
+    }
+
+    #[test]
+    fn has_turbo_vector_storage_by_datatype() {
+        // No explicit datatype (defaults to float32).
+        assert!(!single(None).has_turbo_vector_storage());
+        // Non-turbo datatypes.
+        assert!(!single(Some(Datatype::Float32)).has_turbo_vector_storage());
+        assert!(!single(Some(Datatype::Float16)).has_turbo_vector_storage());
+        assert!(!single(Some(Datatype::Uint8)).has_turbo_vector_storage());
+        // TurboQuant storage datatype.
+        assert!(single(Some(Datatype::Turbo4)).has_turbo_vector_storage());
+    }
+
+    #[test]
+    fn has_turbo_vector_storage_multi_any() {
+        let mut vectors = BTreeMap::new();
+        vectors.insert(
+            "plain".to_string(),
+            VectorParamsBuilder::new(4, Distance::Dot).build(),
+        );
+        vectors.insert(
+            "turbo".to_string(),
+            VectorParamsBuilder::new(4, Distance::Dot)
+                .with_datatype(Datatype::Turbo4)
+                .build(),
+        );
+        let mut params = CollectionParams::empty();
+        params.vectors = VectorsConfig::Multi(vectors);
+
+        // A single Turbo4-backed named vector is enough to trigger raw transfer.
+        assert!(params.has_turbo_vector_storage());
     }
 }
