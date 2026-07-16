@@ -16,7 +16,7 @@ use segment::types::{
     SeqNumberType, VectorNameBuf, WithPayload, WithVector,
 };
 
-use crate::operations::payload_ops::PayloadOps;
+use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointOperations,
     PointStructPersisted, PointStructRawPersisted, UpdateMode,
@@ -25,10 +25,13 @@ use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, Vect
 use crate::operations::{
     CreateVectorName, DeleteVectorName, FieldIndexOperations, VectorNameOperations,
 };
+use crate::segment_holder::locked::LockedSegmentHolder;
+use crate::segment_holder::provisioning::SegmentProvisioning;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
 pub fn process_point_operation(
-    segments: &SegmentHolder,
+    segments: &LockedSegmentHolder,
+    provisioning: Option<&SegmentProvisioning>,
     op_num: SeqNumberType,
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
@@ -36,50 +39,58 @@ pub fn process_point_operation(
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
-            if points.is_empty() {
-                // An empty upsert (e.g. an emptied-out resolved conditional upsert)
-                // touches no segment; bump so WAL can acknowledge it.
-                segments.bump_max_segment_version_overwrite(op_num);
-            }
-            let res = upsert_points(segments, op_num, points.iter(), hw_counter)?;
-            Ok(res)
+            segments.update_with_segment_provisioning(provisioning, |segments| {
+                if points.is_empty() {
+                    // An empty upsert (e.g. an emptied-out resolved conditional upsert)
+                    // touches no segment; bump so WAL can acknowledge it.
+                    segments.bump_max_segment_version_overwrite(op_num);
+                }
+                upsert_points(segments, op_num, points.iter(), hw_counter)
+            })
         }
         PointOperations::UpsertPointsConditional(operation) => {
-            conditional_upsert(segments, op_num, operation, hw_counter)
+            conditional_upsert(segments, provisioning, op_num, operation, hw_counter)
         }
-        PointOperations::DeletePoints { ids } => delete_points(segments, op_num, &ids, hw_counter),
+        PointOperations::DeletePoints { ids } => {
+            delete_points(&segments.read(), op_num, &ids, hw_counter)
+        }
         PointOperations::DeletePointsByFilter(filter) => {
-            delete_points_by_filter(segments, op_num, &filter, hw_counter)
+            delete_points_by_filter(&segments.read(), op_num, &filter, hw_counter)
         }
         PointOperations::SyncPoints(operation) => {
-            let (deleted, new, updated) = sync_points(
-                segments,
-                op_num,
-                operation.from_id,
-                operation.to_id,
-                &operation.points,
-                hw_counter,
-            )?;
-            Ok(deleted + new + updated)
+            segments.update_with_segment_provisioning(provisioning, |segments| {
+                let (deleted, new, updated) = sync_points(
+                    segments,
+                    op_num,
+                    operation.from_id,
+                    operation.to_id,
+                    &operation.points,
+                    hw_counter,
+                )?;
+                Ok(deleted + new + updated)
+            })
         }
         PointOperations::UpsertPointsRaw(points) => {
-            if points.is_empty() {
-                // An empty upsert touches no segment; bump so WAL can acknowledge it.
-                segments.bump_max_segment_version_overwrite(op_num);
-            }
-            let res = upsert_points_raw(segments, op_num, points.iter(), hw_counter)?;
-            Ok(res)
+            segments.update_with_segment_provisioning(provisioning, |segments| {
+                if points.is_empty() {
+                    // An empty upsert touches no segment; bump so WAL can acknowledge it.
+                    segments.bump_max_segment_version_overwrite(op_num);
+                }
+                upsert_points_raw(segments, op_num, points.iter(), hw_counter)
+            })
         }
         PointOperations::SyncPointsRaw(operation) => {
-            let (deleted, new, updated) = sync_points_raw(
-                segments,
-                op_num,
-                operation.from_id,
-                operation.to_id,
-                &operation.points,
-                hw_counter,
-            )?;
-            Ok(deleted + new + updated)
+            segments.update_with_segment_provisioning(provisioning, |segments| {
+                let (deleted, new, updated) = sync_points_raw(
+                    segments,
+                    op_num,
+                    operation.from_id,
+                    operation.to_id,
+                    &operation.points,
+                    hw_counter,
+                )?;
+                Ok(deleted + new + updated)
+            })
         }
     }
 }
@@ -103,37 +114,50 @@ pub fn process_staging_operation(
 }
 
 pub fn process_vector_operation(
-    segments: &SegmentHolder,
+    segments: &LockedSegmentHolder,
+    provisioning: Option<&SegmentProvisioning>,
     op_num: SeqNumberType,
     vector_operation: VectorOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match vector_operation {
         VectorOperations::UpdateVectors(update_vectors) => {
-            update_vectors_conditional(segments, op_num, update_vectors, hw_counter)
+            update_vectors_conditional(segments, provisioning, op_num, update_vectors, hw_counter)
         }
-        VectorOperations::DeleteVectors(ids, vector_names) => {
-            delete_vectors(segments, op_num, &ids.points, &vector_names, hw_counter)
-        }
-        VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-            delete_vectors_by_filter(segments, op_num, &filter, &vector_names, hw_counter)
-        }
+        VectorOperations::DeleteVectors(ids, vector_names) => segments
+            .update_with_segment_provisioning(provisioning, |segments| {
+                delete_vectors(segments, op_num, &ids.points, &vector_names, hw_counter)
+            }),
+        VectorOperations::DeleteVectorsByFilter(filter, vector_names) => segments
+            .update_with_segment_provisioning(provisioning, |segments| {
+                delete_vectors_by_filter(segments, op_num, &filter, &vector_names, hw_counter)
+            }),
     }
 }
 
 pub fn process_payload_operation(
-    segments: &SegmentHolder,
+    segments: &LockedSegmentHolder,
+    provisioning: Option<&SegmentProvisioning>,
     op_num: SeqNumberType,
     payload_operation: PayloadOps,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match payload_operation {
-        PayloadOps::SetPayload(sp) => {
-            let payload: Payload = sp.payload;
-            if let Some(points) = sp.points {
-                set_payload(segments, op_num, &payload, &points, &sp.key, hw_counter)
-            } else if let Some(filter) = sp.filter {
-                set_payload_by_filter(segments, op_num, &payload, &filter, &sp.key, hw_counter)
+        PayloadOps::SetPayload(set_payload_op) => {
+            let SetPayloadOp {
+                payload,
+                points,
+                filter,
+                key,
+            } = set_payload_op;
+            if let Some(points) = points {
+                segments.update_with_segment_provisioning(provisioning, |segments| {
+                    set_payload(segments, op_num, &payload, &points, &key, hw_counter)
+                })
+            } else if let Some(filter) = filter {
+                segments.update_with_segment_provisioning(provisioning, |segments| {
+                    set_payload_by_filter(segments, op_num, &payload, &filter, &key, hw_counter)
+                })
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::validation_error(
@@ -141,11 +165,20 @@ pub fn process_payload_operation(
                 ))
             }
         }
-        PayloadOps::DeletePayload(dp) => {
-            if let Some(points) = dp.points {
-                delete_payload(segments, op_num, &points, &dp.keys, hw_counter)
-            } else if let Some(filter) = dp.filter {
-                delete_payload_by_filter(segments, op_num, &filter, &dp.keys, hw_counter)
+        PayloadOps::DeletePayload(delete_payload_op) => {
+            let DeletePayloadOp {
+                points,
+                keys,
+                filter,
+            } = delete_payload_op;
+            if let Some(points) = points {
+                segments.update_with_segment_provisioning(provisioning, |segments| {
+                    delete_payload(segments, op_num, &points, &keys, hw_counter)
+                })
+            } else if let Some(filter) = filter {
+                segments.update_with_segment_provisioning(provisioning, |segments| {
+                    delete_payload_by_filter(segments, op_num, &filter, &keys, hw_counter)
+                })
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::validation_error(
@@ -153,18 +186,29 @@ pub fn process_payload_operation(
                 ))
             }
         }
-        PayloadOps::ClearPayload { ref points, .. } => {
-            clear_payload(segments, op_num, points, hw_counter)
-        }
-        PayloadOps::ClearPayloadByFilter(ref filter) => {
-            clear_payload_by_filter(segments, op_num, filter, hw_counter)
-        }
-        PayloadOps::OverwritePayload(sp) => {
-            let payload: Payload = sp.payload;
-            if let Some(points) = sp.points {
-                overwrite_payload(segments, op_num, &payload, &points, hw_counter)
-            } else if let Some(filter) = sp.filter {
-                overwrite_payload_by_filter(segments, op_num, &payload, &filter, hw_counter)
+        PayloadOps::ClearPayload { points } => segments
+            .update_with_segment_provisioning(provisioning, |segments| {
+                clear_payload(segments, op_num, &points, hw_counter)
+            }),
+        PayloadOps::ClearPayloadByFilter(filter) => segments
+            .update_with_segment_provisioning(provisioning, |segments| {
+                clear_payload_by_filter(segments, op_num, &filter, hw_counter)
+            }),
+        PayloadOps::OverwritePayload(set_payload_op) => {
+            let SetPayloadOp {
+                payload,
+                points,
+                filter,
+                key: _,
+            } = set_payload_op;
+            if let Some(points) = points {
+                segments.update_with_segment_provisioning(provisioning, |segments| {
+                    overwrite_payload(segments, op_num, &payload, &points, hw_counter)
+                })
+            } else if let Some(filter) = filter {
+                segments.update_with_segment_provisioning(provisioning, |segments| {
+                    overwrite_payload_by_filter(segments, op_num, &payload, &filter, hw_counter)
+                })
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::validation_error(
@@ -199,6 +243,26 @@ pub fn process_field_index_operation(
 /// This is needed to avoid locking segments for too long, so that
 /// parallel read operations are not starved.
 const UPDATE_OP_CHUNK_SIZE: usize = 32;
+
+/// Guard for the insert loops: with a size cap configured on the holder, refuse to insert into a
+/// destination segment that already reached it. The resulting
+/// [`OperationError::OutOfAppendableCapacity`] lets the caller provision a fresh appendable
+/// segment and re-apply; points inserted so far are then skipped by their point version.
+fn check_insert_capacity(
+    segments: &SegmentHolder,
+    write_segment: &RwLockWriteGuard<dyn SegmentEntry>,
+) -> OperationResult<()> {
+    let Some(max_segment_size_bytes) = segments.max_segment_size_bytes() else {
+        return Ok(());
+    };
+    let size = write_segment.max_available_vectors_size_in_bytes()?;
+    if size >= max_segment_size_bytes.get() {
+        return Err(OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: max_segment_size_bytes.get(),
+        });
+    }
+    Ok(())
+}
 
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
@@ -254,16 +318,12 @@ where
             .filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+            let default_write_segment = segments.smallest_appendable_segment()?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
             for point_id in new_point_ids {
+                check_insert_capacity(segments, &write_segment)?;
                 let point = points_map[&point_id];
                 res += usize::from(upsert_with_payload(
                     &mut write_segment,
@@ -326,7 +386,8 @@ pub(crate) fn retain_conditional_upsert_points(
 }
 
 pub fn conditional_upsert(
-    segments: &SegmentHolder,
+    segments: &LockedSegmentHolder,
+    provisioning: Option<&SegmentProvisioning>,
     op_num: SeqNumberType,
     operation: ConditionalInsertOperationInternal,
     hw_counter: &HardwareCounterCell,
@@ -337,18 +398,31 @@ pub fn conditional_upsert(
         update_mode,
     } = operation;
 
-    retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode, hw_counter)?;
-
-    let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
-
-    if upserted_points == 0 {
-        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
-        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_max_segment_version_overwrite(op_num);
+    // The condition is resolved once, against pre-operation state; a provisioning re-run of the
+    // upsert below must not re-evaluate it against partially applied points.
+    {
+        let segments_guard = segments.read();
+        retain_conditional_upsert_points(
+            &segments_guard,
+            &mut points_op,
+            condition,
+            update_mode,
+            hw_counter,
+        )?;
     }
 
-    Ok(upserted_points)
+    let points = points_op.into_point_vec();
+    segments.update_with_segment_provisioning(provisioning, |segments| {
+        let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
+
+        if upserted_points == 0 {
+            // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+            // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+            segments.bump_max_segment_version_overwrite(op_num);
+        }
+
+        Ok(upserted_points)
+    })
 }
 
 /// Upsert to a point ID with the specified vectors and payload in the given segment.
@@ -676,16 +750,12 @@ where
             .filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+            let default_write_segment = segments.smallest_appendable_segment()?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
             for point_id in new_point_ids {
+                check_insert_capacity(segments, &write_segment)?;
                 res += usize::from(upsert_raw_with_payload(
                     &mut write_segment,
                     op_num,
@@ -799,7 +869,8 @@ pub fn sync_points_raw(
 const VECTOR_OP_BATCH_SIZE: usize = 32;
 
 pub fn update_vectors_conditional(
-    segments: &SegmentHolder,
+    segments: &LockedSegmentHolder,
+    provisioning: Option<&SegmentProvisioning>,
     op_num: SeqNumberType,
     points: UpdateVectorsOp,
     hw_counter: &HardwareCounterCell,
@@ -809,26 +880,22 @@ pub fn update_vectors_conditional(
         update_filter,
     } = points;
 
-    let Some(filter_condition) = update_filter else {
-        return update_vectors(segments, op_num, points, hw_counter);
-    };
+    // The filter is resolved once, against pre-operation state; a provisioning re-run of the
+    // update below must not re-evaluate it against partially applied points.
+    if let Some(filter_condition) = update_filter {
+        let segments_guard = segments.read();
+        let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
 
-    let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
+        let points_to_exclude = select_excluded_by_filter_ids(
+            &segments_guard,
+            point_ids,
+            filter_condition,
+            hw_counter,
+        )?;
 
-    let points_to_exclude =
-        select_excluded_by_filter_ids(segments, point_ids, filter_condition, hw_counter)?;
+        points.retain(|p| !points_to_exclude.contains(&p.id));
+    }
 
-    points.retain(|p| !points_to_exclude.contains(&p.id));
-    update_vectors(segments, op_num, points, hw_counter)
-}
-
-/// Update the specified named vectors of a point, keeping unspecified vectors intact.
-fn update_vectors(
-    segments: &SegmentHolder,
-    op_num: SeqNumberType,
-    points: Vec<PointVectorsPersisted>,
-    hw_counter: &HardwareCounterCell,
-) -> OperationResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
     let mut points_map: AHashMap<PointIdType, NamedVectors> = AHashMap::new();
     for point in points {
@@ -839,6 +906,18 @@ fn update_vectors(
         entry.merge(named_vector);
     }
 
+    segments.update_with_segment_provisioning(provisioning, |segments| {
+        update_vectors(segments, op_num, &points_map, hw_counter)
+    })
+}
+
+/// Update the specified named vectors of a point, keeping unspecified vectors intact.
+fn update_vectors(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points_map: &AHashMap<PointIdType, NamedVectors>,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize> {
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     let mut total_updated_points = 0;
@@ -1321,9 +1400,11 @@ fn check_unprocessed_points(
 
 #[cfg(test)]
 mod test {
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::save_on_disk::SaveOnDisk;
     use parking_lot::RwLock;
     use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
     use segment::entry::ReadSegmentEntry as _;
@@ -1334,15 +1415,22 @@ mod test {
     };
     use tempfile::Builder;
 
+    use super::{
+        PayloadOps, PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+        SetPayloadOp,
+    };
     use crate::fixtures::{
         build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
     };
     use crate::operations::point_ops::PointStructRawPersisted;
+    use crate::segment_holder::locked::LockedSegmentHolder;
+    use crate::segment_holder::provisioning::SegmentProvisioning;
     use crate::segment_holder::{FlushMode, SegmentHolder};
     use crate::update::{
         clear_payload_by_filter, create_field_index, delete_payload_by_filter,
         delete_points_by_filter, delete_vectors_by_filter, overwrite_payload_by_filter,
-        set_payload_by_filter, sync_points_raw, upsert_points_raw,
+        process_payload_operation, process_point_operation, set_payload_by_filter, sync_points_raw,
+        upsert_points_raw,
     };
 
     #[test]
@@ -2224,6 +2312,158 @@ mod test {
         assert!(
             hits.is_empty(),
             "filtered reads must agree with payload storage: the row was cleared",
+        );
+    }
+
+    /// Fixtures use dim-4 f32 vectors: 16 bytes per point.
+    const TEST_POINT_SIZE_BYTES: usize = 16;
+
+    /// Build a holder with a non-appendable segment holding points 1-5 and one empty appendable
+    /// segment, capped at two points worth of vector data, plus the matching provisioning.
+    fn capped_holder_with_immutable_points(
+        path: &std::path::Path,
+    ) -> (LockedSegmentHolder, SegmentProvisioning) {
+        let mut non_appendable = build_segment_1(path); // points 1-5
+        non_appendable.appendable_flag = false;
+        let appendable = empty_segment(path);
+        let segment_config = appendable.segment_config.clone();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+
+        let provisioning = SegmentProvisioning {
+            segments_path: path.to_owned(),
+            segment_config,
+            payload_index_schema: Arc::new(
+                SaveOnDisk::load_or_init_default(path.join("payload.schema")).unwrap(),
+            ),
+            deferred_internal_id: None,
+        };
+
+        (LockedSegmentHolder::new(holder), provisioning)
+    }
+
+    fn appendable_segment_sizes(segments: &LockedSegmentHolder) -> Vec<usize> {
+        let segments = segments.read();
+        segments
+            .iter()
+            .filter_map(|(_segment_id, segment)| {
+                let segment = segment.get().read();
+                segment
+                    .is_appendable()
+                    .then(|| segment.max_available_vectors_size_in_bytes().unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_cow_move_provisions_segments_at_capacity() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let (segments, provisioning) = capped_holder_with_immutable_points(dir.path());
+
+        // Set payload on all 5 points: every one CoW-moves out of the non-appendable segment.
+        // Only 2 fit into the existing appendable segment, so the update must provision fresh
+        // segments for the remaining 3 instead of overgrowing the destination.
+        let operation = PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"town": "Amsterdam"},
+            points: Some((1..=5).map(Into::into).collect()),
+            filter: None,
+            key: None,
+        });
+        let updated =
+            process_payload_operation(&segments, Some(&provisioning), 100, operation, &hw_counter)
+                .unwrap();
+        assert_eq!(updated, 5);
+
+        let sizes = appendable_segment_sizes(&segments);
+        assert!(
+            sizes.iter().all(|size| *size <= 2 * TEST_POINT_SIZE_BYTES),
+            "no appendable segment may exceed the cap: {sizes:?}",
+        );
+        assert_eq!(
+            sizes.iter().sum::<usize>(),
+            5 * TEST_POINT_SIZE_BYTES,
+            "all moved points must be accounted for: {sizes:?}",
+        );
+        assert!(
+            sizes.len() >= 3,
+            "the update must have provisioned fresh appendable segments: {sizes:?}",
+        );
+    }
+
+    #[test]
+    fn test_upsert_provisions_segments_at_capacity() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let appendable = empty_segment(dir.path());
+        let segment_config = appendable.segment_config.clone();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(appendable);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+
+        let provisioning = SegmentProvisioning {
+            segments_path: dir.path().to_owned(),
+            segment_config,
+            payload_index_schema: Arc::new(
+                SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap(),
+            ),
+            deferred_internal_id: None,
+        };
+        let segments = LockedSegmentHolder::new(holder);
+
+        // Insert 5 new points; only 2 fit under the cap in the initial appendable segment.
+        let points: Vec<_> = (1..=5)
+            .map(|id: u64| PointStructPersisted {
+                id: id.into(),
+                vector: crate::operations::point_ops::VectorStructPersisted::Single(vec![
+                    1.0, 0.0, 1.0, 0.0,
+                ]),
+                payload: None,
+            })
+            .collect();
+        let operation =
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points));
+        process_point_operation(&segments, Some(&provisioning), 100, operation, &hw_counter)
+            .unwrap();
+
+        let sizes = appendable_segment_sizes(&segments);
+        assert!(
+            sizes.iter().all(|size| *size <= 2 * TEST_POINT_SIZE_BYTES),
+            "no appendable segment may exceed the cap: {sizes:?}",
+        );
+        assert_eq!(
+            sizes.iter().sum::<usize>(),
+            5 * TEST_POINT_SIZE_BYTES,
+            "all inserted points must be accounted for: {sizes:?}",
+        );
+    }
+
+    #[test]
+    fn test_capacity_error_without_provisioning() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let (segments, _provisioning) = capped_holder_with_immutable_points(dir.path());
+
+        // Without provisioning, the same update must fail once the destination is full, and the
+        // error must be recognizable so callers with provisioning can recover from it.
+        let operation = PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"town": "Amsterdam"},
+            points: Some((1..=5).map(Into::into).collect()),
+            filter: None,
+            key: None,
+        });
+        let err = process_payload_operation(&segments, None, 100, operation, &hw_counter)
+            .expect_err("the appendable segment cannot hold all 5 moved points");
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "expected OutOfAppendableCapacity, got: {err}",
         );
     }
 }

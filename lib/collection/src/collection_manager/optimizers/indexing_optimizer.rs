@@ -39,8 +39,11 @@ mod tests {
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::segment_optimizer::SegmentOptimizer;
     use shard::segment_holder::locked::LockedSegmentHolder;
+    use shard::segment_holder::provisioning::SegmentProvisioning;
     use shard::segment_holder::{FlushMode, SegmentId};
-    use shard::update::{process_field_index_operation, process_point_operation};
+    use shard::update::{
+        process_field_index_operation, process_payload_operation, process_point_operation,
+    };
     use tempfile::Builder;
 
     use super::*;
@@ -628,7 +631,8 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         process_point_operation(
-            &locked_holder.read(),
+            &locked_holder,
+            None,
             opnum.next().unwrap(),
             insert_point_ops,
             &hw_counter,
@@ -693,7 +697,8 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         process_point_operation(
-            &locked_holder.read(),
+            &locked_holder,
+            None,
             opnum.next().unwrap(),
             insert_point_ops,
             &hw_counter,
@@ -1121,5 +1126,181 @@ mod tests {
             any_hnsw,
             "an HNSW index should have been created to promote the deferred points",
         );
+    }
+
+    /// Regression test for segment overgrow on `set_payload` by filter (originally reproduced
+    /// in PR #9158).
+    ///
+    /// When all points of a collection live in immutable (indexed) segments and `set_payload`
+    /// is executed via a filter that matches all points, `apply_points_with_conditional_move`
+    /// CoW-moves every matched point into an appendable segment. Without a size check on the
+    /// destination, all moved points used to pile up into a single appendable segment,
+    /// growing it far beyond `max_segment_size`.
+    ///
+    /// With a size cap configured on the segment holder and segment provisioning enabled, the
+    /// update must spill into freshly provisioned appendable segments instead, keeping every
+    /// segment at or below the cap.
+    #[test]
+    fn test_set_payload_by_filter_does_not_overgrow_segment() {
+        init();
+
+        let dim = 256;
+        // Each random_segment with 200 points and 256-dim f32 vectors has roughly
+        // ~200 KB of vector data on its own.
+        let points_per_segment = 200u64;
+        // Use a small max segment size so the combined indexed size exceeds it,
+        // but each individual indexed segment fits below it.
+        let max_segment_size_kb = 300;
+        let max_segment_size_bytes = max_segment_size_kb * segment::common::BYTES_IN_KB;
+
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let segments_temp_dir = Builder::new()
+            .prefix("segments_temp_dir")
+            .tempdir()
+            .unwrap();
+        let mut opnum = 101..1_000_000;
+
+        // --- 1. Build two sizeable random segments (initially appendable). ---
+        let segment_a = random_segment(
+            segments_dir.path(),
+            opnum.next().unwrap(),
+            points_per_segment,
+            dim,
+        );
+        let segment_b = random_segment(
+            segments_dir.path(),
+            opnum.next().unwrap(),
+            points_per_segment,
+            dim,
+        );
+
+        let segment_config = segment_a.segment_config.clone();
+
+        let mut holder = SegmentHolder::default();
+        let segment_a_id = holder.add_new(segment_a);
+        let segment_b_id = holder.add_new(segment_b);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(max_segment_size_bytes));
+
+        let locked_holder = LockedSegmentHolder::new(holder);
+
+        // --- 2. Run indexing optimizer to convert both segments to indexed
+        // (non-appendable) segments. ---
+        let index_optimizer = new_indexing_optimizer(
+            2,
+            OptimizerThresholds {
+                max_segment_size_kb,
+                memmap_threshold_kb: 1_000_000,
+                indexing_threshold_kb: 10, // Always optimize / index
+                deferred_internal_id: None,
+            },
+            segments_dir.path().to_owned(),
+            segments_temp_dir.path().to_owned(),
+            CollectionParams {
+                vectors: VectorsConfig::Single(
+                    VectorParamsBuilder::new(
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                    )
+                    .build(),
+                ),
+                ..CollectionParams::empty()
+            },
+            Default::default(),
+            HnswGlobalConfig::default(),
+            Default::default(),
+        );
+
+        // Index both raw segments. Each gets converted into an indexed
+        // non-appendable segment and a fresh empty appendable segment is
+        // created by the optimizer.
+        index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_a_id]);
+        index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_b_id]);
+
+        // Sanity check: the combined indexed size exceeds the configured max segment size, and
+        // at least 2 indexed (non-appendable) segments exist.
+        let (indexed_total, indexed_count) = {
+            let holder_guard = locked_holder.read();
+            let sizes: Vec<_> = holder_guard
+                .iter()
+                .filter_map(|(_segment_id, segment)| {
+                    let segment = segment.get().read();
+                    if segment.is_appendable() {
+                        None
+                    } else {
+                        Some(segment.max_available_vectors_size_in_bytes().unwrap())
+                    }
+                })
+                .collect();
+            (sizes.iter().sum::<usize>(), sizes.len())
+        };
+        assert!(
+            indexed_total > max_segment_size_bytes,
+            "Expected combined indexed size ({indexed_total}) to exceed max_segment_size ({max_segment_size_bytes})",
+        );
+        assert!(
+            indexed_count >= 2,
+            "Expected at least 2 indexed segments after optimization, got {indexed_count}",
+        );
+
+        // --- 3. Run set_payload by a filter that matches ALL points. ---
+        let payload_index_schema = std::sync::Arc::new(
+            common::save_on_disk::SaveOnDisk::load_or_init_default(
+                segments_dir.path().join("payload.schema"),
+            )
+            .unwrap(),
+        );
+        let provisioning =
+            SegmentProvisioning::from_optimizer(&index_optimizer, payload_index_schema);
+
+        let payload_op = crate::operations::payload_ops::PayloadOps::SetPayload(
+            crate::operations::payload_ops::SetPayloadOp {
+                payload: payload_json! {"new_field": "value"},
+                points: None,
+                filter: Some(segment::types::Filter::default()),
+                key: None,
+            },
+        );
+
+        let hw_counter = HardwareCounterCell::new();
+        process_payload_operation(
+            &locked_holder,
+            Some(&provisioning),
+            opnum.next().unwrap(),
+            payload_op,
+            &hw_counter,
+        )
+        .unwrap();
+
+        // --- 4. Verify no segment exceeds max_segment_size. ---
+        let holder_guard = locked_holder.read();
+        let largest_segment_bytes = holder_guard
+            .iter()
+            .map(|(segment_id, segment)| {
+                let segment = segment.get().read();
+                let size = segment.max_available_vectors_size_in_bytes().unwrap();
+                let info = segment.info().unwrap();
+                log::info!(
+                    "segment {segment_id:?}: appendable={} num_points={} num_vectors={} size_bytes={size}",
+                    segment.is_appendable(),
+                    info.num_points,
+                    info.num_vectors,
+                );
+                size
+            })
+            .max()
+            .unwrap_or_default();
+
+        assert!(
+            largest_segment_bytes <= max_segment_size_bytes,
+            "A segment overgrew the configured max_segment_size: largest={largest_segment_bytes} bytes, max={max_segment_size_bytes} bytes",
+        );
+
+        // The spilled points must have landed in a freshly provisioned appendable segment,
+        // and every moved point must still be accounted for.
+        let total_points: usize = holder_guard
+            .iter()
+            .map(|(_segment_id, segment)| segment.get().read().available_point_count())
+            .sum();
+        assert_eq!(total_points, 2 * points_per_segment as usize);
     }
 }

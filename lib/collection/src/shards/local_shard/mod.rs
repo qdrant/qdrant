@@ -60,6 +60,7 @@ use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimizati
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::segment_holder::FlushMode;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::provisioning::SegmentProvisioning;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -812,6 +813,15 @@ impl LocalShard {
         // operations, so a name that is created and used within the replay window stays valid.
         let mut valid_vector_names = self.collection_config.read().await.params.vector_names();
 
+        // Replayed operations must be able to provision fresh appendable segments, just like the
+        // regular update path.
+        let provisioning = self.optimizers.load().first().map(|optimizer| {
+            SegmentProvisioning::from_optimizer(
+                optimizer.as_ref(),
+                self.payload_index_schema.clone(),
+            )
+        });
+
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
@@ -839,6 +849,7 @@ impl LocalShard {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
                 &self.segments,
+                provisioning.as_ref(),
                 op_num,
                 update.operation,
                 self.update_operation_lock.clone(),

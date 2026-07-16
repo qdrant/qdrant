@@ -249,6 +249,7 @@ mod tests {
     use crate::operations::point_ops::{
         PointInsertOperationsInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
+    use crate::segment_holder::locked::LockedSegmentHolder;
     use crate::update::{delete_points_by_filter, points_by_filter, process_point_operation};
 
     fn color_filter(color: &str) -> Filter {
@@ -313,10 +314,11 @@ mod tests {
         let CollectionUpdateOperations::PointOperation(op) = resolved else {
             unreachable!()
         };
-        process_point_operation(&holder, 100, op, &hw_counter).unwrap();
+        let locked_holder = LockedSegmentHolder::new(holder);
+        process_point_operation(&locked_holder, None, 100, op, &hw_counter).unwrap();
         delete_points_by_filter(&twin_holder, 100, &filter, &hw_counter).unwrap();
 
-        let remaining = points_by_filter(&holder, &filter, &hw_counter).unwrap();
+        let remaining = points_by_filter(&locked_holder.read(), &filter, &hw_counter).unwrap();
         let twin_remaining = points_by_filter(&twin_holder, &filter, &hw_counter).unwrap();
         assert!(remaining.is_empty(), "resolved delete left {remaining:?}");
         assert!(twin_remaining.is_empty());

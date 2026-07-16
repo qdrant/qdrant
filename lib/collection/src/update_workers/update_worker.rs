@@ -6,6 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::provisioning::SegmentProvisioning;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, watch};
 use tokio_util::task::AbortOnDropHandle;
@@ -47,6 +48,7 @@ impl UpdateWorkers {
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
         segments: LockedSegmentHolder,
+        provisioning: Option<Arc<SegmentProvisioning>>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized: bool,
@@ -120,6 +122,7 @@ impl UpdateWorkers {
 
                     let wait = sender.is_some();
                     let segments_clone = segments.clone();
+                    let provisioning_clone = provisioning.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
@@ -128,6 +131,7 @@ impl UpdateWorkers {
                             wait,
                             wal_clone,
                             segments_clone,
+                            provisioning_clone,
                             update_operation_lock_clone,
                             update_tracker_clone,
                             hw_measurements,
@@ -309,6 +313,7 @@ impl UpdateWorkers {
         wait: bool,
         wal: LockedWal,
         segments: LockedSegmentHolder,
+        provisioning: Option<Arc<SegmentProvisioning>>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
@@ -333,6 +338,7 @@ impl UpdateWorkers {
         let result = cpu_utilization.measure(|| {
             CollectionUpdater::update(
                 &segments,
+                provisioning.as_deref(),
                 op_num,
                 operation,
                 update_operation_lock.clone(),

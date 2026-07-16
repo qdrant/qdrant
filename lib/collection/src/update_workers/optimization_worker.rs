@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::provisioning::SegmentProvisioning;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;
@@ -67,6 +69,13 @@ impl UpdateWorkers {
 
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let num_indexing_threads = some_optimizer.num_indexing_threads();
+
+        // For failed-operation recovery: re-applied operations must be able to provision fresh
+        // appendable segments, just like the regular update path.
+        let recovery_provisioning = SegmentProvisioning::from_optimizer(
+            some_optimizer.as_ref(),
+            payload_index_schema.clone(),
+        );
 
         // Asynchronous task to trigger optimizers once CPU budget is available again
         let mut resource_available_trigger: Option<JoinHandle<()>> = None;
@@ -138,6 +147,7 @@ impl UpdateWorkers {
             if Self::try_recover(
                 segments.clone(),
                 wal.clone(),
+                Some(&recovery_provisioning),
                 update_operation_lock.clone(),
                 update_tracker.clone(),
             )
@@ -449,43 +459,18 @@ impl UpdateWorkers {
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
-        let no_segment_with_capacity = {
-            let segments_read = segments.read();
-            segments_read
-                .appendable_segments_ids()
-                .into_iter()
-                .filter_map(|segment_id| segments_read.get(segment_id))
-                .all(|segment| {
-                    let max_vector_size_bytes = segment
-                        .get()
-                        .read()
-                        .max_available_vectors_size_in_bytes()
-                        .unwrap_or_default();
-                    let max_segment_size_bytes = thresholds_config
-                        .max_segment_size_kb
-                        .saturating_mul(segment::common::BYTES_IN_KB);
-
-                    max_vector_size_bytes >= max_segment_size_bytes
-                })
+        let provisioning = SegmentProvisioning {
+            segments_path: segments_path.to_owned(),
+            segment_config: segment_config.plain_segment_config(),
+            payload_index_schema,
+            deferred_internal_id: thresholds_config.deferred_internal_id,
         };
-
-        if no_segment_with_capacity {
-            log::debug!("Creating new appendable segment, all existing segments are over capacity");
-
-            let segments_guard = segments.upgradable_read();
-            // Building the segment yields a `NewSegmentToken` obliging us to register it.
-            let (new_segment, token) = segments_guard.build_tmp_segment(
-                segments_path,
-                Some(segment_config.plain_segment_config()),
-                payload_index_schema,
-                thresholds_config.deferred_internal_id,
-                true,
-            )?;
-            segments_guard.sync_segment_manifest(Some(token))?;
-            let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
-            write_guard.add_new_locked(new_segment);
-        }
-
+        let max_segment_size_bytes = NonZeroUsize::new(
+            thresholds_config
+                .max_segment_size_kb
+                .saturating_mul(segment::common::BYTES_IN_KB),
+        );
+        segments.ensure_appendable_segment_with_capacity(&provisioning, max_segment_size_bytes)?;
         Ok(())
     }
 
@@ -515,6 +500,7 @@ impl UpdateWorkers {
     async fn try_recover(
         segments: LockedSegmentHolder,
         wal: LockedWal,
+        provisioning: Option<&SegmentProvisioning>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
@@ -532,6 +518,7 @@ impl UpdateWorkers {
                     })?;
                     CollectionUpdater::update(
                         &segments,
+                        provisioning,
                         op_num,
                         operation.operation,
                         update_operation_lock.clone(),

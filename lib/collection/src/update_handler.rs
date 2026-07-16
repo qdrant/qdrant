@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -7,9 +8,11 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
+use segment::common::BYTES_IN_KB;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::provisioning::SegmentProvisioning;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
@@ -189,6 +192,26 @@ impl UpdateHandler {
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
+        // Mirror the resolved optimizer size threshold into the segment holder (both on shard
+        // creation and on optimizer config updates, which restart the workers), and hand the
+        // update worker everything it needs to provision fresh appendable segments when all
+        // existing ones reach that threshold.
+        let provisioning = self.optimizers.first().map(|optimizer| {
+            let max_segment_size_bytes = NonZeroUsize::new(
+                optimizer
+                    .threshold_config()
+                    .max_segment_size_kb
+                    .saturating_mul(BYTES_IN_KB),
+            );
+            self.segments
+                .write()
+                .set_max_segment_size_bytes(max_segment_size_bytes);
+            Arc::new(SegmentProvisioning::from_optimizer(
+                optimizer.as_ref(),
+                self.payload_index_schema.clone(),
+            ))
+        });
+
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
 
         // Optimization notifier is triggered when a new optimization is finished
@@ -232,6 +255,7 @@ impl UpdateHandler {
             tx,
             wal,
             segments,
+            provisioning,
             scroll_read_lock,
             update_tracker,
             self.prevent_unoptimized,
