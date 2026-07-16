@@ -1,17 +1,15 @@
 use std::collections::HashMap;
-use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
-use common::bitvec::{BitSlice, BitVec, DeletedBitVec};
+use common::bitvec::{BitSlice, DeletedBitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
-use common::mmap::{Advice, AdviceSetting, MmapSlice, create_and_ensure_length};
+use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
-use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
     UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
@@ -28,6 +26,9 @@ use super::postings_iterator::{
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::deleted_mask::{
+    bitor_deleted_mask, deleted_mask_file, preopen_deleted_mask, save_deleted_mask,
+};
 use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
@@ -47,9 +48,10 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// Mmap-backed immutable full-text inverted index.
 ///
 /// On-disk state (`postings.dat`, `vocab.dat`, `point_to_tokens_count.dat`,
-/// `deleted_points.dat`) is written once during [`Self::create`] and not
-/// mutated afterwards: `deleted_points.dat` records only the points whose
-/// document was empty at build time.
+/// `deleted_mask.bin`) is written once during [`Self::create`] and not
+/// mutated afterwards: `deleted_mask.bin` (legacy `deleted_points.dat` on
+/// older segments) records only the points whose document was empty at build
+/// time.
 ///
 /// Runtime deletions live in the in-memory `Storage::deleted_points` bitvec.
 /// They are **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove`]
@@ -59,6 +61,9 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
     pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
+    /// Whether the "no values" mask was read from the compact
+    /// `deleted_mask.bin` or the legacy `deleted_points.dat`.
+    compact_deleted_mask: bool,
 }
 
 pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {
@@ -96,7 +101,6 @@ impl OnDiskInvertedIndex<MmapFile> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
-        let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
         match postings {
             ImmutablePostings::Ids(postings) => create_postings_file(postings_path, postings)?,
@@ -110,36 +114,18 @@ impl OnDiskInvertedIndex<MmapFile> {
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
         )?;
 
-        // Save point_to_tokens_count, separated into a bitslice for None values and a slice for actual values
-        //
-        // None values are represented as deleted in the bitslice
-        let deleted_bitslice: BitVec = point_to_tokens_count
-            .iter()
-            .map(|count| *count == 0)
-            .collect();
-        {
-            let deleted_flags_count = deleted_bitslice.len();
-            let _ = create_and_ensure_length(
-                &deleted_points_path,
-                deleted_flags_count
-                    .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(size_of::<u64>()),
-            )?;
-
-            let mut deleted_storage = MmapBitSlice::open(
-                &MmapFs,
-                &deleted_points_path,
-                OpenOptions {
-                    writeable: true,
-                    need_sequential: false,
-                    populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                },
-                (),
-            )?;
-            deleted_storage.write_bitslice(&deleted_bitslice)?;
-            deleted_storage.flusher()()?;
-        }
+        // Save point_to_tokens_count, separated into a "no tokens" mask and a
+        // slice for actual values.
+        save_deleted_mask(
+            &path,
+            DELETED_POINTS_FILE,
+            point_to_tokens_count.len(),
+            point_to_tokens_count
+                .iter()
+                .enumerate()
+                .filter(|(_, count)| **count == 0)
+                .map(|(idx, _)| idx as PointOffsetType),
+        )?;
 
         // The actual values go in the slice
         let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
@@ -200,14 +186,12 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             None,
         )?;
 
-        // Deleted points
-        fs.schedule_prefetch(
-            &path.join(DELETED_POINTS_FILE),
-            Some(Self::open_options(
-                Populate::PreferBackground,
-                AdviceSetting::Global,
-            )),
-            None,
+        // "No tokens" mask
+        preopen_deleted_mask(
+            fs,
+            path,
+            DELETED_POINTS_FILE,
+            Self::open_options(Populate::PreferBackground, AdviceSetting::Global),
         )?;
 
         Ok(true)
@@ -223,7 +207,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
-        let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
         let postings_open_options =
             Self::open_options(populate, AdviceSetting::Advice(Advice::Normal));
@@ -260,14 +243,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             Default::default(),
         )?);
 
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
-            &deleted_points_path,
-            Self::open_options(populate, AdviceSetting::Global),
-            Default::default(),
-        )?;
-        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
-
         // `deleted` length must match `point_to_tokens_count.len()` because it
         // only tracks the index's contents. The id-tracker's deleted mask can
         // be shorter or longer; if shorter, the missing entries default to
@@ -277,7 +252,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let total_count = point_to_tokens_count.len()? as usize;
         let mut deleted = deleted_points.to_owned();
         deleted.resize(total_count, false);
-        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
+        let compact_deleted_mask = bitor_deleted_mask(
+            fs,
+            &path,
+            DELETED_POINTS_FILE,
+            Self::open_options(populate, AdviceSetting::Global),
+            &mut deleted,
+        )?;
 
         let deleted = DeletedBitVec::new(deleted);
 
@@ -289,6 +270,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 point_to_tokens_count,
                 deleted_points: deleted,
             },
+            compact_deleted_mask,
         }))
     }
 
@@ -500,7 +482,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             self.path.join(POSTINGS_FILE),
             self.path.join(VOCAB_FILE),
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
-            self.path.join(DELETED_POINTS_FILE),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
         ]
     }
 
@@ -509,7 +491,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             self.path.join(POSTINGS_FILE),
             self.path.join(VOCAB_FILE),
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
-            self.path.join(DELETED_POINTS_FILE),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
         ]
     }
 
@@ -535,7 +517,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self { path, storage } = self;
+        let Self {
+            path,
+            storage,
+            compact_deleted_mask,
+        } = self;
         let Storage {
             postings,
             vocab,
@@ -545,7 +531,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         postings.clear_cache()?;
         vocab.clear_ram_cache()?;
         point_to_tokens_count.clear_ram_cache()?;
-        clear_disk_cache(&path.join(DELETED_POINTS_FILE))?;
+        clear_disk_cache(&deleted_mask_file(
+            path,
+            *compact_deleted_mask,
+            DELETED_POINTS_FILE,
+        ))?;
         Ok(())
     }
 }

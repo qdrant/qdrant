@@ -43,6 +43,7 @@ pub mod sort_utils;
 pub mod sorted_slice;
 pub mod stable_hash;
 pub mod storage_version;
+pub mod stored_bitmask;
 pub mod stored_bitslice;
 pub mod tar_ext;
 pub mod tar_unpack;

@@ -54,9 +54,10 @@ pub(in super::super) struct PointKeyValue {
 /// Mmap-backed immutable geo index.
 ///
 /// On-disk state (`counts_per_hash.bin`, `points_map.bin`, `points_map_ids.bin`,
-/// `deleted.bin`, `point_to_values.*`, etc.) is written once during
-/// [`Self::build`] and not mutated afterwards: `deleted.bin` records only the
-/// points whose payload was empty at build time.
+/// `deleted_mask.bin`, `point_to_values.*`, etc.) is written once during
+/// [`Self::build`] and not mutated afterwards: `deleted_mask.bin` (legacy
+/// `deleted.bin` on older segments) records only the points whose payload was
+/// empty at build time.
 ///
 /// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
 /// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
@@ -68,6 +69,9 @@ pub struct OnDiskGeoIndex<S: UniversalRead = MmapFile> {
     pub(in super::super) storage: Storage<S>,
     pub(super) points_values_count: usize,
     pub(super) max_values_per_point: usize,
+    /// Whether the "no values" mask was read from the compact
+    /// `deleted_mask.bin` or the legacy `deleted.bin`.
+    pub(super) compact_deleted_mask: bool,
 }
 
 pub(in super::super) struct Storage<S: UniversalRead = MmapFile> {
@@ -89,8 +93,8 @@ pub(in super::super) struct Storage<S: UniversalRead = MmapFile> {
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
     pub(in super::super) point_to_values: OnDiskPointToValues<GeoPoint, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
-    /// the build-time empty-payload bits read from `deleted.bin` and the
-    /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
+    /// the build-time empty-payload mask read from disk and the segment-level
+    /// deleted bitslice supplied by the id-tracker. Not persisted.
     pub(in super::super) deleted: DeletedBitVec,
 }
 
