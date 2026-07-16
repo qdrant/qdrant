@@ -11,7 +11,7 @@ use common::universal_io::{
 
 use crate::Result;
 use crate::blobstore::Flusher;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::{BlockOffset, PageId, ValuePointer};
 
 /// File name prefix of the append-only page files, followed by `{id}.dat`
@@ -88,7 +88,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         if pages.is_empty() {
             // If config exists and no page file does, it should be treated as inconsistent
             // storage rather than a missing one
-            return Err(GridstoreError::service_error(format!(
+            return Err(BlobstoreError::service_error(format!(
                 "Append-only page file does not exist: {}",
                 page_file_name(dir, 0).display(),
             )));
@@ -128,7 +128,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         let page =
             self.pages
                 .get(pointer.page_id as usize)
-                .ok_or(GridstoreError::PageNotFound {
+                .ok_or(BlobstoreError::PageNotFound {
                     page_id: pointer.page_id,
                 })?;
         page.read_value::<P>(pointer)
@@ -282,12 +282,12 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             .open(&path, Self::open_options(writeable), Default::default())
             .map_err(|err| {
                 if err.is_not_found() {
-                    GridstoreError::service_error(format!(
+                    BlobstoreError::service_error(format!(
                         "Append-only page file does not exist: {}",
                         path.display(),
                     ))
                 } else {
-                    GridstoreError::from(err)
+                    BlobstoreError::from(err)
                 }
             })?;
         let persisted_len = file.len::<u8>()?;
@@ -335,7 +335,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             .map(|index| index as usize)
             .and_then(|index| self.pending.get(index..index + pointer.length as usize))
             .ok_or_else(|| {
-                GridstoreError::service_error(format!(
+                BlobstoreError::service_error(format!(
                     "value pointer at byte {start} with length {} is out of range",
                     pointer.length,
                 ))
@@ -382,7 +382,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
         // Validate addressability before buffering anything, a rejected append must not grow
         // the page
         let offset = BlockOffset::try_from(self.len()).map_err(|_| {
-            GridstoreError::service_error(format!(
+            BlobstoreError::service_error(format!(
                 "append-only page file {} exceeds the maximum addressable size",
                 self.path.display(),
             ))
@@ -432,7 +432,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
                 self.file.reopen()?;
                 let len = self.file.len::<u8>()?;
                 if len != end {
-                    return Err(GridstoreError::service_error(format!(
+                    return Err(BlobstoreError::service_error(format!(
                         "append-only page file {} was modified outside this writer: it ends \
                          at byte {len}, expected {} before or {end} after the append",
                         self.path.display(),
@@ -452,7 +452,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// Create a closure that syncs all written value data in the page file to disk.
     fn flusher(&self) -> Flusher {
         let flusher = self.file.flusher();
-        Box::new(move || flusher().map_err(GridstoreError::from))
+        Box::new(move || flusher().map_err(BlobstoreError::from))
     }
 }
 
@@ -476,7 +476,7 @@ mod tests {
         page.persisted_len = u64::from(u32::MAX) + 1;
 
         let err = page.append_value(&[1, 2, 3]).unwrap_err();
-        assert!(matches!(err, GridstoreError::ServiceError { .. }));
+        assert!(matches!(err, BlobstoreError::ServiceError { .. }));
 
         // Nothing was written or buffered, and the tracked length is unchanged
         assert_eq!(
@@ -527,7 +527,7 @@ mod tests {
         fs::write(&path, [9; 7]).unwrap();
 
         let err = page.write_pending(4).unwrap_err();
-        assert!(matches!(err, GridstoreError::ServiceError { .. }));
+        assert!(matches!(err, BlobstoreError::ServiceError { .. }));
 
         // Nothing was adopted, the pending bytes are kept for a later flush
         assert_eq!(page.persisted_len, 0);

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use fs_err::File;
 
 use crate::blobstore::Flusher;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::{OptionalPointer, PointOffset, ValuePointer};
 use crate::{Result, direct_io};
 
@@ -171,7 +171,7 @@ impl AppendOnlyTracker {
         // Arenastore::put_value
         let next = self.pointer_count();
         if point_offset < next {
-            return Err(GridstoreError::unsupported_operation(format!(
+            return Err(BlobstoreError::unsupported_operation(format!(
                 "cannot set mapping for point offset {point_offset}, the tracker is append-only \
                  and requires monotonically increasing point offsets, the next allowed point \
                  offset is {next}",
@@ -247,7 +247,7 @@ impl AppendOnlyTracker {
         let new_count = count_from_len(len)?;
 
         if new_count < self.persisted_count {
-            Err(GridstoreError::service_error(format!(
+            Err(BlobstoreError::service_error(format!(
                 "live reload cannot decrease mapping count, possible data loss: old count {}, new count {new_count}",
                 self.persisted_count,
             )))
@@ -266,7 +266,7 @@ impl AppendOnlyTracker {
 /// A trailing partial entry due to a torn write is not counted.
 fn count_from_len(len: u64) -> Result<PointOffset> {
     PointOffset::try_from(len / ENTRY_SIZE).map_err(|_| {
-        GridstoreError::service_error(format!(
+        BlobstoreError::service_error(format!(
             "append-only tracker file of {len} bytes holds more mappings than supported",
         ))
     })

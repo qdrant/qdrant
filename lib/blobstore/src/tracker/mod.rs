@@ -19,7 +19,7 @@ use smallvec::SmallVec;
 pub use self::iter::{Iter, PointerItem};
 pub use self::read_only::ReadOnlyTracker;
 use crate::Result;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 
 pub type PointOffset = u32;
 pub type BlockOffset = u32;
@@ -377,7 +377,7 @@ impl<S: UniversalRead> Tracker<S> {
             Err(UniversalIoError::NotFound { .. }) => {
                 // If config exists and storage doesn't,
                 // it should be treated as inconsistent storage rather than a missing one
-                return Err(GridstoreError::service_error(format!(
+                return Err(BlobstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
                     path.display()
                 )));

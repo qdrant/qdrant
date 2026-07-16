@@ -23,7 +23,7 @@ use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
@@ -97,7 +97,7 @@ where
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
     pub(super) fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
+        let config = StorageConfig::try_from(options).map_err(BlobstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let bitmask = Bitmask::create(&fs, &base_path, config.clone())?;
@@ -145,7 +145,7 @@ where
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
-            return Err(GridstoreError::service_error(format!(
+            return Err(BlobstoreError::service_error(format!(
                 "Inconsistent number of gridstore pages at {base_path:?}: expected {num_pages}, but found {loaded_pages}",
             )));
         }
@@ -395,7 +395,7 @@ where
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         self.with_view(|view| {
             view.read_values::<P, _, _>(
@@ -430,7 +430,7 @@ where
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         let mut current_offset = 0;
         let mut max_offset = PointOffset::MAX;
@@ -510,7 +510,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
                 bitmask.upgrade(),
             ) else {
                 log::trace!("Gridstore was cleared, cancelling flush");
-                return Err(GridstoreError::FlushCancelled);
+                return Err(BlobstoreError::FlushCancelled);
             };
 
             let bitmask_flusher = bitmask.read().flusher();

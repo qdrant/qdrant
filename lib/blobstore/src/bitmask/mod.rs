@@ -13,7 +13,7 @@ use itertools::Itertools;
 
 use crate::Result;
 use crate::config::StorageConfig;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::{BlockOffset, PageId};
 
 const BITMASK_NAME: &str = "bitmask.dat";
@@ -121,7 +121,7 @@ impl<S: UniversalWrite> Bitmask<S> {
 
         let path = Self::bitmask_path(dir);
         if !path.exists() {
-            return Err(GridstoreError::service_error(format!(
+            return Err(BlobstoreError::service_error(format!(
                 "Bitmask file does not exist: {}",
                 path.display()
             )));

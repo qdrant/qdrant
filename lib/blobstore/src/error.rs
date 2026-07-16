@@ -4,7 +4,7 @@ use common::universal_io::{IsNotFound, UniversalIoError};
 use crate::tracker::{PageId, PointOffset};
 
 #[derive(thiserror::Error, Debug)]
-pub enum GridstoreError {
+pub enum BlobstoreError {
     #[error("{0}")]
     Mmap(#[from] mmap::Error),
     #[error("{0}")]
@@ -27,39 +27,39 @@ pub enum GridstoreError {
     ValueNotFound { point_offset: PointOffset },
 }
 
-impl GridstoreError {
+impl BlobstoreError {
     pub fn service_error(description: impl Into<String>) -> Self {
-        GridstoreError::ServiceError {
+        BlobstoreError::ServiceError {
             description: description.into(),
         }
     }
 
     pub fn validation_error(message: impl Into<String>) -> Self {
-        GridstoreError::ValidationError {
+        BlobstoreError::ValidationError {
             message: message.into(),
         }
     }
 
     pub fn unsupported_operation(operation: impl Into<String>) -> Self {
-        GridstoreError::UnsupportedOperation {
+        BlobstoreError::UnsupportedOperation {
             operation: operation.into(),
         }
     }
 }
 
-impl IsNotFound for GridstoreError {
+impl IsNotFound for BlobstoreError {
     fn is_not_found(&self) -> bool {
         match self {
-            GridstoreError::UniversalIo(err) => err.is_not_found(),
-            GridstoreError::Io(err) => err.is_not_found(),
-            GridstoreError::Mmap(err) => err.is_not_found(),
-            GridstoreError::SerdeJson(_)
-            | GridstoreError::ServiceError { .. }
-            | GridstoreError::FlushCancelled
-            | GridstoreError::ValidationError { .. }
-            | GridstoreError::UnsupportedOperation { .. }
-            | GridstoreError::PageNotFound { .. }
-            | GridstoreError::ValueNotFound { .. } => false,
+            BlobstoreError::UniversalIo(err) => err.is_not_found(),
+            BlobstoreError::Io(err) => err.is_not_found(),
+            BlobstoreError::Mmap(err) => err.is_not_found(),
+            BlobstoreError::SerdeJson(_)
+            | BlobstoreError::ServiceError { .. }
+            | BlobstoreError::FlushCancelled
+            | BlobstoreError::ValidationError { .. }
+            | BlobstoreError::UnsupportedOperation { .. }
+            | BlobstoreError::PageNotFound { .. }
+            | BlobstoreError::ValueNotFound { .. } => false,
         }
     }
 }

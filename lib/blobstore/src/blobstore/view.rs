@@ -9,7 +9,7 @@ use super::arenastore::ArenastoreView;
 use super::gridstore::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::{PointOffset, ReadOnlyTracker, ValuePointer};
 
 /// A non-owning view into blobstore data.
@@ -98,7 +98,7 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         match &self.variant {
             ViewVariant::Gridstore(view) => {

@@ -24,12 +24,12 @@ pub use view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Mode, StorageOptions};
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 #[cfg(test)]
 use crate::tracker::ValuePointer;
 
-pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
+pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), BlobstoreError> + Send>;
 
 /// Read-write storage for values of type `V`.
 ///
@@ -232,7 +232,7 @@ where
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         match &self.variant {
             BlobstoreVariant::Gridstore(storage) => {
@@ -265,7 +265,7 @@ where
     pub fn iter<F, E>(&self, callback: F, hw_counter: HwMetricRefCounter) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         match &self.variant {
             BlobstoreVariant::Gridstore(storage) => storage.iter(callback, hw_counter),

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use blobstore::error::GridstoreError;
+use blobstore::error::BlobstoreError;
 use blobstore::{Blob, BlobstoreReader};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
@@ -62,7 +62,7 @@ where
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
         let hw_counter = HardwareCounterCell::disposable();
-        storage.iter::<_, GridstoreError>(
+        storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?,
             |idx, values: Vec<_>| {
                 in_memory_index.add_many_to_map(idx, values);

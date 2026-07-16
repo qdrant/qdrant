@@ -8,7 +8,7 @@ use common::universal_io::{UniversalRead, UserData};
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::pages::Pages;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
@@ -99,7 +99,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         let point_offsets = point_offsets
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));

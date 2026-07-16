@@ -15,7 +15,7 @@ use itertools::Either;
 
 use crate::Result;
 use crate::config::StorageConfig;
-use crate::error::GridstoreError;
+use crate::error::BlobstoreError;
 use crate::tracker::{PageId, ValuePointer};
 
 pub fn page_path(base_path: &Path, page_id: PageId) -> PathBuf {
@@ -301,7 +301,7 @@ impl<S: UniversalRead> Pages<S> {
     where
         P: AccessPattern,
         U: UserData,
-        E: From<GridstoreError>,
+        E: From<BlobstoreError>,
     {
         struct Progress<U> {
             buffer: Vec<MaybeUninit<u8>>,
@@ -363,7 +363,7 @@ impl<S: UniversalRead> Pages<S> {
         // accept more, then drain one completed read at a time. Each read targets
         // its own page file, and chunks for multi-page values may arrive in any order.
         let mut pipeline =
-            S::ReadPipeline::<'_, ReadMeta<U>>::new().map_err(GridstoreError::from)?;
+            S::ReadPipeline::<'_, ReadMeta<U>>::new().map_err(BlobstoreError::from)?;
 
         loop {
             while pipeline.can_schedule()
@@ -372,12 +372,12 @@ impl<S: UniversalRead> Pages<S> {
                 let range = range.into_byte_range::<u8>();
                 pipeline
                     .schedule::<P>(meta, page, range, align_of::<u8>())
-                    .map_err(GridstoreError::from)?;
+                    .map_err(BlobstoreError::from)?;
             }
 
             let Some((meta, bytes)) = pipeline
                 .wait_bytemuck::<u8>()
-                .map_err(GridstoreError::from)?
+                .map_err(BlobstoreError::from)?
             else {
                 break;
             };
