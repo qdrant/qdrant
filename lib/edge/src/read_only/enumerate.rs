@@ -111,7 +111,7 @@ mod tests {
         let building = "6ba7b812-9dad-11d1-80b4-00c04fd430c8";
 
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
+        fs_err::write(
             segment_manifest_path(dir.path()),
             format!(
                 r#"{{"{active}":"active",
