@@ -7,13 +7,13 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
+use super::pages::Pages;
 use super::view::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
-use crate::pages::Pages;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
 
 /// Read-only storage for values of type `V`, operating in mutable mode.

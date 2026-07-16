@@ -4,7 +4,6 @@ pub mod config;
 mod direct_io;
 pub mod error;
 pub mod fixtures;
-mod pages;
 mod tracker;
 
 pub use blob::Blob;
