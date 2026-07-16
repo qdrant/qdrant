@@ -14,17 +14,15 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// Re-read the on-disk deleted bitslice and report points deleted since the
     /// last reload. Mappings are immutable, so nothing is ever inserted.
     ///
-    /// The deleted file is a fixed-size bitmap whose bits the writer flips in
-    /// place, which the held handle's `reopen()` — an append-only-growth
-    /// contract — never picks up on caching backends. So a *fresh* handle is
-    /// opened instead (a fresh open always mirrors the current remote bytes)
-    /// and swapped in; the per-point `get_bit` lookups read fresh state from
-    /// then on too.
+    /// A *fresh* handle is opened rather than reusing the held one: the deleted
+    /// file is mutated in place, which a `reopen()` (append-only-growth
+    /// contract) never picks up on caching backends. A fresh open is guaranteed
+    /// to mirror the current remote bytes; per-point lookups read the fresh
+    /// state from then on too.
     ///
-    /// The full deleted set (`deleted_full`) doubles as the diff baseline: if it
-    /// was materialized (by a prior search/scroll/count/reload) we diff against
-    /// it; otherwise this is the first baseline and every currently-deleted
-    /// offset is reported (an idempotent replay downstream).
+    /// `deleted_full` doubles as the diff baseline; when it was never
+    /// materialized, every currently-deleted offset is reported (an idempotent
+    /// replay downstream).
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,

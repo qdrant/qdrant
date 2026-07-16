@@ -5,21 +5,16 @@
 //! Three files hold the mapping (alongside the reused `id_tracker.versions`
 //! and `id_tracker.deleted`):
 //!
-//! - [`I2E_FILE_NAME`] — internal→external as a fixed-width `u128` array (a
-//!   direct transcription of [`CompressedInternalToExternal`]).
+//! - [`I2E_FILE_NAME`] — internal→external as a fixed-width `u128` array:
 //!   `external_id(offset)` is one 16-byte read.
 //! - [`IS_UUID_FILE_NAME`] — the `is_uuid` flag of every i2e slot, as a compact
-//!   [`StoredBitmask`](common::stored_bitmask::StoredBitmask). Always loaded
-//!   fully into RAM (a [`RoaringBitmap`]) on open, so decoding an i2e slot
-//!   never touches this file again.
+//!   [`StoredBitmask`](common::stored_bitmask::StoredBitmask); small enough to
+//!   always hold in RAM.
 //! - [`E2I_FILE_NAME`] — external→internal as two sorted, fixed-width runs
-//!   (`(u64, u32)` for numeric ids, then `(u128, u32)` for UUIDs — the section
-//!   order encodes "any UUID sorts after any numeric id"), preceded by a sparse
-//!   block index (first key of every ~16 KiB block). A point lookup is an
-//!   in-RAM sparse-index search plus one data-block read.
-//!
-//! [`CompressedInternalToExternal`]:
-//!   crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal
+//!   (numeric ids, then UUIDs — the section order encodes "any UUID sorts
+//!   after any numeric id"), preceded by a sparse block index (first key of
+//!   every ~16 KiB block): a point lookup is an in-RAM sparse-index search
+//!   plus one data-block read.
 
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
@@ -95,8 +90,7 @@ pub const NUM_BLOCK_ENTRIES: u32 = 1365; // * 12 = 16380 bytes
 /// Entries per UUID block, same ~16 KiB target.
 pub const UUID_BLOCK_ENTRIES: u32 = 819; // * 20 = 16380 bytes
 
-/// Encode an external id into the `(u128, is_uuid)` representation shared with
-/// [`CompressedInternalToExternal`](crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal).
+/// Encode an external id into its `(u128, is_uuid)` slot representation.
 fn encode_external(id: PointIdType) -> (u128, bool) {
     match id {
         PointIdType::NumId(num) => (u128::from(num), false),
@@ -104,8 +98,7 @@ fn encode_external(id: PointIdType) -> (u128, bool) {
     }
 }
 
-/// Decode a `(u128, is_uuid)` slot back into a [`PointIdType`]. The value comes
-/// from an i2e 16-byte slot; the flag from the RAM-resident `is_uuid` bitmap.
+/// Decode a `(u128, is_uuid)` slot back into a [`PointIdType`].
 pub(super) fn decode_external(value: u128, is_uuid: bool) -> PointIdType {
     if is_uuid {
         PointIdType::Uuid(Uuid::from_u128(value))

@@ -1,23 +1,13 @@
-//! Disk-resident id tracker: keeps the point-id mapping on disk (the
-//! [on-disk format](on_disk_format) `i2e`/`e2i` files) instead of loading it into
-//! RAM, so resident memory does not scale with point count. Only the small
-//! `is_uuid` sidecar file is always loaded whole into RAM (as a roaring
-//! bitmap inside the [`reader`] core).
+//! Disk-resident id tracker: the point-id mapping stays on disk (the
+//! [on-disk format](on_disk_format)), so resident memory does not scale with
+//! point count. The mapping is immutable once written.
 //!
 //! Two trackers share the [`reader`] core:
 //!
-//! - [`DiskIdTracker`] — writable, deletion-only (non-appendable, R6): usable in a
-//!   regular [`Segment`](crate::segment::Segment) so ordinary deployments also
-//!   avoid the full RAM load. `deleted` and `versions` are kept resident (small,
-//!   mutated in place); only the mapping stays on disk.
-//! - [`ReadOnlyDiskIdTracker`](read_only::ReadOnlyDiskIdTracker) — read-only,
-//!   live-reload mirror for object-storage followers.
-//!
-//! Both are produced from the same on-disk files, written from a
-//! [`CompressedPointMappings`] at build time when `serverless_compatible` is set.
-//!
-//! [`CompressedPointMappings`]:
-//!   crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings
+//! - [`DiskIdTracker`] — writable but deletion-only (non-appendable, R6);
+//!   `deleted` and `versions` are resident and mutated in place.
+//! - [`ReadOnlyDiskIdTracker`] — fully read-only; picks up external deletions
+//!   via live-reload.
 
 mod id_tracker;
 mod id_tracker_read;
@@ -43,13 +33,9 @@ use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::types::SeqNumberType;
 
-/// Writable, deletion-only disk-resident id tracker.
-///
-/// The mapping (`i2e`/`e2i`) is immutable and served from disk via
-/// [`DiskMappingReader`]; the `deleted` bitvec and `versions` are kept resident
-/// and mutated in place, mirroring [`ImmutableIdTracker`] minus the RAM mapping.
-///
-/// [`ImmutableIdTracker`]: crate::id_tracker::immutable_id_tracker::ImmutableIdTracker
+/// Writable, deletion-only disk-resident id tracker: the mapping is immutable
+/// and served from disk; only the `deleted` bitvec and `versions` are resident
+/// and mutable.
 #[derive(Debug)]
 pub struct DiskIdTracker<S: UniversalWrite> {
     path: PathBuf,
@@ -67,9 +53,8 @@ pub struct DiskIdTracker<S: UniversalWrite> {
 }
 
 impl<S: UniversalWrite> DiskIdTracker<S> {
-    /// Approximate resident RAM: versions + deleted bitvec + the reader's
-    /// resident parts (sparse index, `is_uuid` bitmap). The mapping stays on
-    /// disk and is not counted here.
+    /// Approximate resident RAM: versions, deleted bitvec, and the reader's
+    /// resident parts. The on-disk mapping is not counted.
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
             path: _,

@@ -19,9 +19,9 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
         &self.reader
     }
 
-    /// A single lazy `get_bit` on the on-disk deleted file — no full-set load, so
-    /// read-by-id stays lazy. Out-of-range offsets are treated as deleted; storage
-    /// errors propagate.
+    /// A single lazy `get_bit` on the on-disk deleted file — never loads the
+    /// full set. Out-of-range offsets count as deleted; storage errors
+    /// propagate.
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
         Ok(self
             .deleted_file

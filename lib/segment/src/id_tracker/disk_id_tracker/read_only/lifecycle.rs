@@ -26,10 +26,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)
-    /// will read
-    ///
-    /// Returns `false` (nothing scheduled) when the tracker is not in the
-    /// on-disk format.
+    /// will read. Returns `false` (nothing scheduled) when the tracker is not
+    /// in the on-disk format.
     pub fn try_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
@@ -46,9 +44,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         Ok(true)
     }
 
-    /// Open a read-only disk id tracker at `segment_path`. Reads only the two
-    /// headers, the e2i sparse block index, and the `is_uuid` bitmap into RAM;
-    /// all other per-point data stays on the backing store.
+    /// Open a read-only disk id tracker at `segment_path`; all per-point data
+    /// except the `is_uuid` bitmap stays on the backing store.
     ///
     /// Errors if the segment is not in the on-disk format; use
     /// [`try_open`](Self::try_open) to probe without erroring.
@@ -61,9 +58,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         })
     }
 
-    /// Like [`open`](Self::open), but returns `Ok(None)` when the segment is not
-    /// in the on-disk format (`i2e` absent). Probing happens by opening the
-    /// mapping directly, so no separate existence check is issued.
+    /// Like [`open`](Self::open), but returns `Ok(None)` when the segment is
+    /// not in the on-disk format (`i2e` absent).
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,

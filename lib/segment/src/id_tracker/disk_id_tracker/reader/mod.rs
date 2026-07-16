@@ -1,17 +1,14 @@
-//! Shared lazy read core over the [on-disk format](super::on_disk_format)
-//! mapping files (`i2e` + `e2i` + `is_uuid`).
+//! Lazy read core over the [on-disk format](super::on_disk_format) mapping
+//! files (`i2e` + `e2i` + `is_uuid`).
 //!
-//! Holds the two headers, the e2i sparse block index, and the whole `is_uuid`
-//! bitmap in RAM; every lookup reads at most one data block through the
-//! backing [`UniversalRead`] handle. Both the writable
-//! [`DiskIdTracker`](super::DiskIdTracker) and the read-only
-//! [`ReadOnlyDiskIdTracker`](super::read_only::ReadOnlyDiskIdTracker)
-//! embed this and layer their own deletion/version handling on top.
+//! Guarantees:
 //!
-//! Deletion is deliberately NOT applied here: `lookup`/`external_id`/`iter_from`
-//! return build-time-live entries, and each tracker filters with its own deleted
-//! source (a resident bitvec for the writable tracker, a lazy `get_bit` for the
-//! reader).
+//! - resident RAM is small and fixed after open: headers, the e2i sparse
+//!   block index, and the `is_uuid` bitmap;
+//! - a point lookup reads at most one data block;
+//! - deletion is deliberately NOT applied: lookups and iteration return
+//!   build-time-live entries, and callers filter with their own deleted
+//!   source.
 
 mod iter;
 mod lifecycle;
@@ -34,9 +31,8 @@ pub struct DiskMappingReader<S: UniversalRead> {
     num_sparse: Vec<u64>,
     /// First UUID key (`as_u128`) of every UUID block.
     uuid_sparse: Vec<u128>,
-    /// Offsets of the UUID-typed i2e slots. Loaded whole from the `is_uuid`
-    /// file on open and kept resident, so decoding a slot never goes to disk
-    /// for the flag.
+    /// Offsets of the UUID-typed i2e slots, resident since open: decoding a
+    /// slot never goes to disk for the flag.
     is_uuid: RoaringBitmap,
 }
 
@@ -46,8 +42,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         self.i2e_header.total
     }
 
-    /// Resident RAM held by the reader: the e2i sparse block index and the
-    /// `is_uuid` bitmap. The mapping data itself stays on disk.
+    /// Resident RAM: the e2i sparse block index and the `is_uuid` bitmap.
+    /// The mapping data itself is not counted — it stays on disk.
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
             i2e: _,        // on-disk handle

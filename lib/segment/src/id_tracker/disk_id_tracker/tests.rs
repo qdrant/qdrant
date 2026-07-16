@@ -283,15 +283,10 @@ fn deletion_and_live_reload() {
     }
 }
 
-/// Cases 1+2 regression of the live-reload staleness audit: both trackers'
-/// `deleted` file is a fixed-size bitmap whose bits the writer flips in
-/// place — its length never changes — so a reader over a caching backend
-/// must not rely on `reopen()` (append-only-growth contract): the
-/// pre-deletion state, cached when first scanned, would be served forever
-/// and `live_reload` would never report the deletions. `live_reload` opens a
-/// fresh handle instead; this drives it over `DiskCacheFs`, where the
-/// stale-cache failure actually reproduces (mmap readers are read-through
-/// and can't catch it).
+/// Live-reload staleness regression (audit cases 1+2): the `deleted` file is
+/// mutated in place, so `live_reload` must open a fresh handle rather than
+/// `reopen()` a held one. Driven over `DiskCacheFs`, where the stale cache
+/// actually reproduces (mmap readers are read-through and can't catch it).
 #[test]
 fn deletion_and_live_reload_disk_cache() {
     use std::sync::Arc;

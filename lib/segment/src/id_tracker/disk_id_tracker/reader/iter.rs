@@ -19,19 +19,12 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     }
 }
 
-/// Random-order iterator over live `(external_id, offset)` pairs, mirroring
-/// [`CompressedPointMappings::iter_random`]: random internal offsets are drawn
-/// (rejection-sampled and deduplicated so each is visited at most once), the
-/// `deleted` set is applied, and the external id for each surviving offset is
-/// read lazily from `i2e`.
+/// Random-order iterator over live `(external_id, offset)` pairs: each offset
+/// is visited at most once, and a full drain covers every live point.
 ///
-/// Like the in-RAM reference, this is aimed at small `take(limit)` sampling; a
-/// full drain pays coupon-collector cost (and one `i2e` read per yielded point).
-/// `deleted` is passed in because the writable and read-only trackers hold their
-/// deleted set differently.
-///
-/// [`CompressedPointMappings::iter_random`]:
-///   crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings::iter_random
+/// Aimed at small `take(limit)` sampling — a full drain pays coupon-collector
+/// cost plus one `i2e` read per yielded point. Best-effort: a storage error is
+/// logged and the offset skipped.
 pub fn iter_random<'a, S: UniversalRead>(
     reader: &'a DiskMappingReader<S>,
     deleted: &'a BitSlice,

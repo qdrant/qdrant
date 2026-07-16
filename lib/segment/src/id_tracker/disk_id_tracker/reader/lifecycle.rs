@@ -32,9 +32,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         }
     }
 
-    /// The `is_uuid` file is read whole into RAM on open (and its handle
-    /// dropped), so it is populated eagerly, unlike the lazily-served
-    /// `i2e`/`e2i` handles.
+    /// The `is_uuid` file is read whole at open, so it is populated eagerly,
+    /// unlike the lazily-served `i2e`/`e2i` handles.
     fn is_uuid_open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
@@ -44,13 +43,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         }
     }
 
-    /// Schedule background prefetch of the `i2e`/`e2i`/`is_uuid` handles that
-    /// [`try_open`](Self::try_open) will open, without reading any bytes
-    /// (except the `is_uuid` file, which is populated whole — open loads it
-    /// fully into RAM).
-    ///
-    /// Returns `false` (nothing scheduled) when the mapping is
-    /// not in the on-disk format.
+    /// Schedule background prefetch of every file [`try_open`](Self::try_open)
+    /// will open. Returns `false` (nothing scheduled) when the mapping is not
+    /// in the on-disk format.
     pub fn try_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
@@ -78,9 +73,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         Ok(true)
     }
 
-    /// Open the `i2e`/`e2i` handles and read the headers + sparse index into
-    /// RAM, along with the whole `is_uuid` bitmap. No other per-point data is
-    /// read.
+    /// Open the reader, loading only headers, the sparse index, and the
+    /// `is_uuid` bitmap into RAM; no per-point mapping data is read.
     ///
     /// Errors if the segment is not in the on-disk format (`i2e` absent). Use
     /// [`try_open`](Self::try_open) to probe without erroring.
@@ -95,8 +89,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
     /// Like [`open`](Self::open), but returns `Ok(None)` when the defining `i2e`
     /// file is absent — i.e. the segment is not in the on-disk format. Any other
-    /// missing/corrupt file is a hard error. Opening the `i2e` handle also serves
-    /// as the format probe, so no separate existence check is issued.
+    /// missing/corrupt file is a hard error. The format probe is the `i2e` open
+    /// itself; no separate existence check is issued.
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
@@ -139,8 +133,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             uuid_sparse.push(cursor.read_u128::<Endian>()?);
         }
 
-        // The whole `is_uuid` mask is materialized in RAM here; the handle is
-        // dropped right after, so slot decoding never goes back to disk.
+        // The whole `is_uuid` mask is materialized in RAM; the handle is
+        // dropped right after.
         let is_uuid_storage = StoredBitmask::<S>::open(
             fs,
             is_uuid_path(segment_path),

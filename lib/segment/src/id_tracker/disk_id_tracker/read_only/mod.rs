@@ -1,19 +1,15 @@
-//! Disk-resident, read-only id tracker over the [on-disk format], for
-//! serverless / object-storage followers.
+//! Disk-resident, read-only id tracker over the
+//! [on-disk format](super::on_disk_format).
 //!
-//! Keeps only a small fixed index resident (via [`DiskMappingReader`]) and
-//! answers every lookup with at most one data-block read through the backing
-//! [`UniversalRead`] handle, so RAM usage does not scale with point count.
+//! Guarantees:
 //!
-//! Deletion status is checked per point via [`StoredBitSlice::get_bit`] on the hot
-//! read-by-id path (no full load). The whole deleted set is materialized lazily,
-//! once, only when a path that needs the entire slice runs — vector search
-//! ([`deleted_point_bitslice`]), scroll iteration, counts, or the
-//! [`live_reload`](ReadOnlyDiskIdTracker::live_reload) diff baseline.
-//!
-//! [on-disk format]: super::on_disk_format
-//! [`deleted_point_bitslice`]:
-//!   crate::id_tracker::IdTrackerRead::deleted_point_bitslice
+//! - resident RAM does not scale with point count (only the
+//!   [`DiskMappingReader`] core is held);
+//! - read-by-id never loads the full deleted set — deletion is a single lazy
+//!   `get_bit`;
+//! - the full deleted set is materialized at most once, and only for paths
+//!   that need the whole slice (search, scroll, counts, the
+//!   [`live_reload`](ReadOnlyDiskIdTracker::live_reload) baseline).
 
 mod id_tracker_read;
 mod lifecycle;
@@ -32,7 +28,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
 use crate::types::SeqNumberType;
 
-/// Read-only id tracker backed by the on-disk format files, streamed lazily
+/// Read-only id tracker backed by the on-disk format files, read lazily
 /// through a [`UniversalRead`] backend.
 pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
     path: PathBuf,
@@ -62,9 +58,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         ]
     }
 
-    /// Lazily materialize the full deleted set. Used only by paths that need the
-    /// whole slice (search / scroll / counts); never by point lookups. The read
-    /// error propagates instead of being swallowed here.
+    /// Lazily materialize the full deleted set; never called by point lookups.
+    /// Storage errors propagate.
     ///
     /// Manual fallible init (std `OnceLock` has no stable `get_or_try_init`): on a
     /// race both threads read the same on-disk state (`live_reload` needs `&mut`,
