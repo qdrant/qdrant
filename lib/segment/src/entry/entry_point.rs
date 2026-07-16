@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -197,7 +197,8 @@ pub trait ReadSegmentEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
-    fn vector_names(&self) -> HashSet<VectorNameBuf>;
+    /// Names of all vectors in this segment, sorted.
+    fn vector_names(&self) -> Vec<VectorNameBuf>;
 
     /// Whether this segment is completely empty in terms of points
     ///
