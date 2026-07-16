@@ -10,6 +10,7 @@ use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
+use shard::segment_holder::FlushMode;
 use shard::wal::{SerdeWal, WalRawRecord};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -720,6 +721,152 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
     assert_eq!(
         points_count, total_ops as usize,
         "All {total_ops} points should be present after WAL replay with a corrupt tail entry",
+    );
+
+    shard.stop_gracefully().await;
+}
+
+/// A WAL truncated past the persisted applied_seq upper bound must not fail shard load.
+///
+/// The flush worker acks the WAL up to the segments' confirmed flush version, while the
+/// applied_seq file is persisted only every `APPLIED_SEQ_SAVE_INTERVAL` update-worker calls
+/// (from a counter that restarts at zero each process start, and synchronous WAL replay is
+/// not counted at all). After a restart the persisted applied_seq can therefore lag the WAL
+/// `first_index` by more than one save interval, putting the replay target computed from it
+/// before `first_index`. Load must clamp the target instead of trying to replay truncated
+/// entries: everything before `first_index` is already durably flushed.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_replay_truncated_past_applied_seq() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    let config = create_collection_config();
+
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shared_storage_config = Arc::new(SharedStorageConfig {
+        update_queue_size: 10_000,
+        ..Default::default()
+    });
+
+    let total_ops = 500u64;
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        shared_storage_config.clone(),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Stop flush worker so the WAL truncation below is under the test's control.
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Insert all operations
+    for i in 0..total_ops {
+        let point = PointStructPersisted {
+            id: i.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await
+            .unwrap();
+    }
+
+    // Flush segments so acking the whole WAL below matches what the flush worker is
+    // allowed to do: truncation must only pass durably applied operations.
+    shard
+        .segments()
+        .read()
+        .flush_all(FlushMode::Sync, true)
+        .unwrap();
+
+    shard.stop_gracefully().await;
+
+    // Persist an applied_seq lagging the WAL head by well over one save interval, as left
+    // behind by a run that restarted (uncounted synchronous replay) and then applied fewer
+    // ops than the save interval before stopping.
+    let applied_seq_handler = AppliedSeqHandler::load_or_init(collection_dir.path(), total_ops);
+    let low_applied_seq = total_ops - 2 * APPLIED_SEQ_SAVE_INTERVAL;
+    applied_seq_handler
+        .force_set_and_persist(low_applied_seq)
+        .unwrap();
+
+    // Ack the WAL up to its head, as the flush worker does after the segment flush above.
+    // WAL indices: fake operation at 0, then one entry per upsert (1..=total_ops).
+    {
+        let wal_path = LocalShard::wal_path(collection_dir.path());
+        let mut raw_wal: SerdeWal<String> =
+            SerdeWal::new(&wal_path, (&config.wal_config).into()).unwrap();
+        raw_wal.ack(total_ops).unwrap();
+        assert!(
+            raw_wal.first_index() > low_applied_seq + APPLIED_SEQ_SAVE_INTERVAL + 1,
+            "test setup must put the WAL first_index past the applied_seq upper bound"
+        );
+    }
+
+    // Shard load must clamp the replay target to the truncated prefix and succeed.
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        shared_storage_config,
+        payload_index_schema,
+        false,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .expect("shard load must tolerate a WAL truncated past the applied_seq upper bound");
+
+    // Wait for the update worker to drain the queued tail.
+    let timeout = std::time::Duration::from_secs(2);
+    let start = std::time::Instant::now();
+    let poll_interval = std::time::Duration::from_millis(10);
+
+    while shard.local_update_queue_info().await.length > 0 {
+        assert!(
+            start.elapsed() <= timeout,
+            "Timeout waiting for update queue to empty"
+        );
+        tokio::time::sleep(poll_interval).await;
+    }
+
+    // Channel length reaching zero only means the last operation was received,
+    // not that it finished applying; wait for the worker to go idle.
+    shard.plunge_async().await.unwrap().await.unwrap();
+
+    // All points are present: everything before the truncated prefix was durably flushed.
+    let info = shard.info().await.unwrap();
+    let points_count = info.points_count.unwrap_or(0);
+    assert_eq!(
+        points_count, total_ops as usize,
+        "All {total_ops} points should be present after loading with a truncated WAL",
     );
 
     shard.stop_gracefully().await;
