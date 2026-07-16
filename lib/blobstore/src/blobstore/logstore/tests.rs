@@ -9,7 +9,7 @@ use crate::config::{Compression, Mode, StorageOptions};
 use crate::error::BlobstoreError;
 use crate::fixtures::{Payload, empty_storage_append_only, random_payload};
 use crate::tracker::ValuePointer;
-use crate::{Blobstore, BlobstoreReader, direct_io};
+use crate::{Blobstore, BlobstoreReader};
 
 /// Size in bytes of a single mapping entry in the tracker file
 const TRACKER_ENTRY_SIZE: u64 = 16;
@@ -1395,11 +1395,12 @@ fn test_reader_never_writes() {
     let tracker_path = path.join("log_tracker.dat");
     let page_path = path.join("log_page_0.dat");
     {
-        let file = fs::OpenOptions::new()
-            .write(true)
+        use std::io::Write as _;
+        let mut file = fs::OpenOptions::new()
+            .append(true)
             .open(&tracker_path)
             .unwrap();
-        direct_io::write_all_at(&file, &[0xAA; 7], 5 * TRACKER_ENTRY_SIZE).unwrap();
+        file.write_all(&[0xAA; 7]).unwrap();
     }
 
     let tracker_snapshot = fs::read(&tracker_path).unwrap();

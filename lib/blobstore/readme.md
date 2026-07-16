@@ -8,7 +8,7 @@ automatically when opening one, based on the persisted config:
 - **mutable** (default, the `Gridstore` variant): read-write storage with
   in-place space reuse, backed by memory mapped files.
 - **append-only** (the `Logstore` variant): append-only storage for
-  serverless deployments, reading and writing files directly.
+  serverless deployments, one atomic append per file per flush.
 
 Concepts shared by both modes:
 
@@ -52,8 +52,8 @@ Concepts shared by both modes:
 Designed for serverless environments, which restrict IO: files can only be
 appended to, existing bytes can never be rewritten (preallocated zero padding
 cannot be filled in later), and IO is expensive so as few files as possible
-are used. Value data goes through the configured universal IO backend; the
-tracker file is read and written directly on the local filesystem.
+are used. All files are read and written through the configured universal IO
+backend.
 
 - Values cannot be updated or deleted, and must be put at monotonically
   increasing point offsets. Violating puts and deletes are rejected.

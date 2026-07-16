@@ -1,12 +1,17 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use fs_err::File;
+use common::generic_consts::AccessPattern;
+use common::mmap::{Advice, AdviceSetting};
+use common::universal_io::{
+    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadRange, UniversalAppend, UniversalIoError,
+    UniversalRead, UniversalReadFs, UniversalWriteFileOps,
+};
 
+use crate::Result;
 use crate::blobstore::Flusher;
 use crate::error::BlobstoreError;
 use crate::tracker::{OptionalPointer, PointOffset, ValuePointer};
-use crate::{Result, direct_io};
 
 /// File name of the append-only tracker file
 ///
@@ -26,18 +31,18 @@ const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
 ///
 /// Mappings must be set in monotonically increasing point offset order. Skipped point offsets are
 /// materialized as zeroed entries, which decode as `None`. New mappings are buffered in memory,
-/// and appended to the file as a single write when flushing.
+/// and appended to the file as a single atomic append when flushing.
 ///
-/// The file is read and written directly, it is never memory mapped.
+/// The file is read and written through the universal IO backend `S`.
 ///
 /// A write may be torn. If the file length is not a multiple of the entry size, the trailing
 /// partial entry is ignored when reading, and truncated away when opening writable.
 #[derive(Debug)]
-pub(crate) struct AppendOnlyTracker {
+pub(crate) struct AppendOnlyTracker<S> {
     /// Path to the tracker file
     path: PathBuf,
     /// Open handle to the tracker file
-    file: File,
+    file: S,
     /// Number of mappings persisted in the file
     persisted_count: PointOffset,
     /// Mappings that haven't been written to the file yet
@@ -47,46 +52,68 @@ pub(crate) struct AppendOnlyTracker {
     pending: Vec<OptionalPointer>,
 }
 
-impl AppendOnlyTracker {
+impl<S: UniversalRead> AppendOnlyTracker<S> {
     fn tracker_file_name(dir: &Path) -> PathBuf {
         dir.join(FILE_NAME)
     }
 
-    /// Create a new empty tracker in the given directory.
-    ///
-    /// The directory must exist already.
-    pub fn new(dir: &Path) -> Result<Self> {
-        let path = Self::tracker_file_name(dir);
-        let file = direct_io::create_new(&path)?;
-        Ok(Self {
-            path,
-            file,
-            persisted_count: 0,
-            pending: Vec::new(),
-        })
+    /// Universal IO open options for the tracker file.
+    fn open_options(writeable: bool) -> OpenOptions {
+        OpenOptions {
+            writeable,
+            need_sequential: false,
+            // The append-only mode never populates, see [`crate::blobstore::logstore::Logstore`]
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Random),
+        }
     }
 
-    /// Open an existing tracker in the given directory.
+    /// Schedule a prefetch of the tracker file, so a subsequent open is served from the prefetch
+    /// pool.
+    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path) -> Result<()> {
+        fs.schedule_prefetch(
+            &Self::tracker_file_name(dir),
+            Some(Self::open_options(false)),
+            None,
+        )?;
+        Ok(())
+    }
+
+    /// Open the tracker file handle, mapping a missing file to a service error.
+    fn open_file<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        writeable: bool,
+    ) -> Result<S> {
+        fs.open(path, Self::open_options(writeable), Default::default())
+            .map_err(|err| {
+                if err.is_not_found() {
+                    // If config exists and this file doesn't, it should be treated as
+                    // inconsistent storage rather than a missing one
+                    BlobstoreError::service_error(format!(
+                        "Append-only tracker file does not exist: {}",
+                        path.display(),
+                    ))
+                } else {
+                    BlobstoreError::from(err)
+                }
+            })
+    }
+
+    /// Open an existing tracker in the given directory, read-only.
     ///
     /// If the file does not exist, return an error.
     ///
-    /// A trailing partial entry due to a torn write is ignored. When opening writable it is also
-    /// truncated away, so that appends always start at a whole entry offset.
-    pub fn open(dir: &Path, writeable: bool) -> Result<Self> {
+    /// A trailing partial entry due to a torn write is ignored, the file is left untouched.
+    pub fn open_read_only<Fs: UniversalReadFs<File = S>>(fs: &Fs, dir: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let file = direct_io::open_existing(&path, writeable, "Append-only tracker")?;
-
-        let len = file.metadata()?.len();
-        let aligned_len = len - (len % ENTRY_SIZE);
-        if writeable && aligned_len != len {
-            // Recover from a torn write by truncating the partial trailing entry
-            file.set_len(aligned_len)?;
-        }
+        let file = Self::open_file(fs, &path, false)?;
+        let len = file.len::<u8>()?;
 
         Ok(Self {
             path,
             file,
-            persisted_count: count_from_len(aligned_len)?,
+            persisted_count: count_from_len(len)?,
             pending: Vec::new(),
         })
     }
@@ -106,7 +133,7 @@ impl AppendOnlyTracker {
     /// Get the mapping at the given point offset.
     ///
     /// Point offsets that were skipped or that are past the highest set mapping yield `None`.
-    pub fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+    pub fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
         if point_offset >= self.pointer_count() {
             return Ok(None);
         }
@@ -116,9 +143,8 @@ impl AppendOnlyTracker {
             return Ok(self.pending[pending_index].to_option());
         }
 
-        let mut buf = [0; size_of::<OptionalPointer>()];
-        direct_io::read_exact_at(&self.file, &mut buf, u64::from(point_offset) * ENTRY_SIZE)?;
-        let pointer: OptionalPointer = bytemuck::pod_read_unaligned(&buf);
+        let range = ReadRange::one(u64::from(point_offset) * ENTRY_SIZE);
+        let pointer = self.file.read::<P, OptionalPointer>(range)?[0];
         Ok(pointer.to_option())
     }
 
@@ -129,7 +155,7 @@ impl AppendOnlyTracker {
     ///
     /// The result holds one entry per requested point offset, so callers should bound the range
     /// they ask for.
-    pub fn get_range(
+    pub fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
     ) -> Result<Vec<Option<ValuePointer>>> {
@@ -140,14 +166,12 @@ impl AppendOnlyTracker {
         // Persisted part of the range, read in a single read
         let persisted_end = end.min(self.persisted_count);
         if start < persisted_end {
-            let count = (persisted_end - start) as usize;
-            let mut buf = vec![0; count * size_of::<OptionalPointer>()];
-            direct_io::read_exact_at(&self.file, &mut buf, u64::from(start) * ENTRY_SIZE)?;
-            pointers.extend(
-                buf.chunks_exact(size_of::<OptionalPointer>()).map(|entry| {
-                    bytemuck::pod_read_unaligned::<OptionalPointer>(entry).to_option()
-                }),
-            );
+            let range = ReadRange {
+                byte_offset: u64::from(start) * ENTRY_SIZE,
+                length: u64::from(persisted_end - start),
+            };
+            let entries = self.file.read::<P, OptionalPointer>(range)?;
+            pointers.extend(entries.iter().map(|entry| entry.to_option()));
         }
 
         // Pending part of the range
@@ -160,6 +184,86 @@ impl AppendOnlyTracker {
         pointers.resize(point_offsets.len(), None);
 
         Ok(pointers)
+    }
+
+    /// Reopen the tracker file and reload the number of mappings from it, making newly appended
+    /// mappings visible.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Should only be called on read-only instances of the tracker.
+    /// - Mappings are append-only, existing entries never change.
+    /// - Partial writes are possible, but ignored: a trailing partial entry is not counted.
+    ///
+    /// Returns `true` if there are new mappings, `false` if the tracker is already up to date.
+    pub fn live_reload(&mut self) -> Result<bool> {
+        debug_assert!(
+            self.pending.is_empty(),
+            "live reload must only be used on read-only instances",
+        );
+
+        self.file.reopen()?;
+        let len = self.file.len::<u8>()?;
+        let new_count = count_from_len(len)?;
+
+        if new_count < self.persisted_count {
+            Err(BlobstoreError::service_error(format!(
+                "live reload cannot decrease mapping count, possible data loss: old count {}, new count {new_count}",
+                self.persisted_count,
+            )))
+        } else if new_count == self.persisted_count {
+            // No new mappings, no need to reload
+            Ok(false)
+        } else {
+            self.persisted_count = new_count;
+            Ok(true)
+        }
+    }
+}
+
+impl<S: UniversalAppend> AppendOnlyTracker<S> {
+    /// Create a new empty tracker in the given directory, truncating the file if it already
+    /// exists.
+    ///
+    /// The directory must exist already.
+    pub fn new(fs: &S::Fs, dir: &Path) -> Result<Self> {
+        let path = Self::tracker_file_name(dir);
+        fs.create(&path, 0)?;
+        let file = fs.open(&path, Self::open_options(true), Default::default())?;
+        Ok(Self {
+            path,
+            file,
+            persisted_count: 0,
+            pending: Vec::new(),
+        })
+    }
+
+    /// Open an existing tracker in the given directory, writable.
+    ///
+    /// If the file does not exist, return an error.
+    ///
+    /// A trailing partial entry due to a torn write is truncated away, so that appends always
+    /// start at a whole entry offset.
+    pub fn open_writable(fs: &S::Fs, dir: &Path) -> Result<Self> {
+        let path = Self::tracker_file_name(dir);
+        let mut file = Self::open_file(fs, &path, true)?;
+
+        let len = file.len::<u8>()?;
+        let aligned_len = len - (len % ENTRY_SIZE);
+        if aligned_len != len {
+            // Recover from a torn write by truncating the partial trailing entry. The handle is
+            // opened from scratch afterwards, shrinking is not supported through an open handle.
+            drop(file);
+            fs.create(&path, aligned_len as usize)?;
+            file = Self::open_file(fs, &path, true)?;
+        }
+
+        Ok(Self {
+            path,
+            file,
+            persisted_count: count_from_len(aligned_len)?,
+            pending: Vec::new(),
+        })
     }
 
     /// Set the mapping for the given point offset, buffering it in memory until flushed.
@@ -188,12 +292,18 @@ impl AppendOnlyTracker {
 
     /// Append pending mappings for point offsets up to, but excluding, `target` to the file.
     ///
-    /// All appended mappings are written with a single write at the end of the file. The `target`
-    /// is captured through [`pointer_count`](Self::pointer_count) when a flusher is created, so
-    /// that mappings set while a flush is in progress stay pending.
+    /// All appended mappings land with a single atomic append at the end of the file: one
+    /// grow+write syscall on local backends, one RPC on object stores. The `target` is captured
+    /// through [`pointer_count`](Self::pointer_count) when a flusher is created, so that mappings
+    /// set while a flush is in progress stay pending.
     ///
     /// A stale flush, with a `target` at or below what a more recent flush already persisted, is
     /// a no-op: bytes that were appended before must never be written again.
+    ///
+    /// The append offset doubles as a compare-and-swap token: if a previous flush appended these
+    /// mappings but its acknowledgement was lost, the retry conflicts instead of appending twice,
+    /// and the mappings are adopted as persisted when the file ends exactly where this append
+    /// would have ended.
     ///
     /// This does not sync the file to disk, invoke a [`flusher`](Self::flusher) afterwards.
     pub fn write_pending(&mut self, target: PointOffset) -> Result<()> {
@@ -208,14 +318,27 @@ impl AppendOnlyTracker {
         );
         let count = count.min(self.pending.len());
 
-        let entries = &self.pending[..count];
         let offset = u64::from(self.persisted_count) * ENTRY_SIZE;
-        if let Err(err) = direct_io::write_all_at(&self.file, bytemuck::cast_slice(entries), offset)
-        {
-            // Best effort: drop partially appended entries, so that the file stays consistent
-            // with the persisted count and a retried flush never rewrites existing bytes
-            let _ = self.file.set_len(offset);
-            return Err(err.into());
+        let end = offset + count as u64 * ENTRY_SIZE;
+
+        match self.file.append(offset, &self.pending[..count]) {
+            Ok(()) => {}
+            // A retried append after a lost acknowledgement conflicts instead of appending
+            // twice. If the file ends exactly where this append would have ended, the mappings
+            // landed before; adopt them as persisted. Any other length means the file was
+            // modified outside this writer.
+            Err(UniversalIoError::AppendOffsetConflict { .. }) => {
+                self.file.reopen()?;
+                let len = self.file.len::<u8>()?;
+                if len != end {
+                    return Err(BlobstoreError::service_error(format!(
+                        "append-only tracker file {} was modified outside this writer: it ends \
+                         at byte {len}, expected {offset} before or {end} after the append",
+                        self.path.display(),
+                    )));
+                }
+            }
+            Err(err) => return Err(err.into()),
         }
 
         self.pending.drain(..count);
@@ -225,39 +348,9 @@ impl AppendOnlyTracker {
     }
 
     /// Create a closure that syncs all written mappings in the tracker file to disk.
-    pub fn flusher(&self) -> Result<Flusher> {
-        let file = self.file.try_clone()?;
-        Ok(Box::new(move || {
-            file.sync_data()?;
-            Ok(())
-        }))
-    }
-
-    /// Reload the number of mappings from the file, making newly appended mappings visible.
-    ///
-    /// Important assumptions:
-    ///
-    /// - Should only be called on read-only instances of the tracker.
-    /// - Mappings are append-only, existing entries never change.
-    /// - Partial writes are possible, but ignored: a trailing partial entry is not counted.
-    ///
-    /// Returns `true` if there are new mappings, `false` if the tracker is already up to date.
-    pub fn live_reload(&mut self) -> Result<bool> {
-        let len = self.file.metadata()?.len();
-        let new_count = count_from_len(len)?;
-
-        if new_count < self.persisted_count {
-            Err(BlobstoreError::service_error(format!(
-                "live reload cannot decrease mapping count, possible data loss: old count {}, new count {new_count}",
-                self.persisted_count,
-            )))
-        } else if new_count == self.persisted_count {
-            // No new mappings, no need to reload
-            Ok(false)
-        } else {
-            self.persisted_count = new_count;
-            Ok(true)
-        }
+    pub fn flusher(&self) -> Flusher {
+        let flusher = self.file.flusher();
+        Box::new(move || flusher().map_err(BlobstoreError::from))
     }
 }
 
@@ -274,14 +367,18 @@ fn count_from_len(len: u64) -> Result<PointOffset> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
+
+    use common::generic_consts::Random;
+    use common::universal_io::{MmapFile, MmapFs};
     use fs_err as fs;
     use tempfile::TempDir;
 
     use super::*;
 
-    fn empty_tracker() -> (TempDir, AppendOnlyTracker) {
+    fn empty_tracker() -> (TempDir, AppendOnlyTracker<MmapFile>) {
         let dir = TempDir::new().unwrap();
-        let tracker = AppendOnlyTracker::new(dir.path()).unwrap();
+        let tracker = AppendOnlyTracker::new(&MmapFs, dir.path()).unwrap();
         (dir, tracker)
     }
 
@@ -289,7 +386,7 @@ mod tests {
         ValuePointer::new(0, n * 2, n * 3 + 1)
     }
 
-    fn file_len(tracker: &AppendOnlyTracker) -> u64 {
+    fn file_len(tracker: &AppendOnlyTracker<MmapFile>) -> u64 {
         fs::metadata(&tracker.path).unwrap().len()
     }
 
@@ -297,15 +394,15 @@ mod tests {
     fn test_new_tracker_is_empty() {
         let (_dir, tracker) = empty_tracker();
         assert_eq!(tracker.pointer_count(), 0);
-        assert_eq!(tracker.get(0).unwrap(), None);
+        assert_eq!(tracker.get::<Random>(0).unwrap(), None);
         assert_eq!(file_len(&tracker), 0);
     }
 
     #[test]
     fn test_open_missing_tracker_fails() {
         let dir = TempDir::new().unwrap();
-        assert!(AppendOnlyTracker::open(dir.path(), true).is_err());
-        assert!(AppendOnlyTracker::open(dir.path(), false).is_err());
+        assert!(AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path()).is_err());
+        assert!(AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path()).is_err());
     }
 
     #[test]
@@ -318,9 +415,9 @@ mod tests {
 
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
-            assert_eq!(tracker.get(n).unwrap(), Some(pointer(n)));
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
-        assert_eq!(tracker.get(5).unwrap(), None);
+        assert_eq!(tracker.get::<Random>(5).unwrap(), None);
 
         // Nothing is written to the file until flushed
         assert_eq!(file_len(&tracker), 0);
@@ -351,40 +448,40 @@ mod tests {
         tracker.set(4, pointer(4)).unwrap();
 
         assert_eq!(tracker.pointer_count(), 5);
-        assert_eq!(tracker.get(0).unwrap(), Some(pointer(0)));
+        assert_eq!(tracker.get::<Random>(0).unwrap(), Some(pointer(0)));
         for n in 1..4 {
-            assert_eq!(tracker.get(n).unwrap(), None);
+            assert_eq!(tracker.get::<Random>(n).unwrap(), None);
         }
-        assert_eq!(tracker.get(4).unwrap(), Some(pointer(4)));
+        assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
 
         // Gaps are persisted as zeroed entries
         tracker.write_pending(tracker.pointer_count()).unwrap();
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
-        assert_eq!(tracker.get(2).unwrap(), None);
+        assert_eq!(tracker.get::<Random>(2).unwrap(), None);
     }
 
     #[test]
     fn test_write_pending_and_reopen() {
         let dir = TempDir::new().unwrap();
 
-        let mut tracker = AppendOnlyTracker::new(dir.path()).unwrap();
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
         for n in 0..5 {
             tracker.set(n, pointer(n)).unwrap();
         }
         tracker.write_pending(tracker.pointer_count()).unwrap();
-        tracker.flusher().unwrap()().unwrap();
+        tracker.flusher()().unwrap();
 
         // The file length matches the exact number of mappings
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         drop(tracker);
 
-        let tracker = AppendOnlyTracker::open(dir.path(), true).unwrap();
+        let tracker = AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path()).unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
-            assert_eq!(tracker.get(n).unwrap(), Some(pointer(n)));
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
         assert_eq!(
-            tracker.get_range(0..7).unwrap(),
+            tracker.get_range::<Random>(0..7).unwrap(),
             (0..5)
                 .map(|n| Some(pointer(n)))
                 .chain([None, None])
@@ -405,14 +502,14 @@ mod tests {
         assert_eq!(file_len(&tracker), 3 * ENTRY_SIZE);
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
-            assert_eq!(tracker.get(n).unwrap(), Some(pointer(n)));
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
 
         // Then the rest
         tracker.write_pending(5).unwrap();
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         for n in 0..5 {
-            assert_eq!(tracker.get(n).unwrap(), Some(pointer(n)));
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
     }
 
@@ -432,7 +529,7 @@ mod tests {
         assert_eq!(file_len(&tracker), 3 * ENTRY_SIZE);
         assert_eq!(tracker.pointer_count(), 3);
         for n in 0..3 {
-            assert_eq!(tracker.get(n).unwrap(), Some(pointer(n)));
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
     }
 
@@ -440,7 +537,7 @@ mod tests {
     fn test_torn_write_is_ignored_and_truncated() {
         let dir = TempDir::new().unwrap();
 
-        let mut tracker = AppendOnlyTracker::new(dir.path()).unwrap();
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
         for n in 0..5 {
             tracker.set(n, pointer(n)).unwrap();
         }
@@ -449,36 +546,80 @@ mod tests {
         drop(tracker);
 
         // Simulate a torn write by appending a partial entry
-        let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
-        direct_io::write_all_at(&file, &[0xAA; 7], 5 * ENTRY_SIZE).unwrap();
+        let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(&[0xAA; 7]).unwrap();
         drop(file);
         assert_eq!(fs::metadata(&path).unwrap().len(), 5 * ENTRY_SIZE + 7);
 
         // A read-only open ignores the partial entry, but leaves the file untouched
-        let tracker = AppendOnlyTracker::open(dir.path(), false).unwrap();
+        let tracker = AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path()).unwrap();
         assert_eq!(tracker.pointer_count(), 5);
-        assert_eq!(tracker.get(4).unwrap(), Some(pointer(4)));
+        assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE + 7);
         drop(tracker);
 
         // A writable open truncates the partial entry away
-        let tracker = AppendOnlyTracker::open(dir.path(), true).unwrap();
+        let tracker = AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path()).unwrap();
         assert_eq!(tracker.pointer_count(), 5);
-        assert_eq!(tracker.get(4).unwrap(), Some(pointer(4)));
+        assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
+    }
+
+    /// A conflicting append whose mappings already landed — a retried flush after a lost
+    /// acknowledgement — is adopted as persisted instead of appending twice.
+    #[test]
+    fn test_write_pending_adopts_lost_append_on_conflict() {
+        let (_dir, mut tracker) = empty_tracker();
+
+        tracker.set(0, pointer(0)).unwrap();
+
+        // Simulate a flush that landed but was never acknowledged: the entry is in the
+        // (previously empty) file, but the tracker still counts it as pending
+        let entry = OptionalPointer::some(pointer(0));
+        fs::write(&tracker.path, bytemuck::bytes_of(&entry)).unwrap();
+
+        tracker.write_pending(1).unwrap();
+        assert_eq!(tracker.persisted_count, 1);
+        assert!(tracker.pending.is_empty());
+        assert_eq!(
+            file_len(&tracker),
+            ENTRY_SIZE,
+            "the mapping must not be appended twice",
+        );
+        assert_eq!(tracker.get::<Random>(0).unwrap(), Some(pointer(0)));
+    }
+
+    /// A conflicting append against a file that does not end where the append would have ended
+    /// fails: the file was modified outside this writer.
+    #[test]
+    fn test_write_pending_rejects_foreign_growth() {
+        let (_dir, mut tracker) = empty_tracker();
+
+        tracker.set(0, pointer(0)).unwrap();
+
+        // Something else grew the (previously empty) file to an unexpected length
+        fs::write(&tracker.path, [9; 7]).unwrap();
+
+        let err = tracker.write_pending(1).unwrap_err();
+        assert!(matches!(err, BlobstoreError::ServiceError { .. }));
+
+        // Nothing was adopted, the pending mapping is kept for a later flush
+        assert_eq!(tracker.persisted_count, 0);
+        assert_eq!(tracker.pending.len(), 1);
     }
 
     #[test]
     fn test_live_reload() {
         let dir = TempDir::new().unwrap();
 
-        let mut writer = AppendOnlyTracker::new(dir.path()).unwrap();
+        let mut writer = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
         for n in 0..3 {
             writer.set(n, pointer(n)).unwrap();
         }
         writer.write_pending(writer.pointer_count()).unwrap();
 
-        let mut reader = AppendOnlyTracker::open(dir.path(), false).unwrap();
+        let mut reader =
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path()).unwrap();
         assert_eq!(reader.pointer_count(), 3);
         assert!(!reader.live_reload().unwrap());
 
@@ -491,7 +632,7 @@ mod tests {
         assert!(reader.live_reload().unwrap());
         assert_eq!(reader.pointer_count(), 6);
         for n in 0..6 {
-            assert_eq!(reader.get(n).unwrap(), Some(pointer(n)));
+            assert_eq!(reader.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
         assert!(!reader.live_reload().unwrap());
     }
@@ -508,7 +649,7 @@ mod tests {
         tracker.set(6, pointer(6)).unwrap();
 
         assert_eq!(
-            tracker.get_range(0..9).unwrap(),
+            tracker.get_range::<Random>(0..9).unwrap(),
             vec![
                 Some(pointer(0)),
                 Some(pointer(1)),
@@ -522,12 +663,12 @@ mod tests {
             ],
         );
         assert_eq!(
-            tracker.get_range(2..4).unwrap(),
+            tracker.get_range::<Random>(2..4).unwrap(),
             vec![Some(pointer(2)), Some(pointer(3)),]
         );
-        assert_eq!(tracker.get_range(7..9).unwrap(), vec![None, None]);
+        assert_eq!(tracker.get_range::<Random>(7..9).unwrap(), vec![None, None]);
         #[allow(clippy::reversed_empty_ranges)]
-        let empty = tracker.get_range(3..3).unwrap();
+        let empty = tracker.get_range::<Random>(3..3).unwrap();
         assert!(empty.is_empty());
     }
 }

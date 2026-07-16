@@ -11,10 +11,9 @@ use std::sync::Arc;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{UniversalAppend, UniversalRead, UserData};
-use fs_err as fs;
+use common::universal_io::{UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData};
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
 pub(super) use reader::LogstoreReader;
@@ -38,12 +37,16 @@ const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 /// example after a partial copy or restore of the storage directory. Only the most recent
 /// mappings are checked to keep opening cheap.
 fn validate_consistency<S: UniversalRead>(
-    tracker: &AppendOnlyTracker,
+    tracker: &AppendOnlyTracker<S>,
     pages: &AppendOnlyPages<S>,
 ) -> Result<()> {
     let count = tracker.pointer_count();
     let start = count.saturating_sub(OPEN_CHECK_MAPPINGS);
-    for pointer in tracker.get_range(start..count)?.into_iter().flatten() {
+    for pointer in tracker
+        .get_range::<Sequential>(start..count)?
+        .into_iter()
+        .flatten()
+    {
         let extent = u64::from(pointer.block_offset) + u64::from(pointer.length);
         match pages.page_len(pointer.page_id) {
             None => {
@@ -77,8 +80,7 @@ fn validate_consistency<S: UniversalRead>(
 /// object).
 ///
 /// Values cannot be updated or deleted, and must be put at monotonically increasing point
-/// offsets. Value data is read and written through the universal IO backend `S`; the tracker
-/// file is read and written directly.
+/// offsets. All files are read and written through the universal IO backend `S`.
 ///
 /// Uses `Arc<RwLock<...>>` for the pages and tracker to support concurrent flushing.
 #[derive(Debug)]
@@ -88,7 +90,7 @@ where
 {
     fs: S::Fs,
     pub(super) config: LogstoreConfig,
-    tracker: Arc<RwLock<AppendOnlyTracker>>,
+    tracker: Arc<RwLock<AppendOnlyTracker<S>>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
@@ -118,11 +120,12 @@ where
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
     pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
-        let tracker = AppendOnlyTracker::new(&base_path)?;
+        let tracker = AppendOnlyTracker::new(&fs, &base_path)?;
         let pages = AppendOnlyPages::new(&fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
-        common::fs::atomic_save_json(&config_path, &StorageConfig::AppendOnly(config.clone()))?;
+        let config_bytes = serde_json::to_vec(&StorageConfig::AppendOnly(config.clone()))?;
+        fs.atomic_save(&config_path, &config_bytes)?;
 
         Ok(Self {
             fs,
@@ -137,7 +140,7 @@ where
 
     /// Open an existing storage at the given path, with the already read config.
     pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
-        let tracker = AppendOnlyTracker::open(&base_path, true)?;
+        let tracker = AppendOnlyTracker::open_writable(&fs, &base_path)?;
         let pages = AppendOnlyPages::open(&fs, &base_path, true)?;
         validate_consistency(&tracker, &pages)?;
 
@@ -224,8 +227,8 @@ where
     pub(super) fn clear(&mut self) -> Result<()> {
         self.is_alive_flush_lock.blocking_mark_dead();
 
-        fs::remove_dir_all(&self.base_path)?;
-        fs::create_dir_all(&self.base_path)?;
+        self.fs.remove_dir(&self.base_path)?;
+        self.fs.create_dir(&self.base_path)?;
 
         *self = Self::new(self.fs.clone(), self.base_path.clone(), self.config.clone())?;
 
@@ -239,7 +242,7 @@ where
     /// storage.
     pub(super) fn wipe(self) -> Result<()> {
         let Self {
-            fs: _,
+            fs,
             config: _,
             tracker,
             pages,
@@ -251,7 +254,7 @@ where
         is_alive_flush_lock.blocking_mark_dead();
         drop((tracker, pages));
 
-        fs::remove_dir_all(&base_path)?;
+        fs.remove_dir(&base_path)?;
         Ok(())
     }
 
@@ -299,7 +302,11 @@ where
 
     #[cfg(test)]
     pub(super) fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
-        self.tracker.read().get(point_offset).ok().flatten()
+        self.tracker
+            .read()
+            .get::<common::generic_consts::Random>(point_offset)
+            .ok()
+            .flatten()
     }
 
     pub(super) fn max_point_offset(&self) -> PointOffset {
@@ -393,7 +400,7 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
             let tracker_flusher = {
                 let mut tracker_guard = tracker.write();
                 tracker_guard.write_pending(target)?;
-                tracker_guard.flusher()?
+                tracker_guard.flusher()
             };
             tracker_flusher()?;
 

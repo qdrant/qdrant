@@ -66,8 +66,8 @@ pub enum Mode {
     /// number of appends to each file (object stores limit appends per object).
     ///
     /// Puts buffer both the value data and the mapping in memory; each flush batches them into a
-    /// single append per file. Value data goes through the configured universal IO backend, the
-    /// tracker file is read and written directly on the local filesystem.
+    /// single append per file. All files are read and written through the configured universal
+    /// IO backend.
     AppendOnly,
 }
 
