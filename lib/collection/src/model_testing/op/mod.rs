@@ -23,17 +23,21 @@ use segment::data_types::primitive::PrimitiveVectorElement;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
-use segment::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf};
+use segment::data_types::vectors::{
+    VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
+};
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
+    Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
     MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
     PointIdType, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::{ALL_CANDIDATES, Model, ModelEntry, VectorKind, VectorValue, candidate_of};
+use super::{
+    ALL_CANDIDATES, Model, ModelEntry, VectorCandidate, VectorKind, VectorValue, candidate_of,
+};
 use crate::operations::point_ops::UpdateMode;
 use crate::operations::types::Datatype;
 
@@ -604,7 +608,7 @@ impl Op {
                     VectorKind::Dense(dim) | VectorKind::MultiDense(dim) => {
                         VectorNameConfig::dense(DenseVectorConfig {
                             size: dim as usize,
-                            distance: Distance::Dot,
+                            distance: pick.distance,
                             multivector_config: matches!(pick.kind, VectorKind::MultiDense(_))
                                 .then(MultiVectorConfig::default),
                             datatype,
@@ -873,8 +877,10 @@ pub(super) fn model_entry_from(vecs: &NamedVectors, payload: &Payload) -> ModelE
 }
 
 /// Predicted engine read-back for `value` stored under `name`. Dense and multi-dense
-/// vectors with a lossy storage datatype must record the storage round-trip instead of
-/// the inserted value:
+/// vectors first go through the distance metric's ingestion preprocessing (Cosine
+/// normalizes, Dot is an identity — see `metric_preprocess`); vectors with a lossy
+/// storage datatype must then record the storage round-trip instead of the
+/// preprocessed value:
 ///
 /// - Turbo4 (dense only) stores 4-bit quantized codes and returns the dequantized
 ///   vector. The round-trip is deterministic (fixed rotation seeds), shared across
@@ -891,29 +897,62 @@ pub(super) fn model_entry_from(vecs: &NamedVectors, payload: &Payload) -> ModelE
 pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
     let candidate = candidate_of(name);
     match (candidate.kind, value) {
-        (VectorKind::Dense(_), VectorValue::Dense(v)) => match candidate.datatype {
-            // Every fixture vector uses Dot (see `fixture::fixture` and the
-            // CreateVectorName generator arm above).
-            Some(Datatype::Turbo4) => VectorValue::Dense(turbo_storage_roundtrip(v, Distance::Dot)),
-            datatype => match scalar_storage_roundtrip(datatype) {
-                Some(roundtrip) => VectorValue::Dense(roundtrip(v)),
-                None => value.clone(),
-            },
-        },
+        (VectorKind::Dense(_), VectorValue::Dense(v)) => {
+            let stored = metric_preprocess(candidate, v);
+            match candidate.datatype {
+                Some(Datatype::Turbo4) => {
+                    VectorValue::Dense(turbo_storage_roundtrip(&stored, candidate.distance))
+                }
+                datatype => match scalar_storage_roundtrip(datatype) {
+                    Some(roundtrip) => VectorValue::Dense(roundtrip(&stored)),
+                    None => VectorValue::Dense(stored),
+                },
+            }
+        }
         // Turbo4 multi-dense is rejected at startup (`assert_candidates_predictable`),
         // so `scalar_storage_roundtrip`'s panic arm is unreachable here.
         (VectorKind::MultiDense(_), VectorValue::MultiDense(rows)) => {
-            match scalar_storage_roundtrip(candidate.datatype) {
-                Some(roundtrip) => {
-                    VectorValue::MultiDense(rows.iter().map(|row| roundtrip(row)).collect())
-                }
-                None => value.clone(),
-            }
+            let roundtrip = scalar_storage_roundtrip(candidate.datatype);
+            VectorValue::MultiDense(
+                rows.iter()
+                    .map(|row| {
+                        let stored = metric_preprocess(candidate, row);
+                        match roundtrip {
+                            Some(roundtrip) => roundtrip(&stored),
+                            None => stored,
+                        }
+                    })
+                    .collect(),
+            )
         }
         (VectorKind::Sparse, VectorValue::Sparse(_)) => value.clone(),
         (kind, value) => {
             panic!("model_vector: value/kind mismatch for `{name}` ({kind:?}): {value:?}")
         }
+    }
+}
+
+/// The engine's ingestion-time metric preprocessing for one dense vector (or one
+/// multi-dense row): Cosine normalizes, everything else is an identity. Mirrors
+/// `NamedVectors::preprocess_dense_vector`'s per-datatype dispatch — the byte metric's
+/// Cosine preprocess is an identity, so Uint8 vectors are stored un-normalized — and
+/// goes through the engine's own `Distance::preprocess_vector` (same SIMD dispatch
+/// included) so the prediction tracks the engine by construction. Stored vectors are
+/// preprocessed exactly once: optimizer rebuilds and copy-on-write moves transfer the
+/// stored form as raw bytes (see `SegmentEntry::upsert_moved_point`), so read-backs are
+/// never re-normalized and the prediction stays exact across moves.
+fn metric_preprocess(candidate: &VectorCandidate, v: &[f32]) -> Vec<f32> {
+    let v = v.to_vec();
+    match candidate.datatype {
+        None | Some(Datatype::Float32 | Datatype::Turbo4) => {
+            candidate.distance.preprocess_vector::<VectorElementType>(v)
+        }
+        Some(Datatype::Float16) => candidate
+            .distance
+            .preprocess_vector::<VectorElementTypeHalf>(v),
+        Some(Datatype::Uint8) => candidate
+            .distance
+            .preprocess_vector::<VectorElementTypeByte>(v),
     }
 }
 

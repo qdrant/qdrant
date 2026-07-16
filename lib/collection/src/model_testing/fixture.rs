@@ -36,10 +36,11 @@ use crate::shards::shard::{PeerId, ShardId};
 /// config-mismatch optimizer, for one, only acts on `Some`).
 fn dense_params_builder(
     dim: u64,
+    distance: Distance,
     on_disk: bool,
     datatype: Option<Datatype>,
 ) -> VectorParamsBuilder {
-    let mut builder = VectorParamsBuilder::new(dim, Distance::Dot);
+    let mut builder = VectorParamsBuilder::new(dim, distance);
     if on_disk {
         builder = builder.with_on_disk(true);
     }
@@ -83,7 +84,8 @@ pub(super) async fn fixture(
         let name = candidate.name;
         match candidate.kind {
             VectorKind::Dense(dim) => {
-                let mut builder = dense_params_builder(dim, on_disk, candidate.datatype);
+                let mut builder =
+                    dense_params_builder(dim, candidate.distance, on_disk, candidate.datatype);
                 // The inline-storage vector exercises the HNSW `inline_storage` layout, which
                 // stores original + quantized vectors inside the index file and therefore
                 // requires quantization. Pair it with scalar quantization.
@@ -116,7 +118,9 @@ pub(super) async fn fixture(
             VectorKind::MultiDense(dim) => {
                 // The builder has no `with_multivector_config`; set the field on the built
                 // `VectorParams` directly to mark this dense slot as a ColBERT-style multi-vec.
-                let mut params = dense_params_builder(dim, on_disk, candidate.datatype).build();
+                let mut params =
+                    dense_params_builder(dim, candidate.distance, on_disk, candidate.datatype)
+                        .build();
                 params.multivector_config = Some(MultiVectorConfig::default());
                 dense_vectors.insert(name.to_string(), params);
             }
