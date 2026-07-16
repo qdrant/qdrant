@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use segment::types::{Distance, Payload, PointIdType, VectorNameBuf};
 use sparse::common::sparse_vector::SparseVector;
 use tokio::task::JoinHandle;
@@ -262,6 +262,47 @@ pub(super) fn candidate_of(name: &str) -> &'static VectorCandidate {
         .unwrap_or_else(|| panic!("unknown vector name: {name}"))
 }
 
+/// Every point id the workload can draw, precomputed at startup. A bounded, stable pool is
+/// what gives the workload its reuse semantics (upserts overwrite live points, deletes and
+/// retrieves hit them); fresh random UUIDs drawn per op would never repeat and lose all of
+/// that.
+struct IdSpace {
+    ids: Vec<PointIdType>,
+}
+
+impl IdSpace {
+    /// `uuid_fraction` of the `id_pool` slots (rounded) become UUID ids, the rest stay
+    /// numeric (`NumId(0..n)`). The UUIDs are well-formed v4, built from seeded-rng bytes
+    /// (`Builder::from_random_bytes`), so the same seed regenerates the identical pool.
+    /// With `0.0` no rng draws are consumed and the pool is exactly `NumId(0..id_pool)`,
+    /// reproducing the numeric-only op stream of builds without UUID support.
+    fn new(rng: &mut impl Rng, id_pool: u64, uuid_fraction: f64) -> Self {
+        assert!(
+            (0.0..=1.0).contains(&uuid_fraction),
+            "uuid_fraction must be in [0.0, 1.0], got {uuid_fraction}"
+        );
+        let uuid_count = (id_pool as f64 * uuid_fraction).round() as u64;
+        let mut ids: Vec<PointIdType> = (0..id_pool - uuid_count).map(PointIdType::NumId).collect();
+        for _ in 0..uuid_count {
+            let uuid = uuid::Builder::from_random_bytes(rng.random()).into_uuid();
+            ids.push(PointIdType::Uuid(uuid));
+        }
+        IdSpace { ids }
+    }
+
+    /// One uniform draw from the pool. Consumes a single `0..len` range draw, exactly like
+    /// the `NumId(random_range(0..id_pool))` it replaced, so an all-numeric pool is
+    /// rng-stream-identical to the pre-`IdSpace` workload.
+    fn random_id(&self, rng: &mut impl Rng) -> PointIdType {
+        let n = rng.random_range(0..self.ids.len() as u64);
+        self.ids[n as usize]
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+}
+
 // BTreeMap for deterministic iteration order — several op generators sample from `model.keys()`
 // with a seeded RNG, and reservoir sampling order is iteration-order-dependent. AHashMap's
 // `RandomState` seeds with per-process entropy, which breaks workload determinism even for a
@@ -304,6 +345,7 @@ pub async fn run(
     op_num: usize,
     shard_count: u32,
     id_pool: u64,
+    uuid_id_fraction: f64,
     storage_path: &Path,
     disable_optimizer: bool,
     max_segment_size_kb: usize,
@@ -345,6 +387,7 @@ pub async fn run(
         op_num,
         shard_count,
         id_pool,
+        uuid_id_fraction,
         disable_optimizer,
         max_segment_size_kb,
         indexing_threshold_kb,
@@ -367,6 +410,10 @@ pub async fn run(
     // close+reopen. `None` when no snapshot is running. See [`drain_snapshot`].
     let mut pending_snapshot: Option<JoinHandle<CollectionResult<SnapshotDescription>>> = None;
     let rng = &mut SmallRng::seed_from_u64(seed);
+    // Drawn from the seeded rng BEFORE the first swarm config so the pool is fixed for the
+    // whole run. A nonzero `uuid_id_fraction` consumes rng draws here and thus shifts the
+    // op stream vs. other fraction values for the same seed; `0.0` consumes none.
+    let id_space = IdSpace::new(rng, id_pool, uuid_id_fraction);
 
     // Swarm-testing config (Groce et al., ISSTA 2012): disable a random subset of ops. Recomputed
     // every `swarm_interval` ops so one long run becomes a sequence of swarm sub-tests (broader
@@ -545,7 +592,7 @@ pub async fn run(
             eprintln!();
             bar.set_draw_target(ProgressDrawTarget::stderr());
         } else {
-            let op = op::Op::random(rng, &model, &active_names, id_pool, &swarm);
+            let op = op::Op::random(rng, &model, &active_names, &id_space, &swarm);
             log::debug!("op:{i} {op:?}");
             bar.set_message(op.kind());
             // Log BEFORE apply so a panic preserves the offending op in the trace.
@@ -788,6 +835,7 @@ mod tests {
             op_num,
             1, // shard_count
             ID_POOL,
+            0.5, // uuid_id_fraction: mixed numeric/UUID ids
             guard.path(),
             disable_optimizer,
             10, // max_segment_size_kb

@@ -7,13 +7,13 @@ use rand::{Rng, RngExt};
 use segment::data_types::order_by::Direction;
 use segment::json_path::JsonPath;
 use segment::types::{
-    ExtendedPointId, Payload, PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude,
-    PointIdType, VectorNameBuf, WithPayloadInterface, WithVector,
+    Payload, PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude, PointIdType,
+    VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use serde_json::{Map, Value};
 use sparse::common::sparse_vector::SparseVector;
 
-use super::super::{Model, VectorKind, VectorValue, candidate_of};
+use super::super::{IdSpace, Model, VectorKind, VectorValue, candidate_of};
 use super::{NamedVectors, Op, Prefetch, ScrollFilter, canonical_sparse};
 use crate::operations::point_ops::UpdateMode;
 use crate::operations::types::Datatype;
@@ -81,10 +81,6 @@ pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
     URL_PREFIX_PROBES.choose(rng).unwrap()
 }
 
-fn random_id(rng: &mut impl Rng, id_pool: u64) -> PointIdType {
-    ExtendedPointId::NumId(rng.random_range(0..id_pool))
-}
-
 pub(super) fn random_num(rng: &mut impl Rng) -> i64 {
     rng.random_range(0..100i64)
 }
@@ -92,13 +88,13 @@ pub(super) fn random_num(rng: &mut impl Rng) -> i64 {
 pub(super) fn random_distinct_ids(
     rng: &mut impl Rng,
     range: std::ops::RangeInclusive<usize>,
-    id_pool: u64,
+    id_space: &IdSpace,
 ) -> Vec<PointIdType> {
     let n = rng.random_range(range);
     let mut seen = AHashSet::new();
     let mut ids = Vec::with_capacity(n);
     while ids.len() < n {
-        let id = random_id(rng, id_pool);
+        let id = id_space.random_id(rng);
         if seen.insert(id) {
             ids.push(id);
         }
@@ -125,9 +121,9 @@ pub(super) fn random_existing_ids(
 pub(super) fn upsert_fallback(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
-    id_pool: u64,
+    id_space: &IdSpace,
 ) -> Op {
-    let (id, vecs, payload) = random_point(rng, active, id_pool);
+    let (id, vecs, payload) = random_point(rng, active, id_space);
     Op::Upsert(id, vecs, payload)
 }
 
@@ -201,20 +197,20 @@ pub(super) fn random_with_vector(
 pub(super) fn random_scroll_filter(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
-    id_pool: u64,
+    id_space: &IdSpace,
 ) -> ScrollFilter {
     match rng.random_range(0..6) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
         // `has_id` over 1-15 ids drawn from the pool — some present, some not — so the matcher
-        // restricts to a known, model-checkable set. Clamp the count to `id_pool` so
+        // restricts to a known, model-checkable set. Clamp the count to the pool size so
         // `random_distinct_ids` can't spin forever trying to draw more distinct ids than exist
         // (relevant only for tiny `--id-pool` values; the default pool is far above 15).
         3 => ScrollFilter::HasId(random_distinct_ids(
             rng,
-            1..=(id_pool as usize).min(15),
-            id_pool,
+            1..=id_space.len().min(15),
+            id_space,
         )),
         // `has_vector` over an active name: points keep all active vectors on upsert but
         // `DeleteVectors`/`UpdateVectors`/`CreateVectorName` make the populated set vary per point,
@@ -364,10 +360,10 @@ fn random_geo_coords(rng: &mut impl Rng) -> (f64, f64) {
 pub(super) fn random_point(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
-    id_pool: u64,
+    id_space: &IdSpace,
 ) -> (PointIdType, NamedVectors, Payload) {
     (
-        random_id(rng, id_pool),
+        id_space.random_id(rng),
         random_named_vectors(rng, active),
         random_payload(rng),
     )
@@ -377,13 +373,13 @@ pub(super) fn random_distinct_points(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
     range: std::ops::RangeInclusive<usize>,
-    id_pool: u64,
+    id_space: &IdSpace,
 ) -> Vec<(PointIdType, NamedVectors, Payload)> {
     let n = rng.random_range(range);
     let mut seen = AHashSet::new();
     let mut points = Vec::with_capacity(n);
     while points.len() < n {
-        let (id, vecs, payload) = random_point(rng, active, id_pool);
+        let (id, vecs, payload) = random_point(rng, active, id_space);
         if seen.insert(id) {
             points.push((id, vecs, payload));
         }

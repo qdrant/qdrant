@@ -36,7 +36,8 @@ use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::{
-    ALL_CANDIDATES, Model, ModelEntry, VectorCandidate, VectorKind, VectorValue, candidate_of,
+    ALL_CANDIDATES, IdSpace, Model, ModelEntry, VectorCandidate, VectorKind, VectorValue,
+    candidate_of,
 };
 use crate::operations::point_ops::UpdateMode;
 use crate::operations::types::Datatype;
@@ -54,7 +55,7 @@ pub(super) enum Op {
     ClearPayload(Vec<PointIdType>),
     CreateIndex(JsonPath, PayloadFieldSchema),
     DropIndex(JsonPath),
-    /// Retrieve verification: IDs sampled uniformly from `0..id_pool`. Most IDs won't be in
+    /// Retrieve verification: IDs sampled uniformly from the id pool. Most IDs won't be in
     /// the model — the assertion exercises engine⇄model agreement on missing IDs plus the
     /// occasional full per-id check on a hit.
     RetrieveRandom(Vec<PointIdType>),
@@ -450,7 +451,7 @@ impl Op {
         rng: &mut impl Rng,
         model: &Model,
         active: &BTreeSet<VectorNameBuf>,
-        id_pool: u64,
+        id_space: &IdSpace,
         swarm: &Swarm,
     ) -> Self {
         // The op at index N below MUST line up with `Swarm::BASE`/`Swarm::NAMES` at the same
@@ -460,33 +461,33 @@ impl Op {
 
         match workload.sample(rng) {
             0 => {
-                let (id, vecs, payload) = random_point(rng, active, id_pool);
+                let (id, vecs, payload) = random_point(rng, active, id_space);
                 Op::Upsert(id, vecs, payload)
             }
-            1 => Op::UpsertBatch(random_distinct_points(rng, active, 2..=5, id_pool)),
-            2 => Op::Delete(random_distinct_ids(rng, 1..=3, id_pool)),
+            1 => Op::UpsertBatch(random_distinct_points(rng, active, 2..=5, id_space)),
+            2 => Op::Delete(random_distinct_ids(rng, 1..=3, id_space)),
             3 => Op::DeleteByFilter(random_num(rng)),
             4 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::SetPayload(ids, random_payload(rng))
             }
             5 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::OverwritePayload(ids, random_payload(rng))
             }
             6 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::DeletePayload(ids, random_payload_keys(rng))
             }
             7 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::ClearPayload(ids)
             }
@@ -511,7 +512,7 @@ impl Op {
                 let field = if rng.random_bool(0.5) { "tag" } else { "url" };
                 Op::DropIndex(field.parse().unwrap())
             }
-            10 => Op::RetrieveRandom(random_distinct_ids(rng, 3..=10, id_pool)),
+            10 => Op::RetrieveRandom(random_distinct_ids(rng, 3..=10, id_space)),
             11 => Op::CountByNum(random_num(rng)),
             12 => {
                 let vector_name = random_vector_name(rng, active);
@@ -528,13 +529,13 @@ impl Op {
                 }
             }
             13 => Op::UpsertConditional {
-                points: random_distinct_points(rng, active, 1..=3, id_pool),
+                points: random_distinct_points(rng, active, 1..=3, id_space),
                 condition_num: random_num(rng),
                 mode: random_update_mode(rng),
             },
             14 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 let mut points = Vec::with_capacity(ids.len());
                 for id in ids {
@@ -548,7 +549,7 @@ impl Op {
             }
             15 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::DeleteVectors {
                     ids,
@@ -573,7 +574,7 @@ impl Op {
                     .map(|(id, _)| *id)
                     .collect();
                 if eligible.is_empty() {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 }
                 let n_pos = rng.random_range(1..=3).min(eligible.len());
                 let positive: Vec<PointIdType> = eligible.iter().copied().sample(rng, n_pos);
@@ -600,7 +601,7 @@ impl Op {
                     .filter(|c| !active.contains(c.name))
                     .collect();
                 if inactive.is_empty() {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 }
                 let pick = inactive.choose(rng).unwrap();
                 let datatype = pick.datatype.map(VectorStorageDatatype::from);
@@ -627,14 +628,14 @@ impl Op {
             23 => {
                 // DeleteVectorName: at least one name must remain active.
                 if active.len() < 2 {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 }
                 let name = active.iter().choose(rng).unwrap().clone();
                 Op::DeleteVectorName(name)
             }
             24 => {
                 let Some(ids) = random_existing_ids(rng, model, 10) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::RetrieveExisting(ids)
             }
@@ -661,7 +662,7 @@ impl Op {
             },
             30 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::SetPayloadByKey {
                     ids,
@@ -671,7 +672,7 @@ impl Op {
             }
             31 => {
                 let Some(ids) = random_existing_ids(rng, model, 10) else {
-                    return upsert_fallback(rng, active, id_pool);
+                    return upsert_fallback(rng, active, id_space);
                 };
                 Op::RetrieveSelective {
                     ids,
@@ -680,9 +681,9 @@ impl Op {
                 }
             }
             32 => Op::ScrollPaged {
-                // Small page size relative to id_pool so multi-page pagination actually happens.
+                // Small page size relative to the id pool so multi-page pagination actually happens.
                 limit: rng.random_range(1..=20),
-                filter: random_scroll_filter(rng, active, id_pool),
+                filter: random_scroll_filter(rng, active, id_space),
             },
             33 => {
                 let vector_name = random_vector_name(rng, active);
