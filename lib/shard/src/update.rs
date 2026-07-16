@@ -1404,6 +1404,7 @@ mod test {
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::save_on_disk::SaveOnDisk;
     use parking_lot::RwLock;
     use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
     use segment::entry::ReadSegmentEntry as _;
@@ -1415,15 +1416,22 @@ mod test {
     };
     use tempfile::Builder;
 
+    use super::{
+        PayloadOps, PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+        SetPayloadOp,
+    };
     use crate::fixtures::{
         build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
     };
     use crate::operations::point_ops::PointStructRawPersisted;
+    use crate::segment_holder::locked::LockedSegmentHolder;
+    use crate::segment_holder::provisioning::SegmentProvisioning;
     use crate::segment_holder::{FlushMode, SegmentHolder};
     use crate::update::{
         clear_payload_by_filter, create_field_index, delete_payload_by_filter,
         delete_points_by_filter, delete_vectors_by_filter, overwrite_payload_by_filter,
-        set_payload, set_payload_by_filter, sync_points_raw, upsert_points_raw,
+        process_payload_operation, process_point_operation, set_payload, set_payload_by_filter,
+        sync_points_raw, upsert_points_raw,
     };
 
     #[test]
@@ -2348,6 +2356,155 @@ mod test {
         let err = holder
             .smallest_appendable_segment()
             .expect_err("even the smallest appendable segment is at the cap");
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "expected OutOfAppendableCapacity, got: {err}",
+        );
+    }
+
+    /// Build a holder with a non-appendable segment holding points 1-5 and one empty appendable
+    /// segment, capped at two points worth of vector data, plus the matching provisioning.
+    fn capped_holder_with_immutable_points(
+        path: &std::path::Path,
+    ) -> (LockedSegmentHolder, SegmentProvisioning) {
+        let mut non_appendable = build_segment_1(path); // points 1-5
+        non_appendable.appendable_flag = false;
+        let appendable = empty_segment(path);
+        let segment_config = appendable.segment_config.clone();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+
+        let provisioning = SegmentProvisioning {
+            segments_path: path.to_owned(),
+            segment_config,
+            payload_index_schema: Arc::new(
+                SaveOnDisk::load_or_init_default(path.join("payload.schema")).unwrap(),
+            ),
+            deferred_internal_id: None,
+        };
+
+        (LockedSegmentHolder::new(holder), provisioning)
+    }
+
+    fn appendable_segment_sizes(segments: &LockedSegmentHolder) -> Vec<usize> {
+        let segments = segments.read();
+        segments
+            .iter()
+            .filter_map(|(_segment_id, segment)| {
+                let segment = segment.get().read();
+                segment
+                    .is_appendable()
+                    .then(|| segment.max_available_vectors_size_in_bytes().unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_cow_move_provisions_segments_at_capacity() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let (segments, provisioning) = capped_holder_with_immutable_points(dir.path());
+
+        // Set payload on all 5 points: every one CoW-moves out of the non-appendable segment.
+        // Only 2 fit into the existing appendable segment, so the update must provision fresh
+        // segments for the remaining 3 instead of overgrowing the destination.
+        let operation = PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"town": "Amsterdam"},
+            points: Some((1..=5).map(Into::into).collect()),
+            filter: None,
+            key: None,
+        });
+        let updated =
+            process_payload_operation(&segments, Some(&provisioning), 100, operation, &hw_counter)
+                .unwrap();
+        assert_eq!(updated, 5);
+
+        let sizes = appendable_segment_sizes(&segments);
+        assert!(
+            sizes.iter().all(|size| *size <= 2 * TEST_POINT_SIZE_BYTES),
+            "no appendable segment may exceed the cap: {sizes:?}",
+        );
+        assert_eq!(
+            sizes.iter().sum::<usize>(),
+            5 * TEST_POINT_SIZE_BYTES,
+            "all moved points must be accounted for: {sizes:?}",
+        );
+        assert!(
+            sizes.len() >= 3,
+            "the update must have provisioned fresh appendable segments: {sizes:?}",
+        );
+    }
+
+    #[test]
+    fn test_upsert_provisions_segments_at_capacity() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let appendable = empty_segment(dir.path());
+        let segment_config = appendable.segment_config.clone();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(appendable);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+
+        let provisioning = SegmentProvisioning {
+            segments_path: dir.path().to_owned(),
+            segment_config,
+            payload_index_schema: Arc::new(
+                SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap(),
+            ),
+            deferred_internal_id: None,
+        };
+        let segments = LockedSegmentHolder::new(holder);
+
+        // Insert 5 new points; only 2 fit under the cap in the initial appendable segment.
+        let points: Vec<_> = (1..=5)
+            .map(|id: u64| PointStructPersisted {
+                id: id.into(),
+                vector: crate::operations::point_ops::VectorStructPersisted::Single(vec![
+                    1.0, 0.0, 1.0, 0.0,
+                ]),
+                payload: None,
+            })
+            .collect();
+        let operation =
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points));
+        process_point_operation(&segments, Some(&provisioning), 100, operation, &hw_counter)
+            .unwrap();
+
+        let sizes = appendable_segment_sizes(&segments);
+        assert!(
+            sizes.iter().all(|size| *size <= 2 * TEST_POINT_SIZE_BYTES),
+            "no appendable segment may exceed the cap: {sizes:?}",
+        );
+        assert_eq!(
+            sizes.iter().sum::<usize>(),
+            5 * TEST_POINT_SIZE_BYTES,
+            "all inserted points must be accounted for: {sizes:?}",
+        );
+    }
+
+    #[test]
+    fn test_capacity_error_without_provisioning() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let (segments, _provisioning) = capped_holder_with_immutable_points(dir.path());
+
+        // Without provisioning, the same update must fail once the destination is full, and the
+        // error must be recognizable so callers with provisioning can recover from it.
+        let operation = PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"town": "Amsterdam"},
+            points: Some((1..=5).map(Into::into).collect()),
+            filter: None,
+            key: None,
+        });
+        let err = process_payload_operation(&segments, None, 100, operation, &hw_counter)
+            .expect_err("the appendable segment cannot hold all 5 moved points");
         assert!(
             err.is_out_of_appendable_capacity(),
             "expected OutOfAppendableCapacity, got: {err}",
