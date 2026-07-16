@@ -22,7 +22,7 @@ use super::reader::CONFIG_FILENAME;
 use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
-use crate::config::{StorageConfig, StorageOptions};
+use crate::config::{GridstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
@@ -40,7 +40,7 @@ where
     S: UniversalWrite + 'static,
 {
     pub(super) fs: S::Fs,
-    pub(super) config: StorageConfig,
+    pub(super) config: GridstoreConfig,
     pub(super) tracker: Arc<RwLock<Tracker<S>>>,
     pub(super) pages: Arc<RwLock<Pages<S>>>,
     /// MmapBitmask to represent which "blocks" of data in the pages are used and which are free.
@@ -96,8 +96,7 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        let config = StorageConfig::try_from(options).map_err(BlobstoreError::service_error)?;
+    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: GridstoreConfig) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let bitmask = Bitmask::create(&fs, &base_path, config.clone())?;
@@ -121,7 +120,7 @@ where
             .write()
             .attach_page(&storage.fs, &path, Populate::No)?;
 
-        let config_bytes = serde_json::to_vec(&storage.config)?;
+        let config_bytes = serde_json::to_vec(&StorageConfig::Mutable(storage.config.clone()))?;
         storage.fs.atomic_save(&config_path, &config_bytes)?;
 
         Ok(storage)
@@ -133,7 +132,7 @@ where
     pub(super) fn open(
         fs: S::Fs,
         base_path: PathBuf,
-        config: StorageConfig,
+        config: GridstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
@@ -338,11 +337,7 @@ where
         self.fs.remove_dir(&self.base_path)?;
         self.fs.create_dir(&self.base_path)?;
 
-        *self = Self::new(
-            self.fs.clone(),
-            self.base_path.clone(),
-            StorageOptions::from(&self.config),
-        )?;
+        *self = Self::new(self.fs.clone(), self.base_path.clone(), self.config.clone())?;
 
         Ok(())
     }

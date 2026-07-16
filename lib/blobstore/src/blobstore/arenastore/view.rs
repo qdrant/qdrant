@@ -10,7 +10,7 @@ use common::universal_io::{UniversalRead, UserData};
 use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::StorageConfig;
+use crate::config::ArenastoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
@@ -21,7 +21,7 @@ use crate::tracker::{PointOffset, ValuePointer};
 ///
 /// Value data is read through the universal IO backend `S`, the tracker is read directly.
 pub(crate) struct ArenastoreView<'a, V, S: UniversalRead> {
-    config: &'a StorageConfig,
+    config: &'a ArenastoreConfig,
     tracker: &'a AppendOnlyTracker,
     pages: &'a AppendOnlyPages<S>,
     _phantom: PhantomData<V>,
@@ -29,7 +29,7 @@ pub(crate) struct ArenastoreView<'a, V, S: UniversalRead> {
 
 impl<'a, V, S: UniversalRead> ArenastoreView<'a, V, S> {
     pub(super) fn new(
-        config: &'a StorageConfig,
+        config: &'a ArenastoreConfig,
         tracker: &'a AppendOnlyTracker,
         pages: &'a AppendOnlyPages<S>,
     ) -> Self {

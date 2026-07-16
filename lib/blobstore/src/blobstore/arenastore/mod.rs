@@ -24,7 +24,7 @@ use super::Flusher;
 use super::reader::CONFIG_FILENAME;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{StorageConfig, StorageOptions};
+use crate::config::{ArenastoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
@@ -87,7 +87,7 @@ where
     S: UniversalAppend + 'static,
 {
     fs: S::Fs,
-    pub(super) config: StorageConfig,
+    pub(super) config: ArenastoreConfig,
     tracker: Arc<RwLock<AppendOnlyTracker>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
@@ -117,14 +117,12 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        let config = StorageConfig::try_from(options).map_err(BlobstoreError::service_error)?;
-
+    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: ArenastoreConfig) -> Result<Self> {
         let tracker = AppendOnlyTracker::new(&base_path)?;
         let pages = AppendOnlyPages::new(&fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
-        common::fs::atomic_save_json(&config_path, &config)?;
+        common::fs::atomic_save_json(&config_path, &StorageConfig::AppendOnly(config.clone()))?;
 
         Ok(Self {
             fs,
@@ -138,7 +136,7 @@ where
     }
 
     /// Open an existing storage at the given path, with the already read config.
-    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: ArenastoreConfig) -> Result<Self> {
         let tracker = AppendOnlyTracker::open(&base_path, true)?;
         let pages = AppendOnlyPages::open(&fs, &base_path, true)?;
         validate_consistency(&tracker, &pages)?;
@@ -200,7 +198,7 @@ where
         let value_size = u32::try_from(value_size)
             .map_err(|_| BlobstoreError::service_error("value is too large"))?;
 
-        let page_capacity_bytes = self.config.page_size_bytes as u64;
+        let page_capacity_bytes = self.config.page_capacity_bytes as u64;
         let (page_id, offset) =
             self.pages
                 .write()
@@ -229,11 +227,7 @@ where
         fs::remove_dir_all(&self.base_path)?;
         fs::create_dir_all(&self.base_path)?;
 
-        *self = Self::new(
-            self.fs.clone(),
-            self.base_path.clone(),
-            StorageOptions::from(&self.config),
-        )?;
+        *self = Self::new(self.fs.clone(), self.base_path.clone(), self.config.clone())?;
 
         Ok(())
     }

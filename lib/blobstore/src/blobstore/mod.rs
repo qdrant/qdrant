@@ -23,7 +23,7 @@ pub use view::BlobstoreView;
 
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{Mode, StorageOptions};
+use crate::config::{ArenastoreConfig, GridstoreConfig, Mode, StorageConfig, StorageOptions};
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 #[cfg(test)]
@@ -106,13 +106,17 @@ where
     pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         match options.mode.unwrap_or_default() {
             Mode::Mutable => {
-                let storage = Gridstore::new(fs, base_path, options)?;
+                let config =
+                    GridstoreConfig::try_from(options).map_err(BlobstoreError::service_error)?;
+                let storage = Gridstore::new(fs, base_path, config)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
                 })
             }
             Mode::AppendOnly => {
-                let storage = Arenastore::new(fs, base_path, options)?;
+                let config =
+                    ArenastoreConfig::try_from(options).map_err(BlobstoreError::service_error)?;
+                let storage = Arenastore::new(fs, base_path, config)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Arenastore(storage),
                 })
@@ -124,15 +128,14 @@ where
     ///
     /// The operating mode is automatically selected based on the persisted config.
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
-        let config = reader::read_config(&fs, &base_path)?;
-        match config.mode {
-            Mode::Mutable => {
+        match reader::read_config(&fs, &base_path)? {
+            StorageConfig::Mutable(config) => {
                 let storage = Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
                 })
             }
-            Mode::AppendOnly => {
+            StorageConfig::AppendOnly(config) => {
                 let storage = Arenastore::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Arenastore(storage),

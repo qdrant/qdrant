@@ -20,7 +20,7 @@ use super::*;
 use crate::blob::Blob;
 use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    Mode, StorageConfig, compress_lz4, decompress_lz4,
+    GridstoreConfig, Mode, compress_lz4, decompress_lz4,
 };
 use crate::fixtures::{
     HM_FIELDS, Payload, empty_storage, empty_storage_mode, empty_storage_sized, minimal_payload,
@@ -281,12 +281,11 @@ fn test_update_single_payload() {
 fn test_write_across_pages() {
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
     let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
-    let config = StorageConfig {
+    let config = GridstoreConfig {
         page_size_bytes: page_size,
         block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
         region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         compression: Compression::None,
-        mode: Mode::Mutable,
     };
 
     storage.as_gridstore_mut().create_new_page().unwrap();
@@ -780,12 +779,12 @@ fn test_open_rejects_corrupt_config(#[values(Mode::Mutable, Mode::AppendOnly)] m
         storage.flusher()().unwrap();
     }
 
-    // Corrupt the config by zeroing the block size
+    // Corrupt the config by zeroing the page size, which both modes reject
     let config_path = path.join("config.json");
     let config_json = fs::read_to_string(&config_path).unwrap();
     let mut config: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(&config_json).unwrap();
-    config.insert("block_size_bytes".to_string(), 0.into());
+    config.insert("page_size_bytes".to_string(), 0.into());
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
     assert!(Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());

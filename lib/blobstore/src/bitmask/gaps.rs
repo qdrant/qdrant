@@ -6,7 +6,7 @@ use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
 use itertools::Itertools;
 
-use super::{RegionId, StorageConfig};
+use super::{GridstoreConfig, RegionId};
 use crate::Result;
 
 /// Gaps of contiguous zeros in a bitmask region.
@@ -82,7 +82,7 @@ fn gaps_file_path(dir: &Path) -> PathBuf {
 #[derive(Debug)]
 pub(super) struct BitmaskGaps<S> {
     path: PathBuf,
-    config: StorageConfig,
+    config: GridstoreConfig,
     slice_store: TypedStorage<S, RegionGaps>,
 }
 
@@ -95,7 +95,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         fs: &S::Fs,
         dir: &Path,
         iter: impl ExactSizeIterator<Item = RegionGaps>,
-        config: StorageConfig,
+        config: GridstoreConfig,
     ) -> Result<Self> {
         let path = gaps_file_path(dir);
 
@@ -122,7 +122,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         })
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
+    pub fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
         let path = gaps_file_path(dir);
         let options = OpenOptions {
             writeable: true,
@@ -445,7 +445,7 @@ mod tests {
         const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
 
         let temp_dir = tempdir().unwrap();
-        let config: StorageConfig = StorageOptions::default().try_into().unwrap();
+        let config: GridstoreConfig = StorageOptions::default().try_into().unwrap();
 
         // 3 regions, all empty
         let gaps = vec![
