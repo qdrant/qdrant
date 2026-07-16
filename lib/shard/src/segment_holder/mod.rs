@@ -687,25 +687,48 @@ impl SegmentHolder {
         }
     }
 
-    /// Filter CoW-move destination candidates down to appendable segments below the configured
-    /// size cap.
+    /// Appendable segments eligible as write destinations under the configured size cap, with
+    /// their measured sizes.
     ///
-    /// Errors with [`OperationError::OutOfAppendableCapacity`] when candidates exist but all of
-    /// them reached the cap; re-applying the operation after provisioning a fresh appendable
-    /// segment resumes where it left off (already-moved points are skipped by point version).
-    fn candidates_with_capacity(
+    /// Segments that cannot be measured right now (read-lock contention, size errors) stay
+    /// eligible and report `None`: the cap is a soft limit and liveness wins over precision.
+    /// With no cap configured, every appendable segment is eligible.
+    ///
+    /// This is the single origin of [`OperationError::OutOfAppendableCapacity`], returned when
+    /// appendable segments exist but every measurable one reached the cap. Callers recover by
+    /// provisioning a fresh appendable segment and re-applying the operation; already-applied
+    /// points are then skipped by their point version.
+    fn appendable_segments_with_capacity(
         &self,
-        candidates: &[SegmentId],
-    ) -> OperationResult<Vec<SegmentId>> {
-        let eligible: Vec<_> = candidates
-            .iter()
-            .copied()
-            .filter(|segment_id| {
-                self.segment_has_capacity(*segment_id, self.max_segment_size_bytes)
-            })
-            .collect();
+    ) -> OperationResult<Vec<(SegmentId, Option<usize>)>> {
+        let appendable_segments = self.appendable_segments_ids();
+
+        let mut eligible = Vec::with_capacity(appendable_segments.len());
+        for segment_id in &appendable_segments {
+            let Some(locked_segment) = self.get(*segment_id) else {
+                continue;
+            };
+            let size = match locked_segment.get().try_read() {
+                None => None,
+                Some(segment) => match segment.max_available_vectors_size_in_bytes() {
+                    Ok(size) => Some(size),
+                    Err(err) => {
+                        log::error!("Failed to get segment size, ignoring: {err}");
+                        None
+                    }
+                },
+            };
+            let under_cap = match (size, self.max_segment_size_bytes) {
+                (Some(size), Some(max_segment_size_bytes)) => size < max_segment_size_bytes.get(),
+                _ => true,
+            };
+            if under_cap {
+                eligible.push((*segment_id, size));
+            }
+        }
+
         if eligible.is_empty()
-            && !candidates.is_empty()
+            && !appendable_segments.is_empty()
             && let Some(max_segment_size_bytes) = self.max_segment_size_bytes
         {
             return Err(OperationError::OutOfAppendableCapacity {
@@ -736,48 +759,31 @@ impl SegmentHolder {
     ///
     /// # Errors
     ///
-    /// - [`OperationError::OutOfAppendableCapacity`] when a size cap is configured and even the
-    ///   smallest segment reached it; re-applying the operation after provisioning a fresh
-    ///   appendable segment resumes where it left off.
+    /// - [`OperationError::OutOfAppendableCapacity`] when a size cap is configured and every
+    ///   measurable segment reached it (see
+    ///   [`appendable_segments_with_capacity`](Self::appendable_segments_with_capacity)).
     /// - Service error when there are no appendable segments at all.
     ///
     /// If capacity is not important use `random_appendable_segment` instead because it is cheaper.
     pub fn smallest_appendable_segment(&self) -> OperationResult<LockedSegment> {
-        let segment_ids: Vec<_> = self.appendable_segments_ids();
+        let candidates = self.appendable_segments_with_capacity()?;
 
-        // Try a non-blocking read lock on all segments and return the smallest one
-        let smallest_segment = segment_ids
+        // Prefer the smallest measurable candidate; fall back to a random one when none could
+        // be measured.
+        let chosen = candidates
             .iter()
-            .filter_map(|segment_id| self.get(*segment_id))
-            .filter_map(|locked_segment| {
-                match locked_segment
-                    .get()
-                    .try_read()
-                    .map(|segment| segment.max_available_vectors_size_in_bytes())?
-                {
-                    Ok(size) => Some((locked_segment, size)),
-                    Err(err) => {
-                        log::error!("Failed to get segment size, ignoring: {err}");
-                        None
-                    }
-                }
-            })
-            .min_by_key(|(_, segment_size)| *segment_size);
-        if let Some((smallest_segment, size)) = smallest_segment {
-            if let Some(max_segment_size_bytes) = self.max_segment_size_bytes
-                && size >= max_segment_size_bytes.get()
-            {
-                return Err(OperationError::OutOfAppendableCapacity {
-                    max_segment_size_bytes: max_segment_size_bytes.get(),
-                });
-            }
-            return Ok(LockedSegment::clone(smallest_segment));
-        }
+            .filter_map(|(segment_id, size)| size.map(|size| (*segment_id, size)))
+            .min_by_key(|(_, size)| *size)
+            .map(|(segment_id, _)| segment_id)
+            .or_else(|| {
+                candidates
+                    .choose(&mut rand::rng())
+                    .map(|(segment_id, _)| *segment_id)
+            });
 
-        // Fall back to picking a random segment
-        segment_ids
-            .choose(&mut rand::rng())
-            .and_then(|idx| self.appendable_segments.get(idx).cloned())
+        chosen
+            .and_then(|segment_id| self.appendable_segments.get(&segment_id))
+            .cloned()
             .ok_or_else(|| {
                 OperationError::service_error("No appendable segments exist, expected at least one")
             })
@@ -1116,6 +1122,13 @@ impl SegmentHolder {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
+        // CoW-move destination candidates below the size cap. Computed lazily on the first point
+        // that actually needs a move — a batch that applies fully in place must not fail just
+        // because all appendable segments are full — and reused for the rest of this call.
+        // Callers batch points (e.g. 32 per call), so capacity is checked once per batch, not
+        // per point; a destination may overshoot the cap by at most one batch worth of points.
+        let mut eligible_segments: Option<Vec<SegmentId>> = None;
+
         let mut applied_points: AHashSet<PointIdType> = Default::default();
         let stopped = AtomicBool::new(false);
 
@@ -1132,14 +1145,17 @@ impl SegmentHolder {
             let is_applied = if can_apply_operation {
                 point_operation(point_id, write_segment)?
             } else {
-                // Re-check destination capacity per moved point: a large operation can fill the
-                // destination mid-way, and the next point must then go elsewhere (or the
-                // operation must fail with `OutOfAppendableCapacity` so the caller provisions a
-                // fresh appendable segment and re-applies).
-                let eligible_segments;
-                let destination_candidates = if self.max_segment_size_bytes.is_some() {
-                    eligible_segments = self.candidates_with_capacity(&appendable_segments)?;
-                    &eligible_segments
+                let destination_candidates: &[SegmentId] = if self.max_segment_size_bytes.is_some()
+                {
+                    if eligible_segments.is_none() {
+                        let eligible = self
+                            .appendable_segments_with_capacity()?
+                            .into_iter()
+                            .map(|(segment_id, _size)| segment_id)
+                            .collect();
+                        eligible_segments = Some(eligible);
+                    }
+                    eligible_segments.as_ref().unwrap()
                 } else {
                     &appendable_segments
                 };
