@@ -847,21 +847,21 @@ pub enum QueryVector {
 }
 
 impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector {
-    fn transform<F>(self, mut f: F) -> OperationResult<QueryVector>
-    where
-        F: FnMut(VectorInternal) -> OperationResult<VectorInternal>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(VectorInternal) -> OperationResult<VectorInternal>,
+    ) -> OperationResult<QueryVector> {
         match self {
             QueryVector::Nearest(v) => f(v).map(QueryVector::Nearest),
             QueryVector::RecommendBestScore(v) => {
-                Ok(QueryVector::RecommendBestScore(v.transform(&mut f)?))
+                Ok(QueryVector::RecommendBestScore(v.transform(f)?))
             }
             QueryVector::RecommendSumScores(v) => {
-                Ok(QueryVector::RecommendSumScores(v.transform(&mut f)?))
+                Ok(QueryVector::RecommendSumScores(v.transform(f)?))
             }
-            QueryVector::Discover(v) => Ok(QueryVector::Discover(v.transform(&mut f)?)),
-            QueryVector::Context(v) => Ok(QueryVector::Context(v.transform(&mut f)?)),
-            QueryVector::FeedbackNaive(v) => Ok(QueryVector::FeedbackNaive(v.transform(&mut f)?)),
+            QueryVector::Discover(v) => Ok(QueryVector::Discover(v.transform(f)?)),
+            QueryVector::Context(v) => Ok(QueryVector::Context(v.transform(f)?)),
+            QueryVector::FeedbackNaive(v) => Ok(QueryVector::FeedbackNaive(v.transform(f)?)),
         }
     }
 }

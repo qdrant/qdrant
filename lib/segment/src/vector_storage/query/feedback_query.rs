@@ -15,10 +15,10 @@ pub struct FeedbackItem<T> {
 }
 
 impl<T> FeedbackItem<T> {
-    pub fn transform<F, U>(self, mut f: F) -> OperationResult<FeedbackItem<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    pub fn transform<U>(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<FeedbackItem<U>> {
         Ok(FeedbackItem {
             vector: f(self.vector)?,
             score: self.score,
@@ -57,10 +57,10 @@ impl<T> NaiveFeedbackQuery<T> {
 }
 
 impl<T, U> TransformInto<NaiveFeedbackQuery<U>, T, U> for NaiveFeedbackQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<NaiveFeedbackQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<NaiveFeedbackQuery<U>> {
         let Self {
             target,
             feedback,
@@ -70,7 +70,7 @@ impl<T, U> TransformInto<NaiveFeedbackQuery<U>, T, U> for NaiveFeedbackQuery<T> 
             target: f(target)?,
             feedback: feedback
                 .into_iter()
-                .map(|item| item.transform(&mut f))
+                .map(|item| item.transform(f))
                 .try_collect()?,
             coefficients,
         })
@@ -88,10 +88,10 @@ pub struct ContextPair<T> {
 }
 
 impl<T> ContextPair<T> {
-    pub fn transform<F, U>(self, mut f: F) -> OperationResult<ContextPair<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    pub fn transform<U>(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<ContextPair<U>> {
         Ok(ContextPair {
             positive: f(self.positive)?,
             negative: f(self.negative)?,
@@ -175,10 +175,7 @@ impl<TVector: Clone> FeedbackQuery<TVector> {
 }
 
 impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<FeedbackQuery<U>> {
         let Self {
             target,
             context_pairs,
@@ -188,7 +185,7 @@ impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
             target: f(target)?,
             context_pairs: context_pairs
                 .into_iter()
-                .map(|pair| pair.transform(&mut f))
+                .map(|pair| pair.transform(f))
                 .try_collect()?,
             coefficients,
         })

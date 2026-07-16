@@ -56,7 +56,7 @@ where
             + TransformInto<TOriginalQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
     {
         let original_query: TOriginalQuery = raw_query
-            .transform(|vector| {
+            .transform(&|vector| {
                 let mut preprocessed = Vec::new();
                 for slice in vector.multi_vectors() {
                     preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
@@ -70,7 +70,7 @@ where
             .unwrap();
 
         let query: TQuery = original_query
-            .transform(|original_vector| {
+            .transform(&|original_vector| {
                 let original_vector_prequantized = TElement::quantization_preprocess(
                     quantization_config,
                     TMetric::distance(),

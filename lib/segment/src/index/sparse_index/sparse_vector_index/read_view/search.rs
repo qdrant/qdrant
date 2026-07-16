@@ -44,7 +44,7 @@ where
             check_process_stopped(&query_context.is_stopped())?;
 
             let search_results = if query_context.is_require_idf() {
-                let vector = (*vector).clone().transform(|mut vector| {
+                let vector = (*vector).clone().transform(&|mut vector| {
                     match &mut vector {
                         VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
                             return Err(OperationError::WrongSparse);

@@ -29,14 +29,10 @@ impl<T> RecoQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<RecoQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
-        Ok(RecoQuery::new(
-            self.positives.into_iter().map(&mut f).try_collect()?,
-            self.negatives.into_iter().map(&mut f).try_collect()?,
-        ))
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<RecoQuery<U>> {
+        let positives = self.positives.into_iter().map(f).try_collect()?;
+        let negatives = self.negatives.into_iter().map(f).try_collect()?;
+        Ok(RecoQuery::new(positives, negatives))
     }
 }
 
@@ -50,10 +46,10 @@ impl<T> From<RecoQuery<T>> for RecoBestScoreQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoBestScoreQuery<U>, T, U> for RecoBestScoreQuery<T> {
-    fn transform<F>(self, f: F) -> OperationResult<RecoBestScoreQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<RecoBestScoreQuery<U>> {
         Ok(RecoBestScoreQuery(self.0.transform(f)?))
     }
 }
@@ -99,10 +95,10 @@ impl<T> From<RecoQuery<T>> for RecoSumScoresQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoSumScoresQuery<U>, T, U> for RecoSumScoresQuery<T> {
-    fn transform<F>(self, f: F) -> OperationResult<RecoSumScoresQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<RecoSumScoresQuery<U>> {
         Ok(RecoSumScoresQuery(self.0.transform(f)?))
     }
 }

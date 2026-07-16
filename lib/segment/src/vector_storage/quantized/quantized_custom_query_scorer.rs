@@ -47,7 +47,7 @@ where
             + TransformInto<TOriginalQuery, DenseVector, TypedDenseVector<TElement>>,
     {
         let original_query: TOriginalQuery = raw_query
-            .transform(|raw_vector| {
+            .transform(&|raw_vector| {
                 let preprocessed_vector = TMetric::preprocess(raw_vector);
                 let original_vector = TypedDenseVector::from(TElement::slice_from_float_cow(
                     Cow::Owned(preprocessed_vector),
@@ -56,7 +56,7 @@ where
             })
             .unwrap();
         let query: TQuery = original_query
-            .transform(|original_vector| {
+            .transform(&|original_vector| {
                 let original_vector_prequantized = TElement::quantization_preprocess(
                     quantization_config,
                     TMetric::distance(),
