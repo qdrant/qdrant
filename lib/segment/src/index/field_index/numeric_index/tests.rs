@@ -837,9 +837,13 @@ fn test_numeric_index_open_compact_deleted_mask(#[case] index_type: IndexType) {
     // Convert the legacy dense mask into the compact format: same bits
     // (offset 0 = no point at internal id 0, offset 4 = the empty-payload
     // point), 10 logical flags.
+    // The legacy file only exists when the build ran with `compact_bitmask`
+    // off (the default in tests); tolerate either so a future flag-default
+    // change doesn't break the test.
     let legacy_path = temp_dir.path().join("deleted.bin");
-    assert!(legacy_path.exists());
-    fs_err::remove_file(&legacy_path).unwrap();
+    if legacy_path.exists() {
+        fs_err::remove_file(&legacy_path).unwrap();
+    }
     let ones = RoaringBitmap::from_sorted_iter([0u32, 4]).unwrap();
     save_bitmask(&MmapFs, &deleted_mask_path(temp_dir.path()), 10, ones).unwrap();
     assert!(temp_dir.path().join(DELETED_MASK_FILE).exists());

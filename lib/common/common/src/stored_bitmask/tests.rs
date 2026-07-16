@@ -159,6 +159,33 @@ fn overwrite_replaces_previous_snapshot() {
 }
 
 #[test]
+fn rejects_positions_beyond_logical_len() {
+    // Hand-craft a file whose roaring payload contains a position past
+    // `logical_len` — the writer refuses to produce this, so build it from
+    // format parts directly.
+    use super::format::BitmaskHeader;
+
+    let bitmap = RoaringBitmap::from_sorted_iter([100u32]).unwrap();
+    let mut payload = Vec::new();
+    bitmap.serialize_into(&mut payload).unwrap();
+
+    let mut bytes = bytemuck::bytes_of(&BitmaskHeader::new(
+        8,
+        Encoding::RoaringOnes,
+        payload.len() as u64,
+    ))
+    .to_vec();
+    bytes.extend_from_slice(&payload);
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("mask.bin");
+    fs_err::write(&path, bytes).unwrap();
+
+    let mask = open(&path); // header itself is valid
+    assert!(mask.read().is_err());
+}
+
+#[test]
 fn rejects_foreign_files() {
     let dir = TempDir::new().unwrap();
 

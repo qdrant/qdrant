@@ -63,6 +63,15 @@ pub(super) fn save_deleted_mask(
     )
 }
 
+/// Remove a mask file left behind by a build with the opposite format choice,
+/// so readers can't pick up stale bits from it. Missing file is fine.
+fn remove_stale_mask(path: &Path) -> OperationResult<()> {
+    match fs_err::remove_file(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => Ok(result?),
+    }
+}
+
 fn save_deleted_mask_format(
     dir: &Path,
     legacy_file: &str,
@@ -75,7 +84,7 @@ fn save_deleted_mask_format(
             OperationError::service_error(format!("deleted mask offsets are not ascending: {err}"))
         })?;
         save_bitmask(&MmapFs, &deleted_mask_path(dir), num_points as u64, ones)?;
-        return Ok(());
+        return remove_stale_mask(&dir.join(legacy_file));
     }
 
     // Legacy layout: raw bitslice, zero-padded up to whole u64 words.
@@ -99,7 +108,7 @@ fn save_deleted_mask_format(
     )?;
     deleted.set_ascending_bits_batch(empty_points.into_iter().map(|idx| (u64::from(idx), true)))?;
     deleted.flusher()()?;
-    Ok(())
+    remove_stale_mask(&deleted_mask_path(dir))
 }
 
 /// OR the persisted mask into `deleted`, which the caller has already resized
@@ -254,6 +263,29 @@ mod tests {
         for idx in 0..10_000u32 {
             assert_eq!(deleted[idx as usize], empty_points.contains(&idx));
         }
+    }
+
+    #[test]
+    fn format_switch_removes_stale_mask() {
+        let dir = TempDir::new().unwrap();
+
+        // Compact first, then a legacy rebuild with different bits: the stale
+        // compact file must not shadow the fresh legacy mask.
+        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [1u32], true).unwrap();
+        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [2u32], false).unwrap();
+        assert!(!deleted_mask_path(dir.path()).exists());
+        let (deleted, compact) = read_mask(dir.path(), 100);
+        assert!(!compact);
+        assert!(!deleted[1]);
+        assert!(deleted[2]);
+
+        // And back: a compact rebuild removes the legacy file.
+        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [3u32], true).unwrap();
+        assert!(!dir.path().join(LEGACY_FILE).exists());
+        let (deleted, compact) = read_mask(dir.path(), 100);
+        assert!(compact);
+        assert!(!deleted[2]);
+        assert!(deleted[3]);
     }
 
     #[test]

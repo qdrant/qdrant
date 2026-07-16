@@ -83,7 +83,10 @@ impl<S: UniversalRead> StoredBitmask<S> {
                 format_args!("unknown stored bitmask encoding {}", header.encoding),
             ));
         };
-        if HEADER_SIZE as u64 + header.payload_len > file_len {
+        // `file_len >= HEADER_SIZE` was checked above, so the subtraction
+        // cannot underflow; phrasing it this way avoids overflowing on a
+        // corrupted `payload_len` near `u64::MAX`.
+        if header.payload_len > file_len - HEADER_SIZE as u64 {
             return Err(invalid_data(
                 path,
                 format_args!(
@@ -139,12 +142,27 @@ impl<S: UniversalRead> StoredBitmask<S> {
                 };
                 Ok(BitmaskContent::Dense(bits))
             }
-            Encoding::RoaringOnes => Ok(BitmaskContent::Ones(RoaringBitmap::deserialize_from(
-                payload.as_ref(),
-            )?)),
-            Encoding::RoaringZeros => Ok(BitmaskContent::Zeros(RoaringBitmap::deserialize_from(
-                payload.as_ref(),
-            )?)),
+            Encoding::RoaringOnes => Ok(BitmaskContent::Ones(self.decode_roaring(&payload)?)),
+            Encoding::RoaringZeros => Ok(BitmaskContent::Zeros(self.decode_roaring(&payload)?)),
         }
+    }
+
+    /// Deserialize a roaring payload, rejecting positions outside
+    /// `0..logical_len` so [`BitmaskContent`]'s range contract holds even for
+    /// corrupted files.
+    fn decode_roaring(&self, payload: &[u8]) -> Result<RoaringBitmap> {
+        let bitmap = RoaringBitmap::deserialize_from(payload)?;
+        if let Some(max) = bitmap.max()
+            && u64::from(max) >= self.logical_len
+        {
+            return Err(UniversalIoError::Io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "stored bitmask position {max} out of {} bits",
+                    self.logical_len,
+                ),
+            )));
+        }
+        Ok(bitmap)
     }
 }
