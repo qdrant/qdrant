@@ -672,6 +672,7 @@ impl Segment {
                 .as_mut_slice()
                 .copy_from_slice(self.mmap.as_slice());
         }
+        other.mmap.flush()?;
         Ok(())
     }
 }
@@ -817,6 +818,34 @@ mod test {
         check_append(&mut create_segment(1025).0);
         check_append(&mut create_segment(4096).0);
         check_append(&mut create_segment(8 * 1024 * 1024).0);
+    }
+
+    #[test]
+    fn test_copy_to_path_roundtrip() {
+        init_logger();
+        let (mut segment, _dir) = create_segment(4096);
+
+        let entries: Vec<&[u8]> = vec![
+            b"alpha".as_slice(),
+            b"beta".as_slice(),
+            b"gamma".as_slice(),
+            b"delta".as_slice(),
+        ];
+        for entry in &entries {
+            segment.append(entry).unwrap();
+        }
+        segment.flush().unwrap();
+
+        let dst_dir = Builder::new().prefix("segment-copy").tempdir().unwrap();
+        let dst_path = dst_dir.path().join("copied-segment");
+        segment.copy_to_path(&dst_path).unwrap();
+
+        // The copy must be a complete, re-openable segment with byte-identical entries.
+        let copied = Segment::open(&dst_path).unwrap();
+        assert_eq!(copied.len(), entries.len());
+        for (idx, entry) in entries.iter().enumerate() {
+            assert_eq!(&*copied.entry(idx).unwrap(), *entry);
+        }
     }
 
     #[test]
