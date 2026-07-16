@@ -20,17 +20,26 @@ use crate::segment_holder::SegmentHolder;
 
 /// State of a segment in the manifest.
 ///
-/// Only [`Active`](SegmentManifestState::Active) is written today. The other variants are defined so
-/// the on-disk format can grow to describe in-progress segment transitions without breaking
-/// compatibility for readers.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// The shard itself only writes [`Active`](SegmentManifestState::Active); the in-progress states
+/// come from out-of-process rewriters (the serverless indexer). A data-carrying state serializes
+/// as a tagged object, which readers predating it cannot parse — write it only once every reader
+/// understands it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentManifestState {
     /// Live segment, part of the shard's data and safe to read.
     Active,
     /// Reserved for future use: a segment being built that is not yet ready to read.
     UnderConstruction,
-    /// Reserved for future use: a superseded segment that is still readable but pending removal.
+    /// Being rebuilt by an out-of-process optimizer; still live and readable. The claim is a
+    /// lease: past `lease_until` another optimizer may take the segment over.
+    Optimizing {
+        /// Identity of the optimizer run holding the claim (e.g. pod name).
+        holder: String,
+        /// Unix seconds after which the claim is stale.
+        lease_until: u64,
+    },
+    /// A superseded segment that is still readable but pending removal.
     Retiring,
 }
 
@@ -79,8 +88,31 @@ impl SegmentsManifest {
         Self { segments }
     }
 
-    fn add_extra(&mut self, uuid: Uuid, state: SegmentManifestState) {
-        self.segments.insert(uuid, state);
+    /// Set `uuid`'s state, returning the previous one.
+    pub fn set(&mut self, uuid: Uuid, state: SegmentManifestState) -> Option<SegmentManifestState> {
+        self.segments.insert(uuid, state)
+    }
+
+    /// Remove `uuid`'s entry, returning its state.
+    pub fn remove(&mut self, uuid: &Uuid) -> Option<SegmentManifestState> {
+        self.segments.remove(uuid)
+    }
+
+    /// Keep `previous`'s in-progress marks (`Optimizing`/`Retiring`) for segments this manifest
+    /// also lists: a holder rebuild marks everything `Active`, which would erase another
+    /// process's claim. Staleness is governed by the lease, not by rebuilds.
+    #[must_use]
+    pub fn preserving(mut self, previous: &SegmentsManifest) -> Self {
+        for (uuid, state) in previous.iter() {
+            let in_progress = matches!(
+                state,
+                SegmentManifestState::Optimizing { .. } | SegmentManifestState::Retiring,
+            );
+            if in_progress && self.segments.contains_key(uuid) {
+                self.segments.insert(*uuid, state.clone());
+            }
+        }
+        self
     }
 
     /// Rebuild the manifest from `holder` and persist it if it changed.
@@ -101,9 +133,9 @@ impl SegmentsManifest {
             return Ok(());
         };
 
-        let mut current = Self::from_segment_holder(holder);
+        let mut current = Self::from_segment_holder(holder).preserving(&manifest.read());
         if let Some(uuid) = extra_segment {
-            current.add_extra(uuid, SegmentManifestState::Active);
+            current.set(uuid, SegmentManifestState::Active);
         }
 
         if *manifest.read() == current {
@@ -117,7 +149,7 @@ impl SegmentsManifest {
     }
 
     pub fn get(&self, uuid: &Uuid) -> Option<SegmentManifestState> {
-        self.segments.get(uuid).copied()
+        self.segments.get(uuid).cloned()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Uuid, &SegmentManifestState)> {
@@ -130,6 +162,14 @@ impl SegmentsManifest {
 
     pub fn is_empty(&self) -> bool {
         self.segments.is_empty()
+    }
+}
+
+impl FromIterator<(Uuid, SegmentManifestState)> for SegmentsManifest {
+    fn from_iter<I: IntoIterator<Item = (Uuid, SegmentManifestState)>>(iter: I) -> Self {
+        Self {
+            segments: iter.into_iter().collect(),
+        }
     }
 }
 
@@ -169,5 +209,73 @@ mod tests {
             Some(SegmentManifestState::UnderConstruction),
         );
         assert_eq!(parsed.get(&retiring), Some(SegmentManifestState::Retiring));
+    }
+
+    #[test]
+    fn optimizing_roundtrips_as_tagged_object() {
+        let uuid = Uuid::parse_str("1b4e28ba-2fa1-11d2-883f-0016d3cca427").unwrap();
+        let manifest: SegmentsManifest = [(
+            uuid,
+            SegmentManifestState::Optimizing {
+                holder: "indexer-1".to_string(),
+                lease_until: 1_752_000_000,
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert_eq!(
+            json,
+            r#"{"1b4e28ba-2fa1-11d2-883f-0016d3cca427":{"optimizing":{"holder":"indexer-1","lease_until":1752000000}}}"#,
+        );
+
+        let parsed: SegmentsManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, manifest);
+    }
+
+    /// Byte-compat guard: today's writers produce bare strings for the unit states; adding
+    /// the data-carrying variant must not change how those serialize.
+    #[test]
+    fn unit_states_keep_their_bare_string_form() {
+        let uuid = Uuid::parse_str("6ba7b811-9dad-11d1-80b4-00c04fd430c8").unwrap();
+        let manifest: SegmentsManifest = [(uuid, SegmentManifestState::Retiring)]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            serde_json::to_string(&manifest).unwrap(),
+            r#"{"6ba7b811-9dad-11d1-80b4-00c04fd430c8":"retiring"}"#,
+        );
+    }
+
+    #[test]
+    fn preserving_keeps_in_progress_marks_for_listed_segments_only() {
+        let kept = Uuid::parse_str("1b4e28ba-2fa1-11d2-883f-0016d3cca427").unwrap();
+        let gone = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+        let fresh = Uuid::parse_str("6ba7b811-9dad-11d1-80b4-00c04fd430c8").unwrap();
+
+        let optimizing = SegmentManifestState::Optimizing {
+            holder: "indexer-1".to_string(),
+            lease_until: 42,
+        };
+        let previous: SegmentsManifest = [
+            (kept, optimizing.clone()),
+            (gone, SegmentManifestState::Retiring),
+        ]
+        .into_iter()
+        .collect();
+
+        // A holder rebuild lists every live segment as Active; `gone` left the holder.
+        let rebuilt: SegmentsManifest = [
+            (kept, SegmentManifestState::Active),
+            (fresh, SegmentManifestState::Active),
+        ]
+        .into_iter()
+        .collect();
+
+        let merged = rebuilt.preserving(&previous);
+        assert_eq!(merged.get(&kept), Some(optimizing));
+        assert_eq!(merged.get(&fresh), Some(SegmentManifestState::Active));
+        assert_eq!(merged.get(&gone), None, "marks drop with the segment");
     }
 }

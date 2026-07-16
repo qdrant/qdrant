@@ -28,10 +28,10 @@ pub trait SegmentEnumerator: Send + Sync {
 }
 
 /// [`SegmentEnumerator`] that reads the leader's segment manifest (`segments_manifest.json`, sitting
-/// next to the `segments/` directory) and returns its `active` segments — the proper, scan-free
-/// discovery path. Errors if no manifest is present: the manifest is the source of truth, so a
-/// follower using this enumerator requires the leader to write one (the `write_segment_manifest`
-/// feature flag).
+/// next to the `segments/` directory) and returns its readable segments — `active`, plus
+/// `optimizing` ones which stay live until their rebuild's swap. Errors if no manifest is present:
+/// the manifest is the source of truth, so a follower using this enumerator requires the leader to
+/// write one (the `write_segment_manifest` feature flag).
 ///
 /// Generic over the read backend `F` (a [`UniversalReadFs`]), so it reads the manifest over any
 /// storage — local memory-mapped files ([`MmapFs`](common::universal_io::MmapFs)) or a blob/S3
@@ -64,7 +64,13 @@ impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnum
         let manifest: SegmentsManifest = read_json_via(&self.fs, &self.manifest_path)?;
         Ok(manifest
             .iter()
-            .filter(|(_, state)| matches!(state, SegmentManifestState::Active))
+            // Optimizing segments stay live (deletes keep landing in them) until the swap.
+            .filter(|(_, state)| {
+                matches!(
+                    state,
+                    SegmentManifestState::Active | SegmentManifestState::Optimizing { .. },
+                )
+            })
             .map(|(uuid, _)| (*uuid, self.segments_path.join(uuid.to_string())))
             .collect())
     }
@@ -88,5 +94,44 @@ impl LocalSegmentEnumerator {
 impl SegmentEnumerator for LocalSegmentEnumerator {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
         scan_segment_dirs(&self.segments_path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::universal_io::MmapFs;
+
+    use super::*;
+
+    #[test]
+    fn manifest_enumerator_serves_active_and_optimizing_only() {
+        let active = "1b4e28ba-2fa1-11d2-883f-0016d3cca427";
+        let optimizing = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+        let retiring = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
+        let building = "6ba7b812-9dad-11d1-80b4-00c04fd430c8";
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            segment_manifest_path(dir.path()),
+            format!(
+                r#"{{"{active}":"active",
+                    "{optimizing}":{{"optimizing":{{"holder":"indexer-1","lease_until":42}}}},
+                    "{retiring}":"retiring",
+                    "{building}":"under_construction"}}"#,
+            ),
+        )
+        .unwrap();
+
+        let listed = ManifestSegmentEnumerator::new(MmapFs, dir.path())
+            .list_segments()
+            .unwrap();
+
+        let mut uuids: Vec<String> = listed.keys().map(Uuid::to_string).collect();
+        uuids.sort();
+        assert_eq!(uuids, [active, optimizing]);
+        assert_eq!(
+            listed[&Uuid::parse_str(optimizing).unwrap()],
+            dir.path().join(SEGMENTS_PATH).join(optimizing),
+        );
     }
 }
