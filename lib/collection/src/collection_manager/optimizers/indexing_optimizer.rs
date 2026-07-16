@@ -1290,9 +1290,14 @@ mod tests {
             .max()
             .unwrap_or_default();
 
+        // Capacity is checked once per batch of moved points (32 for payload operations), so a
+        // destination admitted below the cap may overshoot it by up to one batch.
+        let point_size_bytes = dim * size_of::<f32>();
+        let batch_overshoot_bytes = 32 * point_size_bytes;
         assert!(
-            largest_segment_bytes <= max_segment_size_bytes,
-            "A segment overgrew the configured max_segment_size: largest={largest_segment_bytes} bytes, max={max_segment_size_bytes} bytes",
+            largest_segment_bytes <= max_segment_size_bytes + batch_overshoot_bytes,
+            "A segment overgrew the configured max_segment_size: largest={largest_segment_bytes} bytes, \
+             max={max_segment_size_bytes} bytes (+{batch_overshoot_bytes} batch tolerance)",
         );
 
         // The spilled points must have landed in a freshly provisioned appendable segment,

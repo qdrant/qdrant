@@ -2351,12 +2351,33 @@ mod test {
         );
     }
 
-    /// Build a holder with a non-appendable segment holding points 1-5 and one empty appendable
-    /// segment, capped at two points worth of vector data, plus the matching provisioning.
+    /// Batch size of the update paths (`UPDATE_OP_CHUNK_SIZE` / `PAYLOAD_OP_BATCH_SIZE`);
+    /// capacity is checked once per batch, so spill tests need several batches worth of points.
+    const TEST_BATCH_SIZE: usize = 32;
+    /// Points per spill test: three batches.
+    const TEST_POINT_NUM: usize = 3 * TEST_BATCH_SIZE;
+    /// A cap of exactly one batch: a fresh destination absorbs one batch before the next one
+    /// finds it at the cap.
+    const TEST_CAP_BYTES: usize = TEST_BATCH_SIZE * TEST_POINT_SIZE_BYTES;
+
+    /// Build a holder with a non-appendable segment holding [`TEST_POINT_NUM`] points (ids
+    /// 1..=N) and one empty appendable segment, capped at [`TEST_CAP_BYTES`], plus the matching
+    /// provisioning.
     fn capped_holder_with_immutable_points(
         path: &std::path::Path,
     ) -> (LockedSegmentHolder, SegmentProvisioning) {
-        let mut non_appendable = build_segment_1(path); // points 1-5
+        let hw_counter = HardwareCounterCell::new();
+        let mut non_appendable = empty_segment(path);
+        for point_id in 1..=TEST_POINT_NUM as u64 {
+            non_appendable
+                .upsert_point(
+                    10,
+                    point_id.into(),
+                    only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+                    &hw_counter,
+                )
+                .unwrap();
+        }
         non_appendable.appendable_flag = false;
         let appendable = empty_segment(path);
         let segment_config = appendable.segment_config.clone();
@@ -2364,7 +2385,7 @@ mod test {
         let mut holder = SegmentHolder::default();
         holder.add_new(non_appendable);
         holder.add_new(appendable);
-        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(TEST_CAP_BYTES));
 
         let provisioning = SegmentProvisioning {
             segments_path: path.to_owned(),
@@ -2398,32 +2419,36 @@ mod test {
 
         let (segments, provisioning) = capped_holder_with_immutable_points(dir.path());
 
-        // Set payload on all 5 points: every one CoW-moves out of the non-appendable segment.
-        // Only 2 fit into the existing appendable segment, so the update must provision fresh
-        // segments for the remaining 3 instead of overgrowing the destination.
+        // Set payload on all points: every one CoW-moves out of the non-appendable segment.
+        // Only one batch fits into the existing appendable segment, so the update must provision
+        // fresh segments for the remaining batches instead of overgrowing the destination.
         let operation = PayloadOps::SetPayload(SetPayloadOp {
             payload: payload_json! {"town": "Amsterdam"},
-            points: Some((1..=5).map(Into::into).collect()),
+            points: Some((1..=TEST_POINT_NUM as u64).map(Into::into).collect()),
             filter: None,
             key: None,
         });
         let updated =
             process_payload_operation(&segments, Some(&provisioning), 100, operation, &hw_counter)
                 .unwrap();
-        assert_eq!(updated, 5);
+        assert_eq!(updated, TEST_POINT_NUM);
 
+        // Capacity is checked per batch, so a destination admitted below the cap may overshoot
+        // it by up to one batch worth of points.
         let sizes = appendable_segment_sizes(&segments);
         assert!(
-            sizes.iter().all(|size| *size <= 2 * TEST_POINT_SIZE_BYTES),
-            "no appendable segment may exceed the cap: {sizes:?}",
+            sizes
+                .iter()
+                .all(|size| *size <= TEST_CAP_BYTES + TEST_BATCH_SIZE * TEST_POINT_SIZE_BYTES),
+            "no appendable segment may exceed the cap by more than one batch: {sizes:?}",
         );
         assert_eq!(
             sizes.iter().sum::<usize>(),
-            5 * TEST_POINT_SIZE_BYTES,
+            TEST_POINT_NUM * TEST_POINT_SIZE_BYTES,
             "all moved points must be accounted for: {sizes:?}",
         );
         assert!(
-            sizes.len() >= 3,
+            sizes.len() >= 2,
             "the update must have provisioned fresh appendable segments: {sizes:?}",
         );
     }
@@ -2438,7 +2463,7 @@ mod test {
 
         let mut holder = SegmentHolder::default();
         holder.add_new(appendable);
-        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(TEST_CAP_BYTES));
 
         let provisioning = SegmentProvisioning {
             segments_path: dir.path().to_owned(),
@@ -2450,9 +2475,10 @@ mod test {
         };
         let segments = LockedSegmentHolder::new(holder);
 
-        // Insert 5 new points; only 2 fit under the cap in the initial appendable segment.
-        let points: Vec<_> = (1..=5)
-            .map(|id: u64| PointStructPersisted {
+        // Insert several batches of new points; only one batch fits under the cap in the
+        // initial appendable segment.
+        let points: Vec<_> = (1..=TEST_POINT_NUM as u64)
+            .map(|id| PointStructPersisted {
                 id: id.into(),
                 vector: crate::operations::point_ops::VectorStructPersisted::Single(vec![
                     1.0, 0.0, 1.0, 0.0,
@@ -2467,13 +2493,19 @@ mod test {
 
         let sizes = appendable_segment_sizes(&segments);
         assert!(
-            sizes.iter().all(|size| *size <= 2 * TEST_POINT_SIZE_BYTES),
-            "no appendable segment may exceed the cap: {sizes:?}",
+            sizes
+                .iter()
+                .all(|size| *size <= TEST_CAP_BYTES + TEST_BATCH_SIZE * TEST_POINT_SIZE_BYTES),
+            "no appendable segment may exceed the cap by more than one batch: {sizes:?}",
         );
         assert_eq!(
             sizes.iter().sum::<usize>(),
-            5 * TEST_POINT_SIZE_BYTES,
+            TEST_POINT_NUM * TEST_POINT_SIZE_BYTES,
             "all inserted points must be accounted for: {sizes:?}",
+        );
+        assert!(
+            sizes.len() >= 2,
+            "the update must have provisioned fresh appendable segments: {sizes:?}",
         );
     }
 
@@ -2488,12 +2520,12 @@ mod test {
         // error must be recognizable so callers with provisioning can recover from it.
         let operation = PayloadOps::SetPayload(SetPayloadOp {
             payload: payload_json! {"town": "Amsterdam"},
-            points: Some((1..=5).map(Into::into).collect()),
+            points: Some((1..=TEST_POINT_NUM as u64).map(Into::into).collect()),
             filter: None,
             key: None,
         });
         let err = process_payload_operation(&segments, None, 100, operation, &hw_counter)
-            .expect_err("the appendable segment cannot hold all 5 moved points");
+            .expect_err("the appendable segment cannot hold all moved points");
         assert!(
             err.is_out_of_appendable_capacity(),
             "expected OutOfAppendableCapacity, got: {err}",
