@@ -104,10 +104,14 @@ impl SegmentsManifest {
     #[must_use]
     pub fn preserving(mut self, previous: &SegmentsManifest) -> Self {
         for (uuid, state) in previous.iter() {
-            let in_progress = matches!(
-                state,
-                SegmentManifestState::Optimizing { .. } | SegmentManifestState::Retiring,
-            );
+            let in_progress = match state {
+                SegmentManifestState::Optimizing {
+                    holder: _,
+                    lease_until: _,
+                }
+                | SegmentManifestState::Retiring => true,
+                SegmentManifestState::Active | SegmentManifestState::UnderConstruction => false,
+            };
             if in_progress && self.segments.contains_key(uuid) {
                 self.segments.insert(*uuid, state.clone());
             }

@@ -65,11 +65,13 @@ impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnum
         Ok(manifest
             .iter()
             // Optimizing segments stay live (deletes keep landing in them) until the swap.
-            .filter(|(_, state)| {
-                matches!(
-                    state,
-                    SegmentManifestState::Active | SegmentManifestState::Optimizing { .. },
-                )
+            .filter(|(_, state)| match state {
+                SegmentManifestState::Active
+                | SegmentManifestState::Optimizing {
+                    holder: _,
+                    lease_until: _,
+                } => true,
+                SegmentManifestState::UnderConstruction | SegmentManifestState::Retiring => false,
             })
             .map(|(uuid, _)| (*uuid, self.segments_path.join(uuid.to_string())))
             .collect())
