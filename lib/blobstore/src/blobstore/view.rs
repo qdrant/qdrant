@@ -5,8 +5,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{UniversalRead, UserData};
 
-use super::arenastore::ArenastoreView;
 use super::gridstore::GridstoreView;
+use super::logstore::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::error::BlobstoreError;
@@ -24,7 +24,7 @@ pub struct BlobstoreView<'a, V, S: UniversalRead> {
 /// Mode specific implementation of the view, see [`crate::config::Mode`].
 enum ViewVariant<'a, V, S: UniversalRead> {
     Gridstore(GridstoreView<'a, V, S, ReadOnlyTracker<S>>),
-    Arenastore(ArenastoreView<'a, V, S>),
+    Logstore(LogstoreView<'a, V, S>),
 }
 
 impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
@@ -34,9 +34,9 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
         }
     }
 
-    pub(super) fn from_arenastore(view: ArenastoreView<'a, V, S>) -> Self {
+    pub(super) fn from_logstore(view: LogstoreView<'a, V, S>) -> Self {
         Self {
-            variant: ViewVariant::Arenastore(view),
+            variant: ViewVariant::Logstore(view),
         }
     }
 
@@ -47,7 +47,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.max_point_offset(),
-            ViewVariant::Arenastore(view) => Ok(view.max_point_offset()),
+            ViewVariant::Logstore(view) => Ok(view.max_point_offset()),
         }
     }
 
@@ -57,7 +57,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.get_storage_size_bytes(),
-            ViewVariant::Arenastore(view) => view.get_storage_size_bytes(),
+            ViewVariant::Logstore(view) => view.get_storage_size_bytes(),
         }
     }
 
@@ -68,7 +68,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     ) -> Result<Cow<'_, [u8]>> {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.read_from_pages::<P>(pointer),
-            ViewVariant::Arenastore(view) => view.read_from_pages::<P>(pointer),
+            ViewVariant::Logstore(view) => view.read_from_pages::<P>(pointer),
         }
     }
 }
@@ -82,7 +82,7 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     ) -> Result<Option<V>> {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset, hw_counter),
-            ViewVariant::Arenastore(view) => view.get_value::<P>(point_offset, hw_counter),
+            ViewVariant::Logstore(view) => view.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -104,7 +104,7 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
             ViewVariant::Gridstore(view) => {
                 view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ViewVariant::Arenastore(view) => {
+            ViewVariant::Logstore(view) => {
                 view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }

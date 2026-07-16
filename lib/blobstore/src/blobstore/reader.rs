@@ -9,8 +9,8 @@ use common::universal_io::{
     read_whole_via,
 };
 
-use super::arenastore::ArenastoreReader;
 use super::gridstore::GridstoreReader;
+use super::logstore::LogstoreReader;
 use super::view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
@@ -36,7 +36,7 @@ pub struct BlobstoreReader<V, S: UniversalRead> {
 #[derive(Debug)]
 enum ReaderVariant<V, S: UniversalRead> {
     Gridstore(GridstoreReader<V, S>),
-    Arenastore(ArenastoreReader<V, S>),
+    Logstore(LogstoreReader<V, S>),
 }
 
 impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
@@ -57,7 +57,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 
         match config {
             StorageConfig::Mutable(_) => GridstoreReader::<V, S>::preopen(fs, &base_path, populate),
-            StorageConfig::AppendOnly(_) => ArenastoreReader::<V, S>::preopen(fs, &base_path),
+            StorageConfig::AppendOnly(_) => LogstoreReader::<V, S>::preopen(fs, &base_path),
         }
     }
 
@@ -82,9 +82,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
                 })
             }
             StorageConfig::AppendOnly(config) => {
-                let reader = ArenastoreReader::open(fs, base_path, config)?;
+                let reader = LogstoreReader::open(fs, base_path, config)?;
                 Ok(Self {
-                    variant: ReaderVariant::Arenastore(reader),
+                    variant: ReaderVariant::Logstore(reader),
                 })
             }
         }
@@ -94,7 +94,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn view(&self) -> BlobstoreView<'_, V, S> {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => BlobstoreView::from_gridstore(reader.view()),
-            ReaderVariant::Arenastore(reader) => BlobstoreView::from_arenastore(reader.view()),
+            ReaderVariant::Logstore(reader) => BlobstoreView::from_logstore(reader.view()),
         }
     }
 
@@ -105,7 +105,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn files(&self) -> Vec<PathBuf> {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.files(),
-            ReaderVariant::Arenastore(reader) => reader.files(),
+            ReaderVariant::Logstore(reader) => reader.files(),
         }
     }
 
@@ -117,7 +117,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.max_point_offset(),
-            ReaderVariant::Arenastore(reader) => Ok(reader.max_point_offset()),
+            ReaderVariant::Logstore(reader) => Ok(reader.max_point_offset()),
         }
     }
 
@@ -128,7 +128,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     ) -> Result<Option<V>> {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
-            ReaderVariant::Arenastore(reader) => reader.get_value::<P>(point_offset, hw_counter),
+            ReaderVariant::Logstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -148,7 +148,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.iter(max_id, callback, hw_counter),
-            ReaderVariant::Arenastore(reader) => reader.iter(max_id, callback, hw_counter),
+            ReaderVariant::Logstore(reader) => reader.iter(max_id, callback, hw_counter),
         }
     }
 
@@ -167,7 +167,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
             ReaderVariant::Gridstore(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ReaderVariant::Arenastore(reader) => {
+            ReaderVariant::Logstore(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -179,7 +179,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn get_storage_size_bytes(&self) -> usize {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.get_storage_size_bytes(),
-            ReaderVariant::Arenastore(reader) => reader.get_storage_size_bytes(),
+            ReaderVariant::Logstore(reader) => reader.get_storage_size_bytes(),
         }
     }
 
@@ -194,7 +194,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
         match &mut self.variant {
             ReaderVariant::Gridstore(reader) => reader.live_reload(fs),
-            ReaderVariant::Arenastore(reader) => reader.live_reload(fs),
+            ReaderVariant::Logstore(reader) => reader.live_reload(fs),
         }
     }
 }
@@ -204,7 +204,7 @@ impl<V, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn is_on_disk(&self) -> bool {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.is_on_disk(),
-            ReaderVariant::Arenastore(reader) => reader.is_on_disk(),
+            ReaderVariant::Logstore(reader) => reader.is_on_disk(),
         }
     }
 
@@ -212,7 +212,7 @@ impl<V, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.variant {
             ReaderVariant::Gridstore(reader) => reader.clear_cache(),
-            ReaderVariant::Arenastore(reader) => reader.clear_cache(),
+            ReaderVariant::Logstore(reader) => reader.clear_cache(),
         }
     }
 }

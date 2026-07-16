@@ -12,7 +12,7 @@ use crate::{Result, direct_io};
 ///
 /// Deliberately different from the mutable mode tracker file name, so that one mode never attempts to
 /// load the incompatible file format of the other.
-const FILE_NAME: &str = "arena_tracker.dat";
+const FILE_NAME: &str = "log_tracker.dat";
 
 /// Size in bytes of a single mapping entry in the tracker file
 const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
@@ -168,7 +168,7 @@ impl AppendOnlyTracker {
     /// than every offset set before it. Skipped offsets are backfilled as `None` entries.
     pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) -> Result<()> {
         // Defensive re-check: the storage validates this before appending any value data, see
-        // Arenastore::put_value
+        // Logstore::put_value
         let next = self.pointer_count();
         if point_offset < next {
             return Err(BlobstoreError::unsupported_operation(format!(

@@ -10,26 +10,26 @@ use common::universal_io::{UniversalRead, UserData};
 use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::ArenastoreConfig;
+use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
 
-/// A non-owning view into arenastore data.
+/// A non-owning view into logstore data.
 ///
 /// Holds borrowed references to the tracker and pages, and contains all reading logic.
 ///
 /// Value data is read through the universal IO backend `S`, the tracker is read directly.
-pub(crate) struct ArenastoreView<'a, V, S: UniversalRead> {
-    config: &'a ArenastoreConfig,
+pub(crate) struct LogstoreView<'a, V, S: UniversalRead> {
+    config: &'a LogstoreConfig,
     tracker: &'a AppendOnlyTracker,
     pages: &'a AppendOnlyPages<S>,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead> ArenastoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead> LogstoreView<'a, V, S> {
     pub(super) fn new(
-        config: &'a ArenastoreConfig,
+        config: &'a LogstoreConfig,
         tracker: &'a AppendOnlyTracker,
         pages: &'a AppendOnlyPages<S>,
     ) -> Self {
@@ -59,7 +59,7 @@ impl<'a, V, S: UniversalRead> ArenastoreView<'a, V, S> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead> ArenastoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
     /// Get the value for a given point offset.
     pub(crate) fn get_value<P: AccessPattern>(
         &self,

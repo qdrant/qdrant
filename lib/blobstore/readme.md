@@ -7,7 +7,7 @@ automatically when opening one, based on the persisted config:
 
 - **mutable** (default, the `Gridstore` variant): read-write storage with
   in-place space reuse, backed by memory mapped files.
-- **append-only** (the `Arenastore` variant): append-only storage for
+- **append-only** (the `Logstore` variant): append-only storage for
   serverless deployments, reading and writing files directly.
 
 Concepts shared by both modes:
@@ -47,7 +47,7 @@ Concepts shared by both modes:
 | `bitmask.dat` | one bit per block: used or free                             |
 | `gaps.dat`    | per-region free block gap summaries                         |
 
-## Append-only mode (`Arenastore`)
+## Append-only mode (`Logstore`)
 
 Designed for serverless environments, which restrict IO: files can only be
 appended to, existing bytes can never be rewritten (preallocated zero padding
@@ -88,8 +88,8 @@ tracker file is read and written directly on the local filesystem.
 | file                       | content                                        |
 |----------------------------|------------------------------------------------|
 | `config.json`              | storage config, `"mode": "append_only"`        |
-| `append_only_tracker.dat`  | mapping entries, exact length = count * 16     |
-| `append_only_page_{n}.dat` | value data, exact length = end of last value   |
+| `log_tracker.dat`  | mapping entries, exact length = count * 16     |
+| `log_page_{n}.dat` | value data, exact length = end of last value   |
 
 ## TODOs
 
