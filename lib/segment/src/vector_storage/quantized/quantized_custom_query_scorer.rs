@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
@@ -11,35 +10,30 @@ use crate::types::QuantizationConfig;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedCustomQueryScorer<'a, TElement, TMetric, TEncodedVectors, TQuery>
+pub struct QuantizedCustomQueryScorer<'a, TEncodedVectors, TQuery>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
     query: TQuery,
     quantized_storage: &'a TEncodedVectors,
-    metric: PhantomData<TMetric>,
-    element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, TEncodedVectors, TQuery>
-    QuantizedCustomQueryScorer<'a, TElement, TMetric, TEncodedVectors, TQuery>
+impl<'a, TEncodedVectors, TQuery> QuantizedCustomQueryScorer<'a, TEncodedVectors, TQuery>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
-    pub fn new<TOriginalQuery, TInputQuery>(
+    pub fn new<TElement, TMetric, TOriginalQuery, TInputQuery>(
         raw_query: TInputQuery,
         quantized_storage: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
         TOriginalQuery: Query<TypedDenseVector<TElement>>
             + TransformInto<TQuery, TypedDenseVector<TElement>, TEncodedVectors::EncodedQuery>
             + Clone,
@@ -73,18 +67,14 @@ where
         Self {
             query,
             quantized_storage,
-            metric: PhantomData,
-            element: PhantomData,
             hardware_counter,
         }
     }
 }
 
-impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorer
-    for QuantizedCustomQueryScorer<'_, TElement, TMetric, TEncodedVectors, TQuery>
+impl<TEncodedVectors, TQuery> QueryScorer
+    for QuantizedCustomQueryScorer<'_, TEncodedVectors, TQuery>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {

@@ -235,7 +235,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::new::<TElement, TMetric, _, _>(
                     RecoBestScoreQuery::from(reco_query),
                     quantized_storage,
                     quantization_config,
@@ -245,7 +245,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::RecommendSumScores(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::new::<TElement, TMetric, _, _>(
                     RecoSumScoresQuery::from(reco_query),
                     quantized_storage,
                     quantization_config,
@@ -255,7 +255,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Discover(discover_query) => {
                 let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::new::<TElement, TMetric, _, _>(
                     discover_query,
                     quantized_storage,
                     quantization_config,
@@ -265,7 +265,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::new::<TElement, TMetric, _, _>(
                     context_query,
                     quantized_storage,
                     quantization_config,
@@ -276,7 +276,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             QueryVector::FeedbackNaive(feedback_query) => {
                 let feedback_query: NaiveFeedbackQuery<DenseVector> =
                     feedback_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::new::<TElement, TMetric, _, _>(
                     feedback_query.into_query(),
                     quantized_storage,
                     quantization_config,
