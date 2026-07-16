@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 use std::io::BufWriter;
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
+use common::generic_consts::{AccessPattern, Random, Sequential};
+use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -16,6 +18,8 @@ use fs_err as fs;
 use memmap2::MmapMut;
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 
 #[derive(Debug)]
 pub struct QuantizedStorage<S: UniversalRead> {
@@ -43,16 +47,78 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 }
 
-impl QuantizedStorage<MmapFile> {
-    /// Open the backing file for build-time bulk appends, bypassing the read-only mmap.
+impl<S: UniversalRead> QuantizedStorage<S> {
+    /// Open the backing file for build-time bulk appends, bypassing the read-only handle.
     pub(crate) fn open_appender(&self) -> std::io::Result<BufWriter<fs::File>> {
         Ok(BufWriter::new(open_append(&self.path)?))
     }
 
-    /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
-    pub(crate) fn reload(&mut self) -> OperationResult<()> {
+    /// Reopen after the file grew so reads observe appended vectors. Build-time only.
+    pub(crate) fn reload(&mut self, fs: &S::Fs) -> OperationResult<()> {
         let path = self.path.clone();
-        *self = Self::from_file(&MmapFs, &path, self.quantized_vector_size.get())?;
+        *self = Self::from_file(fs, &path, self.quantized_vector_size.get())?;
+        Ok(())
+    }
+
+    /// Read one vector with the given access pattern.
+    fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
+        let size = self.quantized_vector_size.get() as u64;
+        self.storage
+            .read::<P, u8>(ReadRange {
+                byte_offset: size * u64::from(key),
+                length: size,
+            })
+            .expect("vector read from quantized storage failed")
+    }
+
+    /// Run `f` for each vector in the batch, batching the underlying reads.
+    ///
+    /// Async-capable backends (io_uring) get the whole batch submitted in one
+    /// go; mmap-style backends fetch a batch first and then run `f` over it,
+    /// which is more cache friendly than interleaving fetch and use.
+    pub fn for_each_in_batch<F: FnMut(usize, &[u8])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
+        if ReadOnly::<S>::kind().can_be_async() {
+            let size = self.quantized_vector_size.get() as u64;
+            let ranges = keys.iter().enumerate().map(|(idx, &key)| {
+                let range = ReadRange {
+                    byte_offset: size * u64::from(key),
+                    length: size,
+                };
+                (idx, range)
+            });
+
+            let callback = |idx, bytes: &[u8]| {
+                f(idx, bytes);
+                Ok(())
+            };
+
+            // Access pattern does not matter for io_uring.
+            self.storage.read_batch::<Random, u8, _>(ranges, callback)?;
+            return Ok(());
+        }
+
+        let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
+
+        for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
+            let vectors = if is_read_with_prefetch_efficient(keys) {
+                let iter = keys.iter().map(|&key| self.read_vector::<Sequential>(key));
+                maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            } else {
+                let iter = keys.iter().map(|&key| self.read_vector::<Random>(key));
+                maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            };
+
+            let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
+
+            for (vector_idx, vector) in vectors.iter().enumerate() {
+                f(batch_offset + vector_idx, vector);
+            }
+        }
+
         Ok(())
     }
 }
