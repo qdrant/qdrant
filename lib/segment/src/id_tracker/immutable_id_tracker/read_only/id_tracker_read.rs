@@ -2,6 +2,7 @@ use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -56,7 +57,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyImmutableIdTracker<S> {
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(self.internal_to_version.iter())
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        Ok(Box::new(self.internal_to_version.iter()))
     }
 }
