@@ -5,8 +5,9 @@ use ahash::HashSet;
 use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadRange, UniversalAppend, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
+    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
+    UserData,
 };
 
 use crate::Result;
@@ -132,6 +133,70 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                     page_id: pointer.page_id,
                 })?;
         page.read_value::<P>(pointer)
+    }
+
+    /// Batch-read the raw value bytes at the given pointers and execute the callback for each.
+    ///
+    /// Issues batched reads against the page files through the backend's read pipeline, so async
+    /// backends can fetch values in parallel. Values that haven't been flushed yet are served
+    /// from the in-memory buffers directly.
+    ///
+    /// The callback is invoked once per pointer, possibly in a different order. Return `false`
+    /// from the callback to stop early.
+    pub(super) fn read_batch_values<P, U, E>(
+        &self,
+        mut pointers: impl Iterator<Item = (U, ValuePointer)>,
+        mut callback: impl FnMut(U, Cow<'_, [u8]>) -> Result<bool, E>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        // Drive the read pipeline directly: refill it from `pointers` whenever it can accept
+        // more, then drain one completed read at a time. Each read targets the value's own page
+        // file, and values never span pages.
+        let mut pipeline = S::ReadPipeline::<'_, U>::new().map_err(BlobstoreError::from)?;
+
+        loop {
+            while pipeline.can_schedule()
+                && let Some((user_data, pointer)) = pointers.next()
+            {
+                let page = self.pages.get(pointer.page_id as usize).ok_or_else(|| {
+                    BlobstoreError::PageNotFound {
+                        page_id: pointer.page_id,
+                    }
+                })?;
+
+                let start = u64::from(pointer.block_offset);
+                let end = start + u64::from(pointer.length);
+
+                // Buffered values are served from memory, see `read_value`
+                if end > page.persisted_len {
+                    if !callback(user_data, Cow::Borrowed(page.pending_value(pointer)?))? {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+
+                pipeline
+                    .schedule::<P>(user_data, &page.file, start..end, align_of::<u8>())
+                    .map_err(BlobstoreError::from)?;
+            }
+
+            let Some((user_data, bytes)) = pipeline
+                .wait_bytemuck::<u8>()
+                .map_err(BlobstoreError::from)?
+            else {
+                break;
+            };
+
+            if !callback(user_data, bytes)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     /// Reload the pages from "disk", making newly appended value data visible to reads and the
@@ -323,14 +388,20 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             return Ok(self.file.read::<P, u8>(range)?);
         }
 
-        // Buffered values are served from memory. A value never straddles the persisted
-        // boundary: values are buffered whole, and flushes only write up to a watermark that
-        // was captured between puts.
+        Ok(Cow::Borrowed(self.pending_value(pointer)?))
+    }
+
+    /// Slice of a buffered value that hasn't been flushed to the file yet.
+    ///
+    /// A value never straddles the persisted boundary: values are buffered whole, and flushes
+    /// only write up to a watermark that was captured between puts.
+    fn pending_value(&self, pointer: ValuePointer) -> Result<&[u8]> {
+        let start = u64::from(pointer.block_offset);
         debug_assert!(
             start >= self.persisted_len,
             "value must not straddle the persisted boundary",
         );
-        let bytes = start
+        start
             .checked_sub(self.persisted_len)
             .map(|index| index as usize)
             .and_then(|index| self.pending.get(index..index + pointer.length as usize))
@@ -339,8 +410,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
                     "value pointer at byte {start} with length {} is out of range",
                     pointer.length,
                 ))
-            })?;
-        Ok(Cow::Borrowed(bytes))
+            })
     }
 
     /// Reopen the page file handle and reload its length, making newly appended value data

@@ -309,7 +309,8 @@ fn test_skipped_point_offsets_read_as_none() {
         .unwrap();
     assert_eq!(count, 1);
 
-    // Batched reads yield None for gaps and out of range point offsets
+    // Batched reads yield None for gaps and out of range point offsets. The callback may be
+    // invoked in any order, so sort before comparing.
     let mut collected = Vec::new();
     storage
         .read_values::<Random, _, BlobstoreError>(
@@ -321,14 +322,15 @@ fn test_skipped_point_offsets_read_as_none() {
             hw_counter.payload_io_read_counter(),
         )
         .unwrap();
+    collected.sort();
     assert_eq!(
         collected,
         vec![
             (0, Some(vec![0; 10])),
             (1, None),
+            (3, Some(vec![3; 10])),
             (5, None),
             (10, Some(vec![10; 10])),
-            (3, Some(vec![3; 10])),
             (20, None),
         ]
     );
@@ -620,7 +622,8 @@ fn test_reader_on_append_only_storage() {
         .unwrap();
     assert_eq!(collected, vec![(0, vec![0; 10]), (1, vec![1; 10])]);
 
-    // Batched reads through the reader and its view
+    // Batched reads through the reader and its view. The callback may be invoked in any order,
+    // so sort before comparing.
     let mut collected = Vec::new();
     reader
         .read_values::<Random, _, BlobstoreError>(
@@ -632,6 +635,7 @@ fn test_reader_on_append_only_storage() {
             hw_counter.payload_io_read_counter(),
         )
         .unwrap();
+    collected.sort();
     assert_eq!(collected, vec![(0, 0, true), (1, 3, false), (2, 4, true)]);
 
     let view = reader.view();
