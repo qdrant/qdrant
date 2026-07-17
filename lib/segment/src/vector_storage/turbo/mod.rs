@@ -1861,18 +1861,21 @@ mod tests {
             open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, false)
                 .unwrap();
 
-        let mut storages = vec![("chunked", chunked), ("mmap", mmap)];
+        let storages = vec![("chunked", chunked), ("mmap", mmap)];
 
-        #[cfg(target_os = "linux")]
-        {
-            let uring =
-                open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, true)
-                    .unwrap();
-            assert!(
-                matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
-                "io_uring backend unavailable in this environment",
-            );
-            storages.push(("uring", uring));
+        cfg_select! {
+            target_os = "linux" => {
+                let uring =
+                    open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, true)
+                        .unwrap();
+                assert!(
+                    matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
+                    "io_uring backend unavailable in this environment",
+                );
+                let mut storages = storages;
+                storages.push(("uring", uring));
+            }
+            _ => {}
         }
 
         for (backend, storage) in &storages {
@@ -1948,19 +1951,23 @@ mod tests {
             open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, false)
                 .unwrap();
 
-        let mut storages = vec![("chunked", chunked), ("mmap", mmap)];
+        let storages = vec![("chunked", chunked), ("mmap", mmap)];
 
-        #[cfg(target_os = "linux")]
-        {
-            let uring =
-                open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, true)
-                    .unwrap();
-            assert!(
-                matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
-                "io_uring backend unavailable in this environment",
-            );
-            storages.push(("uring", uring));
-        }
+        cfg_select! {
+            target_os = "linux" => {
+                let uring =
+                    open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, true)
+                        .unwrap();
+                assert!(
+                    matches!(uring.storage, TurboEncodedVectorStorage::Uring(_)),
+                    "io_uring backend unavailable in this environment",
+                );
+
+                let mut storages = storages;
+                storages.push(("uring", uring));
+            }
+            _ => {}
+        };
 
         // Tag each key with its input position so the threading is checkable.
         let keys: Vec<(usize, PointOffsetType)> = ids.iter().copied().enumerate().collect();

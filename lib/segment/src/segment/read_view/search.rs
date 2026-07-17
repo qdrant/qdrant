@@ -55,7 +55,7 @@ where
             .map(|&id| {
                 let record = SegmentRecord {
                     id,
-                    vectors: needs_vectors(with_vector).then(SmallVec::new),
+                    vectors: with_vector.is_enabled().then(SmallVec::new),
                     payload: None,
                 };
                 (id, record)
@@ -116,7 +116,7 @@ where
             .map(|&id| {
                 let record = SegmentRecordRaw {
                     id,
-                    vectors: needs_vectors(with_vector).then(SmallVec::new),
+                    vectors: with_vector.is_enabled().then(SmallVec::new),
                     payload: None,
                 };
                 (id, record)
@@ -370,14 +370,6 @@ where
             }
         }
         Ok(())
-    }
-}
-
-/// Whether records must carry a `vectors` container for the given request.
-fn needs_vectors(with_vector: &WithVector) -> bool {
-    match with_vector {
-        WithVector::Bool(true) | WithVector::Selector(_) => true,
-        WithVector::Bool(false) => false,
     }
 }
 
