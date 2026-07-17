@@ -574,9 +574,10 @@ impl ShardHolder {
     ) -> CollectionResult<Vec<(&'a Arc<ShardReplicaSet>, Option<&'a ShardKey>)>> {
         let mut res = Vec::new();
 
-        match shard_selector {
+        let filter_resharding = match shard_selector {
             ShardSelectorInternal::Empty => {
-                debug_assert!(false, "Do not expect empty shard selector")
+                debug_assert!(false, "Do not expect empty shard selector");
+                false
             }
             ShardSelectorInternal::All => {
                 let is_custom_sharding = match self.sharding_method {
@@ -584,33 +585,7 @@ impl ShardHolder {
                     ShardingMethod::Custom => true,
                 };
 
-                let resharding_state = self.resharding_state.read().clone();
-
                 for (&shard_id, shard) in self.shards.iter() {
-                    // Ignore a new resharding shard until it completed point migration
-                    // The shard will be marked as active at the end of the migration stage
-                    let resharding_migrating_up = resharding_state.as_ref().is_some_and(|state| {
-                        state.direction == ReshardingDirection::Up
-                            && state.shard_id == shard_id
-                            && state.stage < ReshardingStage::ReadHashRingCommitted
-                    });
-                    if resharding_migrating_up {
-                        continue;
-                    }
-
-                    // Skip shard being removed by resharding down once the write
-                    // hash ring is committed. The shard is logically gone at this
-                    // point; querying it on a remote peer that already applied
-                    // `finish_resharding` would return a "shard not found" error.
-                    let resharding_removing_down = resharding_state.as_ref().is_some_and(|state| {
-                        state.direction == ReshardingDirection::Down
-                            && state.shard_id == shard_id
-                            && state.stage >= ReshardingStage::WriteHashRingCommitted
-                    });
-                    if resharding_removing_down {
-                        continue;
-                    }
-
                     // Technically, we could skip inactive shards regardless of sharding method,
                     // as we do not expect that shard id can even become inactive on all replicas.
                     // (if it happens, means there is a bug)
@@ -623,6 +598,8 @@ impl ShardHolder {
                     let shard_key = self.shard_id_to_key_mapping.get(&shard_id);
                     res.push((shard, shard_key));
                 }
+
+                true
             }
             ShardSelectorInternal::ShardKey(shard_key) => {
                 for shard_id in self.get_shard_ids_by_key(shard_key)? {
@@ -632,6 +609,8 @@ impl ShardHolder {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
                 }
+
+                true
             }
             ShardSelectorInternal::ShardKeys(shard_keys) => {
                 for shard_key in shard_keys {
@@ -643,6 +622,8 @@ impl ShardHolder {
                         }
                     }
                 }
+
+                true
             }
             ShardSelectorInternal::ShardKeyWithFallback(key) => {
                 let (shard_ids_to_query, used_shard_key) =
@@ -657,6 +638,8 @@ impl ShardHolder {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
                 }
+
+                true
             }
             ShardSelectorInternal::ShardId(shard_id) => {
                 if let Some(replica_set) = self.shards.get(shard_id) {
@@ -664,8 +647,39 @@ impl ShardHolder {
                 } else {
                     return Err(shard_not_found_error(*shard_id));
                 }
+
+                // Exempt from resharding filter. This selector is used by internal per-shard
+                // operations, such as the resharding driver reading back migrated points from the
+                // new shard, which must be able to reach the shard before it becomes visible to
+                // user-facing selectors
+                false
             }
+        };
+
+        // Filter out shards that must not be queried while resharding, regardless of how they
+        // were selected above
+        if filter_resharding && let Some(state) = self.resharding_state.read().as_ref() {
+            res.retain(|(shard, _)| {
+                if state.shard_id != shard.shard_id {
+                    return true;
+                }
+
+                // Ignore a new resharding shard until it completed point migration
+                // The shard will be marked as active at the end of the migration stage
+                let resharding_migrating_up = state.direction == ReshardingDirection::Up
+                    && state.stage < ReshardingStage::ReadHashRingCommitted;
+
+                // Skip shard being removed by resharding down once the write
+                // hash ring is committed. The shard is logically gone at this
+                // point; querying it on a remote peer that already applied
+                // `finish_resharding` would return a "shard not found" error.
+                let resharding_removing_down = state.direction == ReshardingDirection::Down
+                    && state.stage >= ReshardingStage::WriteHashRingCommitted;
+
+                !resharding_migrating_up && !resharding_removing_down
+            });
         }
+
         Ok(res)
     }
 
