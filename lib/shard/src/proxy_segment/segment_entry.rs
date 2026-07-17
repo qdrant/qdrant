@@ -1,5 +1,5 @@
 use std::cmp;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -738,7 +738,7 @@ impl ReadSegmentEntry for ProxySegment {
         indexed_fields
     }
 
-    fn vector_names(&self) -> HashSet<VectorNameBuf> {
+    fn vector_names(&self) -> Vec<VectorNameBuf> {
         self.wrapped_segment.get().read().vector_names()
     }
 
