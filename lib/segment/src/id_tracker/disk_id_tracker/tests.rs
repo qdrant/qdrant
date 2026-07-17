@@ -160,6 +160,21 @@ fn detect_and_load_selects_disk_format() {
 }
 
 #[test]
+fn is_uuid_sidecar_written_and_listed() {
+    let (versions, mappings) = make_data(8);
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+
+    let is_uuid_file = super::on_disk_format::is_uuid_path(dir.path());
+    assert!(is_uuid_file.is_file());
+    assert!(disk.files().contains(&is_uuid_file));
+    assert!(disk.immutable_files().contains(&is_uuid_file));
+
+    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    assert!(read_only.files().contains(&is_uuid_file));
+}
+
+#[test]
 fn iter_random_yields_all_live_points() {
     use std::collections::HashSet;
 
@@ -268,15 +283,10 @@ fn deletion_and_live_reload() {
     }
 }
 
-/// Cases 1+2 regression of the live-reload staleness audit: both trackers'
-/// `deleted` file is a fixed-size bitmap whose bits the writer flips in
-/// place — its length never changes — so a reader over a caching backend
-/// must not rely on `reopen()` (append-only-growth contract): the
-/// pre-deletion state, cached when first scanned, would be served forever
-/// and `live_reload` would never report the deletions. `live_reload` opens a
-/// fresh handle instead; this drives it over `DiskCacheFs`, where the
-/// stale-cache failure actually reproduces (mmap readers are read-through
-/// and can't catch it).
+/// Live-reload staleness regression (audit cases 1+2): the `deleted` file is
+/// mutated in place, so `live_reload` must open a fresh handle rather than
+/// `reopen()` a held one. Driven over `DiskCacheFs`, where the stale cache
+/// actually reproduces (mmap readers are read-through and can't catch it).
 #[test]
 fn deletion_and_live_reload_disk_cache() {
     use std::sync::Arc;
@@ -390,10 +400,9 @@ fn on_disk_sections_are_aligned() {
         store_i2e(&mappings, &mut i2e_bytes).unwrap();
         let i2e = I2eHeader::parse(&i2e_bytes).unwrap();
         assert_eq!(i2e.data_offset % SECTION_ALIGN, 0);
-        assert_eq!(i2e.is_uuid_offset % SECTION_ALIGN, 0);
         assert_eq!(
             i2e_bytes.len() as u64,
-            i2e.is_uuid_offset + i2e.total.div_ceil(8),
+            i2e.data_offset + i2e.total * 16,
             "i2e file length must match the parsed layout",
         );
 

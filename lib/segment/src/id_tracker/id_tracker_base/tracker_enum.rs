@@ -128,7 +128,7 @@ impl IdTrackerRead for IdTrackerEnum {
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),

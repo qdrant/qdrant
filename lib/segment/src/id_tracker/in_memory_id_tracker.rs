@@ -117,13 +117,13 @@ impl IdTrackerRead for InMemoryIdTracker {
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        Ok(Box::new(
             self.internal_to_version
                 .iter()
                 .enumerate()
                 .map(|(i, version)| (i as PointOffsetType, *version)),
-        )
+        ))
     }
 }
 
