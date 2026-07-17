@@ -33,6 +33,11 @@ pub struct CoreSearchRequest {
 }
 
 impl CoreSearchRequest {
+    /// Number of candidates required before applying the result offset.
+    pub fn limit_with_offset(&self) -> usize {
+        self.limit.saturating_add(self.offset)
+    }
+
     /// Request-specific [`LoadProfile`] for opening a read-only shard to serve exactly
     /// this search: only the queried vector's components and the filter's field indexes
     /// keep their configured placement.

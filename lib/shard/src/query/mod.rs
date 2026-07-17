@@ -51,6 +51,11 @@ pub struct ShardQueryRequest {
 }
 
 impl ShardQueryRequest {
+    /// Number of candidates required before applying the result offset.
+    pub fn limit_with_offset(&self) -> usize {
+        self.limit.saturating_add(self.offset)
+    }
+
     pub fn prefetches_depth(&self) -> usize {
         self.prefetches
             .iter()
