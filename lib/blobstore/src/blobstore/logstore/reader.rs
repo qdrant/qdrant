@@ -159,13 +159,9 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
     ///   counted.
     pub(crate) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
+        // A writer always updates pages before the tracker, it is not synchronized with readers
+        // Here we read the tracker first, so that we're sure all pages are already updated
         self.tracker.live_reload()?;
-
-        // Reload the pages after the tracker: newly loaded mappings only reference value data
-        // that was appended (and whose page file was created) before the mappings were written,
-        // so reloading the pages last guarantees they cover all of them. Reload them even
-        // without new mappings, unflushed value data may have been appended already and counts
-        // towards the reported storage size.
         self.pages.live_reload(fs)?;
 
         Ok(())
