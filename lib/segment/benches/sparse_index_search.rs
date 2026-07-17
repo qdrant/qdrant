@@ -8,7 +8,7 @@ use dataset::Dataset;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools as _;
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_from_iter;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
@@ -35,13 +35,13 @@ const TOP: usize = 10;
 const FULL_SCAN_THRESHOLD: usize = 1; // low value to trigger index usage by default
 
 fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
-    let mut rnd = StdRng::seed_from_u64(0);
+    let mut rnd = SmallRng::seed_from_u64(0);
     let query_vectors = (0..NUM_QUERIES)
         // Positive values to test pruning.
         .map(|_| random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM))
         .collect::<Vec<_>>();
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
     let random_vectors = (0..NUM_VECTORS).map(|_| random_sparse_vector(&mut rnd, MAX_SPARSE_DIM));
     sparse_vector_index_search_benchmark_impl(c, "random-50k", random_vectors, &query_vectors);
 

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::data_types::tiny_map::TinyMap;
 use segment::fixtures::index_fixtures::random_vector;
 
@@ -14,7 +14,7 @@ const DIM: usize = 100;
 fn small_map_obj(c: &mut Criterion) {
     let mut group = c.benchmark_group("small-map-obj-group");
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     let default_key = "vector".to_string();
     let default_key_2 = "vector1".to_string();
     let default_key_3 = "vector2".to_string();

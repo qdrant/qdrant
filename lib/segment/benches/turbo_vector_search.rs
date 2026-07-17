@@ -28,6 +28,7 @@ use common::types::PointOffsetType;
 use criterion::measurement::WallTime;
 use criterion::{BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use rand::distr::StandardUniform;
+use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{Rng, RngExt};
 use segment::data_types::vectors::{DenseVector, QueryVector};
@@ -57,12 +58,12 @@ fn random_vector(rng: &mut impl Rng, size: usize) -> DenseVector {
 }
 
 fn random_query() -> QueryVector {
-    QueryVector::from(random_vector(&mut rand::rng(), DIM))
+    QueryVector::from(random_vector(&mut rand::make_rng::<SmallRng>(), DIM))
 }
 
 /// Ids to score in one subset iteration: a shuffled sample without replacement.
 fn subset_ids() -> Vec<PointOffsetType> {
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let mut ids: Vec<PointOffsetType> = (0..VECTORS as PointOffsetType).sample(&mut rng, SUBSET);
     ids.shuffle(&mut rng);
     ids
@@ -72,7 +73,7 @@ fn subset_ids() -> Vec<PointOffsetType> {
 /// storage, then bulk-append the encoded bytes into the single-file layout,
 /// exactly as the optimizer does.
 fn build_dataset(dir: &Path) {
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let hw_counter = HardwareCounterCell::new();
 
     let encoder_dir = TempDir::new().expect("encoder tempdir created");

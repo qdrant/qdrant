@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::seq::IndexedMutRandom;
 use rand::{RngExt, SeedableRng};
 use segment::entry::entry_point::SegmentEntry;
@@ -17,7 +17,7 @@ const DUPLICATE_CHANCE: f64 = 0.1;
 const VERSION_RANGE: Range<u64> = 1..50;
 
 pub fn duplicate_bench(c: &mut Criterion) {
-    let mut rand = StdRng::seed_from_u64(42);
+    let mut rand = SmallRng::seed_from_u64(42);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 

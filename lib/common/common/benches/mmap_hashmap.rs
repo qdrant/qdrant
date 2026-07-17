@@ -6,7 +6,7 @@ use common::persisted_hashmap::{MmapHashMap, UniversalHashMap, serialize_hashmap
 use common::universal_io::{OpenOptions, UniversalIoError, UniversalReadFileOps};
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 #[cfg(target_os = "linux")]
@@ -156,7 +156,7 @@ fn make_serialized_hashmap(count: usize) -> PathBuf {
         eprintln!("Building serialized hashmap at {path:?}...");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
         let map = gen_map(&mut rng, count);
 
         serialize_hashmap::<str, u32>(
@@ -171,7 +171,7 @@ fn make_serialized_hashmap(count: usize) -> PathBuf {
     path
 }
 
-fn gen_map(rng: &mut StdRng, count: usize) -> BTreeMap<String, Vec<u32>> {
+fn gen_map(rng: &mut SmallRng, count: usize) -> BTreeMap<String, Vec<u32>> {
     let mut map = BTreeMap::new();
     while map.len() < count {
         let key: String = (0..rng.random_range(5..=32))

@@ -22,7 +22,7 @@ use fs_err::File;
 use itertools::Itertools as _;
 use ndarray::{ArrayView2, Axis};
 use ndarray_npy::ViewNpyExt;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::seq::SliceRandom as _;
 use rand::{Rng, SeedableRng as _};
 use rayon::iter::{
@@ -150,7 +150,7 @@ fn main() {
     let args = Args::parse();
     log::info!("args={args:?}");
 
-    let mut main_rng = StdRng::seed_from_u64(args.random_seed);
+    let mut main_rng = SmallRng::seed_from_u64(args.random_seed);
 
     let tmp_dir = Builder::new()
         .prefix("hnsw_incremental_build")
@@ -190,7 +190,7 @@ fn main() {
                     .collect_vec();
 
                 // Shuffle the dataset to avoid bias.
-                slices_vec.shuffle(&mut StdRng::from_rng(&mut main_rng));
+                slices_vec.shuffle(&mut SmallRng::from_rng(&mut main_rng));
 
                 // Last `arg_queries` vectors from the dataset are used as query vectors.
                 let query_vectors = slices_vec
@@ -203,13 +203,13 @@ fn main() {
             }
             // Generate random vectors.
             (Some(dimensions), None) => {
-                let mut rng = StdRng::from_rng(&mut main_rng);
+                let mut rng = SmallRng::from_rng(&mut main_rng);
                 let query_vectors = std::iter::repeat_with(|| random_vector(&mut rng, dimensions))
                     .take(args.queries)
                     .map(QueryVector::from)
                     .collect_vec();
 
-                let mut rng = StdRng::from_rng(&mut main_rng);
+                let mut rng = SmallRng::from_rng(&mut main_rng);
                 vectors_mem = std::iter::repeat_with(|| random_vector(&mut rng, dimensions))
                     .take(args.init_vectors + args.to_add * args.iterations)
                     .collect_vec();
@@ -229,7 +229,7 @@ fn main() {
 
     // Build initial segment and index it non-incrementally.
     let mut sliding_window = 0..args.init_vectors;
-    let mut rng = StdRng::from_rng(&mut main_rng);
+    let mut rng = SmallRng::from_rng(&mut main_rng);
     let mut last_segment = make_segment(
         &mut rng,
         tmp_dir.path(),
@@ -314,7 +314,7 @@ fn main() {
 }
 
 fn make_segment(
-    rng: &mut StdRng,
+    rng: &mut SmallRng,
     path: &Path,
     all_vectors: &[&[VectorElementType]],
     sliding_window: std::ops::Range<usize>,

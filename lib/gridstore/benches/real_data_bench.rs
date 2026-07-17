@@ -9,6 +9,7 @@ use fs_err as fs;
 use fs_err::File;
 use gridstore::fixtures::{HM_FIELDS, Payload, empty_storage};
 use rand::RngExt;
+use rand::rngs::SmallRng;
 use serde_json::Value;
 
 /// Insert CSV data into the storage
@@ -114,7 +115,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     });
 
     // delete 30% of the points
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     for i in 0..storage.max_point_offset() {
         if rng.random_bool(0.3) {
             storage.delete_value(i).unwrap();

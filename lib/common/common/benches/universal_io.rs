@@ -11,7 +11,7 @@ use common::universal_io::{
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{Rng as _, RngExt, SeedableRng as _};
 
 const FILE_SIZE_BYTES: u64 = 512 * 1024 * 1024;
@@ -84,7 +84,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
     };
     let storage = fs.open(path, options, Default::default()).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     assert_eq!(storage.len::<T>().unwrap(), len);
 
     let low_mem = std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_some();
@@ -205,7 +205,7 @@ fn make_random_file() -> PathBuf {
     fs_err::create_dir_all(path.parent().unwrap()).unwrap();
 
     let mut file = fs::File::create(&path).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     let mut buffer = vec![0; 1024 * 1024];
     let mut bytes_left = FILE_SIZE_BYTES as usize;
 

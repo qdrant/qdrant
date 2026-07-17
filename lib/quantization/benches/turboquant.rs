@@ -6,7 +6,7 @@ use quantization::encoded_vectors::VectorParameters;
 use quantization::encoded_vectors_tq::{Metadata, new_turbo_quantizer_from_metadata};
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{TQBits, TQMode, TQRotation};
-use rand::prelude::StdRng;
+use rand::prelude::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 const DIMS: &[usize] = &[128, 384, 768, 1024, 1536, 4096];
@@ -27,7 +27,7 @@ fn make_tq(dim: usize, bits: TQBits) -> TurboQuantizer {
     new_turbo_quantizer_from_metadata(&metadata).expect("metadata is hand-constructed")
 }
 
-fn random_vector(dim: usize, rng: &mut StdRng) -> Vec<f32> {
+fn random_vector(dim: usize, rng: &mut SmallRng) -> Vec<f32> {
     (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect()
 }
 
@@ -43,7 +43,7 @@ fn bench_quantize(c: &mut Criterion) {
 
         for &dim in DIMS {
             let tq = make_tq(dim, bits);
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = SmallRng::seed_from_u64(42);
 
             group.bench_with_input(BenchmarkId::from_parameter(dim), &dim, |b, _| {
                 b.iter_batched(
@@ -70,7 +70,7 @@ fn bench_dot(c: &mut Criterion) {
 
         for &dim in DIMS {
             let tq = make_tq(dim, bits);
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = SmallRng::seed_from_u64(42);
 
             // Pre-quantize a vector so the bench measures only the dot path.
             let mut buf = vec![0.0f64; dim];
@@ -107,7 +107,7 @@ fn bench_dot_precomputed(c: &mut Criterion) {
 
         for &dim in DIMS {
             let tq = make_tq(dim, bits);
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = SmallRng::seed_from_u64(42);
 
             // Pre-quantize a vector so the bench measures only the dot path.
             let mut buf = vec![0.0f64; dim];

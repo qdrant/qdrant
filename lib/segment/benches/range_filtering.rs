@@ -9,7 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
-use rand::prelude::StdRng;
+use rand::prelude::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::fixtures::payload_fixtures::{FLT_KEY, INT_KEY};
@@ -43,7 +43,7 @@ fn range_filtering(c: &mut Criterion) {
 
     let seed = 42;
 
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 

@@ -2,13 +2,14 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use gridstore::fixtures::{empty_storage, random_payload};
+use rand::rngs::SmallRng;
 
 /// sized similarly to the real dataset for a fair comparison
 const PAYLOAD_COUNT: u32 = 100_000;
 
 pub fn random_data_bench(c: &mut Criterion) {
     let (_dir, mut storage) = empty_storage();
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     c.bench_function("write random payload", |b| {
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();

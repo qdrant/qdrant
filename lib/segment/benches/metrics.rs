@@ -3,7 +3,7 @@ mod prof;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use segment::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf};
 use segment::spaces::metric::Metric;
@@ -64,7 +64,7 @@ const COUNT: usize = 100_000;
 fn byte_metrics_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("byte-metrics-bench-group");
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
 
     let random_vectors_1: Vec<Vec<u8>> = (0..COUNT)
         .map(|_| (0..DIM).map(|_| rng.random_range(0..=255)).collect())
@@ -261,7 +261,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
 fn half_metrics_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("half-metrics-bench-group");
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
 
     let random_vectors_1: Vec<Vec<f16>> = (0..COUNT)
         .map(|_| {
