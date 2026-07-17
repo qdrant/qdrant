@@ -574,9 +574,10 @@ impl ShardHolder {
     ) -> CollectionResult<Vec<(&'a Arc<ShardReplicaSet>, Option<&'a ShardKey>)>> {
         let mut res = Vec::new();
 
-        match shard_selector {
+        let filter_resharding = match shard_selector {
             ShardSelectorInternal::Empty => {
-                debug_assert!(false, "Do not expect empty shard selector")
+                debug_assert!(false, "Do not expect empty shard selector");
+                false
             }
             ShardSelectorInternal::All => {
                 let is_custom_sharding = match self.sharding_method {
@@ -597,6 +598,8 @@ impl ShardHolder {
                     let shard_key = self.shard_id_to_key_mapping.get(&shard_id);
                     res.push((shard, shard_key));
                 }
+
+                true
             }
             ShardSelectorInternal::ShardKey(shard_key) => {
                 for shard_id in self.get_shard_ids_by_key(shard_key)? {
@@ -606,6 +609,8 @@ impl ShardHolder {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
                 }
+
+                true
             }
             ShardSelectorInternal::ShardKeys(shard_keys) => {
                 for shard_key in shard_keys {
@@ -617,6 +622,8 @@ impl ShardHolder {
                         }
                     }
                 }
+
+                true
             }
             ShardSelectorInternal::ShardKeyWithFallback(key) => {
                 let (shard_ids_to_query, used_shard_key) =
@@ -631,6 +638,8 @@ impl ShardHolder {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
                 }
+
+                true
             }
             ShardSelectorInternal::ShardId(shard_id) => {
                 if let Some(replica_set) = self.shards.get(shard_id) {
@@ -638,18 +647,18 @@ impl ShardHolder {
                 } else {
                     return Err(shard_not_found_error(*shard_id));
                 }
+
+                // Exempt from resharding filter. This selector is used by internal per-shard
+                // operations, such as the resharding driver reading back migrated points from the
+                // new shard, which must be able to reach the shard before it becomes visible to
+                // user-facing selectors
+                false
             }
-        }
+        };
 
         // Filter out shards that must not be queried while resharding, regardless of how they
         // were selected above
-        //
-        // Explicit shard ID selection is exempt: it is used by internal per-shard operations,
-        // such as the resharding driver reading back migrated points from the new shard, which
-        // must be able to reach the shard before it becomes visible to user-facing selectors
-        if !shard_selector.is_shard_id()
-            && let Some(state) = self.resharding_state.read().as_ref()
-        {
+        if filter_resharding && let Some(state) = self.resharding_state.read().as_ref() {
             res.retain(|(shard, _)| {
                 if state.shard_id != shard.shard_id {
                     return true;
