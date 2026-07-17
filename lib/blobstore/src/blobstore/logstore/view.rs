@@ -79,6 +79,10 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
 
     /// Iterate over all given values and execute callback for each one.
     ///
+    /// The mappings and the value data are both fetched with batched reads, so async backends
+    /// can serve them in parallel. The callback may be invoked in a different order than the
+    /// requested point offsets.
+    ///
     /// Return `false` from the callback to stop iteration early.
     pub(crate) fn read_values<P, U, E>(
         &self,
@@ -91,24 +95,35 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         U: UserData,
         E: From<BlobstoreError>,
     {
-        for (user_data, point_offset) in point_offsets {
-            let value = match self.tracker.get::<P>(point_offset).map_err(E::from)? {
-                None => None,
-                Some(pointer) => {
-                    let raw = self.read_from_pages::<P>(pointer).map_err(E::from)?;
-                    hw_counter_cell.incr_delta(raw.len());
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
-                    let decompressed = self.config.compression.decompress(raw);
-                    Some(V::from_bytes(&decompressed))
+        let mut pointers = Vec::new();
+
+        for result in self.tracker.iter(point_offsets).map_err(E::from)? {
+            let ((user_data, point_offset), pointer) = result.map_err(E::from)?;
+
+            let Some(pointer) = pointer else {
+                if !callback(user_data, point_offset, None)? {
+                    return Ok(false);
                 }
+
+                continue;
             };
 
-            if !callback(user_data, point_offset, value)? {
-                return Ok(false);
-            }
+            pointers.push(((user_data, point_offset), pointer));
         }
 
-        Ok(true)
+        self.pages.read_batch_values::<P, _, _>(
+            pointers.into_iter(),
+            |(user_data, point_offset), bytes| {
+                hw_counter_cell.incr_delta(bytes.len());
+
+                let decompressed = self.config.compression.decompress(bytes);
+                let value = V::from_bytes(&decompressed);
+                callback(user_data, point_offset, Some(value))
+            },
+        )
     }
 
     /// Iterate over a contiguous range of point offsets and execute callback for each existing

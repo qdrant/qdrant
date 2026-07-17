@@ -1,11 +1,11 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadRange, UniversalAppend, UniversalIoError,
-    UniversalRead, UniversalReadFs, UniversalWriteFileOps,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
+    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFileOps, UserData,
 };
 
 use crate::Result;
@@ -186,6 +186,25 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         Ok(pointers)
     }
 
+    /// Iterate the mappings for the given point offsets.
+    ///
+    /// Issues batched reads against the tracker file through the backend's read pipeline, so
+    /// async backends can fetch entries in parallel. Pending mappings and point offsets past the
+    /// highest set mapping are yielded directly, without touching the file.
+    ///
+    /// Yields one item per requested point offset, possibly in a different order.
+    pub fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffset)>,
+    {
+        Ok(Iter {
+            point_offsets,
+            tracker: self,
+            pipeline: S::ReadPipeline::new()?,
+        })
+    }
+
     /// Reopen the tracker file and reload the number of mappings from it, making newly appended
     /// mappings visible.
     ///
@@ -351,6 +370,70 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     pub fn flusher(&self) -> Flusher {
         let flusher = self.file.flusher();
         Box::new(move || flusher().map_err(BlobstoreError::from))
+    }
+}
+
+/// Batched mapping lookup, see [`AppendOnlyTracker::iter`].
+pub(crate) struct Iter<'a, U, I, S>
+where
+    U: UserData,
+    I: Iterator<Item = (U, PointOffset)>,
+    S: UniversalRead,
+{
+    point_offsets: I,
+    tracker: &'a AppendOnlyTracker<S>,
+    pipeline: S::ReadPipeline<'a, U>,
+}
+
+impl<'a, U, I, S> Iterator for Iter<'a, U, I, S>
+where
+    U: UserData,
+    I: Iterator<Item = (U, PointOffset)>,
+    S: UniversalRead,
+{
+    type Item = Result<(U, Option<ValuePointer>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.pipeline.can_schedule()
+            && let Some((user_data, point_offset)) = self.point_offsets.next()
+        {
+            // Pending mappings and point offsets past the highest set mapping are yielded
+            // directly, only persisted mappings are read from the file
+            if point_offset >= self.tracker.persisted_count {
+                let pending_index = (point_offset - self.tracker.persisted_count) as usize;
+                let pointer = self
+                    .tracker
+                    .pending
+                    .get(pending_index)
+                    .and_then(|entry| entry.to_option());
+                return Some(Ok((user_data, pointer)));
+            }
+
+            let start = u64::from(point_offset) * ENTRY_SIZE;
+            let result = self.pipeline.schedule::<Random>(
+                user_data,
+                &self.tracker.file,
+                start..start + ENTRY_SIZE,
+                align_of::<OptionalPointer>(),
+            );
+
+            if let Err(err) = result {
+                return Some(Err(err.into()));
+            }
+        }
+
+        let result = self.pipeline.wait_bytemuck::<OptionalPointer>();
+
+        let (user_data, entry) = match result {
+            Ok(entry) => entry?,
+            Err(err) => return Some(Err(err.into())),
+        };
+
+        let &[entry] = entry.as_ref() else {
+            unreachable!();
+        };
+
+        Some(Ok((user_data, entry.to_option())))
     }
 }
 
@@ -635,6 +718,40 @@ mod tests {
             assert_eq!(reader.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
         assert!(!reader.live_reload().unwrap());
+    }
+
+    /// The batched lookup resolves persisted, pending, skipped and out of range point offsets,
+    /// possibly yielding them in a different order.
+    #[test]
+    fn test_iter_spans_persisted_and_pending() {
+        let (_dir, mut tracker) = empty_tracker();
+
+        for n in 0..3 {
+            tracker.set(n, pointer(n)).unwrap();
+        }
+        tracker.write_pending(3).unwrap();
+        tracker.set(3, pointer(3)).unwrap();
+        tracker.set(6, pointer(6)).unwrap();
+
+        let requested = [2, 0, 6, 4, 3, 9];
+        let mut collected = tracker
+            .iter(requested.iter().map(|&offset| (offset, offset)))
+            .unwrap()
+            .map(|result| result.unwrap())
+            .collect::<Vec<_>>();
+        collected.sort_by_key(|(point_offset, _)| *point_offset);
+
+        assert_eq!(
+            collected,
+            vec![
+                (0, Some(pointer(0))),
+                (2, Some(pointer(2))),
+                (3, Some(pointer(3))),
+                (4, None),
+                (6, Some(pointer(6))),
+                (9, None),
+            ],
+        );
     }
 
     #[test]
