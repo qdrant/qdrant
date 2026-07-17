@@ -46,6 +46,10 @@ pub trait EncodedVectors: Sized {
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
+    fn encode_query_scaled(&self, query: &[f32]) -> Self::EncodedQuery {
+        self.encode_query(query)
+    }
+
     /// This function is expected to:
     /// - be implemented by non-multivector storages
     /// - be used by multivector storages

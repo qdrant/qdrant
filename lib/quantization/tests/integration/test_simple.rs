@@ -58,6 +58,89 @@ mod tests {
 
     #[rstest]
     #[case(ScalarQuantizationMethod::Int8)]
+    fn test_dot_query_positive_scaling_keeps_quantized_order(
+        #[case] method: ScalarQuantizationMethod,
+    ) {
+        let vectors_count = 3000;
+        let vector_dim = 16;
+        let scale = 2.0;
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(9000 + vector_dim as u64);
+        let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+            .map(|_| {
+                (0..vector_dim)
+                    .map(|i| {
+                        if i % 17 == 0 {
+                            rng.random_range(-20.0..20.0)
+                        } else {
+                            rng.random_range(-1.0..1.0)
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        let query: Vec<f32> = (0..vector_dim)
+            .map(|_| rng.random_range(-1.0..1.0))
+            .collect();
+        let scaled_query: Vec<f32> = query.iter().map(|v| v * scale).collect();
+
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
+        let encoded = EncodedVectorsU8::encode(
+            vector_data.iter(),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            vectors_count,
+            None,
+            method,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let query_u8 = encoded.encode_query_scaled(&query);
+        let scaled_query_u8 = encoded.encode_query_scaled(&scaled_query);
+
+        let score_all = |encoded_query| {
+            let mut scores: Vec<_> = (0..vectors_count)
+                .map(|idx| {
+                    let quantized_vector = encoded.get_quantized_vector(idx as u32);
+                    (
+                        idx,
+                        encoded.score_point_simple(encoded_query, &quantized_vector),
+                    )
+                })
+                .collect();
+            scores.sort_by(|(_, left), (_, right)| right.total_cmp(left));
+            scores
+        };
+
+        let scores = score_all(&query_u8);
+        let scaled_scores = score_all(&scaled_query_u8);
+
+        let ids: Vec<_> = scores.iter().take(10).map(|(idx, _)| *idx).collect();
+        let scaled_ids: Vec<_> = scaled_scores
+            .iter()
+            .take(10)
+            .map(|(idx, _)| *idx)
+            .collect();
+
+        assert_eq!(ids, scaled_ids);
+        for ((idx, score), (scaled_idx, scaled_score)) in scores.iter().zip(&scaled_scores) {
+            assert_eq!(idx, scaled_idx);
+            let tolerance = (*score).abs() * 1e-5 + 1e-4;
+            assert!((*scaled_score - *score * scale).abs() <= tolerance);
+        }
+    }
+
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l2_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
