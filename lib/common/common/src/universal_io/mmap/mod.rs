@@ -395,6 +395,7 @@ impl MmapFile {
             }
             // otherwise, let's open again
             _ => {
+                let _ = new_len; // suppress unused variable lint.
                 *mmap = open_mmap(
                     self.path.as_ref(),
                     self.writeable,
