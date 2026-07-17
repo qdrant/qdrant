@@ -582,11 +582,24 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Clears the local shard data and loads an empty local shard
+    /// Clears the local shard data and loads an empty local shard.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe: a `DummyShard` placeholder is installed before any
+    /// await point, so `self.local` always remains populated and interrupted
+    /// initialization can later be detected and retried.
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
-        let mut local = self.local.write().await;
+        let current_shard = {
+            let mut local = self.local.write().await;
+            local.replace(Shard::Dummy(DummyShard::new(
+                "Initializing empty local shard for incoming shard transfer",
+            )))
+        };
 
-        let current_shard = local.take();
+        #[cfg(test)]
+        wait_after_local_replace().await;
+
         if let Some(current_shard) = current_shard {
             current_shard.stop_gracefully().await;
         }
@@ -606,6 +619,7 @@ impl ShardReplicaSet {
         )
         .await;
 
+        let mut local = self.local.write().await;
         match local_shard_res {
             Ok(local_shard) => {
                 *local = Some(Shard::Local(local_shard));
@@ -1524,4 +1538,190 @@ impl ShardReplicaSet {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {
     Remove(ShardId, PeerId),
+}
+
+#[cfg(test)]
+static INIT_EMPTY_LOCAL_SHARD_AFTER_REPLACE_HOOK: std::sync::Mutex<
+    Option<(
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    )>,
+> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+async fn wait_after_local_replace() {
+    let hook = INIT_EMPTY_LOCAL_SHARD_AFTER_REPLACE_HOOK
+        .lock()
+        .unwrap()
+        .take();
+
+    if let Some((reached, release)) = hook {
+        let _ = reached.send(());
+        let _ = release.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use common::budget::ResourceBudget;
+    use common::save_on_disk::SaveOnDisk;
+    use segment::types::Distance;
+    use tempfile::{Builder, TempDir};
+    use tokio::runtime::Handle;
+    use tokio::sync::RwLock;
+    use tokio::sync::oneshot;
+
+    use super::*;
+    use crate::collection::payload_index_schema::PayloadIndexSchema;
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+    use crate::operations::shared_storage_config::SharedStorageConfig;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::optimizers_builder::OptimizersConfig;
+    use crate::shards::channel_service::ChannelService;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cancel_init_empty_local_shard_preserves_receiver_slot() {
+        let collection_dir = Builder::new()
+            .prefix("init-empty-local-cancel")
+            .tempdir()
+            .unwrap();
+        let replica_set = new_dummy_receiver_replica_set(&collection_dir).await;
+
+        assert!(
+            replica_set.has_local_shard().await,
+            "test fixture must start with a local receiver slot"
+        );
+        assert!(
+            replica_set.is_dummy().await,
+            "test fixture must start with a dummy receiver shard"
+        );
+        replica_set
+            .wait_for_local(Duration::from_secs(1))
+            .await
+            .expect("test fixture metadata must mark this peer as local");
+
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        install_init_empty_local_shard_after_replace_hook(reached_tx, release_rx);
+
+        let mut init_empty_local_shard = Box::pin(replica_set.init_empty_local_shard());
+
+        tokio::select! {
+            _ = reached_rx => {}
+            result = &mut init_empty_local_shard => {
+                panic!("empty local shard initialization completed before the cancellation window: {result:?}");
+            }
+        }
+
+        drop(init_empty_local_shard);
+        drop(release_tx);
+
+        assert!(
+            replica_set.has_local_shard().await,
+            "receiver initialization cancellation must not leave the local shard slot empty"
+        );
+        assert!(
+            replica_set.is_dummy().await,
+            "cancelling receiver initialization should leave a retry-visible dummy receiver state"
+        );
+        replica_set
+            .wait_for_local(Duration::from_secs(1))
+            .await
+            .expect("replica metadata still says this peer is local");
+    }
+
+    fn install_init_empty_local_shard_after_replace_hook(
+        reached: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+    ) {
+        let mut hook = INIT_EMPTY_LOCAL_SHARD_AFTER_REPLACE_HOOK.lock().unwrap();
+        assert!(
+            hook.is_none(),
+            "init-empty-local-shard test hook is already installed"
+        );
+        *hook = Some((reached, release));
+    }
+
+    async fn new_dummy_receiver_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
+        };
+
+        let optimizers_config = OptimizersConfig::fixture();
+        let config = CollectionConfigInternal {
+            params: collection_params,
+            optimizer_config: optimizers_config.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+            quantization_config: None,
+            strict_mode_config: None,
+            uuid: None,
+            metadata: None,
+        };
+
+        let payload_index_schema_file = collection_dir.path().join("payload-schema.json");
+        let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> = Arc::new(
+            SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap(),
+        );
+        let shared_config = Arc::new(RwLock::new(config));
+
+        let replica_set = ShardReplicaSet::build(
+            1,
+            None,
+            "test_collection".to_string(),
+            1,
+            true,
+            HashSet::new(),
+            dummy_on_replica_failure(),
+            dummy_abort_shard_transfer(),
+            collection_dir.path(),
+            shared_config,
+            optimizers_config,
+            Arc::new(SharedStorageConfig::default()),
+            payload_index_schema,
+            ChannelService::default(),
+            update_runtime,
+            search_runtime,
+            ResourceBudget::default(),
+            Some(ReplicaState::Partial),
+        )
+        .await
+        .unwrap();
+
+        {
+            let mut local = replica_set.local.write().await;
+            *local = Some(Shard::Dummy(DummyShard::new(
+                "dummy receiver awaiting shard transfer",
+            )));
+        }
+
+        replica_set
+    }
+
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
+    }
+
+    fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+        Arc::new(|_shard_transfer, _reason| {})
+    }
 }
