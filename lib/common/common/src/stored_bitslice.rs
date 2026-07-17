@@ -211,54 +211,6 @@ impl<S: UniversalRead> StoredBitSlice<S> {
             .copied())
     }
 
-    /// Get many bits in one pipelined pass over the backend.
-    ///
-    /// Batch counterpart of [`get_bit`](Self::get_bit): the containing `u64`
-    /// elements are deduplicated, fetched via a single
-    /// [`read_batch`](TypedStorage::read_batch) (so IO-pipelining backends
-    /// overlap the reads), and the target bits are extracted afterwards.
-    ///
-    /// Results are returned in input order; out-of-bounds indices yield `None`.
-    pub fn get_bits_batch(&self, bit_indices: &[u64]) -> Result<Vec<Option<bool>>> {
-        // Unique in-bounds element positions in first-seen order, so the read
-        // schedule is deterministic and shared elements are fetched once.
-        let mut slot_by_element: ahash::AHashMap<u64, usize> = ahash::AHashMap::new();
-        let mut unique_elements: Vec<u64> = Vec::new();
-        for &bit_index in bit_indices {
-            let element_index = Self::element_idx(bit_index);
-            if element_index >= self.element_len {
-                continue;
-            }
-            slot_by_element.entry(element_index).or_insert_with(|| {
-                unique_elements.push(element_index);
-                unique_elements.len() - 1
-            });
-        }
-
-        let mut elements: Vec<BitStore> = vec![0; unique_elements.len()];
-        self.storage.read_batch::<Random, _>(
-            unique_elements.iter().enumerate().map(|(slot, &element)| {
-                (slot, ReadRange::one(element * size_of::<BitStore>() as u64))
-            }),
-            |slot, data: &[BitStore]| {
-                elements[slot] = data[0];
-                Ok(())
-            },
-        )?;
-
-        Ok(bit_indices
-            .iter()
-            .map(|&bit_index| {
-                let slot = *slot_by_element.get(&Self::element_idx(bit_index))?;
-                let bitslice = BitSlice::from_element(&elements[slot]);
-                bitslice
-                    .get(Self::bit_within_element(bit_index) as usize)
-                    .as_deref()
-                    .copied()
-            })
-            .collect())
-    }
-
     /// Populate the underlying storage's RAM cache.
     pub fn populate(&self) -> Result<()> {
         self.storage.populate()
@@ -521,31 +473,6 @@ mod tests {
     }
 
     // ---- Write tests ----
-
-    #[test]
-    fn test_get_bits_batch() {
-        // Two u64 elements, mixed bits.
-        let data = [
-            0b10110010, 0b01001111, 0x00, 0x00, 0x00, 0x00, 0x00, 0b10000000, // element 0
-            0b00000001, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0b11111111, // element 1
-        ];
-        let f = create_temp_file(&data);
-
-        let storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
-
-        // Unsorted, with duplicates, bits sharing an element, and out-of-bounds.
-        let bit_indices = [127, 0, 1, 64, 63, 1, 200, 9];
-        let batch = storage.get_bits_batch(&bit_indices).unwrap();
-        let expected: Vec<Option<bool>> = bit_indices
-            .iter()
-            .map(|&bit_index| storage.get_bit(bit_index).unwrap())
-            .collect();
-        assert_eq!(batch, expected);
-        assert_eq!(batch[6], None, "out-of-bounds index must yield None");
-
-        assert_eq!(storage.get_bits_batch(&[]).unwrap(), vec![]);
-    }
 
     #[test]
     fn test_set_bit() {
