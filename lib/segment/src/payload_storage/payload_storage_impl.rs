@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalAppend, UniversalWrite};
+use blobstore::error::BlobstoreError;
 use fs_err as fs;
 use serde_json::Value;
 
@@ -22,8 +23,10 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
+        serde_json::from_slice(data).map_err(|err| {
+            BlobstoreError::service_error(format!("Failed to deserialize Payload: {err}"))
+        })
     }
 }
 
