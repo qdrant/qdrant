@@ -1330,20 +1330,6 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
     shard.stop_gracefully().await;
 }
 
-/// Reproducer for <https://github.com/qdrant/qdrant/pull/9813#discussion_r3587293412>.
-///
-/// The raw upsert path (the internal node-to-node API carrying storage-native
-/// vector bytes) does not validate blob length before the WAL write; a malformed
-/// blob is only rejected deep in the storage layer. That rejection used to be a
-/// `ServiceError`, which aborts WAL replay and crash-loops recovery — a single
-/// malformed raw op persisted to the WAL would brick the shard on restart.
-///
-/// After the fix the storage raises `WrongVectorBytesSize`, a user error mapped
-/// to `BadInput`, which WAL replay logs-and-skips just like a plain
-/// `WrongVectorDimension` on the normal upsert path. This test drives the whole
-/// path: a valid raw op and a malformed raw op both reach the WAL, the shard is
-/// reloaded (replaying both), and we assert recovery succeeds with the valid
-/// point preserved and the malformed one skipped.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
     let _ = env_logger::builder().is_test(true).try_init();
