@@ -49,7 +49,7 @@ fn encode_bench(c: &mut Criterion) {
 
     group.bench_function("score random access pq", |b| {
         b.iter(|| {
-            let random_idx = rand::random::<u32>() % vectors_count as u32;
+            let random_idx = rng.random_range(0..vectors_count as u32);
             total += pq_encoded.score_point(&encoded_query, random_idx, &hardware_counter);
         });
     });

@@ -3,13 +3,16 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::p_square::P2Quantile;
 use quantization::quantile::find_quantile_interval_per_coordinate_with_preprocess;
+use rand::RngExt;
+use rand::rngs::SmallRng;
 
 fn p_square(c: &mut Criterion) {
     let mut group = c.benchmark_group("p_square");
 
     let count = 10_000;
+    let mut rng = rand::make_rng::<SmallRng>();
     let data = (0..count)
-        .map(|_| rand::random::<f64>())
+        .map(|_| rng.random::<f64>())
         .collect::<Vec<f64>>();
     let quantile = 0.99;
 
@@ -49,12 +52,9 @@ fn p_square_vectors(c: &mut Criterion) {
 
     let count = 10_000;
     let dim = 1536;
+    let mut rng = rand::make_rng::<SmallRng>();
     let data = (0..count)
-        .map(|_| {
-            (0..dim)
-                .map(|_| rand::random::<f32>())
-                .collect::<Vec<f32>>()
-        })
+        .map(|_| (0..dim).map(|_| rng.random::<f32>()).collect::<Vec<f32>>())
         .collect::<Vec<Vec<f32>>>();
     let quantile = 0.99;
 
