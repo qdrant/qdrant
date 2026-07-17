@@ -7,7 +7,7 @@ use semver::Version;
 use crate::cpu;
 
 /// Current Qdrant version string
-pub const QDRANT_VERSION_STRING: &str = "1.18.2";
+pub const QDRANT_VERSION_STRING: &str = "1.18.3";
 
 /// Current Qdrant semver version
 pub static QDRANT_VERSION: LazyLock<Version> =
