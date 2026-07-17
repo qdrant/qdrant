@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -257,8 +257,10 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| view.estimate_point_count(filter, hw_counter))
     }
 
-    fn vector_names(&self) -> HashSet<VectorNameBuf> {
-        self.vector_data.keys().cloned().collect()
+    fn vector_names(&self) -> Vec<VectorNameBuf> {
+        let mut names: Vec<_> = self.vector_data.keys().cloned().collect();
+        names.sort_unstable();
+        names
     }
 
     fn is_empty(&self) -> bool {

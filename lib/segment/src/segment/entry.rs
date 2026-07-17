@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -308,8 +308,10 @@ impl ReadSegmentEntry for Segment {
             .with_view(|v| v.indexed_fields())
     }
 
-    fn vector_names(&self) -> HashSet<VectorNameBuf> {
-        self.vector_data.keys().cloned().collect()
+    fn vector_names(&self) -> Vec<VectorNameBuf> {
+        let mut names: Vec<_> = self.vector_data.keys().cloned().collect();
+        names.sort_unstable();
+        names
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
