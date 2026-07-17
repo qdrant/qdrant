@@ -37,6 +37,8 @@ pub fn build_simple_segment(
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+                    data_integrity_check: false,
+                    magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -66,6 +68,8 @@ pub fn build_simple_segment_with_payload_storage(
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+                    data_integrity_check: false,
+                    magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -93,6 +97,8 @@ pub fn build_multivec_segment(
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: false,
+            magnitude_bound: None,
         },
     );
     vectors_config.insert(
@@ -105,6 +111,8 @@ pub fn build_multivec_segment(
             quantization_config: None,
             multivector_config: None,
             datatype: None,
+            data_integrity_check: false,
+            magnitude_bound: None,
         },
     );
 

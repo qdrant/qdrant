@@ -1718,6 +1718,27 @@ pub struct VectorDataConfig {
     /// Vector specific configuration to set specific storage element type
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
+
+    /// When `true`, every dense vector arriving on the ingestion path is
+    /// inspected for non-finite components (NaN, +Inf, -Inf). Vectors with
+    /// any such component are rejected with `OperationError::InvalidVectorValue`
+    /// before reaching the index. Defaults to `false` for back-compat.
+    #[serde(default)]
+    pub data_integrity_check: bool,
+
+    /// When set, components with `|v[i]| > magnitude_bound` are rejected with
+    /// `OperationError::InvalidVectorValue`. Independent of the NaN/Inf check;
+    /// useful to catch overflow attacks that get normalised onto a degenerate
+    /// point on the unit hypersphere (e.g. `[1e30; dim]` collapsing to all-zero
+    /// after cosine normalisation). `None`, or any non-finite or non-positive
+    /// value, disables the bound.
+    ///
+    /// Note: `NaN` components are **not** rejected by this bound alone —
+    /// enable `data_integrity_check` to also reject `NaN` / `Inf` values.
+    // TODO: implement `Anonymize` for `Option<f32>` and drop `#[anonymize(false)]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub magnitude_bound: Option<f32>,
 }
 
 impl VectorDataConfig {
@@ -1753,6 +1774,11 @@ impl VectorDataConfig {
             quantization_config: _,
             multivector_config,
             datatype,
+            // Runtime-only ingestion flags, do not gate segment compatibility:
+            // a segment merging two configs with different flags simply takes
+            // the destination's flag for future inserts.
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = self;
 
         if *size != other.size {
@@ -1835,6 +1861,19 @@ pub struct SparseVectorDataConfig {
     /// Default: none
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifier: Option<Modifier>,
+
+    /// See `VectorDataConfig::data_integrity_check`. Applies to the `values`
+    /// array of every incoming `SparseVector`.
+    #[serde(default)]
+    pub data_integrity_check: bool,
+
+    /// See `VectorDataConfig::magnitude_bound`. Bound is applied per-component
+    /// on the `values` array. Note: `NaN` components are not rejected by this
+    /// bound alone — enable `data_integrity_check` for that.
+    // TODO: implement `Anonymize` for `Option<f32>` and drop `#[anonymize(false)]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub magnitude_bound: Option<f32>,
 }
 
 /// If the storage type is not in config, it means it is the OnDisk variant
@@ -1855,6 +1894,8 @@ impl SparseVectorDataConfig {
             index: _,
             storage_type: _,
             modifier,
+            data_integrity_check: _,
+            magnitude_bound: _,
         } = self;
 
         if modifier != &other.modifier {

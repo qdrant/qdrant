@@ -34,6 +34,8 @@ fn default_dense_config(dim: usize) -> VectorDataConfig {
         quantization_config: None,
         multivector_config: None,
         datatype: None,
+        data_integrity_check: false,
+        magnitude_bound: None,
     }
 }
 

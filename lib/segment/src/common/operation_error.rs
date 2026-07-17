@@ -76,6 +76,8 @@ pub enum OperationError {
     },
     #[error("The expression {expression} produced a non-finite number")]
     NonFiniteNumber { expression: String },
+    #[error("Vector contains an invalid value: {reason}")]
+    InvalidVectorValue { reason: String },
 }
 
 impl OperationError {
