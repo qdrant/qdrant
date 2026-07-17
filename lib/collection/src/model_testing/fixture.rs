@@ -11,11 +11,13 @@ use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{
-    Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType, QuantizationConfig,
-    ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, MultiVectorConfig,
+    PayloadFieldSchema, PayloadSchemaType, ProductQuantization, ProductQuantizationConfig,
+    QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
+    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
 };
 
-use super::{ALL_CANDIDATES, COLLECTION_NAME, INLINE_STORAGE_VECTOR, PEER_ID, VectorKind};
+use super::{ALL_CANDIDATES, COLLECTION_NAME, PEER_ID, QuantizationKind, VectorKind};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::config_diff::HnswConfigDiff;
@@ -48,6 +50,51 @@ fn dense_params_builder(
         builder = builder.with_datatype(datatype);
     }
     builder
+}
+
+/// Materialize the schema `QuantizationConfig` for a candidate's declared kind. All fields
+/// are the engine defaults (no quantile / memory-placement / encoding overrides); Scalar
+/// matches the config the inline-storage vector has always used, byte for byte.
+fn quantization_config(kind: QuantizationKind) -> QuantizationConfig {
+    match kind {
+        QuantizationKind::Scalar => QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: ScalarQuantizationConfig {
+                r#type: ScalarType::Int8,
+                quantile: None,
+                always_ram: None,
+                memory: None,
+            },
+        }),
+        QuantizationKind::Product => QuantizationConfig::Product(ProductQuantization {
+            product: ProductQuantizationConfig {
+                compression: CompressionRatio::X4,
+                always_ram: None,
+                memory: None,
+            },
+        }),
+        QuantizationKind::Binary => QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                encoding: None,
+                query_encoding: None,
+            },
+        }),
+        QuantizationKind::Turbo => QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                bits: None,
+            },
+        }),
+        QuantizationKind::TurboBits1_5 => QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                bits: Some(TurboQuantBitSize::Bits1_5),
+            },
+        }),
+    }
 }
 
 /// Build a fresh soak collection rooted at `storage_path`. Creates `collection/` and
@@ -86,23 +133,14 @@ pub(super) async fn fixture(
             VectorKind::Dense(dim) => {
                 let mut builder =
                     dense_params_builder(dim, candidate.distance, on_disk, candidate.datatype);
-                // The inline-storage vector exercises the HNSW `inline_storage` layout, which
-                // stores original + quantized vectors inside the index file and therefore
-                // requires quantization. Pair it with scalar quantization.
-                if name == INLINE_STORAGE_VECTOR {
-                    builder = builder
-                        .with_quantization_config(QuantizationConfig::Scalar(ScalarQuantization {
-                            scalar: ScalarQuantizationConfig {
-                                r#type: ScalarType::Int8,
-                                quantile: None,
-                                always_ram: None,
-                                memory: None,
-                            },
-                        }))
-                        .with_hnsw_config(HnswConfigDiff {
-                            inline_storage: Some(true),
-                            ..Default::default()
-                        });
+                if let Some(kind) = candidate.quantization {
+                    builder = builder.with_quantization_config(quantization_config(kind));
+                }
+                if candidate.inline_storage {
+                    builder = builder.with_hnsw_config(HnswConfigDiff {
+                        inline_storage: Some(true),
+                        ..Default::default()
+                    });
                 }
                 dense_vectors.insert(name.to_string(), builder.build());
             }
