@@ -155,6 +155,34 @@ fn test_try_from_limit_offset_saturates_on_overflow() {
 }
 
 #[test]
+fn test_request_limit_with_offset_saturates_on_overflow() {
+    let shard_request = ShardQueryRequest {
+        prefetches: vec![],
+        query: None,
+        filter: None,
+        score_threshold: None,
+        limit: usize::MAX,
+        offset: 1,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+    assert_eq!(shard_request.limit_with_offset(), usize::MAX);
+
+    let core_request = CoreSearchRequest {
+        query: QueryEnum::Nearest(NamedQuery::new(VectorInternal::Dense(vec![1.0]), "full")),
+        filter: None,
+        params: None,
+        limit: usize::MAX,
+        offset: 1,
+        with_payload: None,
+        with_vector: None,
+        score_threshold: None,
+    };
+    assert_eq!(core_request.limit_with_offset(), usize::MAX);
+}
+
+#[test]
 fn test_try_from_no_prefetch() {
     let dummy_vector = vec![1.0, 2.0, 3.0];
     let request = ShardQueryRequest {

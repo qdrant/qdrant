@@ -24,7 +24,7 @@ use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blocking};
-use shard::search::CoreSearchRequestBatch;
+use shard::search::{CoreSearchRequest, CoreSearchRequestBatch};
 use shard::search_result_aggregator::BatchResultAggregator;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio_util::task::AbortOnDropHandle;
@@ -296,7 +296,7 @@ impl SegmentsSearcher {
             batch_request
                 .searches
                 .iter()
-                .map(|request| request.limit + request.offset)
+                .map(CoreSearchRequest::limit_with_offset)
                 .collect(),
             &further_results,
         );
@@ -682,7 +682,7 @@ fn search_in_segment(
             filter: search_query.filter.as_ref(),
             with_payload: WithPayload::from(with_payload_interface),
             with_vector: search_query.with_vector.clone().unwrap_or_default(),
-            top: search_query.limit + search_query.offset,
+            top: search_query.limit_with_offset(),
             params: search_query.params.as_ref(),
         };
 

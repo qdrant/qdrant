@@ -107,7 +107,7 @@ impl Collection {
 
         let max_limit = batch_request
             .iter()
-            .map(|req| req.limit + req.offset)
+            .map(ShardQueryRequest::limit_with_offset)
             .max()
             .unwrap_or(0);
 
@@ -119,7 +119,7 @@ impl Collection {
 
         for request in batch_request.iter() {
             let mut new_request = request.clone();
-            let request_limit = new_request.limit + new_request.offset;
+            let request_limit = new_request.limit_with_offset();
 
             let is_exact = request.params.as_ref().is_some_and(|p| p.exact);
 
@@ -756,8 +756,33 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             // Otherwise, we expect the root result
             vec![IntermediateQueryInfo {
                 scoring_query: request.query.as_ref(),
-                take: request.offset + request.limit,
+                take: request.limit_with_offset(),
             }]
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn intermediate_query_limit_with_offset_saturates_on_overflow() {
+        let request = ShardQueryRequest {
+            prefetches: vec![],
+            query: None,
+            filter: None,
+            score_threshold: None,
+            limit: usize::MAX,
+            offset: 1,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+
+        let query_infos = intermediate_query_infos(&request);
+
+        assert_eq!(query_infos.len(), 1);
+        assert_eq!(query_infos[0].take, usize::MAX);
     }
 }

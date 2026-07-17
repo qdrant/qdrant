@@ -19,6 +19,7 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// This method is DEPRECATED and should be replaced with query.
     pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
+        let limit_with_offset = search.limit_with_offset();
         let is_stopped_guard = StoppingGuard::new();
         let searches = [search];
         let query_context = init_query_context(
@@ -48,7 +49,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             query,
             filter,
             params,
-            limit,
+            limit: _,
             offset,
             with_payload,
             with_vector,
@@ -69,7 +70,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 &with_payload,
                 &with_vector,
                 filter.as_ref(),
-                offset + limit,
+                limit_with_offset,
                 params.as_ref(),
                 &context.get_segment_query_context(),
             )?;
@@ -83,7 +84,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             Ok(points)
         })?;
 
-        let mut aggregator = BatchResultAggregator::new([offset + limit]);
+        let mut aggregator = BatchResultAggregator::new([limit_with_offset]);
         aggregator.update_point_versions(points_by_segment.iter().flatten());
 
         for points in points_by_segment {
