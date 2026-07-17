@@ -1,18 +1,19 @@
+use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{ID_TRACKER_BATCH_SIZE, IdTrackerRead};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::types::{Filter, PointIdType};
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -90,23 +91,40 @@ where
             deferred_behavior,
         )?;
 
-        // The candidate set is fully drained below either way, so resolving
-        // external ids in chunks trades no laziness for pipelined lookups on
-        // disk-resident id trackers.
-        let chunks = internal_ids.chunks(ID_TRACKER_BATCH_SIZE);
-        let ids_iterator = chunks
-            .into_iter()
-            .flat_map(|chunk| self.id_tracker.external_ids_batch(chunk))
-            .flatten()
-            .filter(|&external_id| match offset {
-                Some(offset) => external_id >= offset,
-                None => true,
-            });
+        if limit == Some(0) {
+            return Ok(vec![]);
+        }
 
-        let mut page = match limit {
-            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
-            None => ids_iterator.collect(),
-        };
+        // The candidate set is fully drained either way: feed the whole
+        // iterator into one batch pass and let the IO layer pipeline the
+        // lookups. With a limit, only the `limit` smallest ids are kept
+        // (mirrors `peek_top_smallest_iterable`, which cannot consume a
+        // callback-fed stream).
+        let mut page: Vec<PointIdType> = Vec::new();
+        let mut top = limit.map(FixedLengthPriorityQueue::new);
+        self.id_tracker
+            .external_ids_batch(internal_ids, |_, external_id| {
+                let past_offset = match offset {
+                    Some(offset) => external_id >= offset,
+                    None => true,
+                };
+                if !past_offset {
+                    return;
+                }
+                match &mut top {
+                    Some(top) => {
+                        top.push(Reverse(external_id));
+                    }
+                    None => page.push(external_id),
+                }
+            })?;
+        if let Some(top) = top {
+            page = top
+                .into_sorted_vec()
+                .into_iter()
+                .map(|Reverse(x)| x)
+                .collect();
+        }
         page.sort_unstable();
         Ok(page)
     }

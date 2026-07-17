@@ -100,42 +100,6 @@ pub trait DiskMappingsSource {
             None => Ok(()),
         }
     }
-
-    /// Batch counterpart of [`resolve_external`](Self::resolve_external): a
-    /// per-point deleted check (see [`resolve_internal_batch`](Self::resolve_internal_batch)
-    /// on why it is not batched), then one pipelined mapping-read pass over the
-    /// surviving offsets. Results are in input order.
-    fn resolve_external_batch(
-        &self,
-        offsets: &[PointOffsetType],
-    ) -> OperationResult<Vec<Option<PointIdType>>> {
-        let deleted: Vec<bool> = offsets
-            .iter()
-            .map(|&offset| self.point_deleted(offset))
-            .collect::<OperationResult<_>>()?;
-
-        let live: Vec<PointOffsetType> = offsets
-            .iter()
-            .zip(&deleted)
-            .filter(|&(_, &deleted)| !deleted)
-            .map(|(&offset, _)| offset)
-            .collect();
-        let external_ids = self.mapping_reader().external_ids_batch(&live)?;
-
-        let mut external_ids = external_ids.into_iter();
-        Ok(deleted
-            .into_iter()
-            .map(|deleted| {
-                if deleted {
-                    None
-                } else {
-                    external_ids
-                        .next()
-                        .expect("one external id per live offset")
-                }
-            })
-            .collect())
-    }
 }
 
 /// A borrowed `(reader, deleted)` view; a `Copy` pair of references whose
@@ -200,18 +164,5 @@ pub fn log_lookup_err<T>(result: OperationResult<Option<T>>) -> Option<T> {
     result.unwrap_or_else(|err| {
         log::error!("disk id tracker lookup failed: {err}");
         None
-    })
-}
-
-/// Batch analogue of [`log_lookup_err`]: on a storage error, log it and yield
-/// all-`None` (`len` entries), since the `IdTrackerRead` batch methods must
-/// return one slot per input.
-pub fn log_lookup_err_batch<T>(
-    result: OperationResult<Vec<Option<T>>>,
-    len: usize,
-) -> Vec<Option<T>> {
-    result.unwrap_or_else(|err| {
-        log::error!("disk id tracker batch lookup failed: {err}");
-        std::iter::repeat_with(|| None).take(len).collect()
     })
 }

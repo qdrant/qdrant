@@ -87,12 +87,13 @@ impl IdTrackerRead for IdTrackerEnum {
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<PointIdType>> {
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(t) => t.external_ids_batch(internal_ids),
-            IdTrackerEnum::ImmutableIdTracker(t) => t.external_ids_batch(internal_ids),
-            IdTrackerEnum::InMemoryIdTracker(t) => t.external_ids_batch(internal_ids),
-            IdTrackerEnum::DiskIdTracker(t) => t.external_ids_batch(internal_ids),
+            IdTrackerEnum::MutableIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::ImmutableIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::InMemoryIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::DiskIdTracker(t) => t.external_ids_batch(internal_ids, callback),
         }
     }
 

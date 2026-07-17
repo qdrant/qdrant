@@ -186,38 +186,42 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// [`read_batch`](UniversalRead::read_batch) pass over `i2e`; the
     /// `is_uuid` flag comes from the RAM-resident bitmap, so no extra reads.
     ///
-    /// Results are returned in input order; out-of-range offsets yield `None`.
+    /// Each resolved `(offset, id)` is handed to `on_found` as its read
+    /// completes (read-completion order, not input order); out-of-range
+    /// offsets are skipped. The input is walked once and nothing is buffered.
     /// Deletion is NOT applied; storage errors propagate.
     pub fn external_ids_batch(
         &self,
-        offsets: &[PointOffsetType],
-    ) -> OperationResult<Vec<Option<PointIdType>>> {
-        let mut results: Vec<Option<PointIdType>> = vec![None; offsets.len()];
-
-        let data_ranges = offsets
-            .iter()
-            .enumerate()
-            .filter(|&(_, &offset)| u64::from(offset) < self.i2e_header.total)
-            .map(|(idx, &offset)| {
+        offsets: impl IntoIterator<Item = PointOffsetType>,
+        mut on_found: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        // Each read is tagged with its offset so the callback can pair it with
+        // the decoded id; the range iterator stays lazy (no collect).
+        let ranges = offsets
+            .into_iter()
+            .filter(|&offset| u64::from(offset) < self.i2e_header.total)
+            .map(|offset| {
                 let range = ReadRange {
                     byte_offset: self.i2e_header.data_offset + u64::from(offset) * 16,
                     length: 16,
                 };
-                (idx, range)
+                (offset, range)
             });
 
         self.i2e
-            .read_batch::<common::generic_consts::Random, u8, usize>(
-                data_ranges,
-                |idx, bytes| {
+            .read_batch::<common::generic_consts::Random, u8, PointOffsetType>(
+                ranges,
+                |offset, bytes| {
                     let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-                    results[idx] =
-                        Some(decode_external(value, self.is_uuid.contains(offsets[idx])));
+                    on_found(
+                        offset,
+                        decode_external(value, self.is_uuid.contains(offset)),
+                    );
                     Ok(())
                 },
             )?;
 
-        Ok(results)
+        Ok(())
     }
 
     /// One 16-byte i2e read; the `is_uuid` flag comes from the RAM-resident

@@ -155,11 +155,12 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<PointIdType>> {
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(t) => t.external_ids_batch(internal_ids),
-            ReadOnlyIdTrackerEnum::Immutable(t) => t.external_ids_batch(internal_ids),
-            ReadOnlyIdTrackerEnum::DiskResident(t) => t.external_ids_batch(internal_ids),
+            ReadOnlyIdTrackerEnum::Appendable(t) => t.external_ids_batch(internal_ids, callback),
+            ReadOnlyIdTrackerEnum::Immutable(t) => t.external_ids_batch(internal_ids, callback),
+            ReadOnlyIdTrackerEnum::DiskResident(t) => t.external_ids_batch(internal_ids, callback),
         }
     }
 

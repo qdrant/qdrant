@@ -23,11 +23,6 @@ const SEED: u64 = 0b101100001101111000111001010100101000101100110100101001000111
 /// It does not mean a point with this version is always deleted.
 pub const DELETED_POINT_VERSION: SeqNumberType = 0;
 
-/// Chunk size for streaming callers of the batch lookups
-/// ([`IdTrackerRead::external_ids_batch`] & co): large enough to keep a
-/// pipelining backend busy, small enough not to materialize the whole stream.
-pub const ID_TRACKER_BATCH_SIZE: usize = 1024;
-
 /// Trait for point ids tracker.
 ///
 /// This tracker is used to convert external (i.e. user-facing) point id into internal point id
@@ -178,21 +173,25 @@ pub trait IdTrackerRead {
     /// Excludes soft deleted points.
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType>;
 
-    /// Batch counterpart of [`external_id`](Self::external_id): one result
-    /// slot per input id, in input order. Deleted and unknown points yield
-    /// `None`.
+    /// Batch counterpart of [`external_id`](Self::external_id), streaming
+    /// each `(internal_id, external_id)` pair to `callback`. Deleted and
+    /// unknown points are skipped, and delivery order is unspecified — callers
+    /// pair results by internal id, not input position.
     ///
     /// The default streams the iterator through the single lookup, which is
     /// what in-RAM trackers want; disk-resident trackers override it to
-    /// pipeline the reads (buffering the input once internally).
+    /// pipeline the reads, propagating storage errors.
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<PointIdType>> {
-        internal_ids
-            .into_iter()
-            .map(|internal_id| self.external_id(internal_id))
-            .collect()
+        mut callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        for internal_id in internal_ids {
+            if let Some(external_id) = self.external_id(internal_id) {
+                callback(internal_id, external_id);
+            }
+        }
+        Ok(())
     }
 
     /// Number of total points

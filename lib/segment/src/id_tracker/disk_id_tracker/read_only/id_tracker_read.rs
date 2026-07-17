@@ -7,9 +7,7 @@ use common::universal_io::{ReadRange, UniversalRead};
 
 use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::disk_id_tracker::mappings::{
-    DiskMappingsSource, log_lookup_err, log_lookup_err_batch,
-};
+use crate::id_tracker::disk_id_tracker::mappings::{DiskMappingsSource, log_lookup_err};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -71,15 +69,34 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         log_lookup_err(self.resolve_external(internal_id))
     }
 
+    /// Deleted offsets are dropped before any read is scheduled (the deleted
+    /// file is prefetched whole, so each check is an in-memory bit test), then
+    /// one pipelined mapping-read pass delivers each surviving `(offset, id)`
+    /// in read-completion order; nothing is buffered.
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<PointIdType>> {
-        let internal_ids: Vec<PointOffsetType> = internal_ids.into_iter().collect();
-        log_lookup_err_batch(
-            self.resolve_external_batch(&internal_ids),
-            internal_ids.len(),
-        )
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        // `point_deleted` is fallible but runs inside the lazy range iterator;
+        // capture the first error out of band and surface it after the pass.
+        let mut first_err = None;
+        self.reader.external_ids_batch(
+            internal_ids
+                .into_iter()
+                .filter(|&offset| match self.point_deleted(offset) {
+                    Ok(deleted) => !deleted,
+                    Err(err) => {
+                        first_err.get_or_insert(err);
+                        false
+                    }
+                }),
+            callback,
+        )?;
+        match first_err {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
     }
 
     /// One pipelined pass over the versions file instead of a read per point,

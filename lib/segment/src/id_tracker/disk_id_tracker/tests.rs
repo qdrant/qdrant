@@ -113,17 +113,21 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     let mut offsets: Vec<u32> = (0..tracker.total_point_count() as u32 + 10).collect();
     offsets.push(0);
 
-    let batch_external_ids = tracker.external_ids_batch(offsets.iter().copied());
+    let mut batch_external_ids: AHashMap<u32, PointIdType> = AHashMap::new();
+    tracker
+        .external_ids_batch(offsets.iter().copied(), |internal_id, external_id| {
+            batch_external_ids.insert(internal_id, external_id);
+        })
+        .unwrap();
     let mut batch_versions: AHashMap<u32, SeqNumberType> = AHashMap::new();
     tracker
         .internal_versions_batch(offsets.iter().copied(), |internal_id, version| {
             batch_versions.insert(internal_id, version);
         })
         .unwrap();
-    assert_eq!(batch_external_ids.len(), offsets.len());
-    for (slot, &offset) in offsets.iter().enumerate() {
+    for &offset in &offsets {
         assert_eq!(
-            batch_external_ids[slot],
+            batch_external_ids.get(&offset).copied(),
             tracker.external_id(offset),
             "external_ids_batch mismatch at {offset}",
         );
@@ -135,7 +139,11 @@ fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
     }
 
     // Empty inputs stay empty.
-    assert_eq!(tracker.external_ids_batch(std::iter::empty()), vec![]);
+    tracker
+        .external_ids_batch(std::iter::empty(), |_, _| {
+            panic!("no ids expected for empty input")
+        })
+        .unwrap();
     tracker
         .internal_versions_batch(std::iter::empty(), |_, _| {
             panic!("no versions expected for empty input")
@@ -323,7 +331,9 @@ fn read_by_id_does_not_materialize_deleted_set() {
             |_, _| {},
         )
         .unwrap();
-    let _ = read_only.external_ids_batch(probe_offsets.clone());
+    read_only
+        .external_ids_batch(probe_offsets.clone(), |_, _| {})
+        .unwrap();
     read_only
         .internal_versions_batch(probe_offsets, |_, _| {})
         .unwrap();

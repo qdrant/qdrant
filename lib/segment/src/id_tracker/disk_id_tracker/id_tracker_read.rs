@@ -5,7 +5,7 @@ use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::UniversalWrite;
 
 use super::DiskIdTracker;
-use super::mappings::{DiskMappingsSource, log_lookup_err, log_lookup_err_batch};
+use super::mappings::{DiskMappingsSource, log_lookup_err};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
@@ -57,14 +57,19 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
         log_lookup_err(self.resolve_external(internal_id))
     }
 
+    /// Deleted offsets are dropped against the resident bitvec (free,
+    /// infallible), then one pipelined mapping-read pass delivers each
+    /// surviving `(offset, id)` in read-completion order; nothing is buffered.
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-    ) -> Vec<Option<PointIdType>> {
-        let internal_ids: Vec<PointOffsetType> = internal_ids.into_iter().collect();
-        log_lookup_err_batch(
-            self.resolve_external_batch(&internal_ids),
-            internal_ids.len(),
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        self.reader.external_ids_batch(
+            internal_ids
+                .into_iter()
+                .filter(|&offset| !self.deleted.get_bit(offset as usize).unwrap_or(true)),
+            callback,
         )
     }
 

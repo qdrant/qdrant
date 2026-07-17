@@ -227,14 +227,18 @@ where
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let external_ids = self
-            .id_tracker
-            .external_ids_batch(internal_result.iter().map(|scored| scored.idx));
+        let mut external_ids = AHashMap::with_capacity(internal_result.len());
+        self.id_tracker.external_ids_batch(
+            internal_result.iter().map(|scored| scored.idx),
+            |internal_id, external_id| {
+                external_ids.insert(internal_id, external_id);
+            },
+        )?;
 
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
-            .zip(external_ids)
-            .filter_map(|(scored_point_offset, point_id)| {
+            .filter_map(|scored_point_offset| {
+                let point_id = external_ids.get(&scored_point_offset.idx).copied();
                 // This can happen if a point was modified between retrieving and post-processing,
                 // but this function locks the segment so it can't be modified during execution.
                 debug_assert!(
