@@ -43,6 +43,37 @@ pub enum SegmentManifestState {
     Retiring,
 }
 
+impl SegmentManifestState {
+    /// Whether a reader may serve the segment: live ([`Active`](Self::Active)), or
+    /// [`Optimizing`](Self::Optimizing) — being rebuilt out-of-process, but live (and still
+    /// receiving deletes) until the swap.
+    pub fn is_usable(&self) -> bool {
+        match self {
+            SegmentManifestState::Active
+            | SegmentManifestState::Optimizing {
+                holder: _,
+                lease_until: _,
+            } => true,
+            SegmentManifestState::UnderConstruction | SegmentManifestState::Retiring => false,
+        }
+    }
+
+    /// Whether the state is a mark owned by an out-of-process optimizer — a rebuild claim
+    /// ([`Optimizing`](Self::Optimizing)) or a pending removal ([`Retiring`](Self::Retiring)) —
+    /// rather than something derivable from the segment holder. A holder rebuild must not erase
+    /// such marks (see [`SegmentsManifest::preserving`]).
+    pub fn is_optimizer_mark(&self) -> bool {
+        match self {
+            SegmentManifestState::Optimizing {
+                holder: _,
+                lease_until: _,
+            }
+            | SegmentManifestState::Retiring => true,
+            SegmentManifestState::Active | SegmentManifestState::UnderConstruction => false,
+        }
+    }
+}
+
 /// Contents of `segments_manifest.json`: a flat map of segment UUID to its state, e.g.
 /// `{ "1b4e28ba-...": "active", "6ba7b810-...": "active" }`.
 ///
@@ -98,21 +129,15 @@ impl SegmentsManifest {
         self.segments.remove(uuid)
     }
 
-    /// Keep `previous`'s in-progress marks (`Optimizing`/`Retiring`) for segments this manifest
-    /// also lists: a holder rebuild marks everything `Active`, which would erase another
-    /// process's claim. Staleness is governed by the lease, not by rebuilds.
+    /// Merge rule for persisting a rebuild: a rebuild from the segment holder marks every live
+    /// segment `Active`, which would erase an out-of-process optimizer's marks. Re-apply
+    /// `previous`'s optimizer marks (`Optimizing`/`Retiring`) to segments this manifest still
+    /// lists; marks for segments gone from the holder drop with them. Staleness is governed by
+    /// the lease, not by rebuilds.
     #[must_use]
     pub fn preserving(mut self, previous: &SegmentsManifest) -> Self {
         for (uuid, state) in previous.iter() {
-            let in_progress = match state {
-                SegmentManifestState::Optimizing {
-                    holder: _,
-                    lease_until: _,
-                }
-                | SegmentManifestState::Retiring => true,
-                SegmentManifestState::Active | SegmentManifestState::UnderConstruction => false,
-            };
-            if in_progress && self.segments.contains_key(uuid) {
+            if state.is_optimizer_mark() && self.segments.contains_key(uuid) {
                 self.segments.insert(*uuid, state.clone());
             }
         }
