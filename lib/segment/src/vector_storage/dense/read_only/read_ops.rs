@@ -6,6 +6,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, VectorStorageDatatype};
@@ -22,6 +23,27 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         self.vectors
             .get::<P>(key as VectorOffsetType)
             .expect("vector not found")
+    }
+
+    fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> crate::common::operation_error::OperationResult<()> {
+        let (user_datas, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
+        self.vectors.for_each_in_batch(&keys, |idx, dense| {
+            let user_data = user_datas[idx];
+            let key = keys[idx];
+            callback(user_data, key, bytemuck::cast_slice(dense).to_vec());
+        })
+    }
+
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        callback: F,
+    ) -> OperationResult<()> {
+        self.vectors.for_each_in_batch(keys, callback)
     }
 }
 
