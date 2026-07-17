@@ -4,7 +4,7 @@ use std::time::Duration;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use rand::SeedableRng as _;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::HnswM;
@@ -36,7 +36,9 @@ where
         .join(env!("CARGO_PKG_NAME"))
         .join(env!("CARGO_CRATE_NAME"))
         .join(format!(
-            "{num_vectors}-{dim}-{m}-{ef_construct}-{use_heuristic}-{:?}",
+            // The "smallrng" suffix keys the cache by RNG algorithm: the cached
+            // graph must match the vectors regenerated below.
+            "{num_vectors}-{dim}-{m}-{ef_construct}-{use_heuristic}-{:?}-smallrng",
             METRIC::distance(),
         ));
 
@@ -46,7 +48,7 @@ where
         METRIC::distance(),
         num_vectors,
         false,
-        &mut StdRng::seed_from_u64(42),
+        &mut SmallRng::seed_from_u64(42),
     );
 
     let graph_layers_path = GraphLayers::get_path(&path);
@@ -59,7 +61,7 @@ where
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, HnswM::new2(m), ef_construct, 10, use_heuristic);
 
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
         for idx in 0..num_vectors {
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx as PointOffsetType, level);

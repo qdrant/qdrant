@@ -4,7 +4,7 @@ use std::str::FromStr;
 use docopt::Docopt;
 use hdrhistogram::Histogram;
 use rand::Rng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use regex::Regex;
 use serde::Deserialize;
 use wal::Segment;
@@ -102,7 +102,7 @@ fn append(args: &Args) {
     let mut segment = Segment::create(path, segment_size).unwrap();
 
     let mut buf = vec![0; entry_size];
-    let mut small_rng = rand::make_rng::<StdRng>();
+    let mut small_rng = rand::make_rng::<SmallRng>();
     small_rng.fill_bytes(&mut buf);
 
     let mut append_hist = Histogram::<u64>::new_with_bounds(1, 60 * 60 * 1000, 2).unwrap();

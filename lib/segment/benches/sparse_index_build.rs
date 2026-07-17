@@ -12,7 +12,7 @@ use common::universal_io::MmapFs;
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::index::VectorIndex;
@@ -38,7 +38,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse-vector-build-group");
 
     let stopped = AtomicBool::new(false);
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
 
     let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();

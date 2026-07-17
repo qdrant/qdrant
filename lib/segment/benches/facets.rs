@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
 use rand::distr::Distribution;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rand_distr::Zipf;
 use segment::data_types::facets::FacetParams;
@@ -70,7 +70,7 @@ fn uuid_str(n: u64) -> String {
 /// 1-dimensional vector just to register the point in the segment.
 fn build_facet_segment(path: &Path) -> Segment {
     let hw_counter = HardwareCounterCell::new();
-    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut rng = SmallRng::seed_from_u64(SEED);
 
     let mut segment = build_simple_segment(path, 1, Distance::Dot).unwrap();
     let vector = [0.0];

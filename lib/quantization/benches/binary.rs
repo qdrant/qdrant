@@ -13,12 +13,12 @@ use quantization::encoded_vectors_binary::{
 };
 use rand::{RngExt, SeedableRng};
 
-fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
+fn generate_number(rng: &mut rand::rngs::SmallRng) -> f32 {
     let n = f32::signum(rng.random_range(-1.0..1.0));
     if n == 0.0 { 1.0 } else { n }
 }
 
-fn generate_vector(dim: usize, rng: &mut rand::rngs::StdRng) -> Vec<f32> {
+fn generate_vector(dim: usize, rng: &mut rand::rngs::SmallRng) -> Vec<f32> {
     (0..dim).map(|_| generate_number(rng)).collect()
 }
 
@@ -27,7 +27,7 @@ fn binary_bench(c: &mut Criterion) {
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
     let mut vectors: Vec<Vec<f32>> = (0..vectors_count)
         .map(|_| generate_vector(vector_dim, &mut rng))
         .collect();
@@ -132,7 +132,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
     let mut vectors: Vec<Vec<f32>> = (0..vectors_count)
         .map(|_| generate_vector(vector_dim, &mut rng))
         .collect();

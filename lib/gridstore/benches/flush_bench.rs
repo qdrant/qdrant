@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::fixtures::{empty_storage, random_payload};
 use rand::RngExt;
+use rand::rngs::SmallRng;
 
 pub fn flush_bench(c: &mut Criterion) {
     let prepopulation_size = 10_000;
@@ -15,7 +16,7 @@ pub fn flush_bench(c: &mut Criterion) {
         c.bench_function(&bench_name, |b| {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
-            let mut rng = rand::rng();
+            let mut rng = rand::make_rng::<SmallRng>();
             let hw_counter = HardwareCounterCell::new();
             let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
@@ -53,7 +54,7 @@ pub fn flush_bench(c: &mut Criterion) {
         c.bench_function(&bench_name, |b| {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
-            let mut rng = rand::rng();
+            let mut rng = rand::make_rng::<SmallRng>();
             let hw_counter = HardwareCounterCell::new();
             let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 

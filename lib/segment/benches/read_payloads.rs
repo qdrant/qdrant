@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use common::universal_io::IoUringFile;
 use common::universal_io::{MmapFile, UniversalWrite};
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::prelude::{SliceRandom, StdRng};
+use rand::prelude::{SliceRandom, SmallRng};
 use rand::{RngExt, SeedableRng};
 use segment::payload_json;
 use segment::payload_storage::payload_storage_impl::{PayloadStorageImpl, storage_dir};
@@ -33,7 +33,7 @@ fn bench(c: &mut Criterion) {
     let sequential_keys: Vec<_> = (0..READ_BATCH_SIZE as PointOffsetType).collect();
 
     let mut random_keys: Vec<_> = (0..POINT_COUNT as PointOffsetType).collect();
-    random_keys.shuffle(&mut StdRng::seed_from_u64(RNG_SEED));
+    random_keys.shuffle(&mut SmallRng::seed_from_u64(RNG_SEED));
     random_keys.truncate(READ_BATCH_SIZE);
 
     let mut group = c.benchmark_group("read-payloads");
@@ -86,7 +86,7 @@ where
         .expect("payload storage opened");
 
     if !storage_exists {
-        let mut rng = StdRng::seed_from_u64(RNG_SEED);
+        let mut rng = SmallRng::seed_from_u64(RNG_SEED);
         let hw_counter = HardwareCounterCell::disposable();
 
         for point_id in 0..POINT_COUNT as PointOffsetType {
@@ -104,7 +104,7 @@ where
     storage
 }
 
-fn random_payload(rng: &mut StdRng, point_id: PointOffsetType) -> Payload {
+fn random_payload(rng: &mut SmallRng, point_id: PointOffsetType) -> Payload {
     let tags: Vec<_> = (0..TAGS_COUNT)
         .map(|_| format!("tag-{}", rng.random_range(0..64)))
         .collect();

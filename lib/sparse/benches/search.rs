@@ -12,7 +12,7 @@ use fs_err as fs;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use itertools::Itertools;
 use rand::SeedableRng as _;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use sha2::Digest;
 use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
@@ -62,7 +62,7 @@ pub fn bench_search(c: &mut Criterion) {
 }
 
 fn bench_uniform_random(c: &mut Criterion, name: &str, num_vectors: usize) {
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
 
     let index = cached_ram_index(name, || {
         let mut rnd = rnd.fork();
@@ -239,6 +239,8 @@ fn cache_dir() -> PathBuf {
     Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(env!("CARGO_PKG_NAME"))
         .join(env!("CARGO_CRATE_NAME"))
+        // Keyed by RNG algorithm: cached indexes must match freshly generated queries.
+        .join("smallrng")
 }
 
 /// Load an [`InvertedIndexRam`] from the cache.

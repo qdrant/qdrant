@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::RngExt;
 use rand::distr::StandardUniform;
+use rand::rngs::SmallRng;
 use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::IdTrackerRead;
@@ -20,7 +21,7 @@ mod prof;
 const DIM: usize = 1024;
 
 fn random_vector(size: usize) -> DenseVector {
-    rand::rng()
+    rand::make_rng::<SmallRng>()
         .sample_iter(StandardUniform)
         .take(size)
         .collect()

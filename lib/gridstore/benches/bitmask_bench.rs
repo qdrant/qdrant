@@ -5,10 +5,11 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::bitmask::MmapBitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
 use rand::RngExt;
+use rand::rngs::SmallRng;
 
 pub fn bench_bitmask_ops(c: &mut Criterion) {
     let distr = rand::distr::StandardUniform;
-    let rng = rand::rng();
+    let rng = rand::make_rng::<SmallRng>();
     let random_bitvec = rng
         .sample_iter::<bool, _>(distr)
         .take(1000 * DEFAULT_REGION_SIZE_BLOCKS)
@@ -24,7 +25,7 @@ pub fn bench_bitmask_ops(c: &mut Criterion) {
     });
 
     c.bench_function("find_available_blocks_in_slice", |b| {
-        let mut rng = rand::rng();
+        let mut rng = rand::make_rng::<SmallRng>();
         b.iter(|| {
             let bitslice = bitslice_iter.next().unwrap();
             let num_blocks = rng.random_range(1..10);

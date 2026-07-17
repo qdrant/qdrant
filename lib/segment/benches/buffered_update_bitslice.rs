@@ -6,7 +6,7 @@ use common::stored_bitslice::MmapBitSlice;
 use common::universal_io::{MmapFs, OpenOptions};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::*;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use tempfile::tempdir;
 
@@ -15,7 +15,7 @@ const FLAG_COUNT: usize = 1_000_000;
 const LOOKUP_COUNT: usize = 1_000_000;
 
 fn buffered_update_bitslice(c: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     let dir = tempdir().unwrap();
     let path = dir.path().join("bitslice.bin");
 
