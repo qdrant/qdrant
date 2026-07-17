@@ -7,6 +7,7 @@ use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::Flusher;
@@ -17,7 +18,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
 use crate::vector_storage::{
     SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    VectorStorageRead, default_read_vector_bytes_impl,
 };
 
 /// Placeholder sparse vector storage that contains no data.
@@ -128,6 +129,14 @@ impl VectorStorageRead for EmptySparseVectorStorage {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted_bitvec.as_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
     }
 }
 

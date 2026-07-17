@@ -184,6 +184,25 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         Ok(())
     }
 
+    fn for_each_flat_multi<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Cow<'_, [T]>),
+    ) -> OperationResult<()> {
+        let row_offsets = self.offsets.resolve_rows::<P, _, _>(
+            keys.into_iter()
+                .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset)),
+        );
+
+        self.vectors.for_each_vector::<P, _>(
+            row_offsets.into_iter(),
+            |(user_data, point_offset), flattened| {
+                callback(user_data, point_offset, flattened);
+                Ok(())
+            },
+        )
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -332,26 +351,14 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
-        // Resolve offsets through the buffer first (so unflushed writes are seen),
-        // then reuse the row-side prefetch reader over `vectors`.
-        let row_offsets = self.offsets.resolve_rows::<P, _, _>(
-            keys.into_iter()
-                .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset)),
-        );
+        self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
+            let vector = CowVector::MultiDense(T::into_float_multivector(
+                flattened_to_multi_vector(flattened, self.vectors.dim()),
+            ));
 
-        self.vectors
-            .for_each_vector::<P, _>(
-                row_offsets.into_iter(),
-                |(user_data, point_offset), flattened| {
-                    let vector = CowVector::MultiDense(T::into_float_multivector(
-                        flattened_to_multi_vector(flattened, self.vectors.dim()),
-                    ));
-
-                    callback(user_data, point_offset, vector);
-                    Ok(())
-                },
-            )
-            .expect("read vectors");
+            callback(user_data, point_offset, vector);
+        })
+        .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -370,6 +377,20 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.get_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
+            callback(
+                user_data,
+                point_offset,
+                bytemuck::cast_slice(flattened.as_ref()).to_vec(),
+            );
+        })
     }
 }
 

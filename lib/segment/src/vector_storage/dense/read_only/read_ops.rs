@@ -112,4 +112,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
     }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        self.read_dense_bytes::<P, U>(keys, callback)
+    }
 }

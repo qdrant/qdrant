@@ -182,24 +182,37 @@ pub trait VectorStorageRead {
     /// the storage-native serialized bytes of each vector. Offsets without a
     /// stored value are skipped; storage read failures propagate as errors.
     ///
-    /// The default reads one vector at a time; [`VectorStorageEnum`] routes
-    /// dense storages through their batched
-    /// [`DenseVectorStorageRead::read_dense_bytes`] readers, so bulk raw reads
-    /// keep the same read pipelining as [`Self::read_vectors`] (io_uring
-    /// submission batching for on-disk storages).
+    /// On-disk storages batch the underlying reads, so bulk raw reads keep the
+    /// same read pipelining as [`Self::read_vectors`] (io_uring submission
+    /// batching / mmap prefetch). In-RAM storages with no batched reader opt
+    /// into [`default_read_vector_bytes_impl`] explicitly.
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
-    ) -> OperationResult<()> {
-        for (user_data, key) in keys {
-            let Some(bytes) = self.vector_bytes_opt::<P>(key)? else {
-                continue;
-            };
-            callback(user_data, key, bytes);
-        }
-        Ok(())
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()>;
+}
+
+/// Per-key fallback for [`VectorStorageRead::read_vector_bytes`], for storages
+/// without a batched byte reader: one [`VectorStorageRead::vector_bytes_opt`]
+/// read per offset, no pipelining.
+pub fn default_read_vector_bytes_impl<VS, P, U>(
+    vector_storage: &VS,
+    keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+    mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+) -> OperationResult<()>
+where
+    VS: VectorStorageRead + ?Sized,
+    P: AccessPattern,
+    U: Copy + UserData,
+{
+    for (user_data, key) in keys {
+        let Some(bytes) = vector_storage.vector_bytes_opt::<P>(key)? else {
+            continue;
+        };
+        callback(user_data, key, bytes);
     }
+    Ok(())
 }
 
 /// Trait for vector storage with mutating operations.
@@ -953,23 +966,6 @@ fn insert_sparse_bytes<S: VectorStorage>(
     storage.insert_vector(key, VectorRef::from(&sparse), hw_counter)
 }
 
-/// Per-key fallback for [`VectorStorageRead::read_vector_bytes`], for storages
-/// without a batched byte reader: one read per offset, no pipelining.
-/// Offsets without a stored value are skipped.
-fn read_vector_bytes_one_by_one<P: AccessPattern, U: Copy + UserData>(
-    storage: &VectorStorageEnum,
-    keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-    mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
-) -> OperationResult<()> {
-    for (user_data, key) in keys {
-        let Some(bytes) = storage.vector_bytes_opt::<P>(key)? else {
-            continue;
-        };
-        callback(user_data, key, bytes);
-    }
-    Ok(())
-}
-
 impl VectorStorageRead for VectorStorageEnum {
     fn with_vector_bytes_opt<P: AccessPattern, R>(
         &self,
@@ -1077,51 +1073,54 @@ impl VectorStorageRead for VectorStorageEnum {
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
     ) -> OperationResult<()> {
         match self {
-            // Dense storages have batched byte readers that keep the read
-            // pipelining of `read_vectors`.
-            VectorStorageEnum::DenseVolatile(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseVolatile(v) => v.read_vector_bytes::<P, U>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseVolatileByte(v) => v.read_vector_bytes::<P, U>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.read_dense_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmap(v) => v.read_dense_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmapByte(v) => v.read_dense_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseVolatileHalf(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmap(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmapByte(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.read_vector_bytes::<P, U>(keys, callback),
 
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseUring(v) => v.read_vector_bytes::<P, U>(keys, callback),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseUringByte(v) => v.read_vector_bytes::<P, U>(keys, callback),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.read_dense_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::DenseUringHalf(v) => v.read_vector_bytes::<P, U>(keys, callback),
 
             VectorStorageEnum::DenseAppendableMemmap(v) => {
-                v.read_dense_bytes::<P, U>(keys, callback)
+                v.read_vector_bytes::<P, U>(keys, callback)
             }
             VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.read_dense_bytes::<P, U>(keys, callback)
+                v.read_vector_bytes::<P, U>(keys, callback)
             }
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.read_dense_bytes::<P, U>(keys, callback)
+                v.read_vector_bytes::<P, U>(keys, callback)
             }
-            VectorStorageEnum::DenseTurbo(v) => v.read_dense_tq_bytes::<P, U>(keys, callback),
-            // No batched byte readers here (yet): sparse and multi-dense read
-            // one vector at a time.
-            VectorStorageEnum::SparseVolatile(_)
-            | VectorStorageEnum::SparseMmap(_)
-            | VectorStorageEnum::MultiDenseVolatile(_)
-            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
-            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
-            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-            | VectorStorageEnum::MultiDenseTurbo(_)
-            | VectorStorageEnum::EmptyDense(_)
-            | VectorStorageEnum::EmptySparse(_) => {
-                read_vector_bytes_one_by_one::<P, U>(self, keys, callback)
+            VectorStorageEnum::DenseTurbo(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::SparseMmap(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                v.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                v.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                v.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageEnum::MultiDenseTurbo(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::SparseVolatile(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::EmptyDense(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageEnum::EmptySparse(v) => v.read_vector_bytes::<P, U>(keys, callback),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => {
+                v.read_vector_bytes::<P, U>(keys, callback)
             }
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_)
-            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {
-                read_vector_bytes_one_by_one::<P, U>(self, keys, callback)
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
+                v.read_vector_bytes::<P, U>(keys, callback)
             }
         }
     }
@@ -1571,6 +1570,44 @@ impl VectorStorageRead for VectorStorageEnum {
             VectorStorageEnum::MultiDenseTurbo(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::EmptyDense(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::EmptySparse(v) => v.deleted_vector_bitslice(),
+        }
+    }
+
+    fn available_vector_count(&self) -> usize {
+        match self {
+            VectorStorageEnum::DenseVolatile(v) => v.available_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.available_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.available_vector_count(),
+            VectorStorageEnum::DenseMemmap(v) => v.available_vector_count(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.available_vector_count(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.available_vector_count(),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(v) => v.available_vector_count(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(v) => v.available_vector_count(),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(v) => v.available_vector_count(),
+
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.available_vector_count(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.available_vector_count(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.available_vector_count(),
+            VectorStorageEnum::DenseTurbo(v) => v.available_vector_count(),
+            VectorStorageEnum::SparseVolatile(v) => v.available_vector_count(),
+            VectorStorageEnum::SparseMmap(v) => v.available_vector_count(),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.available_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.available_vector_count(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.available_vector_count(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.available_vector_count(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.available_vector_count(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.available_vector_count(),
+            VectorStorageEnum::MultiDenseTurbo(v) => v.available_vector_count(),
+            VectorStorageEnum::EmptyDense(v) => v.available_vector_count(),
+            VectorStorageEnum::EmptySparse(v) => v.available_vector_count(),
         }
     }
 }

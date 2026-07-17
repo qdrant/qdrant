@@ -3,9 +3,10 @@ use std::borrow::Cow;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::ReadOnlyImmutableDenseVectorStorage;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, VectorStorageDatatype};
@@ -24,11 +25,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
             .expect("vector not found")
     }
 
-    fn read_dense_bytes<P: AccessPattern, U: Copy + common::universal_io::UserData>(
+    fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
-    ) -> crate::common::operation_error::OperationResult<()> {
+    ) -> OperationResult<()> {
         let (user_data, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
         self.vectors.for_each_in_batch(&keys, |idx, dense| {
             let user_data = user_data[idx];
@@ -41,7 +42,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         &self,
         keys: &[PointOffsetType],
         f: F,
-    ) -> crate::common::operation_error::OperationResult<()> {
+    ) -> OperationResult<()> {
         self.vectors.for_each_in_batch(keys, f)
     }
 }
@@ -97,6 +98,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         self.vectors
             .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector).into())
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        self.read_dense_bytes::<P, U>(keys, callback)
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
