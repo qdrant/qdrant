@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 use super::{BLOCK_SIZE, CacheController, CachedSlice};
@@ -96,7 +96,7 @@ const TOTAL_FLOATS: usize = NUM_VECTORS * VECTOR_DIM;
 
 /// Generate `NUM_VECTORS` vectors of `VECTOR_DIM` f32s using a seeded RNG.
 fn generate_vectors(seed: u64) -> Vec<f32> {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     (0..TOTAL_FLOATS).map(|_| rng.random::<f32>()).collect()
 }
 
@@ -170,7 +170,7 @@ fn test_cached_slice_vectors_random_access() {
 
     let cached_slice = CachedSlice::open(&cacher, &vectors_path).unwrap();
 
-    let mut rng = StdRng::seed_from_u64(123);
+    let mut rng = SmallRng::seed_from_u64(123);
 
     // Random single-element access.
     for _ in 0..5000 {
