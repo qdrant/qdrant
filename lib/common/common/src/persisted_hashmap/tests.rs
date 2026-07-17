@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use itertools::{Itertools, assert_equal};
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 
@@ -38,7 +38,7 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     entry_count: usize,
     large_keys: bool,
 ) {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
 
     // Ground truth
     let mut orig = BTreeMap::<K::Owned, Vec<V>>::new();
@@ -129,7 +129,7 @@ fn run_mmap_checks<K: ?Sized + TestKey, V: TestValue>(
 
 fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
     mut r: Group<'_>,
-    mut rng: &mut StdRng,
+    mut rng: &mut SmallRng,
     uio: &UniversalHashMap<K, V, S>,
     orig: &BTreeMap<K::Owned, Vec<V>>,
     non_existing_keys: &[K::Owned],
