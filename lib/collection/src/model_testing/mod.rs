@@ -35,6 +35,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     VectorCandidate {
@@ -43,6 +44,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Explicit `Some(Float32)` rather than the unset default: exercises schema configs that
@@ -54,6 +56,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Float32),
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Dense vector configured with HNSW `inline_storage` (original + quantized vectors stored
@@ -65,6 +68,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::Scalar),
+        inline_storage: true,
         initially_active: true,
     },
     VectorCandidate {
@@ -73,6 +77,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     VectorCandidate {
@@ -81,6 +86,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: false,
     },
     VectorCandidate {
@@ -89,6 +95,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // TurboQuant 4-bit compressed storage, the primary quantized datatype, applied to
@@ -100,6 +107,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Turbo4),
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Half-precision storage. Lossy but deterministic and idempotent: the model records
@@ -110,6 +118,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Float16),
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Unsigned-byte storage. The engine truncates each component with `x as u8`; the
@@ -121,6 +130,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Uint8),
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Multi-vector variants of the lossy-but-idempotent datatypes: each stored row goes
@@ -131,6 +141,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Float16),
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     VectorCandidate {
@@ -139,6 +150,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Uint8),
         distance: Distance::Dot,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Cosine candidates. The engine normalizes Cosine vectors once, at first ingestion
@@ -152,6 +164,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Cosine,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Per-row normalization: each stored row of the matrix is preprocessed like a dense
@@ -162,6 +175,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Cosine,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Ordering coverage: normalization happens in f32 first, then the f16 storage
@@ -173,6 +187,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Float16),
         distance: Distance::Cosine,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // TurboQuant's dedicated Cosine mode: the l2 length is not stored (forced to 1.0,
@@ -184,6 +199,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Turbo4),
         distance: Distance::Cosine,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Euclid / Manhattan candidates. Both metrics' ingestion preprocess is an identity
@@ -196,6 +212,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Euclid,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     VectorCandidate {
@@ -204,6 +221,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Manhattan,
         quantization: None,
+        inline_storage: false,
         initially_active: true,
     },
     // Search-side quantization coverage: one candidate per remaining `QuantizationConfig`
@@ -218,6 +236,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::Product),
+        inline_storage: false,
         initially_active: true,
     },
     // Dim 6 is deliberately not byte-aligned: the packed 1-bit codes have trailing padding.
@@ -227,6 +246,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::Binary),
+        inline_storage: false,
         initially_active: true,
     },
     // TurboQuant as search-side quantization over regular Float32 storage, distinct from
@@ -237,6 +257,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: None,
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::Turbo),
+        inline_storage: false,
         initially_active: true,
     },
     // Quantization x datatype combos. Live appendable inserts quantize the pristine f32
@@ -244,12 +265,16 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     // read-back, so the codes for the same point differ across those paths. Predictions
     // still only depend on the datatype side (quantization never changes the stored
     // vectors).
+    // Also inline-stored: covers a non-f32 base layout (Float16) and Binary link codes
+    // with trailing padding (dim 6 is not byte-aligned) in the links file; "v" keeps the
+    // regular non-inline Binary path.
     VectorCandidate {
         name: "l",
         kind: VectorKind::Dense(6),
         datatype: Some(Datatype::Float16),
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::Binary),
+        inline_storage: true,
         initially_active: true,
     },
     // Turbo4 storage re-quantized with TurboQuant, one candidate per branch of
@@ -257,12 +282,16 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
     // secondary TQ keeps the source codes in their rotated space and reuses the storage's
     // `Unpadded` rotation for queries. Same padding-free dim 8 as "q" so the CoW
     // re-quantization fixed point holds on the storage side.
+    // Also inline-stored: the Turbo4 base vectors go through the dedicated
+    // `get_dense_tq_vector_layout` path (the inlined base vectors are themselves TQ
+    // codes); "r" and "g" keep the non-inline TQ path for both rotation branches.
     VectorCandidate {
         name: "d",
         kind: VectorKind::Dense(8),
         datatype: Some(Datatype::Turbo4),
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::Turbo),
+        inline_storage: true,
         initially_active: true,
     },
     // `Bits1_5` requires a `Padded` rotation, so the same predicate takes the rotate-back
@@ -273,6 +302,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         datatype: Some(Datatype::Turbo4),
         distance: Distance::Dot,
         quantization: Some(QuantizationKind::TurboBits1_5),
+        inline_storage: false,
         initially_active: true,
     },
 ];
@@ -296,6 +326,9 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 /// - Quantization on inactive candidates: `Op::CreateVectorName`'s `DenseVectorConfig`
 ///   carries no quantization, so the name would activate without it and the intended
 ///   coverage would silently vanish.
+/// - `inline_storage` without quantization: the HNSW inline layout stores original +
+///   quantized vectors inside the index file, so it requires a quantized candidate
+///   (dense-only follows from the quantization constraint).
 fn assert_candidates_predictable() {
     for c in ALL_CANDIDATES {
         let turbo4 = matches!(c.datatype, Some(Datatype::Turbo4));
@@ -318,11 +351,15 @@ fn assert_candidates_predictable() {
                 c.name
             );
         }
+        if c.inline_storage {
+            assert!(
+                c.quantization.is_some(),
+                "HNSW inline_storage requires quantization for `{}` (see comment above)",
+                c.name
+            );
+        }
     }
 }
-
-/// Dense vector name configured with HNSW `inline_storage` + scalar quantization in the fixture.
-pub(super) const INLINE_STORAGE_VECTOR: &str = "i";
 
 pub(super) struct VectorCandidate {
     pub(super) name: &'static str,
@@ -344,6 +381,11 @@ pub(super) struct VectorCandidate {
     /// membership-only nearest checks see the approximate quantized scoring. Dense-only, and
     /// only on `initially_active` candidates; enforced by `assert_candidates_predictable`.
     pub(super) quantization: Option<QuantizationKind>,
+    /// Store original + quantized vectors inside the HNSW index file (`inline_storage` in
+    /// the vector's `HnswConfigDiff`). From the model's perspective the vector behaves like
+    /// any other dense one; only the on-disk index layout differs. Requires `quantization`
+    /// (the layout stores quantized codes); enforced by `assert_candidates_predictable`.
+    pub(super) inline_storage: bool,
     /// Whether the name is present in the collection schema at fixture time. Inactive
     /// names are only reachable through `Op::CreateVectorName`, which is FORCE_OFF by
     /// default, so a candidate gets default-soak coverage only when this is true.

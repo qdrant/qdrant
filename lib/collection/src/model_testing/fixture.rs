@@ -17,9 +17,7 @@ use segment::types::{
     TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
 };
 
-use super::{
-    ALL_CANDIDATES, COLLECTION_NAME, INLINE_STORAGE_VECTOR, PEER_ID, QuantizationKind, VectorKind,
-};
+use super::{ALL_CANDIDATES, COLLECTION_NAME, PEER_ID, QuantizationKind, VectorKind};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::config_diff::HnswConfigDiff;
@@ -138,14 +136,7 @@ pub(super) async fn fixture(
                 if let Some(kind) = candidate.quantization {
                     builder = builder.with_quantization_config(quantization_config(kind));
                 }
-                // The inline-storage vector exercises the HNSW `inline_storage` layout, which
-                // stores original + quantized vectors inside the index file and therefore
-                // requires quantization.
-                if name == INLINE_STORAGE_VECTOR {
-                    assert!(
-                        candidate.quantization.is_some(),
-                        "HNSW inline_storage requires a quantized candidate",
-                    );
+                if candidate.inline_storage {
                     builder = builder.with_hnsw_config(HnswConfigDiff {
                         inline_storage: Some(true),
                         ..Default::default()
