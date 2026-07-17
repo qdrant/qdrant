@@ -8,7 +8,7 @@ use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use segment::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
@@ -23,7 +23,7 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse-vector-storage-group");
 
     let stopped = AtomicBool::new(false);
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
     let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
 

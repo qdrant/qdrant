@@ -23,7 +23,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use quick_cache::sync::Cache as QuickCache;
 use rand::distr::Distribution;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rand_distr::Zipf;
 use rayon::prelude::*;
@@ -78,7 +78,7 @@ static ALLOCATOR: Cap<alloc::System> = Cap::new(alloc::System, usize::MAX);
 
 /// Generate keys following a Zipf distribution (realistic hot/cold access pattern)
 fn generate_zipf_keys(n: usize, num_unique: usize, exponent: f64, seed: u64) -> Vec<Key> {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     let zipf = Zipf::new(num_unique as f64, exponent).unwrap();
 
     (0..n)
@@ -105,7 +105,7 @@ fn generate_scan_resistant_keys(
     scan_frequency: f64,
     seed: u64,
 ) -> Vec<Key> {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     let zipf = Zipf::new(num_unique as f64, 1.0).unwrap();
     let mut scan = (0..num_unique as u64).cycle();
 

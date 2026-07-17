@@ -5,10 +5,11 @@ use common::iterator_ext::IteratorExt;
 use common::iterator_ext::stoppable_iter::StoppableIter;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::RngExt;
+use rand::rngs::SmallRng;
 
 fn bench_atomic_stop(c: &mut Criterion) {
     // Generate random number from 1 to 1_000_000
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
 
     c.bench_function("Sum regular iterator", |b| {
         b.iter(|| {

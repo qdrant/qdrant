@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use segment::fixtures::payload_context_fixture::{
     create_id_tracker_fixture, create_payload_storage_fixture, create_plain_payload_index,
@@ -30,7 +30,7 @@ fn random_bool_filter<R: Rng + ?Sized>(rng: &mut R) -> Filter {
 pub fn plain_boolean_query_points(c: &mut Criterion) {
     let seed = 42;
 
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     let mut group = c.benchmark_group("boolean-query-points");
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
@@ -61,7 +61,7 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
 pub fn struct_boolean_query_points(c: &mut Criterion) {
     let seed = 42;
 
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
@@ -93,7 +93,7 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
 pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     let seed = 42;
 
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let payload_storage = Arc::new(AtomicRefCell::new(

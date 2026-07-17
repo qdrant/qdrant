@@ -8,7 +8,7 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::prelude::{SliceRandom, StdRng};
+use rand::prelude::{SliceRandom, SmallRng};
 use rand::{RngExt, SeedableRng};
 use segment::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use segment::types::{Distance, MultiVectorConfig};
@@ -42,7 +42,7 @@ fn bench(c: &mut Criterion) {
     let sequential_keys: Vec<_> = (0..READ_BATCH_SIZE as PointOffsetType).collect();
 
     let mut random_keys: Vec<_> = (0..POINT_COUNT as PointOffsetType).collect();
-    random_keys.shuffle(&mut StdRng::seed_from_u64(RNG_SEED));
+    random_keys.shuffle(&mut SmallRng::seed_from_u64(RNG_SEED));
     random_keys.truncate(READ_BATCH_SIZE);
 
     let mut group = c.benchmark_group("read-vectors");
@@ -106,7 +106,7 @@ fn storage_dense(path: &Path) -> AppendableMmapDenseVectorStorage<VectorElementT
     )
     .expect("appendable mmap dense storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let mut vector_buffer = vec![0.0; VECTOR_DIM];
     let hw_counter = HardwareCounterCell::disposable();
 
@@ -135,7 +135,7 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
     )
     .expect("appendable mmap multi dense storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let mut vector_buffer = vec![0.0; MAX_VECTORS_PER_POINT * VECTOR_DIM];
     let hw_counter = HardwareCounterCell::disposable();
 
@@ -159,7 +159,7 @@ fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
     let mut storage =
         MmapSparseVectorStorage::open_or_create(path).expect("mmap sparse storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let hw_counter = HardwareCounterCell::disposable();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
@@ -177,7 +177,7 @@ fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
 }
 
 fn random_vector<'a>(
-    rng: &mut StdRng,
+    rng: &mut SmallRng,
     buffer: &'a mut [VectorElementType],
     dim: usize,
 ) -> &'a [VectorElementType] {

@@ -18,7 +18,7 @@ use quantization::turboquant::simd::{
     score_1bit_internal_neon, score_2bit_internal_neon, score_2bit_internal_neon_sdot,
     score_4bit_internal_neon, score_4bit_internal_neon_sdot,
 };
-use rand::prelude::StdRng;
+use rand::prelude::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 
@@ -45,7 +45,7 @@ struct VectorPool {
 impl VectorPool {
     fn with_packed_bytes(packed_bytes: usize, seed: u64) -> Self {
         let count = (POOL_BYTES / packed_bytes).max(1024);
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         let buf: Vec<u8> = (0..count * packed_bytes)
             .map(|_| rng.random_range(0..=u8::MAX))
             .collect();
@@ -84,7 +84,7 @@ impl VectorPool {
 }
 
 fn make_query(dim: usize) -> Vec<f32> {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect()
 }
 
@@ -386,7 +386,7 @@ fn bench_score_1bit_cold(c: &mut Criterion) {
 /// 12/16 rows show the linear cost of widening the query.
 fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
     let mut group = c.benchmark_group("query1bit_vs_bq_scalar8bits");
-    let mut rng_seed = StdRng::seed_from_u64(42);
+    let mut rng_seed = SmallRng::seed_from_u64(42);
     for &dim in DIMS_1BIT {
         let pool = VectorPool::new_1bit(dim, 7);
         let query_floats: Vec<f32> = (0..dim)

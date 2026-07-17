@@ -6,7 +6,8 @@ use std::cell::LazyCell;
 use common::iterator_ext::IteratorExt as _;
 use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
-use rand::{RngExt, rng};
+use rand::RngExt;
+use rand::rngs::SmallRng;
 use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
 use segment::spaces::metric::Metric;
@@ -26,7 +27,7 @@ mod fixture;
 fn hnsw_build_asymptotic(c: &mut Criterion) {
     let mut group = c.benchmark_group("hnsw-index-build-asymptotic");
 
-    let mut rng = rng();
+    let mut rng = rand::make_rng::<SmallRng>();
 
     let setup_5k = LazyCell::new(|| {
         eprintln!();
@@ -95,7 +96,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
 
 fn scoring_vectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("scoring-vector");
-    let mut rng = rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000;
 
@@ -161,14 +162,14 @@ fn basic_scoring_vectors(c: &mut Criterion) {
 
     let num_vectors = base_num_vectors;
     let setup = LazyCell::new(|| {
-        let mut rng = rng();
+        let mut rng = rand::make_rng::<SmallRng>();
         (0..num_vectors)
             .map(|_| random_vector(&mut rng, DIM))
             .collect_vec()
     });
     group.bench_function("basic-score-point", |b| {
         let vectors = &*setup;
-        let mut rng = rng();
+        let mut rng = rand::make_rng::<SmallRng>();
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
             let points_to_score = (0..points_per_cycle).map(|_| rng.random_range(0..num_vectors));
@@ -182,14 +183,14 @@ fn basic_scoring_vectors(c: &mut Criterion) {
 
     let num_vectors = base_num_vectors * 2;
     let setup = LazyCell::new(|| {
-        let mut rng = rng();
+        let mut rng = rand::make_rng::<SmallRng>();
         (0..num_vectors)
             .map(|_| random_vector(&mut rng, DIM))
             .collect_vec()
     });
     group.bench_function("basic-score-point-10x", |b| {
         let vectors = &*setup;
-        let mut rng = rng();
+        let mut rng = rand::make_rng::<SmallRng>();
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
             let points_to_score = (0..points_per_cycle).map(|_| rng.random_range(0..num_vectors));
