@@ -795,7 +795,7 @@ fn test_payload_compression() {
     let payload_bytes = payload.to_bytes();
     let compressed = compress_lz4(&payload_bytes);
     let decompressed = decompress_lz4(&compressed);
-    let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed);
+    let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed).unwrap();
     assert_eq!(payload, decompressed_payload);
 }
 

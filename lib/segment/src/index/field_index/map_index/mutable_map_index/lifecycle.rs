@@ -73,8 +73,11 @@ where
                 },
                 hw_counter_ref,
             )
-            // unwrap safety: never returns an error
-            .unwrap();
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to load mutable map index from gridstore: {err}"
+                ))
+            })?;
 
         Ok(Some(Self {
             in_memory_index,

@@ -6,6 +6,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalWrite};
 use fs_err as fs;
 use gridstore::config::StorageOptions;
+use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 use serde_json::Value;
 
@@ -22,8 +23,10 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self, GridstoreError> {
+        serde_json::from_slice(data).map_err(|err| {
+            GridstoreError::service_error(format!("Failed to deserialize Payload: {err}"))
+        })
     }
 }
 

@@ -334,7 +334,7 @@ where
         self.with_view(|view| {
             let raw = view.read_from_pages::<Random>(pointer)?;
             let decompressed = view.decompress(raw);
-            let value = V::from_bytes(&decompressed);
+            let value = V::from_bytes(&decompressed)?;
             Ok(Some(value))
         })
     }
