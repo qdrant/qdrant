@@ -158,18 +158,23 @@ fn benchmark(c: &mut Criterion) {
             .expect("mmap storage opened"),
     ));
 
-    let mut modes: Vec<(&str, bool, &VectorStorageEnum)> = vec![
+    let modes: Vec<(&str, bool, &VectorStorageEnum)> = vec![
         ("unbatched-mmap", false, &mmap_storage),
         ("batched-mmap", true, &mmap_storage),
     ];
 
-    #[cfg(target_os = "linux")]
-    let uring_storage = VectorStorageEnum::DenseTurbo(Box::new(
-        open_turbo_vector_storage_with_uring(data_dir.path(), DIM, DISTANCE, false, true)
-            .expect("uring storage opened"),
-    ));
-    #[cfg(target_os = "linux")]
-    modes.push(("batched-uring", true, &uring_storage));
+    cfg_select! {
+        target_os = "linux" => {
+            let uring_storage = VectorStorageEnum::DenseTurbo(Box::new(
+                open_turbo_vector_storage_with_uring(data_dir.path(), DIM, DISTANCE, false, true)
+                    .expect("uring storage opened"),
+            ));
+
+            let mut modes = modes;
+            modes.push(("batched-uring", true, &uring_storage));
+        }
+        _ => {}
+    };
 
     let id_tracker = create_id_tracker_fixture(VECTORS);
 
