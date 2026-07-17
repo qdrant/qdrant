@@ -643,7 +643,13 @@ impl ShardHolder {
 
         // Filter out shards that must not be queried while resharding, regardless of how they
         // were selected above
-        if let Some(state) = self.resharding_state.read().as_ref() {
+        //
+        // Explicit shard ID selection is exempt: it is used by internal per-shard operations,
+        // such as the resharding driver reading back migrated points from the new shard, which
+        // must be able to reach the shard before it becomes visible to user-facing selectors
+        if !shard_selector.is_shard_id()
+            && let Some(state) = self.resharding_state.read().as_ref()
+        {
             res.retain(|(shard, _)| {
                 if state.shard_id != shard.shard_id {
                     return true;
