@@ -1351,8 +1351,9 @@ fn get_shard_selector_for_update(
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn test_update_params_timeout_validation_valid() {
@@ -1387,6 +1388,20 @@ mod test {
             wait: false,
             ordering: WriteOrdering::default(),
             timeout: Some(Duration::from_secs(0)),
+        };
+        let result = params.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("timeout must be at least 1 second")
+        );
+
+        // Sub-second, non-zero timeout should also be rejected
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_millis(999)),
         };
         let result = params.validate();
         assert!(result.is_err());
