@@ -13,7 +13,9 @@ use tokio_util::task::AbortOnDropHandle;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateStatus};
-use crate::profiling::interface::log_request_to_collector;
+use crate::profiling::interface::{
+    is_requests_profile_collector_initialized, log_request_to_collector,
+};
 use crate::shards::CollectionId;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
@@ -326,7 +328,8 @@ impl UpdateWorkers {
 
         // This represents the operation without vectors and payloads for logging purposes
         // Do not use for anything else
-        let loggable_operation = operation.remove_details();
+        let loggable_operation =
+            is_requests_profile_collector_initialized().then(|| operation.remove_details());
 
         let cpu_utilization = hw_measurements.cpu_utilization();
 
@@ -349,9 +352,11 @@ impl UpdateWorkers {
             None
         };
 
-        log_request_to_collector(&collection_name, duration, cpu_usage_ratio, move || {
-            loggable_operation
-        });
+        if let Some(loggable_operation) = loggable_operation {
+            log_request_to_collector(&collection_name, duration, cpu_usage_ratio, move || {
+                loggable_operation
+            });
+        }
 
         result
     }

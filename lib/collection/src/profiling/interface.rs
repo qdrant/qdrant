@@ -8,6 +8,13 @@ use crate::profiling::slow_requests_log::LogEntry;
 static REQUESTS_COLLECTOR: OnceCell<crate::profiling::slow_requests_collector::RequestsCollector> =
     OnceCell::const_new();
 
+/// Whether the requests profile collector has been initialized.
+///
+/// Allows callers to skip building loggable copies of requests when profiling is disabled.
+pub fn is_requests_profile_collector_initialized() -> bool {
+    REQUESTS_COLLECTOR.get().is_some()
+}
+
 /// This function should be used to log request profiles into the shared log structure.
 /// This structure is later can be read via API.
 pub fn log_request_to_collector<F, L>(
