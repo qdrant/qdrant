@@ -194,6 +194,39 @@ fn test_delete_single_payload() {
 }
 
 #[test]
+fn test_delete_value_preserves_pointer_on_deserialize_error() {
+    // `Compression::None` so the corrupted bytes reach `Blob::from_bytes` directly,
+    // rather than failing lz4 decompression first.
+    let (_dir, mut storage) = empty_storage_sized(DEFAULT_PAGE_SIZE_BYTES, Compression::None);
+
+    let mut payload = Payload::default();
+    payload.0.insert(
+        "key".to_string(),
+        serde_json::Value::String("value".to_string()),
+    );
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    storage.put_value(0, &payload, hw_counter_ref).unwrap();
+
+    let pointer = storage.get_pointer(0).unwrap();
+
+    // Overwrite the stored bytes in place with something that isn't valid JSON.
+    let garbage = vec![0xFFu8; pointer.length as usize];
+    storage
+        .write_into_pages(&garbage, pointer.page_id, pointer.block_offset)
+        .unwrap();
+
+    // The blob is corrupt, so deletion must fail...
+    assert!(storage.delete_value(0).is_err());
+
+    // ...but the tracker pointer must still be present: a failed delete is not a silent
+    // delete (see PR review on #9881 - `delete_value` used to unset the pointer before
+    // deserializing, so a corrupt blob would vanish even though the call returned an error).
+    assert!(storage.get_pointer(0).is_some());
+}
+
+#[test]
 fn test_update_single_payload() {
     let (_dir, mut storage) = empty_storage();
 
