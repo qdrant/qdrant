@@ -653,7 +653,7 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
 #[cfg(test)]
 mod tests {
     use common::generic_consts::{Random, Sequential};
-    use rand::rngs::StdRng;
+    use rand::rngs::SmallRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
 
@@ -663,7 +663,7 @@ mod tests {
 
     /// Deterministic multivectors of unit inner vectors; point `i` gets `(i % 4) + 1` inner vectors.
     fn make_multi_vectors(dim: usize, count: usize, seed: u64) -> Vec<MultiDenseVectorInternal> {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         (0..count)
             .map(|i| {
                 let inner_count = (i % 4) + 1;
@@ -1040,7 +1040,7 @@ mod tests {
 
     /// Helper: one multivector of `count` distinct unit inner vectors.
     fn multi_of(dim: usize, count: usize, seed: u64) -> MultiDenseVectorInternal {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         let flattened: Vec<f32> = (0..count)
             .flat_map(|_| {
                 let v: DenseVector = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
@@ -1482,7 +1482,7 @@ mod tests {
     }
 
     /// Random multivector with 1..=4 unit inner vectors from the scenario RNG.
-    fn random_multi(rng: &mut StdRng, dim: usize) -> MultiDenseVectorInternal {
+    fn random_multi(rng: &mut SmallRng, dim: usize) -> MultiDenseVectorInternal {
         let count = rng.random_range(1..=4usize);
         let flattened: Vec<f32> = (0..count)
             .flat_map(|_| {
@@ -1560,7 +1560,7 @@ mod tests {
     }
 
     fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         let oracle = Oracle::new(dim, distance);
         let dir = Builder::new()
             .prefix("turbo_multi_model_src")

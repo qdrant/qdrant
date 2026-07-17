@@ -554,7 +554,7 @@ impl DenseTQVectorStorage for TurboVectorStorage {
 mod tests {
     use common::bitvec::BitSliceExt;
     use common::generic_consts::Random;
-    use rand::rngs::StdRng;
+    use rand::rngs::SmallRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
 
@@ -565,7 +565,7 @@ mod tests {
     /// Deterministic test vectors in `[-1, 1]`, seeded so that the storage and
     /// the independent oracle observe exactly the same inputs across runs.
     fn make_vectors(dim: usize, count: usize, seed: u64) -> Vec<DenseVector> {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         (0..count)
             .map(|_| {
                 let v: DenseVector = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
@@ -1470,7 +1470,7 @@ mod tests {
     }
 
     /// Random unit vector drawn from the scenario's RNG (one deterministic stream).
-    fn random_unit_vector(rng: &mut StdRng, dim: usize) -> DenseVector {
+    fn random_unit_vector(rng: &mut SmallRng, dim: usize) -> DenseVector {
         let v: DenseVector = (0..dim).map(|_| rng.random_range(-1.0f32..1.0)).collect();
         let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
         if norm == 0.0 {
@@ -1609,7 +1609,7 @@ mod tests {
     /// and the model in lockstep, flushing/dropping/reloading at random, then copy
     /// the result into the read-only single-file backend via `update_from`.
     fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         let oracle = Oracle::new(dim, distance);
         let dir = Builder::new().prefix("turbo_model_src").tempdir().unwrap();
         let dst_dir = Builder::new().prefix("turbo_model_dst").tempdir().unwrap();
@@ -1836,7 +1836,7 @@ mod tests {
         let inputs = make_vectors(DIM, COUNT, seed);
         let hw_counter = HardwareCounterCell::new();
 
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
             .chain(0..(COUNT / 2) as PointOffsetType)
             .collect();
@@ -1925,7 +1925,7 @@ mod tests {
         let inputs = make_vectors(DIM, COUNT, seed);
         let hw_counter = HardwareCounterCell::new();
 
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
             .chain(0..(COUNT / 2) as PointOffsetType)
             .collect();

@@ -120,7 +120,7 @@ fn test_load_store() {
 /// ID tracker.
 #[test]
 fn test_store_load_mutated() {
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
 
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (dropped_points, custom_version) = {
@@ -293,7 +293,7 @@ fn test_point_deletion_persists_reload() {
 /// Tests de/serializing of only single ID mappings.
 #[test]
 fn test_point_mappings_de_serialization_single() {
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
 
     const SIZE: usize = 400_000;
 
@@ -590,7 +590,7 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
     // Insert 100 random points into id_tracker
 
     let num_points = 200;
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
 
     for _ in 0..num_points {
         // Generate num id in range from 0 to 100
