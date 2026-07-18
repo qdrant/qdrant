@@ -50,7 +50,7 @@ use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH, segment_manifest_pa
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::segment_holder::{FlushMode, SegmentHolder};
-use shard::segment_manifest::SegmentsManifest;
+pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 use shard::wal::SerdeWal;
 use uuid::Uuid;
 
@@ -189,19 +189,23 @@ impl EdgeShard {
     }
 
     /// Rebuild and persist the segment manifest from the current live segment set, when enabled.
-    /// Cheap and idempotent: only writes when the set differs from what's persisted.
+    /// Cheap and idempotent: only writes when the set differs from what's persisted. Preserves an
+    /// out-of-process optimizer's marks for still-live segments.
     pub(crate) fn update_segment_manifest(&self) -> OperationResult<()> {
         let Some(manifest) = &self.segment_manifest else {
             return Ok(());
         };
 
-        let current = SegmentsManifest::from_segment_holder(&self.segments.read());
-        if *manifest.read() == current {
-            return Ok(());
-        }
-
+        let rebuilt = {
+            let holder = self.segments.read();
+            SegmentsManifest::from_segment_holder(&holder)
+        };
+        // Merge under the write lock (see `SegmentsManifest::sync`).
         manifest
-            .write(|manifest| *manifest = current)
+            .write_optional(|previous| {
+                let current = rebuilt.preserving(previous);
+                (*previous != current).then_some(current)
+            })
             .map_err(|err| OperationError::service_error(err.to_string()))?;
         Ok(())
     }
@@ -273,8 +277,18 @@ fn init_segment_manifest(
         return Ok(None);
     }
 
-    let manifest = SegmentsManifest::from_segment_holder(segments);
-    let manifest = SaveOnDisk::new(segment_manifest_path(path), manifest)
+    // `SaveOnDisk::new` persists immediately — read the existing manifest first so an
+    // optimizer's marks survive a (re)load. An unreadable manifest is replaced, as before.
+    let manifest_path = segment_manifest_path(path);
+    let rebuilt = SegmentsManifest::from_segment_holder(segments);
+    let manifest = match fs::read(&manifest_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<SegmentsManifest>(&bytes).ok())
+    {
+        Some(previous) => rebuilt.preserving(&previous),
+        None => rebuilt,
+    };
+    let manifest = SaveOnDisk::new(manifest_path, manifest)
         .map_err(|err| OperationError::service_error(err.to_string()))?;
     Ok(Some(manifest))
 }
