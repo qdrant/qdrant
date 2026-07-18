@@ -1,28 +1,24 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::ScoreType;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::FacetResponse;
-use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{ExtendedPointId, PointIdType, ScoredPoint, WithPayloadInterface, WithVector};
 use shard::count::CountRequestInternal;
 use shard::facet::FacetRequestInternal;
 use shard::locked_segment::LockedSegment;
 use shard::query::ShardQueryRequest;
-use shard::query::scroll::QueryScrollRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequest;
 
-use crate::read_view::EdgeShardRead;
+use crate::read_view::{EdgeShardRead, ReadViewProvider};
 use crate::{EdgeConfig, EdgeShard, ShardInfo};
 
 /// The read-write shard's segments are heterogeneous — `Segment` and `ProxySegment` coexist during
 /// optimization — so the handle is the [`LockedSegment`] enum (static enum dispatch), and the read
 /// view is built over that.
-impl EdgeShardRead for EdgeShard {
+impl ReadViewProvider for EdgeShard {
     type Handle = LockedSegment;
 
     fn read_segments(&self) -> Vec<LockedSegment> {
@@ -58,13 +54,6 @@ impl EdgeShard {
         EdgeShardRead::query(self, request)
     }
 
-    pub fn query_scroll(
-        &self,
-        request: &QueryScrollRequestInternal,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        EdgeShardRead::query_scroll(self, request)
-    }
-
     pub fn scroll(
         &self,
         request: ScrollRequestInternal,
@@ -91,23 +80,5 @@ impl EdgeShard {
 
     pub fn info(&self) -> OperationResult<ShardInfo> {
         EdgeShardRead::info(self)
-    }
-
-    pub fn rescore_with_formula(
-        &self,
-        formula: ParsedFormula,
-        prefetches_results: Vec<Vec<ScoredPoint>>,
-        limit: usize,
-        score_threshold: Option<ScoreType>,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        EdgeShardRead::rescore_with_formula(
-            self,
-            formula,
-            prefetches_results,
-            limit,
-            score_threshold,
-            hw_measurement_acc,
-        )
     }
 }
