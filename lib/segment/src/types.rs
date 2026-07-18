@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::{self, Hash, Hasher};
 use std::mem;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -3785,6 +3786,71 @@ impl FromIterator<PointIdType> for HasIdCondition {
     }
 }
 
+/// One of `total` disjoint deterministic slices of the id space.
+///
+/// A point belongs to the slice iff `hash(id) % total == index`, where `hash`
+/// is SipHash-2-4 with a zero key over the canonical id bytes: 8 little-endian
+/// bytes for numeric ids, the 16 RFC 4122 bytes for UUIDs. For a fixed
+/// `total`, slices `0..total` are disjoint and together cover all points;
+/// membership is uniform regardless of the id scheme and stable across
+/// queries, segments, platforms and Qdrant versions.
+///
+/// Slices with different `total` values are correlated (same hash, no salt):
+/// e.g. slice `0` of `total: 4` is a strict subset of slice `0` of `total: 2`.
+/// This keeps a smaller sample contained in a larger one.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Slice {
+    /// Total number of disjoint slices the id space is split into
+    pub total: NonZeroU32,
+    /// Which slice to select, must be in `0..total`
+    pub index: u32,
+}
+
+impl Slice {
+    /// True iff `point_id` belongs to this slice.
+    pub fn check(&self, point_id: PointIdType) -> bool {
+        let Self { total, index } = self;
+        slice_point_id_hash(point_id) % u64::from(total.get()) == u64::from(*index)
+    }
+}
+
+/// SipHash-2-4 with a zero key over the canonical byte encoding of a point id:
+/// 8 little-endian bytes for [`ExtendedPointId::NumId`], the 16 RFC 4122 bytes
+/// for [`ExtendedPointId::Uuid`].
+///
+/// This value is a public API contract of [`SliceCondition`]: clients may
+/// reproduce it to predict slice membership locally, so it must never change.
+/// It is deliberately independent from [`StableHash`], which is native-endian
+/// and internal to resharding.
+pub fn slice_point_id_hash(point_id: ExtendedPointId) -> u64 {
+    let mut hasher = siphasher::sip::SipHasher24::new();
+    match point_id {
+        ExtendedPointId::NumId(num) => hasher.write(&num.to_le_bytes()),
+        ExtendedPointId::Uuid(uuid) => hasher.write(uuid.as_bytes()),
+    }
+    hasher.finish()
+}
+
+/// Select points that fall into one of `total` disjoint deterministic slices
+/// of the id space, for parallel scans and reproducible sampling.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Validate)]
+#[validate(schema(function = "validate_slice_condition"))]
+pub struct SliceCondition {
+    pub slice: Slice,
+}
+
+pub fn validate_slice_condition(condition: &SliceCondition) -> Result<(), ValidationError> {
+    let SliceCondition { slice } = condition;
+    let Slice { total, index } = slice;
+    if index < &total.get() {
+        Ok(())
+    } else {
+        Err(ValidationError::new(
+            "Slice index must be less than the total number of slices",
+        ))
+    }
+}
+
 /// Select points with payload for a specified nested field
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Validate, Hash)]
 pub struct Nested {
@@ -3837,6 +3903,8 @@ pub enum Condition {
     HasId(HasIdCondition),
     /// Check if point has vector assigned
     HasVector(HasVectorCondition),
+    /// Check if point id falls into a deterministic slice of the id space
+    Slice(SliceCondition),
     /// Nested filters
     Nested(NestedCondition),
     /// Nested filter
@@ -3858,6 +3926,7 @@ enum ConditionUntagged {
     IsNull(IsNullCondition),
     HasId(HasIdCondition),
     HasVector(HasVectorCondition),
+    Slice(SliceCondition),
     Nested(NestedCondition),
     Filter(Filter),
 
@@ -3873,6 +3942,7 @@ impl From<ConditionUntagged> for Condition {
             ConditionUntagged::IsNull(condition) => Condition::IsNull(condition),
             ConditionUntagged::HasId(condition) => Condition::HasId(condition),
             ConditionUntagged::HasVector(condition) => Condition::HasVector(condition),
+            ConditionUntagged::Slice(condition) => Condition::Slice(condition),
             ConditionUntagged::Nested(condition) => Condition::Nested(condition),
             ConditionUntagged::Filter(condition) => Condition::Filter(condition),
             ConditionUntagged::CustomIdChecker(condition) => Condition::CustomIdChecker(condition),
@@ -3969,6 +4039,7 @@ impl Condition {
             Condition::IsEmpty(_)
             | Condition::IsNull(_)
             | Condition::HasVector(_)
+            | Condition::Slice(_)
             | Condition::CustomIdChecker(_) => 0,
         }
     }
@@ -3984,7 +4055,8 @@ impl Condition {
             | Condition::IsNull(_)
             | Condition::CustomIdChecker(_)
             | Condition::HasId(_)
-            | Condition::HasVector(_) => 1,
+            | Condition::HasVector(_)
+            | Condition::Slice(_) => 1,
         }
     }
 
@@ -3995,7 +4067,10 @@ impl Condition {
             Condition::IsNull(is_null_condition) => Some(is_null_condition.is_null.key.clone()),
             Condition::Nested(nested_condition) => Some(nested_condition.array_key()),
             Condition::Filter(filter) => filter.iter_conditions().find_map(|c| c.targeted_key()),
-            Condition::HasId(_) | Condition::HasVector(_) | Condition::CustomIdChecker(_) => None,
+            Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_) => None,
         }
     }
 }
@@ -4009,6 +4084,7 @@ impl Validate for Condition {
             | Condition::IsNull(_)
             | Condition::HasVector(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
+            Condition::Slice(slice_condition) => slice_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
             Condition::CustomIdChecker(_) => Ok(()),
@@ -4939,6 +5015,104 @@ mod tests {
         let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
         let condition: Condition = serde_json::from_str(nested_json).unwrap();
         assert_matches!(condition, Condition::Nested(_));
+
+        // SliceCondition
+        let slice_json = r#"{"slice": {"total": 8, "index": 3}}"#;
+        let condition: Condition = serde_json::from_str(slice_json).unwrap();
+        assert_matches!(condition, Condition::Slice(_));
+    }
+
+    #[test]
+    fn test_slice_condition_serde_and_validation() {
+        let condition: Condition =
+            serde_json::from_str(r#"{"slice": {"total": 8, "index": 3}}"#).unwrap();
+        let Condition::Slice(slice_condition) = &condition else {
+            panic!("expected slice condition, got {condition:?}");
+        };
+        assert_eq!(slice_condition.slice.total.get(), 8);
+        assert_eq!(slice_condition.slice.index, 3);
+        condition.validate().unwrap();
+
+        let serialized = serde_json::to_value(&condition).unwrap();
+        assert_eq!(
+            serialized,
+            serde_json::json!({"slice": {"total": 8, "index": 3}}),
+        );
+
+        // Zero total is rejected at deserialization
+        serde_json::from_str::<SliceCondition>(r#"{"slice": {"total": 0, "index": 0}}"#)
+            .unwrap_err();
+
+        // Out-of-range index is rejected by validation
+        let condition: Condition =
+            serde_json::from_str(r#"{"slice": {"total": 4, "index": 4}}"#).unwrap();
+        condition.validate().unwrap_err();
+    }
+
+    /// Frozen public contract: SipHash-2-4 with a zero key over canonical id
+    /// bytes (8 LE bytes for numeric ids, 16 RFC 4122 bytes for UUIDs).
+    /// Clients reproduce this hash to predict slice membership locally — if
+    /// this test fails, slice membership visibly changed for every existing
+    /// query and the change must be reverted.
+    #[test]
+    fn test_slice_point_id_hash_contract() {
+        // Vectors independently reproduced with a reference SipHash-2-4
+        // implementation outside this codebase.
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        assert_eq!(
+            slice_point_id_hash(ExtendedPointId::NumId(0)),
+            0xe849_e8bb_6ffe_2567,
+        );
+        assert_eq!(
+            slice_point_id_hash(ExtendedPointId::NumId(42)),
+            0x0fc2_553f_0761_9dd3,
+        );
+        assert_eq!(
+            slice_point_id_hash(ExtendedPointId::Uuid(uuid)),
+            0xf5d0_ca21_ba34_d504,
+        );
+    }
+
+    #[test]
+    fn test_slice_disjoint_and_exhaustive() {
+        let numeric_ids = (0..1000_u64).map(ExtendedPointId::NumId);
+        let uuid_ids = (0..1000_u128).map(|seed| {
+            ExtendedPointId::Uuid(Uuid::from_u128(
+                seed.wrapping_mul(0x0123_4567_89ab_cdef_fedc_ba98_7654_3210),
+            ))
+        });
+
+        for point_id in numeric_ids.chain(uuid_ids) {
+            // Exactly one slice of each total matches
+            for total in [1, 2, 5, 10] {
+                let total = NonZeroU32::new(total).unwrap();
+                (0..total.get())
+                    .filter(|&index| Slice { total, index }.check(point_id))
+                    .exactly_one()
+                    .unwrap();
+            }
+
+            // A finer slice is a subset of the coarser slice it maps onto:
+            // hash % 10 == index implies hash % 5 == index % 5
+            let fine_total = NonZeroU32::new(10).unwrap();
+            let fine_index = (0..fine_total.get())
+                .filter(|&index| {
+                    Slice {
+                        total: fine_total,
+                        index,
+                    }
+                    .check(point_id)
+                })
+                .exactly_one()
+                .unwrap();
+            assert!(
+                Slice {
+                    total: NonZeroU32::new(5).unwrap(),
+                    index: fine_index % 5,
+                }
+                .check(point_id)
+            );
+        }
     }
 
     #[test]

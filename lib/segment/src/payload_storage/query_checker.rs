@@ -37,6 +37,7 @@ where
         | Condition::IsNull(_)
         | Condition::HasId(_)
         | Condition::HasVector(_)
+        | Condition::Slice(_)
         | Condition::Nested(_)
         | Condition::CustomIdChecker(_) => checker(condition),
     }
@@ -176,6 +177,10 @@ where
                     )
                 })
         }
+
+        Condition::Slice(slice_condition) => id_tracker
+            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .is_some_and(|external_id| slice_condition.slice.check(external_id)),
 
         Condition::CustomIdChecker(cond) => id_tracker
             .and_then(|id_tracker| id_tracker.external_id(point_id))
@@ -648,6 +653,73 @@ mod tests {
 
         let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));
+    }
+
+    #[test]
+    fn test_slice_condition_checker() {
+        use std::num::NonZeroU32;
+
+        use uuid::Uuid;
+
+        use crate::types::{PointIdType, Slice, SliceCondition};
+
+        let payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        let mut id_tracker = InMemoryIdTracker::new();
+
+        let external_ids: Vec<PointIdType> = (0..100_u64)
+            .map(PointIdType::NumId)
+            .chain((0..100_u128).map(|seed| {
+                PointIdType::Uuid(Uuid::from_u128(
+                    seed.wrapping_mul(0x0123_4567_89ab_cdef_fedc_ba98_7654_3210),
+                ))
+            }))
+            .collect();
+        for (offset, external_id) in external_ids.iter().enumerate() {
+            id_tracker
+                .set_link(*external_id, offset as PointOffsetType)
+                .unwrap();
+        }
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                id_tracker,
+            ))),
+            HashMap::new(),
+        );
+
+        let total = NonZeroU32::new(5).unwrap();
+        let slice_filter = |index| {
+            Filter::new_must(Condition::Slice(SliceCondition {
+                slice: Slice { total, index },
+            }))
+        };
+
+        for offset in 0..external_ids.len() as PointOffsetType {
+            // Each point matches exactly one of the disjoint slices
+            let matching: Vec<u32> = (0..total.get())
+                .filter(|&index| payload_checker.check(offset, &slice_filter(index)))
+                .collect();
+            assert_eq!(matching.len(), 1, "point {offset} matched {matching:?}");
+
+            // must_not inverts membership
+            let inverted = Filter::new_must_not(Condition::Slice(SliceCondition {
+                slice: Slice {
+                    total,
+                    index: matching[0],
+                },
+            }));
+            assert!(!payload_checker.check(offset, &inverted));
+        }
+
+        // On 200 uniformly hashed ids every slice gets some points
+        for index in 0..total.get() {
+            assert!(
+                (0..external_ids.len() as PointOffsetType)
+                    .any(|offset| payload_checker.check(offset, &slice_filter(index))),
+            );
+        }
     }
 
     /// Regression test for <https://github.com/qdrant/qdrant/issues/8936>

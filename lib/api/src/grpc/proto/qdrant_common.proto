@@ -45,6 +45,7 @@ message Condition {
     IsNullCondition is_null = 5;
     NestedCondition nested = 6;
     HasVectorCondition has_vector = 7;
+    SliceCondition slice = 8;
   }
 }
 
@@ -62,6 +63,13 @@ message HasIdCondition {
 
 message HasVectorCondition {
   string has_vector = 1;
+}
+
+message SliceCondition {
+  // Total number of disjoint deterministic slices the id space is split into, must be >= 1
+  uint32 total = 1;
+  // Which slice to select, must be less than `total`
+  uint32 index = 2;
 }
 
 message NestedCondition {

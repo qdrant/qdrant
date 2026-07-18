@@ -145,6 +145,7 @@ where
                 | Condition::IsNull(_)
                 | Condition::HasId(_)
                 | Condition::HasVector(_)
+                | Condition::Slice(_)
                 | Condition::Nested(_)
                 | Condition::CustomIdChecker(_) => {
                     let estimation =

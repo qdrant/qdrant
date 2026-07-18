@@ -158,7 +158,7 @@ pub struct MinShould {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     #[validate(nested)]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
@@ -181,6 +181,8 @@ pub mod condition {
         Nested(super::NestedCondition),
         #[prost(message, tag = "7")]
         HasVector(super::HasVectorCondition),
+        #[prost(message, tag = "8")]
+        Slice(super::SliceCondition),
     }
 }
 #[derive(serde::Serialize)]
@@ -206,6 +208,16 @@ pub struct HasIdCondition {
 pub struct HasVectorCondition {
     #[prost(string, tag = "1")]
     pub has_vector: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SliceCondition {
+    /// Total number of disjoint deterministic slices the id space is split into, must be >= 1
+    #[prost(uint32, tag = "1")]
+    pub total: u32,
+    /// Which slice to select, must be less than `total`
+    #[prost(uint32, tag = "2")]
+    pub index: u32,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

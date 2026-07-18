@@ -229,6 +229,27 @@ impl Validate for grpc::condition::ConditionOneOf {
             ConditionOneOf::HasId(_) => Ok(()),
             ConditionOneOf::IsNull(_) => Ok(()),
             ConditionOneOf::HasVector(_) => Ok(()),
+            ConditionOneOf::Slice(slice_condition) => slice_condition.validate(),
+        }
+    }
+}
+
+impl Validate for grpc::SliceCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::SliceCondition { total, index } = self;
+        let mut errors = ValidationErrors::new();
+        if *total == 0 {
+            errors.add("total", ValidationError::new("must be greater than 0"));
+        } else if index >= total {
+            errors.add(
+                "index",
+                ValidationError::new("must be less than the total number of slices"),
+            );
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
         }
     }
 }
