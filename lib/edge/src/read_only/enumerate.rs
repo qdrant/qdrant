@@ -7,7 +7,7 @@ use shard::files::{SEGMENTS_PATH, segment_manifest_path};
 use shard::segment_manifest::SegmentsManifest;
 use uuid::Uuid;
 
-use crate::scan_segment_dirs;
+use crate::edge_shard::scan_segment_dirs;
 
 /// Enumerates the segments that make up the shard, keyed by their UUID.
 ///

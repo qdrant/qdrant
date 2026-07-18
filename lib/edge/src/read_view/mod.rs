@@ -1,12 +1,22 @@
+mod count;
+mod facet;
+mod grouping;
+mod info;
+mod matrix;
+mod query;
+mod retrieve;
+mod scroll;
+mod search;
+
 use std::path::Path;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
 use parking_lot::{RwLock, RwLockReadGuard};
-use rayon::ThreadPool;
 use rayon::prelude::*;
-use segment::common::operation_error::OperationResult;
+use rayon::{ThreadPool, ThreadPoolBuilder};
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::facets::FacetResponse;
 use segment::entry::ReadSegmentEntry;
 use segment::index::UniversalReadExt;
@@ -22,7 +32,10 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequest;
 
-use crate::{EdgeConfig, ShardInfo};
+pub use self::grouping::{Group, GroupRequest};
+pub use self::info::ShardInfo;
+pub use self::matrix::{SearchMatrixRequest, SearchMatrixResponse};
+use crate::EdgeConfig;
 
 /// A handle to a single segment that can be read-locked to yield a [`ReadSegmentEntry`].
 ///
@@ -189,17 +202,11 @@ pub trait EdgeShardRead {
         view(self).facet(request)
     }
 
-    fn search_matrix(
-        &self,
-        request: crate::matrix::SearchMatrixRequest,
-    ) -> OperationResult<crate::matrix::SearchMatrixResponse> {
+    fn search_matrix(&self, request: SearchMatrixRequest) -> OperationResult<SearchMatrixResponse> {
         view(self).search_matrix(request)
     }
 
-    fn query_groups(
-        &self,
-        request: crate::grouping::GroupRequest,
-    ) -> OperationResult<Vec<crate::grouping::Group>> {
+    fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
         view(self).query_groups(request)
     }
 
@@ -233,4 +240,28 @@ fn view<T: EdgeShardRead + ?Sized>(shard: &T) -> EdgeReadView<T::Handle> {
         shard.config_snapshot(),
         shard.search_pool(),
     )
+}
+
+/// Build a shard's search thread pool with `num_threads` worker threads — the pool behind
+/// [`EdgeReadView::par_map_segments`]. Both the read-write [`EdgeShard`](crate::EdgeShard) and the
+/// read-only [`ReadOnlyEdgeShard`](crate::ReadOnlyEdgeShard) build one at open and keep it for
+/// their lifetime, so per-segment reads and parallel segment opens don't spawn fresh threads per
+/// operation.
+///
+/// `num_threads` is the already-resolved thread count (see [`EdgeConfig::search_thread_count`]);
+/// callers pass `config.search_thread_count()` so a configured `0` is expanded to the CPU-derived
+/// default that matches the core search runtime.
+///
+/// Returns an error (rather than panicking) when the underlying thread spawn fails — this runs
+/// during shard open/load and follower open, so a transient resource failure must not abort the
+/// process.
+pub(crate) fn build_search_pool(num_threads: usize) -> OperationResult<Arc<ThreadPool>> {
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .thread_name(|idx| format!("edge-search-{idx}"))
+        .build()
+        .map_err(|err| {
+            OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
+        })?;
+    Ok(Arc::new(pool))
 }

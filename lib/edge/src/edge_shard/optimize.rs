@@ -5,6 +5,7 @@ use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::HnswGlobalConfig;
+use shard::files::SEGMENTS_PATH;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, LiveVectorNamesProvider,
     TEMP_SEGMENTS_PATH,
@@ -18,7 +19,7 @@ use shard::optimizers::segment_optimizer::{
 use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
-use crate::{EdgeShard, SEGMENTS_PATH};
+use crate::EdgeShard;
 
 impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
