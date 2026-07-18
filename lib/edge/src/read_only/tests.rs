@@ -21,11 +21,12 @@ use shard::scroll::ScrollRequestInternal;
 use uuid::Uuid;
 
 use crate::config::vectors::EdgeVectorParams;
+use crate::edge_shard::scan_segment_dirs;
 use crate::read_only::{
     LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
 };
 use crate::read_view::EdgeShardRead;
-use crate::{EdgeConfig, EdgeShard, scan_segment_dirs};
+use crate::{EdgeConfig, EdgeShard};
 
 const VECTOR_NAME: &str = "edge-ro-test-vector";
 

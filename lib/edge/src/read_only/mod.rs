@@ -17,6 +17,7 @@ mod holder;
 mod lifecycle;
 mod load;
 mod refresh;
+mod shard_read;
 #[cfg(test)]
 mod tests;
 
@@ -26,14 +27,12 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
-use segment::segment::read_only::ReadOnlySegment;
 
 use crate::EdgeConfig;
 pub use crate::read_only::enumerate::{
     LocalSegmentEnumerator, ManifestSegmentEnumerator, SegmentEnumerator,
 };
 use crate::read_only::holder::ReadOnlySegmentHolder;
-use crate::read_view::EdgeShardRead;
 
 /// Read-only follower view over an edge shard's on-disk directory.
 ///
@@ -72,30 +71,5 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Number of segments currently open in the follower.
     pub fn segments_count(&self) -> usize {
         self.segments.read().uuids().len()
-    }
-}
-
-/// The follower's segments are homogeneous, so its handle is the concrete
-/// `Arc<RwLock<ReadOnlySegment<S>>>` — the read path is fully monomorphized, no dynamic dispatch.
-impl<S: UniversalReadExt + 'static> EdgeShardRead for ReadOnlyEdgeShard<S>
-where
-    S::Fs: Send + Sync,
-{
-    type Handle = Arc<RwLock<ReadOnlySegment<S>>>;
-
-    fn read_segments(&self) -> Vec<Arc<RwLock<ReadOnlySegment<S>>>> {
-        self.segments.read().read_handles()
-    }
-
-    fn config_snapshot(&self) -> Arc<EdgeConfig> {
-        self.config.read().clone()
-    }
-
-    fn search_pool(&self) -> Arc<rayon::ThreadPool> {
-        self.search_pool.clone()
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
     }
 }
