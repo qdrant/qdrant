@@ -1,29 +1,34 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use qdrant_edge_ffi::EdgeShard;
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
-use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, GeoRadius, Match};
+use qdrant_edge_ffi::filter::{
+    Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, GeoRadius, Match,
+};
 use qdrant_edge_ffi::query::CountRequest;
 use qdrant_edge_ffi::types::{PointId, WithPayload};
-use qdrant_edge_ffi::EdgeShard;
 use segment::types::{
-    Condition as SegmentCondition, Filter as SegmentFilter, PointIdType,
-    WithPayloadInterface,
+    Condition as SegmentCondition, Filter as SegmentFilter, PointIdType, WithPayloadInterface,
 };
 
 // ── PointId / UUID ────────────────────────────────────────────────────────────
 
 #[test]
 fn bad_uuid_point_id_returns_error_not_panic() {
-    let bad = PointId::Uuid { value: "not-a-uuid".to_string() };
+    let bad = PointId::Uuid {
+        value: "not-a-uuid".to_string(),
+    };
     let r: Result<PointIdType, _> = bad.try_into();
     assert!(r.is_err());
 }
 
 #[test]
 fn good_uuid_point_id_converts() {
-    let g = PointId::Uuid { value: "550e8400-e29b-41d4-a716-446655440000".to_string() };
+    let g = PointId::Uuid {
+        value: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+    };
     let r: Result<PointIdType, _> = g.try_into();
     assert!(r.is_ok());
 }
@@ -41,7 +46,10 @@ fn out_of_range_geo_point_returns_error() {
     use qdrant_edge_ffi::filter::GeoPoint;
     use segment::types::GeoPoint as SegmentGeoPoint;
 
-    let bad = GeoPoint { lon: 10.0, lat: 999.0 };
+    let bad = GeoPoint {
+        lon: 10.0,
+        lat: 999.0,
+    };
     let r: Result<SegmentGeoPoint, _> = bad.try_into();
     assert!(r.is_err());
 }
@@ -51,7 +59,10 @@ fn valid_geo_point_converts() {
     use qdrant_edge_ffi::filter::GeoPoint;
     use segment::types::GeoPoint as SegmentGeoPoint;
 
-    let good = GeoPoint { lon: 13.4, lat: 52.5 };
+    let good = GeoPoint {
+        lon: 13.4,
+        lat: 52.5,
+    };
     let r: Result<SegmentGeoPoint, _> = good.try_into();
     assert!(r.is_ok());
 }
@@ -65,7 +76,9 @@ fn bad_payload_key_in_field_condition_returns_error() {
     let cond = Condition::Field {
         condition: FieldCondition {
             key: "has space".to_string(),
-            r#match: Some(Match::Text { text: "x".to_string() }),
+            r#match: Some(Match::Text {
+                text: "x".to_string(),
+            }),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -84,7 +97,9 @@ fn valid_payload_key_in_field_condition_converts() {
     let cond = Condition::Field {
         condition: FieldCondition {
             key: "meta.author".to_string(),
-            r#match: Some(Match::Text { text: "ann".to_string() }),
+            r#match: Some(Match::Text {
+                text: "ann".to_string(),
+            }),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -102,7 +117,9 @@ fn valid_payload_key_in_field_condition_converts() {
 #[test]
 fn has_id_bad_uuid_returns_error() {
     let cond = Condition::HasId {
-        ids: vec![PointId::Uuid { value: "nope".to_string() }],
+        ids: vec![PointId::Uuid {
+            value: "nope".to_string(),
+        }],
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(r.is_err());
@@ -111,7 +128,9 @@ fn has_id_bad_uuid_returns_error() {
 /// IsEmpty with an invalid JSON-path key returns an error.
 #[test]
 fn is_empty_bad_key_returns_error() {
-    let cond = Condition::IsEmpty { key: "bad key".to_string() };
+    let cond = Condition::IsEmpty {
+        key: "bad key".to_string(),
+    };
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(r.is_err());
 }
@@ -119,7 +138,9 @@ fn is_empty_bad_key_returns_error() {
 /// IsNull with an invalid JSON-path key returns an error.
 #[test]
 fn is_null_bad_key_returns_error() {
-    let cond = Condition::IsNull { key: "bad key".to_string() };
+    let cond = Condition::IsNull {
+        key: "bad key".to_string(),
+    };
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(r.is_err());
 }
@@ -128,7 +149,9 @@ fn is_null_bad_key_returns_error() {
 /// through the transpose and surfaces the error.
 #[test]
 fn filter_must_with_bad_key_returns_error() {
-    let bad_cond = Condition::IsEmpty { key: "bad key".to_string() };
+    let bad_cond = Condition::IsEmpty {
+        key: "bad key".to_string(),
+    };
     let filter = Filter {
         must: Some(vec![bad_cond]),
         should: None,
@@ -156,7 +179,10 @@ fn field_with_match(m: Match) -> Condition {
 
 #[test]
 fn match_any_both_none_returns_error() {
-    let cond = field_with_match(Match::Any { strings: None, integers: None });
+    let cond = field_with_match(Match::Any {
+        strings: None,
+        integers: None,
+    });
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(r.is_err());
 }
@@ -183,7 +209,10 @@ fn match_any_strings_only_ok() {
 
 #[test]
 fn match_except_neither_returns_error() {
-    let cond = field_with_match(Match::Except { strings: None, integers: None });
+    let cond = field_with_match(Match::Except {
+        strings: None,
+        integers: None,
+    });
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(r.is_err());
 }
@@ -214,7 +243,9 @@ fn with_payload_good_fields_ok() {
 /// not the generic `OperationError`.
 #[test]
 fn bad_uuid_is_invalid_argument() {
-    let bad = PointId::Uuid { value: "nope".to_string() };
+    let bad = PointId::Uuid {
+        value: "nope".to_string(),
+    };
     let r: Result<PointIdType, _> = bad.try_into();
     assert!(r.is_err());
     assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
@@ -242,14 +273,17 @@ fn closed_shard_returns_shard_closed() {
         sparse_vector_data: HashMap::new(),
     };
 
-    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(config))
-        .expect("EdgeShard::load failed");
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(config)).expect("EdgeShard::load failed");
 
     // Eagerly release all file handles.
     shard.unload();
 
     // Any operation on the unloaded shard must yield ShardClosed.
-    let result = shard.count(CountRequest { filter: None, exact: false });
+    let result = shard.count(CountRequest {
+        filter: None,
+        exact: false,
+    });
     assert!(result.is_err());
     assert!(
         matches!(result.unwrap_err(), EdgeError::ShardClosed),
@@ -296,10 +330,16 @@ fn geo_polygon_bad_coordinate_returns_error() {
     let polygon = GeoPolygon {
         exterior: GeoLineString {
             points: vec![
-                GeoPoint { lon: 0.0, lat: 999.0 }, // lat out of range
+                GeoPoint {
+                    lon: 0.0,
+                    lat: 999.0,
+                }, // lat out of range
                 GeoPoint { lon: 0.0, lat: 1.0 },
                 GeoPoint { lon: 1.0, lat: 1.0 },
-                GeoPoint { lon: 0.0, lat: 999.0 },
+                GeoPoint {
+                    lon: 0.0,
+                    lat: 999.0,
+                },
             ],
         },
         interiors: None,
@@ -387,8 +427,14 @@ fn geo_polygon_bad_interior_ring_returns_error() {
     let good_exterior = GeoLineString {
         points: vec![
             GeoPoint { lon: 0.0, lat: 0.0 },
-            GeoPoint { lon: 0.0, lat: 10.0 },
-            GeoPoint { lon: 10.0, lat: 10.0 },
+            GeoPoint {
+                lon: 0.0,
+                lat: 10.0,
+            },
+            GeoPoint {
+                lon: 10.0,
+                lat: 10.0,
+            },
             GeoPoint { lon: 0.0, lat: 0.0 },
         ],
     };
@@ -428,7 +474,10 @@ fn field_with_geo_radius(radius: f64) -> Condition {
             range: None,
             geo_bounding_box: None,
             geo_radius: Some(GeoRadius {
-                center: GeoPoint { lon: 13.4, lat: 52.5 },
+                center: GeoPoint {
+                    lon: 13.4,
+                    lat: 52.5,
+                },
                 radius,
             }),
             geo_polygon: None,
@@ -461,7 +510,11 @@ fn geo_radius_infinite_returns_error() {
 #[test]
 fn geo_radius_valid_converts() {
     let r: Result<SegmentCondition, _> = field_with_geo_radius(1000.0).try_into();
-    assert!(r.is_ok(), "expected Ok for a valid radius, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "expected Ok for a valid radius, got: {:?}",
+        r.err()
+    );
 }
 
 /// A zero radius is a degenerate (empty) circle but NOT invalid — the engine
@@ -470,7 +523,11 @@ fn geo_radius_valid_converts() {
 #[test]
 fn geo_radius_zero_converts() {
     let r: Result<SegmentCondition, _> = field_with_geo_radius(0.0).try_into();
-    assert!(r.is_ok(), "expected Ok for a zero radius, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "expected Ok for a zero radius, got: {:?}",
+        r.err()
+    );
 }
 
 // ── FieldCondition: at-least-one predicate ────────────────────────────────────
@@ -492,7 +549,10 @@ fn field_condition_no_predicate_returns_error() {
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_err(), "expected Err for a predicate-less field condition");
+    assert!(
+        r.is_err(),
+        "expected Err for a predicate-less field condition"
+    );
     assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
 }
 
@@ -504,12 +564,24 @@ fn field_condition_multiple_predicates_converts() {
     let cond = Condition::Field {
         condition: FieldCondition {
             key: "tags".to_string(),
-            r#match: Some(Match::Text { text: "x".to_string() }),
-            range: Some(RangeFloat { gte: Some(1.0), gt: None, lte: None, lt: None }),
+            r#match: Some(Match::Text {
+                text: "x".to_string(),
+            }),
+            range: Some(RangeFloat {
+                gte: Some(1.0),
+                gt: None,
+                lte: None,
+                lt: None,
+            }),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
-            values_count: Some(ValuesCount { gte: Some(1), gt: None, lte: None, lt: None }),
+            values_count: Some(ValuesCount {
+                gte: Some(1),
+                gt: None,
+                lte: None,
+                lt: None,
+            }),
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();

@@ -1,13 +1,12 @@
 use ahash::AHashSet;
 use segment::types::{
     AnyVariants, Condition as SegmentCondition, FieldCondition as SegmentFieldCondition,
-    Filter as SegmentFilter, GeoPoint as SegmentGeoPoint,
-    GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
-    GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
-    HasIdCondition, HasVectorCondition, IsEmptyCondition, IsNullCondition,
-    Match as SegmentMatch, MatchAny, MatchExcept, MatchText, MatchValue,
-    PayloadField, PointIdType, Range, RangeInterface,
-    ValuesCount as SegmentValuesCount, ValueVariants as SegmentValueVariants,
+    Filter as SegmentFilter, GeoBoundingBox as SegmentGeoBoundingBox,
+    GeoLineString as SegmentGeoLineString, GeoPoint as SegmentGeoPoint,
+    GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius, HasIdCondition,
+    HasVectorCondition, IsEmptyCondition, IsNullCondition, Match as SegmentMatch, MatchAny,
+    MatchExcept, MatchText, MatchValue, PayloadField, PointIdType, Range, RangeInterface,
+    ValueVariants as SegmentValueVariants, ValuesCount as SegmentValuesCount,
 };
 use segment::utils::maybe_arc::MaybeArc;
 
@@ -176,7 +175,10 @@ impl TryFrom<GeoPolygon> for SegmentGeoPolygon {
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
-        Ok(SegmentGeoPolygon { exterior, interiors })
+        Ok(SegmentGeoPolygon {
+            exterior,
+            interiors,
+        })
     }
 }
 
@@ -236,9 +238,15 @@ pub enum Match {
     /// payload key).
     Text { text: String },
     /// The field value must equal any of the given strings or integers.
-    Any { strings: Option<Vec<String>>, integers: Option<Vec<i64>> },
+    Any {
+        strings: Option<Vec<String>>,
+        integers: Option<Vec<i64>>,
+    },
     /// The field value must equal none of the given strings or integers.
-    Except { strings: Option<Vec<String>>, integers: Option<Vec<i64>> },
+    Except {
+        strings: Option<Vec<String>>,
+        integers: Option<Vec<i64>>,
+    },
 }
 
 impl TryFrom<Match> for SegmentMatch {
@@ -373,14 +381,8 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
             .geo_bounding_box
             .map(SegmentGeoBoundingBox::try_from)
             .transpose()?;
-        let geo_radius = c
-            .geo_radius
-            .map(SegmentGeoRadius::try_from)
-            .transpose()?;
-        let geo_polygon = c
-            .geo_polygon
-            .map(SegmentGeoPolygon::try_from)
-            .transpose()?;
+        let geo_radius = c.geo_radius.map(SegmentGeoRadius::try_from).transpose()?;
+        let geo_polygon = c.geo_polygon.map(SegmentGeoPolygon::try_from).transpose()?;
         let r#match = c.r#match.map(SegmentMatch::try_from).transpose()?;
         Ok(SegmentFieldCondition {
             key,
@@ -428,9 +430,9 @@ impl TryFrom<Condition> for SegmentCondition {
 
     fn try_from(c: Condition) -> Result<Self, Self::Error> {
         match c {
-            Condition::Field { condition } => {
-                Ok(SegmentCondition::Field(SegmentFieldCondition::try_from(condition)?))
-            }
+            Condition::Field { condition } => Ok(SegmentCondition::Field(
+                SegmentFieldCondition::try_from(condition)?,
+            )),
             Condition::IsEmpty { key } => {
                 let parsed_key = crate::error::parse_json_path(&key)?;
                 Ok(SegmentCondition::IsEmpty(IsEmptyCondition {
@@ -515,15 +517,27 @@ impl TryFrom<Filter> for SegmentFilter {
     fn try_from(f: Filter) -> Result<Self, Self::Error> {
         let must = f
             .must
-            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .map(|v| {
+                v.into_iter()
+                    .map(SegmentCondition::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+            })
             .transpose()?;
         let should = f
             .should
-            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .map(|v| {
+                v.into_iter()
+                    .map(SegmentCondition::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+            })
             .transpose()?;
         let must_not = f
             .must_not
-            .map(|v| v.into_iter().map(SegmentCondition::try_from).collect::<Result<Vec<_>, _>>())
+            .map(|v| {
+                v.into_iter()
+                    .map(SegmentCondition::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+            })
             .transpose()?;
         Ok(SegmentFilter {
             must,

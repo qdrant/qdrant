@@ -147,11 +147,10 @@ impl UpdateOperation {
                 })
             })
             .collect::<std::result::Result<Vec<_>, crate::error::EdgeError>>()?;
-        let operation =
-            vector_ops::VectorOperations::UpdateVectors(vector_ops::UpdateVectorsOp {
-                points,
-                update_filter: None,
-            });
+        let operation = vector_ops::VectorOperations::UpdateVectors(vector_ops::UpdateVectorsOp {
+            points,
+            update_filter: None,
+        });
         Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::VectorOperation(operation),
         }))
@@ -197,8 +196,9 @@ impl UpdateOperation {
         point_ids: Vec<PointId>,
         payload_json: String,
     ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
-        let payload = json_to_payload(&payload_json)
-            .map_err(|e| crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}")))?;
+        let payload = json_to_payload(&payload_json).map_err(|e| {
+            crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
+        })?;
         let ids: Vec<PointIdType> = point_ids
             .into_iter()
             .map(PointIdType::try_from)

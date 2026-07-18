@@ -7,12 +7,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use qdrant_edge_ffi::EdgeShard;
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
 use qdrant_edge_ffi::query::{CountRequest, Query, ScrollRequest, SearchRequest};
-use qdrant_edge_ffi::types::{PointId, Vector, Point, WithPayload, WithVector};
+use qdrant_edge_ffi::types::{Point, PointId, Vector, WithPayload, WithVector};
 use qdrant_edge_ffi::update::UpdateOperation;
-use qdrant_edge_ffi::EdgeShard;
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -82,8 +82,8 @@ fn persistence_survives_reload() {
 
     // Session 1: create shard, upsert 3 points, flush, then unload.
     {
-        let shard: Arc<EdgeShard> = EdgeShard::load(path.clone(), Some(make_config()))
-            .expect("load (session 1) failed");
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path.clone(), Some(make_config())).expect("load (session 1) failed");
         upsert_three(&shard);
         shard.flush().expect("flush failed");
         shard.unload();
@@ -105,7 +105,10 @@ fn persistence_survives_reload() {
 
         // count() must agree.
         let n = shard
-            .count(CountRequest { filter: None, exact: true })
+            .count(CountRequest {
+                filter: None,
+                exact: true,
+            })
             .expect("count failed");
         assert_eq!(n, 3, "count() returned {} after reload", n);
 
@@ -151,8 +154,8 @@ fn crash_recovery_after_dirty_drop() {
 
     // "Dirty" session: upsert then drop without explicit flush/unload.
     {
-        let shard: Arc<EdgeShard> = EdgeShard::load(path.clone(), Some(make_config()))
-            .expect("load failed");
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path.clone(), Some(make_config())).expect("load failed");
         upsert_three(&shard);
         // Drop here — no flush() or unload() call.
     }
@@ -238,15 +241,15 @@ fn concurrent_reads_and_unload() {
             let shard_clone = Arc::clone(&shard);
             std::thread::spawn(move || {
                 for _ in 0..iterations {
-                    let result = shard_clone.count(CountRequest { filter: None, exact: false });
+                    let result = shard_clone.count(CountRequest {
+                        filter: None,
+                        exact: false,
+                    });
                     match result {
                         Ok(_) => {}
                         Err(EdgeError::ShardClosed) => {}
                         Err(other) => {
-                            panic!(
-                                "unexpected error during concurrent count: {:?}",
-                                other
-                            );
+                            panic!("unexpected error during concurrent count: {:?}", other);
                         }
                     }
                 }
@@ -398,8 +401,7 @@ fn scalar_quantization_accepted_at_load() {
 fn oversized_limit_rejected_not_allocated() {
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
-    let shard: Arc<EdgeShard> =
-        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
     upsert_three(&shard);
 
     let request = ScrollRequest {
@@ -462,11 +464,13 @@ fn delete_then_reload_reduces_count() {
         shard.flush().expect("flush failed");
     } // drop closes the shard
 
-    let reloaded: Arc<EdgeShard> =
-        EdgeShard::load(path, None).expect("reload after delete failed");
+    let reloaded: Arc<EdgeShard> = EdgeShard::load(path, None).expect("reload after delete failed");
 
     let count = reloaded
-        .count(CountRequest { filter: None, exact: true })
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
         .expect("count failed");
     assert_eq!(count, 2, "deleted point must not survive reload");
 
@@ -491,8 +495,7 @@ fn delete_then_reload_reduces_count() {
 fn search_returns_ranked_results() {
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
-    let shard: Arc<EdgeShard> =
-        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
     upsert_three(&shard);
 
     let results = shard
@@ -549,8 +552,7 @@ fn search_returns_ranked_results() {
 fn set_payload_visible_after_retrieve() {
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
-    let shard: Arc<EdgeShard> =
-        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
     upsert_three(&shard);
 
     let op = UpdateOperation::set_payload(
@@ -758,8 +760,7 @@ fn oversized_search_and_query_limits_rejected() {
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
-    let shard: Arc<EdgeShard> =
-        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
     upsert_three(&shard);
 
     #[allow(clippy::err_expect)]
@@ -870,7 +871,11 @@ fn hnsw_config_optimize_and_search() {
             score_threshold: None,
         })
         .expect("search after optimize failed");
-    assert_eq!(results.len(), 3, "search after optimize should return all points");
+    assert_eq!(
+        results.len(),
+        3,
+        "search after optimize should return all points"
+    );
 
     // The HNSW config round-trips through config() (it reads the rich
     // edge::EdgeConfig, not the lossy plain projection).
@@ -930,11 +935,41 @@ fn oversized_hnsw_params_rejected_not_allocated() {
 
     // Each oversized field must be rejected as InvalidArgument, not allocated.
     for (label, hnsw) in [
-        ("huge m", HnswIndexConfig { m: u64::MAX, ..sane.clone() }),
-        ("huge payload_m", HnswIndexConfig { payload_m: Some(u64::MAX), ..sane.clone() }),
-        ("ef_construct too small", HnswIndexConfig { ef_construct: 0, ..sane.clone() }),
-        ("huge ef_construct", HnswIndexConfig { ef_construct: u64::MAX, ..sane.clone() }),
-        ("thread bomb", HnswIndexConfig { max_indexing_threads: u64::MAX, ..sane.clone() }),
+        (
+            "huge m",
+            HnswIndexConfig {
+                m: u64::MAX,
+                ..sane.clone()
+            },
+        ),
+        (
+            "huge payload_m",
+            HnswIndexConfig {
+                payload_m: Some(u64::MAX),
+                ..sane.clone()
+            },
+        ),
+        (
+            "ef_construct too small",
+            HnswIndexConfig {
+                ef_construct: 0,
+                ..sane.clone()
+            },
+        ),
+        (
+            "huge ef_construct",
+            HnswIndexConfig {
+                ef_construct: u64::MAX,
+                ..sane.clone()
+            },
+        ),
+        (
+            "thread bomb",
+            HnswIndexConfig {
+                max_indexing_threads: u64::MAX,
+                ..sane.clone()
+            },
+        ),
     ] {
         let dir = tempfile::tempdir().expect("tempdir failed");
         let path = dir.path().to_string_lossy().into_owned();
@@ -968,8 +1003,7 @@ fn oversized_hnsw_params_rejected_not_allocated() {
 fn scroll_pagination_via_next_offset() {
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
-    let shard: Arc<EdgeShard> =
-        EdgeShard::load(path, Some(make_config())).expect("load failed");
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
 
     // Upsert 5 points (IDs 1..=5) so a page size of 2 yields 3 pages (2+2+1).
     let points: Vec<Point> = (1..=5u64)
@@ -1019,7 +1053,10 @@ fn scroll_pagination_via_next_offset() {
         }
     }
 
-    assert_eq!(pages, 3, "5 points at page size 2 should span exactly 3 pages");
+    assert_eq!(
+        pages, 3,
+        "5 points at page size 2 should span exactly 3 pages"
+    );
     seen.sort_unstable();
     assert_eq!(
         seen,

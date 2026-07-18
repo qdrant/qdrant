@@ -4,14 +4,13 @@ use segment::data_types::order_by::{
 };
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::types::{
-    Filter as SegmentFilter, PointIdType,
-    SearchParams as SegmentSearchParams, WithPayloadInterface,
-    WithVector as SegmentWithVector,
+    Filter as SegmentFilter, PointIdType, SearchParams as SegmentSearchParams,
+    WithPayloadInterface, WithVector as SegmentWithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::facet::FacetRequestInternal;
-use shard::query::*;
 use shard::query::query_enum::QueryEnum;
+use shard::query::*;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequest;
 
@@ -45,6 +44,7 @@ impl From<SearchParams> for SegmentSearchParams {
             quantization: None,
             indexed_only: p.indexed_only,
             acorn: None,
+            idf: None,
         }
     }
 }
@@ -108,15 +108,15 @@ impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
             ScoringQuery::Vector { query } => {
                 Ok(shard::query::ScoringQuery::Vector(QueryEnum::from(query)))
             }
-            ScoringQuery::Fusion { fusion } => {
-                Ok(shard::query::ScoringQuery::Fusion(FusionInternal::from(fusion)))
-            }
-            ScoringQuery::OrderBy { order_by } => {
-                Ok(shard::query::ScoringQuery::OrderBy(SegmentOrderBy::try_from(order_by)?))
-            }
-            ScoringQuery::Sample { sample } => {
-                Ok(shard::query::ScoringQuery::Sample(SampleInternal::from(sample)))
-            }
+            ScoringQuery::Fusion { fusion } => Ok(shard::query::ScoringQuery::Fusion(
+                FusionInternal::from(fusion),
+            )),
+            ScoringQuery::OrderBy { order_by } => Ok(shard::query::ScoringQuery::OrderBy(
+                SegmentOrderBy::try_from(order_by)?,
+            )),
+            ScoringQuery::Sample { sample } => Ok(shard::query::ScoringQuery::Sample(
+                SampleInternal::from(sample),
+            )),
         }
     }
 }
@@ -312,7 +312,10 @@ impl TryFrom<QueryRequest> for ShardQueryRequest {
             prefetches,
             limit: crate::error::bounded_limit("limit", r.limit)?,
             offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
-            with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
+            with_vector: r
+                .with_vector
+                .map(SegmentWithVector::from)
+                .unwrap_or_default(),
             with_payload: r
                 .with_payload
                 .map(WithPayloadInterface::try_from)
@@ -411,13 +414,19 @@ impl TryFrom<ScrollRequest> for ScrollRequestInternal {
             .transpose()?;
         Ok(ScrollRequestInternal {
             offset,
-            limit: r.limit.map(|v| crate::error::bounded_limit("limit", v)).transpose()?,
+            limit: r
+                .limit
+                .map(|v| crate::error::bounded_limit("limit", v))
+                .transpose()?,
             filter,
             with_payload: r
                 .with_payload
                 .map(WithPayloadInterface::try_from)
                 .transpose()?,
-            with_vector: r.with_vector.map(SegmentWithVector::from).unwrap_or_default(),
+            with_vector: r
+                .with_vector
+                .map(SegmentWithVector::from)
+                .unwrap_or_default(),
             order_by,
         })
     }

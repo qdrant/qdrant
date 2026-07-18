@@ -1,20 +1,21 @@
 use std::collections::HashMap;
 
 use segment::data_types::modifier::Modifier as SegmentModifier;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType as SegmentSparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType as SegmentSparseIndexType,
+};
 use segment::types::{
-    BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding as SegmentBinaryQuantizationEncoding,
+    BinaryQuantization, BinaryQuantizationConfig,
+    BinaryQuantizationEncoding as SegmentBinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding as SegmentBinaryQuantizationQueryEncoding,
     CompressionRatio as SegmentCompressionRatio, Distance as SegmentDistance,
-    HnswConfig as SegmentHnswConfig,
-    Indexes, MultiVectorComparator as SegmentMultiVectorComparator,
-    MultiVectorConfig as SegmentMultiVectorConfig, PayloadStorageType,
-    ProductQuantization, ProductQuantizationConfig,
-    QuantizationConfig as SegmentQuantizationConfig,
-    ScalarQuantization, ScalarQuantizationConfig, ScalarType as SegmentScalarType,
-    SegmentConfig, SparseVectorDataConfig as SegmentSparseVectorDataConfig,
-    SparseVectorStorageType, TurboQuantBitSize as SegmentTurboQuantBitSize,
-    TurboQuantQuantizationConfig, TurboQuantization,
+    HnswConfig as SegmentHnswConfig, Indexes,
+    MultiVectorComparator as SegmentMultiVectorComparator,
+    MultiVectorConfig as SegmentMultiVectorConfig, PayloadStorageType, ProductQuantization,
+    ProductQuantizationConfig, QuantizationConfig as SegmentQuantizationConfig, ScalarQuantization,
+    ScalarQuantizationConfig, ScalarType as SegmentScalarType, SegmentConfig,
+    SparseVectorDataConfig as SegmentSparseVectorDataConfig, SparseVectorStorageType,
+    TurboQuantBitSize as SegmentTurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
     VectorDataConfig as SegmentVectorDataConfig,
     VectorStorageDatatype as SegmentVectorStorageDatatype, VectorStorageType,
 };
@@ -291,10 +292,18 @@ pub enum BinaryQuantizationQueryEncoding {
 impl From<BinaryQuantizationQueryEncoding> for SegmentBinaryQuantizationQueryEncoding {
     fn from(e: BinaryQuantizationQueryEncoding) -> Self {
         match e {
-            BinaryQuantizationQueryEncoding::Default => SegmentBinaryQuantizationQueryEncoding::Default,
-            BinaryQuantizationQueryEncoding::Binary => SegmentBinaryQuantizationQueryEncoding::Binary,
-            BinaryQuantizationQueryEncoding::Scalar4Bits => SegmentBinaryQuantizationQueryEncoding::Scalar4Bits,
-            BinaryQuantizationQueryEncoding::Scalar8Bits => SegmentBinaryQuantizationQueryEncoding::Scalar8Bits,
+            BinaryQuantizationQueryEncoding::Default => {
+                SegmentBinaryQuantizationQueryEncoding::Default
+            }
+            BinaryQuantizationQueryEncoding::Binary => {
+                SegmentBinaryQuantizationQueryEncoding::Binary
+            }
+            BinaryQuantizationQueryEncoding::Scalar4Bits => {
+                SegmentBinaryQuantizationQueryEncoding::Scalar4Bits
+            }
+            BinaryQuantizationQueryEncoding::Scalar8Bits => {
+                SegmentBinaryQuantizationQueryEncoding::Scalar8Bits
+            }
         }
     }
 }
@@ -302,10 +311,18 @@ impl From<BinaryQuantizationQueryEncoding> for SegmentBinaryQuantizationQueryEnc
 impl From<SegmentBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding {
     fn from(e: SegmentBinaryQuantizationQueryEncoding) -> Self {
         match e {
-            SegmentBinaryQuantizationQueryEncoding::Default => BinaryQuantizationQueryEncoding::Default,
-            SegmentBinaryQuantizationQueryEncoding::Binary => BinaryQuantizationQueryEncoding::Binary,
-            SegmentBinaryQuantizationQueryEncoding::Scalar4Bits => BinaryQuantizationQueryEncoding::Scalar4Bits,
-            SegmentBinaryQuantizationQueryEncoding::Scalar8Bits => BinaryQuantizationQueryEncoding::Scalar8Bits,
+            SegmentBinaryQuantizationQueryEncoding::Default => {
+                BinaryQuantizationQueryEncoding::Default
+            }
+            SegmentBinaryQuantizationQueryEncoding::Binary => {
+                BinaryQuantizationQueryEncoding::Binary
+            }
+            SegmentBinaryQuantizationQueryEncoding::Scalar4Bits => {
+                BinaryQuantizationQueryEncoding::Scalar4Bits
+            }
+            SegmentBinaryQuantizationQueryEncoding::Scalar8Bits => {
+                BinaryQuantizationQueryEncoding::Scalar8Bits
+            }
         }
     }
 }
@@ -435,6 +452,7 @@ impl From<QuantizationConfig> for SegmentQuantizationConfig {
                         r#type: SegmentScalarType::from(config.r#type),
                         quantile: config.quantile,
                         always_ram: config.always_ram,
+                        memory: None,
                     },
                 })
             }
@@ -443,6 +461,7 @@ impl From<QuantizationConfig> for SegmentQuantizationConfig {
                     product: ProductQuantizationConfig {
                         compression: SegmentCompressionRatio::from(config.compression),
                         always_ram: config.always_ram,
+                        memory: None,
                     },
                 })
             }
@@ -454,6 +473,7 @@ impl From<QuantizationConfig> for SegmentQuantizationConfig {
                         query_encoding: config
                             .query_encoding
                             .map(SegmentBinaryQuantizationQueryEncoding::from),
+                        memory: None,
                     },
                 })
             }
@@ -462,6 +482,7 @@ impl From<QuantizationConfig> for SegmentQuantizationConfig {
                     turbo: TurboQuantQuantizationConfig {
                         always_ram: config.always_ram,
                         bits: config.bits.map(SegmentTurboQuantBitSize::from),
+                        memory: None,
                     },
                 })
             }
@@ -549,6 +570,7 @@ impl From<HnswIndexConfig> for SegmentHnswConfig {
             full_scan_threshold: crate::error::clamp_usize(c.full_scan_threshold),
             max_indexing_threads: crate::error::clamp_usize(c.max_indexing_threads),
             on_disk: c.on_disk,
+            memory: None,
             payload_m: c.payload_m.map(crate::error::clamp_usize),
             inline_storage: None,
         }
@@ -717,6 +739,7 @@ impl From<SparseVectorDataConfig> for SegmentSparseVectorDataConfig {
                 index_type: SegmentSparseIndexType::MutableRam,
                 full_scan_threshold: c.full_scan_threshold.map(crate::error::clamp_usize),
                 datatype: c.datatype.map(SegmentVectorStorageDatatype::from),
+                memory: None,
             },
             storage_type: SparseVectorStorageType::Mmap,
             modifier: c.modifier.map(SegmentModifier::from),
@@ -852,7 +875,9 @@ impl EdgeConfig {
                         "vector field {name:?}: hnsw payload_m ({payload_m}) exceeds the maximum of {MAX_HNSW_M}"
                     )));
                 }
-                if hnsw.ef_construct < MIN_HNSW_EF_CONSTRUCT || hnsw.ef_construct > MAX_HNSW_EF_CONSTRUCT {
+                if hnsw.ef_construct < MIN_HNSW_EF_CONSTRUCT
+                    || hnsw.ef_construct > MAX_HNSW_EF_CONSTRUCT
+                {
                     return Err(crate::error::EdgeError::invalid_argument(format!(
                         "vector field {name:?}: hnsw ef_construct ({}) is out of range \
                          {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}",

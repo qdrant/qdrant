@@ -129,7 +129,7 @@ pub type Result<T, E = EdgeError> = std::result::Result<T, E>;
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_limit, clamp_usize, MAX_RESULT_COUNT};
+    use super::{MAX_RESULT_COUNT, bounded_limit, clamp_usize};
 
     #[test]
     fn clamp_usize_small_value() {
@@ -144,7 +144,10 @@ mod tests {
     #[test]
     fn bounded_limit_accepts_within_cap() {
         assert_eq!(bounded_limit("limit", 100).unwrap(), 100);
-        assert_eq!(bounded_limit("limit", MAX_RESULT_COUNT).unwrap(), MAX_RESULT_COUNT as usize);
+        assert_eq!(
+            bounded_limit("limit", MAX_RESULT_COUNT).unwrap(),
+            MAX_RESULT_COUNT as usize
+        );
     }
 
     #[test]

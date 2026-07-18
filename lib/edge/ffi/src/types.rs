@@ -2,12 +2,10 @@ use std::collections::HashMap;
 
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
-    Payload, PointIdType, ScoredPoint as SegmentScoredPoint,
-    WithPayloadInterface, WithVector as SegmentWithVector,
+    Payload, PointIdType, ScoredPoint as SegmentScoredPoint, WithPayloadInterface,
+    WithVector as SegmentWithVector,
 };
-use shard::operations::point_ops::{
-    PointStructPersisted, VectorPersisted, VectorStructPersisted,
-};
+use shard::operations::point_ops::{PointStructPersisted, VectorPersisted, VectorStructPersisted};
 use shard::retrieve::record_internal::RecordInternal;
 use sparse::common::sparse_vector::SparseVector as InternalSparseVector;
 
@@ -199,9 +197,7 @@ pub fn json_to_payload(json: &str) -> std::result::Result<Payload, String> {
 fn vector_struct_internal_to_json(v: &VectorStructInternal) -> String {
     match v {
         VectorStructInternal::Single(dense) => serde_json::to_string(dense).unwrap_or_default(),
-        VectorStructInternal::MultiDense(multi) => {
-            serde_json::to_string(multi).unwrap_or_default()
-        }
+        VectorStructInternal::MultiDense(multi) => serde_json::to_string(multi).unwrap_or_default(),
         VectorStructInternal::Named(map) => serde_json::to_string(map).unwrap_or_default(),
     }
 }
@@ -287,7 +283,9 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn into_internal(self) -> std::result::Result<PointStructPersisted, crate::error::EdgeError> {
+    pub fn into_internal(
+        self,
+    ) -> std::result::Result<PointStructPersisted, crate::error::EdgeError> {
         let payload = match self.payload {
             Some(json) => Some(json_to_payload(&json).map_err(|e| {
                 crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
@@ -333,10 +331,7 @@ impl From<SegmentScoredPoint> for ScoredPoint {
             version: p.version,
             score: p.score,
             payload: p.payload.map(|p| payload_to_json(&p)),
-            vector: p
-                .vector
-                .as_ref()
-                .map(|v| vector_struct_internal_to_json(v)),
+            vector: p.vector.as_ref().map(|v| vector_struct_internal_to_json(v)),
         }
     }
 }
@@ -363,10 +358,7 @@ impl From<RecordInternal> for Record {
         Record {
             id: PointId::from(r.id),
             payload: r.payload.map(|p| payload_to_json(&p)),
-            vector: r
-                .vector
-                .as_ref()
-                .map(|v| vector_struct_internal_to_json(v)),
+            vector: r.vector.as_ref().map(|v| vector_struct_internal_to_json(v)),
         }
     }
 }

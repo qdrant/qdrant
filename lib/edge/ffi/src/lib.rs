@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use segment::data_types::facets::FacetValue;
-use segment::types::{PointIdType, SegmentConfig, WithPayloadInterface, WithVector as SegmentWithVector};
+use segment::types::{
+    PointIdType, SegmentConfig, WithPayloadInterface, WithVector as SegmentWithVector,
+};
 
 use crate::config::EdgeConfig;
 use crate::error::{EdgeError, Result};
@@ -222,10 +224,7 @@ impl EdgeShard {
     ///
     /// Returns [`EdgeError::ShardClosed`] if the shard is unloaded,
     /// or [`EdgeError::OperationError`] if the request is malformed.
-    pub fn scroll(
-        &self,
-        request: ScrollRequest,
-    ) -> Result<ScrollResponse> {
+    pub fn scroll(&self, request: ScrollRequest) -> Result<ScrollResponse> {
         let guard = self.inner.lock();
         let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
         let (records, next_offset) = shard.scroll(request.try_into()?)?;
@@ -305,7 +304,9 @@ impl EdgeShard {
             .collect::<crate::error::Result<Vec<_>>>()?;
         let records = shard.retrieve(
             &ids,
-            with_payload.map(WithPayloadInterface::try_from).transpose()?,
+            with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?,
             with_vector.map(SegmentWithVector::from),
         )?;
         Ok(records.into_iter().map(Record::from).collect())
@@ -323,7 +324,7 @@ impl EdgeShard {
     pub fn info(&self) -> Result<ShardInfo> {
         let guard = self.inner.lock();
         let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
-        let info = shard.info();
+        let info = shard.info()?;
         Ok(ShardInfo {
             segments_count: info.segments_count as u64,
             points_count: info.points_count as u64,
@@ -363,10 +364,7 @@ impl EdgeShard {
 /// exist, the archive is corrupt, or `target_path` is not writable.
 #[uniffi::export]
 pub fn unpack_snapshot(snapshot_path: String, target_path: String) -> Result<()> {
-    edge::EdgeShard::unpack_snapshot(
-        &PathBuf::from(snapshot_path),
-        &PathBuf::from(target_path),
-    )?;
+    edge::EdgeShard::unpack_snapshot(&PathBuf::from(snapshot_path), &PathBuf::from(target_path))?;
     Ok(())
 }
 
