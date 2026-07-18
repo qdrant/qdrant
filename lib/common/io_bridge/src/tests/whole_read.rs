@@ -15,7 +15,7 @@ use common::universal_io::{
 };
 use futures::stream::{BoxStream, StreamExt};
 
-use crate::read::AsyncRead;
+use crate::read::{AsyncRead, OffsetByteStream};
 use crate::{BlobFile, BridgeRuntime};
 
 /// Request counters shared with every clone of a [`CountingSource`], so a test
@@ -95,8 +95,7 @@ impl AsyncRead for CountingSource {
         &self,
         _path: &Path,
         from: u64,
-    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
-    {
+    ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
         if from == 0 {
             self.counters.whole.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -114,7 +113,10 @@ impl AsyncRead for CountingSource {
                 });
             }
             let tail = data.slice(from as usize..);
-            Ok((size, futures::stream::once(async move { Ok(tail) }).boxed()))
+            Ok((
+                size,
+                futures::stream::once(async move { Ok((0, tail)) }).boxed(),
+            ))
         }
     }
 
