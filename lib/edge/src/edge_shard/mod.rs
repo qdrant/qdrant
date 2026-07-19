@@ -217,17 +217,25 @@ impl EdgeShard {
             .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
+    /// Persist the WAL and all segments to disk.
+    ///
+    /// Blocks until the WAL and segment locks are free, so a flush issued
+    /// concurrently with an in-flight `update`/`optimize` waits for it and then
+    /// persists, rather than spuriously failing with a "lock busy" error — the
+    /// same blocking-lock semantics those operations already use. Still fallible:
+    /// a genuine WAL/segment flush I/O error is surfaced instead of panicking.
+    ///
+    /// Must not be called while already holding the `wal` mutex or a `segments`
+    /// guard on the same thread — parking_lot locks are non-reentrant and would
+    /// self-deadlock. Today the only callers are the FFI boundary and `Drop`,
+    /// neither of which holds those locks.
     pub fn flush(&self) -> OperationResult<()> {
         self.wal
-            .try_lock()
-            .ok_or_else(|| OperationError::service_error("WAL lock busy during flush"))?
+            .lock()
             .flush()
             .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
 
-        self.segments
-            .try_read()
-            .ok_or_else(|| OperationError::service_error("segment holder lock busy during flush"))?
-            .flush_all(FlushMode::Sync, true)?;
+        self.segments.read().flush_all(FlushMode::Sync, true)?;
 
         Ok(())
     }
