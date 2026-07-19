@@ -1064,3 +1064,1181 @@ fn scroll_pagination_via_next_offset() {
         "pagination should visit every point exactly once, got {seen:?}"
     );
 }
+
+// ── Additional shared helpers ─────────────────────────────────────────────────
+
+/// A single-field config over "vec" (size 4) with a chosen distance metric.
+fn config_with_distance(distance: Distance) -> EdgeConfig {
+    EdgeConfig {
+        vector_data: HashMap::from([(
+            "vec".to_string(),
+            VectorDataConfig {
+                size: 4,
+                distance,
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+                hnsw_config: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    }
+}
+
+/// A two-field config over "vec" and "vec2" (both size 4, Dot) — used to prove
+/// that deleting one named vector leaves the other intact.
+fn two_field_config() -> EdgeConfig {
+    let field = || VectorDataConfig {
+        size: 4,
+        distance: Distance::Dot,
+        quantization_config: None,
+        multivector_config: None,
+        datatype: None,
+        hnsw_config: None,
+    };
+    EdgeConfig {
+        vector_data: HashMap::from([("vec".to_string(), field()), ("vec2".to_string(), field())]),
+        sparse_vector_data: HashMap::new(),
+    }
+}
+
+/// Build a `Vector::Named` populating both "vec" and "vec2".
+fn two_field_vector(a: [f32; 4], b: [f32; 4]) -> Vector {
+    use qdrant_edge_ffi::types::NamedVector;
+    Vector::Named {
+        map: HashMap::from([
+            (
+                "vec".to_string(),
+                NamedVector::Dense { values: a.to_vec() },
+            ),
+            (
+                "vec2".to_string(),
+                NamedVector::Dense { values: b.to_vec() },
+            ),
+        ]),
+    }
+}
+
+/// A filter that matches points whose payload `category` equals `value`.
+fn category_filter(value: &str) -> qdrant_edge_ffi::filter::Filter {
+    use qdrant_edge_ffi::filter::{Condition, FieldCondition, Filter, Match, ValueVariants};
+    Filter {
+        must: Some(vec![Condition::Field {
+            condition: FieldCondition {
+                key: "category".to_string(),
+                r#match: Some(Match::Value {
+                    value: ValueVariants::String {
+                        value: value.to_string(),
+                    },
+                }),
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+            },
+        }]),
+        should: None,
+        must_not: None,
+    }
+}
+
+/// Build a filter nested `depth` levels deep via `Condition::Filter`. The
+/// innermost (deepest) filter is an empty match-all filter, so a legal-depth
+/// tree matches every point.
+fn nested_filter(depth: u32) -> qdrant_edge_ffi::filter::Filter {
+    use qdrant_edge_ffi::filter::{Condition, Filter};
+    let mut f = Filter {
+        must: None,
+        should: None,
+        must_not: None,
+    };
+    for _ in 0..depth {
+        f = Filter {
+            must: Some(vec![Condition::Filter { filter: f }]),
+            should: None,
+            must_not: None,
+        };
+    }
+    f
+}
+
+/// Build a `Prefetch` nested `depth` levels deep via `Prefetch.prefetches`.
+fn nested_prefetch(depth: u32) -> qdrant_edge_ffi::query::Prefetch {
+    use qdrant_edge_ffi::query::Prefetch;
+    let mut p = Prefetch {
+        limit: 1,
+        query: None,
+        prefetches: vec![],
+        filter: None,
+        score_threshold: None,
+        params: None,
+    };
+    for _ in 0..depth {
+        p = Prefetch {
+            limit: 1,
+            query: None,
+            prefetches: vec![p],
+            filter: None,
+            score_threshold: None,
+            params: None,
+        };
+    }
+    p
+}
+
+/// Assert that `upsert_points` rejects `vector` eagerly (at the constructor,
+/// before any shard is involved) with `InvalidArgument`.
+fn assert_vector_rejected(vector: Vector) {
+    #[allow(clippy::err_expect)]
+    let err = UpdateOperation::upsert_points(vec![Point {
+        id: PointId::NumId { value: 1 },
+        vector,
+        payload: None,
+    }])
+    .err()
+    .expect("invalid vector must be rejected by the upsert_points constructor");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
+/// Parse a named dense vector out of a retrieved/searched `vector` JSON string.
+/// Named vectors serialize externally-tagged as `{"<field>":{"Dense":[..]}}`.
+fn dense_named_vector(vjson: &str, field: &str) -> Vec<f32> {
+    let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
+    let arr = parsed
+        .get(field)
+        .and_then(|f| f.get("Dense"))
+        .cloned()
+        .unwrap_or_else(|| panic!("expected a Dense vector under {field:?} in {vjson}"));
+    serde_json::from_value(arr).expect("dense vector array")
+}
+
+// ── Test 19: multi_vector_invalid_matrices_rejected (MUST A) ──────────────────
+
+/// The new multi-vector guard rejects, at the `upsert_points` constructor,
+/// an empty outer matrix, ragged rows, and a zero-dimension row — via both the
+/// single-field `Vector::MultiDense` and the `NamedVector::MultiDense` paths.
+/// These are converted eagerly (before any shard exists), so no config is
+/// needed. Guards against the release-mode panic / silent reshape that
+/// `new_unchecked` would otherwise cause.
+#[test]
+fn multi_vector_invalid_matrices_rejected() {
+    use qdrant_edge_ffi::types::NamedVector;
+
+    // Single-field multi-vector path.
+    assert_vector_rejected(Vector::MultiDense { vectors: vec![] }); // empty outer
+    assert_vector_rejected(Vector::MultiDense {
+        vectors: vec![vec![1.0, 2.0], vec![3.0]], // ragged
+    });
+    assert_vector_rejected(Vector::MultiDense {
+        vectors: vec![vec![]], // zero-dim row
+    });
+
+    // Named multi-vector path (NamedVector::MultiDense inside Vector::Named).
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "vec".to_string(),
+            NamedVector::MultiDense { vectors: vec![] },
+        )]),
+    });
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "vec".to_string(),
+            NamedVector::MultiDense {
+                vectors: vec![vec![1.0, 2.0], vec![3.0]],
+            },
+        )]),
+    });
+}
+
+// ── Test 20: non_finite_vector_components_rejected (MUST B) ───────────────────
+
+/// Any NaN / ±∞ component is rejected at the `upsert_points` constructor across
+/// every vector shape: single dense, named dense, multi-vector row, and sparse
+/// `values`. Without this guard a poisoned component would be stored and later
+/// serialized back to the host as JSON `null`.
+#[test]
+fn non_finite_vector_components_rejected() {
+    use qdrant_edge_ffi::types::{NamedVector, SparseVector};
+
+    // Single dense — NaN and Infinity.
+    assert_vector_rejected(Vector::Single {
+        values: vec![f32::NAN, 0.0, 0.0, 0.0],
+    });
+    assert_vector_rejected(Vector::Single {
+        values: vec![f32::INFINITY, 0.0, 0.0, 0.0],
+    });
+    // Named dense.
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "vec".to_string(),
+            NamedVector::Dense {
+                values: vec![1.0, f32::NAN, 0.0, 0.0],
+            },
+        )]),
+    });
+    // Multi-vector row.
+    assert_vector_rejected(Vector::MultiDense {
+        vectors: vec![vec![1.0, f32::INFINITY]],
+    });
+    // Sparse values.
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "sp".to_string(),
+            NamedVector::Sparse {
+                vector: SparseVector {
+                    indices: vec![0, 1],
+                    values: vec![1.0, f32::NEG_INFINITY],
+                },
+            },
+        )]),
+    });
+}
+
+// ── Test 21: finite_vectors_accepted_by_upsert_constructor (MUST B guard) ─────
+
+/// Over-rejection guard: valid finite vectors (single, multi, named dense) must
+/// still be accepted by the `upsert_points` constructor.
+#[test]
+fn finite_vectors_accepted_by_upsert_constructor() {
+    assert!(
+        UpdateOperation::upsert_points(vec![Point {
+            id: PointId::NumId { value: 1 },
+            vector: Vector::Single {
+                values: vec![0.1, 0.2, 0.3, 0.4],
+            },
+            payload: None,
+        }])
+        .is_ok(),
+        "a finite single vector must be accepted"
+    );
+    assert!(
+        UpdateOperation::upsert_points(vec![Point {
+            id: PointId::NumId { value: 2 },
+            vector: Vector::MultiDense {
+                vectors: vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            },
+            payload: None,
+        }])
+        .is_ok(),
+        "a finite, uniform multi-vector must be accepted"
+    );
+    assert!(
+        UpdateOperation::upsert_points(vec![Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: None,
+        }])
+        .is_ok(),
+        "a finite named dense vector must be accepted"
+    );
+}
+
+// ── Test 22: deeply_nested_filter_rejected_shallow_accepted (MUST C) ──────────
+
+/// `Condition::Filter` recursion is depth-capped at the FFI boundary
+/// (MAX_QUERY_NESTING_DEPTH = 64) so a host-supplied deep tree cannot overflow
+/// the stack. A depth-3 nested (all-matching) filter is accepted and counts
+/// every point; a depth-65 tree is rejected as `InvalidArgument`.
+#[test]
+fn deeply_nested_filter_rejected_shallow_accepted() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    // Shallow (depth 3): accepted, and the all-matching filter counts all points.
+    let ok = shard
+        .count(CountRequest {
+            filter: Some(nested_filter(3)),
+            exact: true,
+        })
+        .expect("a depth-3 nested filter must be accepted");
+    assert_eq!(ok, 3, "an all-matching depth-3 nested filter should count all 3 points");
+
+    // Deep (depth 65): rejected before it can recurse into the engine.
+    #[allow(clippy::err_expect)]
+    let err = shard
+        .count(CountRequest {
+            filter: Some(nested_filter(65)),
+            exact: true,
+        })
+        .err()
+        .expect("a depth-65 nested filter must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for an over-deep filter, got {err:?}"
+    );
+}
+
+// ── Test 23: deeply_nested_prefetch_rejected (MUST C, prefetch path) ──────────
+
+/// The same depth cap applies to `Prefetch.prefetches` recursion via `query()`.
+/// A 65-deep prefetch tree is rejected as `InvalidArgument` at conversion,
+/// before reaching the engine.
+#[test]
+fn deeply_nested_prefetch_rejected() {
+    use qdrant_edge_ffi::query::QueryRequest;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    #[allow(clippy::err_expect)]
+    let err = shard
+        .query(QueryRequest {
+            prefetches: vec![nested_prefetch(65)],
+            query: None,
+            limit: 3,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .err()
+        .expect("a depth-65 prefetch tree must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument for an over-deep prefetch, got {err:?}"
+    );
+}
+
+// ── Test 24: filter_restricts_count_scroll_and_search (MUST D, CRITICAL) ──────
+
+/// The CRITICAL review finding: a `Filter` must actually restrict results, not
+/// merely be accepted. With three points carrying distinct `category` payloads,
+/// a `category == "a"` filter must return ONLY the two matching points through
+/// `count`, `scroll`, and `search` alike (unindexed payload, filtered by scan).
+#[test]
+fn filter_restricts_count_scroll_and_search() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    // ids 1,2 → category "a"; id 3 → category "b".
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"category":"a"}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+            payload: Some(r#"{"category":"a"}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"category":"b"}"#.to_string()),
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+        .expect("update failed");
+
+    // count: exactly the two "a" points.
+    let n = shard
+        .count(CountRequest {
+            filter: Some(category_filter("a")),
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(n, 2, "filter category==a must count exactly the two matching points");
+
+    // scroll: returns only ids {1, 2}.
+    let resp = shard
+        .scroll(ScrollRequest {
+            offset: None,
+            limit: Some(10),
+            filter: Some(category_filter("a")),
+            with_payload: None,
+            with_vector: None,
+            order_by: None,
+        })
+        .expect("scroll failed");
+    let mut scrolled: Vec<u64> = resp
+        .records
+        .iter()
+        .map(|r| match &r.id {
+            PointId::NumId { value } => *value,
+            PointId::Uuid { value } => panic!("unexpected UUID: {value:?}"),
+        })
+        .collect();
+    scrolled.sort_unstable();
+    assert_eq!(scrolled, vec![1, 2], "scroll with filter must return only matching ids");
+
+    // search: returns only the two matching points, even querying toward id 3.
+    let hits = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: vec![0.5, 0.5, 0.5, 0.5],
+                using: Some("vec".to_string()),
+            },
+            limit: 10,
+            offset: None,
+            filter: Some(category_filter("a")),
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("search failed");
+    assert_eq!(hits.len(), 2, "search with filter must return only the two category==a points");
+    for h in &hits {
+        match &h.id {
+            PointId::NumId { value } => assert!(
+                *value == 1 || *value == 2,
+                "search returned a non-matching id: {value}"
+            ),
+            PointId::Uuid { value } => panic!("unexpected UUID: {value:?}"),
+        }
+    }
+}
+
+// ── Test 25: flush_under_concurrent_upserts (SHOULD E) ────────────────────────
+
+/// Backs the blocking-flush change: a writer thread upserts in a loop while the
+/// main thread hammers `flush()`. Neither must panic, and after joining, the
+/// point count must equal the number of successful upserts.
+#[test]
+fn flush_under_concurrent_upserts() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let n = 100u64;
+    let done = Arc::new(AtomicBool::new(false));
+
+    let writer = {
+        let shard = Arc::clone(&shard);
+        let done = Arc::clone(&done);
+        std::thread::spawn(move || {
+            let mut ok = 0u64;
+            for i in 0..n {
+                let op = UpdateOperation::upsert_points(vec![Point {
+                    id: PointId::NumId { value: i },
+                    vector: named_vec([i as f32, 0.0, 0.0, 0.0]),
+                    payload: None,
+                }])
+                .expect("upsert_points failed");
+                if shard.update(op).is_ok() {
+                    ok += 1;
+                }
+            }
+            done.store(true, Ordering::SeqCst);
+            ok
+        })
+    };
+
+    // Flush concurrently for the whole duration the writer runs.
+    while !done.load(Ordering::SeqCst) {
+        let _ = shard.flush();
+    }
+
+    let ok = writer.join().expect("writer thread panicked");
+    shard.flush().expect("final flush failed");
+
+    let count = shard
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(ok, n, "all upserts should have succeeded (shard stayed open)");
+    assert_eq!(count, ok, "point count must equal the number of successful upserts");
+}
+
+// ── Test 26: vector_content_round_trips (SHOULD F) ────────────────────────────
+
+/// Vector *content* (not just presence) must round-trip: upsert a point, then
+/// read the exact floats back via both `retrieve` and `search` with vectors
+/// enabled. f32 → JSON → f32 is exact, so equality is asserted directly.
+#[test]
+fn vector_content_round_trips_through_retrieve_and_search() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let input = [0.1f32, 0.2, 0.3, 0.4];
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 7 },
+                vector: named_vec(input),
+                payload: None,
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+
+    // retrieve with vectors.
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 7 }],
+            None,
+            Some(WithVector::Bool { enable: true }),
+        )
+        .expect("retrieve failed");
+    assert_eq!(recs.len(), 1, "expected the one point back");
+    let vjson = recs[0].vector.as_deref().expect("vector should be present");
+    assert_eq!(
+        dense_named_vector(vjson, "vec"),
+        input.to_vec(),
+        "retrieved vector must round-trip exactly, got {vjson}"
+    );
+
+    // search with vectors.
+    let hits = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: input.to_vec(),
+                using: Some("vec".to_string()),
+            },
+            limit: 1,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: Some(WithVector::Bool { enable: true }),
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("search failed");
+    assert_eq!(hits.len(), 1, "expected the one hit");
+    let vjson = hits[0].vector.as_deref().expect("vector should be present on hit");
+    assert_eq!(
+        dense_named_vector(vjson, "vec"),
+        input.to_vec(),
+        "searched vector must round-trip exactly, got {vjson}"
+    );
+}
+
+// ── Test 27: cosine_distance_ranks_by_direction (SHOULD G) ────────────────────
+
+/// A `Cosine` shard loads and ranks by angular similarity (magnitude ignored):
+/// query [1,0,0,0] against [1,0,0,0], [1,1,0,0], [0,1,0,0] ranks [1, 3, 2] with
+/// descending scores and a top score of ~1.0.
+#[test]
+fn cosine_distance_ranks_by_direction() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(config_with_distance(Distance::Cosine))).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([1.0, 0.0, 0.0, 0.0]),
+            payload: None,
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.0, 1.0, 0.0, 0.0]),
+            payload: None,
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([1.0, 1.0, 0.0, 0.0]),
+            payload: None,
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+        .expect("update failed");
+
+    let hits = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: vec![1.0, 0.0, 0.0, 0.0],
+                using: Some("vec".to_string()),
+            },
+            limit: 3,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("search failed");
+
+    let ids: Vec<u64> = hits
+        .iter()
+        .map(|h| match &h.id {
+            PointId::NumId { value } => *value,
+            PointId::Uuid { value } => panic!("unexpected UUID: {value:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![1, 3, 2],
+        "cosine ranking should order by direction: exact, 45°, orthogonal"
+    );
+    assert!(
+        hits[0].score >= hits[1].score && hits[1].score >= hits[2].score,
+        "cosine scores must be descending, got {:?}",
+        hits.iter().map(|h| h.score).collect::<Vec<_>>()
+    );
+    assert!(
+        (hits[0].score - 1.0).abs() < 1e-5,
+        "cosine top score (exact match) should be ~1.0, got {}",
+        hits[0].score
+    );
+}
+
+// ── Test 28: euclid_and_manhattan_rank_nearest_first (SHOULD G) ───────────────
+
+/// `Euclid` and `Manhattan` shards load and rank nearest-first: for query
+/// [1,0,0,0] the ranking of [1,0,0,0], [0,1,0,0], [1,1,0,0] is [1, 3, 2].
+#[test]
+fn euclid_and_manhattan_rank_nearest_first() {
+    for distance in [Distance::Euclid, Distance::Manhattan] {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let path = dir.path().to_string_lossy().into_owned();
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path, Some(config_with_distance(distance))).expect("load failed");
+
+        let points = vec![
+            Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([1.0, 0.0, 0.0, 0.0]),
+                payload: None,
+            },
+            Point {
+                id: PointId::NumId { value: 2 },
+                vector: named_vec([0.0, 1.0, 0.0, 0.0]),
+                payload: None,
+            },
+            Point {
+                id: PointId::NumId { value: 3 },
+                vector: named_vec([1.0, 1.0, 0.0, 0.0]),
+                payload: None,
+            },
+        ];
+        shard
+            .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+            .expect("update failed");
+
+        let hits = shard
+            .search(SearchRequest {
+                query: Query::Nearest {
+                    vector: vec![1.0, 0.0, 0.0, 0.0],
+                    using: Some("vec".to_string()),
+                },
+                limit: 3,
+                offset: None,
+                filter: None,
+                params: None,
+                with_vector: None,
+                with_payload: None,
+                score_threshold: None,
+            })
+            .expect("search failed");
+
+        let ids: Vec<u64> = hits
+            .iter()
+            .map(|h| match &h.id {
+                PointId::NumId { value } => *value,
+                PointId::Uuid { value } => panic!("unexpected UUID: {value:?}"),
+            })
+            .collect();
+        assert_eq!(
+            ids,
+            vec![1, 3, 2],
+            "{distance:?}: nearest-first ranking should be [1, 3, 2]"
+        );
+    }
+}
+
+// ── Test 29: delete_points_by_filter_persists (SHOULD H) ──────────────────────
+
+/// `delete_points_by_filter` must remove matching points durably: delete every
+/// `category == "a"` point, flush, reload, and confirm only the "b" point
+/// survives.
+#[test]
+fn delete_points_by_filter_persists() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+
+    {
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path.clone(), Some(make_config())).expect("load failed");
+        let points = vec![
+            Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: Some(r#"{"category":"a"}"#.to_string()),
+            },
+            Point {
+                id: PointId::NumId { value: 2 },
+                vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+                payload: Some(r#"{"category":"a"}"#.to_string()),
+            },
+            Point {
+                id: PointId::NumId { value: 3 },
+                vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+                payload: Some(r#"{"category":"b"}"#.to_string()),
+            },
+        ];
+        shard
+            .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+            .expect("update failed");
+        shard
+            .update(
+                UpdateOperation::delete_points_by_filter(category_filter("a"))
+                    .expect("delete_points_by_filter failed"),
+            )
+            .expect("delete update failed");
+        shard.flush().expect("flush failed");
+    }
+
+    let reloaded: Arc<EdgeShard> = EdgeShard::load(path, None).expect("reload failed");
+    let count = reloaded
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(count, 1, "only the non-matching point should survive delete-by-filter");
+    let survivor = reloaded
+        .retrieve(vec![PointId::NumId { value: 3 }], None, None)
+        .expect("retrieve failed");
+    assert_eq!(survivor.len(), 1, "the category==b point (id 3) must remain");
+    let removed = reloaded
+        .retrieve(
+            vec![PointId::NumId { value: 1 }, PointId::NumId { value: 2 }],
+            None,
+            None,
+        )
+        .expect("retrieve failed");
+    assert!(removed.is_empty(), "category==a points must be gone after reload");
+}
+
+// ── Test 30: update_vectors_replaces_stored_vector (SHOULD H) ─────────────────
+
+/// `update_vectors` must replace the stored vector of an existing point; the
+/// new content must be visible on retrieve after a flush.
+#[test]
+fn update_vectors_replaces_stored_vector() {
+    use qdrant_edge_ffi::types::PointVectors;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: None,
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+
+    let replacement = [9.0f32, 8.0, 7.0, 6.0];
+    shard
+        .update(
+            UpdateOperation::update_vectors(vec![PointVectors {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec(replacement),
+            }])
+            .expect("update_vectors failed"),
+        )
+        .expect("update_vectors update failed");
+    shard.flush().expect("flush failed");
+
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            None,
+            Some(WithVector::Bool { enable: true }),
+        )
+        .expect("retrieve failed");
+    let vjson = recs[0].vector.as_deref().expect("vector should be present");
+    assert_eq!(
+        dense_named_vector(vjson, "vec"),
+        replacement.to_vec(),
+        "update_vectors must replace the stored vector, got {vjson}"
+    );
+}
+
+// ── Test 31: delete_vectors_removes_named_field_only (SHOULD H) ───────────────
+
+/// `delete_vectors` must remove only the named vector field, leaving the point
+/// and its other vector field intact.
+#[test]
+fn delete_vectors_removes_named_field_only() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(two_field_config())).expect("load failed");
+
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: two_field_vector([0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]),
+                payload: None,
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+
+    shard
+        .update(
+            UpdateOperation::delete_vectors(
+                vec![PointId::NumId { value: 1 }],
+                vec!["vec2".to_string()],
+            )
+            .expect("delete_vectors failed"),
+        )
+        .expect("delete_vectors update failed");
+    shard.flush().expect("flush failed");
+
+    let count = shard
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(count, 1, "the point must remain after deleting one of its vectors");
+
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            None,
+            Some(WithVector::Bool { enable: true }),
+        )
+        .expect("retrieve failed");
+    let vjson = recs[0].vector.as_deref().expect("vector should be present");
+    let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
+    assert!(
+        parsed.get("vec").is_some(),
+        "the kept vector field must still be present: {vjson}"
+    );
+    assert!(
+        parsed.get("vec2").is_none(),
+        "the deleted vector field must be gone: {vjson}"
+    );
+}
+
+// ── Test 32: delete_payload_removes_only_named_keys (SHOULD H) ────────────────
+
+/// `delete_payload` must remove only the listed keys and leave the rest.
+#[test]
+fn delete_payload_removes_only_named_keys() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: Some(r#"{"a":1,"b":2}"#.to_string()),
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+
+    shard
+        .update(
+            UpdateOperation::delete_payload(vec![PointId::NumId { value: 1 }], vec!["a".to_string()])
+                .expect("delete_payload failed"),
+        )
+        .expect("delete_payload update failed");
+    shard.flush().expect("flush failed");
+
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            Some(WithPayload::Bool { enable: true }),
+            None,
+        )
+        .expect("retrieve failed");
+    let pjson = recs[0].payload.as_deref().expect("payload should be present");
+    let parsed: serde_json::Value = serde_json::from_str(pjson).expect("payload JSON must parse");
+    assert!(parsed.get("a").is_none(), "deleted key `a` must be gone: {pjson}");
+    assert_eq!(
+        parsed.get("b").and_then(|v| v.as_i64()),
+        Some(2),
+        "untouched key `b` must remain: {pjson}"
+    );
+}
+
+// ── Test 33: clear_payload_removes_all_keys (SHOULD H) ────────────────────────
+
+/// `clear_payload` must remove the entire payload while keeping the point.
+#[test]
+fn clear_payload_removes_all_keys() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: Some(r#"{"a":1,"b":2}"#.to_string()),
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+
+    shard
+        .update(
+            UpdateOperation::clear_payload(vec![PointId::NumId { value: 1 }])
+                .expect("clear_payload failed"),
+        )
+        .expect("clear_payload update failed");
+    shard.flush().expect("flush failed");
+
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            Some(WithPayload::Bool { enable: true }),
+            None,
+        )
+        .expect("retrieve failed");
+    assert_eq!(recs.len(), 1, "the point itself must remain after clear_payload");
+    // A cleared payload is either omitted (None) or an empty object.
+    if let Some(pjson) = recs[0].payload.as_deref() {
+        let parsed: serde_json::Value = serde_json::from_str(pjson).expect("payload JSON must parse");
+        assert!(
+            parsed.as_object().map(|o| o.is_empty()).unwrap_or(false),
+            "cleared payload must have no keys, got {pjson}"
+        );
+    }
+    let count = shard
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(count, 1, "clear_payload must not remove the point");
+}
+
+// ── Test 34: multivector_round_trips (NICE I) ─────────────────────────────────
+
+/// A multi-vector field is exposable via `multivector_config`: upsert a
+/// ColBERT-style matrix and read it back. Named multi-vectors serialize
+/// externally-tagged as `{"mv":{"MultiDense":{"flattened_vectors":[..],"dim":N}}}`.
+#[test]
+fn multivector_round_trips() {
+    use qdrant_edge_ffi::config::{MultiVectorComparator, MultiVectorConfig};
+    use qdrant_edge_ffi::types::NamedVector;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let config = EdgeConfig {
+        vector_data: HashMap::from([(
+            "mv".to_string(),
+            VectorDataConfig {
+                size: 2,
+                distance: Distance::Dot,
+                quantization_config: None,
+                multivector_config: Some(MultiVectorConfig {
+                    comparator: MultiVectorComparator::MaxSim,
+                }),
+                datatype: None,
+                hnsw_config: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::new(),
+    };
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(config)).expect("load with multivector config failed");
+
+    let rows = vec![vec![1.0f32, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: Vector::Named {
+                    map: HashMap::from([(
+                        "mv".to_string(),
+                        NamedVector::MultiDense {
+                            vectors: rows.clone(),
+                        },
+                    )]),
+                },
+                payload: None,
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+    shard.flush().expect("flush failed");
+
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            None,
+            Some(WithVector::Bool { enable: true }),
+        )
+        .expect("retrieve failed");
+    let vjson = recs[0].vector.as_deref().expect("vector should be present");
+    let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
+    let multi = parsed
+        .get("mv")
+        .and_then(|f| f.get("MultiDense"))
+        .unwrap_or_else(|| panic!("expected MultiDense under `mv` in {vjson}"));
+    let flattened: Vec<f32> =
+        serde_json::from_value(multi.get("flattened_vectors").expect("flattened_vectors").clone())
+            .expect("flattened vectors");
+    let dim = multi.get("dim").and_then(|d| d.as_u64()).expect("dim");
+    assert_eq!(dim, 2, "each multi-vector row is 2-dimensional");
+    assert_eq!(
+        flattened,
+        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "multi-vector content must round-trip exactly, got {vjson}"
+    );
+}
+
+// ── Test 35: rrf_fusion_over_prefetches (NICE K) ──────────────────────────────
+
+/// A multi-stage `query()` with two vector prefetches fused by `Fusion::Rrf`
+/// must run end-to-end and produce a fused ranked set containing every point
+/// exactly once, in descending score order.
+#[test]
+fn rrf_fusion_over_prefetches_returns_fused_set() {
+    use qdrant_edge_ffi::query::{Fusion, Prefetch, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let branch = |vector: Vec<f32>| Prefetch {
+        limit: 3,
+        query: Some(ScoringQuery::Vector {
+            query: Query::Nearest {
+                vector,
+                using: Some("vec".to_string()),
+            },
+        }),
+        prefetches: vec![],
+        filter: None,
+        score_threshold: None,
+        params: None,
+    };
+
+    let hits = shard
+        .query(QueryRequest {
+            prefetches: vec![
+                branch(vec![0.1, 0.2, 0.3, 0.4]),
+                branch(vec![0.4, 0.3, 0.2, 0.1]),
+            ],
+            query: Some(ScoringQuery::Fusion {
+                fusion: Fusion::Rrf { k: 60 },
+            }),
+            limit: 3,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("RRF fusion query failed");
+
+    assert_eq!(hits.len(), 3, "RRF over two prefetches should fuse to all three points");
+    let mut ids: Vec<u64> = hits
+        .iter()
+        .map(|h| match &h.id {
+            PointId::NumId { value } => *value,
+            PointId::Uuid { value } => panic!("unexpected UUID: {value:?}"),
+        })
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![1, 2, 3], "fused result set should contain each point exactly once");
+    assert!(
+        hits[0].score >= hits[1].score && hits[1].score >= hits[2].score,
+        "fused scores must be in descending order, got {:?}",
+        hits.iter().map(|h| h.score).collect::<Vec<_>>()
+    );
+}
+
+// ── Test 36: sparse_vector_round_trips (NICE I) ───────────────────────────────
+
+/// A sparse vector field is exposable via `sparse_vector_data`: upsert a sparse
+/// vector and read it back. Named sparse vectors serialize externally-tagged as
+/// `{"sp":{"Sparse":{"indices":[..],"values":[..]}}}`.
+#[test]
+fn sparse_vector_round_trips() {
+    use qdrant_edge_ffi::config::SparseVectorDataConfig;
+    use qdrant_edge_ffi::types::{NamedVector, SparseVector};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let config = EdgeConfig {
+        vector_data: HashMap::new(),
+        sparse_vector_data: HashMap::from([(
+            "sp".to_string(),
+            SparseVectorDataConfig {
+                full_scan_threshold: None,
+                datatype: None,
+                modifier: None,
+            },
+        )]),
+    };
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path, Some(config)).expect("load with sparse config failed");
+
+    let indices = vec![1u32, 5, 9];
+    let values = vec![0.5f32, 1.5, 2.5];
+    shard
+        .update(
+            UpdateOperation::upsert_points(vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: Vector::Named {
+                    map: HashMap::from([(
+                        "sp".to_string(),
+                        NamedVector::Sparse {
+                            vector: SparseVector {
+                                indices: indices.clone(),
+                                values: values.clone(),
+                            },
+                        },
+                    )]),
+                },
+                payload: None,
+            }])
+            .expect("upsert_points failed"),
+        )
+        .expect("update failed");
+    shard.flush().expect("flush failed");
+
+    let recs = shard
+        .retrieve(
+            vec![PointId::NumId { value: 1 }],
+            None,
+            Some(WithVector::Bool { enable: true }),
+        )
+        .expect("retrieve failed");
+    let vjson = recs[0].vector.as_deref().expect("vector should be present");
+    let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
+    let sparse = parsed
+        .get("sp")
+        .and_then(|f| f.get("Sparse"))
+        .unwrap_or_else(|| panic!("expected Sparse under `sp` in {vjson}"));
+    let got_indices: Vec<u32> =
+        serde_json::from_value(sparse.get("indices").expect("indices").clone())
+            .expect("sparse indices");
+    let got_values: Vec<f32> =
+        serde_json::from_value(sparse.get("values").expect("values").clone())
+            .expect("sparse values");
+    assert_eq!(got_indices, indices, "sparse indices must round-trip, got {vjson}");
+    assert_eq!(got_values, values, "sparse values must round-trip, got {vjson}");
+}
