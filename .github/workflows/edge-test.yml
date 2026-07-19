@@ -44,6 +44,11 @@ jobs:
 
       - name: Checkout Qdrant
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Don't leave GITHUB_TOKEN in .git/config: later steps build and run
+          # repository-controlled code (Rust/Python examples), which could
+          # otherwise read or exfiltrate the token. This job never pushes.
+          persist-credentials: false
 
       - name: Install Rust nightly (for fmt)
         uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
