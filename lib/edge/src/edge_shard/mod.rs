@@ -203,11 +203,25 @@ impl EdgeShard {
         vector_name: &str,
         hnsw_config: segment::types::HnswConfig,
     ) -> OperationResult<()> {
-        let mut cfg = self.config.read().clone();
-        cfg.set_vector_hnsw_config(vector_name, hnsw_config)?;
+        // Run the fallible mutation on a clone *inside* the config lock via
+        // write_optional, rather than read()-clone-mutate-then-write(). The
+        // latter releases the read lock before writing, so a concurrent config
+        // update between the two would be silently overwritten (a lost-update
+        // TOCTOU). Returning None on failure aborts the persist+swap.
+        let mut mutation = Ok(());
         self.config
-            .write(|c| *c = cfg)
+            .write_optional(|cfg| {
+                let mut updated = cfg.clone();
+                match updated.set_vector_hnsw_config(vector_name, hnsw_config) {
+                    Ok(()) => Some(updated),
+                    Err(e) => {
+                        mutation = Err(e);
+                        None
+                    }
+                }
+            })
             .map_err(|e| OperationError::service_error(e.to_string()))
+            .and(mutation)
     }
 
     /// Update optimizer config and persist.
