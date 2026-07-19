@@ -2,6 +2,7 @@ use std::fmt;
 
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
+use edge::{Prefetch, QueryRequest};
 use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
@@ -18,7 +19,7 @@ use crate::repr::*;
 
 #[pyclass(name = "QueryRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
-pub struct PyQueryRequest(ShardQueryRequest);
+pub struct PyQueryRequest(QueryRequest);
 
 #[pyclass_repr]
 #[pymethods]
@@ -47,7 +48,7 @@ impl PyQueryRequest {
         score_threshold: Option<f32>,
         params: Option<PySearchParams>,
     ) -> Self {
-        Self(ShardQueryRequest {
+        Self(QueryRequest {
             prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
             offset: offset.unwrap_or(0),
@@ -57,7 +58,7 @@ impl PyQueryRequest {
                 .unwrap_or_default(),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
-            score_threshold: score_threshold.map(OrderedFloat),
+            score_threshold,
             params: params.map(SearchParams::from),
         })
     }
@@ -79,9 +80,7 @@ impl PyQueryRequest {
 
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
-        self.0
-            .score_threshold
-            .map(|threshold| threshold.into_inner())
+        self.0.score_threshold
     }
 
     #[getter]
@@ -117,7 +116,7 @@ impl PyQueryRequest {
 impl PyQueryRequest {
     fn _getters(self) {
         // Every field should have a getter method
-        let ShardQueryRequest {
+        let QueryRequest {
             prefetches: _,
             query: _,
             filter: _,
@@ -134,7 +133,7 @@ impl PyQueryRequest {
 #[pyclass(name = "Prefetch", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyPrefetch(ShardPrefetch);
+pub struct PyPrefetch(Prefetch);
 
 #[pyclass_repr]
 #[pymethods]
@@ -156,13 +155,13 @@ impl PyPrefetch {
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
     ) -> Self {
-        Self(ShardPrefetch {
+        Self(Prefetch {
             prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
             query: query.map(ScoringQuery::from),
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::from),
-            score_threshold: score_threshold.map(OrderedFloat),
+            score_threshold,
         })
     }
 
@@ -193,9 +192,7 @@ impl PyPrefetch {
 
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
-        self.0
-            .score_threshold
-            .map(|threshold| threshold.into_inner())
+        self.0.score_threshold
     }
 
     pub fn __repr__(&self) -> String {
@@ -206,7 +203,7 @@ impl PyPrefetch {
 impl PyPrefetch {
     fn _getters(self) {
         // Every field should have a getter method
-        let ShardPrefetch {
+        let Prefetch {
             prefetches: _,
             query: _,
             limit: _,

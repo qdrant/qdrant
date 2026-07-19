@@ -172,12 +172,12 @@ impl PyEdgeShard {
         with_payload: Option<PyWithPayload>,
         with_vector: Option<PyWithVector>,
     ) -> Result<Vec<PyRecord>> {
-        let point_ids = PyPointId::peel_vec(point_ids);
-        let points = self.get_shard()?.retrieve(
-            &point_ids,
-            with_payload.map(WithPayloadInterface::from),
-            with_vector.map(WithVector::from),
-        )?;
+        let request = edge::RetrieveRequest {
+            point_ids: PyPointId::peel_vec(point_ids),
+            with_payload: with_payload.map(WithPayloadInterface::from),
+            with_vector: with_vector.map(WithVector::from),
+        };
+        let points = self.get_shard()?.retrieve(request)?;
         let points = PyRecord::wrap_vec(points);
         Ok(points)
     }

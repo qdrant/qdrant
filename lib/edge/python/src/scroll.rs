@@ -1,9 +1,9 @@
 use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
+use edge::ScrollRequest;
 use pyo3::prelude::*;
 use segment::data_types::order_by::OrderByInterface;
 use segment::types::*;
-use shard::scroll::*;
 
 use crate::query::PyOrderBy;
 use crate::repr::*;
@@ -11,7 +11,7 @@ use crate::types::*;
 
 #[pyclass(name = "ScrollRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
-pub struct PyScrollRequest(ScrollRequestInternal);
+pub struct PyScrollRequest(ScrollRequest);
 
 #[pyclass_repr]
 #[pymethods]
@@ -33,7 +33,7 @@ impl PyScrollRequest {
         with_vector: Option<PyWithVector>,
         order_by: Option<PyOrderBy>,
     ) -> Self {
-        Self(ScrollRequestInternal {
+        Self(ScrollRequest {
             offset: offset.map(PointIdType::from),
             limit,
             filter: filter.map(Filter::from),
@@ -81,7 +81,7 @@ impl PyScrollRequest {
 impl PyScrollRequest {
     fn _getters(self) {
         // Every field should have a getter method
-        let ScrollRequestInternal {
+        let ScrollRequest {
             offset: _,
             limit: _,
             filter: _,

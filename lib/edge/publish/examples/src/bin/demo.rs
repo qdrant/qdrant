@@ -11,8 +11,8 @@ use qdrant_edge::{
     Condition, CountRequest, CreateIndex, EdgeShard, FacetRequest, FieldCondition,
     FieldIndexOperations, Filter, Match, MatchTextAny, NamedQuery, PayloadFieldSchema,
     PayloadSchemaType, PointId, PointInsertOperations, PointOperations, PointStruct, QueryEnum,
-    QueryRequest, Range, ScoringQuery, ScrollRequest, SearchRequest, UpdateOperation, Vector,
-    Vectors, WithPayloadInterface, WithVector,
+    QueryRequestBuilder, Range, RetrieveRequestBuilder, ScoringQuery, ScrollRequestBuilder,
+    SearchRequestBuilder, UpdateOperation, Vector, Vectors, WithPayloadInterface, WithVector,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -95,20 +95,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Query ----");
 
-    let result = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: vec![6.0, 9.0, 4.0, 2.0].into(),
-            using: None,
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 10,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(true),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let result = shard.query(
+        QueryRequestBuilder::new(10)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: vec![6.0, 9.0, 4.0, 2.0].into(),
+                using: None,
+            })))
+            .with_vector(WithVector::Bool(true))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
 
     for point in &result {
         println!("{point:?}");
@@ -116,19 +112,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Search ----");
 
-    let points = shard.search(SearchRequest {
-        query: QueryEnum::Nearest(NamedQuery {
-            query: vec![1.0, 1.0, 1.0, 1.0].into(),
-            using: None,
-        }),
-        filter: None,
-        params: None,
-        limit: 10,
-        offset: 0,
-        with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(WithVector::Bool(true)),
-        score_threshold: None,
-    })?;
+    let points = shard.search(
+        SearchRequestBuilder::new(
+            QueryEnum::Nearest(NamedQuery {
+                query: vec![1.0, 1.0, 1.0, 1.0].into(),
+                using: None,
+            }),
+            10,
+        )
+        .with_payload(WithPayloadInterface::Bool(true))
+        .with_vector(WithVector::Bool(true))
+        .build(),
+    )?;
 
     for point in &points {
         println!("{point:?}");
@@ -159,19 +154,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         must_not: None,
     };
 
-    let points = shard.search(SearchRequest {
-        query: QueryEnum::Nearest(NamedQuery {
-            query: vec![1.0, 1.0, 1.0, 1.0].into(),
-            using: None,
-        }),
-        filter: Some(search_filter),
-        params: None,
-        limit: 10,
-        offset: 0,
-        with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(WithVector::Bool(true)),
-        score_threshold: None,
-    })?;
+    let points = shard.search(
+        SearchRequestBuilder::new(
+            QueryEnum::Nearest(NamedQuery {
+                query: vec![1.0, 1.0, 1.0, 1.0].into(),
+                using: None,
+            }),
+            10,
+        )
+        .filter(search_filter)
+        .with_payload(WithPayloadInterface::Bool(true))
+        .with_vector(WithVector::Bool(true))
+        .build(),
+    )?;
 
     for point in &points {
         println!("{point:?}");
@@ -180,9 +175,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("---- Retrieve ----");
 
     let points = shard.retrieve(
-        &[PointId::NumId(1)],
-        Some(WithPayloadInterface::Bool(true)),
-        Some(WithVector::Bool(true)),
+        RetrieveRequestBuilder::new(vec![PointId::NumId(1)])
+            .with_payload(WithPayloadInterface::Bool(true))
+            .with_vector(WithVector::Bool(true))
+            .build(),
     )?;
 
     for point in &points {
@@ -191,28 +187,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Scroll ----");
 
-    let (scroll_result, mut next_offset) = shard.scroll(ScrollRequest {
-        offset: None,
-        limit: Some(2),
-        filter: None,
-        with_payload: None,
-        with_vector: WithVector::Bool(false),
-        order_by: None,
-    })?;
+    let (scroll_result, mut next_offset) =
+        shard.scroll(ScrollRequestBuilder::new().limit(2).build())?;
     for point in &scroll_result {
         println!("{point:?}");
     }
 
     while let Some(offset) = next_offset {
         println!("--- Next scroll (offset = {offset})---");
-        let (scroll_result, next) = shard.scroll(ScrollRequest {
-            offset: Some(offset),
-            limit: Some(2),
-            filter: None,
-            with_payload: None,
-            with_vector: WithVector::Bool(false),
-            order_by: None,
-        })?;
+        let (scroll_result, next) =
+            shard.scroll(ScrollRequestBuilder::new().offset(offset).limit(2).build())?;
         next_offset = next;
         for point in &scroll_result {
             println!("{point:?}");
@@ -221,10 +205,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Count ----");
 
-    let count = shard.count(CountRequest {
-        filter: None,
-        exact: true,
-    })?;
+    let count = shard.count(CountRequest::new())?;
     println!("Total points count: {count}");
 
     println!("---- Facet ----");
@@ -236,12 +217,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }),
     ))?;
 
-    let response = shard.facet(FacetRequest {
-        key: "hello".try_into().unwrap(),
-        limit: 10,
-        filter: None,
-        exact: false,
-    })?;
+    let response = shard.facet(FacetRequest::new("hello".try_into().unwrap()))?;
 
     println!("Facet results ({} hits):", response.hits.len());
 

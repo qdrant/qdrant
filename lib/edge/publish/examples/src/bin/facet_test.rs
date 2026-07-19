@@ -3,7 +3,8 @@ use std::path::Path;
 
 use examples::DATA_DIR;
 use qdrant_edge::{
-    Condition, EdgeShard, FacetRequest, FieldCondition, Filter, Match, ValueVariants,
+    Condition, EdgeShard, FacetRequest, FacetRequestBuilder, FieldCondition, Filter, Match,
+    ValueVariants,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -33,12 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Shard loaded. Points: {}", shard.info()?.points_count);
 
     println!("---- Test Facet on 'color' field ----");
-    let response = shard.facet(FacetRequest {
-        key: "color".try_into().unwrap(),
-        limit: 10,
-        filter: None,
-        exact: false,
-    })?;
+    let response = shard.facet(FacetRequest::new("color".try_into().unwrap()))?;
 
     println!("Facet results for 'color':");
     for hit in &response.hits {
@@ -46,12 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("---- Test Facet on 'city' field ----");
-    let response = shard.facet(FacetRequest {
-        key: "city".try_into().unwrap(),
-        limit: 10,
-        filter: None,
-        exact: false,
-    })?;
+    let response = shard.facet(FacetRequest::new("city".try_into().unwrap()))?;
 
     println!("Facet results for 'city':");
     for hit in &response.hits {
@@ -64,12 +55,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Match::new_value(ValueVariants::String("red".to_string())),
     )));
 
-    let response = shard.facet(FacetRequest {
-        key: "city".try_into().unwrap(),
-        limit: 10,
-        filter: Some(filter),
-        exact: false,
-    })?;
+    let response = shard.facet(
+        FacetRequestBuilder::new("city".try_into().unwrap())
+            .filter(filter)
+            .build(),
+    )?;
 
     println!("Facet results for 'city' where color='red':");
     for hit in &response.hits {
