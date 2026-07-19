@@ -12,6 +12,7 @@ use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::validation::validate_range_generic;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
@@ -34,10 +35,7 @@ use crate::common::strict_mode::*;
 use crate::common::validate_vectors::validate_vector_dimensions;
 
 fn validate_timeout(duration: &Duration) -> Result<(), ValidationError> {
-    if duration.as_secs() < 1 {
-        return Err(ValidationError::new("timeout must be at least 1 second"));
-    }
-    Ok(())
+    validate_range_generic(duration.as_secs(), Some(1), None)
 }
 
 #[serde_with::serde_as]
@@ -1353,6 +1351,8 @@ fn get_shard_selector_for_update(
 mod test {
     use std::time::Duration;
 
+    use validator::ValidationErrors;
+
     use super::*;
 
     #[test]
@@ -1389,13 +1389,7 @@ mod test {
             ordering: WriteOrdering::default(),
             timeout: Some(Duration::from_secs(0)),
         };
-        let result = params.validate();
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("timeout must be at least 1 second")
-        );
+        assert_timeout_range_error(params.validate().unwrap_err());
 
         // Sub-second, non-zero timeout should also be rejected
         let params = UpdateParams {
@@ -1403,12 +1397,24 @@ mod test {
             ordering: WriteOrdering::default(),
             timeout: Some(Duration::from_millis(999)),
         };
-        let result = params.validate();
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("timeout must be at least 1 second")
+        assert_timeout_range_error(params.validate().unwrap_err());
+    }
+
+    /// Assert the rejection carries the same `range`/`min` shape as
+    /// `#[validate(range(min = 1))]` fields, so clients see a consistent body.
+    fn assert_timeout_range_error(errors: ValidationErrors) {
+        let field_errors = errors.field_errors();
+        let timeout_errors = field_errors
+            .get("timeout")
+            .expect("timeout field should have errors");
+        assert_eq!(timeout_errors.len(), 1);
+        assert_eq!(timeout_errors[0].code, "range");
+        assert_eq!(
+            timeout_errors[0]
+                .params
+                .get("min")
+                .and_then(|min| min.as_u64()),
+            Some(1),
         );
     }
 }
