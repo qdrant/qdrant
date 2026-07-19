@@ -65,8 +65,9 @@ impl UpdateOperation {
     /// # Errors
     ///
     /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError)
-    /// if any point's `payload` field is not valid JSON or any UUID ID is
-    /// malformed.
+    /// if any point's `payload` field is not valid JSON, any UUID ID is
+    /// malformed, or any vector is invalid (a non-finite component, or an empty
+    /// or ragged multi-vector).
     #[uniffi::constructor]
     pub fn upsert_points(
         points: Vec<Point>,
@@ -133,7 +134,8 @@ impl UpdateOperation {
     /// # Errors
     ///
     /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
-    /// any UUID ID is malformed.
+    /// any UUID ID is malformed, or any vector is invalid (a non-finite
+    /// component, or an empty or ragged multi-vector).
     #[uniffi::constructor]
     pub fn update_vectors(
         point_vectors: Vec<PointVectors>,
@@ -143,7 +145,7 @@ impl UpdateOperation {
             .map(|pv| {
                 Ok(shard::operations::vector_ops::PointVectorsPersisted {
                     id: PointIdType::try_from(pv.id)?,
-                    vector: VectorStructPersisted::from(pv.vector),
+                    vector: VectorStructPersisted::try_from(pv.vector)?,
                 })
             })
             .collect::<std::result::Result<Vec<_>, crate::error::EdgeError>>()?;

@@ -1,12 +1,12 @@
 [package]
 name = "qdrant-edge-ffi"
-# Single source of truth for the native (Swift/Kotlin) SDK version is
-# `lib/edge/VERSION`. Keep this in sync with it; the CI `version-sync` job
-# verifies this, the Gradle `VERSION_NAME`, and the Swift release tag all match
-# `lib/edge/VERSION`. (The Python package in `lib/edge/python/Cargo.toml` is a
-# separate distribution channel with its own cadence and is NOT checked here.)
-# To bump: edit `lib/edge/VERSION`, then this, the Gradle `VERSION_NAME`, and run
-# `release-xcframework.sh` to update the Swift tag.
+# This version tracks the native (Swift/Kotlin) Edge SDK line, kept equal to the
+# Python Edge SDK (`lib/edge/python/Cargo.toml`) and the publish amalgamation
+# (`lib/edge/publish/amalgamate.py`). There is no automated cross-check yet:
+# until the Swift/Android SDK PRs land, bump these three by hand together. The
+# `lib/edge/VERSION` single-source-of-truth file and its CI `version-sync` check
+# (also covering the Gradle `VERSION_NAME` and Swift release tag) are introduced
+# with the Gradle/Swift packaging in those follow-up PRs.
 version = "0.7.2"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"

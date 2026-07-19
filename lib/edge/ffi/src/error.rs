@@ -125,6 +125,28 @@ pub(crate) fn bounded_limit(field: &str, v: u64) -> Result<usize> {
     Ok(v as usize)
 }
 
+/// Maximum nesting depth for host-supplied filter and prefetch trees.
+///
+/// `Condition::Filter` and nested `Prefetch` are self-recursive, and their
+/// `TryFrom` conversions recurse one Rust stack frame per level. An unbounded
+/// host-supplied tree (e.g. built from user-derived saved-search data) would
+/// overflow the stack — a `SIGABRT` that `panic = "unwind"` cannot catch. A
+/// legitimate filter/prefetch nests only a handful of levels, so we reject
+/// anything deeper as a catchable `InvalidArgument`. Well below the frame
+/// budget of an 8 MiB stack.
+pub(crate) const MAX_QUERY_NESTING_DEPTH: u32 = 64;
+
+/// Reject a filter/prefetch tree nested beyond [`MAX_QUERY_NESTING_DEPTH`]
+/// before it can recurse deep enough to overflow the stack.
+pub(crate) fn check_nesting_depth(kind: &str, depth: u32) -> Result<()> {
+    if depth > MAX_QUERY_NESTING_DEPTH {
+        return Err(EdgeError::invalid_argument(format!(
+            "{kind} nesting exceeds the maximum depth of {MAX_QUERY_NESTING_DEPTH}"
+        )));
+    }
+    Ok(())
+}
+
 pub type Result<T, E = EdgeError> = std::result::Result<T, E>;
 
 #[cfg(test)]

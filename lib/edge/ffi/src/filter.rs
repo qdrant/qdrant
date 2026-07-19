@@ -429,38 +429,47 @@ impl TryFrom<Condition> for SegmentCondition {
     type Error = crate::error::EdgeError;
 
     fn try_from(c: Condition) -> Result<Self, Self::Error> {
-        match c {
-            Condition::Field { condition } => Ok(SegmentCondition::Field(
-                SegmentFieldCondition::try_from(condition)?,
-            )),
-            Condition::IsEmpty { key } => {
-                let parsed_key = crate::error::parse_json_path(&key)?;
-                Ok(SegmentCondition::IsEmpty(IsEmptyCondition {
-                    is_empty: PayloadField { key: parsed_key },
-                }))
-            }
-            Condition::IsNull { key } => {
-                let parsed_key = crate::error::parse_json_path(&key)?;
-                Ok(SegmentCondition::IsNull(IsNullCondition {
-                    is_null: PayloadField { key: parsed_key },
-                }))
-            }
-            Condition::HasId { ids } => {
-                let id_set: Result<AHashSet<PointIdType>, crate::error::EdgeError> =
-                    ids.into_iter().map(PointIdType::try_from).collect();
-                Ok(SegmentCondition::HasId(HasIdCondition {
-                    has_id: MaybeArc::NoArc(id_set?),
-                }))
-            }
-            Condition::HasVector { vector_name } => {
-                Ok(SegmentCondition::HasVector(HasVectorCondition {
-                    has_vector: vector_name,
-                }))
-            }
-            Condition::Filter { filter } => {
-                Ok(SegmentCondition::Filter(SegmentFilter::try_from(filter)?))
-            }
+        condition_to_segment(c, 0)
+    }
+}
+
+/// Convert a `Condition`, tracking nesting `depth` so a self-recursive
+/// `Condition::Filter` chain cannot overflow the stack (see
+/// [`crate::error::check_nesting_depth`]).
+fn condition_to_segment(
+    c: Condition,
+    depth: u32,
+) -> Result<SegmentCondition, crate::error::EdgeError> {
+    match c {
+        Condition::Field { condition } => Ok(SegmentCondition::Field(
+            SegmentFieldCondition::try_from(condition)?,
+        )),
+        Condition::IsEmpty { key } => {
+            let parsed_key = crate::error::parse_json_path(&key)?;
+            Ok(SegmentCondition::IsEmpty(IsEmptyCondition {
+                is_empty: PayloadField { key: parsed_key },
+            }))
         }
+        Condition::IsNull { key } => {
+            let parsed_key = crate::error::parse_json_path(&key)?;
+            Ok(SegmentCondition::IsNull(IsNullCondition {
+                is_null: PayloadField { key: parsed_key },
+            }))
+        }
+        Condition::HasId { ids } => {
+            let id_set: Result<AHashSet<PointIdType>, crate::error::EdgeError> =
+                ids.into_iter().map(PointIdType::try_from).collect();
+            Ok(SegmentCondition::HasId(HasIdCondition {
+                has_id: MaybeArc::NoArc(id_set?),
+            }))
+        }
+        Condition::HasVector { vector_name } => Ok(SegmentCondition::HasVector(HasVectorCondition {
+            has_vector: vector_name,
+        })),
+        Condition::Filter { filter } => Ok(SegmentCondition::Filter(filter_to_segment(
+            filter,
+            depth + 1,
+        )?)),
     }
 }
 
@@ -515,35 +524,28 @@ impl TryFrom<Filter> for SegmentFilter {
     type Error = crate::error::EdgeError;
 
     fn try_from(f: Filter) -> Result<Self, Self::Error> {
-        let must = f
-            .must
-            .map(|v| {
-                v.into_iter()
-                    .map(SegmentCondition::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
-        let should = f
-            .should
-            .map(|v| {
-                v.into_iter()
-                    .map(SegmentCondition::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
-        let must_not = f
-            .must_not
-            .map(|v| {
-                v.into_iter()
-                    .map(SegmentCondition::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
-        Ok(SegmentFilter {
-            must,
-            should,
-            must_not,
-            min_should: None,
-        })
+        filter_to_segment(f, 0)
     }
+}
+
+/// Convert a `Filter` at nesting `depth`, rejecting trees deeper than
+/// [`MAX_QUERY_NESTING_DEPTH`](crate::error::MAX_QUERY_NESTING_DEPTH) before the
+/// recursion can overflow the stack. Each clause is converted at the same depth;
+/// a nested `Condition::Filter` bumps it by one (see [`condition_to_segment`]).
+fn filter_to_segment(f: Filter, depth: u32) -> Result<SegmentFilter, crate::error::EdgeError> {
+    crate::error::check_nesting_depth("filter", depth)?;
+    let convert = |v: Vec<Condition>| {
+        v.into_iter()
+            .map(|c| condition_to_segment(c, depth))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let must = f.must.map(&convert).transpose()?;
+    let should = f.should.map(&convert).transpose()?;
+    let must_not = f.must_not.map(&convert).transpose()?;
+    Ok(SegmentFilter {
+        must,
+        should,
+        must_not,
+        min_should: None,
+    })
 }

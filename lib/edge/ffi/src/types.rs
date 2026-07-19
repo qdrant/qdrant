@@ -107,15 +107,70 @@ pub enum NamedVector {
     MultiDense { vectors: Vec<Vec<f32>> },
 }
 
-impl From<NamedVector> for VectorPersisted {
-    fn from(v: NamedVector) -> Self {
-        match v {
-            NamedVector::Dense { values } => VectorPersisted::Dense(values),
+/// Reject non-finite (NaN / ±∞) components before a vector crosses into the
+/// engine. The engine validates only dimensionality, so a poisoned component
+/// would otherwise be stored and later serialized back to the host as JSON
+/// `null` — a silent corruption. Mirrors the `is_finite()` guard the geo
+/// conversions already apply.
+fn reject_non_finite(values: &[f32], ctx: &str) -> Result<(), crate::error::EdgeError> {
+    if let Some(pos) = values.iter().position(|x| !x.is_finite()) {
+        return Err(crate::error::EdgeError::invalid_argument(format!(
+            "{ctx} contains a non-finite value (NaN or infinity) at index {pos}"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a host-supplied multi-vector matrix with the same invariants the
+/// engine assumes — non-empty, non-zero and uniform row width — plus a
+/// finite-component check. The persisted form is later reconstructed via
+/// `MultiDenseVectorInternal::new_unchecked`, which only `debug_assert!`s these
+/// invariants: without this guard an empty matrix panics in release and a
+/// ragged matrix is silently reshaped (rows flattened against `row[0].len()`),
+/// storing data the host never sent.
+fn validate_multi_dense(vectors: &[Vec<f32>], ctx: &str) -> Result<(), crate::error::EdgeError> {
+    if vectors.is_empty() {
+        return Err(crate::error::EdgeError::invalid_argument(format!(
+            "{ctx} multi-vector must contain at least one vector"
+        )));
+    }
+    let dim = vectors[0].len();
+    if dim == 0 {
+        return Err(crate::error::EdgeError::invalid_argument(format!(
+            "{ctx} multi-vector has zero dimension"
+        )));
+    }
+    for (i, v) in vectors.iter().enumerate() {
+        if v.len() != dim {
+            return Err(crate::error::EdgeError::invalid_argument(format!(
+                "{ctx} multi-vector has inconsistent row length: row {i} has {} \
+                 elements, expected {dim}",
+                v.len()
+            )));
+        }
+        reject_non_finite(v, ctx)?;
+    }
+    Ok(())
+}
+
+impl TryFrom<NamedVector> for VectorPersisted {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(v: NamedVector) -> Result<Self, Self::Error> {
+        Ok(match v {
+            NamedVector::Dense { values } => {
+                reject_non_finite(&values, "dense vector")?;
+                VectorPersisted::Dense(values)
+            }
             NamedVector::Sparse { vector } => {
+                reject_non_finite(&vector.values, "sparse vector")?;
                 VectorPersisted::Sparse(InternalSparseVector::from(vector))
             }
-            NamedVector::MultiDense { vectors } => VectorPersisted::MultiDense(vectors),
-        }
+            NamedVector::MultiDense { vectors } => {
+                validate_multi_dense(&vectors, "named")?;
+                VectorPersisted::MultiDense(vectors)
+            }
+        })
     }
 }
 
@@ -152,17 +207,25 @@ pub enum Vector {
     Named { map: HashMap<String, NamedVector> },
 }
 
-impl From<Vector> for VectorStructPersisted {
-    fn from(v: Vector) -> Self {
-        match v {
-            Vector::Single { values } => VectorStructPersisted::Single(values),
-            Vector::MultiDense { vectors } => VectorStructPersisted::MultiDense(vectors),
+impl TryFrom<Vector> for VectorStructPersisted {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(v: Vector) -> Result<Self, Self::Error> {
+        Ok(match v {
+            Vector::Single { values } => {
+                reject_non_finite(&values, "dense vector")?;
+                VectorStructPersisted::Single(values)
+            }
+            Vector::MultiDense { vectors } => {
+                validate_multi_dense(&vectors, "single-field")?;
+                VectorStructPersisted::MultiDense(vectors)
+            }
             Vector::Named { map } => VectorStructPersisted::Named(
                 map.into_iter()
-                    .map(|(k, v)| (k, VectorPersisted::from(v)))
-                    .collect(),
+                    .map(|(k, v)| Ok((k, VectorPersisted::try_from(v)?)))
+                    .collect::<Result<_, crate::error::EdgeError>>()?,
             ),
-        }
+        })
     }
 }
 
@@ -184,8 +247,13 @@ impl From<VectorStructPersisted> for Vector {
 // ── Payload (JSON string) ───────────────────────────────────────────────────
 
 /// Payload is represented as a JSON string across the FFI boundary.
+///
+/// Serialization of a `serde_json::Map` is infallible (it holds only already-
+/// validated JSON), so `.expect` here can never fire — but if a future change
+/// makes it fallible we want a loud panic (caught at the UniFFI boundary), not
+/// a silent empty string that a host would parse as valid-but-empty JSON.
 pub fn payload_to_json(payload: &Payload) -> String {
-    serde_json::to_string(&payload.0).unwrap_or_default()
+    serde_json::to_string(&payload.0).expect("payload JSON serialization is infallible")
 }
 
 pub fn json_to_payload(json: &str) -> std::result::Result<Payload, String> {
@@ -194,11 +262,25 @@ pub fn json_to_payload(json: &str) -> std::result::Result<Payload, String> {
     Ok(Payload(map))
 }
 
+/// Serialize retrieved vectors to a JSON string for the host.
+///
+/// These are plain numeric containers whose `Serialize` impls do not fail
+/// (non-finite floats serialize to JSON `null` rather than erroring), so
+/// `.expect` cannot fire — but it fails loud instead of emitting an invalid
+/// empty string should that ever change. Note: non-finite components are
+/// rejected at upsert (see `reject_non_finite`), so FFI-written vectors never
+/// reach here as `null`.
 fn vector_struct_internal_to_json(v: &VectorStructInternal) -> String {
     match v {
-        VectorStructInternal::Single(dense) => serde_json::to_string(dense).unwrap_or_default(),
-        VectorStructInternal::MultiDense(multi) => serde_json::to_string(multi).unwrap_or_default(),
-        VectorStructInternal::Named(map) => serde_json::to_string(map).unwrap_or_default(),
+        VectorStructInternal::Single(dense) => {
+            serde_json::to_string(dense).expect("dense vector JSON serialization is infallible")
+        }
+        VectorStructInternal::MultiDense(multi) => {
+            serde_json::to_string(multi).expect("multi-vector JSON serialization is infallible")
+        }
+        VectorStructInternal::Named(map) => {
+            serde_json::to_string(map).expect("named-vector JSON serialization is infallible")
+        }
     }
 }
 
@@ -294,7 +376,7 @@ impl Point {
         };
         Ok(PointStructPersisted {
             id: PointIdType::try_from(self.id)?,
-            vector: VectorStructPersisted::from(self.vector),
+            vector: VectorStructPersisted::try_from(self.vector)?,
             payload,
         })
     }

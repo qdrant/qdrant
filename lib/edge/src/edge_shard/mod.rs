@@ -227,8 +227,8 @@ impl EdgeShard {
     ///
     /// Must not be called while already holding the `wal` mutex or a `segments`
     /// guard on the same thread — parking_lot locks are non-reentrant and would
-    /// self-deadlock. Today the only callers are the FFI boundary and `Drop`,
-    /// neither of which holds those locks.
+    /// self-deadlock. No current caller does (the FFI boundary, `Drop`, the
+    /// Python bindings, and tests all invoke it without holding those locks).
     pub fn flush(&self) -> OperationResult<()> {
         self.wal
             .lock()

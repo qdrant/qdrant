@@ -86,7 +86,7 @@ fn persistence_survives_reload() {
             EdgeShard::load(path.clone(), Some(make_config())).expect("load (session 1) failed");
         upsert_three(&shard);
         shard.flush().expect("flush failed");
-        shard.unload();
+        shard.unload().expect("unload failed");
         // Arc drops here; shard is fully closed.
     }
 
@@ -258,7 +258,7 @@ fn concurrent_reads_and_unload() {
         .collect();
 
     // Unload from main thread while reader threads may still be running.
-    shard.unload();
+    shard.unload().expect("unload failed");
 
     for handle in handles {
         handle.join().expect("reader thread panicked");

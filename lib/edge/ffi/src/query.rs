@@ -240,25 +240,33 @@ impl TryFrom<Prefetch> for ShardPrefetch {
     type Error = crate::error::EdgeError;
 
     fn try_from(p: Prefetch) -> Result<Self, Self::Error> {
-        let prefetches = p
-            .prefetches
-            .into_iter()
-            .map(ShardPrefetch::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-        let filter = p.filter.map(SegmentFilter::try_from).transpose()?;
-        let query = p
-            .query
-            .map(shard::query::ScoringQuery::try_from)
-            .transpose()?;
-        Ok(ShardPrefetch {
-            prefetches,
-            limit: crate::error::bounded_limit("prefetch limit", p.limit)?,
-            query,
-            params: p.params.map(SegmentSearchParams::from),
-            filter,
-            score_threshold: p.score_threshold.map(OrderedFloat),
-        })
+        prefetch_to_shard(p, 0)
     }
+}
+
+/// Convert a `Prefetch` at nesting `depth`, rejecting trees deeper than
+/// [`MAX_QUERY_NESTING_DEPTH`](crate::error::MAX_QUERY_NESTING_DEPTH) before the
+/// recursion over nested `prefetches` can overflow the stack.
+fn prefetch_to_shard(p: Prefetch, depth: u32) -> Result<ShardPrefetch, crate::error::EdgeError> {
+    crate::error::check_nesting_depth("prefetch", depth)?;
+    let prefetches = p
+        .prefetches
+        .into_iter()
+        .map(|pp| prefetch_to_shard(pp, depth + 1))
+        .collect::<Result<Vec<_>, _>>()?;
+    let filter = p.filter.map(SegmentFilter::try_from).transpose()?;
+    let query = p
+        .query
+        .map(shard::query::ScoringQuery::try_from)
+        .transpose()?;
+    Ok(ShardPrefetch {
+        prefetches,
+        limit: crate::error::bounded_limit("prefetch limit", p.limit)?,
+        query,
+        params: p.params.map(SegmentSearchParams::from),
+        filter,
+        score_threshold: p.score_threshold.map(OrderedFloat),
+    })
 }
 
 // ── QueryRequest ────────────────────────────────────────────────────────────

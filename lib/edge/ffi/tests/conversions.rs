@@ -277,7 +277,7 @@ fn closed_shard_returns_shard_closed() {
         EdgeShard::load(path, Some(config)).expect("EdgeShard::load failed");
 
     // Eagerly release all file handles.
-    shard.unload();
+    shard.unload().expect("unload failed");
 
     // Any operation on the unloaded shard must yield ShardClosed.
     let result = shard.count(CountRequest {

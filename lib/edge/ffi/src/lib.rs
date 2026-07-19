@@ -109,7 +109,9 @@ impl EdgeShard {
     /// # Errors
     ///
     /// Returns an [`EdgeError::ShardClosed`] if the shard has already been
-    /// unloaded via [`EdgeShard::unload`].
+    /// unloaded via [`EdgeShard::unload`], or an
+    /// [`EdgeError::OperationError`] if the WAL or a segment fails to flush to
+    /// disk (e.g. the volume is full or unmounted).
     pub fn flush(&self) -> Result<()> {
         let guard = self.inner.lock();
         let shard = guard.as_ref().ok_or(EdgeError::ShardClosed)?;
@@ -138,9 +140,10 @@ impl EdgeShard {
     /// Eagerly releases the shard's WAL and segment file handles, flushing any
     /// pending data.
     ///
-    /// After this call returns, any further operation on the shard fails with
-    /// [`EdgeError::ShardClosed`]. Calling `unload` on an already-unloaded
-    /// shard is a no-op.
+    /// This flushes pending data (surfacing any I/O error) and then releases
+    /// the handles. After it returns `Ok`, any further operation on the shard
+    /// fails with [`EdgeError::ShardClosed`]. Calling `unload` on an
+    /// already-unloaded shard is a no-op that returns `Ok`.
     ///
     /// NOTE: this is named `unload`, not `close`, on purpose. UniFFI makes the
     /// generated object `AutoCloseable`/`Disposable` with its own `close()` /
@@ -150,9 +153,26 @@ impl EdgeShard {
     /// teardown is therefore the generated one: `shard.use { ... }` (Kotlin) or
     /// letting the last reference drop (Swift ARC). Call `unload` only when you
     /// want to release resources *before* the object itself goes away (e.g. at
-    /// app-suspend, typically after [`EdgeShard::flush`]).
-    pub fn unload(&self) {
-        self.inner.lock().take();
+    /// app-suspend).
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::OperationError`] if the final flush fails (e.g.
+    /// the volume is full or unmounted). On failure the shard is left loaded so
+    /// the host can retry; the implicit flush on the eventual object drop would
+    /// otherwise only reach the log. On success the resources are released.
+    pub fn unload(&self) -> Result<()> {
+        let mut guard = self.inner.lock();
+        if let Some(shard) = guard.as_ref() {
+            // Flush explicitly so a final fsync failure reaches the host as an
+            // error instead of only `EdgeShard::drop`'s log line. On error we
+            // keep the shard loaded (no `take`) so the caller can retry. On
+            // success `take()` drops it; Drop re-runs flush, a cheap no-op on
+            // already-persisted state.
+            shard.flush()?;
+        }
+        guard.take();
+        Ok(())
     }
 
     /// Applies a batch of point upserts, deletes, or payload/vector edits
