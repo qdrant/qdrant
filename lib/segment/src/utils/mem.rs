@@ -1,28 +1,25 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Refresh interval for [`total_memory_bytes`]. Matches the disk-usage cache TTL
-/// so RAM and disk figures react to a live (in-place) cgroup/volume resize
-const TOTAL_MEMORY_TTL: Duration = Duration::from_secs(5);
+/// TTL for the cached total memory; matches the disk-usage cache.
+const CACHE_TTL: Duration = Duration::from_secs(5);
 
-/// Returns current total memory in bytes (cgroup limit if set, else host), served from
-/// a cached value that refreshes at most once per [`TOTAL_MEMORY_TTL`].
+static TOTAL_MEMORY_CACHE: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+
+/// Total memory in bytes (cgroup limit if set, else host), cached for `CACHE_TTL`
+/// since `Mem::new()` is not free. Short TTL keeps it in step with limit resizes.
 pub fn total_memory_bytes() -> u64 {
-    static CACHE: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
-
     let now = Instant::now();
 
-    // Fast path: fresh cached value.
-    if let Ok(guard) = CACHE.lock()
+    if let Ok(guard) = TOTAL_MEMORY_CACHE.lock()
         && let Some((cached_at, value)) = *guard
-        && now.duration_since(cached_at) < TOTAL_MEMORY_TTL
+        && now.duration_since(cached_at) < CACHE_TTL
     {
         return value;
     }
 
-    // Miss or stale — recompute outside the lock, then store.
     let value = Mem::new().total_memory_bytes();
-    if let Ok(mut guard) = CACHE.lock() {
+    if let Ok(mut guard) = TOTAL_MEMORY_CACHE.lock() {
         *guard = Some((now, value));
     }
     value
