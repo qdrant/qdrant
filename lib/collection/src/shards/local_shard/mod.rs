@@ -735,6 +735,19 @@ impl LocalShard {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
         let wal = self.wal.wal.lock().await;
 
+        // Disarm the appendable-segment size cap for the synchronous replay below: it applies
+        // operations exactly as they were originally accepted. A capacity error here could not
+        // recover (recovery runs on optimizer wake-ups, which only process signals once the
+        // shard serves updates) and would fail the whole shard load. The cap re-arms after the
+        // replay, before the remaining WAL tail is queued to the update worker, where recovery
+        // is live.
+        let max_segment_size_bytes = {
+            let mut segments = self.segments.write();
+            let cap = segments.max_segment_size_bytes();
+            segments.set_max_segment_size_bytes(None);
+            cap
+        };
+
         let from = wal.first_index();
         let last_wal_index = from + wal.len(false);
 
@@ -933,6 +946,12 @@ impl LocalShard {
             // version.
             segments.flush_all(FlushMode::Sync, true)?;
         }
+
+        // Synchronous replay is done; re-arm the appendable-segment size cap for the queued WAL
+        // tail and everything after.
+        self.segments
+            .write()
+            .set_max_segment_size_bytes(max_segment_size_bytes);
 
         bar.finish();
         if !show_progress_bar {
