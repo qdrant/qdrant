@@ -2,19 +2,11 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// Refresh interval for [`total_memory_bytes`]. Matches the disk-usage cache TTL
-/// so RAM and disk figures react to a live (in-place) cgroup/volume resize at
-/// the same cadence.
+/// so RAM and disk figures react to a live (in-place) cgroup/volume resize
 const TOTAL_MEMORY_TTL: Duration = Duration::from_secs(5);
 
-/// Effective total memory in bytes — the cgroup memory limit when set, else the
-/// host total — served from a value refreshed at most once per
-/// [`TOTAL_MEMORY_TTL`].
-///
-/// [`Mem::new`] is not free (it builds a `sysinfo::System` and loads the cgroup
-/// memory controller), so this is preferable to `Mem::new().total_memory_bytes()`
-/// for callers that only need the total and may run repeatedly. A short TTL,
-/// rather than caching once, means an in-place memory-limit resize is reflected
-/// within a few seconds instead of only after a restart.
+/// Returns current total memory in bytes (cgroup limit if set, else host), served from
+/// a cached value that refreshes at most once per [`TOTAL_MEMORY_TTL`].
 pub fn total_memory_bytes() -> u64 {
     static CACHE: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
 
