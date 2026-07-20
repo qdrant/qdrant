@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
-use common::condition_checker::ConditionChecker;
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
@@ -344,5 +344,12 @@ impl ConditionChecker for PlainFilterContext<'_> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(self.condition_checker.check(point_id, self.filter))
+    }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
     }
 }

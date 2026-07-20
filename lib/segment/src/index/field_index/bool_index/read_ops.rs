@@ -18,7 +18,7 @@
 
 use std::path::PathBuf;
 
-use common::condition_checker::ConditionChecker;
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -343,6 +343,13 @@ impl<N: BoolIndexRead> ConditionChecker for BoolConditionChecker<'_, N> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         self.idx.check_values_any(point_id, self.is_true)
+    }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
     }
 }
 

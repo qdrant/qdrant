@@ -43,10 +43,7 @@ pub trait ConditionChecker {
         rest: Rest,
     ) -> Result<usize, Self::Error>
     where
-        Self: Sized,
-    {
-        default_check_batched(items, select, rest, |id| self.check(id))
-    }
+        Self: Sized;
 }
 
 /// See [`ConditionChecker::check_batched`].
