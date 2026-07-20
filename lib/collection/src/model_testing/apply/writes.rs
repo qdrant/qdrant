@@ -3,11 +3,12 @@ use std::collections::BTreeSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::json_path::JsonPath;
-use segment::types::{Payload, PayloadFieldSchema, PointIdType, VectorNameBuf};
+use segment::types::{Payload, PayloadFieldSchema, PointIdType, Slice, VectorNameBuf};
 
 use super::super::Model;
 use super::super::op::{
-    NamedVectors, match_num_filter, model_entry_from, model_vector, num_matches,
+    NamedVectors, match_num_and_slice_filter, match_num_filter, model_entry_from, model_vector,
+    num_matches,
 };
 use super::{apply_update, to_named_persisted};
 use crate::collection::Collection;
@@ -70,12 +71,28 @@ pub(super) async fn apply_delete(collection: &Collection, model: &mut Model, ids
     }
 }
 
-pub(super) async fn apply_delete_by_filter(collection: &Collection, model: &mut Model, num: i64) {
-    let delete = CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
-        match_num_filter(num),
-    ));
+pub(super) async fn apply_delete_by_filter(
+    collection: &Collection,
+    model: &mut Model,
+    num: i64,
+    slice: Option<Slice>,
+) {
+    let filter = match slice {
+        None => match_num_filter(num),
+        Some(Slice { total, index }) => match_num_and_slice_filter(num, total, index),
+    };
+    let delete =
+        CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(filter));
     apply_update(collection, delete, "delete by filter").await;
-    model.retain(|_, entry| !num_matches(&entry.payload, num));
+    model.retain(|id, entry| {
+        if !num_matches(&entry.payload, num) {
+            return true;
+        }
+        match slice {
+            None => false,
+            Some(s) => !s.check(*id),
+        }
+    });
 }
 
 pub(super) async fn apply_set_payload(
