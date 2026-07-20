@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs};
 use rand::SeedableRng as _;
@@ -74,6 +75,102 @@ fn assert_read_parity<A: IdTrackerRead, B: IdTrackerRead>(reference: &A, candida
             "version mismatch at {offset}",
         );
     }
+}
+
+/// Assert every batch lookup agrees with its single-point counterpart,
+/// including missing ids, duplicates, deleted points and out-of-range offsets.
+fn assert_batch_parity<T: IdTrackerRead>(tracker: &T) {
+    let live: Vec<(PointIdType, u32)> = tracker.point_mappings().iter_from(None).collect();
+
+    // External ids to probe: every live id, ids that are absent, a duplicate.
+    let mut external_ids: Vec<PointIdType> = live.iter().map(|&(id, _)| id).collect();
+    external_ids.push(PointIdType::NumId(u64::MAX));
+    external_ids.push(PointIdType::Uuid(uuid::Uuid::from_u128(u128::MAX)));
+    if let Some(&first) = external_ids.first() {
+        external_ids.push(first);
+    }
+
+    let mut resolved: Vec<(PointIdType, u32)> = Vec::new();
+    tracker
+        .resolve_external_ids(
+            external_ids.iter().copied(),
+            DeferredBehavior::VisibleOnly,
+            |external_id, offset| resolved.push((external_id, offset)),
+        )
+        .unwrap();
+    let expected: Vec<(PointIdType, u32)> = external_ids
+        .iter()
+        .filter_map(|&external_id| {
+            tracker
+                .internal_id_with_behavior(external_id, DeferredBehavior::VisibleOnly)
+                .map(|offset| (external_id, offset))
+        })
+        .collect();
+    assert_eq!(resolved, expected, "resolve_external_ids mismatch");
+
+    // Offsets to probe: every offset (live and deleted), out-of-range ones,
+    // and a duplicate.
+    let mut offsets: Vec<u32> = (0..tracker.total_point_count() as u32 + 10).collect();
+    offsets.push(0);
+
+    let mut batch_external_ids: AHashMap<u32, PointIdType> = AHashMap::new();
+    tracker
+        .external_ids_batch(offsets.iter().copied(), |internal_id, external_id| {
+            batch_external_ids.insert(internal_id, external_id);
+        })
+        .unwrap();
+    let mut batch_versions: AHashMap<u32, SeqNumberType> = AHashMap::new();
+    tracker
+        .internal_versions_batch(offsets.iter().copied(), |internal_id, version| {
+            batch_versions.insert(internal_id, version);
+        })
+        .unwrap();
+    for &offset in &offsets {
+        assert_eq!(
+            batch_external_ids.get(&offset).copied(),
+            tracker.external_id(offset),
+            "external_ids_batch mismatch at {offset}",
+        );
+        assert_eq!(
+            batch_versions.get(&offset).copied(),
+            tracker.internal_version(offset),
+            "internal_versions_batch mismatch at {offset}",
+        );
+    }
+
+    // Empty inputs stay empty.
+    tracker
+        .external_ids_batch(std::iter::empty(), |_, _| {
+            panic!("no ids expected for empty input")
+        })
+        .unwrap();
+    tracker
+        .internal_versions_batch(std::iter::empty(), |_, _| {
+            panic!("no versions expected for empty input")
+        })
+        .unwrap();
+    tracker
+        .resolve_external_ids(std::iter::empty(), DeferredBehavior::VisibleOnly, |_, _| {
+            panic!("no pairs expected for empty input")
+        })
+        .unwrap();
+}
+
+#[test]
+fn batch_lookups_match_single() {
+    let (versions, mappings) = make_data(8);
+
+    // Trait defaults on the in-RAM tracker.
+    let immutable = build_immutable(&versions, mappings.clone());
+    assert_batch_parity(&immutable);
+
+    // Batched overrides on both disk trackers.
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+    assert_batch_parity(&disk);
+
+    let read_only = ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    assert_batch_parity(&read_only);
 }
 
 #[test]
@@ -222,6 +319,24 @@ fn read_by_id_does_not_materialize_deleted_set() {
         let _ = read_only.internal_version(*offset);
         let _ = read_only.is_deleted_point(*offset);
     }
+
+    // Batch read-by-id must stay lazy as well.
+    let probe_ids: Vec<PointIdType> = live.iter().take(200).map(|&(id, _)| id).collect();
+    let probe_offsets = live.iter().take(200).map(|&(_, offset)| offset);
+    read_only
+        .resolve_external_ids(
+            probe_ids.iter().copied(),
+            DeferredBehavior::VisibleOnly,
+            |_, _| {},
+        )
+        .unwrap();
+    read_only
+        .external_ids_batch(probe_offsets.clone(), |_, _| {})
+        .unwrap();
+    read_only
+        .internal_versions_batch(probe_offsets, |_, _| {})
+        .unwrap();
+
     assert!(
         !read_only.deleted_full_materialized(),
         "read-by-id lookups must not materialize the full deleted set",
@@ -281,6 +396,10 @@ fn deletion_and_live_reload() {
         assert!(read_only.is_deleted_point(*offset));
         assert_eq!(read_only.external_id(*offset), None);
     }
+
+    // Batch lookups agree with the single-point paths after the deletions too.
+    assert_batch_parity(&disk);
+    assert_batch_parity(&read_only);
 }
 
 /// Live-reload staleness regression (audit cases 1+2): the `deleted` file is

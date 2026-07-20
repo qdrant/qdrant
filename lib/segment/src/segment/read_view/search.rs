@@ -42,10 +42,16 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        let (resolved_ids, resolved_offsets) = self
-            .id_tracker
-            .resolve_external_ids(point_ids, deferred_behavior);
-        debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
+        let mut resolved_ids = Vec::with_capacity(point_ids.len());
+        let mut resolved_offsets = Vec::with_capacity(point_ids.len());
+        self.id_tracker.resolve_external_ids(
+            point_ids.iter().copied(),
+            deferred_behavior,
+            |point_id, offset| {
+                resolved_ids.push(point_id);
+                resolved_offsets.push(offset);
+            },
+        )?;
 
         // One blank record per resolved point; `vectors` is `Some` only when
         // vectors were requested, so the `WithVector::Bool(false)` path needs
@@ -103,10 +109,16 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
-        let (resolved_ids, resolved_offsets) = self
-            .id_tracker
-            .resolve_external_ids(point_ids, deferred_behavior);
-        debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
+        let mut resolved_ids = Vec::with_capacity(point_ids.len());
+        let mut resolved_offsets = Vec::with_capacity(point_ids.len());
+        self.id_tracker.resolve_external_ids(
+            point_ids.iter().copied(),
+            deferred_behavior,
+            |point_id, offset| {
+                resolved_ids.push(point_id);
+                resolved_offsets.push(offset);
+            },
+        )?;
 
         // One blank record per resolved point; `vectors` is `Some` only when
         // vectors were requested, so the `WithVector::Bool(false)` path needs
@@ -215,16 +227,24 @@ where
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        let mut external_ids = AHashMap::with_capacity(internal_result.len());
+        self.id_tracker.external_ids_batch(
+            internal_result.iter().map(|scored| scored.idx),
+            |internal_id, external_id| {
+                external_ids.insert(internal_id, external_id);
+            },
+        )?;
+
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
             .filter_map(|scored_point_offset| {
-                let point_offset = scored_point_offset.idx;
-                let point_id = self.id_tracker.external_id(point_offset);
+                let point_id = external_ids.get(&scored_point_offset.idx).copied();
                 // This can happen if a point was modified between retrieving and post-processing,
                 // but this function locks the segment so it can't be modified during execution.
                 debug_assert!(
                     point_id.is_some(),
-                    "Point with internal ID {point_offset} not found in id tracker"
+                    "Point with internal ID {} not found in id tracker",
+                    scored_point_offset.idx,
                 );
                 point_id.map(|id| (id, scored_point_offset))
             })
@@ -239,11 +259,19 @@ where
             DeferredBehavior::VisibleOnly,
         )?;
 
+        let mut versions = AHashMap::with_capacity(scored_offsets.len());
+        self.id_tracker.internal_versions_batch(
+            scored_offsets.iter().map(|scored| scored.idx),
+            |internal_id, version| {
+                versions.insert(internal_id, version);
+            },
+        )?;
+
         let mut results = Vec::with_capacity(point_ids.len());
 
         for (point_id, scored_offset) in point_ids.into_iter().zip(scored_offsets) {
             let ScoredPointOffset {
-                idx: point_offset,
+                idx,
                 score: point_score,
             } = scored_offset;
 
@@ -260,14 +288,11 @@ where
                 continue;
             };
 
-            let point_version =
-                self.id_tracker
-                    .internal_version(point_offset)
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!(
-                            "Corrupter id_tracker, no version for point {point_id}"
-                        ))
-                    })?;
+            let point_version = versions.get(&idx).copied().ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Corrupter id_tracker, no version for point {point_id}"
+                ))
+            })?;
 
             let SegmentRecord {
                 id,
