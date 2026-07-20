@@ -299,6 +299,7 @@ impl ProxyVectorNameChanges {
                 Condition::IsEmpty(_) => {}
                 Condition::IsNull(_) => {}
                 Condition::HasId(_) => {}
+                Condition::Slice(_) => {}
                 Condition::CustomIdChecker(_) => {}
             }
         }
@@ -347,6 +348,7 @@ impl ProxyVectorNameChanges {
                 Condition::IsEmpty(_) => {}
                 Condition::IsNull(_) => {}
                 Condition::HasId(_) => {}
+                Condition::Slice(_) => {}
                 Condition::CustomIdChecker(_) => {}
             }
         }

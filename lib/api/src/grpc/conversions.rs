@@ -39,9 +39,9 @@ use super::qdrant::{
     KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads, Memory,
     MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
-    ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
-    StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize, TurboQuantization,
-    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
+    ShardKeySelector, SliceCondition, StartFrom, StrictModeMultivector,
+    StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize,
+    TurboQuantization, UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
 use super::stemming_algorithm::StemmingParams;
 use super::{
@@ -1811,6 +1811,7 @@ pub fn grpc_condition_into_condition(
                 has_vector: has_vector.has_vector,
             },
         )),
+        ConditionOneOf::Slice(slice) => Some(segment::types::Condition::Slice(slice.try_into()?)),
     };
 
     Ok(condition)
@@ -1845,9 +1846,42 @@ impl From<segment::types::Condition> for Condition {
                     has_vector: has_vector.has_vector,
                 }))
             }
+            segment::types::Condition::Slice(slice) => {
+                Some(ConditionOneOf::Slice(SliceCondition::from(slice)))
+            }
         };
 
         Self { condition_one_of }
+    }
+}
+
+impl TryFrom<SliceCondition> for segment::types::SliceCondition {
+    type Error = Status;
+
+    fn try_from(value: SliceCondition) -> Result<Self, Self::Error> {
+        let SliceCondition { total, index } = value;
+        let total = std::num::NonZeroU32::new(total)
+            .ok_or_else(|| Status::invalid_argument("Slice total must be greater than 0"))?;
+        if index >= total.get() {
+            return Err(Status::invalid_argument(
+                "Slice index must be less than the total number of slices",
+            ));
+        }
+        Ok(Self {
+            slice: segment::types::Slice { total, index },
+        })
+    }
+}
+
+impl From<segment::types::SliceCondition> for SliceCondition {
+    fn from(value: segment::types::SliceCondition) -> Self {
+        let segment::types::SliceCondition {
+            slice: segment::types::Slice { total, index },
+        } = value;
+        Self {
+            total: total.get(),
+            index,
+        }
     }
 }
 
