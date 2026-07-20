@@ -45,7 +45,7 @@ where
         let mut resolved_ids = Vec::with_capacity(point_ids.len());
         let mut resolved_offsets = Vec::with_capacity(point_ids.len());
         self.id_tracker.resolve_external_ids(
-            point_ids,
+            point_ids.iter().copied(),
             deferred_behavior,
             |point_id, offset| {
                 resolved_ids.push(point_id);
@@ -112,7 +112,7 @@ where
         let mut resolved_ids = Vec::with_capacity(point_ids.len());
         let mut resolved_offsets = Vec::with_capacity(point_ids.len());
         self.id_tracker.resolve_external_ids(
-            point_ids,
+            point_ids.iter().copied(),
             deferred_behavior,
             |point_id, offset| {
                 resolved_ids.push(point_id);

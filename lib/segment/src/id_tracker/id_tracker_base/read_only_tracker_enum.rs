@@ -10,7 +10,7 @@ use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTrack
 use crate::id_tracker::mutable_id_tracker::read_only::{
     LiveReloadResult, ReadOnlyAppendableIdTracker,
 };
-use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
@@ -166,7 +166,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
 
     fn resolve_external_ids(
         &self,
-        point_ids: impl PointIdBatch,
+        point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: common::types::DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {

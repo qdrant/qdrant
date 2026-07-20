@@ -10,7 +10,6 @@ use rand::{RngExt, SeedableRng};
 use super::point_mappings_ref::PointMappingsRefEnum;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::point_id_batch::PointIdBatch;
 use crate::types::{PointIdType, SeqNumberType};
 
 /// Sampling randomness seed
@@ -286,7 +285,7 @@ pub trait IdTrackerRead {
     /// reading `deferred_internal_id()` themselves.
     fn resolve_external_ids(
         &self,
-        point_ids: impl PointIdBatch,
+        point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: DeferredBehavior,
         mut callback: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
@@ -295,7 +294,7 @@ pub trait IdTrackerRead {
         // old impl carried. For WithDeferred, the lookup prefers the
         // deferred head over a shadowed active so each ext yields its
         // latest version exactly once.
-        for point_id in point_ids.iter_ids() {
+        for point_id in point_ids {
             if let Some(internal_id) = self.internal_id_with_behavior(point_id, deferred_behavior) {
                 callback(point_id, internal_id);
             }

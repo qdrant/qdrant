@@ -83,7 +83,7 @@ where
             Condition::HasId(has_id) => {
                 let mut segment_ids = AHashSet::with_capacity(has_id.has_id.len());
                 id_tracker.resolve_external_ids(
-                    &*has_id.has_id,
+                    has_id.has_id.iter().copied(),
                     deferred_behavior,
                     |_, offset| {
                         segment_ids.insert(offset);

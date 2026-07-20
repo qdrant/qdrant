@@ -122,7 +122,7 @@ where
                 let point_ids = has_id.has_id.clone();
                 let mut resolved_point_offsets = Vec::with_capacity(point_ids.len());
                 self.id_tracker.resolve_external_ids(
-                    &*point_ids,
+                    point_ids.iter().copied(),
                     deferred_behavior,
                     |_, offset| resolved_point_offsets.push(offset),
                 )?;

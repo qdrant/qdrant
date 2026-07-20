@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use super::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::PointIdBatch;
 use crate::id_tracker::disk_id_tracker::on_disk_format::{
     NUM_ENTRY_SIZE, UUID_ENTRY_SIZE, decode_external, decode_num_block, decode_uuid_block,
 };
@@ -128,14 +127,14 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// would only re-implement that at the cost of an up-front index.
     pub fn lookup_batch(
         &self,
-        external_ids: impl PointIdBatch,
+        external_ids: impl IntoIterator<Item = PointIdType>,
         mut on_found: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
         // Each read is tagged with `(is_uuid, key)` so the callback can pick the
         // decoder, binary-search, and rebuild the id. Ids outside every block
         // are dropped here; the range iterator stays lazy (no collect).
         let ranges = external_ids
-            .iter_ids()
+            .into_iter()
             .filter_map(|external_id| match external_id {
                 PointIdType::NumId(num) => {
                     let block = self.num_block_of(num)?;

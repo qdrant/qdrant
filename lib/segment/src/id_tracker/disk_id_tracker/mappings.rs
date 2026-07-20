@@ -8,7 +8,6 @@ use common::universal_io::UniversalRead;
 
 use super::reader::{self, DiskMappingReader};
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::PointIdBatch;
 use crate::types::PointIdType;
 
 /// The state a disk-resident mapping needs to answer reads: the lazy mapping
@@ -80,7 +79,7 @@ pub trait DiskMappingsSource {
     /// it would buy nothing.
     fn resolve_internal_batch(
         &self,
-        external_ids: impl PointIdBatch,
+        external_ids: impl IntoIterator<Item = PointIdType>,
         mut on_live: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
         // Use `first_err` instead of `?` to avoid UniversalIoError vs OperationResult problems
