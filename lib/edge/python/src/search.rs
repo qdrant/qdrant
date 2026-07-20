@@ -1,16 +1,16 @@
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use edge::SearchRequest;
 use ordered_float::OrderedFloat;
 use pyo3::prelude::*;
 use shard::query::query_enum::QueryEnum;
-use shard::search::CoreSearchRequest;
 
 use crate::repr::*;
 use crate::*;
 
 #[pyclass(name = "SearchRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
-pub struct PySearchRequest(CoreSearchRequest);
+pub struct PySearchRequest(SearchRequest);
 
 #[pyclass_repr]
 #[pymethods]
@@ -37,7 +37,7 @@ impl PySearchRequest {
         with_payload: Option<PyWithPayload>,
         score_threshold: Option<f32>,
     ) -> Self {
-        Self(CoreSearchRequest {
+        Self(SearchRequest {
             query: QueryEnum::from(query),
             limit,
             offset: offset.unwrap_or(0),
@@ -97,7 +97,7 @@ impl PySearchRequest {
 impl PySearchRequest {
     fn _getters(self) {
         // Every field should have a getter method
-        let CoreSearchRequest {
+        let SearchRequest {
             query: _,
             filter: _,
             params: _,

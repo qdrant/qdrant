@@ -1,17 +1,17 @@
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
+use edge::FacetRequest;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::data_types::facets::{FacetResponse, FacetValue, FacetValueHit};
 use segment::types::Filter;
-use shard::facet::FacetRequestInternal;
 
 use crate::repr::*;
 use crate::types::{PyFilter, PyJsonPath};
 
 #[pyclass(name = "FacetRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
-pub struct PyFacetRequest(FacetRequestInternal);
+pub struct PyFacetRequest(FacetRequest);
 
 #[pyclass_repr]
 #[pymethods]
@@ -19,7 +19,7 @@ impl PyFacetRequest {
     #[new]
     #[pyo3(signature = (key, limit = 10, exact = false, filter = None))]
     pub fn new(key: PyJsonPath, limit: usize, exact: bool, filter: Option<PyFilter>) -> Self {
-        Self(FacetRequestInternal {
+        Self(FacetRequest {
             key: key.into(),
             limit,
             filter: filter.map(Filter::from),

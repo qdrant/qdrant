@@ -1,20 +1,10 @@
 use segment::common::operation_error::OperationResult;
-use segment::json_path::JsonPath;
 pub use shard::grouping::Group;
 use shard::grouping::{GroupByDriver, RequestBudget};
 use shard::query::{self, ShardQueryRequest};
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
-
-/// Group the results of a base query by a payload field.
-pub struct GroupRequest {
-    /// Base scoring query. Its `limit`/`offset`/`with_payload`/`filter` are adjusted
-    /// here; the query vector, params, prefetch and score_threshold are honoured.
-    pub query: ShardQueryRequest,
-    pub group_by: JsonPath,
-    pub groups: usize,
-    pub group_size: usize,
-}
+use crate::requests::GroupRequest;
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
@@ -24,6 +14,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             groups,
             group_size,
         } = request;
+        let query = ShardQueryRequest::from(query);
 
         let order = query::query_result_order(query.query.as_ref(), |vector_name| {
             self.config.get_distance(vector_name)
@@ -51,31 +42,22 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 mod tests {
     use segment::data_types::groups::GroupId;
     use segment::data_types::vectors::{NamedQuery, VectorInternal};
-    use segment::types::{WithPayloadInterface, WithVector};
     use shard::query::ScoringQuery;
     use shard::query::query_enum::QueryEnum;
 
     use super::*;
-    use crate::EdgeShardRead;
     use crate::test_helpers::{
         VECTOR_NAME, point_with_group, point_with_group_values, test_config, upsert,
     };
+    use crate::{EdgeShardRead, QueryRequest, QueryRequestBuilder};
 
-    fn base_query() -> ShardQueryRequest {
-        ShardQueryRequest {
-            prefetches: vec![],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+    fn base_query() -> QueryRequest {
+        QueryRequestBuilder::new(0)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                 VectorInternal::from(vec![1.0]),
                 VECTOR_NAME.to_string(),
-            )))),
-            filter: None,
-            score_threshold: None,
-            limit: 0,
-            offset: 0,
-            params: None,
-            with_vector: WithVector::Bool(false),
-            with_payload: WithPayloadInterface::Bool(false),
-        }
+            ))))
+            .build()
     }
 
     #[test]
@@ -93,12 +75,12 @@ mod tests {
         );
 
         let groups = shard
-            .query_groups(GroupRequest {
-                query: base_query(),
-                group_by: "group".parse().unwrap(),
-                groups: 2,
-                group_size: 5,
-            })
+            .query_groups(GroupRequest::new(
+                base_query(),
+                "group".parse().unwrap(),
+                2,
+                5,
+            ))
             .unwrap();
 
         assert_eq!(groups.len(), 2);
@@ -125,12 +107,12 @@ mod tests {
         );
 
         let groups = shard
-            .query_groups(GroupRequest {
-                query: base_query(),
-                group_by: "group".parse().unwrap(),
-                groups: 2,
-                group_size: 2,
-            })
+            .query_groups(GroupRequest::new(
+                base_query(),
+                "group".parse().unwrap(),
+                2,
+                2,
+            ))
             .unwrap();
 
         assert_eq!(groups.len(), 2);

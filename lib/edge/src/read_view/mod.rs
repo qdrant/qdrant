@@ -9,7 +9,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use segment::common::operation_error::{OperationError, OperationResult};
 
 pub use self::handle::ReadSegmentHandle;
-pub use self::ops::{Group, GroupRequest, SearchMatrixRequest, SearchMatrixResponse, ShardInfo};
+pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
 pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
 use crate::EdgeConfig;

@@ -11,13 +11,11 @@ use common::universal_io::{MmapFile, MmapFs};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
-use shard::count::CountRequestInternal;
 use shard::files::{SEGMENTS_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-use shard::scroll::ScrollRequestInternal;
 use uuid::Uuid;
 
 use crate::config::vectors::EdgeVectorParams;
@@ -26,7 +24,7 @@ use crate::read_only::{
     LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
 };
 use crate::read_view::EdgeShardRead;
-use crate::{EdgeConfig, EdgeShard};
+use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
 
 const VECTOR_NAME: &str = "edge-ro-test-vector";
 
@@ -91,34 +89,22 @@ fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
 }
 
 fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
-    follower
-        .count(CountRequestInternal {
-            filter: None,
-            exact: true,
-        })
-        .unwrap()
+    follower.count(CountRequest::new()).unwrap()
 }
 
 fn leader_exact_count(leader: &EdgeShard) -> usize {
-    leader
-        .count(CountRequestInternal {
-            filter: None,
-            exact: true,
-        })
-        .unwrap()
+    leader.count(CountRequest::new()).unwrap()
 }
 
 /// Scrolled point ids (sorted) visible to the follower.
 fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<ExtendedPointId> {
     let (records, _) = follower
-        .scroll(ScrollRequestInternal {
-            offset: None,
-            limit: Some(10_000),
-            filter: None,
-            with_payload: Some(WithPayloadInterface::Bool(false)),
-            with_vector: WithVector::Bool(false),
-            order_by: None,
-        })
+        .scroll(
+            ScrollRequestBuilder::new()
+                .limit(10_000)
+                .with_payload(WithPayloadInterface::Bool(false))
+                .build(),
+        )
         .unwrap();
     let mut ids = records.into_iter().map(|r| r.id).collect::<Vec<_>>();
     ids.sort_unstable();
@@ -133,9 +119,10 @@ fn assert_follower_vectors(follower: &ReadOnlyEdgeShard<MmapFile>, ids: &[u64]) 
         .collect::<Vec<_>>();
     let results = follower
         .retrieve(
-            &point_ids,
-            Some(WithPayloadInterface::Bool(false)),
-            Some(WithVector::Bool(true)),
+            RetrieveRequestBuilder::new(point_ids)
+                .with_payload(WithPayloadInterface::Bool(false))
+                .with_vector(WithVector::Bool(true))
+                .build(),
         )
         .unwrap();
     assert_eq!(results.len(), ids.len(), "expected all ids retrievable");
@@ -191,14 +178,10 @@ fn follower_with_load_profile_serves_reads() {
     upsert(&leader, 1..=100);
     leader.flush();
 
-    let scroll_request = ScrollRequestInternal {
-        offset: None,
-        limit: Some(10_000),
-        filter: None,
-        with_payload: Some(WithPayloadInterface::Bool(false)),
-        with_vector: WithVector::Bool(false),
-        order_by: None,
-    };
+    let scroll_request = ScrollRequestBuilder::new()
+        .limit(10_000)
+        .with_payload(WithPayloadInterface::Bool(false))
+        .build();
 
     let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,

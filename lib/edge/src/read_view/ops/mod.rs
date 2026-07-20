@@ -11,6 +11,6 @@ mod retrieve;
 mod scroll;
 mod search;
 
-pub use self::grouping::{Group, GroupRequest};
+pub use self::grouping::Group;
 pub use self::info::ShardInfo;
-pub use self::matrix::{SearchMatrixRequest, SearchMatrixResponse};
+pub use self::matrix::SearchMatrixResponse;

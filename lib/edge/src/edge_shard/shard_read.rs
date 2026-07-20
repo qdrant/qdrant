@@ -3,16 +3,14 @@ use std::sync::Arc;
 
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::FacetResponse;
-use segment::types::{ExtendedPointId, PointIdType, ScoredPoint, WithPayloadInterface, WithVector};
-use shard::count::CountRequestInternal;
-use shard::facet::FacetRequestInternal;
+use segment::types::{PointIdType, ScoredPoint};
 use shard::locked_segment::LockedSegment;
-use shard::query::ShardQueryRequest;
 use shard::retrieve::record_internal::RecordInternal;
-use shard::scroll::ScrollRequestInternal;
-use shard::search::CoreSearchRequest;
 
 use crate::read_view::{EdgeShardRead, ReadViewProvider};
+use crate::requests::{
+    CountRequest, FacetRequest, QueryRequest, RetrieveRequest, ScrollRequest, SearchRequest,
+};
 use crate::{EdgeConfig, EdgeShard, ShardInfo};
 
 /// The read-write shard's segments are heterogeneous — `Segment` and `ProxySegment` coexist during
@@ -46,35 +44,30 @@ impl ReadViewProvider for EdgeShard {
 /// shared implementation.
 impl EdgeShard {
     /// This method is DEPRECATED and should be replaced with query.
-    pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
-        EdgeShardRead::search(self, search)
+    pub fn search(&self, request: SearchRequest) -> OperationResult<Vec<ScoredPoint>> {
+        EdgeShardRead::search(self, request)
     }
 
-    pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
+    pub fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         EdgeShardRead::query(self, request)
     }
 
     pub fn scroll(
         &self,
-        request: ScrollRequestInternal,
+        request: ScrollRequest,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
         EdgeShardRead::scroll(self, request)
     }
 
-    pub fn retrieve(
-        &self,
-        point_ids: &[ExtendedPointId],
-        with_payload: Option<WithPayloadInterface>,
-        with_vector: Option<WithVector>,
-    ) -> OperationResult<Vec<RecordInternal>> {
-        EdgeShardRead::retrieve(self, point_ids, with_payload, with_vector)
+    pub fn retrieve(&self, request: RetrieveRequest) -> OperationResult<Vec<RecordInternal>> {
+        EdgeShardRead::retrieve(self, request)
     }
 
-    pub fn count(&self, request: CountRequestInternal) -> OperationResult<usize> {
+    pub fn count(&self, request: CountRequest) -> OperationResult<usize> {
         EdgeShardRead::count(self, request)
     }
 
-    pub fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse> {
+    pub fn facet(&self, request: FacetRequest) -> OperationResult<FacetResponse> {
         EdgeShardRead::facet(self, request)
     }
 

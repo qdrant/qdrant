@@ -164,7 +164,6 @@ mod tests {
     use fs_err as fs;
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
-    use shard::count::CountRequestInternal;
     use shard::operations::CollectionUpdateOperations::{PointOperation, VectorNameOperation};
     use shard::operations::VectorNameOperations;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
@@ -175,7 +174,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::config::vectors::EdgeVectorParams;
-    use crate::{EdgeConfig, EdgeShard};
+    use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder};
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
@@ -198,12 +197,7 @@ mod tests {
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
         assert_eq!(reopened.info().unwrap().segments_count, 2);
 
-        let count = reopened
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = reopened.count(CountRequest::new()).unwrap();
         assert_eq!(
             count, 1,
             "exact count should deduplicate point ids across segments"
@@ -345,12 +339,7 @@ mod tests {
 
         // All duplicated segments contained the same point (id=1). After merge,
         // the exact count should deduplicate across remaining segments.
-        let count = reopened
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = reopened.count(CountRequest::new()).unwrap();
         assert_eq!(count, 1, "merged shard should have exactly one point");
 
         assert_points_retrievable_with_vectors(&reopened, &[1]);
@@ -490,20 +479,16 @@ mod tests {
         assert!(optimized, "25% deletion should trigger vacuum");
 
         // Verify point count
-        let count = shard
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = shard.count(CountRequest::new()).unwrap();
         assert_eq!(count, 750, "should have 750 remaining points after vacuum");
 
         // Verify deleted points are gone
         let deleted_results = shard
             .retrieve(
-                &deleted_ids,
-                Some(WithPayloadInterface::Bool(false)),
-                Some(WithVector::Bool(false)),
+                RetrieveRequestBuilder::new(deleted_ids.clone())
+                    .with_payload(WithPayloadInterface::Bool(false))
+                    .with_vector(WithVector::Bool(false))
+                    .build(),
             )
             .unwrap();
         assert!(
@@ -545,24 +530,14 @@ mod tests {
         // in the result, `points_optimized == 0` and the function returns false.
         let _optimized = shard.optimize().unwrap();
 
-        let count = shard
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = shard.count(CountRequest::new()).unwrap();
         assert_eq!(count, 0, "all points should be gone after vacuum");
 
         // Shard should still be functional — can insert new points
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(9999)]))))
             .unwrap();
-        let count = shard
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = shard.count(CountRequest::new()).unwrap();
         assert_eq!(count, 1, "shard should accept new points after full vacuum");
 
         assert_points_retrievable_with_vectors(&shard, &[9999]);
@@ -674,12 +649,7 @@ mod tests {
 
         // The duplicated segments each had 750 surviving points (same IDs).
         // After merge, the shard should be functional with correct data.
-        let count = reopened
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = reopened.count(CountRequest::new()).unwrap();
         assert_eq!(
             count, 750,
             "merged shard should preserve surviving points without double-counting"
@@ -722,12 +692,7 @@ mod tests {
         // Reload the shard
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
 
-        let count = reopened
-            .count(CountRequestInternal {
-                filter: None,
-                exact: true,
-            })
-            .unwrap();
+        let count = reopened.count(CountRequest::new()).unwrap();
         assert_eq!(count, 750, "point count should be preserved across reload");
 
         // Verify specific points survive reload with correct vectors
@@ -789,9 +754,10 @@ mod tests {
         // No data loss on the surviving vector.
         let results = reopened
             .retrieve(
-                &[ExtendedPointId::NumId(1)],
-                Some(WithPayloadInterface::Bool(false)),
-                Some(WithVector::Bool(true)),
+                RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(1)])
+                    .with_payload(WithPayloadInterface::Bool(false))
+                    .with_vector(WithVector::Bool(true))
+                    .build(),
             )
             .unwrap();
         assert_eq!(results.len(), 1, "point should survive the merge");
@@ -867,9 +833,10 @@ mod tests {
             .collect::<Vec<_>>();
         let results = shard
             .retrieve(
-                &point_ids,
-                Some(WithPayloadInterface::Bool(false)),
-                Some(WithVector::Bool(true)),
+                RetrieveRequestBuilder::new(point_ids)
+                    .with_payload(WithPayloadInterface::Bool(false))
+                    .with_vector(WithVector::Bool(true))
+                    .build(),
             )
             .unwrap();
         assert_eq!(

@@ -35,8 +35,6 @@ mod reexports_from_qdrant_crates {
         NaiveFeedbackCoefficients as NaiveFeedbackStrategy,
         NaiveFeedbackQuery as FeedbackNaiveQuery, RecoQuery as RecommendQuery,
     };
-    pub use shard::count::CountRequestInternal as CountRequest;
-    pub use shard::facet::FacetRequestInternal as FacetRequest;
     pub use shard::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     pub use shard::operations::point_ops::{
         ConditionalInsertOperationInternal as ConditionalInsertOperation, PointIdsList,
@@ -55,11 +53,8 @@ mod reexports_from_qdrant_crates {
     pub use shard::query::query_enum::QueryEnum;
     pub use shard::query::{
         FusionInternal as Fusion, MmrInternal as Mmr, SampleInternal as Sample, ScoringQuery,
-        ShardPrefetch as Prefetch, ShardQueryRequest as QueryRequest,
     };
     pub use shard::retrieve::record_internal::RecordInternal as Record;
-    pub use shard::scroll::ScrollRequestInternal as ScrollRequest;
-    pub use shard::search::CoreSearchRequest as SearchRequest;
     pub use sparse::common::sparse_vector::SparseVector;
 }
 pub use reexports_from_qdrant_crates::*;
