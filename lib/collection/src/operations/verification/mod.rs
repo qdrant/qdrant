@@ -270,8 +270,8 @@ pub fn check_resident_memory(
     Ok(())
 }
 
-/// Total system memory (or cgroup limit) in bytes. Cached once — total memory
-/// is effectively constant for a running process.
+/// Total system memory (or cgroup limit) in bytes.
+/// Memory allowance can change in a cgroup-limited node, so need to refresh the cache periodically.
 fn total_memory_bytes() -> u64 {
     segment::utils::mem::total_memory_bytes()
 }
