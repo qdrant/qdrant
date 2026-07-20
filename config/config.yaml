@@ -304,6 +304,11 @@ service:
   # Uncomment to enable.
   # read_only_api_key: your_secret_read_only_api_key_here
 
+  # Force the service to reject write and manage operations.
+  # Read-only mode is intended for single-node deployments only.
+  # Can also be enabled with the `--read-only` CLI argument.
+  # read_only: false
+
   # Uncomment to enable JWT Role Based Access Control (RBAC).
   # If enabled, you can generate JWT tokens with fine-grained rules for access control.
   # Use generated token instead of API key.

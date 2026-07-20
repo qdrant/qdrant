@@ -123,6 +123,11 @@ struct Args {
     #[arg(long, action, default_value_t = false)]
     disable_telemetry: bool,
 
+    /// Force the service to reject write and manage operations.
+    /// Read-only mode is only supported for single-node deployments.
+    #[arg(long, action, default_value_t = false)]
+    read_only: bool,
+
     /// Run stacktrace collector. Used for debugging.
     #[arg(long, action, default_value_t = false)]
     stacktrace: bool,
@@ -370,7 +375,8 @@ fn main() -> anyhow::Result<()> {
     // Settings & global state
     //
 
-    let settings = Settings::new(args.config_path)?;
+    let mut settings = Settings::new(args.config_path)?;
+    settings.service.read_only |= args.read_only;
 
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);
@@ -446,6 +452,10 @@ fn main() -> anyhow::Result<()> {
 
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
+
+    if settings.service.read_only && settings.cluster.enabled {
+        anyhow::bail!("Read-only mode is not supported for distributed deployments");
+    }
 
     //
     // Storage directory & filesystem compatibility

@@ -45,6 +45,9 @@ pub struct AuthKeys {
 
     /// Table of content, needed to do stateful validation of JWT
     toc: Arc<TableOfContent>,
+
+    /// Whether the whole service should restrict requests to read-only access.
+    read_only_mode: bool,
 }
 
 #[derive(Debug)]
@@ -106,17 +109,18 @@ impl AuthKeys {
         }
     }
 
-    /// Defines the auth scheme given the service config
+    /// Defines the auth scheme given the service config.
     ///
-    /// Returns None if no scheme is specified.
+    /// Returns None if no API keys or service-wide read-only mode are configured.
     pub fn try_create(service_config: &ServiceConfig, toc: Arc<TableOfContent>) -> Option<Self> {
         match (
             service_config.api_key.clone(),
             service_config.alt_api_key.clone(),
             service_config.read_only_api_key.clone(),
+            service_config.read_only,
         ) {
-            (None, None, None) => None,
-            (read_write, alt_read_write, read_only) => {
+            (None, None, None, false) => None,
+            (read_write, alt_read_write, read_only, read_only_mode) => {
                 let (jwt_parser, alt_jwt_parser) = Self::get_jwt_parser(service_config);
 
                 Some(Self {
@@ -126,8 +130,25 @@ impl AuthKeys {
                     jwt_parser,
                     alt_jwt_parser,
                     toc,
+                    read_only_mode,
                 })
             }
+        }
+    }
+
+    fn has_any_key(&self) -> bool {
+        self.read_write.is_some()
+            || self.alt_read_write.is_some()
+            || self.read_only.is_some()
+            || self.jwt_parser.is_some()
+            || self.alt_jwt_parser.is_some()
+    }
+
+    fn apply_read_only_mode(&self, access: Access) -> Access {
+        if self.read_only_mode {
+            access.into_read_only()
+        } else {
+            access
         }
     }
 
@@ -138,6 +159,15 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
     ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
+        if self.read_only_mode && !self.has_any_key() {
+            return Ok((
+                Access::full_ro("Read-only mode without configured API keys"),
+                InferenceToken(None),
+                AuthType::None,
+                None,
+            ));
+        }
+
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -148,7 +178,7 @@ impl AuthKeys {
 
         if self.can_write(key) {
             return Ok((
-                Access::full("Read-write access by key"),
+                self.apply_read_only_mode(Access::full("Read-write access by key")),
                 InferenceToken(None),
                 AuthType::ApiKey,
                 None,
@@ -157,7 +187,7 @@ impl AuthKeys {
 
         if self.can_read(key) {
             return Ok((
-                Access::full_ro("Read-only access by key"),
+                self.apply_read_only_mode(Access::full_ro("Read-only access by key")),
                 InferenceToken(None),
                 AuthType::ApiKey,
                 None,
@@ -184,7 +214,12 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));
+            return Ok((
+                self.apply_read_only_mode(access),
+                InferenceToken(sub),
+                AuthType::Jwt,
+                subject,
+            ));
         }
 
         // JTW parser exists, but can't decode the token
