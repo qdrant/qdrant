@@ -388,6 +388,7 @@ impl<'a> Extractor<'a> {
             Condition::HasId(_) => return,
             Condition::CustomIdChecker(_) => return,
             Condition::HasVector(_) => return,
+            Condition::Slice(_) => return,
         };
 
         // An empty required-index set means the condition is a no-op (e.g.

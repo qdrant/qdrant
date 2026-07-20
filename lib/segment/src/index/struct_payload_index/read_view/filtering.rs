@@ -153,6 +153,16 @@ where
                 .estimate_field_condition(field_condition, nested_path, hw_counter)?
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
+            Condition::Slice(slice_condition) => {
+                let available_points = self.available_point_count();
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: 0,
+                    exp: available_points / slice_condition.slice.total.get() as usize,
+                    max: available_points,
+                }
+            }
+
             Condition::CustomIdChecker(cond) => {
                 cond.0.estimate_cardinality(self.available_point_count())
             }

@@ -7009,6 +7009,7 @@ dependencies = [
  "serde_json",
  "serde_variant",
  "sha2 0.11.0",
+ "siphasher 1.0.3",
  "smallvec",
  "sparse",
  "strum",

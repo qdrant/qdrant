@@ -20,7 +20,7 @@ use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
 };
-use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer};
+use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer, Slice};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -152,6 +152,12 @@ where
                     },
                 }))
             }
+            Condition::Slice(slice_condition) => {
+                ConditionCheckerEnum::Dyn(Box::new(SliceConditionChecker {
+                    id_tracker,
+                    slice: slice_condition.slice,
+                }))
+            }
             Condition::CustomIdChecker(cond) => {
                 let segment_ids: AHashSet<_> = id_tracker
                     .point_mappings()
@@ -233,6 +239,25 @@ impl ConditionChecker for IdsConditionChecker {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(self.0.contains(&point_id))
+    }
+}
+
+/// For [`Condition::Slice`]. Resolves the external id and checks slice
+/// membership per candidate point; unlike [`IdsConditionChecker`] it does not
+/// materialize the matching id set, which holds `~points / total` entries.
+struct SliceConditionChecker<'a, I: IdTrackerRead> {
+    id_tracker: &'a I,
+    slice: Slice,
+}
+
+impl<I: IdTrackerRead> ConditionChecker for SliceConditionChecker<'_, I> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self
+            .id_tracker
+            .external_id(point_id)
+            .is_some_and(|external_id| self.slice.check(external_id)))
     }
 }
 

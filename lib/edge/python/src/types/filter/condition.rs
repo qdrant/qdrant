@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::NonZeroU32;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -27,6 +28,7 @@ impl FromPyObject<'_, '_> for PyCondition {
             IsNull(PyIsNullCondition),
             HasId(PyHasIdCondition),
             HasVector(PyHasVectorCondition),
+            Slice(PySliceCondition),
             Nested(PyNestedCondition),
             Filter(PyFilter),
         }
@@ -37,6 +39,7 @@ impl FromPyObject<'_, '_> for PyCondition {
             Helper::IsNull(is_null) => Condition::IsNull(is_null.into()),
             Helper::HasId(has_id) => Condition::HasId(has_id.into()),
             Helper::HasVector(has_vector) => Condition::HasVector(has_vector.into()),
+            Helper::Slice(slice) => Condition::Slice(slice.into()),
             Helper::Nested(nested) => Condition::Nested(nested.into()),
             Helper::Filter(filter) => Condition::Filter(filter.into()),
         };
@@ -59,6 +62,7 @@ impl<'py> IntoPyObject<'py> for PyCondition {
             Condition::HasVector(has_vector) => {
                 PyHasVectorCondition(has_vector).into_bound_py_any(py)
             }
+            Condition::Slice(slice) => PySliceCondition(slice).into_bound_py_any(py),
             Condition::Nested(nested) => PyNestedCondition(nested).into_bound_py_any(py),
             Condition::Filter(filter) => PyFilter(filter).into_bound_py_any(py),
             Condition::CustomIdChecker(_) => {
@@ -86,6 +90,7 @@ impl Repr for PyCondition {
             Condition::IsNull(is_null) => PyIsNullCondition::wrap_ref(is_null).fmt(f),
             Condition::HasId(has_id) => PyHasIdCondition::wrap_ref(has_id).fmt(f),
             Condition::HasVector(has_vector) => PyHasVectorCondition::wrap_ref(has_vector).fmt(f),
+            Condition::Slice(slice) => PySliceCondition::wrap_ref(slice).fmt(f),
             Condition::Nested(nested) => PyNestedCondition::wrap_ref(nested).fmt(f),
             Condition::Filter(filter) => PyFilter::wrap_ref(filter).fmt(f),
             Condition::CustomIdChecker(_) => {
@@ -228,5 +233,55 @@ impl PyHasVectorCondition {
         let HasVectorCondition {
             has_vector: _vector,
         } = self.0;
+    }
+}
+
+#[pyclass(name = "SliceCondition", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PySliceCondition(pub SliceCondition);
+
+#[pyclass_repr]
+#[pymethods]
+impl PySliceCondition {
+    #[new]
+    pub fn new(total: u32, index: u32) -> PyResult<Self> {
+        let Some(total) = NonZeroU32::new(total) else {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "total must be greater than 0",
+            ));
+        };
+        if index >= total.get() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "index must be less than total",
+            ));
+        }
+        Ok(Self(SliceCondition {
+            slice: Slice { total, index },
+        }))
+    }
+
+    #[getter]
+    pub fn total(&self) -> u32 {
+        self.0.slice.total.get()
+    }
+
+    #[getter]
+    pub fn index(&self) -> u32 {
+        self.0.slice.index
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PySliceCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Slice {
+            total: _total,
+            index: _index,
+        } = self.0.slice;
     }
 }

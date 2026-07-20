@@ -116,6 +116,7 @@ impl CardinalityEstimation {
                     | Condition::IsNull(_)
                     | Condition::HasId(_)
                     | Condition::HasVector(_)
+                    | Condition::Slice(_)
                     | Condition::Nested(_)
                     | Condition::Filter(_)
                     | Condition::CustomIdChecker(_) => false,
@@ -126,6 +127,7 @@ impl CardinalityEstimation {
                     | Condition::IsEmpty(_)
                     | Condition::IsNull(_)
                     | Condition::HasVector(_)
+                    | Condition::Slice(_)
                     | Condition::Nested(_)
                     | Condition::Filter(_)
                     | Condition::CustomIdChecker(_) => false,
@@ -138,6 +140,7 @@ impl CardinalityEstimation {
                     | Condition::IsEmpty(_)
                     | Condition::IsNull(_)
                     | Condition::HasId(_)
+                    | Condition::Slice(_)
                     | Condition::Nested(_)
                     | Condition::Filter(_)
                     | Condition::CustomIdChecker(_) => false,
