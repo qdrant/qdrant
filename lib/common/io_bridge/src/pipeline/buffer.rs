@@ -106,25 +106,30 @@ async fn scatter_stream_into_buffer(
             .ok()
             .and_then(|start| Some((start, start.checked_add(bytes.len())?)))
             .filter(|&(_, end)| end <= expected_len)
-            .ok_or_else(|| UniversalIoError::S3Config {
-                description: format!(
-                    "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
+            .ok_or_else(|| {
+                UniversalIoError::S3(
+                    format!(
+                        "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
                      {expected_len}",
-                    bytes.len(),
-                ),
+                        bytes.len(),
+                    )
+                    .into(),
+                )
             })?;
-        let overlap = || UniversalIoError::S3Config {
-            description: format!(
-                "overlapping read: chunk {start}..{end} intersects already-received bytes"
-            ),
+        let overlap_err = || {
+            UniversalIoError::S3(
+                format!("overlapping read: chunk {start}..{end} intersects already-received bytes")
+                    .into(),
+            )
         };
+
         // Merge with a range ending exactly at `start` and/or one starting
         // exactly at `end`; any true intersection is a protocol violation.
         let mut new_start = start;
         let mut new_end = end;
         if let Some((&prev_start, &prev_end)) = written.range(..=start).next_back() {
             if prev_end > start {
-                return Err(overlap());
+                return Err(overlap_err());
             }
             if prev_end == start {
                 written.remove(&prev_start);
@@ -133,7 +138,7 @@ async fn scatter_stream_into_buffer(
         }
         if let Some((&next_start, &next_end)) = written.range(start..).next() {
             if next_start < end {
-                return Err(overlap());
+                return Err(overlap_err());
             }
             if next_start == end {
                 written.remove(&next_start);
