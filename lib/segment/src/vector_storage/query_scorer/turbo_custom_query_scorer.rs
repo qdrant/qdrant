@@ -40,7 +40,7 @@ where
         // Preprocess (per distance) and precompute each sub-query vector once;
         // `preprocess_query` folds both steps together.
         let query: TQuery = raw_query
-            .transform(|raw_vector| Ok(storage.preprocess_query(raw_vector)))
+            .transform(&|raw_vector| Ok(storage.preprocess_query(raw_vector)))
             .unwrap();
 
         hardware_counter.set_cpu_multiplier(storage.quantized_vector_size());

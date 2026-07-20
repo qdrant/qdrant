@@ -39,7 +39,7 @@ where
     {
         // Preprocess and precompute every inner vector of each sub-query once.
         let query: TQuery = raw_query
-            .transform(|multi| Ok(storage.preprocess_query(&multi)))
+            .transform(&|multi| Ok(storage.preprocess_query(&multi)))
             .unwrap();
 
         hardware_counter.set_vector_io_read_multiplier(usize::from(storage.is_on_disk()));
