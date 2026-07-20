@@ -2,23 +2,14 @@ use ahash::AHashSet;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{
-    Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
+    Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint,
     WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
 use shard::query::{SampleInternal, ScoringQuery, ShardQueryRequest};
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
-
-/// A single-shard distance-matrix request: sample `sample_size` random points that
-/// carry the `using` vector, then find each sample's `limit_per_sample` nearest
-/// neighbours restricted to the sampled set.
-pub struct SearchMatrixRequest {
-    pub sample_size: usize,
-    pub limit_per_sample: usize,
-    pub filter: Option<Filter>,
-    pub using: VectorNameBuf,
-}
+use crate::requests::SearchMatrixRequest;
 
 #[derive(Debug, Default)]
 pub struct SearchMatrixResponse {

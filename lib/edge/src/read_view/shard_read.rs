@@ -4,19 +4,15 @@ use std::sync::Arc;
 use rayon::ThreadPool;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::FacetResponse;
-use segment::types::{ExtendedPointId, PointIdType, ScoredPoint, WithPayloadInterface, WithVector};
-use shard::count::CountRequestInternal;
-use shard::facet::FacetRequestInternal;
-use shard::query::ShardQueryRequest;
+use segment::types::{PointIdType, ScoredPoint};
 use shard::retrieve::record_internal::RecordInternal;
-use shard::scroll::ScrollRequestInternal;
-use shard::search::CoreSearchRequest;
 
-use super::{
-    EdgeReadView, Group, GroupRequest, ReadSegmentHandle, SearchMatrixRequest,
-    SearchMatrixResponse, ShardInfo,
-};
+use super::{EdgeReadView, Group, ReadSegmentHandle, SearchMatrixResponse, ShardInfo};
 use crate::EdgeConfig;
+use crate::requests::{
+    CountRequest, FacetRequest, GroupRequest, QueryRequest, RetrieveRequest, ScrollRequest,
+    SearchMatrixRequest, SearchRequest,
+};
 
 mod sealed {
     /// Empty marker supertrait of [`EdgeShardRead`](super::EdgeShardRead). Unnameable outside the
@@ -50,6 +46,9 @@ pub(crate) trait ReadViewProvider {
 /// Read API shared by the read-write [`EdgeShard`](crate::EdgeShard) and the read-only follower
 /// shard.
 ///
+/// Every method takes its edge request type from [`crate::requests`]; the blanket impl converts
+/// it into the internal request the read logic executes.
+///
 /// A shard only implements the crate-private snapshot provider; this trait comes for free through
 /// a blanket impl whose methods build an [`EdgeReadView`] from that snapshot and run the shared
 /// logic, so the read code is never duplicated and the snapshot plumbing stays invisible to crate
@@ -61,25 +60,20 @@ pub trait EdgeShardRead: sealed::Sealed {
     fn path(&self) -> &Path;
 
     /// This method is DEPRECATED and should be replaced with query.
-    fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>>;
+    fn search(&self, request: SearchRequest) -> OperationResult<Vec<ScoredPoint>>;
 
-    fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>>;
+    fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>>;
 
     fn scroll(
         &self,
-        request: ScrollRequestInternal,
+        request: ScrollRequest,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)>;
 
-    fn retrieve(
-        &self,
-        point_ids: &[ExtendedPointId],
-        with_payload: Option<WithPayloadInterface>,
-        with_vector: Option<WithVector>,
-    ) -> OperationResult<Vec<RecordInternal>>;
+    fn retrieve(&self, request: RetrieveRequest) -> OperationResult<Vec<RecordInternal>>;
 
-    fn count(&self, request: CountRequestInternal) -> OperationResult<usize>;
+    fn count(&self, request: CountRequest) -> OperationResult<usize>;
 
-    fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse>;
+    fn facet(&self, request: FacetRequest) -> OperationResult<FacetResponse>;
 
     fn search_matrix(&self, request: SearchMatrixRequest) -> OperationResult<SearchMatrixResponse>;
 
@@ -97,36 +91,36 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
         ReadViewProvider::path(self)
     }
 
-    fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
-        view(self).search(search)
+    fn search(&self, request: SearchRequest) -> OperationResult<Vec<ScoredPoint>> {
+        view(self).search(request.into())
     }
 
-    fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
-        view(self).query(request)
+    fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>> {
+        view(self).query(request.into())
     }
 
     fn scroll(
         &self,
-        request: ScrollRequestInternal,
+        request: ScrollRequest,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
-        view(self).scroll(request)
+        view(self).scroll(request.into())
     }
 
-    fn retrieve(
-        &self,
-        point_ids: &[ExtendedPointId],
-        with_payload: Option<WithPayloadInterface>,
-        with_vector: Option<WithVector>,
-    ) -> OperationResult<Vec<RecordInternal>> {
-        view(self).retrieve(point_ids, with_payload, with_vector)
+    fn retrieve(&self, request: RetrieveRequest) -> OperationResult<Vec<RecordInternal>> {
+        let RetrieveRequest {
+            point_ids,
+            with_payload,
+            with_vector,
+        } = request;
+        view(self).retrieve(&point_ids, with_payload, with_vector)
     }
 
-    fn count(&self, request: CountRequestInternal) -> OperationResult<usize> {
-        view(self).count(request)
+    fn count(&self, request: CountRequest) -> OperationResult<usize> {
+        view(self).count(request.into())
     }
 
-    fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse> {
-        view(self).facet(request)
+    fn facet(&self, request: FacetRequest) -> OperationResult<FacetResponse> {
+        view(self).facet(request.into())
     }
 
     fn search_matrix(&self, request: SearchMatrixRequest) -> OperationResult<SearchMatrixResponse> {
