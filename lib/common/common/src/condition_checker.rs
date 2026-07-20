@@ -92,7 +92,10 @@ pub enum Rest {
 impl Select {
     #[inline(always)]
     pub const fn is_match(self) -> bool {
-        matches!(self, Select::Matches)
+        match self {
+            Select::Matches => true,
+            Select::NonMatches => false,
+        }
     }
 }
 
@@ -115,19 +118,23 @@ pub fn default_check_batched<K: CheckItem, E>(
         Rest::Keep => {
             let mut lo = 0;
             let mut hi = items.len();
-            loop {
-                while lo < hi && pred(items[lo].point_id())? == select.is_match() {
+            'outer: while lo < hi {
+                if pred(items[lo].point_id())? == select.is_match() {
                     lo += 1;
+                    continue;
                 }
-                while lo < hi && pred(items[hi - 1].point_id())? != select.is_match() {
+                // items[lo] doesn't belong on the left: scan down for one that does.
+                loop {
                     hi -= 1;
+                    if lo == hi {
+                        break 'outer;
+                    }
+                    if pred(items[hi].point_id())? == select.is_match() {
+                        break;
+                    }
                 }
-                if lo >= hi {
-                    break;
-                }
-                items.swap(lo, hi - 1);
+                items.swap(lo, hi);
                 lo += 1;
-                hi -= 1;
             }
             Ok(lo)
         }
@@ -174,10 +181,9 @@ impl<E> ConditionChecker for ConstantConditionChecker<E> {
         _rest: Rest,
     ) -> Result<usize, E> {
         // Every id is on the same side, so no rearrangement is needed.
-        Ok(if self.0 == select.is_match() {
-            ids.len()
-        } else {
-            0
+        Ok(match self.0 == select.is_match() {
+            true => ids.len(),
+            false => 0,
         })
     }
 }
@@ -252,10 +258,7 @@ impl<'a, T: Copy> Partitioner<'a, T> {
     ///
     /// Panics if you try to write more than was read.
     pub fn write(&self, value: T, is_left: bool) {
-        if self.left_end.get() >= self.unread_start.get() {
-            debug_assert!(false);
-            return;
-        }
+        assert!(self.left_end.get() < self.unread_start.get());
         if is_left {
             // Writing to the left side moves `left_end` forward.
             //
@@ -306,8 +309,8 @@ impl<'a, T: Copy> Partitioner<'a, T> {
     ///
     /// Panics if you haven't read/written all the elements yet.
     pub fn finish(&self) -> usize {
-        debug_assert_eq!(self.left_end.get(), self.unread_start.get());
-        debug_assert_eq!(self.unread_start.get(), self.right_start.get());
+        assert_eq!(self.left_end.get(), self.unread_start.get());
+        assert_eq!(self.unread_start.get(), self.right_start.get());
         self.left_end.get()
     }
 }
