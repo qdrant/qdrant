@@ -10,7 +10,7 @@ use segment::data_types::vectors::{
     MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
 use segment::types::{
-    PointIdType, SearchParams, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
+    PointIdType, SearchParams, Slice, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
 use shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
@@ -18,9 +18,9 @@ use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
     FusionKind, NamedVectors, Prefetch, ScrollFilter, canonical_sparse, dense_diff, dense_matches,
-    has_num, match_has_id_filter, match_has_vector_filter, match_num_filter, match_tag_filter,
-    match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
-    url_prefix_matches,
+    has_num, match_has_id_filter, match_has_vector_filter, match_num_filter, match_slice_filter,
+    match_tag_filter, match_url_prefix_filter, num_matches, optional_read_filter,
+    passes_read_filters, tag_matches, url_prefix_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -1038,6 +1038,7 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::UrlPrefix(prefix) => Some(match_url_prefix_filter(prefix)),
         ScrollFilter::HasId(ids) => Some(match_has_id_filter(ids)),
         ScrollFilter::HasVector(name) => Some(match_has_vector_filter(name)),
+        ScrollFilter::Slice { total, index } => Some(match_slice_filter(*total, *index)),
     };
     // Precompute the `has_id` set once so the per-point predicate is O(1).
     let has_id_set: AHashSet<PointIdType> = match filter {
@@ -1046,7 +1047,8 @@ pub(super) async fn apply_scroll_paged(
         | ScrollFilter::Num(_)
         | ScrollFilter::Tag(_)
         | ScrollFilter::UrlPrefix(_)
-        | ScrollFilter::HasVector(_) => AHashSet::new(),
+        | ScrollFilter::HasVector(_)
+        | ScrollFilter::Slice { .. } => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
         .iter()
@@ -1057,6 +1059,11 @@ pub(super) async fn apply_scroll_paged(
             ScrollFilter::UrlPrefix(prefix) => url_prefix_matches(&entry.payload, prefix),
             ScrollFilter::HasId(_) => has_id_set.contains(*id),
             ScrollFilter::HasVector(name) => entry.vectors.contains_key(name),
+            ScrollFilter::Slice { total, index } => Slice {
+                total: *total,
+                index: *index,
+            }
+            .check(**id),
         })
         .map(|(id, _)| *id)
         .collect();

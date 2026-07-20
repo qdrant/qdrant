@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
@@ -193,13 +194,14 @@ pub(super) fn random_with_vector(
 }
 
 /// A filter selector for paginated scroll: no filter, `num == X`, `tag == X`, a `has_id`
-/// matcher, or a `has_vector` matcher over a currently-active vector name.
+/// matcher, a `has_vector` matcher over a currently-active vector name, a `url` prefix
+/// matcher, or a deterministic `slice` of the id space.
 pub(super) fn random_scroll_filter(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
     id_space: &IdSpace,
 ) -> ScrollFilter {
-    match rng.random_range(0..6) {
+    match rng.random_range(0..7) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
@@ -217,6 +219,14 @@ pub(super) fn random_scroll_filter(
         // so this meaningfully restricts.
         4 => ScrollFilter::HasVector(random_vector_name(rng, active)),
         5 => ScrollFilter::UrlPrefix(random_url_prefix_probe(rng).to_string()),
+        // Small totals so each slice still gets multiple points from the default id pool
+        // (~500 → ~62–500 points/slice). `total = 1` is the identity case (matches everything).
+        6 => {
+            const TOTALS: &[u32] = &[1, 2, 3, 4, 5, 8];
+            let total = NonZeroU32::new(*TOTALS.choose(rng).unwrap()).unwrap();
+            let index = rng.random_range(0..total.get());
+            ScrollFilter::Slice { total, index }
+        }
         _ => unreachable!(),
     }
 }

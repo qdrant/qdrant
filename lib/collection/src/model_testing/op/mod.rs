@@ -2,6 +2,7 @@ mod generators;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
@@ -30,7 +31,8 @@ use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
     MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    PointIdType, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface, WithVector,
+    PointIdType, Slice, SliceCondition, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface,
+    WithVector,
 };
 use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
@@ -248,7 +250,7 @@ pub(super) enum FusionKind {
 }
 
 /// Filter selector for `ScrollPaged`. Beyond the payload filters the other scroll verifiers
-/// support, this also covers a `has_id` matcher (restrict to an explicit point-id set).
+/// support, this also covers id-based matchers (`has_id`, `slice`) and `has_vector`.
 #[derive(Debug, Clone)]
 pub(super) enum ScrollFilter {
     None,
@@ -263,6 +265,13 @@ pub(super) enum ScrollFilter {
     HasVector(VectorNameBuf),
     /// `url` prefix matcher: only points whose `url` payload starts with the given prefix.
     UrlPrefix(String),
+    /// `slice` matcher: only points whose id falls in slice `index` of `total`
+    /// (`stable_hash(id) % total == index`). Deterministic and model-checkable via
+    /// [`Slice::check`]; primary use case of sliced scroll.
+    Slice {
+        total: NonZeroU32,
+        index: u32,
+    },
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -827,6 +836,12 @@ pub(super) fn match_has_vector_filter(name: &str) -> Filter {
     Filter::new_must(Condition::HasVector(HasVectorCondition::from(
         name.to_string(),
     )))
+}
+
+pub(super) fn match_slice_filter(total: NonZeroU32, index: u32) -> Filter {
+    Filter::new_must(Condition::Slice(SliceCondition {
+        slice: Slice { total, index },
+    }))
 }
 
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {
