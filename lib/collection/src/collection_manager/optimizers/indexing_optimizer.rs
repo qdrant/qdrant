@@ -1125,20 +1125,21 @@ mod tests {
         );
     }
 
-    /// Reproduction for segment overgrow on `set_payload_by_filter`.
+    /// Regression test for segment overgrow on `set_payload_by_filter` (#9158).
     ///
-    /// Hypothesis (under test):
-    ///   When all points of a collection live in immutable (indexed) segments and
-    ///   `set_payload` is executed via a filter that matches all points, the
-    ///   `apply_points_with_conditional_move` mechanism CoW-moves every matched
-    ///   point into a single (random) appendable segment.
+    /// When all points of a collection live in immutable (indexed) segments and
+    /// `set_payload` is executed via a filter that matches all points, the
+    /// `apply_points_with_conditional_move` mechanism CoW-moves every matched
+    /// point into an appendable segment. With the appendable segment size cap
+    /// armed, the operation fails with the recoverable `OutOfAppendableCapacity`
+    /// error once every appendable segment reaches the cap, instead of growing
+    /// one past `max_segment_size`.
     ///
-    ///   This appendable segment is not size-checked during the move, so its
-    ///   resulting size can exceed the configured `max_segment_size`.
-    ///
-    /// This test currently FAILS by design: it is a reproduction for the
-    /// unfixed segment overgrow bug. It will pass once the underlying issue
-    /// is addressed.
+    /// In production the failed operation wakes the optimizer, whose wake-up
+    /// provisions a fresh appendable segment and re-applies the operation from
+    /// `failed_operation` recovery. This test drives that loop synchronously:
+    /// fail, ensure capacity, retry with the same op number (already-applied
+    /// points are skipped by their point version).
     #[test]
     fn test_set_payload_by_filter_does_not_overgrow_segment() {
         init();
@@ -1250,6 +1251,19 @@ mod tests {
             "Expected at least 2 indexed segments after optimization, got {indexed_count}",
         );
 
+        // Arm the appendable segment size cap, as `UpdateHandler::run_workers` does on a real
+        // shard.
+        locked_holder
+            .write()
+            .set_max_segment_size_bytes(std::num::NonZeroUsize::new(max_segment_size_bytes));
+
+        let payload_schema_file = segments_dir.path().join("payload.schema");
+        let payload_index_schema: std::sync::Arc<
+            common::save_on_disk::SaveOnDisk<shard::payload_index_schema::PayloadIndexSchema>,
+        > = std::sync::Arc::new(
+            common::save_on_disk::SaveOnDisk::load_or_init_default(payload_schema_file).unwrap(),
+        );
+
         // --- 3. Run set_payload by filter that matches ALL points. ---
         // An empty filter matches every point in the collection.
         let payload: segment::types::Payload = payload_json! {"new_field": "value"};
@@ -1265,19 +1279,57 @@ mod tests {
             },
         );
 
-        let result = process_payload_operation(
-            &locked_holder.read(),
-            opnum.next().unwrap(),
-            payload_op,
-            &hw_counter,
-        );
+        // Drive the recovery loop synchronously: the operation fails with the recoverable
+        // capacity error once all appendable segments reach the cap; the optimizer wake-up
+        // provisions a fresh appendable segment and recovery re-applies the operation under
+        // the same op number, resuming where it stopped.
+        let payload_op_num = opnum.next().unwrap();
+        let mut capacity_failures = 0;
+        let result = loop {
+            let result = process_payload_operation(
+                &locked_holder.read(),
+                payload_op_num,
+                payload_op.clone(),
+                &hw_counter,
+            );
+            match result {
+                Err(err) if err.is_out_of_appendable_capacity() && capacity_failures < 8 => {
+                    capacity_failures += 1;
+                    let created =
+                        crate::update_workers::UpdateWorkers::ensure_appendable_segment_with_capacity(
+                            &locked_holder,
+                            index_optimizer.segments_path(),
+                            index_optimizer.segment_optimizer_config(),
+                            index_optimizer.threshold_config(),
+                            payload_index_schema.clone(),
+                        )
+                        .unwrap();
+                    assert!(
+                        created,
+                        "a capacity error implies all appendable segments are at the cap, \
+                         so the ensure step must create a fresh one",
+                    );
+                }
+                other => break other,
+            }
+        };
 
         assert!(
             result.is_ok(),
-            "set_payload_by_filter should succeed: {result:?}",
+            "set_payload_by_filter should succeed after capacity recovery: {result:?}",
+        );
+        assert!(
+            capacity_failures > 0,
+            "the operation should have hit the capacity error at least once",
         );
 
-        // --- 4. Verify no segment exceeds max_segment_size. ---
+        // --- 4. Verify no segment exceeds max_segment_size (plus the documented one-batch
+        // overshoot tolerance of the per-batch capacity check), and every point survived. ---
+        const PAYLOAD_OP_BATCH_SIZE: usize = 32;
+        let point_size_bytes = dim * size_of::<f32>();
+        let batch_tolerance_bytes = PAYLOAD_OP_BATCH_SIZE * point_size_bytes;
+
+        let mut total_points = 0;
         let largest_segment_bytes = locked_holder
             .read()
             .iter()
@@ -1291,14 +1343,21 @@ mod tests {
                     info.num_points,
                     info.num_vectors,
                 );
+                total_points += info.num_points;
                 size
             })
             .max()
             .unwrap_or_default();
 
+        assert_eq!(
+            total_points as u64,
+            2 * points_per_segment,
+            "every point must survive the capacity recovery",
+        );
         assert!(
-            largest_segment_bytes <= max_segment_size_bytes,
-            "A segment overgrew the configured max_segment_size: largest={largest_segment_bytes} bytes, max={max_segment_size_bytes} bytes",
+            largest_segment_bytes <= max_segment_size_bytes + batch_tolerance_bytes,
+            "A segment overgrew the configured max_segment_size: largest={largest_segment_bytes} bytes, \
+             max={max_segment_size_bytes} bytes, tolerance={batch_tolerance_bytes} bytes",
         );
     }
 }

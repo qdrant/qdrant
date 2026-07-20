@@ -1096,6 +1096,20 @@ impl CollectionError {
         matches!(self, Self::PreConditionFailed { .. })
     }
 
+    /// Whether this is the flattened [`OperationError::OutOfAppendableCapacity`] error: all
+    /// appendable segments reached `max_segment_size`. The typed variant does not survive the
+    /// conversion to a (transient) service error, so it is recognized by its message prefix,
+    /// which a test on the variant locks in place.
+    pub fn is_out_of_appendable_capacity(&self) -> bool {
+        matches!(
+            self,
+            Self::ServiceError { error, .. }
+                if error.starts_with(
+                    segment::common::operation_error::OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX,
+                )
+        )
+    }
+
     pub fn is_missing_point(&self) -> bool {
         #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
