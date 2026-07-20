@@ -110,17 +110,21 @@ impl UpdateWorkers {
 
             // Ensure we have at least one appendable segment with enough capacity
             // Source required parameters from first optimizer
-            let result = Self::ensure_appendable_segment_with_capacity(
+            let created_appendable_segment = match Self::ensure_appendable_segment_with_capacity(
                 &segments,
                 some_optimizer.segments_path(),
                 some_optimizer.segment_optimizer_config(),
                 some_optimizer.threshold_config(),
                 payload_index_schema.clone(),
-            );
-            if let Err(err) = result {
-                log::error!("Failed to ensure there are appendable segments with capacity: {err}");
-                panic!("Failed to ensure there are appendable segments with capacity: {err}");
-            }
+            ) {
+                Ok(created) => created,
+                Err(err) => {
+                    log::error!(
+                        "Failed to ensure there are appendable segments with capacity: {err}"
+                    );
+                    panic!("Failed to ensure there are appendable segments with capacity: {err}");
+                }
+            };
 
             // Backstop: reconcile the segment manifest with the live segment set. Registration
             // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
@@ -144,6 +148,17 @@ impl UpdateWorkers {
             .await
             .is_err()
             {
+                // Failed-operation recovery could not complete. When this wake-up just
+                // provisioned a fresh appendable segment, the failure is likely
+                // `OutOfAppendableCapacity` part-way through an operation that moves more data
+                // than one segment holds: it filled the new segment and needs another. Wake
+                // ourselves again so the next capacity-ensure provisions the next segment and
+                // recovery resumes where it stopped (applied points are skipped by version).
+                // Progress-guarded: if the provisioned segment stayed empty, the next wake-up
+                // creates nothing and this re-signal chain stops.
+                if created_appendable_segment {
+                    let _ = sender.try_send(OptimizerSignal::Nop);
+                }
                 let _ = optimization_finished_sender.send(());
                 continue;
             }
@@ -442,13 +457,15 @@ impl UpdateWorkers {
     /// created.
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
+    ///
+    /// Returns whether a new segment was created.
     pub fn ensure_appendable_segment_with_capacity(
         segments: &LockedSegmentHolder,
         segments_path: &Path,
         segment_config: &SegmentOptimizerConfig,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<bool> {
         let no_segment_with_capacity = {
             let segments_read = segments.read();
             segments_read
@@ -486,7 +503,7 @@ impl UpdateWorkers {
             write_guard.add_new_locked(new_segment);
         }
 
-        Ok(())
+        Ok(no_segment_with_capacity)
     }
 
     /// Trigger optimizers when CPU budget is available

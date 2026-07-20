@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use parking_lot::RwLockWriteGuard;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{Filter, Payload, PointIdType, SeqNumberType, VectorNameBuf};
@@ -193,12 +193,7 @@ where
             .filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+            let default_write_segment = segments.smallest_appendable_segment()?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
