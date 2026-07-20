@@ -467,23 +467,14 @@ impl UpdateWorkers {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<bool> {
         let no_segment_with_capacity = {
-            let segments_read = segments.read();
-            segments_read
-                .appendable_segments_ids()
-                .into_iter()
-                .filter_map(|segment_id| segments_read.get(segment_id))
-                .all(|segment| {
-                    let max_vector_size_bytes = segment
-                        .get()
-                        .read()
-                        .max_available_vectors_size_in_bytes()
-                        .unwrap_or_default();
-                    let max_segment_size_bytes = thresholds_config
-                        .max_segment_size_kb
-                        .saturating_mul(segment::common::BYTES_IN_KB);
-
-                    max_vector_size_bytes >= max_segment_size_bytes
-                })
+            let max_segment_size_bytes = std::num::NonZeroUsize::new(
+                thresholds_config
+                    .max_segment_size_kb
+                    .saturating_mul(segment::common::BYTES_IN_KB),
+            );
+            !segments
+                .read()
+                .has_appendable_segment_with_capacity(max_segment_size_bytes)
         };
 
         if no_segment_with_capacity {
@@ -547,14 +538,31 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    CollectionUpdater::update(
+                    let result = CollectionUpdater::update(
                         &segments,
                         op_num,
                         operation.operation,
                         update_operation_lock.clone(),
                         update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                    );
+                    match result {
+                        Ok(_) => {}
+                        // Abort recovery and retry on a later wake-up.
+                        Err(err) if err.is_transient() => return Err(err),
+                        // A non-transient decline can never succeed; skip it like WAL replay
+                        // does on shard load, instead of aborting recovery forever. A replayed
+                        // operation can legitimately decline this way when later (already
+                        // applied) operations changed the state it sees, e.g. deleted one of
+                        // its points. `CollectionUpdater` already dropped it from
+                        // `failed_operation`, unblocking the WAL acknowledge.
+                        Err(err) => {
+                            log::warn!(
+                                "Skipping failed operation {op_num} during recovery, \
+                                 it was declined: {err}"
+                            );
+                        }
+                    }
                 }
             }
         };
