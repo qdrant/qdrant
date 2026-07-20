@@ -32,7 +32,7 @@ use crate::backend::BlobBackend;
 /// object into. Bounds the blast radius of a dropped connection (a retry
 /// re-fetches one chunk, not the whole object) while staying large enough that
 /// the per-request round-trip stays amortized.
-const DEFAULT_READ_CHUNK_SIZE: u64 = 16 * 1024 * 1024;
+const DEFAULT_READ_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
 /// Number of follow-up chunk GETs a multi-part [`AsyncRead::read_from`] keeps
 /// in flight at once. Chunks are yielded as they complete (out of order,
@@ -219,9 +219,9 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                 .await
                 .map_err(|err| map_get_err(err, &key))?;
             let total = first.meta.size;
-            // Follow-up chunks are pinned to the version the probe saw: a
-            // concurrent overwrite fails the read (HTTP 412) instead of
-            // silently stitching bytes from two object versions.
+            // Follow-up chunks are pinned to the version the probe saw.
+            // All major providers support `e-tag`. For now, we won't fail if
+            // it doesn't support it.
             let e_tag = first.meta.e_tag.take();
             let first_end = first.range.end;
             let first_stream =
