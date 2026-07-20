@@ -25,14 +25,13 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         }
     }
 
-    /// Open options for the deleted flags: unlike the mapping/versions files
-    /// (read per-point, left lazy), the deleted set is read whole — per-point
-    /// deleted checks plus full materialization for search — so it is populated
-    /// as a whole, keeping those reads off remote storage.
     fn deleted_open_options() -> OpenOptions {
         OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            // Prefetch because external_ids_batch checks point_deleted() one-by-one
             populate: Populate::PreferBackground,
-            ..Self::open_options()
+            advice: AdviceSetting::Global,
         }
     }
 
