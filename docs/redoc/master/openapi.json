@@ -12755,12 +12755,14 @@
             "nullable": true
           },
           "ram_size": {
+            "description": "Effective total memory for this process in KiB (cgroup limit or host RAM).",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "disk_size": {
+            "description": "Size in KiB of the filesystem hosting Qdrant's /storage path (if not available, fallback to host disk size)",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
