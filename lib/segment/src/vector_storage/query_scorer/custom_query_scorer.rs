@@ -45,10 +45,8 @@ impl<
         TInputQuery: Query<DenseVector>
             + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
     {
-        let mut dim = 0;
         let query = query
-            .transform(|vector| {
-                dim = vector.len();
+            .transform(&|vector| {
                 let preprocessed_vector = TMetric::preprocess(vector);
                 Ok(TypedDenseVector::from(TElement::slice_from_float_cow(
                     Cow::from(preprocessed_vector),
@@ -56,6 +54,7 @@ impl<
             })
             .unwrap();
 
+        let dim = vector_storage.vector_dim();
         hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
         if vector_storage.is_on_disk() {
             hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());

@@ -15,16 +15,14 @@ pub use reco_query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
 
 pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {
     /// Change the underlying type of the query, or just process it in some way.
-    fn transform<F>(self, f: F) -> OperationResult<Output>
-    where
-        F: FnMut(T) -> OperationResult<U>;
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<Output>;
 
     fn transform_into(self) -> OperationResult<Output>
     where
         Self: Sized,
         T: TryInto<U, Error = OperationError>,
     {
-        self.transform(|v| v.try_into())
+        self.transform(&|v| v.try_into())
     }
 }
 

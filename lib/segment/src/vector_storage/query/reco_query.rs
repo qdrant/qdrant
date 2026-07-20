@@ -29,14 +29,10 @@ impl<T> RecoQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<RecoQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
-        Ok(RecoQuery::new(
-            self.positives.into_iter().map(&mut f).try_collect()?,
-            self.negatives.into_iter().map(&mut f).try_collect()?,
-        ))
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<RecoQuery<U>> {
+        let positives = self.positives.into_iter().map(f).try_collect()?;
+        let negatives = self.negatives.into_iter().map(f).try_collect()?;
+        Ok(RecoQuery::new(positives, negatives))
     }
 }
 
@@ -50,10 +46,10 @@ impl<T> From<RecoQuery<T>> for RecoBestScoreQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoBestScoreQuery<U>, T, U> for RecoBestScoreQuery<T> {
-    fn transform<F>(self, f: F) -> OperationResult<RecoBestScoreQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<RecoBestScoreQuery<U>> {
         Ok(RecoBestScoreQuery(self.0.transform(f)?))
     }
 }
@@ -67,19 +63,22 @@ impl From<RecoBestScoreQuery<VectorInternal>> for QueryVector {
 impl<T> Query<T> for RecoBestScoreQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // get similarities to all positives
-        let positive_similarities = self.0.positives.iter().map(&similarity);
+        let mut max_positive = ScoreType::NEG_INFINITY;
+        for vector in &self.0.positives {
+            let score = similarity(vector);
+            if score.total_cmp(&max_positive).is_gt() {
+                max_positive = score;
+            }
+        }
 
         // and all negatives
-        let negative_similarities = self.0.negatives.iter().map(&similarity);
-
-        // get max similarity to positives and max to negatives
-        let max_positive = positive_similarities
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(ScoreType::NEG_INFINITY);
-
-        let max_negative = negative_similarities
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(ScoreType::NEG_INFINITY);
+        let mut max_negative = ScoreType::NEG_INFINITY;
+        for vector in &self.0.negatives {
+            let score = similarity(vector);
+            if score.total_cmp(&max_negative).is_gt() {
+                max_negative = score;
+            }
+        }
 
         if max_positive > max_negative {
             scaled_fast_sigmoid(max_positive)
@@ -99,10 +98,10 @@ impl<T> From<RecoQuery<T>> for RecoSumScoresQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoSumScoresQuery<U>, T, U> for RecoSumScoresQuery<T> {
-    fn transform<F>(self, f: F) -> OperationResult<RecoSumScoresQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<RecoSumScoresQuery<U>> {
         Ok(RecoSumScoresQuery(self.0.transform(f)?))
     }
 }
@@ -116,10 +115,16 @@ impl From<RecoSumScoresQuery<VectorInternal>> for QueryVector {
 impl<T> Query<T> for RecoSumScoresQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // Sum all positive vectors scores
-        let positive_score: ScoreType = self.0.positives.iter().map(&similarity).sum();
+        let mut positive_score: ScoreType = 0.0;
+        for vector in &self.0.positives {
+            positive_score += similarity(vector);
+        }
 
         // Sum all negative vectors scores
-        let negative_score: ScoreType = self.0.negatives.iter().map(&similarity).sum();
+        let mut negative_score: ScoreType = 0.0;
+        for vector in &self.0.negatives {
+            negative_score += similarity(vector);
+        }
 
         // Subtract
         positive_score - negative_score
