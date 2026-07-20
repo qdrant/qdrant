@@ -41,6 +41,11 @@ pub struct RunningEnvironmentTelemetry {
     #[anonymize(false)]
     distribution_version: Option<String>,
     is_docker: bool,
+    /// Number of CPU cores Qdrant will actually use for sizing thread pools,
+    /// optimizer budget and segment counts. This is the effective count from
+    /// [`common::cpu::get_num_cpus`] (honors `QDRANT_NUM_CPUS` and the cgroup
+    /// CPU quota), not the host socket count — so a cgroup-limited node reports
+    /// its quota rather than the underlying machine's total cores.
     #[anonymize(false)]
     cores: Option<usize>,
     /// Average number of CPU cores used by this process over roughly the last
@@ -49,7 +54,12 @@ pub struct RunningEnvironmentTelemetry {
     #[anonymize(false)]
     #[serde(skip_serializing_if = "Option::is_none")]
     cpu_cores_used: Option<f32>,
+    /// Effective total memory in KiB: the cgroup memory limit enforced on this
+    /// process when set (via [`segment::utils::mem::Mem`]), otherwise the host's
+    /// total RAM. A cgroup-limited node reports its cap, not the machine total.
     ram_size: Option<usize>,
+    /// Capacity in KiB of the filesystem hosting Qdrant's storage path (the data
+    /// volume), rather than the container root filesystem.
     disk_size: Option<usize>,
     #[anonymize(false)]
     cpu_flags: String,
@@ -122,7 +132,8 @@ impl AppBuildTelemetry {
                 .then(common::low_memory::low_memory_mode),
             hnsw_global_config: (detail.level >= DetailsLevel::Level1)
                 .then(|| settings.storage.hnsw_global_config.clone()),
-            system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
+            system: (detail.level >= DetailsLevel::Level1)
+                .then(|| get_system_data(&settings.storage.storage_path)),
             jwt_rbac: settings.service.jwt_rbac,
             hide_jwt_dashboard: settings.service.hide_jwt_dashboard,
             audit: collect_audit_telemetry(settings.audit.as_ref(), detail),
@@ -157,7 +168,7 @@ fn collect_audit_telemetry(
     })
 }
 
-fn get_system_data() -> RunningEnvironmentTelemetry {
+fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
     let distribution = if let Ok(release) = sys_info::linux_os_release() {
         release.id
     } else {
@@ -228,10 +239,18 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         distribution,
         distribution_version,
         is_docker: cfg!(unix) && Path::new("/.dockerenv").exists(),
-        cores: sys_info::cpu_num().ok().map(|x| x as usize),
+        cores: Some(common::cpu::get_num_cpus()),
         cpu_cores_used: common::process_cpu_usage::process_cpu_usage_cores(),
-        ram_size: sys_info::mem_info().ok().map(|x| x.total as usize),
-        disk_size: sys_info::disk_info().ok().map(|x| x.total as usize),
+        // Effective memory: the cgroup limit when set, otherwise the host total
+        // (via `segment::utils::mem`, which wraps cgroups_rs + sysinfo). Cached,
+        // so no per-call `Mem` init. Reported in KiB to match the previous unit.
+        ram_size: Some((segment::utils::mem::total_memory_bytes() / 1024) as usize),
+        // Capacity of the filesystem hosting Qdrant's storage (the data volume),
+        // not the container root fs. Reported in KiB to match `sys_info`. Uses
+        // the cached reader, shared with strict-mode disk checks.
+        disk_size: common::disk_usage::disk_usage(storage_path)
+            .map(|usage| (usage.total / 1024) as usize)
+            .or_else(|| sys_info::disk_info().ok().map(|x| x.total as usize)),
         cpu_flags: cpu_flags.join(","),
         cpu_endian: Some(CpuEndian::current()),
         gpu_devices,
