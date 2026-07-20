@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::ops::Range;
 
@@ -91,74 +90,61 @@ async fn scatter_stream_into_buffer(
     align: usize,
 ) -> Result<AVec<u8, RuntimeAlign>> {
     let mut buf = AVec::<u8, RuntimeAlign>::with_capacity(align, expected_len);
-    // Written ranges so far as `start -> end`, disjoint and merged eagerly so
-    // the map stays small: an in-order stream collapses to a single entry, an
-    // out-of-order one holds an entry per "hole", bounded by the backend's
-    // concurrency window.
-    let mut written: BTreeMap<usize, usize> = BTreeMap::new();
+    // Disjoint runs of already-written bytes, grown/merged as chunks land.
+    // There are few in practice — an in-order stream is a single run, an
+    // out-of-order one adds a run per concurrent "hole" — so a linear scan is fast.
+    // Revisit if the run bound (`READ_CHUNK_CONCURRENCY` in `io_bridge_object_store`) grows large.
+    let mut runs: Vec<Range<usize>> = Vec::new();
     let mut bytes_written = 0usize;
     while let Some(chunk) = stream.next().await {
         let (offset, bytes) = chunk?;
         if bytes.is_empty() {
             continue;
         }
-        let (start, end) = usize::try_from(offset)
-            .ok()
-            .and_then(|start| Some((start, start.checked_add(bytes.len())?)))
-            .filter(|&(_, end)| end <= expected_len)
-            .ok_or_else(|| {
-                UniversalIoError::S3(
-                    format!(
-                        "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
+        let start = usize::try_from(offset).ok();
+        let end = start.and_then(|start| start.checked_add(bytes.len()));
+        let Some((start, end)) = start.zip(end).filter(|&(_, end)| end <= expected_len) else {
+            return Err(UniversalIoError::S3(
+                format!(
+                    "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
                      {expected_len}",
-                        bytes.len(),
-                    )
-                    .into(),
+                    bytes.len(),
                 )
-            })?;
-        let overlap_err = || {
-            UniversalIoError::S3(
+                .into(),
+            ));
+        };
+        if runs.iter().any(|run| run.start < end && start < run.end) {
+            return Err(UniversalIoError::S3(
                 format!("overlapping read: chunk {start}..{end} intersects already-received bytes")
                     .into(),
-            )
-        };
-
-        // Merge with a range ending exactly at `start` and/or one starting
-        // exactly at `end`; any true intersection is a protocol violation.
-        let mut new_start = start;
-        let mut new_end = end;
-        if let Some((&prev_start, &prev_end)) = written.range(..=start).next_back() {
-            if prev_end > start {
-                return Err(overlap_err());
-            }
-            if prev_end == start {
-                written.remove(&prev_start);
-                new_start = prev_start;
-            }
+            ));
         }
-        if let Some((&next_start, &next_end)) = written.range(start..).next() {
-            if next_start < end {
-                return Err(overlap_err());
-            }
-            if next_start == end {
-                written.remove(&next_start);
-                new_end = next_end;
-            }
-        }
-        // SAFETY: `end <= expected_len <= capacity`, and the checks above
-        // guarantee `start..end` is disjoint from every prior write.
+        // SAFETY: `end <= expected_len <= capacity`, and the check above
+        // guarantees `start..end` is disjoint from every prior write.
         unsafe {
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.as_mut_ptr().add(start), bytes.len());
         }
-        written.insert(new_start, new_end);
         bytes_written += bytes.len();
+        // Grow an adjacent run or start a new one.
+        // Runs are disjoint, so each side matches at most once.
+        let before = runs.iter().position(|run| run.end == start);
+        let after = runs.iter().position(|run| run.start == end);
+        match (before, after) {
+            (Some(before), Some(after)) => {
+                runs[before].end = runs[after].end;
+                runs.swap_remove(after);
+            }
+            (Some(before), None) => runs[before].end = end,
+            (None, Some(after)) => runs[after].start = start,
+            (None, None) => runs.push(start..end),
+        }
     }
     // Every write was in-bounds and disjoint, so matching totals prove the
     // chunks tiled `0..expected_len` exactly; anything less means a gap.
     if bytes_written != expected_len {
-        return Err(UniversalIoError::S3Config {
-            description: format!("short read: expected {expected_len} bytes, got {bytes_written}"),
-        });
+        return Err(UniversalIoError::S3(
+            format!("short read: expected {expected_len} bytes, got {bytes_written}").into(),
+        ));
     }
     // SAFETY: the coverage check above proves every byte in `0..expected_len`
     // was written exactly once.
