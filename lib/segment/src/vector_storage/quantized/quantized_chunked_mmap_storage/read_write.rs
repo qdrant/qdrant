@@ -5,7 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, Populate, UniversalWrite};
+use common::universal_io::{MmapFile, Populate, UniversalWrite, UserData};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -64,6 +64,22 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
         P: AccessPattern,
     {
         self.data.get_many::<P>(index as usize, count)
+    }
+
+    /// Batched counterpart of [`Self::get_many`]: invoke `callback` with the
+    /// concatenated records of each `(user_data, start, count)` range, batching
+    /// the underlying reads. Like [`Self::get_many`], a range must not
+    /// straddle a chunk boundary.
+    pub fn for_each_many<P, U>(
+        &self,
+        ranges: impl Iterator<Item = (U, PointOffsetType, u32)>,
+        callback: impl FnMut(U, Cow<'_, [u8]>) -> OperationResult<()>,
+    ) -> OperationResult<()>
+    where
+        P: AccessPattern,
+        U: UserData,
+    {
+        self.data.for_each_vector::<P, _>(ranges, callback)
     }
 }
 

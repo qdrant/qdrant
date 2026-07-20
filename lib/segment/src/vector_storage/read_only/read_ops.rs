@@ -239,4 +239,48 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
             }
         }
     }
+
+    fn available_vector_count(&self) -> usize {
+        match self {
+            VectorStorageReadEnum::Dense(s) => s.available_vector_count(),
+            VectorStorageReadEnum::DenseByte(s) => s.available_vector_count(),
+            VectorStorageReadEnum::DenseHalf(s) => s.available_vector_count(),
+            VectorStorageReadEnum::DenseChunked(s) => s.available_vector_count(),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.available_vector_count(),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.available_vector_count(),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.available_vector_count(),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.available_vector_count(),
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.available_vector_count(),
+            VectorStorageReadEnum::Sparse(s) => s.available_vector_count(),
+        }
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        match self {
+            VectorStorageReadEnum::Dense(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseByte(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseHalf(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseChunked(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseChunkedByte(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageReadEnum::DenseChunkedHalf(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageReadEnum::MultiDenseChunked(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback)
+            }
+            VectorStorageReadEnum::Sparse(s) => s.read_vector_bytes::<P, U>(keys, callback),
+        }
+    }
 }
