@@ -45,7 +45,7 @@ impl<S: UniversalRead> GeoMapIndexRead for StoredGeoMapIndex<S> {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         StoredGeoMapIndex::check_values_any(self, idx, hw_counter, |p| check_fn(p))
     }
 

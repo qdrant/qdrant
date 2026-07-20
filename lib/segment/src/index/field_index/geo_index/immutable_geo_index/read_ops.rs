@@ -45,7 +45,7 @@ impl GeoMapIndexRead for ImmutableGeoMapIndex {
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         ImmutableGeoMapIndex::check_values_any(self, idx, |p| check_fn(p))
     }
 

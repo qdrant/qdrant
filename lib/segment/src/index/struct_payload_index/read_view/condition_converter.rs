@@ -48,7 +48,6 @@ where
                             point_id,
                             |payload| {
                                 check_field_condition(field_condition, &payload, field_indexes, &hw)
-                                    .unwrap(/* TODO(uio): handle errors */)
                             },
                             &hw,
                         )
@@ -79,7 +78,7 @@ where
                         Box::new(move |point_id| {
                             payload_provider.with_payload(
                                 point_id,
-                                |payload| check_is_empty_condition(is_empty, &payload),
+                                |payload| Ok(check_is_empty_condition(is_empty, &payload)),
                                 &hw,
                             )
                         })
@@ -103,7 +102,7 @@ where
                         Box::new(move |point_id| {
                             payload_provider.with_payload(
                                 point_id,
-                                |payload| check_is_null_condition(is_null, &payload),
+                                |payload| Ok(check_is_null_condition(is_null, &payload)),
                                 &hw,
                             )
                         })
@@ -116,15 +115,17 @@ where
                     .iter()
                     .filter_map(|external_id| id_tracker.internal_id(*external_id))
                     .collect();
-                Box::new(move |point_id| segment_ids.contains(&point_id))
+                Box::new(move |point_id| Ok(segment_ids.contains(&point_id)))
             }
             Condition::HasVector(has_vector) => {
                 if let Some(vector_storage) =
                     self.vector_storages.get(&has_vector.has_vector).cloned()
                 {
-                    Box::new(move |point_id| !vector_storage.borrow().is_deleted_vector(point_id))
+                    Box::new(move |point_id| {
+                        Ok(!vector_storage.borrow().is_deleted_vector(point_id))
+                    })
                 } else {
-                    Box::new(|_point_id| false)
+                    Box::new(|_point_id| Ok(false))
                 }
             }
             Condition::Nested(nested) => {
@@ -173,11 +174,11 @@ where
                                         &hw,
                                     ) {
                                         // If at least one nested object matches, return true
-                                        return true;
+                                        return Ok(true);
                                     }
                                 }
                             }
-                            false
+                            Ok(false)
                         },
                         &hw,
                     )
@@ -191,7 +192,7 @@ where
                     .filter_map(|external_id| id_tracker.internal_id(external_id))
                     .collect();
 
-                Box::new(move |internal_id| segment_ids.contains(&internal_id))
+                Box::new(move |internal_id| Ok(segment_ids.contains(&internal_id)))
             }
             Condition::Filter(_) => unreachable!(),
         }

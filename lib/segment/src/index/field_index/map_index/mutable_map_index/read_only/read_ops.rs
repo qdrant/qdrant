@@ -20,7 +20,7 @@ where
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         self.inner.check_values_any(idx, hw_counter, check_fn)
     }
 

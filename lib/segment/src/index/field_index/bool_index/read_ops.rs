@@ -294,7 +294,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
         }) => {
             let is_true = *is_true;
             Some(Box::new(move |point_id: PointOffsetType| {
-                idx.check_values_any(point_id, is_true)
+                Ok(idx.check_values_any(point_id, is_true))
             }))
         }
         Match::Value(MatchValue {

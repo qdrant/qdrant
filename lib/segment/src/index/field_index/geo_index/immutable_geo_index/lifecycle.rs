@@ -179,13 +179,13 @@ impl ImmutableGeoMapIndex {
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         let mut counter = 0usize;
 
-        self.point_to_values.check_values_any(idx, |v| {
+        Ok(self.point_to_values.check_values_any(idx, |v| {
             counter += 1;
             check_fn(v)
-        })
+        }))
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = &GeoPoint> + '_> {
