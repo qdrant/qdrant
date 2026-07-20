@@ -645,66 +645,35 @@ impl SegmentHolder {
 
     /// Whether at least one appendable segment is below the given size cap.
     ///
-    /// `false` when there are no appendable segments at all. With no cap, any appendable segment
-    /// counts as having capacity. Segments that cannot be read-locked right now count as having
-    /// capacity: the cap is a soft limit and liveness wins over precision.
+    /// `false` when there are no appendable segments at all. Eligibility follows
+    /// [`eligible_appendable_segments`](Self::eligible_appendable_segments) with the given cap.
     pub fn has_appendable_segment_with_capacity(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> bool {
-        let appendable_segments = self.appendable_segments_ids();
-        !appendable_segments.is_empty()
-            && appendable_segments
-                .iter()
-                .any(|segment_id| self.segment_has_capacity(*segment_id, max_segment_size_bytes))
+        !self
+            .eligible_appendable_segments(max_segment_size_bytes)
+            .is_empty()
     }
 
-    /// Whether the given segment's measured size is below the given cap.
-    ///
-    /// Unmeasurable segments (gone, read-lock contention, size errors) count as having capacity,
-    /// so that the soft cap never blocks progress on measurement issues alone.
-    fn segment_has_capacity(
-        &self,
-        segment_id: SegmentId,
-        max_segment_size_bytes: Option<NonZeroUsize>,
-    ) -> bool {
-        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
-            return true;
-        };
-        let Some(locked_segment) = self.get(segment_id) else {
-            return true;
-        };
-        let Some(segment) = locked_segment.get().try_read() else {
-            return true;
-        };
-        match segment.max_available_vectors_size_in_bytes() {
-            Ok(size) => size < max_segment_size_bytes.get(),
-            Err(err) => {
-                log::error!("Failed to get segment size, ignoring: {err}");
-                true
-            }
-        }
-    }
-
-    /// Appendable segments eligible as write destinations under the configured size cap, with
-    /// their measured sizes.
+    /// Appendable segments below the given size cap, with their measured sizes.
     ///
     /// Segments that cannot be measured right now (read-lock contention, size errors) stay
     /// eligible and report `None`: the cap is a soft limit and liveness wins over precision.
-    /// With no cap configured, every appendable segment is eligible.
+    /// With no cap, every appendable segment is eligible.
     ///
-    /// This is the single origin of [`OperationError::OutOfAppendableCapacity`], returned when
-    /// appendable segments exist but every measurable one reached the cap. The updater recovers
-    /// by signalling the optimizer (whose wake-up provisions a fresh appendable segment) and
-    /// re-applying the operation; already-applied points are then skipped by their point version.
-    fn appendable_segments_with_capacity(
+    /// Single origin of the eligibility semantics: every capacity decision (the destination
+    /// filter, the capacity error, the updater's wait predicate, the optimizer's ensure step)
+    /// derives from this list so they can never disagree.
+    fn eligible_appendable_segments(
         &self,
-    ) -> OperationResult<Vec<(SegmentId, Option<usize>)>> {
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> Vec<(SegmentId, Option<usize>)> {
         let appendable_segments = self.appendable_segments_ids();
 
         let mut eligible = Vec::with_capacity(appendable_segments.len());
-        for segment_id in &appendable_segments {
-            let Some(locked_segment) = self.get(*segment_id) else {
+        for segment_id in appendable_segments {
+            let Some(locked_segment) = self.get(segment_id) else {
                 continue;
             };
             let size = match locked_segment.get().try_read() {
@@ -717,17 +686,31 @@ impl SegmentHolder {
                     }
                 },
             };
-            let under_cap = match (size, self.max_segment_size_bytes) {
+            let under_cap = match (size, max_segment_size_bytes) {
                 (Some(size), Some(max_segment_size_bytes)) => size < max_segment_size_bytes.get(),
                 _ => true,
             };
             if under_cap {
-                eligible.push((*segment_id, size));
+                eligible.push((segment_id, size));
             }
         }
+        eligible
+    }
+
+    /// Appendable segments eligible as write destinations under the configured size cap, with
+    /// their measured sizes.
+    ///
+    /// This is the single origin of [`OperationError::OutOfAppendableCapacity`], returned when
+    /// appendable segments exist but every measurable one reached the cap. The updater recovers
+    /// by signalling the optimizer (whose wake-up provisions a fresh appendable segment) and
+    /// re-applying the operation; already-applied points are then skipped by their point version.
+    fn appendable_segments_with_capacity(
+        &self,
+    ) -> OperationResult<Vec<(SegmentId, Option<usize>)>> {
+        let eligible = self.eligible_appendable_segments(self.max_segment_size_bytes);
 
         if eligible.is_empty()
-            && !appendable_segments.is_empty()
+            && !self.appendable_segments.is_empty()
             && let Some(max_segment_size_bytes) = self.max_segment_size_bytes
         {
             return Err(OperationError::OutOfAppendableCapacity {

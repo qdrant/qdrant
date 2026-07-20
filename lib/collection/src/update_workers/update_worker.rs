@@ -128,15 +128,42 @@ impl UpdateWorkers {
                     // actually available, so every round makes progress worth a segment's
                     // capacity.
                     const CAPACITY_RETRIES_MAX: usize = 64;
-                    const CAPACITY_POLL_INTERVAL: std::time::Duration =
-                        std::time::Duration::from_millis(5);
+                    const CAPACITY_WAIT_SLICE: std::time::Duration =
+                        std::time::Duration::from_millis(100);
                     const CAPACITY_WAIT_PER_ROUND: std::time::Duration =
                         std::time::Duration::from_secs(5);
 
+                    let mut operation = Some(operation);
                     let mut capacity_retries = 0;
                     let operation_result = loop {
+                        // The first attempt consumes the operation; the rare retry rounds
+                        // re-read it from WAL instead of deep-cloning every operation on the
+                        // hot path.
+                        let attempt_operation = match operation.take() {
+                            Some(operation) => operation,
+                            None => {
+                                let wal_clone = wal.clone();
+                                let reread = tokio::task::spawn_blocking(move || {
+                                    wal_clone.blocking_lock().read_raw_record(op_num)
+                                })
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|record| record.deserialize().ok())
+                                .map(|deserialized| deserialized.operation);
+                                match reread {
+                                    Some(operation) => operation,
+                                    None => {
+                                        break Ok(Err(CollectionError::service_error(format!(
+                                            "Operation {op_num} could not be re-read from WAL \
+                                             for a capacity retry"
+                                        ))));
+                                    }
+                                }
+                            }
+                        };
+
                         let collection_name_clone = collection_name.clone();
-                        let operation_clone = operation.clone();
                         let wal_clone = wal.clone();
                         let segments_clone = segments.clone();
                         let update_operation_lock_clone = update_operation_lock.clone();
@@ -145,7 +172,7 @@ impl UpdateWorkers {
                         let result = tokio::task::spawn_blocking(move || {
                             Self::update_worker_internal(
                                 collection_name_clone,
-                                operation_clone,
+                                attempt_operation,
                                 op_num,
                                 wait,
                                 wal_clone,
@@ -175,19 +202,33 @@ impl UpdateWorkers {
                         if !has_capacity(&segments) {
                             let _ = optimize_sender.send(OptimizerSignal::Nop).await;
 
+                            // Wake early on the optimizer's `optimization_finished` signal;
+                            // the timeout slice doubles as a fallback re-check, since not
+                            // every wake-up path fires the signal promptly.
+                            let mut optimization_finished = optimization_finished_receiver.clone();
                             let round_deadline = Instant::now() + CAPACITY_WAIT_PER_ROUND;
                             let capacity_appeared = loop {
                                 if has_capacity(&segments) {
                                     break true;
                                 }
-                                if Instant::now() >= round_deadline {
+                                let now = Instant::now();
+                                if now >= round_deadline {
                                     break false;
                                 }
-                                tokio::time::sleep(CAPACITY_POLL_INTERVAL).await;
+                                let slice = CAPACITY_WAIT_SLICE.min(round_deadline - now);
+                                let _ =
+                                    tokio::time::timeout(slice, optimization_finished.changed())
+                                        .await;
                             };
                             if !capacity_appeared {
                                 break result;
                             }
+                        } else if capacity_retries > 1 {
+                            // Consecutive immediate retries mean this wait predicate and the
+                            // apply path keep disagreeing (a segment can measure differently
+                            // under momentary lock contention): back off briefly instead of
+                            // hot-looping full re-applications.
+                            tokio::time::sleep(CAPACITY_WAIT_SLICE).await;
                         }
                     };
 

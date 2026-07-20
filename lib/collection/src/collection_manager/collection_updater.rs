@@ -31,6 +31,16 @@ impl CollectionUpdater {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
                     log::error!("Update operation failed: {collection_error}")
+                } else if !segments.read().failed_operation.is_empty()
+                    && segments.write().failed_operation.remove(&op_num)
+                {
+                    // A previously failed operation declined non-transiently on re-apply: it can
+                    // never succeed anymore (e.g. later operations deleted the points it
+                    // references). Drop it so it stops pinning the WAL acknowledge forever.
+                    log::warn!(
+                        "Update operation {op_num} declined on re-apply, dropping it: \
+                         {collection_error}"
+                    )
                 } else {
                     log::warn!("Update operation declined: {collection_error}")
                 }
