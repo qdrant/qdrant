@@ -10,8 +10,8 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
-use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
+use gridstore::{Blob, Gridstore};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -328,6 +328,28 @@ impl VectorStorageRead for MmapSparseVectorStorage {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.get_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        // Same batched pass as `read_vectors`, re-serializing the stored form
+        // instead of decoding it into a `SparseVector`.
+        self.storage.read_values::<P, _, _>(
+            keys.into_iter(),
+            move |user_data, point_offset, stored| {
+                let Some(stored) = stored else {
+                    return Ok(());
+                };
+
+                // TODO(uio): allow gridstore to return plain bytes.
+                callback(user_data, point_offset, Blob::to_bytes(&stored));
+                Ok(())
+            },
+            HardwareCounterCell::disposable().vector_io_read(),
+        )
     }
 }
 

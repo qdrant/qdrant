@@ -17,7 +17,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -229,15 +229,53 @@ impl TurboMultiVectorStorage {
 
     /// Decode the full multivector behind an offset record.
     fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> CowVector<'_> {
-        let mut flattened = Vec::with_capacity(offset.count as usize * self.dim);
-        for inner_id in offset.offset..offset.offset + offset.count {
-            let encoded = self.storage.get_vector_data(inner_id);
-            self.dequantize_inner_into(&encoded, &mut flattened);
+        let records = self
+            .storage
+            .get_many::<Random>(offset.offset, offset.count as usize)
+            // SAFETY: `fresh_range_start` guarantees ranges never straddle across a boundary.
+            .expect("Multivector not found");
+        self.dequantize_records(&records)
+    }
+
+    /// Decode concatenated encoded records (the
+    /// [`MultiTQVectorStorage::get_multi_tq`] form) into a multivector.
+    fn dequantize_records(&self, records: &[u8]) -> CowVector<'_> {
+        let record_size = self.quantizer.quantized_size();
+        let mut flattened = Vec::with_capacity(records.len() / record_size * self.dim);
+        for encoded in records.chunks_exact(record_size) {
+            self.dequantize_inner_into(encoded, &mut flattened);
         }
         CowVector::MultiDense(CowMultiVector::Owned(TypedMultiDenseVector {
             flattened_vectors: flattened,
             dim: self.dim,
         }))
+    }
+
+    /// Two-pass batched read for records. First offsets, then vectors.
+    fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, &[u8]),
+    ) -> OperationResult<()> {
+        let offset_keys = keys
+            .into_iter()
+            .map(|(user_data, key)| ((user_data, key), key, 1));
+
+        let mut ranges = Vec::with_capacity(offset_keys.size_hint().0);
+        self.offsets
+            .for_each_vector::<P, _>(offset_keys, |(user_data, key), record| {
+                let &[offset] = record.as_ref() else {
+                    unreachable!("multi-vector offsets are stored as vectors of length 1");
+                };
+                ranges.push(((user_data, key), offset.offset, offset.count));
+                Ok(())
+            })?;
+
+        self.storage
+            .for_each_many::<P, _>(ranges.into_iter(), |(user_data, key), records| {
+                callback(user_data, key, records.as_ref());
+                Ok(())
+            })
     }
 
     /// Start of a fresh range for `count` records, never straddling a chunk
@@ -538,6 +576,28 @@ impl VectorStorageRead for TurboMultiVectorStorage {
         } else {
             0
         }
+    }
+
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+    ) {
+        self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
+            callback(user_data, key, self.dequantize_records(records));
+        })
+        .expect("read TQ multivectors");
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
+            // Concatenated encoded records per point
+            callback(user_data, key, records.to_vec());
+        })
     }
 }
 

@@ -3,6 +3,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
+use gridstore::Blob;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::ReadOnlySparseVectorStorage;
@@ -124,5 +125,27 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        // Same batched pass as `read_vectors`, re-serializing the stored form
+        // instead of decoding it into a `SparseVector`.
+        self.storage.read_values::<P, _, _>(
+            keys.into_iter(),
+            move |user_data, point_offset, stored| {
+                let Some(stored) = stored else {
+                    return Ok(());
+                };
+
+                // TODO(uio): allow gridstore to return plain bytes.
+                callback(user_data, point_offset, Blob::to_bytes(&stored));
+                Ok(())
+            },
+            HardwareCounterCell::disposable().vector_io_read(),
+        )
     }
 }

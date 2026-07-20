@@ -6,6 +6,7 @@ use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
@@ -16,7 +17,7 @@ use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::{
     SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    VectorStorageRead, default_read_vector_bytes_impl,
 };
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
@@ -198,6 +199,14 @@ impl VectorStorageRead for VolatileSparseVectorStorage {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
     }
 }
 
