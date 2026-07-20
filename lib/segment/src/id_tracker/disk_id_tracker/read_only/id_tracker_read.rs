@@ -2,14 +2,16 @@
 
 use common::bitvec::BitSlice;
 use common::generic_consts::{Random, Sequential};
+use common::iterator_ext::IteratorExt as _;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{ReadRange, UniversalRead};
+use itertools::Itertools as _;
 
 use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::mappings::{DiskMappingsSource, log_lookup_err};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
-use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
@@ -78,25 +80,10 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
     ) -> OperationResult<()> {
-        // `point_deleted` is fallible but runs inside the lazy range iterator;
-        // capture the first error out of band and surface it after the pass.
-        let mut first_err = None;
-        self.reader.external_ids_batch(
-            internal_ids
-                .into_iter()
-                .filter(|&offset| match self.point_deleted(offset) {
-                    Ok(deleted) => !deleted,
-                    Err(err) => {
-                        first_err.get_or_insert(err);
-                        false
-                    }
-                }),
-            callback,
-        )?;
-        match first_err {
-            Some(err) => Err(err),
-            None => Ok(()),
-        }
+        internal_ids
+            .into_iter()
+            .try_filter(|&offset| OperationResult::Ok(!self.point_deleted(offset)?))
+            .process_results(|it| self.reader.external_ids_batch(it, callback))?
     }
 
     /// One pipelined pass over the versions file instead of a read per point,
@@ -135,7 +122,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
     fn resolve_external_ids(
         &self,
-        point_ids: impl PointIdBatch,
+        point_ids: impl IntoIterator<Item = PointIdType>,
         _deferred_behavior: DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
