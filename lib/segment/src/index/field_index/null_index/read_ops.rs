@@ -242,12 +242,12 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
 
     if let Some(is_empty) = *is_empty {
         return Some(Box::new(move |point_id: PointOffsetType| {
-            null_index.values_is_empty(point_id) == is_empty
+            Ok(null_index.values_is_empty(point_id) == is_empty)
         }));
     }
     if let Some(is_null) = *is_null {
         return Some(Box::new(move |point_id: PointOffsetType| {
-            null_index.values_is_null(point_id) == is_null
+            Ok(null_index.values_is_null(point_id) == is_null)
         }));
     }
     None

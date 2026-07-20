@@ -20,9 +20,10 @@ where
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
-        self.point_to_values
-            .check_values_any(idx, |v| check_fn(v.borrow()))
+    ) -> OperationResult<bool> {
+        Ok(self
+            .point_to_values
+            .check_values_any(idx, |v| check_fn(v.borrow())))
     }
 
     fn get_values<'a>(

@@ -338,11 +338,12 @@ impl GeoMapIndexRead for InMemoryGeoMapIndex {
         idx: PointOffsetType,
         _hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        self.point_to_values
+    ) -> OperationResult<bool> {
+        Ok(self
+            .point_to_values
             .get(idx as usize)
             .map(|values| values.iter().any(check_fn))
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {

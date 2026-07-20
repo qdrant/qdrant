@@ -77,7 +77,7 @@ impl<S: UniversalRead> GeoMapIndexRead for ReadOnlyGeoMapIndex<S> {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         match self {
             ReadOnlyGeoMapIndex::Appendable(index) => {
                 GeoMapIndexRead::check_values_any(index, idx, hw_counter, check_fn)

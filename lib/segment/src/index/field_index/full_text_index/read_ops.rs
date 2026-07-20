@@ -316,16 +316,13 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
         PayloadMatchQueryType::TextAny => index.parse_text_any_query(text, &hw_counter),
     };
 
-    // Empty query or parse error: legacy behaviour returns a checker
-    // that always says false. FIXME(uio): the error arm silently
-    // ignores errors — see the existing TODO on `check_match` below.
+    // Empty query or parse error: return a checker that always says false.
     let Ok(Some(parsed_query)) = query_opt else {
-        return Some(Box::new(|_| false));
+        return Some(Box::new(|_| Ok(false)));
     };
 
     Some(Box::new(move |point_id: PointOffsetType| {
-        // FIXME(uio): don't silently ignore errors. Log error? Update ConditionCheckerFn?
-        index.check_match(&parsed_query, point_id).unwrap_or(false)
+        index.check_match(&parsed_query, point_id)
     }))
 }
 

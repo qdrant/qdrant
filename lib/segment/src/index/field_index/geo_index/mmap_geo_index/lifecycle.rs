@@ -243,16 +243,14 @@ impl<S: UniversalRead> StoredGeoMapIndex<S> {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
         if self.storage.deleted.get_bit(idx as usize) == Some(false) {
             self.storage
                 .point_to_values
                 .check_values_any(idx, |v| check_fn(v), &hw_counter)
-                // FIXME: don't silently ignore error
-                .unwrap_or(false)
         } else {
-            false
+            Ok(false)
         }
     }
 

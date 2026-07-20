@@ -66,7 +66,7 @@ pub trait GeoMapIndexRead {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool;
+    ) -> OperationResult<bool>;
 
     fn values_count(&self, idx: PointOffsetType) -> usize;
 
@@ -212,6 +212,7 @@ pub(super) fn filter<'a, G: GeoMapIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
+                .unwrap_or(false)
             },
         ))));
     }
@@ -224,6 +225,7 @@ pub(super) fn filter<'a, G: GeoMapIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
+                .unwrap_or(false)
             },
         ))));
     }
@@ -236,6 +238,7 @@ pub(super) fn filter<'a, G: GeoMapIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
+                .unwrap_or(false)
             },
         ))));
     }

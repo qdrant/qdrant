@@ -114,7 +114,7 @@ impl FormulaScorer<'_> {
                     })
                 }
                 VariableId::Condition(id) => {
-                    let value = check_condition(&self.condition_checkers[*id], point_id);
+                    let value = check_condition(&self.condition_checkers[*id], point_id)?;
                     let score = if value { 1.0 } else { 0.0 };
                     Ok(score)
                 }
@@ -399,8 +399,8 @@ mod tests {
             );
 
             let condition_checkers = vec![
-                OptimizedCondition::Checker(Box::new(|_| true)),
-                OptimizedCondition::Checker(Box::new(|_| false)),
+                OptimizedCondition::Checker(Box::new(|_| Ok(true))),
+                OptimizedCondition::Checker(Box::new(|_| Ok(false))),
             ];
 
             FormulaScorer {

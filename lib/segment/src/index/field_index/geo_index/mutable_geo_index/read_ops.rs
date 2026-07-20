@@ -44,7 +44,7 @@ impl GeoMapIndexRead for MutableGeoMapIndex {
         idx: PointOffsetType,
         hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         self.in_memory_index
             .check_values_any(idx, hw_counter, check_fn)
     }

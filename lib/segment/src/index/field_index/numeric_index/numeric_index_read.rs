@@ -23,16 +23,17 @@ use crate::telemetry::PayloadIndexTelemetry;
 ///
 /// [`NumericIndexInner`]: super::NumericIndexInner
 pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
-    /// Hardware counter is used only by the mmap-backed variant; in-memory
-    /// variants ignore it. Returns `false` if the mmap read fails (matches
-    /// the legacy enum dispatcher behavior — see the FIXME on
-    /// [`super::NumericIndexInner::check_values_any`]).
+    /// Checks if any value for point `idx` satisfies `check_fn`.
+    ///
+    /// Returns `Ok(true)` if at least one value matches, `Ok(false)` if none
+    /// match or the point has no values, and `Err` on I/O failure (e.g. mmap
+    /// read error).
     fn check_values_any(
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
-    ) -> bool;
+    ) -> OperationResult<bool>;
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
 

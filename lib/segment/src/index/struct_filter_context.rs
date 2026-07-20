@@ -15,6 +15,12 @@ impl<'a> StructFilterContext<'a> {
 
 impl FilterContext for StructFilterContext<'_> {
     fn check(&self, point_id: PointOffsetType) -> bool {
-        check_optimized_filter(&self.optimized_filter, point_id)
+        match check_optimized_filter(&self.optimized_filter, point_id) {
+            Ok(result) => result,
+            Err(err) => {
+                log::error!("Error evaluating filter condition for point {point_id}: {err}");
+                false
+            }
+        }
     }
 }
