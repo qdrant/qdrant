@@ -97,7 +97,8 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             };
 
             // Access pattern does not matter for io_uring.
-            self.storage.read_batch::<Random, u8, _>(ranges, callback)?;
+            self.storage
+                .read_batch::<Random, u8, _, OperationError>(ranges, callback)?;
             return Ok(());
         }
 

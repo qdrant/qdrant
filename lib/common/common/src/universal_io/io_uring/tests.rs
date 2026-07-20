@@ -86,10 +86,13 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
     // --- read_batch (callback API) ---
     let mut batch_results = Vec::new();
 
-    file.read_batch::<Sequential, _>(ranges.into_iter().enumerate(), |idx, items| {
-        batch_results.push((idx, items.to_vec()));
-        Ok(())
-    })?;
+    file.read_batch::<Sequential, _, UniversalIoError>(
+        ranges.into_iter().enumerate(),
+        |idx, items| {
+            batch_results.push((idx, items.to_vec()));
+            Ok(())
+        },
+    )?;
 
     batch_results.sort_by_key(|&(idx, _)| idx);
 

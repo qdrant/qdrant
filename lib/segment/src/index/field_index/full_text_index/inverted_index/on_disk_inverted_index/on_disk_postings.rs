@@ -114,15 +114,17 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         // parsed (copied) out of the read bytes, so nothing borrows the file past
         // the read — `read_batch` is sufficient here, no pipeline needed.
         let mut headers: Vec<HeaderResult> = Vec::with_capacity(valid_ranges.len());
-        self.storage
-            .read_batch::<Random, u8, _>(valid_ranges, |token_id, bytes| {
+        self.storage.read_batch::<Random, u8, _, UniversalIoError>(
+            valid_ranges,
+            |token_id, bytes| {
                 headers.push(
                     PostingListHeader::read_from_prefix(bytes)
                         .map(|(header, _)| (token_id, header))
                         .map_err(UniversalIoError::from),
                 );
                 Ok(())
-            })?;
+            },
+        )?;
 
         Ok(HeadersBatch {
             headers,

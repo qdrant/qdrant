@@ -8,7 +8,7 @@ use common::universal_io::{ReadRange, UniversalRead};
 use itertools::Itertools as _;
 
 use super::ReadOnlyDiskIdTracker;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::disk_id_tracker::mappings::{DiskMappingsSource, log_lookup_err};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
@@ -108,12 +108,15 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
                 (internal_id, range)
             });
         self.versions
-            .read_batch::<Random, PointOffsetType>(ranges, |internal_id, values| {
-                if let Some(&version) = values.first() {
-                    callback(internal_id, version);
-                }
-                Ok(())
-            })?;
+            .read_batch::<Random, PointOffsetType, OperationError>(
+                ranges,
+                |internal_id, values| {
+                    if let Some(&version) = values.first() {
+                        callback(internal_id, version);
+                    }
+                    Ok(())
+                },
+            )?;
 
         Ok(())
     }

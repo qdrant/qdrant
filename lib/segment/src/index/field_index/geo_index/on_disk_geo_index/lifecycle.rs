@@ -578,13 +578,15 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // non-deleted point ids.
         let mut points = AHashSet::new();
         let deleted = &self.storage.deleted;
-        self.storage.points_map_ids.read_batch::<Random, _>(
-            point_map_ranges.into_iter().enumerate(),
-            |_idx, values| {
-                points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
-                Ok(())
-            },
-        )?;
+        self.storage
+            .points_map_ids
+            .read_batch::<Random, _, OperationError>(
+                point_map_ranges.into_iter().enumerate(),
+                |_idx, values| {
+                    points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
+                    Ok(())
+                },
+            )?;
 
         Ok(points)
     }

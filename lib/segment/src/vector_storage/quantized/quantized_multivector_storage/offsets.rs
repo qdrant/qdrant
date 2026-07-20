@@ -13,7 +13,7 @@ use fs_err as fs;
 use memmap2::MmapMut;
 
 use super::{MultivectorOffset, MultivectorOffsetsStorage};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::{ChunkedVectors, ChunkedVectorsRead};
 
@@ -236,7 +236,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
         });
 
         self.offsets
-            .read_batch::<Random, _>(ranges, |idx, offset| {
+            .read_batch::<Random, _, OperationError>(ranges, |idx, offset| {
                 let [offset] = offset else {
                     unreachable!("multi-vector offsets are stored as a single-element slice");
                 };

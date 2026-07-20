@@ -8,7 +8,8 @@ use bytemuck::TransparentWrapper;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalAppend,
-    UniversalFlush, UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs,
+    UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -81,16 +82,17 @@ where
     }
 
     #[inline]
-    pub fn read_batch<P, U>(
+    pub fn read_batch<P, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
+        callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E>
     where
         P: AccessPattern,
         U: UserData,
+        E: From<UniversalIoError>,
     {
-        self.inner.read_batch::<P, T, U>(ranges, callback)
+        self.inner.read_batch::<P, T, U, E>(ranges, callback)
     }
 
     #[inline]

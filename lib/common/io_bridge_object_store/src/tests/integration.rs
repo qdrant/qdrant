@@ -90,7 +90,7 @@ fn test_read_batch_parallel() {
         .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
         .collect();
     let mut got: std::collections::HashMap<u32, Vec<u8>> = Default::default();
-    file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |user_data, slice| {
+    file.read_batch::<common::generic_consts::Random, u8, _, common::universal_io::UniversalIoError>(inputs, |user_data, slice| {
         got.insert(user_data, slice.to_vec());
         Ok(())
     })

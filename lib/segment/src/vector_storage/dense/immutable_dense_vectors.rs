@@ -17,7 +17,7 @@ use common::universal_io::{
 use fs_err::{File, OpenOptions};
 
 use crate::common::error_logging::LogError;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
@@ -200,7 +200,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         };
 
         // access pattern does not matter for io_uring
-        self.storage.read_batch::<Random, _>(ranges, callback)?;
+        self.storage
+            .read_batch::<Random, _, OperationError>(ranges, callback)?;
         Ok(())
     }
 

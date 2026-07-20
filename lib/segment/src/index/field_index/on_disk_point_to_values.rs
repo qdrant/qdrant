@@ -300,32 +300,37 @@ where
         });
         let mut value_reads = Vec::new();
         self.store
-            .read_batch::<Random, MmapRange, _>(range_reads, |point_id, ranges| {
-                let MmapRange { start, count } = ranges[0];
+            .read_batch::<Random, MmapRange, _, OperationError>(
+                range_reads,
+                |point_id, ranges| {
+                    let MmapRange { start, count } = ranges[0];
 
-                // Use next point's start as end offset for this one.
-                let end = ranges.get(1).map_or(file_len, |next| next.start);
-                let length = end - start;
+                    // Use next point's start as end offset for this one.
+                    let end = ranges.get(1).map_or(file_len, |next| next.start);
+                    let length = end - start;
 
-                // Mirror `values_iter`: account the per-point access overhead
-                // plus the length of the values.
-                hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
+                    // Mirror `values_iter`: account the per-point access overhead
+                    // plus the length of the values.
+                    hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
 
-                if count > 0 {
-                    value_reads.push((point_id, count as usize, ReadRange::new(start, length)));
-                }
-                Ok(())
-            })?;
+                    if count > 0 {
+                        value_reads.push((point_id, count as usize, ReadRange::new(start, length)));
+                    }
+                    Ok(())
+                },
+            )?;
 
         // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
         let value_reads = value_reads
             .into_iter()
             .map(|(point_id, count, range)| ((point_id, count), range));
-        self.store
-            .read_batch::<Random, u8, _>(value_reads, |(point_id, count), bytes| {
+        self.store.read_batch::<Random, u8, _, OperationError>(
+            value_reads,
+            |(point_id, count), bytes| {
                 callback(point_id, ValuesIter::new(Cow::Borrowed(bytes), count));
                 Ok(())
-            })?;
+            },
+        )?;
 
         Ok(())
     }

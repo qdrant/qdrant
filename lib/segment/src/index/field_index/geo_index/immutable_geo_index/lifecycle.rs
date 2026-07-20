@@ -34,25 +34,29 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        index.storage.points_map_ids.read_batch::<Random, _>(
-            points_map_entries
-                .iter()
-                .map(|item| ReadRange {
-                    byte_offset: u64::from(item.ids_start) * size_of::<PointOffsetType>() as u64,
-                    length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
-                })
-                .enumerate(),
-            |i, ids| {
-                points_map_hashes.push(points_map_entries[i].hash.normalize());
-                points_map_offsets.push(points_map_ids.len() as u32);
-                for &id in ids {
-                    if index.storage.deleted.is_active(id) {
-                        points_map_ids.push(id);
+        index
+            .storage
+            .points_map_ids
+            .read_batch::<Random, _, OperationError>(
+                points_map_entries
+                    .iter()
+                    .map(|item| ReadRange {
+                        byte_offset: u64::from(item.ids_start)
+                            * size_of::<PointOffsetType>() as u64,
+                        length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
+                    })
+                    .enumerate(),
+                |i, ids| {
+                    points_map_hashes.push(points_map_entries[i].hash.normalize());
+                    points_map_offsets.push(points_map_ids.len() as u32);
+                    for &id in ids {
+                        if index.storage.deleted.is_active(id) {
+                            points_map_ids.push(id);
+                        }
                     }
-                }
-                Ok(())
-            },
-        )?;
+                    Ok(())
+                },
+            )?;
         points_map_offsets.push(points_map_ids.len() as u32);
         drop(points_map_entries);
 

@@ -35,7 +35,10 @@ where
 
         // Read one byte per block purely to fault each block into the local
         // cache; the bytes themselves are discarded.
-        self.read_batch::<Sequential, u8, ()>(one_byte_per_block, |(), _bytes| Ok(()))?;
+        self.read_batch::<Sequential, u8, (), UniversalIoError>(
+            one_byte_per_block,
+            |(), _bytes| Ok(()),
+        )?;
 
         Ok(())
     }

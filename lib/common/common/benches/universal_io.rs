@@ -7,7 +7,7 @@ use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFs;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+    MmapFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
@@ -126,7 +126,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Random, T, ()>(ranges, |(), chunk| {
+                .read_batch::<Random, T, (), UniversalIoError>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -149,7 +149,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Sequential, T, ()>(ranges, |(), chunk| {
+                .read_batch::<Sequential, T, (), UniversalIoError>(ranges, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -166,12 +166,15 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
             b.iter(|| {
                 let mut sum = 0u64;
                 storage
-                    .read_batch::<Sequential, T, ()>(ranges_full_file::<T>(), |(), chunk| {
-                        for &item in bytemuck::cast_slice::<T, u64>(chunk) {
-                            sum = sum.wrapping_add(item);
-                        }
-                        Ok(())
-                    })
+                    .read_batch::<Sequential, T, (), UniversalIoError>(
+                        ranges_full_file::<T>(),
+                        |(), chunk| {
+                            for &item in bytemuck::cast_slice::<T, u64>(chunk) {
+                                sum = sum.wrapping_add(item);
+                            }
+                            Ok(())
+                        },
+                    )
                     .unwrap();
                 black_box(sum);
             })
