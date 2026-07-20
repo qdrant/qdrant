@@ -8,8 +8,17 @@ use super::DiskIdTracker;
 use super::mappings::{DiskMappingsSource, log_lookup_err};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointIdBatch, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
+
+impl<S: UniversalWrite> DiskIdTracker<S> {
+    /// Infallible counterpart of [`DiskMappingsSource::point_deleted`]: the
+    /// deleted bitvec is resident. Out-of-range offsets are treated as deleted
+    /// (mirrors the in-RAM tracker).
+    fn point_deleted(&self, offset: PointOffsetType) -> bool {
+        self.deleted.get_bit(offset as usize).unwrap_or(true)
+    }
+}
 
 impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTracker<S> {
     type Backend = S;
@@ -19,9 +28,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTra
     }
 
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
-        // Resident bitvec, so this never fails; out-of-range offsets are treated
-        // as deleted (mirrors the in-RAM tracker).
-        Ok(self.deleted.get_bit(offset as usize).unwrap_or(true))
+        Ok(self.point_deleted(offset))
     }
 
     fn deleted_bitslice(&self) -> OperationResult<&BitSlice> {
@@ -57,9 +64,9 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
         log_lookup_err(self.resolve_external(internal_id))
     }
 
-    /// Deleted offsets are dropped against the resident bitvec (free,
-    /// infallible), then one pipelined mapping-read pass delivers each
-    /// surviving `(offset, id)` in read-completion order; nothing is buffered.
+    /// Deleted offsets are dropped against the resident bitvec, then one
+    /// pipelined mapping-read pass delivers each surviving `(offset, id)` in
+    /// read-completion order; nothing is buffered.
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
@@ -68,7 +75,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
         self.reader.external_ids_batch(
             internal_ids
                 .into_iter()
-                .filter(|&offset| !self.deleted.get_bit(offset as usize).unwrap_or(true)),
+                .filter(|&offset| !self.point_deleted(offset)),
             callback,
         )
     }
@@ -77,7 +84,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
     fn resolve_external_ids(
         &self,
-        point_ids: impl PointIdBatch,
+        point_ids: impl IntoIterator<Item = PointIdType>,
         _deferred_behavior: DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
@@ -97,8 +104,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        // Resident bitvec, so this never actually errors.
-        self.point_deleted(key).unwrap_or(true)
+        self.point_deleted(key)
     }
 
     fn name(&self) -> &'static str {
