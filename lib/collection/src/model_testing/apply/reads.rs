@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
@@ -808,6 +809,35 @@ pub(super) async fn apply_count_by_num(collection: &Collection, model: &Model, n
         .filter(|entry| num_matches(&entry.payload, num))
         .count();
     assert_eq!(actual, expected, "count(num=={num}) mismatch");
+}
+
+pub(super) async fn apply_count_by_slice(
+    collection: &Collection,
+    model: &Model,
+    total: NonZeroU32,
+    index: u32,
+) {
+    let actual = collection
+        .count(
+            CountRequestInternal {
+                filter: Some(match_slice_filter(total, index)),
+                exact: true,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("count by slice failed")
+        .count;
+    let slice = Slice { total, index };
+    let expected = model.keys().filter(|id| slice.check(**id)).count();
+    assert_eq!(
+        actual, expected,
+        "count(slice total={total} index={index}) mismatch"
+    );
 }
 
 /// Map a model payload value to its facet representation. Only the facetable JSON kinds the

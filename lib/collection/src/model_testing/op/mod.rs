@@ -10,7 +10,7 @@ use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
     random_point, random_prefetch, random_query_for_name, random_recommend_strategy,
-    random_scroll_filter, random_tag, random_update_mode, random_url_prefix_probe,
+    random_scroll_filter, random_slice, random_tag, random_update_mode, random_url_prefix_probe,
     random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
     upsert_fallback,
 };
@@ -133,6 +133,12 @@ pub(super) enum Op {
     CountByTag(String),
     /// Verification op: count points whose `url` starts with the given prefix.
     CountByUrlPrefix(String),
+    /// Verification op: count points in a deterministic id-space slice
+    /// (`stable_hash(id) % total == index`), compare to model count via [`Slice::check`].
+    CountBySlice {
+        total: NonZeroU32,
+        index: u32,
+    },
     /// Verification op: scroll all points matching `tag == X`, compare id set to model.
     ScrollFilteredByTag(String),
     /// Verification op: scroll all points whose `url` starts with the given prefix.
@@ -290,7 +296,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 38;
+    const N: usize = 39;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -332,6 +338,7 @@ impl Swarm {
         "CountByUrlPrefix",
         "ScrollFilteredByUrlPrefix",
         "CreateSnapshot",
+        "CountBySlice",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -386,6 +393,7 @@ impl Swarm {
         // Background snapshot: cheap to *start* (the loop just spawns it), but it does real IO on a
         // blocking thread, so keep the weight modest.
         2, // CreateSnapshot
+        4, // CountBySlice
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -734,6 +742,10 @@ impl Op {
             35 => Op::CountByUrlPrefix(random_url_prefix_probe(rng).to_string()),
             36 => Op::ScrollFilteredByUrlPrefix(random_url_prefix_probe(rng).to_string()),
             37 => Op::CreateSnapshot,
+            38 => {
+                let (total, index) = random_slice(rng);
+                Op::CountBySlice { total, index }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -755,6 +767,7 @@ impl Op {
             Op::RetrieveRandom(_) => "RetrieveRandom",
             Op::RetrieveExisting(_) => "RetrieveExisting",
             Op::CountByNum(_) => "CountByNum",
+            Op::CountBySlice { .. } => "CountBySlice",
             Op::Search { .. } => "Search",
             Op::Query { .. } => "Query",
             Op::UpsertConditional { .. } => "UpsertConditional",

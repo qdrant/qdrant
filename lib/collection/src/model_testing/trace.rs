@@ -225,6 +225,10 @@ fn op_payload(op: &Op) -> Value {
         Op::RetrieveRandom(ids) => json!({ "ids": ids }),
         Op::RetrieveExisting(ids) => json!({ "ids": ids }),
         Op::CountByNum(num) => json!({ "num": num }),
+        Op::CountBySlice { total, index } => json!({
+            "total": total.get(),
+            "index": index,
+        }),
         Op::Search {
             vector_name,
             limit,

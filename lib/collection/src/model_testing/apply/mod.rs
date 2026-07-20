@@ -110,6 +110,9 @@ pub(super) async fn apply(
         Op::CountByUrlPrefix(prefix) => {
             reads::apply_count_by_url_prefix(collection, model, prefix).await
         }
+        Op::CountBySlice { total, index } => {
+            reads::apply_count_by_slice(collection, model, *total, *index).await
+        }
         Op::ScrollFilteredByTag(tag) => {
             reads::apply_scroll_filtered_by_tag(collection, model, tag).await
         }
