@@ -1,6 +1,7 @@
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
@@ -15,8 +16,6 @@ pub struct OptimizedFilter<'a> {
     must: Vec<ConditionCheckerEnum<'a>>,
     /// All conditions must NOT match
     must_not: Vec<ConditionCheckerEnum<'a>>,
-
-    scratch: Vec<usize>,
 }
 
 impl<'a> OptimizedFilter<'a> {
@@ -33,7 +32,6 @@ impl<'a> OptimizedFilter<'a> {
             min_should_count,
             must,
             must_not,
-            scratch: Vec::new(),
         }
     }
 
@@ -53,7 +51,6 @@ impl ConditionChecker for OptimizedFilter<'_> {
             min_should_count,
             must,
             must_not,
-            scratch: _,
         } = self;
 
         // `should`: at least one matches, if not empty.
@@ -96,7 +93,7 @@ impl ConditionChecker for OptimizedFilter<'_> {
     }
 
     fn check_batched<K: CheckItem>(
-        &mut self,
+        &self,
         ids: &mut [K],
         select: Select,
         rest: Rest,
@@ -107,7 +104,6 @@ impl ConditionChecker for OptimizedFilter<'_> {
             min_should_count,
             must,
             must_not,
-            scratch,
         } = self;
         match select {
             Select::Matches => {
@@ -125,7 +121,6 @@ impl ConditionChecker for OptimizedFilter<'_> {
                     *min_should_count,
                     Select::Matches,
                     rest,
-                    scratch,
                 )?;
                 Ok(n)
             }
@@ -149,7 +144,6 @@ impl ConditionChecker for OptimizedFilter<'_> {
                     threshold,
                     Select::NonMatches,
                     min_should_rest,
-                    scratch,
                 )?;
                 Ok(n)
             }
@@ -159,7 +153,7 @@ impl ConditionChecker for OptimizedFilter<'_> {
 
 /// Select ids that satisfy all of the conditions.
 fn all_of<C: ConditionChecker, K: CheckItem>(
-    conditions: &mut [C],
+    conditions: &[C],
     ids: &mut [K],
     select: Select,
     rest: Rest,
@@ -187,7 +181,7 @@ fn all_of<C: ConditionChecker, K: CheckItem>(
 
 /// Select ids that satisfy any of the conditions.
 fn any_of<C: ConditionChecker, K: CheckItem>(
-    conditions: &mut [C],
+    conditions: &[C],
     ids: &mut [K],
     select: Select,
     rest: Rest,
@@ -208,7 +202,7 @@ fn any_of<C: ConditionChecker, K: CheckItem>(
     //        └────────────────────────────────────────────┘
     let mut n = 0;
     let last = conditions.len().wrapping_sub(1);
-    for (i, condition) in conditions.iter_mut().enumerate() {
+    for (i, condition) in conditions.iter().enumerate() {
         // Only the last conditions's rejects are final.
         let condition_rest = rest.keep_if(i != last);
         n += condition.check_batched(&mut ids[n..], select, condition_rest)?;
@@ -218,12 +212,11 @@ fn any_of<C: ConditionChecker, K: CheckItem>(
 
 /// Selects ids that satisfy at least `threshold` conditions.
 fn at_least<C: ConditionChecker, K: CheckItem>(
-    conditions: &mut [C],
+    conditions: &[C],
     ids: &mut [K],
     threshold: usize,
     select: Select,
     rest: Rest,
-    scratch: &mut Vec<usize>,
 ) -> Result<usize, C::Error> {
     if threshold == 0 {
         return Ok(ids.len());
@@ -233,23 +226,22 @@ fn at_least<C: ConditionChecker, K: CheckItem>(
     }
 
     // Counting sort: ids are kept in blocks by descending number of satisfied
-    // children; `ids[..scratch[0]]` satisfy at least `threshold` of them,
-    // `ids[scratch[i - 1]..scratch[i]]` satisfy exactly `threshold - i`.
+    // children; `ids[..counts[0]]` satisfy at least `threshold` of them,
+    // `ids[counts[i - 1]..counts[i]]` satisfy exactly `threshold - i`.
     // A satisfied id moves to the front of its block, joining the block above.
     let m = ids.len();
-    scratch.clear();
-    scratch.resize(threshold, 0);
+    let mut counts = SmallVec::<[usize; 16]>::from_elem(0, threshold);
     let last = conditions.len() - 1;
-    for (c, condition) in conditions.iter_mut().enumerate() {
+    for (c, condition) in conditions.iter().enumerate() {
         // Only the last condition's rejects are final (see `any_of`).
         let child_rest = rest.keep_if(c != last);
         for i in 0..threshold {
-            let start = scratch[i];
-            let end = if i + 1 < threshold { scratch[i + 1] } else { m };
-            scratch[i] += condition.check_batched(&mut ids[start..end], select, child_rest)?;
+            let start = counts[i];
+            let end = if i + 1 < threshold { counts[i + 1] } else { m };
+            counts[i] += condition.check_batched(&mut ids[start..end], select, child_rest)?;
         }
     }
-    Ok(scratch[0])
+    Ok(counts[0])
 }
 
 #[cfg(test)]
@@ -272,14 +264,14 @@ mod tests {
                     total += 1;
                     ConditionCheckerEnum::TestBitOfId(TestBitOfId(total - 1))
                 };
-                let mut filter = OptimizedFilter::new(
+                let filter = OptimizedFilter::new(
                     (0..should).map(|_| next()).collect(),
                     (0..min_should).map(|_| next()).collect(),
                     min_should_count,
                     (0..must).map(|_| next()).collect(),
                     (0..must_not).map(|_| next()).collect(),
                 );
-                assert_congruence(&mut filter, 1 << total, &mut rng);
+                assert_congruence(&filter, 1 << total, &mut rng);
             }
         }
     }
@@ -289,8 +281,8 @@ mod tests {
         for seed in 0..20 {
             let mut rng = StdRng::seed_from_u64(seed);
             let mut bits = 0;
-            let mut filter = generate(&mut rng, 3, &mut bits);
-            assert_congruence(&mut filter, 1 << bits, &mut rng);
+            let filter = generate(&mut rng, 3, &mut bits);
+            assert_congruence(&filter, 1 << bits, &mut rng);
         }
 
         fn generate(rng: &mut StdRng, depth: usize, bits: &mut u32) -> OptimizedFilter<'static> {

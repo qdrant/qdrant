@@ -37,7 +37,7 @@ pub trait ConditionChecker {
     ///                   ↑ partition point
     /// ```
     fn check_batched<K: CheckItem>(
-        &mut self,
+        &self,
         items: &mut [K],
         select: Select,
         rest: Rest,
@@ -175,7 +175,7 @@ impl<E> ConditionChecker for ConstantConditionChecker<E> {
     }
 
     fn check_batched<K: CheckItem>(
-        &mut self,
+        &self,
         ids: &mut [K],
         select: Select,
         _rest: Rest,
@@ -333,7 +333,7 @@ impl<T: Copy> Iterator for PartitionerIter<'_, T> {
 /// Assert that [`ConditionChecker::check_batched`] returns the same values as
 /// [`ConditionChecker::check`].
 #[cfg(feature = "testing")]
-pub fn assert_congruence<C>(checker: &mut C, num_points: usize, rng: &mut StdRng)
+pub fn assert_congruence<C>(checker: &C, num_points: usize, rng: &mut StdRng)
 where
     C: ConditionChecker<Error: std::fmt::Debug>,
 {
@@ -344,7 +344,7 @@ where
         false => far_ids[rng.random_range(0..far_ids.len())],
     };
 
-    let mut check = |mut input: Vec<PointOffsetType>| {
+    let check = |mut input: Vec<PointOffsetType>| {
         input.sort_unstable();
 
         for select in [Select::Matches, Select::NonMatches] {

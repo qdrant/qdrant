@@ -219,12 +219,12 @@ fn check_index<T: Serialize>(
 
             // Sanity check: `check()` is the same as `expected`
             let checker = index.condition_checker(condition, HwMeasurementAcc::new());
-            let mut checker = checker.unwrap().unwrap();
+            let checker = checker.unwrap().unwrap();
             for (id, &(_, _, _, expected)) in (0u32..).zip(points) {
                 assert_eq!(checker.check(id).unwrap(), expected, "{id}");
             }
 
-            assert_congruence(&mut checker, n, &mut rng);
+            assert_congruence(&checker, n, &mut rng);
 
             let r#type = index.get_full_index_type();
 
@@ -232,7 +232,7 @@ fn check_index<T: Serialize>(
                 ReadOnlyFieldIndex::open(&MmapFs, dir, &field, schema, &r#type, n, &deleted, None);
             let index = index.unwrap().unwrap();
             let checker = index.condition_checker(condition, HwMeasurementAcc::new());
-            assert_congruence(&mut checker.unwrap().unwrap(), n as _, &mut rng);
+            assert_congruence(&checker.unwrap().unwrap(), n as _, &mut rng);
 
             #[cfg(target_os = "linux")]
             {
@@ -241,7 +241,7 @@ fn check_index<T: Serialize>(
                 );
                 let index = index.unwrap().unwrap();
                 let checker = index.condition_checker(condition, HwMeasurementAcc::new());
-                assert_congruence(&mut checker.unwrap().unwrap(), n, &mut rng);
+                assert_congruence(&checker.unwrap().unwrap(), n, &mut rng);
             }
         }
     }

@@ -370,7 +370,7 @@ impl<T: FullTextIndexRead> ConditionChecker for FullTextConditionChecker<'_, T> 
     }
 
     fn check_batched<K: CheckItem>(
-        &mut self,
+        &self,
         ids: &mut [K],
         select: Select,
         _rest: Rest,
