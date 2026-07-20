@@ -11328,7 +11328,7 @@
             ]
           },
           "metadata": {
-            "description": "Metadata to update for the collection. If provided, this will merge with existing metadata. To remove metadata, set it to an empty object.",
+            "description": "Metadata to update for the collection. If provided, this will merge with existing metadata. Individual keys can be removed by setting their value to `null`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Payload"
