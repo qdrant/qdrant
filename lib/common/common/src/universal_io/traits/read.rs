@@ -84,6 +84,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn read_batch<P, T, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        _access_pattern: P,
         mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
     ) -> Result<(), E>
     where

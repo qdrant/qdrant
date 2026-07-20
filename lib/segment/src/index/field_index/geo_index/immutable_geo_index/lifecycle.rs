@@ -34,7 +34,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        index.storage.points_map_ids.read_batch::<Random, _, _>(
+        index.storage.points_map_ids.read_batch(
             points_map_entries
                 .iter()
                 .map(|item| ReadRange {
@@ -42,6 +42,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
                     length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
                 })
                 .enumerate(),
+            Random,
             |i, ids| {
                 points_map_hashes.push(points_map_entries[i].hash.normalize());
                 points_map_offsets.push(points_map_ids.len() as u32);

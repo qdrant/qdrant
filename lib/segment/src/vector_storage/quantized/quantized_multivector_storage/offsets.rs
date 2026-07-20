@@ -235,14 +235,13 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
             (idx, ReadRange::one(offset))
         });
 
-        self.offsets
-            .read_batch::<Random, _, _>(ranges, |idx, offset| {
-                let [offset] = offset else {
-                    unreachable!("multi-vector offsets are stored as a single-element slice");
-                };
-                callback(idx, *offset);
-                UioResult::Ok(())
-            })?;
+        self.offsets.read_batch(ranges, Random, |idx, offset| {
+            let [offset] = offset else {
+                unreachable!("multi-vector offsets are stored as a single-element slice");
+            };
+            callback(idx, *offset);
+            UioResult::Ok(())
+        })?;
         Ok(())
     }
 

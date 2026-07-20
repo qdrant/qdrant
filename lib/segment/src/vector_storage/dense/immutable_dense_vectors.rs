@@ -200,7 +200,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         };
 
         // access pattern does not matter for io_uring
-        self.storage.read_batch::<Random, _, _>(ranges, callback)?;
+        self.storage.read_batch(ranges, Random, callback)?;
         Ok(())
     }
 

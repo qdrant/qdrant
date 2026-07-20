@@ -146,7 +146,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             });
 
         self.e2i
-            .read_batch::<Random, u8, (bool, u128), _>(ranges, |(is_uuid, key), bytes| {
+            .read_batch(ranges, Random, |(is_uuid, key), bytes| {
                 let entries = if is_uuid {
                     decode_uuid_block(bytes)
                 } else {
@@ -200,15 +200,14 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 (offset, range)
             });
 
-        self.i2e
-            .read_batch::<Random, u8, PointOffsetType, _>(ranges, |offset, bytes| {
-                let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-                on_found(
-                    offset,
-                    decode_external(value, self.is_uuid.contains(offset)),
-                );
-                Ok(())
-            })
+        self.i2e.read_batch(ranges, Random, |offset, bytes| {
+            let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
+            on_found(
+                offset,
+                decode_external(value, self.is_uuid.contains(offset)),
+            );
+            Ok(())
+        })
     }
 
     /// One 16-byte i2e read; the `is_uuid` flag comes from the RAM-resident

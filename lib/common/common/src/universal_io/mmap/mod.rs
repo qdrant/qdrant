@@ -228,6 +228,7 @@ impl UniversalRead for MmapFile {
     fn read_batch<P: AccessPattern, T: Item, U: UserData, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        _access_pattern: P,
         mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
     ) -> Result<(), E> {
         let bytes = self.as_bytes::<P>();

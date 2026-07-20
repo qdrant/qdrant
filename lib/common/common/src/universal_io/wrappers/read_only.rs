@@ -134,6 +134,7 @@ where
     fn read_batch<P, T, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        access_pattern: P,
         callback: impl FnMut(U, &[T]) -> Result<(), E>,
     ) -> Result<(), E>
     where
@@ -142,7 +143,7 @@ where
         U: UserData,
         E: From<UniversalIoError>,
     {
-        self.0.read_batch::<P, T, U, E>(ranges, callback)
+        self.0.read_batch(ranges, access_pattern, callback)
     }
 
     #[inline]

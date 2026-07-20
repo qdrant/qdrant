@@ -126,7 +126,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Random, T, (), _>(ranges, |(), chunk| {
+                .read_batch(ranges, Random, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -149,7 +149,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Sequential, T, (), _>(ranges, |(), chunk| {
+                .read_batch(ranges, Sequential, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
@@ -166,7 +166,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
             b.iter(|| {
                 let mut sum = 0u64;
                 storage
-                    .read_batch::<Sequential, T, (), _>(ranges_full_file::<T>(), |(), chunk| {
+                    .read_batch(ranges_full_file::<T>(), Sequential, |(), chunk| {
                         for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                             sum = sum.wrapping_add(item);
                         }

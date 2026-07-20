@@ -304,7 +304,7 @@ where
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
         self.store
-            .read_batch::<Random, MmapRange, _, _>(range_reads, |user_data, ranges| {
+            .read_batch(range_reads, Random, |user_data, ranges| {
                 let MmapRange { start, count } = ranges[0];
 
                 // Use next point's start as end offset for this one.
@@ -330,7 +330,7 @@ where
             .into_iter()
             .map(|(user_data, count, range)| ((user_data, count), range));
         self.store
-            .read_batch::<Random, u8, _, _>(value_reads, |(user_data, count), bytes| {
+            .read_batch(value_reads, Random, |(user_data, count), bytes| {
                 f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
                 UioResult::Ok(())
             })?;

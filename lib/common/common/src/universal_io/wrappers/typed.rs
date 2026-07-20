@@ -82,17 +82,13 @@ where
     }
 
     #[inline]
-    pub fn read_batch<P, U, E>(
+    pub fn read_batch<P: AccessPattern, U: UserData, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        access_pattern: P,
         callback: impl FnMut(U, &[T]) -> Result<(), E>,
-    ) -> Result<(), E>
-    where
-        P: AccessPattern,
-        U: UserData,
-        E: From<UniversalIoError>,
-    {
-        self.inner.read_batch::<P, T, U, E>(ranges, callback)
+    ) -> Result<(), E> {
+        self.inner.read_batch(ranges, access_pattern, callback)
     }
 
     #[inline]

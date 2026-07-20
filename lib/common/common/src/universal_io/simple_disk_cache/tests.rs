@@ -755,7 +755,7 @@ mod tests_mod {
             .collect();
 
         let mut seen = vec![false; ranges.len()];
-        file.read_batch::<Random, u8, usize, _>(ranges.clone(), |i, bytes| {
+        file.read_batch(ranges.clone(), Random, |i, bytes: &[u8]| {
             let start = ranges[i].1.byte_offset as usize;
             assert_eq!(bytes, &scn.data[start..start + 100]);
             assert!(!seen[i]);

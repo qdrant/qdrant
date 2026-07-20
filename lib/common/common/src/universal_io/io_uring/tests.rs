@@ -87,7 +87,7 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     // --- read_batch (callback API) ---
     let mut batch_results = Vec::new();
 
-    file.read_batch::<Sequential, _, _>(ranges.into_iter().enumerate(), |idx, items| {
+    file.read_batch(ranges.into_iter().enumerate(), Sequential, |idx, items| {
         batch_results.push((idx, items.to_vec()));
         UioResult::Ok(())
     })?;

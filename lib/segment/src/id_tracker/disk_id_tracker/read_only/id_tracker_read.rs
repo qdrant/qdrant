@@ -121,7 +121,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
                 (internal_id, range)
             });
         self.versions
-            .read_batch::<Random, PointOffsetType, _>(ranges, |internal_id, values| {
+            .read_batch(ranges, Random, |internal_id, values| {
                 if let Some(&version) = values.first() {
                     callback(internal_id, version);
                 }
