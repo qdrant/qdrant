@@ -241,13 +241,7 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         is_docker: cfg!(unix) && Path::new("/.dockerenv").exists(),
         cores: Some(common::cpu::get_num_cpus()),
         cpu_cores_used: common::process_cpu_usage::process_cpu_usage_cores(),
-        // Effective memory: the cgroup limit when set, otherwise the host total
-        // (via `segment::utils::mem`, which wraps cgroups_rs + sysinfo). Cached,
-        // so no per-call `Mem` init. Reported in KiB to match the previous unit.
         ram_size: Some((segment::utils::mem::total_memory_bytes() / 1024) as usize),
-        // Capacity of the filesystem hosting Qdrant's storage (the data volume),
-        // not the container root fs. Reported in KiB to match `sys_info`. Uses
-        // the cached reader, shared with strict-mode disk checks.
         disk_size: common::disk_usage::disk_usage(storage_path)
             .map(|usage| (usage.total / 1024) as usize)
             .or_else(|| sys_info::disk_info().ok().map(|x| x.total as usize)),
