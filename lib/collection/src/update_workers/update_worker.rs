@@ -74,11 +74,6 @@ impl UpdateWorkers {
                     wait_for_deferred,
                     hw_measurements,
                 }) => {
-                    let collection_name_clone = collection_name.clone();
-                    let wal_clone = wal.clone();
-                    let update_operation_lock_clone = update_operation_lock.clone();
-                    let update_tracker_clone = update_tracker.clone();
-
                     let operation = if let Some(operation) = operation {
                         *operation
                     } else {
@@ -119,21 +114,82 @@ impl UpdateWorkers {
                     };
 
                     let wait = sender.is_some();
-                    let segments_clone = segments.clone();
-                    let operation_result = tokio::task::spawn_blocking(move || {
-                        Self::update_worker_internal(
-                            collection_name_clone,
-                            operation,
-                            op_num,
-                            wait,
-                            wal_clone,
-                            segments_clone,
-                            update_operation_lock_clone,
-                            update_tracker_clone,
-                            hw_measurements,
-                        )
-                    })
-                    .await;
+
+                    // Apply the operation, retrying inline when it failed because every
+                    // appendable segment reached the size cap: wake the optimizer (its wake-up
+                    // provisions a fresh appendable segment) and re-apply once capacity is
+                    // back. Re-applying is safe: points already applied are skipped by their
+                    // version, exactly as in WAL replay. The caller thus sees added latency
+                    // instead of a transient failure. Should capacity not reappear in time,
+                    // fall through with the error: the operation is queued in
+                    // `failed_operation` and asynchronous recovery re-applies it later.
+                    //
+                    // Retry rounds are bounded, and each round only proceeds once capacity is
+                    // actually available, so every round makes progress worth a segment's
+                    // capacity.
+                    const CAPACITY_RETRIES_MAX: usize = 64;
+                    const CAPACITY_POLL_INTERVAL: std::time::Duration =
+                        std::time::Duration::from_millis(5);
+                    const CAPACITY_WAIT_PER_ROUND: std::time::Duration =
+                        std::time::Duration::from_secs(5);
+
+                    let mut capacity_retries = 0;
+                    let operation_result = loop {
+                        let collection_name_clone = collection_name.clone();
+                        let operation_clone = operation.clone();
+                        let wal_clone = wal.clone();
+                        let segments_clone = segments.clone();
+                        let update_operation_lock_clone = update_operation_lock.clone();
+                        let update_tracker_clone = update_tracker.clone();
+                        let hw_measurements_clone = hw_measurements.clone();
+                        let result = tokio::task::spawn_blocking(move || {
+                            Self::update_worker_internal(
+                                collection_name_clone,
+                                operation_clone,
+                                op_num,
+                                wait,
+                                wal_clone,
+                                segments_clone,
+                                update_operation_lock_clone,
+                                update_tracker_clone,
+                                hw_measurements_clone,
+                            )
+                        })
+                        .await;
+
+                        let out_of_capacity =
+                            matches!(&result, Ok(Err(err)) if err.is_out_of_appendable_capacity());
+                        if !out_of_capacity || capacity_retries >= CAPACITY_RETRIES_MAX {
+                            break result;
+                        }
+                        capacity_retries += 1;
+
+                        // Capacity may already be back: the optimizer wake-up triggered by a
+                        // previous operation provisions concurrently. Otherwise wake it up and
+                        // wait for the fresh segment.
+                        let has_capacity = |segments: &LockedSegmentHolder| {
+                            let segments_read = segments.read();
+                            let cap = segments_read.max_segment_size_bytes();
+                            segments_read.has_appendable_segment_with_capacity(cap)
+                        };
+                        if !has_capacity(&segments) {
+                            let _ = optimize_sender.send(OptimizerSignal::Nop).await;
+
+                            let round_deadline = Instant::now() + CAPACITY_WAIT_PER_ROUND;
+                            let capacity_appeared = loop {
+                                if has_capacity(&segments) {
+                                    break true;
+                                }
+                                if Instant::now() >= round_deadline {
+                                    break false;
+                                }
+                                tokio::time::sleep(CAPACITY_POLL_INTERVAL).await;
+                            };
+                            if !capacity_appeared {
+                                break result;
+                            }
+                        }
+                    };
 
                     let res = match operation_result {
                         Ok(Ok(update_res)) => optimize_sender
