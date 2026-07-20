@@ -315,7 +315,7 @@ pub struct UpdateCollection {
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
     /// Metadata to update for the collection. If provided, this will merge with existing metadata.
-    /// To remove metadata, set it to an empty object.
+    /// Individual keys can be removed by setting their value to `null`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Payload>,
 }
