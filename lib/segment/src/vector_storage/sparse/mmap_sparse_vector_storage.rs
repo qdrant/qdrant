@@ -299,13 +299,14 @@ impl VectorStorageRead for MmapSparseVectorStorage {
             Ok(())
         };
 
-        self.storage
-            .read_values::<P, _, _>(
-                keys.into_iter(),
-                callback,
-                HardwareCounterCell::disposable().vector_io_read(),
-            )
-            .expect("sparse vectors read")
+        // Ignore any error, e.g. a corrupt on-disk blob, same as `get_vector_opt` above.
+        if let Err(err) = self.storage.read_values::<P, _, _>(
+            keys.into_iter(),
+            callback,
+            HardwareCounterCell::disposable().vector_io_read(),
+        ) {
+            log::error!("Failed to read sparse vectors: {err}");
+        }
     }
 
     /// Get vector by key, if it exists.

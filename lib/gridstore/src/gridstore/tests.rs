@@ -227,6 +227,39 @@ fn test_delete_value_preserves_pointer_on_deserialize_error() {
 }
 
 #[test]
+fn test_read_values_reports_error_on_deserialize_error() {
+    // Second follow-up finding on PR #9881: `MmapSparseVectorStorage::read_vectors` used
+    // `.expect(...)` on this same `read_values` call, so a corrupt blob turned back into a
+    // panic one layer up even though `Blob::from_bytes` itself no longer panics. Assert here
+    // that `read_values` surfaces the deserialize failure as an `Err`, never a panic, so
+    // callers can choose to ignore it instead of crashing.
+    let (_dir, mut storage) = empty_storage_sized(DEFAULT_PAGE_SIZE_BYTES, Compression::None);
+
+    let mut payload = Payload::default();
+    payload.0.insert(
+        "key".to_string(),
+        serde_json::Value::String("value".to_string()),
+    );
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    storage.put_value(0, &payload, hw_counter_ref).unwrap();
+
+    let pointer = storage.get_pointer(0).unwrap();
+    let garbage = vec![0xFFu8; pointer.length as usize];
+    storage
+        .write_into_pages(&garbage, pointer.page_id, pointer.block_offset)
+        .unwrap();
+
+    let result = storage.read_values::<Random, _, GridstoreError>(
+        std::iter::once((0usize, 0u32)),
+        |_, _, _| Ok(()),
+        hw_counter.payload_io_read_counter(),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_update_single_payload() {
     let (_dir, mut storage) = empty_storage();
 
