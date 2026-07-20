@@ -964,7 +964,7 @@ fn insert_sparse_bytes<S: VectorStorage>(
     bytes: &[u8],
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    let sparse = SparseVector::try_from(StoredSparseVector::try_from_bytes(bytes)?)?;
+    let sparse = StoredSparseVector::decode_untrusted_bytes(bytes)?;
     storage.insert_vector(key, VectorRef::from(&sparse), hw_counter)
 }
 
