@@ -134,6 +134,55 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         }
     }
 
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyIdTrackerEnum::Appendable(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+        }
+    }
+
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyIdTrackerEnum::Appendable(t) => t.external_ids_batch(internal_ids, callback),
+            ReadOnlyIdTrackerEnum::Immutable(t) => t.external_ids_batch(internal_ids, callback),
+            ReadOnlyIdTrackerEnum::DiskResident(t) => t.external_ids_batch(internal_ids, callback),
+        }
+    }
+
+    fn resolve_external_ids(
+        &self,
+        point_ids: impl IntoIterator<Item = PointIdType>,
+        deferred_behavior: common::types::DeferredBehavior,
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyIdTrackerEnum::Appendable(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+        }
+    }
+
     fn total_point_count(&self) -> usize {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.total_point_count(),
