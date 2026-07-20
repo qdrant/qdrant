@@ -41,11 +41,7 @@ pub struct RunningEnvironmentTelemetry {
     #[anonymize(false)]
     distribution_version: Option<String>,
     is_docker: bool,
-    /// Number of CPU cores Qdrant will actually use for sizing thread pools,
-    /// optimizer budget and segment counts. This is the effective count from
-    /// [`common::cpu::get_num_cpus`] (honors `QDRANT_NUM_CPUS` and the cgroup
-    /// CPU quota), not the host socket count — so a cgroup-limited node reports
-    /// its quota rather than the underlying machine's total cores.
+    // Number of CPU cores Qdrant will use (accounting for cgroup/host limits)
     #[anonymize(false)]
     cores: Option<usize>,
     /// Average number of CPU cores used by this process over roughly the last
@@ -54,12 +50,9 @@ pub struct RunningEnvironmentTelemetry {
     #[anonymize(false)]
     #[serde(skip_serializing_if = "Option::is_none")]
     cpu_cores_used: Option<f32>,
-    /// Effective total memory in KiB: the cgroup memory limit enforced on this
-    /// process when set (via [`segment::utils::mem::Mem`]), otherwise the host's
-    /// total RAM. A cgroup-limited node reports its cap, not the machine total.
+    /// Effective total memory for this process in KiB (cgroup limit or host RAM).
     ram_size: Option<usize>,
-    /// Capacity in KiB of the filesystem hosting Qdrant's storage path (the data
-    /// volume), rather than the container root filesystem.
+    /// Size in KiB of the filesystem hosting Qdrant's /storage path (if not available, fallback to host disk size)
     disk_size: Option<usize>,
     #[anonymize(false)]
     cpu_flags: String,
