@@ -24,7 +24,9 @@ pub(super) async fn apply(
         }
         Op::UpsertBatch(points) => writes::apply_upsert_batch(collection, model, points).await,
         Op::Delete(ids) => writes::apply_delete(collection, model, ids).await,
-        Op::DeleteByFilter(num) => writes::apply_delete_by_filter(collection, model, *num).await,
+        Op::DeleteByFilter { num, slice } => {
+            writes::apply_delete_by_filter(collection, model, *num, *slice).await
+        }
         Op::SetPayload(ids, payload) => {
             writes::apply_set_payload(collection, model, ids, payload).await
         }

@@ -50,7 +50,14 @@ pub(super) enum Op {
     Upsert(PointIdType, NamedVectors, Payload),
     UpsertBatch(Vec<(PointIdType, NamedVectors, Payload)>),
     Delete(Vec<PointIdType>),
-    DeleteByFilter(i64),
+    /// Delete every point matching `num == X`, optionally further restricted to an id-space
+    /// `slice`. The engine resolves the filter to concrete ids at submit time before the WAL
+    /// append (issue #9575); with `slice: Some`, that resolution path also evaluates the
+    /// per-candidate slice check, and reload replays the resolved id list.
+    DeleteByFilter {
+        num: i64,
+        slice: Option<Slice>,
+    },
     SetPayload(Vec<PointIdType>, Payload),
     OverwritePayload(Vec<PointIdType>, Payload),
     DeletePayload(Vec<PointIdType>, Vec<JsonPath>),
@@ -120,9 +127,10 @@ pub(super) enum Op {
     },
     /// Same as `DeleteVectors` but driven by a `num == X` filter instead of an id list.
     ///
-    /// NOTE: this is structurally similar to `DeleteByFilter` (which is currently disabled
-    /// due to https://github.com/qdrant/qdrant/issues/9575). If post-reload count
-    /// mismatches appear here, the same WAL-replay nondeterminism is the prime suspect.
+    /// NOTE: this is structurally similar to `DeleteByFilter`. If post-reload count
+    /// mismatches appear here, the same WAL-replay nondeterminism is the prime suspect
+    /// (see https://github.com/qdrant/qdrant/issues/9575 — filter ops are now resolved to
+    /// concrete ids before the WAL append).
     DeleteVectorsByFilter {
         num: i64,
         names: Vec<VectorNameBuf>,
@@ -256,7 +264,7 @@ pub(super) enum FusionKind {
 }
 
 /// Filter selector for `ScrollPaged`. Beyond the payload filters the other scroll verifiers
-/// support, this also covers id-based matchers (`has_id`, `slice`) and `has_vector`.
+/// support, this also covers id-based matchers (`has_id`, `slice`, `num`∧`slice`) and `has_vector`.
 #[derive(Debug, Clone)]
 pub(super) enum ScrollFilter {
     None,
@@ -275,6 +283,14 @@ pub(super) enum ScrollFilter {
     /// (`stable_hash(id) % total == index`). Deterministic and model-checkable via
     /// [`Slice::check`]; primary use case of sliced scroll.
     Slice {
+        total: NonZeroU32,
+        index: u32,
+    },
+    /// Composed `num == X` ∧ `slice`: the indexed `num` condition drives candidate
+    /// selection; `slice` is evaluated per candidate (no primary clause). Exercises the
+    /// planner path where an indexed payload filter is combined with an id-hash check.
+    NumAndSlice {
+        num: i64,
         total: NonZeroU32,
         index: u32,
     },
@@ -483,7 +499,16 @@ impl Op {
             }
             1 => Op::UpsertBatch(random_distinct_points(rng, active, 2..=5, id_space)),
             2 => Op::Delete(random_distinct_ids(rng, 1..=3, id_space)),
-            3 => Op::DeleteByFilter(random_num(rng)),
+            3 => {
+                let num = random_num(rng);
+                // Half the time compose with a slice so submit-time filter resolution and
+                // WAL-replayed id lists exercise Condition::Slice, not only payload match.
+                let slice = rng.random_bool(0.5).then(|| {
+                    let (total, index) = random_slice(rng);
+                    Slice { total, index }
+                });
+                Op::DeleteByFilter { num, slice }
+            }
             4 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
                     return upsert_fallback(rng, active, id_space);
@@ -757,7 +782,7 @@ impl Op {
             Op::Upsert(..) => "Upsert",
             Op::UpsertBatch(_) => "UpsertBatch",
             Op::Delete(_) => "Delete",
-            Op::DeleteByFilter(_) => "DeleteByFilter",
+            Op::DeleteByFilter { .. } => "DeleteByFilter",
             Op::SetPayload(..) => "SetPayload",
             Op::OverwritePayload(..) => "OverwritePayload",
             Op::DeletePayload(..) => "DeletePayload",
@@ -855,6 +880,11 @@ pub(super) fn match_slice_filter(total: NonZeroU32, index: u32) -> Filter {
     Filter::new_must(Condition::Slice(SliceCondition {
         slice: Slice { total, index },
     }))
+}
+
+/// Indexed `num` ∧ id-space `slice` — `num` can be a primary clause; `slice` is per-candidate.
+pub(super) fn match_num_and_slice_filter(num: i64, total: NonZeroU32, index: u32) -> Filter {
+    match_num_filter(num).merge(&match_slice_filter(total, index))
 }
 
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {

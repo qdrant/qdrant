@@ -204,13 +204,13 @@ pub(super) fn random_slice(rng: &mut impl Rng) -> (NonZeroU32, u32) {
 
 /// A filter selector for paginated scroll: no filter, `num == X`, `tag == X`, a `has_id`
 /// matcher, a `has_vector` matcher over a currently-active vector name, a `url` prefix
-/// matcher, or a deterministic `slice` of the id space.
+/// matcher, a deterministic `slice` of the id space, or composed `num` ∧ `slice`.
 pub(super) fn random_scroll_filter(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
     id_space: &IdSpace,
 ) -> ScrollFilter {
-    match rng.random_range(0..7) {
+    match rng.random_range(0..8) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
@@ -231,6 +231,14 @@ pub(super) fn random_scroll_filter(
         6 => {
             let (total, index) = random_slice(rng);
             ScrollFilter::Slice { total, index }
+        }
+        7 => {
+            let (total, index) = random_slice(rng);
+            ScrollFilter::NumAndSlice {
+                num: random_num(rng),
+                total,
+                index,
+            }
         }
         _ => unreachable!(),
     }
