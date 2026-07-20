@@ -11,8 +11,8 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
-    UniversalReadFs,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult,
+    UniversalRead, UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -93,11 +93,12 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 
             let callback = |idx, bytes: &[u8]| {
                 f(idx, bytes);
-                Ok(())
+                UioResult::Ok(())
             };
 
             // Access pattern does not matter for io_uring.
-            self.storage.read_batch::<Random, u8, _>(ranges, callback)?;
+            self.storage
+                .read_batch::<Random, u8, _, _>(ranges, callback)?;
             return Ok(());
         }
 

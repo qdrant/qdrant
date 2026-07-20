@@ -345,7 +345,7 @@ where
                 .map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             storage
-                .read_batch::<Random, u8, _>(ranges.into_iter().enumerate(), |idx, chunk| {
+                .read_batch::<Random, u8, _, _>(ranges.into_iter().enumerate(), |idx, chunk| {
                     results[idx].extend_from_slice(chunk);
                     Ok(())
                 })

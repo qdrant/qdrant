@@ -5,7 +5,7 @@ use std::path::Path;
 
 use common::generic_consts::Random;
 use common::universal_io::{
-    ListedFile, ReadRange, UniversalAppend, UniversalIoError, UniversalRead,
+    ListedFile, ReadRange, UioResult, UniversalAppend, UniversalIoError, UniversalRead,
 };
 use io_bridge::{AsyncRead, BridgeRuntime};
 use object_store::aws::AmazonS3;
@@ -91,9 +91,9 @@ fn test_read_batch_parallel() {
         .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
         .collect();
     let mut got: std::collections::HashMap<u32, Vec<u8>> = Default::default();
-    file.read_batch::<Random, u8, _>(inputs, |user_data, slice| {
+    file.read_batch::<Random, u8, _, _>(inputs, |user_data, slice| {
         got.insert(user_data, slice.to_vec());
-        Ok(())
+        UioResult::Ok(())
     })
     .expect("read_batch");
     assert_eq!(got.len(), 16);

@@ -373,7 +373,7 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 mod tests {
     use bytes::Bytes;
     use common::generic_consts::{Random, Sequential};
-    use common::universal_io::{ListedFile, ReadRange, UniversalAppend, UniversalRead};
+    use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalAppend, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
     use object_store::memory::InMemory;
     use object_store::{PutMode, UpdateVersion};
@@ -528,9 +528,9 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch::<Random, u8, _>(inputs, |u, s| {
+        file.read_batch::<Random, u8, _, _>(inputs, |u, s| {
             got.insert(u, s.to_vec());
-            Ok(())
+            UioResult::Ok(())
         })
         .expect("read_batch");
         assert_eq!(got[&1], b"hello");

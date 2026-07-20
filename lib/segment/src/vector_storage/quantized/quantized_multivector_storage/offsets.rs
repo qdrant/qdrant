@@ -6,8 +6,8 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, UniversalWrite,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
+    UniversalRead, UniversalReadFs, UniversalWrite,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -236,12 +236,12 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
         });
 
         self.offsets
-            .read_batch::<Random, _>(ranges, |idx, offset| {
+            .read_batch::<Random, _, _>(ranges, |idx, offset| {
                 let [offset] = offset else {
                     unreachable!("multi-vector offsets are stored as a single-element slice");
                 };
                 callback(idx, *offset);
-                Ok(())
+                UioResult::Ok(())
             })?;
         Ok(())
     }

@@ -5,7 +5,7 @@ use std::ops::Range;
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalKind};
+use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError, UniversalKind};
 
 /// Per-file handle for universal read access.
 ///
@@ -81,15 +81,16 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         self.read::<Sequential, T>(range)
     }
 
-    fn read_batch<P, T, U>(
+    fn read_batch<P, T, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        mut callback: impl FnMut(U, &[T]) -> UioResult<()>,
-    ) -> UioResult<()>
+        mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E>
     where
         P: AccessPattern,
         T: Item,
         U: UserData,
+        E: From<UniversalIoError>,
     {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();

@@ -13,7 +13,7 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, SortedBlockIndex,
-    TypedStorage, UniversalRead, UniversalReadFs, UserData, read_json_via,
+    TypedStorage, UioResult, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -600,11 +600,11 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // non-deleted point ids.
         let mut points = AHashSet::new();
         let deleted = &self.storage.deleted;
-        self.storage.points_map_ids.read_batch::<Random, _>(
+        self.storage.points_map_ids.read_batch::<Random, _, _>(
             point_map_ranges.into_iter().enumerate(),
             |_idx, values| {
                 points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
-                Ok(())
+                UioResult::Ok(())
             },
         )?;
 

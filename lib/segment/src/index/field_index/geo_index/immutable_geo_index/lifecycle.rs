@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use ahash::AHashSet;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::{ReadRange, UniversalRead};
+use common::universal_io::{ReadRange, UioResult, UniversalRead};
 
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::{Counts, DELETED_SENTINEL, ImmutableGeoIndex};
@@ -34,7 +34,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        index.storage.points_map_ids.read_batch::<Random, _>(
+        index.storage.points_map_ids.read_batch::<Random, _, _>(
             points_map_entries
                 .iter()
                 .map(|item| ReadRange {
@@ -50,7 +50,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
                         points_map_ids.push(id);
                     }
                 }
-                Ok(())
+                UioResult::Ok(())
             },
         )?;
         points_map_offsets.push(points_map_ids.len() as u32);

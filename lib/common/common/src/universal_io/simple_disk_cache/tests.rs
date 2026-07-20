@@ -173,6 +173,7 @@ mod tests_mod {
     use super::*;
     #[cfg_predicate]
     use crate::universal_io::R;
+    use crate::universal_io::UioResult;
 
     const PREFILL: bool = _PREFILL;
 
@@ -754,12 +755,12 @@ mod tests_mod {
             .collect();
 
         let mut seen = vec![false; ranges.len()];
-        file.read_batch::<Random, u8, usize>(ranges.clone(), |i, bytes| {
+        file.read_batch::<Random, u8, usize, _>(ranges.clone(), |i, bytes| {
             let start = ranges[i].1.byte_offset as usize;
             assert_eq!(bytes, &scn.data[start..start + 100]);
             assert!(!seen[i]);
             seen[i] = true;
-            Ok(())
+            UioResult::Ok(())
         })
         .unwrap();
         assert!(seen.iter().all(|&s| s));

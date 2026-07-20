@@ -7,6 +7,7 @@ use nix::libc;
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
+use crate::universal_io::UioResult;
 
 /// Create `path`, populate it with the binary representation of `data`,
 /// then open and return it.
@@ -86,9 +87,9 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     // --- read_batch (callback API) ---
     let mut batch_results = Vec::new();
 
-    file.read_batch::<Sequential, _>(ranges.into_iter().enumerate(), |idx, items| {
+    file.read_batch::<Sequential, _, _>(ranges.into_iter().enumerate(), |idx, items| {
         batch_results.push((idx, items.to_vec()));
-        Ok(())
+        UioResult::Ok(())
     })?;
 
     batch_results.sort_by_key(|&(idx, _)| idx);

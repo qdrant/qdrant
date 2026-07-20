@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{
-    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UioResult, UniversalRead,
+    UniversalReadFs,
 };
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
@@ -115,13 +116,13 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         // the read — `read_batch` is sufficient here, no pipeline needed.
         let mut headers: Vec<HeaderResult> = Vec::with_capacity(valid_ranges.len());
         self.storage
-            .read_batch::<Random, u8, _>(valid_ranges, |token_id, bytes| {
+            .read_batch::<Random, u8, _, _>(valid_ranges, |token_id, bytes| {
                 headers.push(
                     PostingListHeader::read_from_prefix(bytes)
                         .map(|(header, _)| (token_id, header))
                         .map_err(UniversalIoError::from),
                 );
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         Ok(HeadersBatch {

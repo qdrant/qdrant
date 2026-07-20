@@ -367,9 +367,9 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch::<Random, u8, _>(inputs, |u, s| {
+        file.read_batch::<Random, u8, _, _>(inputs, |u, s| {
             got.insert(u, s.to_vec());
-            Ok(())
+            UioResult::Ok(())
         })
         .expect("read_batch");
         assert_eq!(got[&1], b"hello");

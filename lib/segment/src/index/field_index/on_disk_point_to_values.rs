@@ -10,8 +10,8 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
-    UserData,
+    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalRead,
+    UniversalReadFs, UserData,
 };
 use zerocopy::IntoBytes;
 
@@ -304,7 +304,7 @@ where
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
         self.store
-            .read_batch::<Random, MmapRange, _>(range_reads, |user_data, ranges| {
+            .read_batch::<Random, MmapRange, _, _>(range_reads, |user_data, ranges| {
                 let MmapRange { start, count } = ranges[0];
 
                 // Use next point's start as end offset for this one.
@@ -322,7 +322,7 @@ where
                 // usually marked in `deleted`.
                 value_reads.push((user_data, count as usize, ReadRange::new(start, length)));
 
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
@@ -330,9 +330,9 @@ where
             .into_iter()
             .map(|(user_data, count, range)| ((user_data, count), range));
         self.store
-            .read_batch::<Random, u8, _>(value_reads, |(user_data, count), bytes| {
+            .read_batch::<Random, u8, _, _>(value_reads, |(user_data, count), bytes| {
                 f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         Ok(())

@@ -12,7 +12,7 @@ use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange,
-    TypedStorage, UniversalRead, UniversalReadFs,
+    TypedStorage, UioResult, UniversalRead, UniversalReadFs,
 };
 use fs_err::{File, OpenOptions};
 
@@ -196,11 +196,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
 
         let callback = move |idx, vector: &[T]| {
             callback(idx, vector);
-            Ok(())
+            UioResult::Ok(())
         };
 
         // access pattern does not matter for io_uring
-        self.storage.read_batch::<Random, _>(ranges, callback)?;
+        self.storage.read_batch::<Random, _, _>(ranges, callback)?;
         Ok(())
     }
 
