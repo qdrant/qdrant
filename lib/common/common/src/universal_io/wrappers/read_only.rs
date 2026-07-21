@@ -160,15 +160,12 @@ where
     }
 
     #[inline]
-    fn read_bytes_iter<P, U>(
+    fn read_bytes_iter<P: AccessPattern, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
-        self.0.read_bytes_iter::<P, U>(ranges)
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
+        self.0.read_bytes_iter(ranges, access_pattern)
     }
 
     #[inline]

@@ -141,14 +141,11 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         }))
     }
 
-    fn read_bytes_iter<P, U>(
+    fn read_bytes_iter<P: AccessPattern, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
+        _access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
 
