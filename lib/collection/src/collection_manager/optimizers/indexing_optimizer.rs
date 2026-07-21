@@ -41,7 +41,8 @@ mod tests {
     use shard::segment_holder::locked::LockedSegmentHolder;
     use shard::segment_holder::{FlushMode, SegmentId};
     use shard::update::{
-        process_field_index_operation, process_payload_operation, process_point_operation,
+        PAYLOAD_OP_BATCH_SIZE, process_field_index_operation, process_payload_operation,
+        process_point_operation,
     };
     use tempfile::Builder;
 
@@ -1321,7 +1322,6 @@ mod tests {
 
         // --- 4. Verify no segment exceeds max_segment_size (plus the documented one-batch
         // overshoot tolerance of the per-batch capacity check), and every point survived. ---
-        const PAYLOAD_OP_BATCH_SIZE: usize = 32;
         let point_size_bytes = dim * size_of::<f32>();
         let batch_tolerance_bytes = PAYLOAD_OP_BATCH_SIZE * point_size_bytes;
 
