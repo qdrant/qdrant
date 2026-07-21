@@ -1,5 +1,6 @@
 //! Point lookups: sparse-index binary search plus one data-block read.
 
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead};
 use uuid::Uuid;
@@ -38,9 +39,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         &self,
         block: u64,
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
-        let bytes = self
-            .e2i
-            .read::<common::generic_consts::Random, u8>(self.num_block_range(block))?;
+        let bytes = self.e2i.read::<Random, u8>(self.num_block_range(block))?;
         Ok(decode_num_block(bytes.as_ref()))
     }
 
@@ -48,9 +47,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         &self,
         block: u64,
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
-        let bytes = self
-            .e2i
-            .read::<common::generic_consts::Random, u8>(self.uuid_block_range(block))?;
+        let bytes = self.e2i.read::<Random, u8>(self.uuid_block_range(block))?;
         Ok(decode_uuid_block(bytes.as_ref()))
     }
 
@@ -148,25 +145,22 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             });
 
         self.e2i
-            .read_batch::<common::generic_consts::Random, u8, (bool, u128)>(
-                ranges,
-                |(is_uuid, key), bytes| {
-                    let entries = if is_uuid {
-                        decode_uuid_block(bytes)
+            .read_batch::<Random, u8, (bool, u128)>(ranges, |(is_uuid, key), bytes| {
+                let entries = if is_uuid {
+                    decode_uuid_block(bytes)
+                } else {
+                    decode_num_block(bytes)
+                };
+                if let Ok(pos) = entries.binary_search_by_key(&key, |(k, _)| *k) {
+                    let id = if is_uuid {
+                        PointIdType::Uuid(Uuid::from_u128(key))
                     } else {
-                        decode_num_block(bytes)
+                        PointIdType::NumId(key as u64)
                     };
-                    if let Ok(pos) = entries.binary_search_by_key(&key, |(k, _)| *k) {
-                        let id = if is_uuid {
-                            PointIdType::Uuid(Uuid::from_u128(key))
-                        } else {
-                            PointIdType::NumId(key as u64)
-                        };
-                        on_found(id, entries[pos].1);
-                    }
-                    Ok(())
-                },
-            )?;
+                    on_found(id, entries[pos].1);
+                }
+                Ok(())
+            })?;
 
         Ok(())
     }
@@ -208,17 +202,14 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             });
 
         self.i2e
-            .read_batch::<common::generic_consts::Random, u8, PointOffsetType>(
-                ranges,
-                |offset, bytes| {
-                    let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-                    on_found(
-                        offset,
-                        decode_external(value, self.is_uuid.contains(offset)),
-                    );
-                    Ok(())
-                },
-            )?;
+            .read_batch::<Random, u8, PointOffsetType>(ranges, |offset, bytes| {
+                let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
+                on_found(
+                    offset,
+                    decode_external(value, self.is_uuid.contains(offset)),
+                );
+                Ok(())
+            })?;
 
         Ok(())
     }
@@ -227,12 +218,10 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// bitmap.
     fn read_external_id(&self, offset: PointOffsetType) -> OperationResult<PointIdType> {
         let data_offset = self.i2e_header.data_offset + u64::from(offset) * 16;
-        let data = self
-            .i2e
-            .read::<common::generic_consts::Random, u8>(ReadRange {
-                byte_offset: data_offset,
-                length: 16,
-            })?;
+        let data = self.i2e.read::<Random, u8>(ReadRange {
+            byte_offset: data_offset,
+            length: 16,
+        })?;
         let value = u128::from_le_bytes(data.as_ref().try_into().expect("16 data bytes"));
         Ok(decode_external(value, self.is_uuid.contains(offset)))
     }

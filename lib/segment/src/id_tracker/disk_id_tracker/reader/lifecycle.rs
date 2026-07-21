@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::StoredBitmask;
 use common::universal_io::{
@@ -103,21 +104,21 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         else {
             return Ok(None);
         };
-        let i2e_header_bytes = i2e.read::<common::generic_consts::Random, u8>(ReadRange {
+        let i2e_header_bytes = i2e.read::<Random, u8>(ReadRange {
             byte_offset: 0,
             length: I2E_HEADER_SIZE,
         })?;
         let i2e_header = I2eHeader::parse(i2e_header_bytes.as_ref())?;
 
         let e2i = fs.open(e2i_path(segment_path), options, Default::default())?;
-        let e2i_header_bytes = e2i.read::<common::generic_consts::Random, u8>(ReadRange {
+        let e2i_header_bytes = e2i.read::<Random, u8>(ReadRange {
             byte_offset: 0,
             length: E2I_HEADER_SIZE,
         })?;
         let e2i_header = E2iHeader::parse(e2i_header_bytes.as_ref())?;
 
         // Read the whole sparse index (numeric then UUID) in a single range.
-        let index_bytes = e2i.read::<common::generic_consts::Random, u8>(ReadRange {
+        let index_bytes = e2i.read::<Random, u8>(ReadRange {
             byte_offset: E2I_HEADER_SIZE,
             length: e2i_header.index_end() - E2I_HEADER_SIZE,
         })?;

@@ -230,6 +230,7 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
+    use common::generic_consts::{Random, Sequential};
     use common::universal_io::{
         ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs,
     };
@@ -313,7 +314,7 @@ mod tests {
             .open("obj", OpenOptions::new_for_test(), ())
             .expect("open");
         let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
+            .read::<Sequential, u8>(ReadRange::new(0, 11))
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -326,7 +327,7 @@ mod tests {
             "obj",
         );
         let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
+            .read::<Sequential, u8>(ReadRange::new(0, 11))
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -338,9 +339,7 @@ mod tests {
             BridgeRuntime::global(),
             "obj",
         );
-        let cow = file
-            .read::<common::generic_consts::Random, u8>(ReadRange::new(6, 5))
-            .expect("read");
+        let cow = file.read::<Random, u8>(ReadRange::new(6, 5)).expect("read");
         assert_eq!(&cow[..], b"world");
     }
 
@@ -368,7 +367,7 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |u, s| {
+        file.read_batch::<Random, u8, _>(inputs, |u, s| {
             got.insert(u, s.to_vec());
             Ok(())
         })

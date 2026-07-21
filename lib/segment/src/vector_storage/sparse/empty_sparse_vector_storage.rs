@@ -167,6 +167,8 @@ impl VectorStorage for EmptySparseVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::generic_consts::Random;
+
     use super::*;
 
     #[test]
@@ -184,17 +186,8 @@ mod tests {
         assert!(storage.is_deleted_vector(499));
         assert!(storage.files().is_empty());
 
-        assert!(
-            storage
-                .get_vector_opt::<common::generic_consts::Random>(0)
-                .is_none()
-        );
-        assert!(
-            storage
-                .get_sparse_opt::<common::generic_consts::Random>(0)
-                .unwrap()
-                .is_none()
-        );
+        assert!(storage.get_vector_opt::<Random>(0).is_none());
+        assert!(storage.get_sparse_opt::<Random>(0).unwrap().is_none());
     }
 
     #[test]
