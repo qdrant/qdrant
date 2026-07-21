@@ -3,7 +3,7 @@ use std::borrow::{Borrow, Cow};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 use gridstore::Blob;
 
 use super::super::read_ops::MapIndexRead;
@@ -34,6 +34,32 @@ where
             }
             ReadOnlyMapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
             ReadOnlyMapIndex::OnDisk(index) => index.check_values_any(idx, hw_counter, check_fn),
+        }
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&N) -> bool,
+        M: FnMut(U, bool),
+    {
+        match self {
+            ReadOnlyMapIndex::Appendable(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
+            ReadOnlyMapIndex::Immutable(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
+            ReadOnlyMapIndex::OnDisk(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
         }
     }
 

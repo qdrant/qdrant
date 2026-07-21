@@ -227,21 +227,24 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         callback(views)
     }
 
-    /// Fetch posting lists for the given token ids and hand them to `callback`.
-    /// If any of posting lists is not found - return `None`.
+    /// Fetch posting lists for the given token ids and hand them to `callback`,
+    /// which is *always* invoked: with `Some(views)` when every token has a
+    /// posting list, or `None` when at least one is missing (i.e. nothing can
+    /// match). Always running lets batch callers iterate their items in a single
+    /// pass, reporting a non-match for the `None` case, instead of a separate
+    /// fallback loop.
     pub fn with_all_or_none_postings<T>(
         &self,
         token_ids: &[TokenId],
-        callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
-    ) -> OperationResult<Option<T>> {
+        callback: impl FnOnce(Option<Vec<(TokenId, PostingListView<'_, V>)>>) -> OperationResult<T>,
+    ) -> OperationResult<T> {
         let HeadersBatch { headers, missing } = self.headers_iter(token_ids)?;
 
         if !missing.is_empty() {
-            return Ok(None);
+            return callback(None);
         }
 
-        self.with_posting_views(headers, token_ids.len(), callback)
-            .map(Some)
+        self.with_posting_views(headers, token_ids.len(), |views| callback(Some(views)))
     }
 
     /// Fetch all existing posting lists for the given token ids and hand them

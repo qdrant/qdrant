@@ -63,6 +63,16 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
         self.inverted_index.check_match(query, point_id)
     }
 
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        self.inverted_index
+            .check_match_batch(query, items, on_match)
+    }
+
     fn for_each_payload_block_inner(
         &self,
         threshold: usize,
