@@ -39,7 +39,7 @@ const DEFAULT_READ_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 /// tagged with their offset); a larger value hides more per-request round-trip
 /// latency at the cost of buffering up to `concurrency * chunk_size` bytes
 /// ahead of the consumer.
-const READ_CHUNK_CONCURRENCY: usize = 32;
+const READ_CHUNK_CONCURRENCY: usize = 16;
 
 /// [`AsyncRead`] handle over an object store. Holds the store as `Arc<S>` so it
 /// is cheap to clone; the object key is supplied per call.
