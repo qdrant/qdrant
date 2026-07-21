@@ -142,3 +142,61 @@ impl UpdateWorkers {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use segment::data_types::vectors::only_default_vector;
+    use segment::entry::entry_point::SegmentEntry as _;
+    use shard::segment_holder::SegmentHolder;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::collection_manager::fixtures::empty_segment;
+
+    /// `failed_operation` is what keeps a failed operation replayable: it caps the version the
+    /// flush worker acknowledges in the WAL, so the entry stays on disk until the operation is
+    /// re-applied. Both halves of the recovery contract rest on this, queueing a transient failure
+    /// and dropping one that can never succeed again.
+    #[test]
+    fn test_failed_operation_pins_wal_acknowledge() {
+        let dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut segment = empty_segment(dir.path());
+        segment
+            .upsert_point(
+                10,
+                1.into(),
+                only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                &hw_counter,
+            )
+            .unwrap();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(segment);
+        let segments = LockedSegmentHolder::new(holder);
+        segments.read().flush_all(FlushMode::Sync, true).unwrap();
+
+        assert_eq!(
+            UpdateWorkers::flush_segments(segments.clone()).unwrap(),
+            10,
+            "with nothing queued the acknowledge follows the persisted version",
+        );
+
+        segments.write().failed_operation.insert(5);
+        assert_eq!(
+            UpdateWorkers::flush_segments(segments.clone()).unwrap(),
+            5,
+            "a queued operation must hold the acknowledge below itself",
+        );
+
+        // Dropping the entry is what a non-transient decline does, and it must release the pin.
+        segments.write().failed_operation.remove(&5);
+        assert_eq!(
+            UpdateWorkers::flush_segments(segments.clone()).unwrap(),
+            10,
+            "dropping the queued operation must let the acknowledge advance again",
+        );
+    }
+}
