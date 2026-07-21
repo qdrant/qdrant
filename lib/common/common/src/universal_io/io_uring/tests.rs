@@ -103,7 +103,7 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     }
 
     // --- read_iter (iterator API) ---
-    let read_iter = file.read_iter::<Sequential, _>(ranges.into_iter().enumerate())?;
+    let read_iter = file.read_iter(ranges.into_iter().enumerate(), Sequential)?;
 
     let mut iter_results: Vec<_> = read_iter.collect::<UioResult<Vec<_>>>()?;
     iter_results.sort_by_key(|&(idx, _)| idx);
@@ -120,7 +120,7 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     let many_ranges = (0..64).map(|i| read_range::<u64>(i, 1)).enumerate();
 
     let mut count = 0;
-    for record in file.read_iter::<Sequential, _>(many_ranges)? {
+    for record in file.read_iter(many_ranges, Sequential)? {
         let (idx, items) = record?;
 
         assert_eq!(
@@ -160,8 +160,8 @@ fn test_io_uring_read_iter_concurrent() -> UioResult<()> {
     let ranges_a = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
     let ranges_b = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
 
-    let iter_a = file_a.read_iter::<Sequential, _>(ranges_a.enumerate())?;
-    let iter_b = file_b.read_iter::<Sequential, _>(ranges_b.enumerate())?;
+    let iter_a = file_a.read_iter(ranges_a.enumerate(), Sequential)?;
+    let iter_b = file_b.read_iter(ranges_b.enumerate(), Sequential)?;
 
     // Zip alternates next() calls between the two iterators on the same
     // thread-local io_uring ring. With in-flight operations left across
@@ -267,7 +267,7 @@ fn test_io_uring_eintr_handling() -> UioResult<()> {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
 
-            let Ok(iter) = file.read_iter::<Sequential, _>(ranges) else {
+            let Ok(iter) = file.read_iter(ranges, Sequential) else {
                 return 1;
             };
 

@@ -147,16 +147,12 @@ where
     }
 
     #[inline]
-    fn read_iter<P, T, U>(
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-    {
-        self.0.read_iter::<P, T, U>(ranges)
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
+        self.0.read_iter(ranges, access_pattern)
     }
 
     #[inline]

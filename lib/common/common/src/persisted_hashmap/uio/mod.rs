@@ -154,7 +154,7 @@ where
         };
         let mut iter = OrderingIterator::new(
             self.storage
-                .read_iter::<Sequential, usize>(range.iter_autochunks::<u8>().enumerate())?,
+                .read_iter::<_, usize>(range.iter_autochunks::<u8>().enumerate(), Sequential)?,
         );
 
         while let Some(chunk) = iter.next() {

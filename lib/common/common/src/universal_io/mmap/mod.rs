@@ -216,6 +216,7 @@ impl UniversalRead for MmapFile {
     fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        _access_pattern: P,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
         let bytes = self.as_bytes::<P>();
         Ok(ranges.into_iter().map(move |(user_data, range)| {

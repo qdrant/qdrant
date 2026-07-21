@@ -211,7 +211,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         let mut raw_postings: Vec<(TokenId, RawPostingList<'_>)> =
             Vec::with_capacity(expected_capacity);
 
-        for entry in self.storage.read_iter::<Sequential, u8, _>(range_iter)? {
+        for entry in self.storage.read_iter(range_iter, Sequential)? {
             let ((token_id, header), bytes) = entry?;
             raw_postings.push((token_id, RawPostingList::new(bytes, header)));
         }

@@ -550,13 +550,14 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // arrive out of order from the underlying IO, so we reorder them with
         // `OrderingIterator` before inspecting their contents; this lets us
         // stop reading as soon as we walk past the last prefix.
-        let chunks = self.storage.points_map.read_iter::<Sequential, _>(
+        let chunks = self.storage.points_map.read_iter(
             ReadRange {
                 byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
                 length: len - start_idx,
             }
             .iter_autochunks::<PointKeyValue>()
             .enumerate(),
+            Sequential,
         )?;
 
         let ordered_chunks = OrderingIterator::new(chunks);

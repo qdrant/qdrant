@@ -115,15 +115,11 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
 
     /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator
     /// instead of accepting a callback.
-    fn read_iter<P, T, U>(
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-    {
+        _access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
 

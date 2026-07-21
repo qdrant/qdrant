@@ -95,12 +95,13 @@ where
     pub fn read_iter<P, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        access_pattern: P,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
         U: UserData,
     {
-        self.inner.read_iter::<P, T, U>(ranges)
+        self.inner.read_iter(ranges, access_pattern)
     }
 
     #[inline]
