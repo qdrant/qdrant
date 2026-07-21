@@ -476,13 +476,8 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
     fn for_each_in_dense_tq_batch<F: FnMut(usize, &[u8])>(
         &self,
         keys: &[PointOffsetType],
-        mut f: F,
-    ) -> OperationResult<()> {
-        for (idx, &key) in keys.iter().enumerate() {
-            f(idx, &self.get_dense_tq::<Random>(key));
-        }
-        Ok(())
-    }
+        f: F,
+    ) -> OperationResult<()>;
 
     /// Batched byte counterpart of [`VectorStorageRead::read_vectors`]: calls
     /// `callback` with the raw encoded bytes of each vector. TQ counterpart of
