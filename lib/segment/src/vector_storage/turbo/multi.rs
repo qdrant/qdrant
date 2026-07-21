@@ -40,10 +40,11 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::{
-    MultiTQVectorStorage, VectorOffsetType, VectorStorage, VectorStorageRead,
+    MultiTQVectorStorage, MultiTQVectorStorageRead, VectorOffsetType, VectorStorage,
+    VectorStorageRead,
 };
 
-const OFFSETS_PATH: &str = "tq_offsets.dat";
+pub(super) const OFFSETS_PATH: &str = "tq_offsets.dat";
 
 /// Multivector storage for TurboQuant encoded inner vectors.
 pub struct TurboMultiVectorStorage {
@@ -665,7 +666,58 @@ impl VectorStorage for TurboMultiVectorStorage {
     }
 }
 
-impl MultiTQVectorStorage for TurboMultiVectorStorage {
+/// Scoring surface the Turbo multivector query scorers need from a multivector
+/// TurboQuant storage. Multi counterpart of
+/// [`TurboScoring`](super::TurboScoring): implemented by the writable
+/// [`TurboMultiVectorStorage`] and its read-only counterpart, so the shared
+/// `raw_turbo_multi_scorer_impl` works over either.
+pub trait TurboMultiScoring: MultiTQVectorStorageRead {
+    /// Preprocess and precompute each inner query vector of a multi-query once.
+    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ>;
+
+    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
+    /// `key`.
+    fn score_point_max_similarity(
+        &self,
+        query: &[EncodedQueryTQ],
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType;
+
+    /// Symmetric MaxSim score between two stored points.
+    fn score_internal_max_similarity(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType;
+}
+
+impl TurboMultiScoring for TurboMultiVectorStorage {
+    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
+        TurboMultiVectorStorage::preprocess_query(self, query)
+    }
+
+    fn score_point_max_similarity(
+        &self,
+        query: &[EncodedQueryTQ],
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        TurboMultiVectorStorage::score_point_max_similarity(self, query, key, hw_counter)
+    }
+
+    fn score_internal_max_similarity(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
+        TurboMultiVectorStorage::score_internal_max_similarity(self, point_a, point_b, hw_counter)
+    }
+}
+
+impl MultiTQVectorStorageRead for TurboMultiVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -688,7 +740,9 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
             // `fresh_range_start` guarantees ranges never straddle a boundary.
             .expect("Multivector not found")
     }
+}
 
+impl MultiTQVectorStorage for TurboMultiVectorStorage {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,

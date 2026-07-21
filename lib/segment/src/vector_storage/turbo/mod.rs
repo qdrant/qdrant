@@ -9,6 +9,7 @@
 //! **not** `DenseVectorStorage<T>`.
 
 pub mod multi;
+pub mod read_only;
 #[cfg(test)]
 mod test;
 mod turbo_encoded_vectors;
@@ -36,7 +37,9 @@ use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::{DenseTQVectorStorage, VectorStorage, VectorStorageRead};
+use crate::vector_storage::{
+    DenseTQVectorStorage, DenseTQVectorStorageRead, VectorStorage, VectorStorageRead,
+};
 
 // TurboQuant DataType (TQDT) always uses 4 bits without shift+scale error correction.
 const TQDT_BITS: TQBits = TQBits::Bits4;
@@ -493,7 +496,43 @@ impl VectorStorage for TurboVectorStorage {
     }
 }
 
-impl DenseTQVectorStorage for TurboVectorStorage {
+pub trait TurboScoring: DenseTQVectorStorageRead {
+    fn preprocess_query(&self, query: DenseVector) -> EncodedQueryTQ;
+
+    fn score_query_bytes(&self, query: &EncodedQueryTQ, bytes: &[u8]) -> ScoreType;
+
+    fn score_internal_encoded(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+    ) -> ScoreType;
+
+    fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
+}
+
+impl TurboScoring for TurboVectorStorage {
+    fn preprocess_query(&self, query: DenseVector) -> EncodedQueryTQ {
+        TurboVectorStorage::preprocess_query(self, query)
+    }
+
+    fn score_query_bytes(&self, query: &EncodedQueryTQ, bytes: &[u8]) -> ScoreType {
+        TurboVectorStorage::score_query_bytes(self, query, bytes)
+    }
+
+    fn score_internal_encoded(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+    ) -> ScoreType {
+        TurboVectorStorage::score_internal_encoded(self, point_a, point_b)
+    }
+
+    fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
+        TurboVectorStorage::get_quantized_vector(self, key)
+    }
+}
+
+impl DenseTQVectorStorageRead for TurboVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -527,7 +566,9 @@ impl DenseTQVectorStorage for TurboVectorStorage {
                 callback(user_data[idx], point_offsets[idx], bytes.to_vec());
             })
     }
+}
 
+impl DenseTQVectorStorage for TurboVectorStorage {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,

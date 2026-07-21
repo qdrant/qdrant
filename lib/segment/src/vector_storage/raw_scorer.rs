@@ -34,8 +34,8 @@ use crate::vector_storage::query_scorer::turbo_multi_custom_query_scorer::TurboM
 use crate::vector_storage::query_scorer::turbo_multi_query_scorer::TurboMultiQueryScorer;
 use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
-use crate::vector_storage::turbo::TurboVectorStorage;
-use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
+use crate::vector_storage::turbo::TurboScoring;
+use crate::vector_storage::turbo::multi::TurboMultiScoring;
 
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
@@ -84,7 +84,7 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseTurbo(vs) => raw_turbo_scorer_impl(query, vs, hc),
+        VectorStorageEnum::DenseTurbo(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
@@ -101,7 +101,9 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
-        VectorStorageEnum::MultiDenseTurbo(vs) => raw_turbo_multi_scorer_impl(query, vs, hc),
+        VectorStorageEnum::MultiDenseTurbo(vs) => {
+            raw_turbo_multi_scorer_impl(query, vs.as_ref(), hc)
+        }
         VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
     }
@@ -326,16 +328,9 @@ fn new_scorer_with_metric<
     }
 }
 
-/// Build a [`RawScorer`] for a [`TurboVectorStorage`].
-///
-/// The metric is selected at runtime from the storage's distance (no generic
-/// `TMetric`): query preprocessing and the score sign convention live inside
-/// [`TurboVectorStorage`], so the scorers here only carry the precomputed
-/// query. `Nearest` uses the asymmetric [`TurboQueryScorer`]; the multi-vector
-/// queries use [`TurboCustomQueryScorer`].
-pub fn raw_turbo_scorer_impl<'a>(
+pub fn raw_turbo_scorer_impl<'a, TStorage: TurboScoring>(
     query: QueryVector,
-    vector_storage: &'a TurboVectorStorage,
+    vector_storage: &'a TStorage,
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
@@ -387,14 +382,9 @@ pub fn raw_turbo_scorer_impl<'a>(
     }
 }
 
-/// Build a [`RawScorer`] for a [`TurboMultiVectorStorage`].
-///
-/// Mirror of [`raw_turbo_scorer_impl`] for multivectors: `Nearest` uses the
-/// MaxSim [`TurboMultiQueryScorer`]; the multi-vector queries use
-/// [`TurboMultiCustomQueryScorer`].
-pub fn raw_turbo_multi_scorer_impl<'a>(
+pub fn raw_turbo_multi_scorer_impl<'a, TStorage: TurboMultiScoring>(
     query: QueryVector,
-    vector_storage: &'a TurboMultiVectorStorage,
+    vector_storage: &'a TStorage,
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
