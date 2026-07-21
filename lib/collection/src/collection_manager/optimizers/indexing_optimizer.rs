@@ -1179,10 +1179,6 @@ mod tests {
         let segment_a_id = holder.add_new(segment_a);
         let segment_b_id = holder.add_new(segment_b);
 
-        // Add a small empty appendable segment so that after indexing the other
-        // two, there is still an appendable target for upserts. We don't really
-        // need it (the holder creates one on demand), but it makes assertions
-        // about which segment overgrows clearer.
         let locked_holder = LockedSegmentHolder::new(holder);
 
         // --- 2. Run indexing optimizer to convert both segments to indexed

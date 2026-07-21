@@ -935,7 +935,7 @@ fn test_capacity_error_when_all_appendable_at_cap() {
     // Setting payload on the points of the non-appendable segment needs to CoW-move them,
     // but no appendable segment is below the cap: the operation must fail with the
     // recoverable capacity error instead of growing the full destination further.
-    let points: Vec<PointIdType> = (1..=5).map(Into::into).collect();
+    let points: Vec<PointIdType> = (1..=5u64).map(PointIdType::from).collect();
     let err = set_payload(
         &holder,
         100,
