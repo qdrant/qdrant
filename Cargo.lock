@@ -1536,9 +1536,9 @@ checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
 name = "constant_time_eq"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+checksum = "1a1ec0cfec728a79a5109075543131387f911cb4d07716436d7ae20533657a96"
 
 [[package]]
 name = "convert_case"
@@ -5811,7 +5811,7 @@ dependencies = [
  "common",
  "config",
  "console-subscriber",
- "constant_time_eq 0.4.2",
+ "constant_time_eq 0.5.0",
  "ctrlc",
  "env_logger",
  "fs-err",
