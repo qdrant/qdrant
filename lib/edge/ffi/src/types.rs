@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::vectors::{
+    MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
+};
 use segment::types::{
     Payload, PointIdType, ScoredPoint as SegmentScoredPoint, WithPayloadInterface,
     WithVector as SegmentWithVector,
@@ -72,19 +74,15 @@ pub struct SparseVector {
 
 impl From<SparseVector> for InternalSparseVector {
     fn from(v: SparseVector) -> Self {
-        InternalSparseVector {
-            indices: v.indices,
-            values: v.values,
-        }
+        let SparseVector { indices, values } = v;
+        InternalSparseVector { indices, values }
     }
 }
 
 impl From<InternalSparseVector> for SparseVector {
     fn from(v: InternalSparseVector) -> Self {
-        SparseVector {
-            indices: v.indices,
-            values: v.values,
-        }
+        let InternalSparseVector { indices, values } = v;
+        SparseVector { indices, values }
     }
 }
 
@@ -183,6 +181,34 @@ impl From<VectorPersisted> for NamedVector {
             },
             VectorPersisted::MultiDense(vectors) => NamedVector::MultiDense { vectors },
         }
+    }
+}
+
+/// Query-side conversion: a host-supplied vector value becomes the engine's
+/// query vector, with the same finite/uniform validation as the upsert path.
+impl TryFrom<NamedVector> for VectorInternal {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(v: NamedVector) -> Result<Self, Self::Error> {
+        Ok(match v {
+            NamedVector::Dense { values } => {
+                reject_non_finite(&values, "dense query vector")?;
+                VectorInternal::Dense(values)
+            }
+            NamedVector::Sparse { vector } => {
+                reject_non_finite(&vector.values, "sparse query vector")?;
+                VectorInternal::Sparse(InternalSparseVector::from(vector))
+            }
+            NamedVector::MultiDense { vectors } => {
+                validate_multi_dense(&vectors, "query")?;
+                let multi = MultiDenseVectorInternal::try_from_matrix(vectors).map_err(|e| {
+                    crate::error::EdgeError::invalid_argument(format!(
+                        "invalid query multi-vector: {e}"
+                    ))
+                })?;
+                VectorInternal::MultiDense(multi)
+            }
+        })
     }
 }
 
@@ -361,6 +387,7 @@ pub struct Point {
     pub vector: Vector,
     /// Optional payload, encoded as a JSON object string.
     /// `None`/`null` stores an empty payload.
+    #[uniffi(default = None)]
     pub payload: Option<String>,
 }
 
@@ -368,15 +395,20 @@ impl Point {
     pub fn into_internal(
         self,
     ) -> std::result::Result<PointStructPersisted, crate::error::EdgeError> {
-        let payload = match self.payload {
+        let Self {
+            id,
+            vector,
+            payload,
+        } = self;
+        let payload = match payload {
             Some(json) => Some(json_to_payload(&json).map_err(|e| {
                 crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
             })?),
             None => None,
         };
         Ok(PointStructPersisted {
-            id: PointIdType::try_from(self.id)?,
-            vector: VectorStructPersisted::try_from(self.vector)?,
+            id: PointIdType::try_from(id)?,
+            vector: VectorStructPersisted::try_from(vector)?,
             payload,
         })
     }
@@ -408,12 +440,23 @@ pub struct ScoredPoint {
 
 impl From<SegmentScoredPoint> for ScoredPoint {
     fn from(p: SegmentScoredPoint) -> Self {
+        let SegmentScoredPoint {
+            id,
+            version,
+            score,
+            payload,
+            vector,
+            // Edge is single-shard and the FFI has no order-by-scored surface,
+            // so neither field reaches the host.
+            shard_key: _,
+            order_value: _,
+        } = p;
         ScoredPoint {
-            id: PointId::from(p.id),
-            version: p.version,
-            score: p.score,
-            payload: p.payload.map(|p| payload_to_json(&p)),
-            vector: p.vector.as_ref().map(|v| vector_struct_internal_to_json(v)),
+            id: PointId::from(id),
+            version,
+            score,
+            payload: payload.map(|p| payload_to_json(&p)),
+            vector: vector.as_ref().map(vector_struct_internal_to_json),
         }
     }
 }
@@ -437,10 +480,19 @@ pub struct Record {
 
 impl From<RecordInternal> for Record {
     fn from(r: RecordInternal) -> Self {
+        let RecordInternal {
+            id,
+            payload,
+            vector,
+            // Edge is single-shard and the FFI scroll surface has no
+            // order-by cursor, so neither field reaches the host.
+            shard_key: _,
+            order_value: _,
+        } = r;
         Record {
-            id: PointId::from(r.id),
-            payload: r.payload.map(|p| payload_to_json(&p)),
-            vector: r.vector.as_ref().map(|v| vector_struct_internal_to_json(v)),
+            id: PointId::from(id),
+            payload: payload.map(|p| payload_to_json(&p)),
+            vector: vector.as_ref().map(vector_struct_internal_to_json),
         }
     }
 }

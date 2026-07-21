@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use qdrant_edge_ffi::EdgeShard;
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
 use qdrant_edge_ffi::filter::{
     Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, GeoRadius, Match,
 };
-use qdrant_edge_ffi::query::CountRequest;
 use qdrant_edge_ffi::types::{PointId, WithPayload};
+use qdrant_edge_ffi::{CountRequest, EdgeShard};
 use segment::types::{
     Condition as SegmentCondition, Filter as SegmentFilter, PointIdType, WithPayloadInterface,
 };

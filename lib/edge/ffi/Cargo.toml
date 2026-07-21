@@ -12,6 +12,12 @@ authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
 
+[features]
+# Passthrough so the update-operation coverage map in `src/update.rs` stays
+# exhaustive when the workspace is built with staging operations enabled
+# (mirrors the same passthrough in `edge`).
+staging = ["edge/staging", "shard/staging"]
+
 [lints]
 workspace = true
 
@@ -37,8 +43,6 @@ ahash = { workspace = true }
 parking_lot = { workspace = true }
 serde_json = { workspace = true }
 ordered-float = { workspace = true }
-
-[dev-dependencies]
 tempfile = { workspace = true }
 
 [build-dependencies]

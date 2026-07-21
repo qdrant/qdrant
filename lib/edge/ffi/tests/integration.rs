@@ -7,12 +7,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use qdrant_edge_ffi::EdgeShard;
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
-use qdrant_edge_ffi::query::{CountRequest, Query, ScrollRequest, SearchRequest};
-use qdrant_edge_ffi::types::{Point, PointId, Vector, WithPayload, WithVector};
+use qdrant_edge_ffi::types::{NamedVector, Point, PointId, Vector, WithPayload, WithVector};
 use qdrant_edge_ffi::update::UpdateOperation;
+use qdrant_edge_ffi::{
+    CountRequest, EdgeShard, Query, RetrieveRequest, ScrollRequest, SearchRequest,
+};
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ fn upsert_three(shard: &EdgeShard) {
             payload: Some(r#"{"title":"point three"}"#.to_string()),
         },
     ];
-    let op = UpdateOperation::upsert_points(points).expect("upsert_points failed");
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed");
     shard.update(op).expect("shard.update failed");
 }
 
@@ -119,11 +120,11 @@ fn persistence_survives_reload() {
             PointId::NumId { value: 3 },
         ];
         let records = shard
-            .retrieve(
-                ids,
-                Some(WithPayload::Bool { enable: false }),
-                Some(WithVector::Bool { enable: false }),
-            )
+            .retrieve(RetrieveRequest {
+                point_ids: ids,
+                with_payload: Some(WithPayload::Bool { enable: false }),
+                with_vector: Some(WithVector::Bool { enable: false }),
+            })
             .expect("retrieve failed");
         assert_eq!(
             records.len(),
@@ -186,20 +187,24 @@ fn payload_round_trips_through_ffi() {
 
     let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
 
-    let op = UpdateOperation::upsert_points(vec![Point {
-        id: PointId::NumId { value: 42 },
-        vector: named_vec([0.1, 0.2, 0.3, 0.4]),
-        payload: Some(original_json.to_string()),
-    }])
+    let op = UpdateOperation::upsert_points(
+        vec![Point {
+            id: PointId::NumId { value: 42 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(original_json.to_string()),
+        }],
+        None,
+        None,
+    )
     .expect("upsert_points failed");
     shard.update(op).expect("update failed");
 
     let records = shard
-        .retrieve(
-            vec![PointId::NumId { value: 42 }],
-            Some(WithPayload::Bool { enable: true }),
-            Some(WithVector::Bool { enable: false }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 42 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: Some(WithVector::Bool { enable: false }),
+        })
         .expect("retrieve failed");
 
     assert_eq!(records.len(), 1, "expected exactly 1 record");
@@ -277,28 +282,32 @@ fn retrieve_missing_ids_omitted() {
     let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
 
     // Upsert only IDs 1 and 2.
-    let op = UpdateOperation::upsert_points(vec![
-        Point {
-            id: PointId::NumId { value: 1 },
-            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
-            payload: None,
-        },
-        Point {
-            id: PointId::NumId { value: 2 },
-            vector: named_vec([0.4, 0.3, 0.2, 0.1]),
-            payload: None,
-        },
-    ])
+    let op = UpdateOperation::upsert_points(
+        vec![
+            Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: None,
+            },
+            Point {
+                id: PointId::NumId { value: 2 },
+                vector: named_vec([0.4, 0.3, 0.2, 0.1]),
+                payload: None,
+            },
+        ],
+        None,
+        None,
+    )
     .expect("upsert_points failed");
     shard.update(op).expect("update failed");
 
     // Retrieve IDs 1 and 999 — only 1 exists.
     let records = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }, PointId::NumId { value: 999 }],
-            Some(WithPayload::Bool { enable: false }),
-            Some(WithVector::Bool { enable: false }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }, PointId::NumId { value: 999 }],
+            with_payload: Some(WithPayload::Bool { enable: false }),
+            with_vector: Some(WithVector::Bool { enable: false }),
+        })
         .expect("retrieve should succeed even with missing IDs");
 
     assert_eq!(
@@ -338,7 +347,9 @@ fn retrieve_missing_ids_omitted() {
 /// this SDK rejects.
 #[test]
 fn scalar_quantization_accepted_at_load() {
-    use qdrant_edge_ffi::config::{QuantizationConfig, ScalarQuantizationParams, ScalarType};
+    use qdrant_edge_ffi::config::{
+        Memory, QuantizationConfig, ScalarQuantizationParams, ScalarType,
+    };
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -353,7 +364,7 @@ fn scalar_quantization_accepted_at_load() {
                     config: ScalarQuantizationParams {
                         r#type: ScalarType::Int8,
                         quantile: Some(0.99),
-                        always_ram: Some(true),
+                        memory: Some(Memory::Pinned),
                     },
                 }),
                 multivector_config: None,
@@ -475,7 +486,11 @@ fn delete_then_reload_reduces_count() {
     assert_eq!(count, 2, "deleted point must not survive reload");
 
     let got = reloaded
-        .retrieve(vec![PointId::NumId { value: 2 }], None, None)
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 2 }],
+            with_payload: None,
+            with_vector: None,
+        })
         .expect("retrieve failed");
     assert!(got.is_empty(), "deleted ID 2 must not be retrievable");
 }
@@ -501,7 +516,9 @@ fn search_returns_ranked_results() {
     let results = shard
         .search(SearchRequest {
             query: Query::Nearest {
-                vector: vec![0.1, 0.2, 0.3, 0.4],
+                vector: NamedVector::Dense {
+                    values: vec![0.1, 0.2, 0.3, 0.4],
+                },
                 using: Some("vec".to_string()),
             },
             limit: 3,
@@ -558,16 +575,17 @@ fn set_payload_visible_after_retrieve() {
     let op = UpdateOperation::set_payload(
         vec![PointId::NumId { value: 1 }],
         r#"{"tag":"hot"}"#.to_string(),
+        None,
     )
     .expect("set_payload failed");
     shard.update(op).expect("set_payload update failed");
 
     let got = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            Some(WithPayload::Bool { enable: true }),
-            None,
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: None,
+        })
         .expect("retrieve failed");
 
     assert_eq!(got.len(), 1, "expected the one point back");
@@ -598,7 +616,7 @@ fn set_payload_visible_after_retrieve() {
 #[test]
 fn product_quantization_accepted_at_load() {
     use qdrant_edge_ffi::config::{
-        CompressionRatio, ProductQuantizationParams, QuantizationConfig,
+        CompressionRatio, Memory, ProductQuantizationParams, QuantizationConfig,
     };
 
     let dir = tempfile::tempdir().expect("tempdir failed");
@@ -613,7 +631,7 @@ fn product_quantization_accepted_at_load() {
                 quantization_config: Some(QuantizationConfig::Product {
                     config: ProductQuantizationParams {
                         compression: CompressionRatio::X16,
-                        always_ram: Some(true),
+                        memory: Some(Memory::Pinned),
                     },
                 }),
                 multivector_config: None,
@@ -639,7 +657,9 @@ fn product_quantization_accepted_at_load() {
 /// `load` must accept it.
 #[test]
 fn turbo_quantization_accepted_at_load() {
-    use qdrant_edge_ffi::config::{QuantizationConfig, TurboQuantBitSize, TurboQuantizationParams};
+    use qdrant_edge_ffi::config::{
+        Memory, QuantizationConfig, TurboQuantBitSize, TurboQuantizationParams,
+    };
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -652,7 +672,7 @@ fn turbo_quantization_accepted_at_load() {
                 distance: Distance::Dot,
                 quantization_config: Some(QuantizationConfig::Turbo {
                     config: TurboQuantizationParams {
-                        always_ram: Some(true),
+                        memory: Some(Memory::Pinned),
                         bits: Some(TurboQuantBitSize::Bits4),
                     },
                 }),
@@ -679,7 +699,7 @@ fn turbo_quantization_accepted_at_load() {
 /// (someone accidentally narrowing the allow-arm).
 #[test]
 fn binary_quantization_accepted_at_load() {
-    use qdrant_edge_ffi::config::{BinaryQuantizationParams, QuantizationConfig};
+    use qdrant_edge_ffi::config::{BinaryQuantizationParams, Memory, QuantizationConfig};
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -692,7 +712,7 @@ fn binary_quantization_accepted_at_load() {
                 distance: Distance::Dot,
                 quantization_config: Some(QuantizationConfig::Binary {
                     config: BinaryQuantizationParams {
-                        always_ram: Some(true),
+                        memory: Some(Memory::Pinned),
                         encoding: None,
                         query_encoding: None,
                     },
@@ -756,7 +776,7 @@ fn zero_vector_size_rejected_at_load() {
 /// cap on one of these paths.
 #[test]
 fn oversized_search_and_query_limits_rejected() {
-    use qdrant_edge_ffi::query::{QueryRequest, ScoringQuery};
+    use qdrant_edge_ffi::{QueryRequest, ScoringQuery};
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -767,7 +787,9 @@ fn oversized_search_and_query_limits_rejected() {
     let search_err = shard
         .search(SearchRequest {
             query: Query::Nearest {
-                vector: vec![0.1, 0.2, 0.3, 0.4],
+                vector: NamedVector::Dense {
+                    values: vec![0.1, 0.2, 0.3, 0.4],
+                },
                 using: Some("vec".to_string()),
             },
             limit: u64::MAX,
@@ -791,7 +813,9 @@ fn oversized_search_and_query_limits_rejected() {
             prefetches: Vec::new(),
             query: Some(ScoringQuery::Vector {
                 query: Query::Nearest {
-                    vector: vec![0.1, 0.2, 0.3, 0.4],
+                    vector: NamedVector::Dense {
+                        values: vec![0.1, 0.2, 0.3, 0.4],
+                    },
                     using: Some("vec".to_string()),
                 },
             }),
@@ -820,7 +844,7 @@ fn oversized_search_and_query_limits_rejected() {
 /// `optimize()` works end-to-end.
 #[test]
 fn hnsw_config_optimize_and_search() {
-    use qdrant_edge_ffi::config::HnswIndexConfig;
+    use qdrant_edge_ffi::config::{HnswIndexConfig, Memory};
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -839,7 +863,7 @@ fn hnsw_config_optimize_and_search() {
                     ef_construct: 100,
                     full_scan_threshold: 10_000,
                     max_indexing_threads: 1,
-                    on_disk: Some(false),
+                    memory: Some(Memory::Cached),
                     payload_m: None,
                 }),
             },
@@ -859,7 +883,9 @@ fn hnsw_config_optimize_and_search() {
     let results = shard
         .search(SearchRequest {
             query: Query::Nearest {
-                vector: vec![0.1, 0.2, 0.3, 0.4],
+                vector: NamedVector::Dense {
+                    values: vec![0.1, 0.2, 0.3, 0.4],
+                },
                 using: Some("vec".to_string()),
             },
             limit: 3,
@@ -907,7 +933,7 @@ fn hnsw_config_optimize_and_search() {
 /// Reaching the assertions at all is the proof (no abort).
 #[test]
 fn oversized_hnsw_params_rejected_not_allocated() {
-    use qdrant_edge_ffi::config::HnswIndexConfig;
+    use qdrant_edge_ffi::config::{HnswIndexConfig, Memory};
 
     // Build an EdgeConfig with a given HNSW config on the single "vec" field.
     let make = |hnsw: HnswIndexConfig| EdgeConfig {
@@ -929,7 +955,7 @@ fn oversized_hnsw_params_rejected_not_allocated() {
         ef_construct: 100,
         full_scan_threshold: 10_000,
         max_indexing_threads: 1,
-        on_disk: Some(false),
+        memory: Some(Memory::Cached),
         payload_m: None,
     };
 
@@ -1014,7 +1040,7 @@ fn scroll_pagination_via_next_offset() {
         })
         .collect();
     shard
-        .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
         .expect("update failed");
 
     let page_size = 2u64;
@@ -1107,10 +1133,7 @@ fn two_field_vector(a: [f32; 4], b: [f32; 4]) -> Vector {
     use qdrant_edge_ffi::types::NamedVector;
     Vector::Named {
         map: HashMap::from([
-            (
-                "vec".to_string(),
-                NamedVector::Dense { values: a.to_vec() },
-            ),
+            ("vec".to_string(), NamedVector::Dense { values: a.to_vec() }),
             (
                 "vec2".to_string(),
                 NamedVector::Dense { values: b.to_vec() },
@@ -1164,8 +1187,8 @@ fn nested_filter(depth: u32) -> qdrant_edge_ffi::filter::Filter {
 }
 
 /// Build a `Prefetch` nested `depth` levels deep via `Prefetch.prefetches`.
-fn nested_prefetch(depth: u32) -> qdrant_edge_ffi::query::Prefetch {
-    use qdrant_edge_ffi::query::Prefetch;
+fn nested_prefetch(depth: u32) -> qdrant_edge_ffi::Prefetch {
+    use qdrant_edge_ffi::Prefetch;
     let mut p = Prefetch {
         limit: 1,
         query: None,
@@ -1191,11 +1214,15 @@ fn nested_prefetch(depth: u32) -> qdrant_edge_ffi::query::Prefetch {
 /// before any shard is involved) with `InvalidArgument`.
 fn assert_vector_rejected(vector: Vector) {
     #[allow(clippy::err_expect)]
-    let err = UpdateOperation::upsert_points(vec![Point {
-        id: PointId::NumId { value: 1 },
-        vector,
-        payload: None,
-    }])
+    let err = UpdateOperation::upsert_points(
+        vec![Point {
+            id: PointId::NumId { value: 1 },
+            vector,
+            payload: None,
+        }],
+        None,
+        None,
+    )
     .err()
     .expect("invalid vector must be rejected by the upsert_points constructor");
     assert!(
@@ -1305,33 +1332,45 @@ fn non_finite_vector_components_rejected() {
 #[test]
 fn finite_vectors_accepted_by_upsert_constructor() {
     assert!(
-        UpdateOperation::upsert_points(vec![Point {
-            id: PointId::NumId { value: 1 },
-            vector: Vector::Single {
-                values: vec![0.1, 0.2, 0.3, 0.4],
-            },
-            payload: None,
-        }])
+        UpdateOperation::upsert_points(
+            vec![Point {
+                id: PointId::NumId { value: 1 },
+                vector: Vector::Single {
+                    values: vec![0.1, 0.2, 0.3, 0.4],
+                },
+                payload: None,
+            }],
+            None,
+            None
+        )
         .is_ok(),
         "a finite single vector must be accepted"
     );
     assert!(
-        UpdateOperation::upsert_points(vec![Point {
-            id: PointId::NumId { value: 2 },
-            vector: Vector::MultiDense {
-                vectors: vec![vec![1.0, 2.0], vec![3.0, 4.0]],
-            },
-            payload: None,
-        }])
+        UpdateOperation::upsert_points(
+            vec![Point {
+                id: PointId::NumId { value: 2 },
+                vector: Vector::MultiDense {
+                    vectors: vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+                },
+                payload: None,
+            }],
+            None,
+            None
+        )
         .is_ok(),
         "a finite, uniform multi-vector must be accepted"
     );
     assert!(
-        UpdateOperation::upsert_points(vec![Point {
-            id: PointId::NumId { value: 3 },
-            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
-            payload: None,
-        }])
+        UpdateOperation::upsert_points(
+            vec![Point {
+                id: PointId::NumId { value: 3 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: None,
+            }],
+            None,
+            None
+        )
         .is_ok(),
         "a finite named dense vector must be accepted"
     );
@@ -1357,7 +1396,10 @@ fn deeply_nested_filter_rejected_shallow_accepted() {
             exact: true,
         })
         .expect("a depth-3 nested filter must be accepted");
-    assert_eq!(ok, 3, "an all-matching depth-3 nested filter should count all 3 points");
+    assert_eq!(
+        ok, 3,
+        "an all-matching depth-3 nested filter should count all 3 points"
+    );
 
     // Deep (depth 65): rejected before it can recurse into the engine.
     #[allow(clippy::err_expect)]
@@ -1381,7 +1423,7 @@ fn deeply_nested_filter_rejected_shallow_accepted() {
 /// before reaching the engine.
 #[test]
 fn deeply_nested_prefetch_rejected() {
-    use qdrant_edge_ffi::query::QueryRequest;
+    use qdrant_edge_ffi::QueryRequest;
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -1440,7 +1482,7 @@ fn filter_restricts_count_scroll_and_search() {
         },
     ];
     shard
-        .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
         .expect("update failed");
 
     // count: exactly the two "a" points.
@@ -1450,7 +1492,10 @@ fn filter_restricts_count_scroll_and_search() {
             exact: true,
         })
         .expect("count failed");
-    assert_eq!(n, 2, "filter category==a must count exactly the two matching points");
+    assert_eq!(
+        n, 2,
+        "filter category==a must count exactly the two matching points"
+    );
 
     // scroll: returns only ids {1, 2}.
     let resp = shard
@@ -1472,13 +1517,19 @@ fn filter_restricts_count_scroll_and_search() {
         })
         .collect();
     scrolled.sort_unstable();
-    assert_eq!(scrolled, vec![1, 2], "scroll with filter must return only matching ids");
+    assert_eq!(
+        scrolled,
+        vec![1, 2],
+        "scroll with filter must return only matching ids"
+    );
 
     // search: returns only the two matching points, even querying toward id 3.
     let hits = shard
         .search(SearchRequest {
             query: Query::Nearest {
-                vector: vec![0.5, 0.5, 0.5, 0.5],
+                vector: NamedVector::Dense {
+                    values: vec![0.5, 0.5, 0.5, 0.5],
+                },
                 using: Some("vec".to_string()),
             },
             limit: 10,
@@ -1490,7 +1541,11 @@ fn filter_restricts_count_scroll_and_search() {
             score_threshold: None,
         })
         .expect("search failed");
-    assert_eq!(hits.len(), 2, "search with filter must return only the two category==a points");
+    assert_eq!(
+        hits.len(),
+        2,
+        "search with filter must return only the two category==a points"
+    );
     for h in &hits {
         match &h.id {
             PointId::NumId { value } => assert!(
@@ -1524,11 +1579,15 @@ fn flush_under_concurrent_upserts() {
         std::thread::spawn(move || {
             let mut ok = 0u64;
             for i in 0..n {
-                let op = UpdateOperation::upsert_points(vec![Point {
-                    id: PointId::NumId { value: i },
-                    vector: named_vec([i as f32, 0.0, 0.0, 0.0]),
-                    payload: None,
-                }])
+                let op = UpdateOperation::upsert_points(
+                    vec![Point {
+                        id: PointId::NumId { value: i },
+                        vector: named_vec([i as f32, 0.0, 0.0, 0.0]),
+                        payload: None,
+                    }],
+                    None,
+                    None,
+                )
                 .expect("upsert_points failed");
                 if shard.update(op).is_ok() {
                     ok += 1;
@@ -1553,8 +1612,14 @@ fn flush_under_concurrent_upserts() {
             exact: true,
         })
         .expect("count failed");
-    assert_eq!(ok, n, "all upserts should have succeeded (shard stayed open)");
-    assert_eq!(count, ok, "point count must equal the number of successful upserts");
+    assert_eq!(
+        ok, n,
+        "all upserts should have succeeded (shard stayed open)"
+    );
+    assert_eq!(
+        count, ok,
+        "point count must equal the number of successful upserts"
+    );
 }
 
 // ── Test 26: vector_content_round_trips (SHOULD F) ────────────────────────────
@@ -1571,22 +1636,26 @@ fn vector_content_round_trips_through_retrieve_and_search() {
     let input = [0.1f32, 0.2, 0.3, 0.4];
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 7 },
-                vector: named_vec(input),
-                payload: None,
-            }])
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 7 },
+                    vector: named_vec(input),
+                    payload: None,
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
 
     // retrieve with vectors.
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 7 }],
-            None,
-            Some(WithVector::Bool { enable: true }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 7 }],
+            with_payload: None,
+            with_vector: Some(WithVector::Bool { enable: true }),
+        })
         .expect("retrieve failed");
     assert_eq!(recs.len(), 1, "expected the one point back");
     let vjson = recs[0].vector.as_deref().expect("vector should be present");
@@ -1600,7 +1669,9 @@ fn vector_content_round_trips_through_retrieve_and_search() {
     let hits = shard
         .search(SearchRequest {
             query: Query::Nearest {
-                vector: input.to_vec(),
+                vector: NamedVector::Dense {
+                    values: input.to_vec(),
+                },
                 using: Some("vec".to_string()),
             },
             limit: 1,
@@ -1613,7 +1684,10 @@ fn vector_content_round_trips_through_retrieve_and_search() {
         })
         .expect("search failed");
     assert_eq!(hits.len(), 1, "expected the one hit");
-    let vjson = hits[0].vector.as_deref().expect("vector should be present on hit");
+    let vjson = hits[0]
+        .vector
+        .as_deref()
+        .expect("vector should be present on hit");
     assert_eq!(
         dense_named_vector(vjson, "vec"),
         input.to_vec(),
@@ -1651,13 +1725,15 @@ fn cosine_distance_ranks_by_direction() {
         },
     ];
     shard
-        .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
         .expect("update failed");
 
     let hits = shard
         .search(SearchRequest {
             query: Query::Nearest {
-                vector: vec![1.0, 0.0, 0.0, 0.0],
+                vector: NamedVector::Dense {
+                    values: vec![1.0, 0.0, 0.0, 0.0],
+                },
                 using: Some("vec".to_string()),
             },
             limit: 3,
@@ -1724,13 +1800,17 @@ fn euclid_and_manhattan_rank_nearest_first() {
             },
         ];
         shard
-            .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+            .update(
+                UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"),
+            )
             .expect("update failed");
 
         let hits = shard
             .search(SearchRequest {
                 query: Query::Nearest {
-                    vector: vec![1.0, 0.0, 0.0, 0.0],
+                    vector: NamedVector::Dense {
+                        values: vec![1.0, 0.0, 0.0, 0.0],
+                    },
                     using: Some("vec".to_string()),
                 },
                 limit: 3,
@@ -1789,7 +1869,9 @@ fn delete_points_by_filter_persists() {
             },
         ];
         shard
-            .update(UpdateOperation::upsert_points(points).expect("upsert_points failed"))
+            .update(
+                UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"),
+            )
             .expect("update failed");
         shard
             .update(
@@ -1807,19 +1889,33 @@ fn delete_points_by_filter_persists() {
             exact: true,
         })
         .expect("count failed");
-    assert_eq!(count, 1, "only the non-matching point should survive delete-by-filter");
+    assert_eq!(
+        count, 1,
+        "only the non-matching point should survive delete-by-filter"
+    );
     let survivor = reloaded
-        .retrieve(vec![PointId::NumId { value: 3 }], None, None)
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 3 }],
+            with_payload: None,
+            with_vector: None,
+        })
         .expect("retrieve failed");
-    assert_eq!(survivor.len(), 1, "the category==b point (id 3) must remain");
+    assert_eq!(
+        survivor.len(),
+        1,
+        "the category==b point (id 3) must remain"
+    );
     let removed = reloaded
-        .retrieve(
-            vec![PointId::NumId { value: 1 }, PointId::NumId { value: 2 }],
-            None,
-            None,
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }, PointId::NumId { value: 2 }],
+            with_payload: None,
+            with_vector: None,
+        })
         .expect("retrieve failed");
-    assert!(removed.is_empty(), "category==a points must be gone after reload");
+    assert!(
+        removed.is_empty(),
+        "category==a points must be gone after reload"
+    );
 }
 
 // ── Test 30: update_vectors_replaces_stored_vector (SHOULD H) ─────────────────
@@ -1836,11 +1932,15 @@ fn update_vectors_replaces_stored_vector() {
 
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 1 },
-                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
-                payload: None,
-            }])
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 1 },
+                    vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                    payload: None,
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
@@ -1848,21 +1948,24 @@ fn update_vectors_replaces_stored_vector() {
     let replacement = [9.0f32, 8.0, 7.0, 6.0];
     shard
         .update(
-            UpdateOperation::update_vectors(vec![PointVectors {
-                id: PointId::NumId { value: 1 },
-                vector: named_vec(replacement),
-            }])
+            UpdateOperation::update_vectors(
+                vec![PointVectors {
+                    id: PointId::NumId { value: 1 },
+                    vector: named_vec(replacement),
+                }],
+                None,
+            )
             .expect("update_vectors failed"),
         )
         .expect("update_vectors update failed");
     shard.flush().expect("flush failed");
 
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            None,
-            Some(WithVector::Bool { enable: true }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: None,
+            with_vector: Some(WithVector::Bool { enable: true }),
+        })
         .expect("retrieve failed");
     let vjson = recs[0].vector.as_deref().expect("vector should be present");
     assert_eq!(
@@ -1885,11 +1988,15 @@ fn delete_vectors_removes_named_field_only() {
 
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 1 },
-                vector: two_field_vector([0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]),
-                payload: None,
-            }])
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 1 },
+                    vector: two_field_vector([0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]),
+                    payload: None,
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
@@ -1911,14 +2018,17 @@ fn delete_vectors_removes_named_field_only() {
             exact: true,
         })
         .expect("count failed");
-    assert_eq!(count, 1, "the point must remain after deleting one of its vectors");
+    assert_eq!(
+        count, 1,
+        "the point must remain after deleting one of its vectors"
+    );
 
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            None,
-            Some(WithVector::Bool { enable: true }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: None,
+            with_vector: Some(WithVector::Bool { enable: true }),
+        })
         .expect("retrieve failed");
     let vjson = recs[0].vector.as_deref().expect("vector should be present");
     let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
@@ -1943,33 +2053,46 @@ fn delete_payload_removes_only_named_keys() {
 
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 1 },
-                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
-                payload: Some(r#"{"a":1,"b":2}"#.to_string()),
-            }])
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 1 },
+                    vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                    payload: Some(r#"{"a":1,"b":2}"#.to_string()),
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
 
     shard
         .update(
-            UpdateOperation::delete_payload(vec![PointId::NumId { value: 1 }], vec!["a".to_string()])
-                .expect("delete_payload failed"),
+            UpdateOperation::delete_payload(
+                vec![PointId::NumId { value: 1 }],
+                vec!["a".to_string()],
+            )
+            .expect("delete_payload failed"),
         )
         .expect("delete_payload update failed");
     shard.flush().expect("flush failed");
 
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            Some(WithPayload::Bool { enable: true }),
-            None,
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: None,
+        })
         .expect("retrieve failed");
-    let pjson = recs[0].payload.as_deref().expect("payload should be present");
+    let pjson = recs[0]
+        .payload
+        .as_deref()
+        .expect("payload should be present");
     let parsed: serde_json::Value = serde_json::from_str(pjson).expect("payload JSON must parse");
-    assert!(parsed.get("a").is_none(), "deleted key `a` must be gone: {pjson}");
+    assert!(
+        parsed.get("a").is_none(),
+        "deleted key `a` must be gone: {pjson}"
+    );
     assert_eq!(
         parsed.get("b").and_then(|v| v.as_i64()),
         Some(2),
@@ -1988,11 +2111,15 @@ fn clear_payload_removes_all_keys() {
 
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 1 },
-                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
-                payload: Some(r#"{"a":1,"b":2}"#.to_string()),
-            }])
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 1 },
+                    vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                    payload: Some(r#"{"a":1,"b":2}"#.to_string()),
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
@@ -2006,16 +2133,21 @@ fn clear_payload_removes_all_keys() {
     shard.flush().expect("flush failed");
 
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            Some(WithPayload::Bool { enable: true }),
-            None,
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: None,
+        })
         .expect("retrieve failed");
-    assert_eq!(recs.len(), 1, "the point itself must remain after clear_payload");
+    assert_eq!(
+        recs.len(),
+        1,
+        "the point itself must remain after clear_payload"
+    );
     // A cleared payload is either omitted (None) or an empty object.
     if let Some(pjson) = recs[0].payload.as_deref() {
-        let parsed: serde_json::Value = serde_json::from_str(pjson).expect("payload JSON must parse");
+        let parsed: serde_json::Value =
+            serde_json::from_str(pjson).expect("payload JSON must parse");
         assert!(
             parsed.as_object().map(|o| o.is_empty()).unwrap_or(false),
             "cleared payload must have no keys, got {pjson}"
@@ -2064,29 +2196,33 @@ fn multivector_round_trips() {
     let rows = vec![vec![1.0f32, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 1 },
-                vector: Vector::Named {
-                    map: HashMap::from([(
-                        "mv".to_string(),
-                        NamedVector::MultiDense {
-                            vectors: rows.clone(),
-                        },
-                    )]),
-                },
-                payload: None,
-            }])
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 1 },
+                    vector: Vector::Named {
+                        map: HashMap::from([(
+                            "mv".to_string(),
+                            NamedVector::MultiDense {
+                                vectors: rows.clone(),
+                            },
+                        )]),
+                    },
+                    payload: None,
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
     shard.flush().expect("flush failed");
 
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            None,
-            Some(WithVector::Bool { enable: true }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: None,
+            with_vector: Some(WithVector::Bool { enable: true }),
+        })
         .expect("retrieve failed");
     let vjson = recs[0].vector.as_deref().expect("vector should be present");
     let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
@@ -2094,9 +2230,13 @@ fn multivector_round_trips() {
         .get("mv")
         .and_then(|f| f.get("MultiDense"))
         .unwrap_or_else(|| panic!("expected MultiDense under `mv` in {vjson}"));
-    let flattened: Vec<f32> =
-        serde_json::from_value(multi.get("flattened_vectors").expect("flattened_vectors").clone())
-            .expect("flattened vectors");
+    let flattened: Vec<f32> = serde_json::from_value(
+        multi
+            .get("flattened_vectors")
+            .expect("flattened_vectors")
+            .clone(),
+    )
+    .expect("flattened vectors");
     let dim = multi.get("dim").and_then(|d| d.as_u64()).expect("dim");
     assert_eq!(dim, 2, "each multi-vector row is 2-dimensional");
     assert_eq!(
@@ -2113,7 +2253,7 @@ fn multivector_round_trips() {
 /// exactly once, in descending score order.
 #[test]
 fn rrf_fusion_over_prefetches_returns_fused_set() {
-    use qdrant_edge_ffi::query::{Fusion, Prefetch, QueryRequest, ScoringQuery};
+    use qdrant_edge_ffi::{Fusion, Prefetch, QueryRequest, ScoringQuery};
 
     let dir = tempfile::tempdir().expect("tempdir failed");
     let path = dir.path().to_string_lossy().into_owned();
@@ -2124,7 +2264,7 @@ fn rrf_fusion_over_prefetches_returns_fused_set() {
         limit: 3,
         query: Some(ScoringQuery::Vector {
             query: Query::Nearest {
-                vector,
+                vector: NamedVector::Dense { values: vector },
                 using: Some("vec".to_string()),
             },
         }),
@@ -2141,7 +2281,10 @@ fn rrf_fusion_over_prefetches_returns_fused_set() {
                 branch(vec![0.4, 0.3, 0.2, 0.1]),
             ],
             query: Some(ScoringQuery::Fusion {
-                fusion: Fusion::Rrf { k: 60 },
+                fusion: Fusion::Rrf {
+                    k: 60,
+                    weights: None,
+                },
             }),
             limit: 3,
             offset: None,
@@ -2153,7 +2296,11 @@ fn rrf_fusion_over_prefetches_returns_fused_set() {
         })
         .expect("RRF fusion query failed");
 
-    assert_eq!(hits.len(), 3, "RRF over two prefetches should fuse to all three points");
+    assert_eq!(
+        hits.len(),
+        3,
+        "RRF over two prefetches should fuse to all three points"
+    );
     let mut ids: Vec<u64> = hits
         .iter()
         .map(|h| match &h.id {
@@ -2162,7 +2309,11 @@ fn rrf_fusion_over_prefetches_returns_fused_set() {
         })
         .collect();
     ids.sort_unstable();
-    assert_eq!(ids, vec![1, 2, 3], "fused result set should contain each point exactly once");
+    assert_eq!(
+        ids,
+        vec![1, 2, 3],
+        "fused result set should contain each point exactly once"
+    );
     assert!(
         hits[0].score >= hits[1].score && hits[1].score >= hits[2].score,
         "fused scores must be in descending order, got {:?}",
@@ -2200,32 +2351,36 @@ fn sparse_vector_round_trips() {
     let values = vec![0.5f32, 1.5, 2.5];
     shard
         .update(
-            UpdateOperation::upsert_points(vec![Point {
-                id: PointId::NumId { value: 1 },
-                vector: Vector::Named {
-                    map: HashMap::from([(
-                        "sp".to_string(),
-                        NamedVector::Sparse {
-                            vector: SparseVector {
-                                indices: indices.clone(),
-                                values: values.clone(),
+            UpdateOperation::upsert_points(
+                vec![Point {
+                    id: PointId::NumId { value: 1 },
+                    vector: Vector::Named {
+                        map: HashMap::from([(
+                            "sp".to_string(),
+                            NamedVector::Sparse {
+                                vector: SparseVector {
+                                    indices: indices.clone(),
+                                    values: values.clone(),
+                                },
                             },
-                        },
-                    )]),
-                },
-                payload: None,
-            }])
+                        )]),
+                    },
+                    payload: None,
+                }],
+                None,
+                None,
+            )
             .expect("upsert_points failed"),
         )
         .expect("update failed");
     shard.flush().expect("flush failed");
 
     let recs = shard
-        .retrieve(
-            vec![PointId::NumId { value: 1 }],
-            None,
-            Some(WithVector::Bool { enable: true }),
-        )
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: None,
+            with_vector: Some(WithVector::Bool { enable: true }),
+        })
         .expect("retrieve failed");
     let vjson = recs[0].vector.as_deref().expect("vector should be present");
     let parsed: serde_json::Value = serde_json::from_str(vjson).expect("vector JSON must parse");
@@ -2239,6 +2394,596 @@ fn sparse_vector_round_trips() {
     let got_values: Vec<f32> =
         serde_json::from_value(sparse.get("values").expect("values").clone())
             .expect("sparse values");
-    assert_eq!(got_indices, indices, "sparse indices must round-trip, got {vjson}");
-    assert_eq!(got_values, values, "sparse values must round-trip, got {vjson}");
+    assert_eq!(
+        got_indices, indices,
+        "sparse indices must round-trip, got {vjson}"
+    );
+    assert_eq!(
+        got_values, values,
+        "sparse values must round-trip, got {vjson}"
+    );
+}
+
+// ── New-surface tests: full update-operation and scoring-query coverage ───────
+
+/// `create_field_index` makes `facet` usable on an FFI-only shard — previously
+/// impossible, since faceting requires a payload index and the FFI had no way
+/// to build one.
+#[test]
+fn create_field_index_enables_facet() {
+    use qdrant_edge_ffi::{FacetRequest, PayloadSchemaType};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"category":"a"}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.4, 0.3, 0.2, 0.1]),
+            payload: Some(r#"{"category":"a"}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"category":"b"}"#.to_string()),
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    let op =
+        UpdateOperation::create_field_index("category".to_string(), PayloadSchemaType::Keyword)
+            .expect("create_field_index failed");
+    shard.update(op).expect("index creation failed");
+
+    let facets = shard
+        .facet(FacetRequest {
+            key: "category".to_string(),
+            limit: 10,
+            exact: true,
+            filter: None,
+        })
+        .expect("facet over the freshly indexed field must work");
+    let mut counts: Vec<(String, u64)> = facets
+        .hits
+        .into_iter()
+        .map(|h| (h.value, h.count))
+        .collect();
+    counts.sort();
+    assert_eq!(counts, vec![("a".to_string(), 2), ("b".to_string(), 1)]);
+
+    // And drop it again — deleting the index must succeed.
+    let op = UpdateOperation::delete_field_index("category".to_string())
+        .expect("delete_field_index failed");
+    shard.update(op).expect("index deletion failed");
+}
+
+/// `update_mode: InsertOnly` must not overwrite an existing point.
+#[test]
+fn conditional_upsert_insert_only_preserves_existing() {
+    use qdrant_edge_ffi::UpdateMode;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let op = UpdateOperation::upsert_points(
+        vec![Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.9, 0.9, 0.9, 0.9]),
+            payload: Some(r#"{"title":"overwritten"}"#.to_string()),
+        }],
+        None,
+        Some(UpdateMode::InsertOnly),
+    )
+    .expect("conditional upsert failed");
+    shard.update(op).expect("update failed");
+
+    let recs = shard
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: None,
+        })
+        .expect("retrieve failed");
+    let payload = recs[0].payload.as_deref().expect("payload expected");
+    assert!(
+        payload.contains("point one"),
+        "InsertOnly must not overwrite the existing point, got {payload}"
+    );
+}
+
+/// `overwrite_payload` replaces the payload wholesale; `set_payload` merges.
+#[test]
+fn overwrite_payload_replaces_wholesale() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let op = UpdateOperation::overwrite_payload(
+        vec![PointId::NumId { value: 1 }],
+        r#"{"only":"this"}"#.to_string(),
+        None,
+    )
+    .expect("overwrite_payload failed");
+    shard.update(op).expect("update failed");
+
+    let recs = shard
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: None,
+        })
+        .expect("retrieve failed");
+    let payload = recs[0].payload.as_deref().expect("payload expected");
+    assert!(
+        payload.contains("only"),
+        "new key must be present: {payload}"
+    );
+    assert!(
+        !payload.contains("title"),
+        "overwrite must drop the old keys, got {payload}"
+    );
+}
+
+/// Filter-addressed payload ops apply to matching points only.
+#[test]
+fn clear_payload_by_filter_applies_to_matches() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    // Match "point one" by full-text-less means: HasId is simplest here.
+    let filter = qdrant_edge_ffi::filter::Filter {
+        must: Some(vec![qdrant_edge_ffi::filter::Condition::HasId {
+            ids: vec![PointId::NumId { value: 1 }],
+        }]),
+        should: None,
+        must_not: None,
+    };
+    let op = UpdateOperation::clear_payload_by_filter(filter).expect("clear failed");
+    shard.update(op).expect("update failed");
+
+    let recs = shard
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }, PointId::NumId { value: 2 }],
+            with_payload: Some(WithPayload::Bool { enable: true }),
+            with_vector: None,
+        })
+        .expect("retrieve failed");
+    let p1 = recs
+        .iter()
+        .find(|r| matches!(r.id, PointId::NumId { value: 1 }))
+        .unwrap();
+    let p2 = recs
+        .iter()
+        .find(|r| matches!(r.id, PointId::NumId { value: 2 }))
+        .unwrap();
+    assert_eq!(
+        p1.payload.as_deref(),
+        Some("{}"),
+        "payload of id 1 must be cleared"
+    );
+    assert!(
+        p2.payload.as_deref().unwrap_or("").contains("point two"),
+        "payload of id 2 must be untouched"
+    );
+}
+
+/// Recommend / Discover / Context / MMR queries run end-to-end.
+#[test]
+fn advanced_vector_queries_return_results() {
+    use qdrant_edge_ffi::{ContextPair, QueryRequest, RecommendStrategy, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let dense = |values: [f32; 4]| NamedVector::Dense {
+        values: values.to_vec(),
+    };
+    let using = Some("vec".to_string());
+
+    let queries = vec![
+        Query::Recommend {
+            positives: vec![dense([0.1, 0.2, 0.3, 0.4])],
+            negatives: vec![dense([0.5, 0.5, 0.5, 0.5])],
+            strategy: Some(RecommendStrategy::BestScore),
+            using: using.clone(),
+        },
+        Query::Recommend {
+            positives: vec![dense([0.1, 0.2, 0.3, 0.4])],
+            negatives: vec![],
+            strategy: Some(RecommendStrategy::SumScores),
+            using: using.clone(),
+        },
+        Query::Discover {
+            target: dense([0.1, 0.2, 0.3, 0.4]),
+            context: vec![ContextPair {
+                positive: dense([0.1, 0.2, 0.3, 0.4]),
+                negative: dense([0.5, 0.5, 0.5, 0.5]),
+            }],
+            using: using.clone(),
+        },
+        Query::Context {
+            context: vec![ContextPair {
+                positive: dense([0.1, 0.2, 0.3, 0.4]),
+                negative: dense([0.5, 0.5, 0.5, 0.5]),
+            }],
+            using: using.clone(),
+        },
+    ];
+    for query in queries {
+        let hits = shard
+            .query(QueryRequest {
+                limit: 3,
+                offset: None,
+                query: Some(ScoringQuery::Vector { query }),
+                prefetches: vec![],
+                with_vector: None,
+                with_payload: None,
+                filter: None,
+                score_threshold: None,
+                params: None,
+            })
+            .expect("advanced query failed");
+        assert!(!hits.is_empty(), "advanced query returned no hits");
+    }
+
+    // MMR is a ScoringQuery of its own.
+    let hits = shard
+        .query(QueryRequest {
+            limit: 3,
+            offset: None,
+            query: Some(ScoringQuery::Mmr {
+                vector: dense([0.1, 0.2, 0.3, 0.4]),
+                using,
+                lambda: 0.5,
+                candidates_limit: 10,
+            }),
+            prefetches: vec![],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("mmr query failed");
+    assert!(!hits.is_empty(), "mmr query returned no hits");
+
+    // A recommend query without positives must be rejected at the boundary.
+    let err = shard
+        .query(QueryRequest {
+            limit: 3,
+            offset: None,
+            query: Some(ScoringQuery::Vector {
+                query: Query::Recommend {
+                    positives: vec![],
+                    negatives: vec![],
+                    strategy: None,
+                    using: Some("vec".to_string()),
+                },
+            }),
+            prefetches: vec![],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect_err("recommend without positives must fail");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
+/// Formula re-scoring over a prefetch: `$score + popularity`.
+#[test]
+fn formula_rescoring_boosts_by_payload() {
+    use qdrant_edge_ffi::{Expression, Prefetch, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.1, 0.1, 0.1]),
+            payload: Some(r#"{"popularity":0.0}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            // Slightly less similar, but hugely popular — the formula must
+            // push it to the top.
+            vector: named_vec([0.09, 0.09, 0.09, 0.09]),
+            payload: Some(r#"{"popularity":100.0}"#.to_string()),
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    let expression = Expression::sum(vec![
+        Expression::variable("$score".to_string()),
+        Expression::variable("popularity".to_string()),
+    ])
+    .expect("expression build failed");
+
+    let hits = shard
+        .query(QueryRequest {
+            limit: 2,
+            offset: None,
+            query: Some(ScoringQuery::Formula {
+                expression,
+                defaults: HashMap::from([("popularity".to_string(), "0.0".to_string())]),
+            }),
+            prefetches: vec![Prefetch {
+                limit: 10,
+                query: Some(ScoringQuery::Vector {
+                    query: Query::Nearest {
+                        vector: NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                        using: Some("vec".to_string()),
+                    },
+                }),
+                prefetches: vec![],
+                filter: None,
+                score_threshold: None,
+                params: None,
+            }],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("formula query failed");
+    assert!(
+        matches!(hits[0].id, PointId::NumId { value: 2 }),
+        "the popular point must rank first after formula boost"
+    );
+}
+
+/// Grouped query: one group per category, best hit each.
+#[test]
+fn query_groups_returns_one_group_per_key() {
+    use qdrant_edge_ffi::{GroupRequest, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"category":"a"}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.4, 0.3, 0.2, 0.1]),
+            payload: Some(r#"{"category":"a"}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"category":"b"}"#.to_string()),
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    let groups = shard
+        .query_groups(GroupRequest {
+            query: QueryRequest {
+                limit: 10,
+                offset: None,
+                query: Some(ScoringQuery::Vector {
+                    query: Query::Nearest {
+                        vector: NamedVector::Dense {
+                            values: vec![0.1, 0.2, 0.3, 0.4],
+                        },
+                        using: Some("vec".to_string()),
+                    },
+                }),
+                prefetches: vec![],
+                with_vector: None,
+                with_payload: None,
+                filter: None,
+                score_threshold: None,
+                params: None,
+            },
+            group_by: "category".to_string(),
+            groups: 10,
+            group_size: 1,
+        })
+        .expect("query_groups failed");
+    assert_eq!(groups.len(), 2, "expected one group per category");
+    for group in &groups {
+        assert_eq!(group.hits.len(), 1, "group_size=1 must cap hits per group");
+    }
+}
+
+/// Distance matrix over sampled points.
+#[test]
+fn search_matrix_relates_samples() {
+    use qdrant_edge_ffi::SearchMatrixRequest;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let response = shard
+        .search_matrix(SearchMatrixRequest {
+            sample_size: 3,
+            limit_per_sample: 2,
+            filter: None,
+            using: Some("vec".to_string()),
+        })
+        .expect("search_matrix failed");
+    assert_eq!(response.sample_ids.len(), 3, "all three points sampled");
+    assert_eq!(
+        response.nearests.len(),
+        response.sample_ids.len(),
+        "one neighbour row per sample"
+    );
+    for row in &response.nearests {
+        assert!(
+            row.len() <= 2 && !row.is_empty(),
+            "each sample must have 1..=2 neighbours within the sampled set"
+        );
+    }
+}
+
+/// Vector-name ops: add a dense field, write to it, then drop it.
+#[test]
+fn create_and_delete_named_vector_field() {
+    use qdrant_edge_ffi::config::Distance;
+    use qdrant_edge_ffi::types::NamedVector;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let op =
+        UpdateOperation::create_dense_vector("extra".to_string(), 4, Distance::Dot, None, None)
+            .expect("create_dense_vector failed");
+    shard.update(op).expect("adding a vector field failed");
+
+    // The new field is writable.
+    let op = UpdateOperation::upsert_points(
+        vec![Point {
+            id: PointId::NumId { value: 9 },
+            vector: Vector::Named {
+                map: HashMap::from([
+                    (
+                        "vec".to_string(),
+                        NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                    ),
+                    (
+                        "extra".to_string(),
+                        NamedVector::Dense {
+                            values: vec![0.2, 0.2, 0.2, 0.2],
+                        },
+                    ),
+                ]),
+            },
+            payload: None,
+        }],
+        None,
+        None,
+    )
+    .expect("upsert failed");
+    shard.update(op).expect("writing the new field failed");
+
+    // Size bound is enforced at the boundary.
+    // `.err().expect()` rather than `.expect_err()`: the Ok type involves a
+    // non-`Debug` UniFFI object, so `expect_err` does not compile.
+    #[allow(clippy::err_expect)]
+    let err = UpdateOperation::create_dense_vector("bad".to_string(), 0, Distance::Dot, None, None)
+        .err()
+        .expect("size 0 must be rejected");
+    assert!(matches!(err, EdgeError::InvalidArgument { .. }));
+
+    // And the field can be dropped again.
+    let op = UpdateOperation::delete_vector_name("extra".to_string());
+    shard.update(op).expect("deleting the vector field failed");
+}
+
+/// The lifecycle additions: `path`, `snapshot_manifest`, and the config
+/// setters are callable and validated.
+#[test]
+fn lifecycle_additions_work() {
+    use qdrant_edge_ffi::OptimizersConfig;
+    use qdrant_edge_ffi::config::{HnswIndexConfig, Memory};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path_string = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> =
+        EdgeShard::load(path_string.clone(), Some(make_config())).expect("load failed");
+
+    assert_eq!(shard.path().expect("path failed"), path_string);
+
+    let manifest = shard.snapshot_manifest().expect("snapshot_manifest failed");
+    serde_json::from_str::<serde_json::Value>(&manifest)
+        .expect("snapshot manifest must be valid JSON");
+
+    shard
+        .set_hnsw_config(HnswIndexConfig {
+            m: 16,
+            ef_construct: 100,
+            full_scan_threshold: 10_000,
+            max_indexing_threads: 1,
+            memory: Some(Memory::Cached),
+            payload_m: None,
+        })
+        .expect("set_hnsw_config failed");
+
+    // Out-of-range HNSW params are rejected, not applied.
+    let err = shard
+        .set_hnsw_config(HnswIndexConfig {
+            m: u64::MAX,
+            ef_construct: 100,
+            full_scan_threshold: 10_000,
+            max_indexing_threads: 1,
+            memory: None,
+            payload_m: None,
+        })
+        .expect_err("oversized m must be rejected");
+    assert!(matches!(err, EdgeError::InvalidArgument { .. }));
+
+    shard
+        .set_vector_hnsw_config(
+            "vec".to_string(),
+            HnswIndexConfig {
+                m: 8,
+                ef_construct: 64,
+                full_scan_threshold: 10_000,
+                max_indexing_threads: 1,
+                memory: None,
+                payload_m: None,
+            },
+        )
+        .expect("set_vector_hnsw_config failed");
+
+    shard
+        .set_optimizers_config(OptimizersConfig {
+            deleted_threshold: Some(0.5),
+            vacuum_min_vector_number: Some(100),
+            default_segment_number: Some(1),
+            max_segment_size_kb: None,
+            indexing_threshold_kb: Some(1000),
+            prevent_unoptimized: None,
+        })
+        .expect("set_optimizers_config failed");
+
+    // `create` on an occupied path must fail; on a fresh path it must work.
+    // `.err().expect()`: see note above — the Ok type is a non-`Debug`
+    // UniFFI object.
+    #[allow(clippy::err_expect)]
+    let err = EdgeShard::create(path_string, make_config())
+        .err()
+        .expect("create over an existing shard must fail");
+    assert!(matches!(err, EdgeError::OperationError { .. }));
+
+    let dir2 = tempfile::tempdir().expect("tempdir failed");
+    let fresh = EdgeShard::create(dir2.path().to_string_lossy().into_owned(), make_config())
+        .expect("create on a fresh path failed");
+    upsert_three(&fresh);
 }
