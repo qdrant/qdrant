@@ -209,7 +209,7 @@ where
                 )?);
             }
             RwLockWriteGuard::unlock_fair(write_segment);
-        };
+        }
     }
 
     Ok(res)

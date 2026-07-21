@@ -137,7 +137,7 @@ impl UpdateWorkers {
 
                     let mut operation = Some(operation);
                     let mut retry_deadline = None;
-                    let mut capacity_retries = 0;
+                    let mut retried_before = false;
                     let operation_result = loop {
                         // The first attempt consumes the operation; the rare retry rounds
                         // re-read it from WAL instead of deep-cloning every operation on the
@@ -199,7 +199,8 @@ impl UpdateWorkers {
                         if Instant::now() >= deadline {
                             break result;
                         }
-                        capacity_retries += 1;
+                        let repeat_retry = retried_before;
+                        retried_before = true;
 
                         // Capacity may already be back: the optimizer wake-up triggered by a
                         // previous operation provisions concurrently. Otherwise wake it up and
@@ -234,7 +235,7 @@ impl UpdateWorkers {
                             if !capacity_appeared {
                                 break result;
                             }
-                        } else if capacity_retries > 1 {
+                        } else if repeat_retry {
                             // Consecutive immediate retries mean this wait predicate and the
                             // apply path keep disagreeing (a segment can measure differently
                             // under momentary lock contention): back off briefly instead of
