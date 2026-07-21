@@ -146,6 +146,91 @@ mod tests {
         PointOperations, PointStructPersisted, VectorStructPersisted,
     };
 
+    /// `failed_operation` pins the WAL acknowledge, so every transition in and out of it is
+    /// load-bearing: an entry that is never removed stalls the acknowledge forever, and one that
+    /// is removed too eagerly drops an operation that still needed re-applying.
+    fn failed_operations(segments: &LockedSegmentHolder) -> Vec<SeqNumberType> {
+        segments.read().failed_operation.iter().copied().collect()
+    }
+
+    fn empty_holder() -> LockedSegmentHolder {
+        LockedSegmentHolder::new(SegmentHolder::default())
+    }
+
+    #[test]
+    fn test_transient_failure_is_queued_for_recovery() {
+        let segments = empty_holder();
+
+        CollectionUpdater::handle_update_result(
+            &segments,
+            42,
+            &Err(CollectionError::service_error("all segments at the cap")),
+        );
+
+        assert_eq!(
+            failed_operations(&segments),
+            vec![42],
+            "a transient failure must be queued so recovery re-applies it",
+        );
+    }
+
+    #[test]
+    fn test_successful_reapply_clears_failed_operation() {
+        let segments = empty_holder();
+        segments.write().failed_operation.extend([42, 43]);
+
+        CollectionUpdater::handle_update_result(&segments, 42, &Ok(1));
+
+        assert_eq!(
+            failed_operations(&segments),
+            vec![43],
+            "a successful re-apply must unpin its own operation and leave the others",
+        );
+    }
+
+    #[test]
+    fn test_non_transient_decline_on_reapply_drops_failed_operation() {
+        let segments = empty_holder();
+        segments.write().failed_operation.extend([42, 43]);
+
+        // A queued operation can start declining once later operations changed what it sees, e.g.
+        // deleted the points it references. It can never succeed again, so holding the acknowledge
+        // for it would stall the WAL forever.
+        CollectionUpdater::handle_update_result(
+            &segments,
+            42,
+            &Err(CollectionError::PointNotFound {
+                missed_point_id: 1.into(),
+            }),
+        );
+
+        assert_eq!(
+            failed_operations(&segments),
+            vec![43],
+            "a queued operation that declines can never succeed, it must stop pinning the WAL",
+        );
+    }
+
+    #[test]
+    fn test_non_transient_decline_of_unqueued_operation_keeps_others() {
+        let segments = empty_holder();
+        segments.write().failed_operation.extend([42]);
+
+        // First-time decline of an unrelated operation: it was never queued, and it must not
+        // disturb the operation that is.
+        CollectionUpdater::handle_update_result(
+            &segments,
+            99,
+            &Err(CollectionError::bad_input("malformed".to_string())),
+        );
+
+        assert_eq!(
+            failed_operations(&segments),
+            vec![42],
+            "declining a never-queued operation must not touch the recovery queue",
+        );
+    }
+
     #[test]
     fn test_sync_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
