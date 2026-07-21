@@ -480,6 +480,7 @@ impl UpdateWorkers {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+    use std::path::Path;
     use std::sync::atomic::AtomicBool;
     use std::time::Duration;
 
@@ -495,6 +496,7 @@ mod tests {
     use shard::wal::{SerdeWal, WalRawRecord};
     use tempfile::Builder;
     use tokio::sync::{Mutex as TokioMutex, mpsc};
+    use tokio::task::JoinHandle;
     use wal::WalOptions;
 
     use super::*;
@@ -515,23 +517,16 @@ mod tests {
         }))
     }
 
-    /// A capacity failure must not surface to the client: the worker signals the optimizer, waits
-    /// for the fresh appendable segment and re-applies the operation, so the caller sees added
-    /// latency instead of an error. The re-apply reads the operation back from the WAL rather than
-    /// keeping a clone, so this also locks that the queued operation is readable at its op number.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_update_worker_retries_capacity_failure_inline() {
-        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
-        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
-        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
-
+    /// Points 1 and 2 in a non-appendable segment, plus the only appendable segment already at the
+    /// cap: any CoW move out of the first has nowhere to land.
+    ///
+    /// The points are seeded at version 0 so a replayed operation, whose op number is a WAL index,
+    /// is not skipped as already applied.
+    fn segments_at_capacity(segments_dir: &Path) -> LockedSegmentHolder {
         let hw_counter = HardwareCounterCell::new();
         let vector = only_default_vector(&[1.0, 0.0, 1.0, 1.0]);
 
-        // The points to move live in a non-appendable segment, so setting their payload needs a
-        // CoW move into an appendable one. Seeded at version 0 so the replayed operation, whose
-        // op number is a WAL index, is not skipped as already applied.
-        let mut non_appendable = empty_segment(segments_dir.path());
+        let mut non_appendable = empty_segment(segments_dir);
         for point_id in [1u64, 2] {
             non_appendable
                 .upsert_point(0, point_id.into(), vector.clone(), &hw_counter)
@@ -539,8 +534,7 @@ mod tests {
         }
         non_appendable.appendable_flag = false;
 
-        // The only appendable segment, already at the cap of two points.
-        let mut appendable = empty_segment(segments_dir.path());
+        let mut appendable = empty_segment(segments_dir);
         for point_id in [100u64, 101] {
             appendable
                 .upsert_point(0, point_id.into(), vector.clone(), &hw_counter)
@@ -551,7 +545,97 @@ mod tests {
         holder.add_new(non_appendable);
         holder.add_new(appendable);
         holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
-        let segments = LockedSegmentHolder::new(holder);
+        LockedSegmentHolder::new(holder)
+    }
+
+    /// Start an update worker with a stand-in optimization worker.
+    ///
+    /// The stand-in provisions one fresh appendable segment on its first `Nop` when
+    /// `provision_capacity` is set, mimicking the capacity-ensure step of a real wake-up. It
+    /// reports how many it provisioned, which doubles as an assertion that the worker asked.
+    fn spawn_worker(
+        segments: LockedSegmentHolder,
+        wal: SerdeWal<OperationWithClockTag>,
+        shard_dir: &Path,
+        segments_dir: &Path,
+        provision_capacity: bool,
+    ) -> (
+        mpsc::Sender<UpdateSignal>,
+        JoinHandle<Receiver<UpdateSignal>>,
+        JoinHandle<usize>,
+    ) {
+        let (update_sender, update_receiver) = mpsc::channel(8);
+        let (optimize_sender, mut optimize_receiver) = mpsc::channel(8);
+        let (optimization_finished_sender, optimization_finished_receiver) = watch::channel(());
+
+        let optimizer_segments = segments.clone();
+        let optimizer_dir = segments_dir.to_owned();
+        let optimizer = tokio::spawn(async move {
+            let mut provisioned = 0;
+            while let Some(signal) = optimize_receiver.recv().await {
+                if matches!(signal, OptimizerSignal::Nop) && provision_capacity && provisioned == 0
+                {
+                    provisioned += 1;
+                    let fresh = empty_segment(&optimizer_dir);
+                    optimizer_segments.write().add_new(fresh);
+                    let _ = optimization_finished_sender.send(());
+                }
+            }
+            provisioned
+        });
+
+        let last_wal_index = wal.first_index() + wal.len(false);
+        let worker = tokio::spawn(UpdateWorkers::update_worker_fn(
+            "test_collection".to_string(),
+            update_receiver,
+            optimize_sender,
+            Arc::new(TokioMutex::new(wal)),
+            segments,
+            Arc::new(tokio::sync::RwLock::new(())),
+            UpdateTracker::default(),
+            false,
+            optimization_finished_receiver,
+            Arc::new(AppliedSeqHandler::load_or_init(shard_dir, last_wal_index)),
+            CancellationToken::new(),
+        ));
+
+        (update_sender, worker, optimizer)
+    }
+
+    async fn submit(
+        update_sender: &mpsc::Sender<UpdateSignal>,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+    ) -> CollectionResult<InternalUpdateResult> {
+        let (feedback_sender, feedback_receiver) = oneshot::channel();
+        update_sender
+            .send(UpdateSignal::Operation(OperationData {
+                op_num,
+                operation: Some(Box::new(operation)),
+                sender: Some(feedback_sender),
+                wait_for_deferred: false,
+                hw_measurements: HwMeasurementAcc::disposable(),
+            }))
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(60), feedback_receiver)
+            .await
+            .expect("the worker must answer within the retry budget")
+            .expect("the worker must not drop the feedback channel")
+    }
+
+    /// A capacity failure must not surface to the client: the worker signals the optimizer, waits
+    /// for the fresh appendable segment and re-applies the operation, so the caller sees added
+    /// latency instead of an error. The re-apply reads the operation back from the WAL rather than
+    /// keeping a clone, so this also locks that the queued operation is readable at its op number.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_retries_capacity_failure_inline() {
+        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
+        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
+
+        let segments = segments_at_capacity(segments_dir.path());
 
         let mut wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
@@ -572,58 +656,17 @@ mod tests {
             .unwrap();
         assert!(op_num > 0, "the operation must outrank the seeded points");
 
-        let (update_sender, update_receiver) = mpsc::channel(8);
-        let (optimize_sender, mut optimize_receiver) = mpsc::channel(8);
-        let (optimization_finished_sender, optimization_finished_receiver) = watch::channel(());
-
-        // Stands in for the optimization worker: its wake-up provisions one fresh appendable
-        // segment. Provisioning only once also asserts that a single round is enough here.
-        let optimizer_segments = segments.clone();
-        let optimizer_dir = segments_dir.path().to_owned();
-        let optimizer = tokio::spawn(async move {
-            let mut provisioned = 0;
-            while let Some(signal) = optimize_receiver.recv().await {
-                if matches!(signal, OptimizerSignal::Nop) && provisioned == 0 {
-                    provisioned += 1;
-                    let fresh = empty_segment(&optimizer_dir);
-                    optimizer_segments.write().add_new(fresh);
-                    let _ = optimization_finished_sender.send(());
-                }
-            }
-            provisioned
-        });
-
-        let worker = tokio::spawn(UpdateWorkers::update_worker_fn(
-            "test_collection".to_string(),
-            update_receiver,
-            optimize_sender,
-            Arc::new(TokioMutex::new(wal)),
+        let (update_sender, worker, optimizer) = spawn_worker(
             segments.clone(),
-            Arc::new(tokio::sync::RwLock::new(())),
-            UpdateTracker::default(),
-            false,
-            optimization_finished_receiver,
-            Arc::new(AppliedSeqHandler::load_or_init(shard_dir.path(), op_num)),
-            CancellationToken::new(),
-        ));
+            wal,
+            shard_dir.path(),
+            segments_dir.path(),
+            true,
+        );
 
-        let (feedback_sender, feedback_receiver) = oneshot::channel();
-        update_sender
-            .send(UpdateSignal::Operation(OperationData {
-                op_num,
-                operation: Some(Box::new(operation)),
-                sender: Some(feedback_sender),
-                wait_for_deferred: false,
-                hw_measurements: HwMeasurementAcc::disposable(),
-            }))
+        submit(&update_sender, op_num, operation)
             .await
-            .unwrap();
-
-        let result = tokio::time::timeout(Duration::from_secs(60), feedback_receiver)
-            .await
-            .expect("the worker must answer within the retry budget")
-            .expect("the worker must not drop the feedback channel");
-        result.expect("the inline retry must turn the capacity failure into a success");
+            .expect("the inline retry must turn the capacity failure into a success");
 
         assert!(
             segments.read().failed_operation.is_empty(),
@@ -660,6 +703,120 @@ mod tests {
             optimizer.await.unwrap(),
             1,
             "the worker must have signalled the optimizer to provision capacity",
+        );
+    }
+
+    /// When capacity never comes back, the worker stops waiting and reports the capacity error.
+    /// The operation must then be queued in `failed_operation` so asynchronous recovery owns it,
+    /// and stay pinned there so the WAL keeps it replayable.
+    ///
+    /// Takes one `CAPACITY_WAIT_PER_ROUND` to run: the round wait is what expires here, well
+    /// before the overall retry budget, which is only a backstop for rounds that keep seeing
+    /// capacity appear and still fail.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_hands_over_to_recovery_when_capacity_never_appears() {
+        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
+        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
+
+        let segments = segments_at_capacity(segments_dir.path());
+
+        let mut wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
+        wal.write(
+            &WalRawRecord::new(&OperationWithClockTag::new(
+                set_payload_op(&[], "filler"),
+                None,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let operation = set_payload_op(&[1, 2], "blue");
+        let op_num = wal
+            .write(
+                &WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap(),
+            )
+            .unwrap();
+
+        // The stand-in optimizer never provisions, so capacity never returns.
+        let (update_sender, worker, optimizer) = spawn_worker(
+            segments.clone(),
+            wal,
+            shard_dir.path(),
+            segments_dir.path(),
+            false,
+        );
+
+        let err = submit(&update_sender, op_num, operation)
+            .await
+            .expect_err("without capacity the operation cannot succeed");
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "expected the capacity error, got: {err}",
+        );
+
+        assert_eq!(
+            segments
+                .read()
+                .failed_operation
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![op_num],
+            "the operation must be queued for recovery and pin the WAL acknowledge",
+        );
+
+        drop(update_sender);
+        worker.await.unwrap();
+        optimizer.await.unwrap();
+    }
+
+    /// The retry re-reads the operation from WAL instead of keeping a clone on the hot path. If it
+    /// is not there, the worker must report that rather than silently reporting success or hanging.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_reports_unreadable_wal_record_on_retry() {
+        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
+        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
+
+        let segments = segments_at_capacity(segments_dir.path());
+
+        let mut wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
+        wal.write(
+            &WalRawRecord::new(&OperationWithClockTag::new(
+                set_payload_op(&[], "filler"),
+                None,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        // Past the end of the WAL: the first attempt uses the operation passed with the signal, and
+        // only the retry goes looking for it on disk.
+        let op_num = wal.first_index() + wal.len(false) + 5;
+
+        let (update_sender, worker, optimizer) = spawn_worker(
+            segments.clone(),
+            wal,
+            shard_dir.path(),
+            segments_dir.path(),
+            true,
+        );
+
+        let err = submit(&update_sender, op_num, set_payload_op(&[1, 2], "blue"))
+            .await
+            .expect_err("the retry cannot proceed without the operation");
+        assert!(
+            err.to_string().contains("could not be re-read from WAL"),
+            "expected the re-read failure, got: {err}",
+        );
+
+        drop(update_sender);
+        worker.await.unwrap();
+        assert_eq!(
+            optimizer.await.unwrap(),
+            1,
+            "the worker must have reached the retry, which is what re-reads the WAL",
         );
     }
 }
