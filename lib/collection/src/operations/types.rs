@@ -1924,3 +1924,28 @@ impl PeerMetadata {
         self.version != *defaults::QDRANT_VERSION
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The update worker recognizes the capacity condition by message prefix, because the typed
+    /// variant does not survive the conversion below. This locks the whole chain: the variant's
+    /// message, the conversion into a service error, and the detection. Asserting on
+    /// `OperationError` alone would still pass if the conversion started wrapping the message.
+    #[test]
+    fn test_out_of_appendable_capacity_survives_conversion() {
+        let err = CollectionError::from(OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: 1024,
+        });
+
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "the update worker would stop retrying capacity failures: {err}",
+        );
+        assert!(
+            err.is_transient(),
+            "failed-operation recovery must re-apply the operation",
+        );
+    }
+}
