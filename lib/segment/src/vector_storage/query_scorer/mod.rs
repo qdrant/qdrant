@@ -25,18 +25,24 @@ pub trait QueryScorer {
     /// Score a batch of points
     ///
     /// Enables underlying storage to optimize pre-fetching of data
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert_eq!(ids.len(), scores.len());
-
-        for (idx, id) in ids.iter().enumerate() {
-            scores[idx] = self.score_stored(*id);
-        }
-    }
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]);
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 
     type SupportsBytes: TBool;
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
+}
+
+pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
+    this: &Q,
+    ids: &[u32],
+    scores: &mut [f32],
+) {
+    debug_assert_eq!(ids.len(), scores.len());
+
+    for (idx, id) in ids.iter().enumerate() {
+        scores[idx] = this.score_stored(*id);
+    }
 }
 
 pub trait QueryScorerBytes {
