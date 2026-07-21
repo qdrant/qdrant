@@ -125,8 +125,13 @@ where
     }
 
     #[inline]
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
-        self.0.read_bytes::<P>(range, align)
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        self.0.read_bytes(range, access_pattern, align)
     }
 
     #[inline]

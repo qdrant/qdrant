@@ -102,7 +102,12 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let buf = self

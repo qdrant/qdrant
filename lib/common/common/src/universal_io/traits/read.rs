@@ -63,13 +63,22 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn read<P: AccessPattern, T: Item>(
         &self,
         range: ReadRange,
-        _access_pattern: P,
+        access_pattern: P,
     ) -> UioResult<Cow<'_, [T]>> {
-        let bytes = self.read_bytes::<P>(range.into_byte_range::<T>(), align_of::<T>())?;
+        let bytes = self.read_bytes(
+            range.into_byte_range::<T>(),
+            access_pattern,
+            align_of::<T>(),
+        )?;
         Ok(bytes.try_cast_bytemuck().unwrap())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>>;
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>>;
 
     /// Read the entire file in one logical access.
     ///

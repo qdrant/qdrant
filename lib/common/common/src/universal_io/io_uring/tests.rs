@@ -333,7 +333,7 @@ fn test_io_uring_direct_io() -> UioResult<()> {
         let end = start + expected.len();
 
         let range = start as u64..end as u64;
-        let bytes = file.read_bytes::<Sequential>(range, KERNEL_PAGE_SIZE)?;
+        let bytes = file.read_bytes(range, Sequential, KERNEL_PAGE_SIZE)?;
 
         assert_eq!(bytes.as_ref(), expected, "O_DIRECT block {idx} mismatch");
     }

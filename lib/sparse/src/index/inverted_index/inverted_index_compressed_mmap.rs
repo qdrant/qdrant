@@ -349,8 +349,9 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     ) -> UioResult<()> {
         // Phase 1: read all headers as one contiguous range.
         let storage_len = self.storage.len::<u8>()?;
-        let headers = self.storage.read_bytes::<Sequential>(
+        let headers = self.storage.read_bytes(
             0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
+            Sequential,
             align_of::<PostingListFileHeader<W>>(),
         )?;
         hw_counter.vector_io_read().incr_delta(headers.len());

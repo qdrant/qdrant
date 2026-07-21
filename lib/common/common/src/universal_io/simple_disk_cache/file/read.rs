@@ -60,7 +60,12 @@ where
         self.reopen_impl()
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
         let mut pipeline = DiskCachePipeline::<R, ()>::new()?;
         pipeline.schedule::<P>((), self, range, align)?;
         let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");

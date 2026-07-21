@@ -102,7 +102,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         )?;
 
         let header_size = size_of::<Header>() as u64;
-        let header_bytes = storage.read_bytes::<Random>(0..header_size, align_of::<Header>())?;
+        let header_bytes = storage.read_bytes(0..header_size, Random, align_of::<Header>())?;
         let header: Header = bytemuck::try_pod_read_unaligned(header_bytes.as_ref())
             .map_err(|_| OperationError::service_error("Failed to read prefix index header"))?;
 
@@ -118,8 +118,11 @@ impl<S: UniversalRead> PrefixIndex<S> {
             )));
         }
 
-        let index_bytes =
-            storage.read_bytes::<Random>(header_size..header_size + header.block_index_size, 1)?;
+        let index_bytes = storage.read_bytes(
+            header_size..header_size + header.block_index_size,
+            Random,
+            1,
+        )?;
         let blocks = Self::parse_block_index(
             index_bytes.as_ref(),
             header.block_count,

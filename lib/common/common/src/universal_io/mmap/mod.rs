@@ -205,6 +205,7 @@ impl UniversalRead for MmapFile {
     fn read_bytes<P: AccessPattern>(
         &self,
         range: Range<u64>,
+        _access_pattern: P,
         _align: usize,
     ) -> UioResult<ACow<'_>> {
         let mmap = self.as_bytes::<P>();
