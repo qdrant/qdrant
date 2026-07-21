@@ -201,7 +201,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         // inverted index needs the decoded values anyway, so decode and
         // delegate to the regular path.
         let sparse = vector
-            .map(|bytes| SparseVector::try_from(StoredSparseVector::try_from_bytes(bytes)?))
+            .map(StoredSparseVector::decode_untrusted_bytes)
             .transpose()?;
         self.update_vector(id, sparse.as_ref().map(VectorRef::from), hw_counter)
     }
