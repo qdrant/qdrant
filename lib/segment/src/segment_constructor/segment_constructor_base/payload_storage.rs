@@ -14,10 +14,17 @@ pub(crate) fn create_payload_storage(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
+    create_payload_storage_at(segment_path, config)
+}
+
+pub(crate) fn create_payload_storage_at(
+    storage_path: &Path,
+    config: &SegmentConfig,
+) -> OperationResult<PayloadStorageEnum> {
     #[cfg(target_os = "linux")]
     match config.payload_storage_type {
         PayloadStorageType::Mmap if get_async_scorer() && feature_flags().async_payload_storage => {
-            let storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), false);
+            let storage = PayloadStorageImpl::open_or_create(storage_path.to_path_buf(), false);
 
             match storage {
                 Ok(storage) => return Ok(PayloadStorageEnum::IoUring(storage)),
@@ -36,6 +43,6 @@ pub(crate) fn create_payload_storage(
         PayloadStorageType::InRamMmap => true,
     };
 
-    let payload_storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate)?;
+    let payload_storage = PayloadStorageImpl::open_or_create(storage_path.to_path_buf(), populate)?;
     Ok(PayloadStorageEnum::Mmap(payload_storage))
 }

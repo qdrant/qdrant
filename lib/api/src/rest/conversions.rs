@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorStructInternal};
 use uuid::Uuid;
 
-use super::schema::{ScoredPoint, Vector};
+use super::schema::{PointMetadata, ScoredPoint, Vector};
 use super::{
     FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, Query,
     QueryInterface, VectorOutput, VectorStructOutput,
@@ -83,6 +83,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score,
             payload,
             vector,
+            metadata,
             shard_key,
             order_value,
         } = value;
@@ -92,8 +93,18 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score,
             payload,
             vector: vector.map(VectorStructOutput::from),
+            metadata: metadata.map(Into::into),
             shard_key,
             order_value,
+        }
+    }
+}
+
+impl From<segment::types::PointSystemMetadata> for PointMetadata {
+    fn from(value: segment::types::PointSystemMetadata) -> Self {
+        Self {
+            created_at: value.created_at.map(|v| v.to_string()),
+            updated_at: value.updated_at.map(|v| v.to_string()),
         }
     }
 }

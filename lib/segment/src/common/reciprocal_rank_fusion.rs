@@ -110,6 +110,7 @@ mod tests {
             score,
             payload: None,
             vector: None,
+            metadata: None,
             shard_key: None,
             order_value: None,
         }

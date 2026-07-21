@@ -49,6 +49,7 @@ impl Segment {
             vector_data,
             payload_index,
             payload_storage,
+            system_metadata_storage: _,
             appendable_flag: _,
             append_only_mutations: _,
             segment_type: _,

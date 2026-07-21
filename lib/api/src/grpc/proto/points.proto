@@ -1403,6 +1403,11 @@ message OrderValue {
   }
 }
 
+message PointMetadata {
+  optional string created_at = 1;
+  optional string updated_at = 2;
+}
+
 message ScoredPoint {
   // Point id
   PointId id = 1;
@@ -1420,6 +1425,8 @@ message ScoredPoint {
   optional ShardKey shard_key = 7;
   // Order by value
   optional OrderValue order_value = 8;
+  // System-managed point metadata
+  optional PointMetadata metadata = 9;
 }
 
 message GroupId {
@@ -1523,6 +1530,8 @@ message RetrievedPoint {
   optional ShardKey shard_key = 5;
   // Order-by value
   optional OrderValue order_value = 6;
+  // System-managed point metadata
+  optional PointMetadata metadata = 7;
 }
 
 message GetResponse {

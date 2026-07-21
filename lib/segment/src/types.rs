@@ -403,10 +403,20 @@ pub struct ScoredPoint {
     pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<VectorStructInternal>,
+    /// System-managed point metadata
+    pub metadata: Option<PointSystemMetadata>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
     /// Order-by value
     pub order_value: Option<OrderValue>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PointSystemMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTimePayloadType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTimePayloadType>,
 }
 
 impl Eq for ScoredPoint {}

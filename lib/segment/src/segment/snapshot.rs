@@ -153,6 +153,15 @@ impl Segment {
                 .into_iter()
                 .map(move |file| (file, FileVersion::from(version)))
         };
+        let metadata_storage_files = {
+            let version = self.version_tracker.get_payload().or(self.version);
+
+            self.system_metadata_storage
+                .borrow()
+                .files()
+                .into_iter()
+                .map(move |file| (file, FileVersion::from(version)))
+        };
 
         let immutable_files = self.immutable_files().into_iter().map(|file| {
             let version = self.initial_version.unwrap_or(0);
@@ -179,6 +188,7 @@ impl Segment {
         let files = files
             .chain(vector_storage_files)
             .chain(payload_storage_files)
+            .chain(metadata_storage_files)
             .chain(immutable_files)
             .chain(payload_index_files);
 
@@ -218,6 +228,7 @@ impl Segment {
 
         files.extend(self.payload_index.borrow().files());
         files.extend(self.payload_storage.borrow().files());
+        files.extend(self.system_metadata_storage.borrow().files());
 
         files
     }
@@ -245,6 +256,7 @@ impl Segment {
         );
 
         files.extend(self.payload_storage.borrow().immutable_files());
+        files.extend(self.system_metadata_storage.borrow().immutable_files());
 
         files
     }
@@ -328,6 +340,14 @@ pub fn snapshot_files(
         if include_if(stripped_path) {
             tar.blocking_append_file(&file, stripped_path)
                 .map_err(|err| failed_to_add("payload storage file", &file, err))?;
+        }
+    }
+    for file in segment.system_metadata_storage.borrow().files() {
+        let stripped_path = strip_prefix(&file, &segment.segment_path)?;
+
+        if include_if(stripped_path) {
+            tar.blocking_append_file(&file, stripped_path)
+                .map_err(|err| failed_to_add("system metadata storage file", &file, err))?;
         }
     }
 

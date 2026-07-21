@@ -473,12 +473,24 @@ pub struct ScoredPoint {
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStructOutput>,
+    /// System-managed point metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<PointMetadata>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct PointMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 /// Point data
@@ -493,6 +505,9 @@ pub struct Record {
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStructOutput>,
+    /// System-managed point metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<PointMetadata>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,

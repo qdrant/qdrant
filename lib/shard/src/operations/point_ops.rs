@@ -439,6 +439,7 @@ impl From<SegmentRecordRaw> for PointStructRawPersisted {
             id,
             vectors,
             payload,
+            metadata: _,
         } = record;
 
         Self {
@@ -455,6 +456,7 @@ impl PointStructRawPersisted {
             id,
             vectors,
             payload,
+            metadata: _,
         } = segment_record;
 
         if &self.id != id {
@@ -692,6 +694,7 @@ impl PointStructPersisted {
             id,
             vectors,
             payload,
+            metadata: _,
         } = segment_record;
 
         if &self.id != id {
@@ -731,6 +734,7 @@ impl TryFrom<api::rest::schema::Record> for PointStructPersisted {
             vector,
             shard_key: _,
             order_value: _,
+            metadata: _,
         } = record;
 
         if vector.is_none() {

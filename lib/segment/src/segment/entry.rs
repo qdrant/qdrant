@@ -27,6 +27,7 @@ use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
+use crate::payload_storage::PayloadStorage;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
@@ -148,6 +149,18 @@ impl ReadSegmentEntry for Segment {
                 deferred_behavior,
             )
         })
+        .and_then(|mut records| {
+            for (point_id, record) in &mut records {
+                if let Some(offset) = self
+                    .id_tracker
+                    .borrow()
+                    .internal_id_with_behavior(*point_id, deferred_behavior)
+                {
+                    record.metadata = self.get_point_metadata_by_offset(offset, hw_counter)?;
+                }
+            }
+            Ok(records)
+        })
     }
 
     fn retrieve_raw(
@@ -168,6 +181,18 @@ impl ReadSegmentEntry for Segment {
                 is_stopped,
                 deferred_behavior,
             )
+        })
+        .and_then(|mut records| {
+            for (point_id, record) in &mut records {
+                if let Some(offset) = self
+                    .id_tracker
+                    .borrow()
+                    .internal_id_with_behavior(*point_id, deferred_behavior)
+                {
+                    record.metadata = self.get_point_metadata_by_offset(offset, hw_counter)?;
+                }
+            }
+            Ok(records)
         })
     }
 
@@ -432,6 +457,7 @@ impl StorageSegmentEntry for Segment {
         let segment_path = self.segment_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
+        let system_metadata_flusher = self.system_metadata_storage.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
 
@@ -523,6 +549,8 @@ impl StorageSegmentEntry for Segment {
                     skip_if_cancelled(quantization_flusher(), "quantized vectors")?;
                 }
                 payload_index_flusher().map_err(|err| wrap_err(err, "payload_index"))?;
+                system_metadata_flusher()
+                    .map_err(|err| wrap_err(err, "system_metadata_storage"))?;
                 // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
                 // This is because vector_storage and payload_index flush are not atomic.
                 // If payload or vector flush fails, we will be able to recover data from WAL.
@@ -766,6 +794,7 @@ impl SegmentEntry for Segment {
                 hw_counter,
                 |segment, internal_id| {
                     segment.replace_all_vectors(internal_id, op_num, &vectors, hw_counter)?;
+                    segment.touch_point_metadata(internal_id, hw_counter)?;
                     Ok(true)
                 },
                 |raw_vectors, updated_vectors, _payload| {
@@ -777,6 +806,7 @@ impl SegmentEntry for Segment {
             None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
                 let new_index =
                     segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
+                segment.touch_point_metadata(new_index, hw_counter)?;
                 Ok((false, Some(new_index)))
             }),
         }
@@ -826,6 +856,7 @@ impl SegmentEntry for Segment {
                                 vectors,
                                 hw_counter,
                             )?;
+                            segment.touch_point_metadata(existing_internal_id, hw_counter)?;
                             Ok((true, Some(existing_internal_id)))
                         }
                     },
@@ -834,6 +865,7 @@ impl SegmentEntry for Segment {
             None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
                 let new_index =
                     segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+                segment.touch_point_metadata(new_index, hw_counter)?;
                 Ok((false, Some(new_index)))
             }),
         }
@@ -935,6 +967,7 @@ impl SegmentEntry for Segment {
             hw_counter,
             |segment, internal_id| {
                 segment.update_vectors(internal_id, op_num, vectors.clone(), hw_counter)?;
+                segment.touch_point_metadata(internal_id, hw_counter)?;
                 Ok(true)
             },
             |_raw_vectors, updated_vectors, _payload| {
@@ -976,12 +1009,18 @@ impl SegmentEntry for Segment {
             internal_id,
             &HardwareCounterCell::disposable(),
             |segment, internal_id| {
-                let vector_data = segment
-                    .vector_data
-                    .get(vector_name)
-                    .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-                let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                vector_storage.delete_vector(internal_id)
+                let is_deleted = {
+                    let vector_data = segment
+                        .vector_data
+                        .get(vector_name)
+                        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    vector_storage.delete_vector(internal_id)?
+                };
+                if is_deleted {
+                    segment.touch_point_metadata(internal_id, &HardwareCounterCell::disposable())?;
+                }
+                Ok(is_deleted)
             },
             |raw_vectors, _updated_vectors, _payload| {
                 raw_vectors.remove(vector_name);
@@ -1026,6 +1065,7 @@ impl SegmentEntry for Segment {
                     full_payload,
                     hw_counter,
                 )?;
+                segment.touch_point_metadata(internal_id, hw_counter)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
@@ -1065,6 +1105,7 @@ impl SegmentEntry for Segment {
                     key,
                     hw_counter,
                 )?;
+                segment.touch_point_metadata(internal_id, hw_counter)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
@@ -1104,6 +1145,7 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .delete_payload(internal_id, key, hw_counter)?;
+                segment.touch_point_metadata(internal_id, hw_counter)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
@@ -1139,6 +1181,7 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .clear_payload(internal_id, hw_counter)?;
+                segment.touch_point_metadata(internal_id, hw_counter)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },

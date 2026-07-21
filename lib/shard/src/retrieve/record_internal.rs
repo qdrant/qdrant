@@ -1,7 +1,7 @@
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal};
-use segment::types::{Payload, PointIdType, ShardKey, VectorName};
+use segment::types::{Payload, PointIdType, PointSystemMetadata, ShardKey, VectorName};
 
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
@@ -18,6 +18,8 @@ pub struct RecordInternal {
     pub shard_key: Option<ShardKey>,
     /// Order value, if used for order_by
     pub order_value: Option<OrderValue>,
+    /// System-managed metadata
+    pub metadata: Option<PointSystemMetadata>,
 }
 
 impl RecordInternal {
@@ -28,6 +30,7 @@ impl RecordInternal {
             vector: None,
             shard_key: None,
             order_value: None,
+            metadata: None,
         }
     }
 
@@ -51,6 +54,7 @@ impl From<SegmentRecord> for RecordInternal {
             id,
             payload,
             vectors,
+            metadata,
         } = record;
         Self {
             id,
@@ -58,6 +62,7 @@ impl From<SegmentRecord> for RecordInternal {
             vector: vectors.map(VectorStructInternal::from),
             shard_key: None,
             order_value: None,
+            metadata,
         }
     }
 }
@@ -73,6 +78,7 @@ impl TryFrom<RecordInternal> for PointStructPersisted {
             vector,
             shard_key: _,
             order_value: _,
+            metadata: _,
         } = record;
 
         if vector.is_none() {
@@ -99,6 +105,7 @@ impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
             vector,
             shard_key,
             order_value,
+            metadata,
         } = record;
         Self {
             id: Some(id.into()),
@@ -106,6 +113,7 @@ impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
             vectors: vector.map(api::grpc::qdrant::VectorsOutput::from),
             shard_key: shard_key.map(convert_shard_key_to_grpc),
             order_value: order_value.map(From::from),
+            metadata: metadata.map(Into::into),
         }
     }
 }
@@ -119,11 +127,13 @@ impl From<RecordInternal> for api::rest::Record {
             vector,
             shard_key,
             order_value,
+            metadata,
         } = value;
         Self {
             id,
             payload,
             vector: vector.map(api::rest::VectorStructOutput::from),
+            metadata: metadata.map(Into::into),
             shard_key,
             order_value,
         }

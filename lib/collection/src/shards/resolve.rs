@@ -170,6 +170,7 @@ fn record_eq(this: &RecordInternal, other: &RecordInternal) -> bool {
     this.id == other.id
         && this.order_value == other.order_value
         && this.vector == other.vector
+        && this.metadata == other.metadata
         && payload_eq(&this.payload, &other.payload)
 }
 
@@ -178,6 +179,7 @@ fn scored_point_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
         && this.score == other.score
         && this.order_value == other.order_value
         && this.vector == other.vector
+        && this.metadata == other.metadata
         && payload_eq(&this.payload, &other.payload)
 }
 
@@ -546,6 +548,7 @@ mod test {
             score,
             payload: None,
             vector: None,
+            metadata: None,
             shard_key: None,
             order_value: None,
         }

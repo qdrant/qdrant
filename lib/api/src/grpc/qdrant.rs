@@ -7351,6 +7351,14 @@ pub mod order_value {
     }
 }
 #[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PointMetadata {
+    #[prost(string, optional, tag = "1")]
+    pub created_at: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub updated_at: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
     /// Point id
@@ -7374,6 +7382,9 @@ pub struct ScoredPoint {
     /// Order by value
     #[prost(message, optional, tag = "8")]
     pub order_value: ::core::option::Option<OrderValue>,
+    /// System-managed point metadata
+    #[prost(message, optional, tag = "9")]
+    pub metadata: ::core::option::Option<PointMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -7535,6 +7546,9 @@ pub struct RetrievedPoint {
     /// Order-by value
     #[prost(message, optional, tag = "6")]
     pub order_value: ::core::option::Option<OrderValue>,
+    /// System-managed point metadata
+    #[prost(message, optional, tag = "7")]
+    pub metadata: ::core::option::Option<PointMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

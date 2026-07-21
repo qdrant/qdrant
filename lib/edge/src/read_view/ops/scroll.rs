@@ -120,6 +120,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 score: 1.0,
                 payload: record.payload,
                 vector: record.vector,
+                metadata: record.metadata,
                 shard_key: record.shard_key,
                 order_value: record.order_value,
             })

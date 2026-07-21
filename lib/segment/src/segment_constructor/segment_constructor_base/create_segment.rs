@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use super::id_tracker::create_segment_id_tracker;
 use super::paths::{get_payload_index_path, get_vector_index_path, get_vector_storage_path};
-use super::payload_storage::create_payload_storage;
+use super::payload_storage::{create_payload_storage, create_payload_storage_at};
 use super::sp;
 use super::sparse_vector_index::open_or_create_sparse_vector_index;
 use super::vector_index::{VectorIndexOpenArgs, open_vector_index};
@@ -24,7 +24,7 @@ use crate::id_tracker::{IdTrackerEnum, IdTrackerFormat, IdTrackerRead};
 use crate::index::VectorIndexEnum;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
-use crate::segment::{Segment, VectorData};
+use crate::segment::{SYSTEM_METADATA_STORAGE_DIR, Segment, VectorData};
 use crate::types::{
     SegmentConfig, SegmentType, SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName,
 };
@@ -51,6 +51,10 @@ pub(super) fn create_segment(
     let started = Instant::now();
     let payload_storage = sp(create_payload_storage(segment_path, config)?);
     log_load_timing(segment_path, "payload_storage", started);
+    let started = Instant::now();
+    let system_metadata_path = segment_path.join(SYSTEM_METADATA_STORAGE_DIR);
+    let system_metadata_storage = sp(create_payload_storage_at(&system_metadata_path, config)?);
+    log_load_timing(segment_path, "system_metadata_storage", started);
 
     let appendable_flag = config.is_appendable();
 
@@ -159,6 +163,7 @@ pub(super) fn create_segment(
         append_only_mutations: common::flags::feature_flags().append_only_mutations,
         payload_index,
         payload_storage,
+        system_metadata_storage,
         segment_config: config.clone(),
         error_status: None,
     })

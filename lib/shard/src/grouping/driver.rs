@@ -255,6 +255,7 @@ mod tests {
             score,
             payload: Some(payload_json! { "g": group }),
             vector: None,
+            metadata: None,
             shard_key: None,
             order_value: None,
         }

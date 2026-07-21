@@ -38,6 +38,7 @@ use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
+pub const SYSTEM_METADATA_STORAGE_DIR: &str = "system_metadata";
 
 const SNAPSHOT_PATH: &str = "snapshot";
 
@@ -81,6 +82,7 @@ pub struct Segment {
     pub vector_data: HashMap<VectorNameBuf, VectorData>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
+    pub system_metadata_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
     /// Route mutating ops through clone-and-tombstone so the underlying
@@ -121,6 +123,9 @@ impl Drop for Segment {
         // Try to remove everything from the disk cache, as it might pollute the cache
         if let Err(e) = self.payload_storage.borrow().clear_cache() {
             log::error!("Failed to clear cache of payload_storage: {e}");
+        }
+        if let Err(e) = self.system_metadata_storage.borrow().clear_cache() {
+            log::error!("Failed to clear cache of system_metadata_storage: {e}");
         }
 
         if let Err(e) = self.payload_index.borrow().clear_cache() {

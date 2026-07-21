@@ -48,6 +48,7 @@ impl PyRecord {
             vector: _,
             shard_key: _, // not relevant for Qdrant Edge
             order_value: _,
+            metadata: _,
         } = self.0;
     }
 }

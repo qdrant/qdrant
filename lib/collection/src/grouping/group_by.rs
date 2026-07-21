@@ -370,6 +370,7 @@ mod tests {
             score,
             payload,
             vector: None,
+            metadata: None,
             shard_key: None,
             order_value: None,
         }

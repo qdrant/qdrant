@@ -795,6 +795,7 @@ mod tests {
             vector: Some(vector),
             shard_key: None,
             order_value: None,
+            metadata: None,
         };
         referenced.extend(None, vec![(point_id, record)]);
         referenced

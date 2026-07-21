@@ -1,7 +1,9 @@
 use std::cmp::max;
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 
+use chrono::Utc;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
@@ -24,9 +26,10 @@ use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
 use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
-    SnapshotFormat, VectorName, VectorNameBuf,
+    DateTimePayloadType, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType,
+    PointSystemMetadata, SegmentState, SeqNumberType, SnapshotFormat, VectorName, VectorNameBuf,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorageRead;
@@ -43,6 +46,76 @@ fn find_raw_vector<'a>(
 }
 
 impl Segment {
+    fn read_point_metadata_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PointSystemMetadata> {
+        let payload = self
+            .system_metadata_storage
+            .borrow()
+            .get(point_offset, hw_counter)?;
+
+        let created_at = payload
+            .0
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .and_then(|v| DateTimePayloadType::from_str(v).ok());
+        let updated_at = payload
+            .0
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .and_then(|v| DateTimePayloadType::from_str(v).ok());
+
+        Ok(PointSystemMetadata {
+            created_at,
+            updated_at,
+        })
+    }
+
+    pub(crate) fn get_point_metadata_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PointSystemMetadata>> {
+        let metadata = self.read_point_metadata_by_offset(point_offset, hw_counter)?;
+        if metadata.created_at.is_none() && metadata.updated_at.is_none() {
+            Ok(None)
+        } else {
+            Ok(Some(metadata))
+        }
+    }
+
+    pub(super) fn touch_point_metadata(
+        &mut self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let mut metadata = self.read_point_metadata_by_offset(point_offset, hw_counter)?;
+        let now = DateTimePayloadType::from(Utc::now());
+        if metadata.created_at.is_none() {
+            metadata.created_at = Some(now.clone());
+        }
+        metadata.updated_at = Some(now);
+
+        let mut map = serde_json::Map::new();
+        if let Some(created_at) = metadata.created_at {
+            map.insert(
+                "created_at".to_string(),
+                serde_json::Value::String(created_at.to_string()),
+            );
+        }
+        if let Some(updated_at) = metadata.updated_at {
+            map.insert(
+                "updated_at".to_string(),
+                serde_json::Value::String(updated_at.to_string()),
+            );
+        }
+        self.system_metadata_storage
+            .borrow_mut()
+            .overwrite(point_offset, &Payload(map), hw_counter)
+    }
+
     /// Replace vectors in-place
     ///
     /// This replaces all named vectors for this point with the given set of named vectors.
@@ -214,6 +287,7 @@ impl Segment {
         self.payload_index
             .borrow_mut()
             .overwrite_payload(new_id, &payload, hw_counter)?;
+        self.touch_point_metadata(new_id, hw_counter)?;
         // The payload content is unchanged, but writing it at `new_id` still
         // mutates payload storage: stamp it so partial snapshots re-upload
         // the changed files.
@@ -265,6 +339,7 @@ impl Segment {
         self.payload_index
             .borrow_mut()
             .overwrite_payload(internal_id, payload, hw_counter)?;
+        self.touch_point_metadata(internal_id, hw_counter)?;
         // The overwrite mutated payload storage: stamp it so partial
         // snapshots re-upload it (the old CoW path bumped this via
         // `set_full_payload`).
@@ -395,6 +470,7 @@ impl Segment {
         self.payload_index
             .borrow_mut()
             .overwrite_payload(new_id, &payload, hw_counter)?;
+        self.touch_point_metadata(new_id, hw_counter)?;
 
         // Writing the payload row at new_id mutated payload storage — even
         // for a vectors-only mutation whose entry point never touches the

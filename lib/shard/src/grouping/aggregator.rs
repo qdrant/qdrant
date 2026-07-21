@@ -228,6 +228,7 @@ mod unit_tests {
             score,
             payload: Some(payload_json! { "docId": payloads }),
             vector: None,
+            metadata: None,
             shard_key: None,
             order_value: None,
         }
@@ -240,6 +241,7 @@ mod unit_tests {
             score,
             payload: None,
             vector: None,
+            metadata: None,
             shard_key: None,
             order_value: None,
         }

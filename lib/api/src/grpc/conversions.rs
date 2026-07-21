@@ -37,7 +37,7 @@ use super::qdrant::{
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
     KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads, Memory,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, PointMetadata, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
     StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize, TurboQuantization,
@@ -1122,6 +1122,7 @@ impl TryFrom<rest::Record> for RetrievedPoint {
             vector,
             shard_key,
             order_value,
+            metadata,
         } = record;
         let retrieved_point = Self {
             id: Some(PointId::from(id)),
@@ -1129,6 +1130,7 @@ impl TryFrom<rest::Record> for RetrievedPoint {
             vectors: vector.map(VectorsOutput::try_from).transpose()?,
             shard_key: shard_key.map(convert_shard_key_to_grpc),
             order_value: order_value.map(From::from),
+            metadata: metadata.map(Into::into),
         };
         Ok(retrieved_point)
     }
@@ -1182,6 +1184,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score,
             payload,
             vector,
+            metadata,
             shard_key,
             order_value,
         } = point;
@@ -1191,6 +1194,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score,
             version,
             vectors: vector.map(VectorsOutput::from),
+            metadata: metadata.map(Into::into),
             shard_key: shard_key.map(convert_shard_key_to_grpc),
             order_value: order_value.map(OrderValue::from),
         }
@@ -1206,6 +1210,7 @@ impl TryFrom<rest::ScoredPoint> for ScoredPoint {
             score,
             payload,
             vector,
+            metadata,
             shard_key,
             order_value,
         } = point;
@@ -1215,9 +1220,28 @@ impl TryFrom<rest::ScoredPoint> for ScoredPoint {
             score,
             version,
             vectors: vector.map(VectorsOutput::try_from).transpose()?,
+            metadata: metadata.map(Into::into),
             shard_key: shard_key.map(convert_shard_key_to_grpc),
             order_value: order_value.map(OrderValue::from),
         })
+    }
+}
+
+impl From<segment::types::PointSystemMetadata> for PointMetadata {
+    fn from(value: segment::types::PointSystemMetadata) -> Self {
+        Self {
+            created_at: value.created_at.map(|v| v.to_string()),
+            updated_at: value.updated_at.map(|v| v.to_string()),
+        }
+    }
+}
+
+impl From<rest::PointMetadata> for PointMetadata {
+    fn from(value: rest::PointMetadata) -> Self {
+        Self {
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
     }
 }
 

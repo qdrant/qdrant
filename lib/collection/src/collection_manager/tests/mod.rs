@@ -332,6 +332,7 @@ fn test_delete_all_point_versions() {
                 payload: None,
                 shard_key: None,
                 order_value: None,
+                metadata: None,
             }
         )])
     );

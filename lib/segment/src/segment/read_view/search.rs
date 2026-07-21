@@ -57,6 +57,7 @@ where
                     id,
                     vectors: with_vector.is_enabled().then(SmallVec::new),
                     payload: None,
+                    metadata: None,
                 };
                 (id, record)
             })
@@ -118,6 +119,7 @@ where
                     id,
                     vectors: with_vector.is_enabled().then(SmallVec::new),
                     payload: None,
+                    metadata: None,
                 };
                 (id, record)
             })
@@ -273,6 +275,7 @@ where
                 id,
                 vectors,
                 payload,
+                metadata,
             } = record;
 
             results.push(ScoredPoint {
@@ -281,6 +284,7 @@ where
                 score: point_score,
                 payload,
                 vector: vectors.map(VectorStructInternal::from),
+                metadata,
                 shard_key: None,
                 order_value: None,
             });

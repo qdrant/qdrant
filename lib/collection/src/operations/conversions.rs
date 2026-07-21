@@ -134,6 +134,7 @@ pub fn try_record_from_grpc(
         vectors,
         shard_key,
         order_value,
+        metadata: _,
     } = point;
     let id = id
         .ok_or_else(|| Status::invalid_argument("retrieved point does not have an ID"))?
@@ -159,6 +160,7 @@ pub fn try_record_from_grpc(
         vector,
         shard_key: convert_shard_key_from_grpc_opt(shard_key),
         order_value,
+        metadata: None,
     })
 }
 

@@ -59,6 +59,7 @@ impl PyScoredPoint {
             score: _,
             vector: _,
             payload: _,
+            metadata: _,
             shard_key: _, // not relevant for Qdrant Edge
             order_value: _,
         } = self.0;

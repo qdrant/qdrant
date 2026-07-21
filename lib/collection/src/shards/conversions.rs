@@ -1,5 +1,6 @@
 use api::conversions::json::payload_to_proto;
 use api::grpc::conversions::convert_shard_key_from_grpc_opt;
+use std::str::FromStr;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
@@ -12,7 +13,10 @@ use api::grpc::qdrant::{
 };
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
+use segment::types::{
+    DateTimePayloadType, Filter, PayloadFieldSchema, PointIdType, PointSystemMetadata, ScoredPoint,
+    VectorNameBuf,
+};
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -624,6 +628,7 @@ pub fn try_scored_point_from_grpc(
         vectors,
         shard_key,
         order_value,
+        metadata,
     } = point;
     let id = id
         .ok_or_else(|| Status::invalid_argument("scored point does not have an ID"))?
@@ -640,6 +645,15 @@ pub fn try_scored_point_from_grpc(
         .map(|vectors| vectors.try_into())
         .transpose()
         .map_err(|e| Status::invalid_argument(format!("Failed to parse vectors: {e}")))?;
+    let metadata = metadata.map(
+        |api::grpc::qdrant::PointMetadata {
+             created_at,
+             updated_at,
+         }| PointSystemMetadata {
+            created_at: created_at.and_then(|v| DateTimePayloadType::from_str(&v).ok()),
+            updated_at: updated_at.and_then(|v| DateTimePayloadType::from_str(&v).ok()),
+        },
+    );
 
     Ok(ScoredPoint {
         id,
@@ -647,6 +661,7 @@ pub fn try_scored_point_from_grpc(
         score,
         payload,
         vector,
+        metadata,
         shard_key: convert_shard_key_from_grpc_opt(shard_key),
         order_value: order_value.map(TryFrom::try_from).transpose()?,
     })
