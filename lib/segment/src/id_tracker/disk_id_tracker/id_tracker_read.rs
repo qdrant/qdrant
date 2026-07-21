@@ -35,6 +35,19 @@ impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTra
         // Resident bitvec, so this never fails.
         Ok(&self.deleted)
     }
+
+    fn resolve_internal_batch(
+        &self,
+        external_ids: impl IntoIterator<Item = PointIdType>,
+        mut on_live: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        // The deleted bitvec is resident, so the per-point check is infallible.
+        self.reader.lookup_batch(external_ids, |id, offset| {
+            if !self.point_deleted(offset) {
+                on_live(id, offset);
+            }
+        })
+    }
 }
 
 impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<S> {
