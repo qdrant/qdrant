@@ -476,3 +476,190 @@ impl UpdateWorkers {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+    use std::sync::atomic::AtomicBool;
+    use std::time::Duration;
+
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::DeferredBehavior;
+    use segment::data_types::vectors::only_default_vector;
+    use segment::entry::entry_point::SegmentEntry as _;
+    use segment::payload_json;
+    use segment::types::{PayloadContainer, WithPayload};
+    use shard::operations::OperationWithClockTag;
+    use shard::retrieve::retrieve_blocking::retrieve_blocking;
+    use shard::segment_holder::SegmentHolder;
+    use shard::wal::{SerdeWal, WalRawRecord};
+    use tempfile::Builder;
+    use tokio::sync::{Mutex as TokioMutex, mpsc};
+    use wal::WalOptions;
+
+    use super::*;
+    use crate::collection_manager::fixtures::{TEST_TIMEOUT, empty_segment};
+    use crate::operations::payload_ops::{PayloadOps, SetPayloadOp};
+
+    /// Fixture segments hold dim-4 f32 vectors: 16 bytes per point.
+    const TEST_POINT_SIZE_BYTES: usize = 16;
+
+    /// An operation that has to CoW-move `points` out of their non-appendable segment, which is
+    /// what needs insert capacity.
+    fn set_payload_op(points: &[u64], color: &str) -> CollectionUpdateOperations {
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"color": color},
+            points: Some(points.iter().map(|id| (*id).into()).collect()),
+            filter: None,
+            key: None,
+        }))
+    }
+
+    /// A capacity failure must not surface to the client: the worker signals the optimizer, waits
+    /// for the fresh appendable segment and re-applies the operation, so the caller sees added
+    /// latency instead of an error. The re-apply reads the operation back from the WAL rather than
+    /// keeping a clone, so this also locks that the queued operation is readable at its op number.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_retries_capacity_failure_inline() {
+        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
+        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        let vector = only_default_vector(&[1.0, 0.0, 1.0, 1.0]);
+
+        // The points to move live in a non-appendable segment, so setting their payload needs a
+        // CoW move into an appendable one. Seeded at version 0 so the replayed operation, whose
+        // op number is a WAL index, is not skipped as already applied.
+        let mut non_appendable = empty_segment(segments_dir.path());
+        for point_id in [1u64, 2] {
+            non_appendable
+                .upsert_point(0, point_id.into(), vector.clone(), &hw_counter)
+                .unwrap();
+        }
+        non_appendable.appendable_flag = false;
+
+        // The only appendable segment, already at the cap of two points.
+        let mut appendable = empty_segment(segments_dir.path());
+        for point_id in [100u64, 101] {
+            appendable
+                .upsert_point(0, point_id.into(), vector.clone(), &hw_counter)
+                .unwrap();
+        }
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(non_appendable);
+        holder.add_new(appendable);
+        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+        let segments = LockedSegmentHolder::new(holder);
+
+        let mut wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
+        // Filler so the operation under test lands above the seeded point version of 0.
+        wal.write(
+            &WalRawRecord::new(&OperationWithClockTag::new(
+                set_payload_op(&[], "filler"),
+                None,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let operation = set_payload_op(&[1, 2], "blue");
+        let op_num = wal
+            .write(
+                &WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap(),
+            )
+            .unwrap();
+        assert!(op_num > 0, "the operation must outrank the seeded points");
+
+        let (update_sender, update_receiver) = mpsc::channel(8);
+        let (optimize_sender, mut optimize_receiver) = mpsc::channel(8);
+        let (optimization_finished_sender, optimization_finished_receiver) = watch::channel(());
+
+        // Stands in for the optimization worker: its wake-up provisions one fresh appendable
+        // segment. Provisioning only once also asserts that a single round is enough here.
+        let optimizer_segments = segments.clone();
+        let optimizer_dir = segments_dir.path().to_owned();
+        let optimizer = tokio::spawn(async move {
+            let mut provisioned = 0;
+            while let Some(signal) = optimize_receiver.recv().await {
+                if matches!(signal, OptimizerSignal::Nop) && provisioned == 0 {
+                    provisioned += 1;
+                    let fresh = empty_segment(&optimizer_dir);
+                    optimizer_segments.write().add_new(fresh);
+                    let _ = optimization_finished_sender.send(());
+                }
+            }
+            provisioned
+        });
+
+        let worker = tokio::spawn(UpdateWorkers::update_worker_fn(
+            "test_collection".to_string(),
+            update_receiver,
+            optimize_sender,
+            Arc::new(TokioMutex::new(wal)),
+            segments.clone(),
+            Arc::new(tokio::sync::RwLock::new(())),
+            UpdateTracker::default(),
+            false,
+            optimization_finished_receiver,
+            Arc::new(AppliedSeqHandler::load_or_init(shard_dir.path(), op_num)),
+            CancellationToken::new(),
+        ));
+
+        let (feedback_sender, feedback_receiver) = oneshot::channel();
+        update_sender
+            .send(UpdateSignal::Operation(OperationData {
+                op_num,
+                operation: Some(Box::new(operation)),
+                sender: Some(feedback_sender),
+                wait_for_deferred: false,
+                hw_measurements: HwMeasurementAcc::disposable(),
+            }))
+            .await
+            .unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(60), feedback_receiver)
+            .await
+            .expect("the worker must answer within the retry budget")
+            .expect("the worker must not drop the feedback channel");
+        result.expect("the inline retry must turn the capacity failure into a success");
+
+        assert!(
+            segments.read().failed_operation.is_empty(),
+            "the successful re-apply must unpin the WAL acknowledge",
+        );
+
+        let is_stopped = AtomicBool::new(false);
+        let records = retrieve_blocking(
+            segments,
+            &[1.into(), 2.into()],
+            &WithPayload::from(true),
+            &false.into(),
+            TEST_TIMEOUT,
+            &is_stopped,
+            HwMeasurementAcc::new(),
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+        assert_eq!(records.len(), 2, "both moved points must survive the retry");
+        for record in records.values() {
+            assert_eq!(
+                record.payload.as_ref().and_then(|payload| payload
+                    .get_value(&"color".parse().unwrap())
+                    .first()
+                    .cloned()),
+                Some(&serde_json::json!("blue")),
+                "the retry must actually apply the operation, not just report success",
+            );
+        }
+
+        drop(update_sender);
+        worker.await.unwrap();
+        assert_eq!(
+            optimizer.await.unwrap(),
+            1,
+            "the worker must have signalled the optimizer to provision capacity",
+        );
+    }
+}
