@@ -319,13 +319,8 @@ impl TurboMultiVectorStorage {
             .unwrap_or_default();
 
         if count > offset.capacity {
-            // Ingest path (`insert_multi` / `insert_multi_tq_bytes`): the count
-            // comes from the operation, so an over-capacity multivector is user
-            // error (`WrongVectorBytesSize`), not `ServiceError` — the op is
-            // already in the WAL and must be skipped on replay instead of
-            // crash-looping recovery. The public API can't produce one
-            // (`MAX_MULTIVECTOR_FLATTENED_LEN`), but the internal API applies
-            // operations without that validation.
+            // User error so WAL replay skips the op instead of crash-looping.
+            // Reachable only internally (no `MAX_MULTIVECTOR_FLATTENED_LEN` check).
             let fresh_start = self.fresh_range_start(count).ok_or_else(|| {
                 OperationError::wrong_vector_bytes_size(exceeds_chunk_capacity_message(count))
             })?;
