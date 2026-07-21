@@ -53,9 +53,18 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
         range: Range<u64>,
     ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static;
 
-    /// Fetch the object at `path` from byte offset `from` to its end in one
-    /// request — no separate `len`/HEAD round-trip. `from == 0` reads the whole
-    /// object.
+    /// Fetch the object at `path` from byte offset `from` to its end — no
+    /// separate `len`/HEAD round-trip. `from == 0` reads the whole object.
+    /// Implementations may split a large object into multiple range requests
+    /// behind the returned stream, but must yield the bytes of a single
+    /// consistent version of the object (or fail).
+    ///
+    /// Each stream item is `(offset, bytes)`: the position of that chunk
+    /// **relative to `from`**, plus its bytes. Chunks may arrive **out of
+    /// order** — a multi-request implementation is free to yield each range as
+    /// it completes — but must be disjoint and tile the tail exactly.
+    /// Sequential backends can tag an in-order stream with
+    /// [`with_running_offsets`].
     ///
     /// The returned `u64` is the **total size of the whole object, in bytes**
     /// (as reported by the GET response, e.g. parsed from `Content-Range`/
@@ -72,15 +81,14 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
         &self,
         path: &Path,
         from: u64,
-    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static;
+    ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static;
 
-    /// Fetch the whole object at `path` in one request. Convenience for
+    /// Fetch the whole object at `path`. Convenience for
     /// [`read_from(path, 0)`](Self::read_from).
     fn read_whole(
         &self,
         path: &Path,
-    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
-    {
+    ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
         self.read_from(path, 0)
     }
 
@@ -92,4 +100,29 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     }
 
     fn kind() -> UniversalKind;
+}
+
+/// Stream of `(offset, bytes)` chunks yielded by [`AsyncRead::read_from`]:
+/// each chunk's position relative to the requested start, plus its bytes.
+/// Chunks may arrive out of order; they must be disjoint and tile the tail
+/// exactly.
+pub type OffsetByteStream = BoxStream<'static, Result<(u64, Bytes)>>;
+
+/// Tag an in-order byte stream with running offsets, producing the
+/// `(offset, bytes)` item shape [`AsyncRead::read_from`] requires. For
+/// backends that deliver the tail as one sequential stream.
+pub fn with_running_offsets(
+    stream: impl futures::Stream<Item = Result<Bytes>> + Send + 'static,
+) -> OffsetByteStream {
+    use futures::StreamExt as _;
+    stream
+        .scan(0u64, |offset, item| {
+            let item = item.map(|bytes| {
+                let at = *offset;
+                *offset += bytes.len() as u64;
+                (at, bytes)
+            });
+            futures::future::ready(Some(item))
+        })
+        .boxed()
 }
