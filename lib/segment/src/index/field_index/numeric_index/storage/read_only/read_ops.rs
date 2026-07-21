@@ -9,7 +9,7 @@ use std::ops::Bound;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 use gridstore::Blob;
 
 use super::super::super::numeric_index_read::NumericIndexRead;
@@ -42,6 +42,32 @@ where
             }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
                 index.check_values_any(idx, check_fn, hw_counter)
+            }
+        }
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&T) -> bool,
+        M: FnMut(U, bool),
+    {
+        match self {
+            ReadOnlyNumericIndexInner::Appendable(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
+            ReadOnlyNumericIndexInner::Immutable(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
+            ReadOnlyNumericIndexInner::OnDisk(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
             }
         }
     }

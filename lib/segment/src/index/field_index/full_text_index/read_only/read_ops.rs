@@ -116,6 +116,23 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => {
+                index.check_match_batch(query, items, on_match)
+            }
+            ReadOnlyFullTextIndex::OnDisk(index) => index.check_match_batch(query, items, on_match),
+            ReadOnlyFullTextIndex::Immutable(index) => {
+                index.check_match_batch(query, items, on_match)
+            }
+        }
+    }
+
     fn for_each_payload_block_inner(
         &self,
         threshold: usize,

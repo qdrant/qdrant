@@ -302,19 +302,17 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool,
         ) -> OperationResult<Vec<PointOffsetType>> {
-            let result =
-                postings.with_all_or_none_postings(tokens.tokens(), |posting_readers| {
-                    if posting_readers.is_empty() {
-                        return Ok(Vec::new());
-                    }
-                    let posting_readers = posting_readers
-                        .into_iter()
-                        .map(|(_token_id, posting_list_view)| posting_list_view)
-                        .collect();
-                    Ok(intersect_compressed_postings_iterator(posting_readers, filter).collect())
-                })?;
-            // Some token has no posting list -> no matches
-            Ok(result.unwrap_or_default())
+            postings.with_all_or_none_postings(tokens.tokens(), |posting_readers| {
+                // Empty query, or a missing token -> no matches
+                let Some(posting_readers) = posting_readers.filter(|r| !r.is_empty()) else {
+                    return Ok(Vec::new());
+                };
+                let posting_readers = posting_readers
+                    .into_iter()
+                    .map(|(_token_id, posting_list_view)| posting_list_view)
+                    .collect();
+                Ok(intersect_compressed_postings_iterator(posting_readers, filter).collect())
+            })
         }
 
         match &self.storage.postings {
@@ -371,13 +369,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> OperationResult<bool> {
-            let result = postings.with_all_or_none_postings(tokens.tokens(), |all_postings| {
-                Ok(all_postings
-                    .into_iter()
-                    .all(|(_token_id, posting)| posting.visitor().contains(point_id)))
-            })?;
-            // Some token has no posting list -> no match
-            Ok(result.unwrap_or(false))
+            postings.with_all_or_none_postings(tokens.tokens(), |all_postings| {
+                // Some token has no posting list -> no match
+                Ok(all_postings.is_some_and(|all_postings| {
+                    all_postings
+                        .into_iter()
+                        .all(|(_token_id, posting)| posting.visitor().contains(point_id))
+                }))
+            })
         }
 
         match &self.storage.postings {
@@ -427,19 +426,18 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 // not fetch the same posting list twice, otherwise positions get
                 // added twice in `phrase_in_all_postings`.
                 let unique_tokens = phrase.to_token_set();
-                let result = postings.with_all_or_none_postings(
-                    unique_tokens.tokens(),
-                    |selected_postings| {
-                        Ok(intersect_compressed_postings_phrase_iterator(
-                            phrase,
-                            selected_postings,
-                            is_active,
-                        )
-                        .collect())
-                    },
-                )?;
-                // Some token has no posting list -> no matches
-                Ok(result.unwrap_or_default())
+                postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
+                    // Some token has no posting list -> no matches
+                    let Some(selected_postings) = selected_postings else {
+                        return Ok(Vec::new());
+                    };
+                    Ok(intersect_compressed_postings_phrase_iterator(
+                        phrase,
+                        selected_postings,
+                        is_active,
+                    )
+                    .collect())
+                })
             }
             // cannot do phrase matching if there's no positional information
             OnDiskPostingsEnum::Ids(_postings) => Ok(Vec::new()),
@@ -459,22 +457,171 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         match &self.storage.postings {
             OnDiskPostingsEnum::WithPositions(postings) => {
                 let unique_tokens = phrase.to_token_set();
-                let result = postings.with_all_or_none_postings(
-                    unique_tokens.tokens(),
-                    |selected_postings| {
-                        Ok(check_compressed_postings_phrase(
-                            phrase,
-                            point_id,
-                            selected_postings,
-                        ))
-                    },
-                )?;
-                // Some token has no posting list -> no match
-                Ok(result.unwrap_or(false))
+                postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
+                    // Some token has no posting list -> no match
+                    Ok(selected_postings.is_some_and(|selected_postings| {
+                        check_compressed_postings_phrase(phrase, point_id, selected_postings)
+                    }))
+                })
             }
             // cannot do phrase matching if there's no positional information
             OnDiskPostingsEnum::Ids(_postings) => Ok(false),
         }
+    }
+
+    /// Batched counterpart of [`InvertedIndex::check_match`].
+    pub fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        match query {
+            ParsedQuery::AllTokens(tokens) => self.check_has_subset_batch(tokens, items, on_match),
+            ParsedQuery::AnyTokens(tokens) => self.check_has_any_batch(tokens, items, on_match),
+            ParsedQuery::Phrase(phrase) => self.check_has_phrase_batch(phrase, items, on_match),
+        }
+    }
+
+    fn check_has_subset_batch<U: UserData>(
+        &self,
+        tokens: &TokenSet,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        // An empty query matches nothing. Guard it here: the `all()` below would
+        // otherwise be vacuously true.
+        if tokens.is_empty() {
+            for (tag, _) in items {
+                on_match(tag, false);
+            }
+            return Ok(());
+        }
+
+        fn run<V, S, I, M, U>(
+            index: &OnDiskInvertedIndex<S>,
+            postings: &OnDiskPostings<V, S>,
+            tokens: &TokenSet,
+            items: I,
+            on_match: &mut M,
+        ) -> OperationResult<()>
+        where
+            V: ZerocopyPostingValue,
+            S: UniversalRead,
+            U: UserData,
+            I: Iterator<Item = (U, PointOffsetType)>,
+            M: FnMut(U, bool),
+        {
+            // `None` (some token has no posting list) means nothing matches, so
+            // every item reports `false`.
+            postings.with_all_or_none_postings(tokens.tokens(), |maybe_postings| {
+                let mut visitors = maybe_postings.map(|postings| {
+                    postings
+                        .into_iter()
+                        .map(|(_, posting)| posting.visitor())
+                        .collect::<Vec<_>>()
+                });
+                for (tag, point_id) in items {
+                    let matched = visitors.as_mut().is_some_and(|visitors| {
+                        index.is_active(point_id)
+                            && visitors.iter_mut().all(|v| v.contains(point_id))
+                    });
+                    on_match(tag, matched);
+                }
+                Ok(())
+            })
+        }
+
+        match &self.storage.postings {
+            OnDiskPostingsEnum::Ids(postings) => run(self, postings, tokens, items, &mut on_match),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                run(self, postings, tokens, items, &mut on_match)
+            }
+        }
+    }
+
+    fn check_has_any_batch<U: UserData>(
+        &self,
+        tokens: &TokenSet,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        if tokens.is_empty() {
+            // No tokens means nothing matches; report every item as a non-match.
+            for (tag, _) in items {
+                on_match(tag, false);
+            }
+            return Ok(());
+        }
+
+        fn check_any<V, S, I, M, U>(
+            index: &OnDiskInvertedIndex<S>,
+            postings: &OnDiskPostings<V, S>,
+            tokens: &TokenSet,
+            items: I,
+            on_match: &mut M,
+        ) -> OperationResult<()>
+        where
+            V: ZerocopyPostingValue,
+            S: UniversalRead,
+            U: UserData,
+            I: Iterator<Item = (U, PointOffsetType)>,
+            M: FnMut(U, bool),
+        {
+            postings.with_existing_postings(tokens.tokens(), |all_postings| {
+                let mut visitors: Vec<_> = all_postings
+                    .into_iter()
+                    .map(|(_, posting)| posting.visitor())
+                    .collect();
+                for (tag, point_id) in items {
+                    let matched = index.is_active(point_id)
+                        && visitors.iter_mut().any(|v| v.contains(point_id));
+                    on_match(tag, matched);
+                }
+                Ok(())
+            })
+        }
+
+        match &self.storage.postings {
+            OnDiskPostingsEnum::Ids(postings) => {
+                check_any(self, postings, tokens, items, &mut on_match)
+            }
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                check_any(self, postings, tokens, items, &mut on_match)
+            }
+        }
+    }
+
+    fn check_has_phrase_batch<U: UserData>(
+        &self,
+        phrase: &Document,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        // Phrase matching needs positional information; without it nothing matches.
+        let OnDiskPostingsEnum::WithPositions(postings) = &self.storage.postings else {
+            for (tag, _) in items {
+                on_match(tag, false);
+            }
+            return Ok(());
+        };
+
+        let unique_tokens = phrase.to_token_set();
+        // `None` (some token has no posting list) means nothing matches, so every
+        // item reports `false`.
+        postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
+            for (tag, point_id) in items {
+                let matched = selected_postings.as_ref().is_some_and(|selected| {
+                    // `PostingListView` is a set of slice refs, so the per-point
+                    // clone only copies references; the postings were loaded once
+                    // above.
+                    self.is_active(point_id)
+                        && check_compressed_postings_phrase(phrase, point_id, selected.clone())
+                });
+                on_match(tag, matched);
+            }
+            Ok(())
+        })
     }
 
     pub fn files(&self) -> Vec<PathBuf> {

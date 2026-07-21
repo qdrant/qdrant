@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use atomic_refcell::AtomicRefCell;
-use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
+use common::condition_checker::{
+    CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
+};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use serde_json::Value;
@@ -230,6 +232,13 @@ where
             &self.hw_counter,
         )
     }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
 }
 
 /// For [`Condition::HasId`] and [`Condition::CustomIdChecker`].
@@ -240,6 +249,13 @@ impl ConditionChecker for IdsConditionChecker {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(self.0.contains(&point_id))
+    }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
     }
 }
 
@@ -260,6 +276,13 @@ impl<I: IdTrackerRead> ConditionChecker for SliceConditionChecker<'_, I> {
             .external_id(point_id)
             .is_some_and(|external_id| self.slice.check(external_id)))
     }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
 }
 
 /// For [`Condition::HasVector`].
@@ -270,5 +293,14 @@ impl<V: VectorStorageRead> ConditionChecker for HasVectorConditionChecker<V> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(!self.0.borrow().is_deleted_vector(point_id))
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        default_check_batched(ids, select, rest, |id| self.check(id))
     }
 }
