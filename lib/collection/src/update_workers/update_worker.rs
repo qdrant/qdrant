@@ -124,16 +124,19 @@ impl UpdateWorkers {
                     // fall through with the error: the operation is queued in
                     // `failed_operation` and asynchronous recovery re-applies it later.
                     //
-                    // Retry rounds are bounded, and each round only proceeds once capacity is
-                    // actually available, so every round makes progress worth a segment's
-                    // capacity.
-                    const CAPACITY_RETRIES_MAX: usize = 64;
+                    // Retries are bounded by a wall-clock budget rather than a round count:
+                    // rounds differ wildly in cost, and this worker handles one operation at a
+                    // time, so the budget is exactly what a single operation may hold the
+                    // shard's update queue for.
+                    const CAPACITY_RETRY_BUDGET: std::time::Duration =
+                        std::time::Duration::from_secs(30);
                     const CAPACITY_WAIT_SLICE: std::time::Duration =
                         std::time::Duration::from_millis(100);
                     const CAPACITY_WAIT_PER_ROUND: std::time::Duration =
                         std::time::Duration::from_secs(5);
 
                     let mut operation = Some(operation);
+                    let mut retry_deadline = None;
                     let mut capacity_retries = 0;
                     let operation_result = loop {
                         // The first attempt consumes the operation; the rare retry rounds
@@ -186,7 +189,14 @@ impl UpdateWorkers {
 
                         let out_of_capacity =
                             matches!(&result, Ok(Err(err)) if err.is_out_of_appendable_capacity());
-                        if !out_of_capacity || capacity_retries >= CAPACITY_RETRIES_MAX {
+                        if !out_of_capacity {
+                            break result;
+                        }
+                        // The budget clock starts at the first capacity failure, so it covers
+                        // the retries only and not the initial apply.
+                        let deadline = *retry_deadline
+                            .get_or_insert_with(|| Instant::now() + CAPACITY_RETRY_BUDGET);
+                        if Instant::now() >= deadline {
                             break result;
                         }
                         capacity_retries += 1;
@@ -206,7 +216,8 @@ impl UpdateWorkers {
                             // the timeout slice doubles as a fallback re-check, since not
                             // every wake-up path fires the signal promptly.
                             let mut optimization_finished = optimization_finished_receiver.clone();
-                            let round_deadline = Instant::now() + CAPACITY_WAIT_PER_ROUND;
+                            let round_deadline =
+                                deadline.min(Instant::now() + CAPACITY_WAIT_PER_ROUND);
                             let capacity_appeared = loop {
                                 if has_capacity(&segments) {
                                     break true;
