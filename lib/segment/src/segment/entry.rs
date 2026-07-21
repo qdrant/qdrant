@@ -1018,7 +1018,8 @@ impl SegmentEntry for Segment {
                     vector_storage.delete_vector(internal_id)?
                 };
                 if is_deleted {
-                    segment.touch_point_metadata(internal_id, &HardwareCounterCell::disposable())?;
+                    segment
+                        .touch_point_metadata(internal_id, &HardwareCounterCell::disposable())?;
                 }
                 Ok(is_deleted)
             },

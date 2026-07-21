@@ -1,6 +1,7 @@
+use std::str::FromStr;
+
 use api::conversions::json::payload_to_proto;
 use api::grpc::conversions::convert_shard_key_from_grpc_opt;
-use std::str::FromStr;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
