@@ -8,7 +8,7 @@ use super::DiskIdTracker;
 use super::mappings::{DiskMappingsSource, log_lookup_err};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum, default_internal_versions_batch};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalWrite> DiskIdTracker<S> {
@@ -45,11 +45,19 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     }
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        // Resident versions, mutated in place. `internal_versions_batch` is
-        // deliberately NOT overridden: its default loop hits this resident
-        // store, so there is no IO to pipeline. Only the read-only tracker,
-        // whose versions file stays on disk, batches it.
+        // Resident versions, mutated in place.
         self.internal_to_version.get(internal_id)
+    }
+
+    /// The default single-lookup loop hits the resident version store, so
+    /// there is no IO to pipeline. Only the read-only tracker, whose versions
+    /// file stays on disk, batches the reads.
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
     }
 
     fn internal_id_with_behavior(

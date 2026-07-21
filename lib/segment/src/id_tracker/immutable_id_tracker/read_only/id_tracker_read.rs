@@ -4,7 +4,7 @@ use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum, default_internal_versions_batch};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalRead> IdTrackerRead for ReadOnlyImmutableIdTracker<S> {
@@ -16,6 +16,14 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyImmutableIdTracker<S> {
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id)
+    }
+
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
     }
 
     fn internal_id_with_behavior(
