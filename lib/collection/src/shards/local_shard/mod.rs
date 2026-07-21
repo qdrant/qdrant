@@ -741,11 +741,29 @@ impl LocalShard {
         // shard serves updates) and would fail the whole shard load. The cap re-arms after the
         // replay, before the remaining WAL tail is queued to the update worker, where recovery
         // is live.
-        let max_segment_size_bytes = {
+        //
+        // Restored by a guard rather than inline: the replay below returns early on several
+        // error paths, and leaving the cap disarmed there would let the shard run uncapped for
+        // its whole lifetime.
+        struct RearmCapOnDrop<'a> {
+            segments: &'a LockedSegmentHolder,
+            cap: Option<std::num::NonZeroUsize>,
+        }
+
+        impl Drop for RearmCapOnDrop<'_> {
+            fn drop(&mut self) {
+                self.segments.write().set_max_segment_size_bytes(self.cap);
+            }
+        }
+
+        let rearm_cap = {
             let mut segments = self.segments.write();
             let cap = segments.max_segment_size_bytes();
             segments.set_max_segment_size_bytes(None);
-            cap
+            RearmCapOnDrop {
+                segments: &self.segments,
+                cap,
+            }
         };
 
         let from = wal.first_index();
@@ -948,10 +966,9 @@ impl LocalShard {
         }
 
         // Synchronous replay is done; re-arm the appendable-segment size cap for the queued WAL
-        // tail and everything after.
-        self.segments
-            .write()
-            .set_max_segment_size_bytes(max_segment_size_bytes);
+        // tail and everything after. Explicit rather than left to the end of the function, so the
+        // cap is back before the tail reaches the update worker.
+        drop(rearm_cap);
 
         bar.finish();
         if !show_progress_bar {
