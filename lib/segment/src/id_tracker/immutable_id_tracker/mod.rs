@@ -38,7 +38,7 @@ use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{
     DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
-    default_internal_versions_batch,
+    default_external_ids_batch, default_internal_versions_batch,
 };
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -261,6 +261,14 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         self.mappings.external_id(internal_id)
+    }
+
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        default_external_ids_batch(self, internal_ids, callback)
     }
 
     type Backend = S;

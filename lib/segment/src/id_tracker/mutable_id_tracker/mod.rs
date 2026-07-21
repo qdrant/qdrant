@@ -32,7 +32,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{
     DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
-    default_internal_versions_batch,
+    default_external_ids_batch, default_internal_versions_batch,
 };
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -197,6 +197,14 @@ impl IdTrackerRead for MutableIdTracker {
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         self.mappings.external_id(internal_id)
+    }
+
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        default_external_ids_batch(self, internal_ids, callback)
     }
 
     type Backend = common::universal_io::MmapFile;
