@@ -58,37 +58,37 @@ pub struct IoUringContextConfig;
 impl UniversalReadFileOps for IoUringFs {
     type ContextConfig = IoUringContextConfig;
 
-    fn from_context(_ctx: Self::ContextConfig) -> Result<Self> {
+    fn from_context(_ctx: Self::ContextConfig) -> UioResult<Self> {
         Ok(Self)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> UioResult<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
 }
 
 impl UniversalWriteFileOps for IoUringFs {
-    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
         local_file_ops::local_create(path, expected_length)
     }
 
-    fn create_dir(&self, path: &Path) -> Result<()> {
+    fn create_dir(&self, path: &Path) -> UioResult<()> {
         local_file_ops::local_create_dir(path)
     }
 
-    fn remove(&self, path: &Path) -> Result<()> {
+    fn remove(&self, path: &Path) -> UioResult<()> {
         local_file_ops::local_remove(path)
     }
 
-    fn remove_dir(&self, path: &Path) -> Result<()> {
+    fn remove_dir(&self, path: &Path) -> UioResult<()> {
         local_file_ops::local_remove_dir(path)
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         local_file_ops::local_atomic_save(path, bytes)
     }
 }
@@ -121,7 +121,7 @@ impl UniversalReadFs for IoUringFs {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: IoUringOpenExtra,
-    ) -> Result<IoUringFile> {
+    ) -> UioResult<IoUringFile> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;
 
@@ -160,11 +160,11 @@ impl UniversalRead for IoUringFile {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> Result<()> {
+    fn reopen(&mut self) -> UioResult<()> {
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
         if self.direct_io {
             // direct_io needs special handling
             let mut pipeline = IoUringPipeline::<()>::new()?;
@@ -179,7 +179,7 @@ impl UniversalRead for IoUringFile {
         Ok(ACow::Owned(bytes))
     }
 
-    fn len<T>(&self) -> Result<u64> {
+    fn len<T>(&self) -> UioResult<u64> {
         let byte_len = self.file.metadata()?.len();
 
         let items_len = byte_len / size_of::<T>() as u64;
@@ -188,7 +188,7 @@ impl UniversalRead for IoUringFile {
         Ok(items_len)
     }
 
-    fn populate(&self) -> Result<()> {
+    fn populate(&self) -> UioResult<()> {
         if crate::low_memory::low_memory_mode().skip_populate() {
             return Ok(());
         }
@@ -212,7 +212,7 @@ impl UniversalRead for IoUringFile {
         false
     }
 
-    fn clear_ram_cache(&self) -> Result<()> {
+    fn clear_ram_cache(&self) -> UioResult<()> {
         crate::fs::clear_disk_cache(self.file.path())?;
         Ok(())
     }
@@ -224,7 +224,7 @@ impl UniversalRead for IoUringFile {
 /// Reject positioned writes reaching beyond `file_len`: growth is reserved
 /// for [`UniversalAppend`] on every backend — without this check, `pwrite`
 /// would silently extend the file with a zero-filled hole.
-fn check_write_bounds<T>(file_len: u64, byte_offset: ByteOffset, bytes: &[u8]) -> Result<()> {
+fn check_write_bounds<T>(file_len: u64, byte_offset: ByteOffset, bytes: &[u8]) -> UioResult<()> {
     let end = byte_offset.checked_add(bytes.len() as u64);
     if end.is_none_or(|end| end > file_len) {
         return Err(UniversalIoError::OutOfBounds {
@@ -237,7 +237,7 @@ fn check_write_bounds<T>(file_len: u64, byte_offset: ByteOffset, bytes: &[u8]) -
 }
 
 impl UniversalWrite for IoUringFile {
-    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> UioResult<()> {
         let bytes = bytemuck::cast_slice(items);
         check_write_bounds::<T>(self.file.metadata()?.len(), byte_offset, bytes)?;
         self.file.write_all_at(bytes, byte_offset)?;
@@ -247,7 +247,7 @@ impl UniversalWrite for IoUringFile {
     fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         items: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let file_len = self.file.metadata()?.len();
 
         let mut rt = IoUringWriteRuntime::new()?;
@@ -279,11 +279,11 @@ impl UniversalWrite for IoUringFile {
     fn write_multi<'a, T: bytemuck::Pod>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let file_lens = files
             .iter()
             .map(|file| Ok(file.file.metadata()?.len()))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<UioResult<Vec<_>>>()?;
 
         let mut rt = IoUringWriteRuntime::new()?;
         let mut writes = writes.into_iter().peekable();
@@ -327,7 +327,7 @@ impl UniversalFlush for IoUringFile {
 }
 
 impl UniversalAppend for IoUringFile {
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         let mut slices = [io::IoSlice::new(bytes)];
         self.append_slices(offset, &mut slices, bytes.len())
@@ -337,7 +337,7 @@ impl UniversalAppend for IoUringFile {
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let (mut slices, total) = local_file_ops::collect_append_slices(items);
         self.append_slices(offset, &mut slices, total)
     }
@@ -400,7 +400,7 @@ impl IoUringFile {
         offset: ByteOffset,
         slices: &mut [io::IoSlice<'_>],
         total: usize,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         if total == 0 {
             return Ok(());
         }

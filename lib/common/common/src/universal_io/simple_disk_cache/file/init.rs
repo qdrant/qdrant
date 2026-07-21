@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use super::{DiskCache, State};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
-use crate::universal_io::{OwnedPipeline, Result};
+use crate::universal_io::{OwnedPipeline, UioResult};
 
 /// A borrowed view of a materialized [`State::Ready`]: the live `remote` handle
 /// paired with its local mmap mirror.
@@ -24,7 +24,7 @@ where
     R: DiskCacheRemote,
 {
     /// Return the materialized [`State::Ready`], initializing it on first call.
-    pub(crate) fn state(&self) -> Result<ReadyRef<'_, R>> {
+    pub(crate) fn state(&self) -> UioResult<ReadyRef<'_, R>> {
         if !self.is_ready() {
             self.init_state()?;
         }
@@ -44,7 +44,7 @@ where
 
     /// Drive `state` to [`State::Ready`] under the lock, consuming whichever
     /// pre-init variant is staged. Idempotent: a no-op once `ready` is set.
-    pub(super) fn init_state(&self) -> Result<()> {
+    pub(super) fn init_state(&self) -> UioResult<()> {
         let mut state = self.state.lock();
 
         // Another thread may have materialized while we waited for the lock.
@@ -75,7 +75,7 @@ where
 
     /// Build an empty local mmap sized from the remote length; reads fault blocks
     /// in on demand. The lazy cold-start path ([`State::Uninit`]).
-    fn init_from_scratch(&self, remote: R) -> Result<(R, LocalState)> {
+    fn init_from_scratch(&self, remote: R) -> UioResult<(R, LocalState)> {
         let len = remote.len::<u8>()?;
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
         Ok((remote, local))
@@ -86,7 +86,7 @@ where
     pub(super) fn init_from_open_prefill(
         &self,
         mut pipeline: OwnedPipeline<R, ()>,
-    ) -> Result<(R, LocalState)> {
+    ) -> UioResult<(R, LocalState)> {
         match pipeline.wait()? {
             Some((_, bytes)) => {
                 // `bytes` covers the whole file, so its length is the remote length.
@@ -111,7 +111,7 @@ where
         &self,
         mut pipeline: OwnedPipeline<R, u64>,
         mut local: LocalState,
-    ) -> Result<(R, LocalState)> {
+    ) -> UioResult<(R, LocalState)> {
         match pipeline.wait()? {
             Some((start, bytes)) if !bytes.is_empty() => {
                 let end = start + bytes.len() as u64;
@@ -138,7 +138,7 @@ where
         &self,
         mut pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
-    ) -> Result<(R, LocalState)> {
+    ) -> UioResult<(R, LocalState)> {
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
 
         match pipeline.wait()? {
@@ -161,7 +161,7 @@ where
     /// instead of a separate `len` call followed by lazy faulting.
     ///
     /// [`read_whole`]: crate::universal_io::UniversalRead::read_whole
-    pub(super) fn prefill_if_uninit(&self) -> Result<()> {
+    pub(super) fn prefill_if_uninit(&self) -> UioResult<()> {
         if self.is_ready() {
             return Ok(());
         }

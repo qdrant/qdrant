@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, Result, UniversalIoError, UniversalKind};
+use common::universal_io::{ListedFile, UioResult, UniversalIoError, UniversalKind};
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use io_bridge::{AsyncRead, AsyncWrite, OffsetByteStream};
 use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt, PutPayload};
@@ -110,7 +110,7 @@ impl<S> ObjectStoreSource<S> {
 impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     type Config = S::Config;
 
-    fn open(config: &Self::Config) -> Result<Self> {
+    fn open(config: &Self::Config) -> UioResult<Self> {
         Ok(Self {
             store: Arc::new(S::build_store(config)?),
             append: S::append_context(config)?,
@@ -121,7 +121,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         let store = self.store.clone();
         let prefix_path = prefix.to_path_buf();
         // object_store lists by whole path segment; emulate the byte-prefix
@@ -159,7 +159,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         }
     }
 
-    fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+    fn exists(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
 
@@ -176,7 +176,8 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         &self,
         path: &Path,
         range: Range<u64>,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
+    {
         let store = self.store.clone();
         let key = build_key(path);
         async move {
@@ -196,7 +197,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         &self,
         path: &Path,
         from: u64,
-    ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
         let chunk_size = self.chunk_size;
@@ -283,7 +284,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         }
     }
 
-    fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+    fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
         async move {
@@ -301,7 +302,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
 }
 
 impl<S: BlobBackend> AsyncWrite for ObjectStoreSource<S> {
-    fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+    fn create(&self, path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
         async move {
@@ -314,7 +315,7 @@ impl<S: BlobBackend> AsyncWrite for ObjectStoreSource<S> {
         }
     }
 
-    fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+    fn remove(&self, path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
         async move {
@@ -325,7 +326,11 @@ impl<S: BlobBackend> AsyncWrite for ObjectStoreSource<S> {
         }
     }
 
-    fn save(&self, path: &Path, bytes: Bytes) -> impl Future<Output = Result<()>> + Send + 'static {
+    fn save(
+        &self,
+        path: &Path,
+        bytes: Bytes,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
         async move {
@@ -383,7 +388,7 @@ mod tests {
     impl BlobBackend for InMemory {
         type Config = InMemoryConfig;
 
-        fn build_store(_config: &Self::Config) -> Result<Self> {
+        fn build_store(_config: &Self::Config) -> UioResult<Self> {
             Ok(InMemory::new())
         }
 
@@ -402,7 +407,7 @@ mod tests {
             path: &Path,
             offset: u64,
             data: Bytes,
-        ) -> impl Future<Output = Result<u64>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             let store = self.store().clone();
             let key = build_key(path);
 

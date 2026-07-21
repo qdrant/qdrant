@@ -7,9 +7,9 @@ use rand::{RngExt, SeedableRng};
 
 use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
-use crate::universal_io::{self, MmapFile, MmapFs, OpenOptions, UniversalRead};
 #[cfg(target_os = "linux")]
 use crate::universal_io::{IoUringFile, IoUringFs, IoUringOpenExtra};
+use crate::universal_io::{MmapFile, MmapFs, OpenOptions, UioResult, UniversalRead};
 
 #[rustfmt::skip] #[test] fn test_k_str_v_i64()   { run_checks::<str,  i64 >(); }
 #[rustfmt::skip] #[test] fn test_k_str_v_u128()  { run_checks::<str,  u128>(); }
@@ -239,7 +239,7 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
 }
 
 #[expect(clippy::unnecessary_wraps, reason = "reduce boilerplate in checks")]
-fn push_val<T>(v: &mut Vec<T>, val: T) -> universal_io::Result<()> {
+fn push_val<T>(v: &mut Vec<T>, val: T) -> UioResult<()> {
     v.push(val);
     Ok(())
 }

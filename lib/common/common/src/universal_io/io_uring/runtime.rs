@@ -18,7 +18,7 @@ pub struct IoUringRuntime<Req, U> {
 }
 
 impl<Req, U> IoUringRuntime<Req, U> {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> UioResult<Self> {
         let mut io_uring = pool::get_io_uring()?;
         let capacity = io_uring.submission().capacity();
 
@@ -47,7 +47,7 @@ impl<Req, U> IoUringRuntime<Req, U> {
         &mut self.state
     }
 
-    pub fn enqueue(&mut self, entry: squeue::Entry) -> Result<()> {
+    pub fn enqueue(&mut self, entry: squeue::Entry) -> UioResult<()> {
         unsafe {
             self.io_uring
                 .submission()
@@ -58,9 +58,9 @@ impl<Req, U> IoUringRuntime<Req, U> {
 
     /// Push entries into Submission Queue while `entries` returns `Ok(Something)`
     /// or the queue is full.
-    pub fn enqueue_while<F>(&mut self, mut entries: F) -> Result<()>
+    pub fn enqueue_while<F>(&mut self, mut entries: F) -> UioResult<()>
     where
-        F: FnMut(&mut IoUringState<Req, U>) -> Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<Req, U>) -> UioResult<Option<squeue::Entry>>,
     {
         let mut squeue = self.io_uring.submission();
 

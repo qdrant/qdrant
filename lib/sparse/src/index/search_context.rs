@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use common::universal_io::Result;
+use common::universal_io::UioResult;
 
 use super::posting_list_common::PostingListIter;
 use crate::SearchScratch;
@@ -46,7 +46,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         scratch: &'a mut SearchScratch<'_>,
         is_stopped: &'a AtomicBool,
         hardware_counter: &'a HardwareCounterCell,
-    ) -> Result<SearchContext<'a, T>> {
+    ) -> UioResult<SearchContext<'a, T>> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
         let mut max_record_id = 0;

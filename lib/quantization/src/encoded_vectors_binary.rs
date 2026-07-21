@@ -11,7 +11,7 @@ use common::mmap::MmapFlusher;
 use common::mmap::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use common::typelevel::True;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, read_json_via};
+use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
@@ -515,7 +515,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
-    ) -> common::universal_io::Result<Self> {
+    ) -> UioResult<Self> {
         let metadata: Metadata = read_json_via(fs, meta_path)?;
         let result = Self {
             metadata,

@@ -11,7 +11,7 @@ use crate::generic_consts::Sequential;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, Result, UniversalIoError,
+    ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
 };
 
@@ -94,7 +94,7 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         &self,
         path: impl AsRef<Path>,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
-    ) -> Result<R> {
+    ) -> UioResult<R> {
         self.remote_fs.open(
             path.as_ref(),
             OpenOptions {
@@ -114,7 +114,7 @@ where
 {
     type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFileOps>::ContextConfig>;
 
-    fn from_context(ctx: Self::ContextConfig) -> Result<Self> {
+    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
         let DiskCacheFsContext { config, remote } = ctx;
         Ok(Self {
             config,
@@ -122,11 +122,11 @@ where
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.remote_fs.list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> UioResult<bool> {
         self.remote_fs.exists(path)
     }
 }
@@ -136,23 +136,23 @@ where
     R: UniversalRead,
     R::Fs: UniversalWriteFileOps,
 {
-    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
         self.remote_fs.create(path, expected_length)
     }
 
-    fn create_dir(&self, path: &Path) -> Result<()> {
+    fn create_dir(&self, path: &Path) -> UioResult<()> {
         self.remote_fs.create_dir(path)
     }
 
-    fn remove(&self, path: &Path) -> Result<()> {
+    fn remove(&self, path: &Path) -> UioResult<()> {
         self.remote_fs.remove(path)
     }
 
-    fn remove_dir(&self, path: &Path) -> Result<()> {
+    fn remove_dir(&self, path: &Path) -> UioResult<()> {
         self.remote_fs.remove_dir(path)
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         self.remote_fs.atomic_save(path, bytes)
     }
 }
@@ -185,7 +185,7 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
-    ) -> Result<DiskCache<R>> {
+    ) -> UioResult<DiskCache<R>> {
         // The cache is strictly read-only: appends (and any other writes)
         // must go directly to the backing storage, not through the cache.
         if options.writeable {

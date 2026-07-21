@@ -10,7 +10,7 @@ use crate::generic_consts::Sequential;
 
 /// Create `path`, populate it with the binary representation of `data`,
 /// then open and return it.
-fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> Result<IoUringFile> {
+fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> UioResult<IoUringFile> {
     fs_err::write(path, bytemuck::cast_slice(data))?;
 
     let fs = IoUringFs::from_context(Default::default())?;
@@ -35,7 +35,7 @@ fn read_range<T>(offset: usize, length: usize) -> ReadRange {
 }
 
 #[test]
-fn test_io_uring_read() -> Result<()> {
+fn test_io_uring_read() -> UioResult<()> {
     // 1. Populate test file with u64 binary data
     let dir = tempfile::tempdir().unwrap();
 
@@ -61,7 +61,7 @@ fn test_io_uring_read() -> Result<()> {
 }
 
 #[test]
-fn test_io_uring_read_batch_read_iter() -> Result<()> {
+fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     let dir = tempfile::tempdir().unwrap();
 
     let data: Vec<u64> = (0..256).collect();
@@ -104,7 +104,7 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
     // --- read_iter (iterator API) ---
     let read_iter = file.read_iter::<Sequential, _>(ranges.into_iter().enumerate())?;
 
-    let mut iter_results: Vec<_> = read_iter.collect::<Result<Vec<_>>>()?;
+    let mut iter_results: Vec<_> = read_iter.collect::<UioResult<Vec<_>>>()?;
     iter_results.sort_by_key(|&(idx, _)| idx);
 
     for (idx, items) in iter_results {
@@ -137,7 +137,7 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
 }
 
 #[test]
-fn test_io_uring_read_iter_concurrent() -> Result<()> {
+fn test_io_uring_read_iter_concurrent() -> UioResult<()> {
     let dir = tempfile::tempdir().unwrap();
 
     // Large enough to span many io_uring batches (64 ranges, queue depth 16).
@@ -203,7 +203,7 @@ extern "C" fn noop_signal_handler(_sig: libc::c_int) {}
 /// `submit_and_wait`. Under signal bombardment with cold page cache,
 /// no errors or panics should surface to the caller.
 #[test]
-fn test_io_uring_eintr_handling() -> Result<()> {
+fn test_io_uring_eintr_handling() -> UioResult<()> {
     // Install a no-op SIGUSR1 handler *without* SA_RESTART so that
     // io_uring_enter() receives EINTR instead of auto-restarting.
     unsafe {
@@ -311,7 +311,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
 /// Every read is `KERNEL_PAGE_SIZE` aligned on both ends, with `align` set to `KERNEL_PAGE_SIZE`.
 /// The last block extends past EOF, so its read returns a truncated tail of valid bytes.
 #[test]
-fn test_io_uring_direct_io() -> Result<()> {
+fn test_io_uring_direct_io() -> UioResult<()> {
     use super::pipeline::IoUringPipeline;
 
     let dir = tempfile::tempdir().unwrap();

@@ -1,6 +1,6 @@
 //! AWS S3 backend.
 
-use common::universal_io::{Result, UniversalIoError, UniversalKind};
+use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::aws::{AmazonS3, AmazonS3Builder};
 use url::Url;
 
@@ -45,7 +45,7 @@ pub enum AwsCredentials {
 impl BlobBackend for AmazonS3 {
     type Config = AwsConfig;
 
-    fn build_store(config: &Self::Config) -> Result<Self> {
+    fn build_store(config: &Self::Config) -> UioResult<Self> {
         let mut builder = match &config.credentials {
             AwsCredentials::Default => AmazonS3Builder::from_env(),
             AwsCredentials::Static {
@@ -80,7 +80,7 @@ impl BlobBackend for AmazonS3 {
         UniversalKind::S3
     }
 
-    fn append_context(config: &Self::Config) -> Result<Option<AppendContext>> {
+    fn append_context(config: &Self::Config) -> UioResult<Option<AppendContext>> {
         let s3_config_error = |description: String| UniversalIoError::S3Config { description };
 
         let (endpoint, region) =

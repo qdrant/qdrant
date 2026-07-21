@@ -6,7 +6,7 @@ use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    ByteOffset, Flusher, Item, Result, UniversalAppend, UniversalFlush, UniversalIoError,
+    ByteOffset, Flusher, Item, UioResult, UniversalAppend, UniversalFlush, UniversalIoError,
     UniversalKind, UniversalRead, UserData,
 };
 
@@ -71,7 +71,7 @@ impl<A: AsyncRead> BlobFile<A> {
         config: &A::Config,
         runtime: BridgeRuntime,
         path: impl Into<PathBuf>,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         let inner = A::open(config)?;
         Ok(Self::new(inner, runtime, path))
     }
@@ -98,11 +98,11 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> Result<()> {
+    fn reopen(&mut self) -> UioResult<()> {
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let buf = self
@@ -122,7 +122,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(ACow::Owned(buf))
     }
 
-    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         let buf = self
             .runtime
             .block_on(read_whole_into_byte_buffer::<A>(self, align_of::<T>()))?;
@@ -131,7 +131,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
             .expect("buffer has compatible layout"))
     }
 
-    fn len<T>(&self) -> Result<u64> {
+    fn len<T>(&self) -> UioResult<u64> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let item_size = size_of::<T>() as u64;
@@ -151,7 +151,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(len / item_size)
     }
 
-    fn populate(&self) -> Result<()> {
+    fn populate(&self) -> UioResult<()> {
         Ok(())
     }
 
@@ -159,7 +159,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         false
     }
 
-    fn clear_ram_cache(&self) -> Result<()> {
+    fn clear_ram_cache(&self) -> UioResult<()> {
         Ok(())
     }
 
@@ -179,7 +179,7 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
     /// One append RPC at exactly `offset`; the backend itself validates the
     /// offset against the current object size (the compare-and-swap), so no
     /// local length tracking is needed.
-    fn append_bytes(&self, offset: ByteOffset, data: Bytes) -> Result<()> {
+    fn append_bytes(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
         if data.is_empty() {
             return Ok(());
         }
@@ -198,7 +198,7 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
 }
 
 impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         self.append_bytes(offset, Bytes::copy_from_slice(bytemuck::cast_slice(data)))
     }
 
@@ -206,7 +206,7 @@ impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         // Concatenate into a single buffer so the whole batch lands in one
         // request.
         let slices: Vec<&[u8]> = items
@@ -254,7 +254,7 @@ mod tests {
     impl AsyncRead for MockSource {
         type Config = ();
 
-        fn open(_config: &()) -> Result<Self> {
+        fn open(_config: &()) -> UioResult<Self> {
             Err(UniversalIoError::S3Config {
                 description: "MockSource has no real open path; construct directly in tests".into(),
             })
@@ -263,11 +263,11 @@ mod tests {
         fn list_files(
             &self,
             _prefix: &Path,
-        ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
             std::future::ready(Ok(vec![]))
         }
 
-        fn exists(&self, _path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+        fn exists(&self, _path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
             std::future::ready(Ok(true))
         }
 
@@ -275,7 +275,7 @@ mod tests {
             &self,
             _path: &Path,
             range: Range<u64>,
-        ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static
+        ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
         {
             let bytes = self.data.slice(range.start as usize..range.end as usize);
             async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
@@ -285,7 +285,7 @@ mod tests {
             &self,
             _path: &Path,
             from: u64,
-        ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
             let size = self.data.len() as u64;
             let tail = self.data.slice(from as usize..);
             async move {
@@ -296,7 +296,7 @@ mod tests {
             }
         }
 
-        fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+        fn len(&self, _path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             let len = self.data.len() as u64;
             async move { Ok(len) }
         }
@@ -396,18 +396,18 @@ mod tests {
     impl AsyncRead for MutableMockSource {
         type Config = ();
 
-        fn open(_config: &()) -> Result<Self> {
+        fn open(_config: &()) -> UioResult<Self> {
             Ok(Self::default())
         }
 
         fn list_files(
             &self,
             _prefix: &Path,
-        ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
             std::future::ready(Ok(vec![]))
         }
 
-        fn exists(&self, _path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+        fn exists(&self, _path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
             std::future::ready(Ok(self.store.lock().unwrap().is_some()))
         }
 
@@ -415,7 +415,7 @@ mod tests {
             &self,
             path: &Path,
             range: Range<u64>,
-        ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static
+        ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
         {
             let result = match &*self.store.lock().unwrap() {
                 Some(data) => Ok(Bytes::copy_from_slice(
@@ -433,7 +433,7 @@ mod tests {
             &self,
             path: &Path,
             from: u64,
-        ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
             let result = match &*self.store.lock().unwrap() {
                 Some(data) => Ok((
                     data.len() as u64,
@@ -450,7 +450,7 @@ mod tests {
             }
         }
 
-        fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+        fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             self.len_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let result = match &*self.store.lock().unwrap() {
@@ -466,12 +466,12 @@ mod tests {
     }
 
     impl AsyncWrite for MutableMockSource {
-        fn create(&self, _path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        fn create(&self, _path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static {
             *self.store.lock().unwrap() = Some(Vec::new());
             std::future::ready(Ok(()))
         }
 
-        fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static {
+        fn remove(&self, path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static {
             let result = match self.store.lock().unwrap().take() {
                 Some(_) => Ok(()),
                 None => Err(UniversalIoError::NotFound { path: path.into() }),
@@ -483,7 +483,7 @@ mod tests {
             &self,
             _path: &Path,
             bytes: Bytes,
-        ) -> impl Future<Output = Result<()>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<()>> + Send + 'static {
             *self.store.lock().unwrap() = Some(bytes.to_vec());
             std::future::ready(Ok(()))
         }
@@ -495,7 +495,7 @@ mod tests {
             path: &Path,
             offset: u64,
             data: Bytes,
-        ) -> impl Future<Output = Result<u64>> + Send + 'static {
+        ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             self.append_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut guard = self.store.lock().unwrap();

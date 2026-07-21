@@ -7,7 +7,7 @@ use blink_alloc::Blink;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Result, UniversalRead, UniversalWrite, UserData};
+use common::universal_io::{UioResult, UniversalRead, UniversalWrite, UserData};
 #[cfg(feature = "testing")]
 use fs_err as fs;
 #[cfg(feature = "testing")]
@@ -41,7 +41,7 @@ pub struct InvertedIndexRam {
 }
 
 impl<S: UniversalWrite> InvertedIndexReadWrite<S> for InvertedIndexRam {
-    fn open_rw_impl(_fs: &<S as UniversalRead>::Fs, _path: &Path) -> Result<Self> {
+    fn open_rw_impl(_fs: &<S as UniversalRead>::Fs, _path: &Path) -> UioResult<Self> {
         panic!("InvertedIndexRam is never persisted, so can't to be loaded");
     }
 
@@ -49,7 +49,7 @@ impl<S: UniversalWrite> InvertedIndexReadWrite<S> for InvertedIndexRam {
         _fs: &<S as UniversalRead>::Fs,
         ram_index: Cow<InvertedIndexRam>,
         _path: P,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         Ok(ram_index.into_owned())
     }
 }
@@ -63,7 +63,7 @@ impl InvertedIndex for InvertedIndexRam {
         false
     }
 
-    fn save(&self, _path: &Path) -> Result<()> {
+    fn save(&self, _path: &Path) -> UioResult<()> {
         panic!("InvertedIndexRam is not supposed to be saved");
     }
 
@@ -72,8 +72,8 @@ impl InvertedIndex for InvertedIndexRam {
         ids: impl Iterator<Item = (U, DimOffset)>,
         _arena: &'a Blink,
         _hw_counter: &'a HardwareCounterCell,
-        mut callback: impl FnMut(U, PostingListIterator<'a>) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(U, PostingListIterator<'a>) -> UioResult<()>,
+    ) -> UioResult<()> {
         for (user_data, id) in ids {
             callback(user_data, self.get(id)?.iter())?;
         }
@@ -88,8 +88,8 @@ impl InvertedIndex for InvertedIndexRam {
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         _hw_counter: &HardwareCounterCell,
-        mut callback: impl FnMut(U, usize) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(U, usize) -> UioResult<()>,
+    ) -> UioResult<()> {
         for (user_data, id) in ids {
             callback(user_data, self.get(id)?.elements.len())?;
         }
@@ -154,7 +154,7 @@ impl InvertedIndexRam {
         }
     }
 
-    pub fn get(&self, id: DimOffset) -> Result<&PostingList> {
+    pub fn get(&self, id: DimOffset) -> UioResult<&PostingList> {
         self.postings
             .get(id as usize)
             .ok_or_else(|| out_of_bounds(id, self.len()))

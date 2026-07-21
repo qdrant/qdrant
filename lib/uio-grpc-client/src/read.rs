@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, ReadRange, Result, UniversalIoError};
+use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 use futures::stream::BoxStream;
 use tonic::codegen::InterceptedService;
@@ -29,7 +29,7 @@ pub struct AuthInterceptor {
 impl AuthInterceptor {
     /// Parse the optional API key into a (sensitive) metadata value up front, so
     /// an invalid key is reported at connect time rather than on every request.
-    fn new(api_key: Option<String>) -> Result<Self> {
+    fn new(api_key: Option<String>) -> UioResult<Self> {
         let api_key = api_key
             .map(|key| {
                 let mut value: MetadataValue<Ascii> = key.parse().map_err(|err| {
@@ -90,7 +90,7 @@ pub struct Client {
 impl Client {
     /// Connect to a remote StorageRead gRPC service, authenticating with the
     /// optional Qdrant API key.
-    pub async fn connect(endpoint: impl Into<String>, api_key: Option<String>) -> Result<Self> {
+    pub async fn connect(endpoint: impl Into<String>, api_key: Option<String>) -> UioResult<Self> {
         let interceptor = AuthInterceptor::new(api_key)?;
         let channel = Channel::from_shared(endpoint.into())
             .map_err(|e| UniversalIoError::Io(std::io::Error::other(e)))?
@@ -111,7 +111,7 @@ impl Client {
     /// first request (driven by whatever runtime executes that request). This is
     /// what lets the `io_bridge_uio_grpc` backend satisfy the synchronous,
     /// runtime-free `AsyncRead::open` contract.
-    pub fn connect_lazy(endpoint: impl Into<String>, api_key: Option<String>) -> Result<Self> {
+    pub fn connect_lazy(endpoint: impl Into<String>, api_key: Option<String>) -> UioResult<Self> {
         let interceptor = AuthInterceptor::new(api_key)?;
         let channel = Channel::from_shared(endpoint.into())
             .map_err(|e| UniversalIoError::Io(std::io::Error::other(e)))?
@@ -128,7 +128,7 @@ impl Client {
         collection_name: &str,
         shard_id: u32,
         prefix_path: &str,
-    ) -> Result<Vec<ListedFile>> {
+    ) -> UioResult<Vec<ListedFile>> {
         let response = self
             .inner
             .clone()
@@ -160,7 +160,7 @@ impl Client {
         collection_name: &str,
         shard_id: u32,
         path: &str,
-    ) -> Result<bool> {
+    ) -> UioResult<bool> {
         let response = self
             .inner
             .clone()
@@ -181,7 +181,7 @@ impl Client {
         collection_name: &str,
         shard_id: u32,
         path: &str,
-    ) -> Result<u64> {
+    ) -> UioResult<u64> {
         let response = self
             .inner
             .clone()
@@ -204,7 +204,7 @@ impl Client {
         path: &str,
         byte_offset: u64,
         length: u64,
-    ) -> Result<Vec<u8>> {
+    ) -> UioResult<Vec<u8>> {
         let response = self
             .inner
             .clone()
@@ -229,7 +229,7 @@ impl Client {
         path: &str,
         byte_offset: u64,
         length: u64,
-    ) -> Result<Vec<u8>> {
+    ) -> UioResult<Vec<u8>> {
         let mut stream = self
             .inner
             .clone()
@@ -266,7 +266,7 @@ impl Client {
         path: &str,
         byte_offset: u64,
         length: u64,
-    ) -> Result<BoxStream<'static, Result<Bytes>>> {
+    ) -> UioResult<BoxStream<'static, UioResult<Bytes>>> {
         let path = path.to_string();
         let stream = self
             .inner
@@ -296,7 +296,7 @@ impl Client {
         collection_name: &str,
         shard_id: u32,
         path: &str,
-    ) -> Result<Vec<u8>> {
+    ) -> UioResult<Vec<u8>> {
         let response = self
             .inner
             .clone()
@@ -318,7 +318,7 @@ impl Client {
         shard_id: u32,
         path: &str,
         ranges: &[ReadRange],
-    ) -> Result<Vec<Vec<u8>>> {
+    ) -> UioResult<Vec<Vec<u8>>> {
         let proto_ranges: Vec<_> = ranges
             .iter()
             .map(|r| qdrant::ReadBatchRange {

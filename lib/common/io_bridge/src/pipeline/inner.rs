@@ -2,7 +2,7 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::universal_io::{Result, UniversalIoError, UserData};
+use common::universal_io::{UioResult, UniversalIoError, UserData};
 use futures::FutureExt as _;
 use slab::Slab;
 use tokio::sync::mpsc;
@@ -105,9 +105,9 @@ where
         runtime: &BridgeRuntime,
         user_data: U,
         future: F,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
-        F: Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static,
+        F: Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static,
     {
         if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
@@ -149,7 +149,7 @@ where
 
     /// Block until any in-flight read completes, returning its caller
     /// `user_data`, destination buffer, and the time the read itself took.
-    pub(crate) fn wait(&mut self) -> Result<Option<CompletedRead<U>>> {
+    pub(crate) fn wait(&mut self) -> UioResult<Option<CompletedRead<U>>> {
         if self.slots.is_empty() {
             return Ok(None);
         }
