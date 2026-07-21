@@ -611,8 +611,7 @@ mod tests {
                             .collect(),
                     ),
                     SPARSE_NAME => VectorInternal::Sparse(
-                        SparseVector::try_from(StoredSparseVector::try_from_bytes(bytes).unwrap())
-                            .unwrap(),
+                        StoredSparseVector::decode_untrusted_bytes(bytes).unwrap(),
                     ),
                     other => panic!("unexpected vector name {other}"),
                 };
@@ -728,9 +727,8 @@ mod tests {
         };
         assert_eq!(name, SPARSE_NAME);
         assert_eq!(raw_name, SPARSE_NAME);
-        let decoded = VectorInternal::Sparse(
-            SparseVector::try_from(StoredSparseVector::try_from_bytes(bytes).unwrap()).unwrap(),
-        );
+        let decoded =
+            VectorInternal::Sparse(StoredSparseVector::decode_untrusted_bytes(bytes).unwrap());
         assert_eq!(vector, &decoded);
 
         // Point 2 is untouched: same vector names in both results.
