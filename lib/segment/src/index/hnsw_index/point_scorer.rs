@@ -1,24 +1,21 @@
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::condition_checker::ConditionChecker;
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::SimpleCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
-use crate::vector_storage::{
-    RawScorer, RawScorerBuilder, VectorStorageRead, check_deleted_condition,
-};
+use crate::vector_storage::{NotDeletedChecker, RawScorer, RawScorerBuilder, VectorStorageRead};
 #[cfg(feature = "testing")]
 use crate::vector_storage::{VectorStorageEnum, new_raw_scorer};
 
@@ -61,41 +58,81 @@ pub struct FilteredScorer<'a> {
 }
 
 pub struct ScorerFilters<'a> {
-    filter_context: Option<FilterContext<'a>>,
-    /// Point deleted flags should be explicitly present as `false`
-    /// for each existing point in the segment.
-    /// If there are no flags for some points, they are considered deleted.
-    /// [`BitSlice`] defining flags for deleted points (and thus these vectors).
-    point_deleted: &'a BitSlice,
-    /// [`BitSlice`] defining flags for deleted vectors in this segment.
-    vec_deleted: &'a BitSlice,
+    filter_context: Option<OptimizedFilter<'a>>,
+    deleted: NotDeletedChecker<'a>,
 }
 
-type FilterContext<'a> = SimpleCow<'a, OptimizedFilter<'a>>;
-
 impl<'a> ScorerFilters<'a> {
+    pub fn new(
+        filter_context: Option<OptimizedFilter<'a>>,
+        deleted: NotDeletedChecker<'a>,
+    ) -> Self {
+        ScorerFilters {
+            filter_context,
+            deleted,
+        }
+    }
+
     /// Return true if vector satisfies current search context for given point:
     /// exists, not deleted, and satisfies filter context.
     pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
-        check_deleted_condition(point_id, self.vec_deleted, self.point_deleted)
+        self.deleted.check_infallible(point_id)
             && self
                 .filter_context
                 .as_ref()
                 .is_none_or(|f| f.check_infallible(point_id))
     }
+}
 
-    fn as_borrowed(&'a self) -> Self {
-        ScorerFilters {
-            filter_context: self.filter_context.as_ref().map(SimpleCow::as_borrowed),
-            point_deleted: self.point_deleted,
-            vec_deleted: self.vec_deleted,
+impl ConditionChecker for ScorerFilters<'_> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self.deleted.check(point_id)?
+            && match &self.filter_context {
+                Some(f) => f.check(point_id)?,
+                None => true,
+            })
+    }
+
+    fn check_infallible(&self, point_id: PointOffsetType) -> bool {
+        self.check_vector(point_id)
+    }
+
+    #[inline]
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        let Self {
+            filter_context,
+            deleted,
+        } = self;
+        match select {
+            Select::Matches => {
+                let n = deleted.check_batched(ids, Select::Matches, rest)?;
+                match filter_context {
+                    Some(f) => f.check_batched(&mut ids[..n], Select::Matches, rest),
+                    None => Ok(n),
+                }
+            }
+            Select::NonMatches => {
+                let deleted_rest = rest.keep_if(filter_context.is_some());
+                let mut f = deleted.check_batched(ids, Select::NonMatches, deleted_rest)?;
+                if let Some(filter) = filter_context {
+                    f += filter.check_batched(&mut ids[f..], Select::NonMatches, rest)?;
+                }
+                Ok(f)
+            }
         }
     }
 }
 
 pub struct FilteredBytesScorer<'a> {
     scorer_bytes: &'a dyn QueryScorerBytes,
-    filters: ScorerFilters<'a>,
+    filters: &'a ScorerFilters<'a>,
 }
 
 impl<'a> FilteredBytesScorer<'a> {
@@ -124,7 +161,7 @@ impl<'a> FilteredScorer<'a> {
         query: QueryVector,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<FilterContext<'a>>,
+        filter_context: Option<OptimizedFilter<'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -138,11 +175,7 @@ impl<'a> FilteredScorer<'a> {
         };
         Ok(FilteredScorer {
             raw_scorer,
-            filters: ScorerFilters {
-                filter_context,
-                point_deleted,
-                vec_deleted: vectors.deleted_vector_bitslice(),
-            },
+            filters: ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted)),
             scores_buffer: Vec::new(),
         })
     }
@@ -151,7 +184,7 @@ impl<'a> FilteredScorer<'a> {
         point_id: PointOffsetType,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<FilterContext<'a>>,
+        filter_context: Option<OptimizedFilter<'a>>,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
@@ -179,11 +212,7 @@ impl<'a> FilteredScorer<'a> {
         };
         Ok(FilteredScorer {
             raw_scorer,
-            filters: ScorerFilters {
-                filter_context,
-                point_deleted,
-                vec_deleted: vectors.deleted_vector_bitslice(),
-            },
+            filters: ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted)),
             scores_buffer: Vec::new(),
         })
     }
@@ -201,11 +230,7 @@ impl<'a> FilteredScorer<'a> {
     ) -> Self {
         FilteredScorer {
             raw_scorer: new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap(),
-            filters: ScorerFilters {
-                filter_context: None,
-                point_deleted,
-                vec_deleted: vector_storage.deleted_vector_bitslice(),
-            },
+            filters: ScorerFilters::new(None, vector_storage.not_deleted_checker(point_deleted)),
             scores_buffer: Vec::new(),
         }
     }
@@ -222,7 +247,7 @@ impl<'a> FilteredScorer<'a> {
     pub fn scorer_bytes(&self) -> Option<FilteredBytesScorer<'_>> {
         Some(FilteredBytesScorer {
             scorer_bytes: self.raw_scorer.scorer_bytes()?,
-            filters: self.filters.as_borrowed(),
+            filters: &self.filters,
         })
     }
 
@@ -236,15 +261,20 @@ impl<'a> FilteredScorer<'a> {
     ///   **Warning**: This input will be wrecked during the execution.
     /// * `limit` - limits the number of points to process after filtering.
     ///   `0` means no limit.
+    #[inline(always)]
     pub fn score_points(
         &mut self,
         point_ids: &mut Vec<PointOffsetType>,
         limit: usize,
     ) -> impl Iterator<Item = ScoredPointOffset> {
-        point_ids.retain(|point_id| self.filters.check_vector(*point_id));
+        let mut n = self
+            .filters
+            .check_batched(point_ids, Select::Matches, Rest::Discard)
+            .unwrap_or(0 /* TODO(uio): propagate error */);
         if limit != 0 {
-            point_ids.truncate(limit);
+            n = n.min(limit);
         }
+        point_ids.truncate(n);
 
         self.score_points_unfiltered(point_ids)
     }
@@ -292,7 +322,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         queries: &[&QueryVector],
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
-        filter_context: Option<FilterContext<'a>>,
+        filter_context: Option<OptimizedFilter<'a>>,
         top: usize,
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
@@ -316,11 +346,8 @@ impl<'a> BatchFilteredSearcher<'a> {
                 raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, pq })
             })
             .collect::<Result<_, _>>()?;
-        let filters = ScorerFilters {
-            filter_context,
-            point_deleted,
-            vec_deleted: vectors.deleted_vector_bitslice(),
-        };
+        let filters =
+            ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted));
         Ok(Self {
             scorer_batch,
             filters,
@@ -356,11 +383,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             .collect();
         Self {
             scorer_batch,
-            filters: ScorerFilters {
-                filter_context: None,
-                point_deleted,
-                vec_deleted: vector_storage.deleted_vector_bitslice(),
-            },
+            filters: ScorerFilters::new(None, vector_storage.not_deleted_checker(point_deleted)),
         }
     }
 
@@ -376,6 +399,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// `peek_top_iter(self, ...)` which consumes the searcher.
     pub fn iter_not_deleted(&self) -> impl Iterator<Item = PointOffsetType> + 'a {
         self.filters
+            .deleted
             .point_deleted
             .iter_zeros()
             .map(|p| p as PointOffsetType)
