@@ -16,7 +16,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum,
-    VectorStorageRead, default_read_vector_bytes_impl,
+    VectorStorageRead, default_for_each_in_dense_batch, default_read_vector_bytes_impl,
 };
 
 /// Placeholder vector storage that contains no data.
@@ -97,6 +97,14 @@ impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         // the destination's index→offset layout stays aligned. The deletion
         // flag from `is_deleted_vector` keeps the placeholder from being read.
         Cow::Owned(vec![0.0; self.dim])
+    }
+
+    fn for_each_in_dense_batch<F: FnMut(usize, &[VectorElementType])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_in_dense_batch(self, keys, f)
     }
 }
 
