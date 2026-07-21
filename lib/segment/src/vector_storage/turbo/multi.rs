@@ -151,6 +151,14 @@ pub fn open_appendable_turbo_multi_vector_storage(
     })
 }
 
+/// Rejection message for a multivector that cannot fit a whole storage chunk
+/// ([`TurboMultiVectorStorage::fresh_range_start`] returning `None`). Single
+/// source of truth for both write paths; only the error class differs by call
+/// site (user error on ingest, service error on the optimizer merge).
+fn exceeds_chunk_capacity_message(count: PointOffsetType) -> String {
+    format!("Multivector of {count} subvectors exceeds the chunk capacity")
+}
+
 impl TurboMultiVectorStorage {
     /// Offset record for `key`, if the point exists.
     fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
@@ -279,21 +287,21 @@ impl TurboMultiVectorStorage {
     }
 
     /// Start of a fresh range for `count` records, never straddling a chunk
-    /// boundary: skips the tail when the range wouldn't fit it, errors when
-    /// even a whole chunk can't hold it.
-    fn fresh_range_start(&self, count: PointOffsetType) -> OperationResult<PointOffsetType> {
+    /// boundary: skips the tail when the range wouldn't fit it, `None` when
+    /// even a whole chunk can't hold it. Callers classify the `None` case via
+    /// [`exceeds_chunk_capacity_message`]: user error on the ingest path,
+    /// service error on the optimizer merge.
+    fn fresh_range_start(&self, count: PointOffsetType) -> Option<PointOffsetType> {
         let start = self.storage.vectors_count() as PointOffsetType;
         let left = self.storage.get_remaining_chunk_keys(start);
         if count as usize <= left {
-            return Ok(start);
+            return Some(start);
         }
         let next_chunk = start + left as PointOffsetType;
         if count as usize > self.storage.get_remaining_chunk_keys(next_chunk) {
-            return Err(OperationError::service_error(format!(
-                "Multivector of {count} subvectors exceeds the chunk capacity",
-            )));
+            return None;
         }
-        Ok(next_chunk)
+        Some(next_chunk)
     }
 
     /// Record range for upserting `count` records at `key`: reuse the existing
@@ -311,8 +319,13 @@ impl TurboMultiVectorStorage {
             .unwrap_or_default();
 
         if count > offset.capacity {
+            // User error so WAL replay skips the op instead of crash-looping.
+            // Reachable only internally (no `MAX_MULTIVECTOR_FLATTENED_LEN` check).
+            let fresh_start = self.fresh_range_start(count).ok_or_else(|| {
+                OperationError::wrong_vector_bytes_size(exceeds_chunk_capacity_message(count))
+            })?;
             offset = MultivectorMmapOffset {
-                offset: self.fresh_range_start(count)?,
+                offset: fresh_start,
                 count,
                 capacity: count,
             };
@@ -687,7 +700,11 @@ impl MultiTQVectorStorage for TurboMultiVectorStorage {
 
             let count = (blob.len() / record_size) as u32;
             let key = self.offsets.len() as PointOffsetType;
-            let inner_start = self.fresh_range_start(count)?;
+            // Optimizer merge of already-stored data: over-capacity here is
+            // genuine corruption, kept as a service error.
+            let inner_start = self.fresh_range_start(count).ok_or_else(|| {
+                OperationError::service_error(exceeds_chunk_capacity_message(count))
+            })?;
             for (i, record) in blob.chunks_exact(record_size).enumerate() {
                 self.storage.upsert_vector(
                     inner_start + i as PointOffsetType,
