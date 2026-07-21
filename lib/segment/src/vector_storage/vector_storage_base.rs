@@ -20,6 +20,7 @@ use super::dense::empty_dense_vector_storage::EmptyDenseVectorStorage;
 use super::dense::volatile_dense_vector_storage::VolatileDenseVectorStorage;
 use super::multi_dense::appendable_mmap_multi_dense_vector_storage::AppendableMmapMultiDenseVectorStorage;
 use super::multi_dense::volatile_multi_dense_vector_storage::VolatileMultiDenseVectorStorage;
+use super::raw_scorer::NotDeletedChecker;
 use super::sparse::StoredSparseVector;
 use super::sparse::empty_sparse_vector_storage::EmptySparseVectorStorage;
 use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
@@ -139,6 +140,14 @@ pub trait VectorStorageRead {
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
     fn deleted_vector_bitslice(&self) -> &BitSlice;
+
+    /// [`NotDeletedChecker`] over this storage's deleted flags and the given point deleted flags.
+    fn not_deleted_checker<'a>(&'a self, point_deleted: &'a BitSlice) -> NotDeletedChecker<'a> {
+        NotDeletedChecker {
+            point_deleted,
+            vec_deleted: self.deleted_vector_bitslice(),
+        }
+    }
 
     /// Size of all available (non-deleted) vectors in bytes.
     fn size_of_available_vectors_in_bytes(&self) -> usize;

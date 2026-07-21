@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
@@ -581,16 +582,36 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
     }
 }
 
-#[inline]
-pub fn check_deleted_condition(
-    point: PointOffsetType,
-    vec_deleted: &BitSlice,
-    point_deleted: &BitSlice,
-) -> bool {
-    // Deleted points propagate to vectors; check vector deletion for possible early return
-    // Default to not deleted if our deleted flags failed grow
-    !vec_deleted.get_bit(point as usize).unwrap_or(false)
-        // Additionally check point deletion for integrity if delete propagation to vector failed
-        // Default to deleted if the point mapping was removed from the ID tracker
-        && !point_deleted.get_bit(point as usize).unwrap_or(true)
+/// A [`ConditionChecker`] matching points that not deleted.
+pub struct NotDeletedChecker<'a> {
+    /// [`BitSlice`] defining flags for deleted points (and thus their vectors).
+    ///
+    /// Point deleted flags should be explicitly present as `false`
+    /// for each existing point in the segment.
+    /// If there are no flags for some points, they are considered deleted.
+    pub point_deleted: &'a BitSlice,
+
+    /// [`BitSlice`] defining flags for deleted vectors in this segment.
+    pub vec_deleted: &'a BitSlice,
+}
+
+impl ConditionChecker for NotDeletedChecker<'_> {
+    type Error = OperationError;
+
+    #[inline]
+    fn check(&self, point: PointOffsetType) -> OperationResult<bool> {
+        // Deleted points propagate to vectors; check vector deletion for possible early return
+        // Default to not deleted if our deleted flags failed grow
+        Ok(!self.vec_deleted.get_bit(point as usize).unwrap_or(false)
+            // Additionally check point deletion for integrity if delete propagation to vector failed
+            // Default to deleted if the point mapping was removed from the ID tracker
+            && !self.point_deleted.get_bit(point as usize).unwrap_or(true))
+    }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
 }
