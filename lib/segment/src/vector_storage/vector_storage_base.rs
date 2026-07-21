@@ -483,21 +483,11 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
     /// `callback` with the raw encoded bytes of each vector. TQ counterpart of
     /// [`DenseVectorStorageRead::read_dense_bytes`], with the same valid-keys
     /// precondition.
-    ///
-    /// The default reads one vector at a time; storages with batched readers
-    /// override this so bulk byte reads keep the same read pipelining as
-    /// `read_vectors` (io_uring submission batching for on-disk storages).
     fn read_dense_tq_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
-    ) -> OperationResult<()> {
-        for (user_data, key) in keys {
-            let bytes = self.get_dense_tq::<P>(key);
-            callback(user_data, key, bytes.to_vec());
-        }
-        Ok(())
-    }
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()>;
 }
 
 /// Read + bulk-ingest access to a multivector storage of TurboQuant encoded
