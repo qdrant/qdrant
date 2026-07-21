@@ -2,6 +2,7 @@ use std::cmp::{Ordering, max, min};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
+use common::condition_checker::{ConditionChecker, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
@@ -24,6 +25,13 @@ pub struct IndexedPostingListIterator<T: PostingListIter> {
 /// Making this larger makes the search faster but uses more (pooled) memory
 const ADVANCE_BATCH_SIZE: usize = 10_000;
 
+/// How many candidates to accumulate before flushing them through the filter.
+///
+/// Each flush updates the "min score to beat" ([`TopK::threshold`]), which
+/// gates further candidates, so smaller batches mean fewer wasted filter
+/// checks, while larger batches amortize the filter better.
+const FILTER_BATCH_SIZE: usize = 128;
+
 pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     postings_iterators: Vec<IndexedPostingListIterator<T>>,
     query: RemappedSparseVector,
@@ -34,6 +42,8 @@ pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     /// Scores buffer from [`SearchScratch`].
     scores: &'a mut Vec<ScoreType>,
+    /// Buffer for batched filtering from [`SearchScratch`].
+    candidates: &'a mut Vec<ScoredPointOffset>,
     use_pruning: bool,
     hardware_counter: &'a HardwareCounterCell,
 }
@@ -81,6 +91,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             min_record_id,
             max_record_id,
             scores: &mut scratch.scores,
+            candidates: &mut scratch.candidates,
             use_pruning,
             hardware_counter,
         })
@@ -143,11 +154,11 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
     }
 
     /// Advance posting lists iterators in a batch fashion.
-    fn advance_batch<F: Fn(PointOffsetType) -> bool>(
+    fn advance_batch<C: ConditionChecker>(
         &mut self,
         batch_start_id: PointOffsetType,
         batch_last_id: PointOffsetType,
-        filter_condition: &F,
+        checker: &C,
     ) {
         // init batch scores
         let batch_len = batch_last_id - batch_start_id + 1;
@@ -169,39 +180,64 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             );
         }
 
-        for (local_index, &score) in self.scores.iter().enumerate() {
-            // publish only the non-zero scores above the current min to beat
-            if score != 0.0 && score > self.top_results.threshold() {
+        // Collect only the non-zero scores above the current min to beat,
+        // then check them against the filter batch by batch.
+        let Self {
+            scores,
+            candidates,
+            top_results,
+            ..
+        } = self;
+        candidates.clear();
+        // Hoisted out of the hot loop: only a flush can move the threshold.
+        let mut threshold = top_results.threshold();
+        for (local_index, &score) in scores.iter().enumerate() {
+            if score != 0.0 && score > threshold {
                 let real_id = batch_start_id + local_index as PointOffsetType;
-                // do not score if filter condition is not satisfied
-                if !filter_condition(real_id) {
-                    continue;
-                }
-                let score_point_offset = ScoredPointOffset {
+                candidates.push(ScoredPointOffset {
                     score,
                     idx: real_id,
-                };
-                self.top_results.push(score_point_offset);
+                });
+                if candidates.len() == FILTER_BATCH_SIZE {
+                    push_filtered(candidates, top_results, checker);
+                    threshold = top_results.threshold();
+                }
             }
         }
+        push_filtered(candidates, top_results, checker);
     }
 
     /// Compute scores for the last posting list quickly
-    fn process_last_posting_list<F: Fn(PointOffsetType) -> bool>(&mut self, filter_condition: &F) {
+    fn process_last_posting_list<C: ConditionChecker>(&mut self, checker: &C) {
         debug_assert_eq!(self.postings_iterators.len(), 1);
-        let posting = &mut self.postings_iterators[0];
+        let Self {
+            postings_iterators,
+            top_results,
+            candidates,
+            ..
+        } = self;
+        let posting = &mut postings_iterators[0];
+        let query_weight = posting.query_weight;
+        candidates.clear();
+        // Hoisted out of the hot loop: only a flush can move the threshold.
+        let mut threshold = top_results.threshold();
         posting.posting_list_iterator.for_each_till_id(
             PointOffsetType::MAX,
             &mut (),
             |_, id, weight| {
-                // do not score if filter condition is not satisfied
-                if !filter_condition(id) {
-                    return;
+                let score = weight * query_weight;
+                // The same "min to beat" check as in `TopK::push`, but before
+                // paying for the filter check.
+                if score > threshold {
+                    candidates.push(ScoredPointOffset { score, idx: id });
+                    if candidates.len() == FILTER_BATCH_SIZE {
+                        push_filtered(candidates, top_results, checker);
+                        threshold = top_results.threshold();
+                    }
                 }
-                let score = weight * posting.query_weight;
-                self.top_results.push(ScoredPointOffset { score, idx: id });
             },
         );
+        push_filtered(candidates, top_results, checker);
     }
 
     /// Returns the next min record id from all posting list iterators
@@ -260,10 +296,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
     }
 
     /// Search for the top k results that satisfy the filter condition
-    pub fn search<F: Fn(PointOffsetType) -> bool>(
-        &mut self,
-        filter_condition: &F,
-    ) -> Vec<ScoredPointOffset> {
+    pub fn search<C: ConditionChecker>(&mut self, checker: &C) -> Vec<ScoredPointOffset> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
@@ -300,7 +333,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             );
 
             // advance and score posting lists iterators
-            self.advance_batch(start_batch_id, last_batch_id, filter_condition);
+            self.advance_batch(start_batch_id, last_batch_id, checker);
 
             // remove empty posting lists if necessary
             self.postings_iterators.retain(|posting_iterator| {
@@ -317,7 +350,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
 
             // if only one posting list left, we can score it quickly
             if self.postings_iterators.len() == 1 {
-                self.process_last_posting_list(filter_condition);
+                self.process_last_posting_list(checker);
                 break;
             }
 
@@ -412,4 +445,21 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         // no pruning took place
         false
     }
+}
+
+/// Batch-check `candidates` against the filter and push the survivors into
+/// `top_results`. Drains `candidates`.
+fn push_filtered<C: ConditionChecker>(
+    candidates: &mut Vec<ScoredPointOffset>,
+    top_results: &mut TopK,
+    checker: &C,
+) {
+    // Errors are swallowed the same way as in `ConditionChecker::check_infallible`.
+    let n = checker
+        .check_batched(candidates, Select::Matches, Rest::Discard)
+        .unwrap_or(0);
+    for &score_point_offset in &candidates[..n] {
+        top_results.push(score_point_offset);
+    }
+    candidates.clear();
 }

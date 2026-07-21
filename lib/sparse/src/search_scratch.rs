@@ -2,11 +2,11 @@ use std::fmt::Debug;
 
 use blink_alloc::Blink;
 use common::defaults::POOL_KEEP_LIMIT;
-use common::types::ScoreType;
+use common::types::{ScoreType, ScoredPointOffset};
 use parking_lot::Mutex;
 
 pub struct SearchScratchPool {
-    pool: Mutex<Vec<(SearchScratchScores, Blink)>>,
+    pool: Mutex<Vec<(SearchScratchScores, SearchScratchCandidates, Blink)>>,
 }
 
 impl Debug for SearchScratchPool {
@@ -25,10 +25,11 @@ impl SearchScratchPool {
 
     /// Take a single [`SearchScratch`] from the pool.
     pub fn get(&self) -> SearchScratch<'_> {
-        let (scores, arena) = self.pool.lock().pop().unwrap_or_default();
+        let (scores, candidates, arena) = self.pool.lock().pop().unwrap_or_default();
         SearchScratch {
             pool: self,
             scores,
+            candidates,
             arena,
         }
     }
@@ -40,6 +41,8 @@ pub struct SearchScratch<'a> {
     pool: &'a SearchScratchPool,
     /// Used for batched scoring.
     pub(crate) scores: SearchScratchScores,
+    /// Used for batched filtering.
+    pub(crate) candidates: SearchScratchCandidates,
     /// Used to own/store posting list bytes while reading them from the file.
     pub(crate) arena: Blink,
 }
@@ -54,20 +57,23 @@ impl SearchScratch<'_> {
 }
 
 type SearchScratchScores = Vec<ScoreType>;
+type SearchScratchCandidates = Vec<ScoredPointOffset>;
 
 impl Drop for SearchScratch<'_> {
     fn drop(&mut self) {
         let SearchScratch {
             pool: SearchScratchPool { pool },
             scores,
+            candidates,
             arena,
         } = self;
         let mut pool = pool.lock();
         if pool.len() < *POOL_KEEP_LIMIT {
             let scores = std::mem::take(scores);
+            let candidates = std::mem::take(candidates);
             let mut arena = std::mem::take(arena);
             arena.reset();
-            pool.push((scores, arena));
+            pool.push((scores, candidates, arena));
         }
     }
 }
