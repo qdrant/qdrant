@@ -79,6 +79,7 @@ fn bad_payload_key_in_field_condition_returns_error() {
                 text: "x".to_string(),
             }),
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -100,6 +101,7 @@ fn valid_payload_key_in_field_condition_converts() {
                 text: "ann".to_string(),
             }),
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -155,6 +157,7 @@ fn filter_must_with_bad_key_returns_error() {
         must: Some(vec![bad_cond]),
         should: None,
         must_not: None,
+        min_should: None,
     };
     let r: Result<SegmentFilter, _> = filter.try_into();
     assert!(r.is_err());
@@ -168,6 +171,7 @@ fn field_with_match(m: Match) -> Condition {
             key: "k".to_string(),
             r#match: Some(m),
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -312,6 +316,7 @@ fn geo_polygon_field_condition_converts() {
             key: "location".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(polygon),
@@ -348,6 +353,7 @@ fn geo_polygon_bad_coordinate_returns_error() {
             key: "location".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(polygon),
@@ -378,6 +384,7 @@ fn geo_polygon_too_few_points_returns_error() {
             key: "location".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(polygon),
@@ -408,6 +415,7 @@ fn geo_polygon_unclosed_ring_returns_error() {
             key: "location".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(polygon),
@@ -452,6 +460,7 @@ fn geo_polygon_bad_interior_ring_returns_error() {
             key: "location".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(polygon),
@@ -471,6 +480,7 @@ fn field_with_geo_radius(radius: f64) -> Condition {
             key: "location".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: Some(GeoRadius {
                 center: GeoPoint {
@@ -541,6 +551,7 @@ fn field_condition_no_predicate_returns_error() {
             key: "meta.author".to_string(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -572,6 +583,7 @@ fn field_condition_multiple_predicates_converts() {
                 lte: None,
                 lt: None,
             }),
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -614,4 +626,198 @@ fn turbo4_datatype_round_trips() {
         "expected VectorStorageDatatype::Turbo4 back, got {:?}",
         back
     );
+}
+
+// ── New filter surface: slice / nested / text matches / datetime / min_should ─
+
+#[test]
+fn slice_condition_converts_and_validates() {
+    let ok = Condition::Slice { total: 4, index: 3 };
+    let r: Result<SegmentCondition, _> = ok.try_into();
+    assert!(r.is_ok());
+
+    let zero_total = Condition::Slice { total: 0, index: 0 };
+    let r: Result<SegmentCondition, _> = zero_total.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+
+    let index_out_of_range = Condition::Slice { total: 2, index: 2 };
+    let r: Result<SegmentCondition, _> = index_out_of_range.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+}
+
+#[test]
+fn nested_condition_converts() {
+    let nested = Condition::Nested {
+        key: "diet".to_string(),
+        filter: Filter {
+            must: Some(vec![Condition::IsEmpty {
+                key: "gaps".to_string(),
+            }]),
+            should: None,
+            must_not: None,
+            min_should: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = nested.try_into();
+    assert!(matches!(r, Ok(SegmentCondition::Nested(_))));
+
+    let bad_key = Condition::Nested {
+        key: "diet[".to_string(),
+        filter: Filter {
+            must: None,
+            should: None,
+            must_not: None,
+            min_should: None,
+        },
+    };
+    let r: Result<SegmentCondition, _> = bad_key.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+}
+
+#[test]
+fn text_match_variants_convert() {
+    use segment::types::Match as SegmentMatch;
+
+    let cases = vec![
+        Match::TextAny {
+            text_any: "a b".to_string(),
+        },
+        Match::Phrase {
+            phrase: "a b".to_string(),
+        },
+        Match::Prefix {
+            prefix: "ab".to_string(),
+        },
+    ];
+    let converted: Vec<SegmentMatch> = cases
+        .into_iter()
+        .map(|m| m.try_into().expect("text match must convert"))
+        .collect();
+    assert!(matches!(converted[0], SegmentMatch::TextAny(_)));
+    assert!(matches!(converted[1], SegmentMatch::Phrase(_)));
+    assert!(matches!(converted[2], SegmentMatch::Prefix(_)));
+}
+
+#[test]
+fn datetime_range_converts_and_rejects_garbage() {
+    use qdrant_edge_ffi::filter::RangeDatetime;
+    use segment::types::FieldCondition as SegmentFieldCondition;
+
+    let base = |datetime_range: Option<RangeDatetime>| FieldCondition {
+        key: "ts".to_string(),
+        r#match: None,
+        range: None,
+        datetime_range,
+        geo_bounding_box: None,
+        geo_radius: None,
+        geo_polygon: None,
+        values_count: None,
+    };
+
+    let ok = base(Some(RangeDatetime {
+        gte: Some("2024-01-01T00:00:00Z".to_string()),
+        gt: None,
+        lte: Some("2025-01-01T00:00:00Z".to_string()),
+        lt: None,
+    }));
+    let r: Result<SegmentFieldCondition, _> = ok.try_into();
+    assert!(r.is_ok(), "valid RFC 3339 bounds must convert: {r:?}");
+
+    let bad = base(Some(RangeDatetime {
+        gte: Some("not-a-date".to_string()),
+        gt: None,
+        lte: None,
+        lt: None,
+    }));
+    let r: Result<SegmentFieldCondition, _> = bad.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+
+    // Both range kinds at once is contradictory: the engine holds only one.
+    let mut both = base(Some(RangeDatetime {
+        gte: Some("2024-01-01T00:00:00Z".to_string()),
+        gt: None,
+        lte: None,
+        lt: None,
+    }));
+    both.range = Some(qdrant_edge_ffi::filter::RangeFloat {
+        gte: Some(1.0),
+        gt: None,
+        lte: None,
+        lt: None,
+    });
+    let r: Result<SegmentFieldCondition, _> = both.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+}
+
+#[test]
+fn min_should_converts() {
+    use qdrant_edge_ffi::filter::MinShould;
+
+    let filter = Filter {
+        must: None,
+        should: None,
+        must_not: None,
+        min_should: Some(MinShould {
+            conditions: vec![
+                Condition::IsEmpty {
+                    key: "a".to_string(),
+                },
+                Condition::IsNull {
+                    key: "b".to_string(),
+                },
+            ],
+            min_count: 1,
+        }),
+    };
+    let r: Result<SegmentFilter, _> = filter.try_into();
+    let converted = r.expect("min_should filter must convert");
+    let min_should = converted.min_should.expect("min_should must be present");
+    assert_eq!(min_should.min_count, 1);
+    assert_eq!(min_should.conditions.len(), 2);
+}
+
+#[test]
+fn with_payload_exclude_converts_to_selector() {
+    use segment::types::PayloadSelector;
+
+    let w = WithPayload::Exclude {
+        fields: vec!["secret".to_string()],
+    };
+    let r: Result<WithPayloadInterface, _> = w.try_into();
+    assert!(matches!(
+        r,
+        Ok(WithPayloadInterface::Selector(PayloadSelector::Exclude(_)))
+    ));
+
+    let bad = WithPayload::Exclude {
+        fields: vec!["secret[".to_string()],
+    };
+    let r: Result<WithPayloadInterface, _> = bad.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+}
+
+#[test]
+fn order_by_start_from_converts() {
+    use qdrant_edge_ffi::{OrderBy, StartFrom};
+    use segment::data_types::order_by::OrderBy as SegmentOrderBy;
+
+    let ok = OrderBy {
+        key: "ts".to_string(),
+        direction: None,
+        start_from: Some(StartFrom::Datetime {
+            value: "2024-01-01T00:00:00Z".to_string(),
+        }),
+    };
+    let r: Result<SegmentOrderBy, _> = ok.try_into();
+    assert!(r.is_ok(), "datetime start_from must convert: {r:?}");
+
+    let bad = OrderBy {
+        key: "ts".to_string(),
+        direction: None,
+        start_from: Some(StartFrom::Datetime {
+            value: "yesterday-ish".to_string(),
+        }),
+    };
+    let r: Result<SegmentOrderBy, _> = bad.try_into();
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
 }

@@ -1155,6 +1155,7 @@ fn category_filter(value: &str) -> qdrant_edge_ffi::filter::Filter {
                     },
                 }),
                 range: None,
+                datetime_range: None,
                 geo_bounding_box: None,
                 geo_radius: None,
                 geo_polygon: None,
@@ -1163,6 +1164,7 @@ fn category_filter(value: &str) -> qdrant_edge_ffi::filter::Filter {
         }]),
         should: None,
         must_not: None,
+        min_should: None,
     }
 }
 
@@ -1175,12 +1177,14 @@ fn nested_filter(depth: u32) -> qdrant_edge_ffi::filter::Filter {
         must: None,
         should: None,
         must_not: None,
+        min_should: None,
     };
     for _ in 0..depth {
         f = Filter {
             must: Some(vec![Condition::Filter { filter: f }]),
             should: None,
             must_not: None,
+            min_should: None,
         };
     }
     f
@@ -2549,6 +2553,7 @@ fn clear_payload_by_filter_applies_to_matches() {
         }]),
         should: None,
         must_not: None,
+        min_should: None,
     };
     let op = UpdateOperation::clear_payload_by_filter(filter).expect("clear failed");
     shard.update(op).expect("update failed");
@@ -2986,4 +2991,80 @@ fn lifecycle_additions_work() {
     let fresh = EdgeShard::create(dir2.path().to_string_lossy().into_owned(), make_config())
         .expect("create on a fresh path failed");
     upsert_three(&fresh);
+}
+
+/// Slice conditions partition the shard: the two halves of `total: 2` are
+/// disjoint and together cover every point.
+#[test]
+fn slice_condition_partitions_points() {
+    use qdrant_edge_ffi::CountRequest;
+    use qdrant_edge_ffi::filter::{Condition, Filter};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let slice_count = |total: u32, index: u32| {
+        shard
+            .count(CountRequest {
+                filter: Some(Filter {
+                    must: Some(vec![Condition::Slice { total, index }]),
+                    should: None,
+                    must_not: None,
+                    min_should: None,
+                }),
+                exact: true,
+            })
+            .expect("slice count failed")
+    };
+    assert_eq!(
+        slice_count(1, 0),
+        3,
+        "the single slice must cover everything"
+    );
+    assert_eq!(
+        slice_count(2, 0) + slice_count(2, 1),
+        3,
+        "the two halves must partition the shard"
+    );
+}
+
+/// `WithPayload::Exclude` drops the listed keys but keeps the rest.
+#[test]
+fn with_payload_exclude_drops_keys() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let op = UpdateOperation::upsert_points(
+        vec![Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"keep":"yes","secret":"no"}"#.to_string()),
+        }],
+        None,
+        None,
+    )
+    .expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    let recs = shard
+        .retrieve(RetrieveRequest {
+            point_ids: vec![PointId::NumId { value: 1 }],
+            with_payload: Some(WithPayload::Exclude {
+                fields: vec!["secret".to_string()],
+            }),
+            with_vector: None,
+        })
+        .expect("retrieve failed");
+    let payload = recs[0].payload.as_deref().expect("payload expected");
+    assert!(
+        payload.contains("keep"),
+        "non-excluded key must remain: {payload}"
+    );
+    assert!(
+        !payload.contains("secret"),
+        "excluded key must be dropped: {payload}"
+    );
 }

@@ -286,3 +286,60 @@ impl Expression {
         }))
     }
 }
+
+// ── Coverage map ────────────────────────────────────────────────────────────
+
+/// Compile-time map of the engine's formula-expression tree onto the
+/// [`Expression`] constructors above — same contract as the maps in
+/// [`crate::update`], [`crate::ops::query`], and [`crate::filter`]: no
+/// wildcard arms, so a variant added to [`ExpressionInternal`] or the
+/// engine's [`DecayKind`](SegmentDecayKind) stops this function from
+/// compiling until the constructor surface decision is recorded here.
+///
+/// Never called; it exists only for the exhaustiveness check.
+#[allow(dead_code)]
+fn assert_every_expression_is_mapped(e: ExpressionInternal) {
+    match e {
+        // [`Expression::constant`]
+        ExpressionInternal::Constant(_) => {}
+        // [`Expression::variable`]
+        ExpressionInternal::Variable(_) => {}
+        // [`Expression::condition`]
+        ExpressionInternal::Condition(_) => {}
+        // [`Expression::geo_distance`]
+        ExpressionInternal::GeoDistance { .. } => {}
+        // [`Expression::datetime`]
+        ExpressionInternal::Datetime(_) => {}
+        // [`Expression::datetime_key`]
+        ExpressionInternal::DatetimeKey(_) => {}
+        // [`Expression::mult`]
+        ExpressionInternal::Mult(_) => {}
+        // [`Expression::sum`]
+        ExpressionInternal::Sum(_) => {}
+        // [`Expression::negate`]
+        ExpressionInternal::Neg(_) => {}
+        // [`Expression::div`]
+        ExpressionInternal::Div { .. } => {}
+        // [`Expression::sqrt`]
+        ExpressionInternal::Sqrt(_) => {}
+        // [`Expression::pow`]
+        ExpressionInternal::Pow { .. } => {}
+        // [`Expression::exp`]
+        ExpressionInternal::Exp(_) => {}
+        // [`Expression::log10`]
+        ExpressionInternal::Log10(_) => {}
+        // [`Expression::ln`]
+        ExpressionInternal::Ln(_) => {}
+        // [`Expression::abs`]
+        ExpressionInternal::Abs(_) => {}
+        // [`Expression::decay`], with every [`DecayKind`]
+        ExpressionInternal::Decay { kind, .. } => match kind {
+            // [`DecayKind::Lin`]
+            SegmentDecayKind::Lin => {}
+            // [`DecayKind::Gauss`]
+            SegmentDecayKind::Gauss => {}
+            // [`DecayKind::Exp`]
+            SegmentDecayKind::Exp => {}
+        },
+    }
+}

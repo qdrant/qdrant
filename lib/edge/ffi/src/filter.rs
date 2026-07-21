@@ -1,11 +1,15 @@
+use std::num::NonZeroU32;
+
 use ahash::AHashSet;
 use segment::types::{
-    AnyVariants, Condition as SegmentCondition, FieldCondition as SegmentFieldCondition,
-    Filter as SegmentFilter, GeoBoundingBox as SegmentGeoBoundingBox,
-    GeoLineString as SegmentGeoLineString, GeoPoint as SegmentGeoPoint,
-    GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius, HasIdCondition,
-    HasVectorCondition, IsEmptyCondition, IsNullCondition, Match as SegmentMatch, MatchAny,
-    MatchExcept, MatchText, MatchValue, PayloadField, PointIdType, Range, RangeInterface,
+    AnyVariants, Condition as SegmentCondition, DateTimePayloadType,
+    FieldCondition as SegmentFieldCondition, Filter as SegmentFilter,
+    GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
+    GeoPoint as SegmentGeoPoint, GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
+    HasIdCondition, HasVectorCondition, IsEmptyCondition, IsNullCondition, Match as SegmentMatch,
+    MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchText, MatchTextAny, MatchValue,
+    MinShould as SegmentMinShould, Nested as SegmentNested, NestedCondition, PayloadField,
+    PointIdType, Range, RangeInterface, Slice as SegmentSlice, SliceCondition,
     ValueVariants as SegmentValueVariants, ValuesCount as SegmentValuesCount,
 };
 use segment::utils::maybe_arc::MaybeArc;
@@ -214,6 +218,59 @@ pub struct RangeFloat {
     pub lt: Option<f64>,
 }
 
+// ── RangeDatetime ───────────────────────────────────────────────────────────
+
+/// A datetime range filter with optional inclusive/exclusive bounds, each an
+/// RFC 3339 timestamp string (e.g. `"2024-01-01T00:00:00Z"`).
+///
+/// Requires a datetime index on the payload key. Unset bounds are treated as
+/// unbounded.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct RangeDatetime {
+    /// Inclusive lower bound (≥).
+    #[uniffi(default = None)]
+    pub gte: Option<String>,
+    /// Exclusive lower bound (>).
+    #[uniffi(default = None)]
+    pub gt: Option<String>,
+    /// Inclusive upper bound (≤).
+    #[uniffi(default = None)]
+    pub lte: Option<String>,
+    /// Exclusive upper bound (<).
+    #[uniffi(default = None)]
+    pub lt: Option<String>,
+}
+
+/// Parse one datetime range bound, naming the bound in the error.
+fn parse_datetime_bound(
+    bound: &str,
+    value: Option<String>,
+) -> Result<Option<DateTimePayloadType>, crate::error::EdgeError> {
+    value
+        .map(|v| {
+            v.parse::<DateTimePayloadType>().map_err(|e| {
+                crate::error::EdgeError::invalid_argument(format!(
+                    "invalid datetime range bound {bound} ({v:?}): {e}"
+                ))
+            })
+        })
+        .transpose()
+}
+
+impl TryFrom<RangeDatetime> for Range<DateTimePayloadType> {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: RangeDatetime) -> Result<Self, Self::Error> {
+        let RangeDatetime { gte, gt, lte, lt } = r;
+        Ok(Range {
+            gte: parse_datetime_bound("gte", gte)?,
+            gt: parse_datetime_bound("gt", gt)?,
+            lte: parse_datetime_bound("lte", lte)?,
+            lt: parse_datetime_bound("lt", lt)?,
+        })
+    }
+}
+
 // ── MatchValue ──────────────────────────────────────────────────────────────
 
 /// A scalar payload value used by [`Match::Value`].
@@ -247,9 +304,18 @@ impl From<ValueVariants> for SegmentValueVariants {
 pub enum Match {
     /// Exact scalar match.
     Value { value: ValueVariants },
-    /// Full-text match on a string field (requires a full-text index on the
-    /// payload key).
+    /// Full-text match: every word of `text` must occur in the field
+    /// (requires a full-text index on the payload key).
     Text { text: String },
+    /// Full-text match: at least one word of `text_any` must occur in the
+    /// field (requires a full-text index on the payload key).
+    TextAny { text_any: String },
+    /// Full-text phrase match: the words must occur adjacently and in order
+    /// (requires a full-text index with phrase matching enabled).
+    Phrase { phrase: String },
+    /// Prefix match: some word of the field must start with `prefix`
+    /// (requires a full-text index on the payload key).
+    Prefix { prefix: String },
     /// The field value must equal any of the given strings or integers.
     Any {
         strings: Option<Vec<String>>,
@@ -271,6 +337,9 @@ impl TryFrom<Match> for SegmentMatch {
                 value: SegmentValueVariants::from(value),
             })),
             Match::Text { text } => Ok(SegmentMatch::Text(MatchText { text })),
+            Match::TextAny { text_any } => Ok(SegmentMatch::TextAny(MatchTextAny { text_any })),
+            Match::Phrase { phrase } => Ok(SegmentMatch::Phrase(MatchPhrase { phrase })),
+            Match::Prefix { prefix } => Ok(SegmentMatch::Prefix(MatchPrefix { prefix })),
             Match::Any { strings, integers } => {
                 let any = match (strings, integers) {
                     (None, None) => {
@@ -361,9 +430,13 @@ pub struct FieldCondition {
     /// Scalar / text / list match.
     #[uniffi(default = None)]
     pub r#match: Option<Match>,
-    /// Numeric range comparison.
+    /// Numeric range comparison. Mutually exclusive with `datetime_range`.
     #[uniffi(default = None)]
     pub range: Option<RangeFloat>,
+    /// Datetime range comparison (RFC 3339 bounds). Mutually exclusive with
+    /// `range`; requires a datetime index on the key.
+    #[uniffi(default = None)]
+    pub datetime_range: Option<RangeDatetime>,
     /// Geographic bounding-box containment.
     #[uniffi(default = None)]
     pub geo_bounding_box: Option<GeoBoundingBox>,
@@ -386,6 +459,7 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
             key,
             r#match,
             range,
+            datetime_range,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -399,6 +473,7 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         // predicates are valid and combine with AND.
         if r#match.is_none()
             && range.is_none()
+            && datetime_range.is_none()
             && geo_bounding_box.is_none()
             && geo_radius.is_none()
             && geo_polygon.is_none()
@@ -406,21 +481,34 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         {
             return Err(crate::error::EdgeError::invalid_argument(
                 "field condition has no predicate set: specify at least one of \
-                 match, range, geo_bounding_box, geo_radius, geo_polygon, or values_count",
+                 match, range, datetime_range, geo_bounding_box, geo_radius, geo_polygon, \
+                 or values_count",
             ));
         }
+
+        // The engine's `range` slot holds one interface, float or datetime.
+        let range = match (range, datetime_range) {
+            (Some(_), Some(_)) => {
+                return Err(crate::error::EdgeError::invalid_argument(
+                    "field condition: set either `range` or `datetime_range`, not both",
+                ));
+            }
+            (Some(RangeFloat { gte, gt, lte, lt }), None) => Some(RangeInterface::Float(Range {
+                gte: gte.map(ordered_float::OrderedFloat),
+                gt: gt.map(ordered_float::OrderedFloat),
+                lte: lte.map(ordered_float::OrderedFloat),
+                lt: lt.map(ordered_float::OrderedFloat),
+            })),
+            (None, Some(datetime_range)) => {
+                Some(RangeInterface::DateTime(Range::try_from(datetime_range)?))
+            }
+            (None, None) => None,
+        };
 
         Ok(SegmentFieldCondition {
             key,
             r#match: r#match.map(SegmentMatch::try_from).transpose()?,
-            range: range.map(|RangeFloat { gte, gt, lte, lt }| {
-                RangeInterface::Float(Range {
-                    gte: gte.map(ordered_float::OrderedFloat),
-                    gt: gt.map(ordered_float::OrderedFloat),
-                    lte: lte.map(ordered_float::OrderedFloat),
-                    lt: lt.map(ordered_float::OrderedFloat),
-                })
-            }),
+            range,
             geo_bounding_box: geo_bounding_box
                 .map(SegmentGeoBoundingBox::try_from)
                 .transpose()?,
@@ -448,6 +536,17 @@ pub enum Condition {
     HasId { ids: Vec<PointId> },
     /// The point must have a vector in the named field.
     HasVector { vector_name: String },
+    /// The point ID must fall into slice `index` of the ID space split into
+    /// `total` deterministic, disjoint slices. Slices with different `total`
+    /// values are correlated: slice `0` of `total: 4` is a strict subset of
+    /// slice `0` of `total: 2`, so a smaller sample is contained in a larger
+    /// one. `index` must be in `0..total`.
+    Slice { total: u32, index: u32 },
+    /// Apply `filter` to the objects of the nested-object array stored under
+    /// payload `key`: a point matches if at least one array element satisfies
+    /// the whole filter. Inside, keys are relative to `key` and ID-based
+    /// conditions are not allowed.
+    Nested { key: String, filter: Filter },
     /// Nested filter — useful for grouping `should` clauses inside a
     /// `must` / `must_not`.
     Filter { filter: Filter },
@@ -491,6 +590,27 @@ fn condition_to_segment(
                 has_id: MaybeArc::NoArc(id_set?),
             }))
         }
+        Condition::Slice { total, index } => {
+            // Mirror the engine's `validate_slice_condition`, which only runs
+            // on the serde path: `total` must be non-zero and `index < total`.
+            let total = NonZeroU32::new(total).ok_or_else(|| {
+                crate::error::EdgeError::invalid_argument("slice condition: total must be non-zero")
+            })?;
+            if index >= total.get() {
+                return Err(crate::error::EdgeError::invalid_argument(format!(
+                    "slice condition: index ({index}) must be less than total ({total})"
+                )));
+            }
+            Ok(SegmentCondition::Slice(SliceCondition {
+                slice: SegmentSlice { total, index },
+            }))
+        }
+        Condition::Nested { key, filter } => Ok(SegmentCondition::Nested(NestedCondition::new(
+            SegmentNested {
+                key: crate::error::parse_json_path(&key)?,
+                filter: filter_to_segment(filter, depth + 1)?,
+            },
+        ))),
         Condition::HasVector { vector_name } => {
             Ok(SegmentCondition::HasVector(HasVectorCondition {
                 has_vector: vector_name,
@@ -543,6 +663,19 @@ pub struct Filter {
     /// Clauses that must all fail to match.
     #[uniffi(default = None)]
     pub must_not: Option<Vec<Condition>>,
+    /// At least `min_count` of these clauses must match.
+    #[uniffi(default = None)]
+    pub min_should: Option<MinShould>,
+}
+
+/// The `min_should` clause of a [`Filter`]: at least `min_count` of
+/// `conditions` must match.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct MinShould {
+    /// Candidate clauses.
+    pub conditions: Vec<Condition>,
+    /// How many of `conditions` must match, at minimum.
+    pub min_count: u64,
 }
 
 impl TryFrom<Filter> for SegmentFilter {
@@ -563,6 +696,7 @@ fn filter_to_segment(f: Filter, depth: u32) -> Result<SegmentFilter, crate::erro
         must,
         should,
         must_not,
+        min_should,
     } = f;
     let convert = |v: Vec<Condition>| {
         v.into_iter()
@@ -573,6 +707,114 @@ fn filter_to_segment(f: Filter, depth: u32) -> Result<SegmentFilter, crate::erro
         must: must.map(&convert).transpose()?,
         should: should.map(&convert).transpose()?,
         must_not: must_not.map(&convert).transpose()?,
-        min_should: None,
+        min_should: min_should
+            .map(
+                |MinShould {
+                     conditions,
+                     min_count,
+                 }| {
+                    Ok::<_, crate::error::EdgeError>(SegmentMinShould {
+                        conditions: convert(conditions)?,
+                        min_count: crate::error::clamp_usize(min_count),
+                    })
+                },
+            )
+            .transpose()?,
     })
+}
+
+// ── Coverage map ────────────────────────────────────────────────────────────
+
+/// Compile-time map of the engine's filter-condition tree onto the FFI
+/// [`Filter`] / [`Condition`] / [`Match`] surface above.
+///
+/// Same contract as the maps in [`crate::update`] and [`crate::ops::query`]:
+/// an exhaustive match with no wildcard arms, so a variant added to the
+/// engine's [`Condition`](SegmentCondition), [`Match`](SegmentMatch),
+/// [`RangeInterface`], [`AnyVariants`], or
+/// [`ValueVariants`](SegmentValueVariants) stops this function from
+/// compiling, forcing an explicit decision about the FFI surface.
+///
+/// Never called; it exists only for the exhaustiveness check.
+#[allow(dead_code)]
+fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
+    match c {
+        SegmentCondition::Field(field) => {
+            let SegmentFieldCondition {
+                // [`FieldCondition::key`]
+                key: _,
+                // [`FieldCondition::match`]
+                r#match,
+                // [`FieldCondition::range`] / [`FieldCondition::datetime_range`]
+                range,
+                // [`FieldCondition::geo_bounding_box`]
+                geo_bounding_box: _,
+                // [`FieldCondition::geo_radius`]
+                geo_radius: _,
+                // [`FieldCondition::geo_polygon`]
+                geo_polygon: _,
+                // [`FieldCondition::values_count`]
+                values_count: _,
+                // Not exposed as fields: the dedicated [`Condition::IsEmpty`] /
+                // [`Condition::IsNull`] variants express the same predicates.
+                is_empty: _,
+                is_null: _,
+            } = field;
+            if let Some(m) = r#match {
+                match m {
+                    // [`Match::Value`]
+                    SegmentMatch::Value(MatchValue { value }) => match value {
+                        // [`ValueVariants::String`]
+                        SegmentValueVariants::String(_) => {}
+                        // [`ValueVariants::Integer`]
+                        SegmentValueVariants::Integer(_) => {}
+                        // [`ValueVariants::Bool`]
+                        SegmentValueVariants::Bool(_) => {}
+                    },
+                    // [`Match::Text`]
+                    SegmentMatch::Text(_) => {}
+                    // [`Match::TextAny`]
+                    SegmentMatch::TextAny(_) => {}
+                    // [`Match::Phrase`]
+                    SegmentMatch::Phrase(_) => {}
+                    // [`Match::Prefix`]
+                    SegmentMatch::Prefix(_) => {}
+                    // [`Match::Any`]
+                    SegmentMatch::Any(MatchAny { any }) => match any {
+                        // [`Match::Any`] `strings`
+                        AnyVariants::Strings(_) => {}
+                        // [`Match::Any`] `integers`
+                        AnyVariants::Integers(_) => {}
+                    },
+                    // [`Match::Except`] (same `AnyVariants` split as `Any`)
+                    SegmentMatch::Except(MatchExcept { except: _ }) => {}
+                }
+            }
+            if let Some(range) = range {
+                match range {
+                    // [`FieldCondition::range`] ([`RangeFloat`])
+                    RangeInterface::Float(_) => {}
+                    // [`FieldCondition::datetime_range`] ([`RangeDatetime`])
+                    RangeInterface::DateTime(_) => {}
+                }
+            }
+        }
+        // [`Condition::IsEmpty`]
+        SegmentCondition::IsEmpty(_) => {}
+        // [`Condition::IsNull`]
+        SegmentCondition::IsNull(_) => {}
+        // [`Condition::HasId`]
+        SegmentCondition::HasId(_) => {}
+        // [`Condition::HasVector`]
+        SegmentCondition::HasVector(_) => {}
+        // [`Condition::Slice`]
+        SegmentCondition::Slice(_) => {}
+        // [`Condition::Nested`]
+        SegmentCondition::Nested(_) => {}
+        // [`Condition::Filter`]; its `min_should` field is [`Filter::min_should`]
+        SegmentCondition::Filter(_) => {}
+        // Not exposed: runtime-internal resharding hook, `#[serde(skip)]`-ed
+        // out of every serialized surface; never host-constructed.
+        SegmentCondition::CustomIdChecker(_) => {}
+    }
 }

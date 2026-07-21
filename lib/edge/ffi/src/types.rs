@@ -4,8 +4,8 @@ use segment::data_types::vectors::{
     MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
 };
 use segment::types::{
-    Payload, PointIdType, ScoredPoint as SegmentScoredPoint, WithPayloadInterface,
-    WithVector as SegmentWithVector,
+    Payload, PayloadSelector, PayloadSelectorExclude, PointIdType,
+    ScoredPoint as SegmentScoredPoint, WithPayloadInterface, WithVector as SegmentWithVector,
 };
 use shard::operations::point_ops::{PointStructPersisted, VectorPersisted, VectorStructPersisted};
 use shard::retrieve::record_internal::RecordInternal;
@@ -321,22 +321,56 @@ pub enum WithPayload {
     /// Include only the listed payload fields. Use JSON-path syntax to
     /// select nested keys (e.g. `"meta.author"`).
     Fields { fields: Vec<String> },
+    /// Include all payload fields except the listed ones. Use JSON-path
+    /// syntax to exclude nested keys.
+    Exclude { fields: Vec<String> },
 }
 
 impl TryFrom<WithPayload> for WithPayloadInterface {
     type Error = crate::error::EdgeError;
 
     fn try_from(w: WithPayload) -> Result<Self, Self::Error> {
+        let parse_all = |fields: Vec<String>| {
+            fields
+                .iter()
+                .map(|f| crate::error::parse_json_path(f))
+                .collect::<Result<Vec<_>, _>>()
+        };
         match w {
             WithPayload::Bool { enable } => Ok(WithPayloadInterface::Bool(enable)),
-            WithPayload::Fields { fields } => {
-                let parsed: Result<Vec<_>, _> = fields
-                    .iter()
-                    .map(|f| crate::error::parse_json_path(f))
-                    .collect();
-                Ok(WithPayloadInterface::Fields(parsed?))
-            }
+            WithPayload::Fields { fields } => Ok(WithPayloadInterface::Fields(parse_all(fields)?)),
+            WithPayload::Exclude { fields } => Ok(WithPayloadInterface::Selector(
+                PayloadSelector::Exclude(PayloadSelectorExclude::new(parse_all(fields)?)),
+            )),
         }
+    }
+}
+
+/// Compile-time map of the engine's payload/vector selection enums onto the
+/// FFI [`WithPayload`] / [`WithVector`] surface — same contract as the maps
+/// in [`crate::update`], [`crate::ops::query`], and [`crate::filter`].
+///
+/// Never called; it exists only for the exhaustiveness check.
+#[allow(dead_code)]
+fn assert_every_selection_is_mapped(payload: WithPayloadInterface, vector: SegmentWithVector) {
+    match payload {
+        // [`WithPayload::Bool`]
+        WithPayloadInterface::Bool(_) => {}
+        // [`WithPayload::Fields`]
+        WithPayloadInterface::Fields(_) => {}
+        WithPayloadInterface::Selector(selector) => match selector {
+            // Same include semantics as [`WithPayload::Fields`], which the
+            // FFI emits instead.
+            PayloadSelector::Include(_) => {}
+            // [`WithPayload::Exclude`]
+            PayloadSelector::Exclude(_) => {}
+        },
+    }
+    match vector {
+        // [`WithVector::Bool`]
+        SegmentWithVector::Bool(_) => {}
+        // [`WithVector::Names`]
+        SegmentWithVector::Selector(_) => {}
     }
 }
 

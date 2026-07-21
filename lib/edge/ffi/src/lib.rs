@@ -24,7 +24,7 @@ pub use crate::ops::{
     FacetResponse, FeedbackCoefficients, FeedbackItem, Fusion, Group, GroupId, GroupRequest,
     OrderBy, Prefetch, Query, QueryRequest, RecommendStrategy, RetrieveRequest, Sample,
     ScoringQuery, ScrollRequest, ScrollResponse, SearchMatrixRequest, SearchMatrixResponse,
-    SearchParams, SearchRequest, ShardInfo,
+    SearchParams, SearchRequest, ShardInfo, StartFrom,
 };
 pub use crate::shard::{EdgeShard, unpack_snapshot};
 pub use crate::update::{PayloadSchemaType, UpdateMode, UpdateOperation};

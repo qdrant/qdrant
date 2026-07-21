@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use segment::data_types::order_by::{Direction as SegmentDirection, OrderBy as SegmentOrderBy};
+use segment::data_types::order_by::{
+    Direction as SegmentDirection, OrderBy as SegmentOrderBy, StartFrom as SegmentStartFrom,
+};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
@@ -473,6 +475,35 @@ impl TryFrom<Fusion> for FusionInternal {
 
 // ── OrderBy ─────────────────────────────────────────────────────────────────
 
+/// The value an [`OrderBy`] iteration starts from.
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum StartFrom {
+    /// Start from this integer value of the ordering key.
+    Integer { value: i64 },
+    /// Start from this float value of the ordering key.
+    Float { value: f64 },
+    /// Start from this RFC 3339 datetime value of the ordering key.
+    Datetime { value: String },
+}
+
+impl TryFrom<StartFrom> for SegmentStartFrom {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(s: StartFrom) -> Result<Self, Self::Error> {
+        Ok(match s {
+            StartFrom::Integer { value } => SegmentStartFrom::Integer(value),
+            StartFrom::Float { value } => SegmentStartFrom::Float(value),
+            StartFrom::Datetime { value } => {
+                SegmentStartFrom::Datetime(value.parse().map_err(|e| {
+                    crate::error::EdgeError::invalid_argument(format!(
+                        "invalid order-by start_from datetime ({value:?}): {e}"
+                    ))
+                })?)
+            }
+        })
+    }
+}
+
 /// Orders results by a payload field rather than vector similarity.
 ///
 /// Requires the payload `key` to have a numeric index.
@@ -483,17 +514,24 @@ pub struct OrderBy {
     /// Sort direction. Defaults to ascending when unset.
     #[uniffi(default = None)]
     pub direction: Option<Direction>,
+    /// Value of `key` to start the ordered iteration from (inclusive).
+    #[uniffi(default = None)]
+    pub start_from: Option<StartFrom>,
 }
 
 impl TryFrom<OrderBy> for SegmentOrderBy {
     type Error = crate::error::EdgeError;
 
     fn try_from(o: OrderBy) -> Result<Self, Self::Error> {
-        let OrderBy { key, direction } = o;
+        let OrderBy {
+            key,
+            direction,
+            start_from,
+        } = o;
         Ok(SegmentOrderBy {
             key: crate::error::parse_json_path(&key)?,
             direction: direction.map(SegmentDirection::from),
-            start_from: None,
+            start_from: start_from.map(SegmentStartFrom::try_from).transpose()?,
         })
     }
 }
@@ -717,9 +755,19 @@ fn assert_every_scoring_query_is_mapped(q: shard::query::ScoringQuery) {
             // [`Fusion::Dbsf`]
             FusionInternal::Dbsf => {}
         },
-        // [`ScoringQuery::OrderBy`] (without `start_from`, which has no
-        // FFI surface yet)
-        shard::query::ScoringQuery::OrderBy(_) => {}
+        // [`ScoringQuery::OrderBy`]
+        shard::query::ScoringQuery::OrderBy(o) => {
+            if let Some(start_from) = o.start_from {
+                match start_from {
+                    // [`StartFrom::Integer`]
+                    SegmentStartFrom::Integer(_) => {}
+                    // [`StartFrom::Float`]
+                    SegmentStartFrom::Float(_) => {}
+                    // [`StartFrom::Datetime`]
+                    SegmentStartFrom::Datetime(_) => {}
+                }
+            }
+        }
         // [`ScoringQuery::Formula`], built from [`Expression`] — the
         // expression tree itself is covered by construction: `Expression`
         // constructors are the only way to produce its `inner`.

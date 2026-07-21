@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use segment::types::{
-    Filter as SegmentFilter, PayloadFieldSchema, PayloadSchemaType as SegmentPayloadSchemaType,
-    PointIdType,
+    Filter as SegmentFilter, PayloadFieldSchema, PayloadSchemaParams,
+    PayloadSchemaType as SegmentPayloadSchemaType, PointIdType,
 };
 use shard::operations::point_ops::{
     PointIdsList, PointInsertOperationsInternal, VectorStructPersisted,
@@ -738,17 +738,51 @@ fn assert_every_update_operation_is_mapped(op: CollectionUpdateOperations) {
             payload_ops::PayloadOps::OverwritePayload(_) => {}
         },
         CollectionUpdateOperations::FieldIndexOperation(op) => match op {
-            // [`UpdateOperation::create_field_index`] (simple schema types;
-            // the per-type index-parameter forms of `PayloadFieldSchema`
-            // have no FFI surface yet)
-            FieldIndexOperations::CreateIndex(_) => {}
+            // [`UpdateOperation::create_field_index`]
+            FieldIndexOperations::CreateIndex(CreateIndex {
+                field_name: _,
+                field_schema,
+            }) => match field_schema {
+                // The engine can infer the schema; the FFI always supplies one.
+                None => {}
+                // [`PayloadSchemaType`], all simple schema types
+                Some(PayloadFieldSchema::FieldType(t)) => match t {
+                    SegmentPayloadSchemaType::Keyword => {}
+                    SegmentPayloadSchemaType::Integer => {}
+                    SegmentPayloadSchemaType::Float => {}
+                    SegmentPayloadSchemaType::Geo => {}
+                    SegmentPayloadSchemaType::Text => {}
+                    SegmentPayloadSchemaType::Bool => {}
+                    SegmentPayloadSchemaType::Datetime => {}
+                    SegmentPayloadSchemaType::Uuid => {}
+                },
+                // Not exposed yet: the per-type index-parameter forms
+                // (`is_tenant`, `on_disk`, text tokenizers, …). The FFI only
+                // emits the parameterless `FieldType` schema above.
+                Some(PayloadFieldSchema::FieldParams(p)) => match p {
+                    PayloadSchemaParams::Keyword(_) => {}
+                    PayloadSchemaParams::Integer(_) => {}
+                    PayloadSchemaParams::Float(_) => {}
+                    PayloadSchemaParams::Geo(_) => {}
+                    PayloadSchemaParams::Text(_) => {}
+                    PayloadSchemaParams::Bool(_) => {}
+                    PayloadSchemaParams::Datetime(_) => {}
+                    PayloadSchemaParams::Uuid(_) => {}
+                },
+            },
             // [`UpdateOperation::delete_field_index`]
             FieldIndexOperations::DeleteIndex(_) => {}
         },
         CollectionUpdateOperations::VectorNameOperation(op) => match op {
-            // [`UpdateOperation::create_dense_vector`] /
-            // [`UpdateOperation::create_sparse_vector`]
-            VectorNameOperations::CreateVectorName(_) => {}
+            VectorNameOperations::CreateVectorName(CreateVectorName {
+                vector_name: _,
+                config,
+            }) => match config {
+                // [`UpdateOperation::create_dense_vector`]
+                VectorNameConfig::Dense(_) => {}
+                // [`UpdateOperation::create_sparse_vector`]
+                VectorNameConfig::Sparse(_) => {}
+            },
             // [`UpdateOperation::delete_vector_name`]
             VectorNameOperations::DeleteVectorName(_) => {}
         },
