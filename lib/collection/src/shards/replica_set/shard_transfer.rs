@@ -342,6 +342,47 @@ impl ShardReplicaSet {
         let _ = local.insert(Shard::Local(local_shard));
     }
 
+    /// Revert any proxy wrapper on the local shard back into a plain local shard, discarding
+    /// all proxy state. Nothing is ever sent to a remote shard: queued updates are forgotten
+    /// and update forwarding stops.
+    ///
+    /// Does nothing if there is no local shard, or if the local shard is not a proxy.
+    ///
+    /// This method cannot fail and performs no remote calls.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - the proxy may not be reverted to a local shard.
+    pub async fn discard_proxy_local(&self) {
+        let mut local = self.local.write().await;
+
+        let Some(shard) = local.take() else {
+            return;
+        };
+
+        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
+        let shard = match shard {
+            shard @ (Shard::Local(_) | Shard::Dummy(_)) => shard,
+            Shard::ForwardProxy(proxy) => {
+                log::debug!("Discarding forward proxy and reverting to local shard");
+                Shard::Local(proxy.wrapped_shard)
+            }
+            Shard::QueueProxy(proxy) => {
+                log::debug!("Forgetting queue proxy updates and reverting to local shard");
+                let (local_shard, _) = proxy.forget_updates_and_finalize();
+                Shard::Local(local_shard)
+            }
+            Shard::Proxy(proxy) => {
+                log::debug!("Discarding proxy and reverting to local shard");
+                Shard::Local(proxy.wrapped_shard)
+            }
+        };
+
+        let _ = local.insert(shard);
+    }
+
     /// Read a transfer batch without sending it yet.
     ///
     /// Returns a [`PreparedTransferBatch`] that holds the update lock. The caller can then drop
