@@ -76,11 +76,39 @@ impl Collection {
             .shard_transfers
             .read()
             .clone();
-        for transfer in shard_transfers.intersection(&old_transfers) {
-            log::debug!("Aborting shard transfer: {transfer:?}");
-        }
         for transfer in old_transfers.difference(&shard_transfers) {
-            log::debug!("Aborting shard transfer: {transfer:?}");
+            // This transfer finished or was aborted in consensus while this peer was too far
+            // behind to receive the corresponding log entries, so the regular finish/abort
+            // handlers never ran here. Clean up leftover transfer state explicitly. Otherwise, if
+            // this peer is the transfer source, its local shard stays proxified forever and keeps
+            // forwarding updates to a peer that may not have the shard anymore — which fails
+            // snapshot application itself (on payload index updates) and prevents this peer from
+            // ever catching up with consensus.
+            log::debug!("Cleaning up stale shard transfer: {transfer:?}");
+
+            self.transfer_tasks
+                .lock()
+                .await
+                .stop_task(&transfer.key())
+                .await;
+
+            if transfer.from == this_peer_id {
+                let shard_holder = self.shards_holder.read().await;
+                if let Some(replica_set) = shard_holder.get_shard(transfer.shard_id) {
+                    // Discard proxy state instead of flushing it to the remote: replica states in
+                    // the same snapshot already reflect the transfer outcome, and the target may
+                    // not have the shard anymore
+                    replica_set.discard_proxy_local().await;
+                }
+            }
+
+            // Notify any tasks waiting for this transfer to end
+            let _ = self
+                .shards_holder
+                .read()
+                .await
+                .shard_transfer_changes
+                .send(ShardTransferChange::Abort(transfer.key()));
         }
         for transfer in shard_transfers.difference(&old_transfers) {
             if transfer.from == this_peer_id {
