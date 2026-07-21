@@ -322,13 +322,14 @@ impl EdgeShard {
             .into_iter()
             .map(PointIdType::try_from)
             .collect::<crate::error::Result<Vec<_>>>()?;
-        let records = shard.retrieve(
-            &ids,
-            with_payload
+        let request = edge::RetrieveRequest {
+            point_ids: ids,
+            with_payload: with_payload
                 .map(WithPayloadInterface::try_from)
                 .transpose()?,
-            with_vector.map(SegmentWithVector::from),
-        )?;
+            with_vector: with_vector.map(SegmentWithVector::from),
+        };
+        let records = shard.retrieve(request)?;
         Ok(records.into_iter().map(Record::from).collect())
     }
 

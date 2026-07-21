@@ -1,4 +1,3 @@
-use ordered_float::OrderedFloat;
 use segment::data_types::order_by::{
     Direction as SegmentDirection, OrderBy as SegmentOrderBy, OrderByInterface,
 };
@@ -7,12 +6,8 @@ use segment::types::{
     Filter as SegmentFilter, PointIdType, SearchParams as SegmentSearchParams,
     WithPayloadInterface, WithVector as SegmentWithVector,
 };
-use shard::count::CountRequestInternal;
-use shard::facet::FacetRequestInternal;
 use shard::query::query_enum::QueryEnum;
 use shard::query::*;
-use shard::scroll::ScrollRequestInternal;
-use shard::search::CoreSearchRequest;
 
 use crate::filter::Filter;
 use crate::types::{PointId, WithPayload, WithVector};
@@ -236,36 +231,36 @@ pub struct Prefetch {
     pub params: Option<SearchParams>,
 }
 
-impl TryFrom<Prefetch> for ShardPrefetch {
+impl TryFrom<Prefetch> for edge::Prefetch {
     type Error = crate::error::EdgeError;
 
     fn try_from(p: Prefetch) -> Result<Self, Self::Error> {
-        prefetch_to_shard(p, 0)
+        prefetch_to_edge(p, 0)
     }
 }
 
 /// Convert a `Prefetch` at nesting `depth`, rejecting trees deeper than
 /// [`MAX_QUERY_NESTING_DEPTH`](crate::error::MAX_QUERY_NESTING_DEPTH) before the
 /// recursion over nested `prefetches` can overflow the stack.
-fn prefetch_to_shard(p: Prefetch, depth: u32) -> Result<ShardPrefetch, crate::error::EdgeError> {
+fn prefetch_to_edge(p: Prefetch, depth: u32) -> Result<edge::Prefetch, crate::error::EdgeError> {
     crate::error::check_nesting_depth("prefetch", depth)?;
     let prefetches = p
         .prefetches
         .into_iter()
-        .map(|pp| prefetch_to_shard(pp, depth + 1))
+        .map(|pp| prefetch_to_edge(pp, depth + 1))
         .collect::<Result<Vec<_>, _>>()?;
     let filter = p.filter.map(SegmentFilter::try_from).transpose()?;
     let query = p
         .query
         .map(shard::query::ScoringQuery::try_from)
         .transpose()?;
-    Ok(ShardPrefetch {
+    Ok(edge::Prefetch {
         prefetches,
         limit: crate::error::bounded_limit("prefetch limit", p.limit)?,
         query,
         params: p.params.map(SegmentSearchParams::from),
         filter,
-        score_threshold: p.score_threshold.map(OrderedFloat),
+        score_threshold: p.score_threshold,
     })
 }
 
@@ -302,21 +297,21 @@ pub struct QueryRequest {
     pub params: Option<SearchParams>,
 }
 
-impl TryFrom<QueryRequest> for ShardQueryRequest {
+impl TryFrom<QueryRequest> for edge::QueryRequest {
     type Error = crate::error::EdgeError;
 
     fn try_from(r: QueryRequest) -> Result<Self, Self::Error> {
         let prefetches = r
             .prefetches
             .into_iter()
-            .map(ShardPrefetch::try_from)
+            .map(edge::Prefetch::try_from)
             .collect::<Result<Vec<_>, _>>()?;
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
         let query = r
             .query
             .map(shard::query::ScoringQuery::try_from)
             .transpose()?;
-        Ok(ShardQueryRequest {
+        Ok(edge::QueryRequest {
             prefetches,
             limit: crate::error::bounded_limit("limit", r.limit)?,
             offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
@@ -331,7 +326,7 @@ impl TryFrom<QueryRequest> for ShardQueryRequest {
                 .unwrap_or_default(),
             query,
             filter,
-            score_threshold: r.score_threshold.map(OrderedFloat),
+            score_threshold: r.score_threshold,
             params: r.params.map(SegmentSearchParams::from),
         })
     }
@@ -364,12 +359,12 @@ pub struct SearchRequest {
     pub score_threshold: Option<f32>,
 }
 
-impl TryFrom<SearchRequest> for CoreSearchRequest {
+impl TryFrom<SearchRequest> for edge::SearchRequest {
     type Error = crate::error::EdgeError;
 
     fn try_from(r: SearchRequest) -> Result<Self, Self::Error> {
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
-        Ok(CoreSearchRequest {
+        Ok(edge::SearchRequest {
             query: QueryEnum::from(r.query),
             limit: crate::error::bounded_limit("limit", r.limit)?,
             offset: crate::error::bounded_limit("offset", r.offset.unwrap_or(0))?,
@@ -410,7 +405,7 @@ pub struct ScrollRequest {
     pub order_by: Option<OrderBy>,
 }
 
-impl TryFrom<ScrollRequest> for ScrollRequestInternal {
+impl TryFrom<ScrollRequest> for edge::ScrollRequest {
     type Error = crate::error::EdgeError;
 
     fn try_from(r: ScrollRequest) -> Result<Self, Self::Error> {
@@ -420,7 +415,7 @@ impl TryFrom<ScrollRequest> for ScrollRequestInternal {
             .order_by
             .map(|o| SegmentOrderBy::try_from(o).map(OrderByInterface::Struct))
             .transpose()?;
-        Ok(ScrollRequestInternal {
+        Ok(edge::ScrollRequest {
             offset,
             limit: r
                 .limit
@@ -452,12 +447,12 @@ pub struct CountRequest {
     pub exact: bool,
 }
 
-impl TryFrom<CountRequest> for CountRequestInternal {
+impl TryFrom<CountRequest> for edge::CountRequest {
     type Error = crate::error::EdgeError;
 
     fn try_from(r: CountRequest) -> Result<Self, Self::Error> {
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
-        Ok(CountRequestInternal {
+        Ok(edge::CountRequest {
             filter,
             exact: r.exact,
         })
@@ -483,13 +478,13 @@ pub struct FacetRequest {
     pub filter: Option<Filter>,
 }
 
-impl TryFrom<FacetRequest> for FacetRequestInternal {
+impl TryFrom<FacetRequest> for edge::FacetRequest {
     type Error = crate::error::EdgeError;
 
     fn try_from(r: FacetRequest) -> Result<Self, Self::Error> {
         let key = crate::error::parse_json_path(&r.key)?;
         let filter = r.filter.map(SegmentFilter::try_from).transpose()?;
-        Ok(FacetRequestInternal {
+        Ok(edge::FacetRequest {
             key,
             limit: crate::error::bounded_limit("limit", r.limit)?,
             filter,
