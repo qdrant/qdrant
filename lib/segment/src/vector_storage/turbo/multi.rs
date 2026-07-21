@@ -367,7 +367,7 @@ impl TurboMultiVectorStorage {
     ) -> OperationResult<()> {
         let record_size = self.quantizer.quantized_size();
         if bytes.is_empty() || !bytes.len().is_multiple_of(record_size) {
-            return Err(OperationError::service_error(format!(
+            return Err(OperationError::wrong_vector_bytes_size(format!(
                 "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
                 bytes.len(),
             )));
