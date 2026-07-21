@@ -70,10 +70,7 @@ where
     fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         self.prefill_if_uninit()?;
         let length = self.len::<T>()?;
-        self.read::<Sequential, T>(ReadRange {
-            byte_offset: 0,
-            length,
-        })
+        self.read(ReadRange::new(0, length), Sequential)
     }
 
     fn len<T>(&self) -> UioResult<u64> {

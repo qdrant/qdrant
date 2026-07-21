@@ -195,9 +195,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
             force_sequential || range.length as usize * size_of::<T>() > PAGE_SIZE_BYTES * 4;
 
         if use_sequential {
-            chunk.read::<Sequential>(range).ok()
+            chunk.read(range, Sequential).ok()
         } else {
-            chunk.read::<Random>(range).ok()
+            chunk.read(range, Random).ok()
         }
     }
 

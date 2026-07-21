@@ -213,9 +213,10 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         let offset = self
             .offsets
-            .read::<Random>(ReadRange::one(
-                u64::from(idx) * size_of::<MultivectorOffset>() as u64,
-            ))
+            .read(
+                ReadRange::one(u64::from(idx) * size_of::<MultivectorOffset>() as u64),
+                Random,
+            )
             .expect("multi-vector offset read");
 
         let [offset] = offset.as_ref() else {

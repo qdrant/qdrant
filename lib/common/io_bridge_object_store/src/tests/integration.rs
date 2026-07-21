@@ -69,7 +69,7 @@ fn test_read_range() {
         BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, "ranged.bin")
             .expect("open");
     let bytes = file
-        .read::<Random, u8>(ReadRange::new(16, 16))
+        .read::<_, u8>(ReadRange::new(16, 16), Random)
         .expect("read");
     assert_eq!(bytes.len(), 16);
     assert_eq!(bytes[0], 16);

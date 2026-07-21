@@ -72,8 +72,12 @@ where
     }
 
     #[inline]
-    pub fn read<P: AccessPattern>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
-        self.inner.read::<P, T>(range)
+    pub fn read<P: AccessPattern>(
+        &self,
+        range: ReadRange,
+        access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
+        self.inner.read(range, access_pattern)
     }
 
     #[inline]

@@ -314,7 +314,7 @@ mod tests {
             .open("obj", OpenOptions::new_for_test(), ())
             .expect("open");
         let cow = file
-            .read::<Sequential, u8>(ReadRange::new(0, 11))
+            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -327,7 +327,7 @@ mod tests {
             "obj",
         );
         let cow = file
-            .read::<Sequential, u8>(ReadRange::new(0, 11))
+            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -339,7 +339,9 @@ mod tests {
             BridgeRuntime::global(),
             "obj",
         );
-        let cow = file.read::<Random, u8>(ReadRange::new(6, 5)).expect("read");
+        let cow = file
+            .read::<_, u8>(ReadRange::new(6, 5), Random)
+            .expect("read");
         assert_eq!(&cow[..], b"world");
     }
 

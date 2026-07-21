@@ -39,7 +39,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         &self,
         block: u64,
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
-        let bytes = self.e2i.read::<Random, u8>(self.num_block_range(block))?;
+        let bytes = self
+            .e2i
+            .read::<_, u8>(self.num_block_range(block), Random)?;
         Ok(decode_num_block(bytes.as_ref()))
     }
 
@@ -47,7 +49,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         &self,
         block: u64,
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
-        let bytes = self.e2i.read::<Random, u8>(self.uuid_block_range(block))?;
+        let bytes = self
+            .e2i
+            .read::<_, u8>(self.uuid_block_range(block), Random)?;
         Ok(decode_uuid_block(bytes.as_ref()))
     }
 
@@ -214,10 +218,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// bitmap.
     fn read_external_id(&self, offset: PointOffsetType) -> OperationResult<PointIdType> {
         let data_offset = self.i2e_header.data_offset + u64::from(offset) * 16;
-        let data = self.i2e.read::<Random, u8>(ReadRange {
-            byte_offset: data_offset,
-            length: 16,
-        })?;
+        let data = self
+            .i2e
+            .read::<_, u8>(ReadRange::new(data_offset, 16), Random)?;
         let value = u128::from_le_bytes(data.as_ref().try_into().expect("16 data bytes"));
         Ok(decode_external(value, self.is_uuid.contains(offset)))
     }

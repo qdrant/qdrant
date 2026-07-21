@@ -57,7 +57,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
             return Ok(None);
         };
 
-        let header = storage.read::<Sequential, PostingsHeader>(ReadRange::one(0))?[0];
+        let header = storage.read::<_, PostingsHeader>(ReadRange::one(0), Sequential)?[0];
 
         Ok(Some(Self {
             _path: path,
@@ -161,7 +161,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
             byte_offset: header.offset,
             length: header.posting_size::<V>() as u64,
         };
-        let bytes = self.storage.read::<Sequential, u8>(read_range)?;
+        let bytes = self.storage.read::<_, u8>(read_range, Sequential)?;
         let result = RawPostingList::new(bytes, header);
         Ok(result)
     }

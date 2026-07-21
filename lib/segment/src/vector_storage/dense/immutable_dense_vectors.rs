@@ -122,7 +122,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         };
 
         self.storage
-            .read::<P>(range)
+            .read(range, P::default())
             .expect("vector read from storage failed")
     }
 

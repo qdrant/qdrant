@@ -102,12 +102,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
         b.iter(|| {
             let mut sum = 0u64;
             let offset = rng.random_range(0..len) * size_of::<T>() as u64;
-            let data = storage
-                .read::<Random, T>(ReadRange {
-                    byte_offset: offset,
-                    length: 1,
-                })
-                .unwrap();
+            let data = storage.read(ReadRange::one(offset), Random).unwrap();
             for &item in bytemuck::cast_slice::<T, u64>(&data) {
                 sum = sum.wrapping_add(item);
             }

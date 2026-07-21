@@ -60,7 +60,11 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
 
     /// Prefer [`read_batch`] if you need high performance.
     #[inline]
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: Item>(
+        &self,
+        range: ReadRange,
+        _access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
         let bytes = self.read_bytes::<P>(range.into_byte_range::<T>(), align_of::<T>())?;
         Ok(bytes.try_cast_bytemuck().unwrap())
     }
@@ -78,7 +82,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
             length: self.len::<T>()?,
         };
 
-        self.read::<Sequential, T>(range)
+        self.read(range, Sequential)
     }
 
     fn read_batch<P, T, U, E>(

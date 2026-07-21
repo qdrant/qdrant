@@ -230,10 +230,10 @@ impl<S: UniversalRead> PrefixIndex<S> {
             .payload_index_io_read_counter()
             .incr_delta((last_block.bytes.end - bytes_start) as usize);
 
-        let bytes = self.storage.read::<Random, u8>(ReadRange::new(
-            bytes_start,
-            last_block.bytes.end - bytes_start,
-        ))?;
+        let bytes = self.storage.read::<_, u8>(
+            ReadRange::new(bytes_start, last_block.bytes.end - bytes_start),
+            Random,
+        )?;
 
         for block in &self.blocks[range] {
             let block_bytes = bytes
@@ -339,10 +339,10 @@ impl<S: UniversalRead> PrefixIndex<S> {
             .payload_index_io_read_counter()
             .incr_delta((block.bytes.end - block.bytes.start) as usize);
 
-        let bytes = self.storage.read::<Random, u8>(ReadRange::new(
-            block.bytes.start,
-            block.bytes.end - block.bytes.start,
-        ))?;
+        let bytes = self.storage.read::<_, u8>(
+            ReadRange::new(block.bytes.start, block.bytes.end - block.bytes.start),
+            Random,
+        )?;
         decode_block(bytes.as_ref(), block.key_count, f)
     }
 

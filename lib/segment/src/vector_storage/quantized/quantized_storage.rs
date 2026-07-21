@@ -64,10 +64,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         let size = self.quantized_vector_size.get() as u64;
         self.storage
-            .read::<P, u8>(ReadRange {
-                byte_offset: size * u64::from(key),
-                length: size,
-            })
+            .read(ReadRange::new(size * u64::from(key), size), P::default())
             .expect("vector read from quantized storage failed")
     }
 
@@ -228,10 +225,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
         self.storage
-            .read::<Random, u8>(ReadRange {
-                byte_offset: start,
-                length,
-            })
+            .read(ReadRange::new(start, length), Random)
             .ok()
     }
 

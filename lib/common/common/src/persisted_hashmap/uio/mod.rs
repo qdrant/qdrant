@@ -69,10 +69,8 @@ where
         let storage = TypedStorage::<S, u8>::open(fs, path, options, extra)?;
 
         // 1. Read header.
-        let header_bytes = storage.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: size_of::<Header>() as u64,
-        })?;
+        let header_bytes =
+            storage.read(ReadRange::new(0, size_of::<Header>() as u64), Sequential)?;
         let (header, _) = Header::read_from_prefix(&header_bytes)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid header"))?;
 
@@ -93,10 +91,8 @@ where
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "buckets_pos before header end")
             })?;
-        let phf_bytes = storage.read::<Sequential>(ReadRange {
-            byte_offset: phf_region_start,
-            length: phf_region_len,
-        })?;
+        let phf_bytes =
+            storage.read(ReadRange::new(phf_region_start, phf_region_len), Sequential)?;
         let phf = Function::read(&mut Cursor::new(&*phf_bytes))?;
 
         let entries_start =
@@ -196,10 +192,13 @@ where
         if self.average_entry_size < SEQUENTIAL_READ_THRESHOLD {
             self.for_each_entry(|key, _| f(key))
         } else {
-            let buckets = self.storage.read::<Sequential>(ReadRange {
-                byte_offset: self.header.buckets_pos,
-                length: self.header.buckets_count * size_of::<BucketOffset>() as u64,
-            })?;
+            let buckets = self.storage.read(
+                ReadRange::new(
+                    self.header.buckets_pos,
+                    self.header.buckets_count * size_of::<BucketOffset>() as u64,
+                ),
+                Sequential,
+            )?;
             let mut offsets: Vec<BucketOffset> = buckets
                 .as_chunks::<{ size_of::<BucketOffset>() }>()
                 .0

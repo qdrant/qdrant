@@ -184,20 +184,14 @@ mod tests_mod {
 
         // Read inside the first block.
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 10,
-                length: 20,
-            })
+            .read::<_, u8>(ReadRange::new(10, 20), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[10..30]);
 
         // Last block includes the 100-byte tail.
         let last = scn.data.len() as u64;
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: last - 50,
-                length: 50,
-            })
+            .read::<_, u8>(ReadRange::new(last - 50, 50), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[scn.data.len() - 50..]);
     }
@@ -225,10 +219,7 @@ mod tests_mod {
         let start = (BLOCK_SIZE - 50) as u64;
         let len = (BLOCK_SIZE + 100) as u64;
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: start,
-                length: len,
-            })
+            .read::<_, u8>(ReadRange::new(start, len), Sequential)
             .unwrap();
         let start = start as usize;
         let end = start + len as usize;
@@ -258,12 +249,7 @@ mod tests_mod {
         );
 
         // Trigger one read. This must bring up the local file.
-        let _ = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 1,
-            })
-            .unwrap();
+        let _ = file.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         assert!(
             expected_local.exists(),
@@ -284,10 +270,7 @@ mod tests_mod {
         file.populate().unwrap();
 
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: scn.data.len() as u64,
-            })
+            .read::<_, u8>(ReadRange::new(0, scn.data.len() as u64), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
     }
@@ -298,10 +281,7 @@ mod tests_mod {
         let file = scn.open::<R>(PREFILL);
 
         let err = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 1000,
-                length: 100,
-            })
+            .read::<_, u8>(ReadRange::new(1000, 100), Sequential)
             .unwrap_err();
         assert_matches!(
             err,
@@ -320,10 +300,7 @@ mod tests_mod {
         let first = scn.open::<R>(PREFILL);
         let read_all = |cache: &DiskCache<R>| {
             cache
-                .read::<Sequential, u8>(ReadRange {
-                    byte_offset: 0,
-                    length: scn.data.len() as u64,
-                })
+                .read::<_, u8>(ReadRange::new(0, scn.data.len() as u64), Sequential)
                 .unwrap()
                 .to_vec()
         };
@@ -344,12 +321,7 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE);
         let cache = scn.open::<R>(PREFILL);
 
-        let _ = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 1,
-            })
-            .unwrap();
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let local_path = cache.local_path.clone();
         assert!(local_path.exists());
@@ -387,12 +359,7 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE * 3);
         let mut cache = scn.open::<R>(PREFILL);
 
-        let _ = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 1,
-            })
-            .unwrap();
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let (len_before, populated_before, fetched_before) = {
             let local = cache.state().expect("local initialized after read").local;
@@ -433,20 +400,12 @@ mod tests_mod {
 
         let original_len = scn.data.len() as u64;
 
-        let _ = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 1,
-            })
-            .unwrap();
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
         let err = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: original_len,
-                length: BLOCK_SIZE as u64,
-            })
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
             .unwrap_err();
         assert_matches!(
             err,
@@ -456,10 +415,7 @@ mod tests_mod {
         cache.reopen().unwrap();
 
         let bytes = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: original_len,
-                length: BLOCK_SIZE as u64,
-            })
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &new_data[original_len as usize..]);
     }
@@ -476,10 +432,7 @@ mod tests_mod {
         // Touch the partial tail so block 1 ends up in the `fetched` bitmap
         // (its fetch is clamped to the old EOF).
         let _ = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: BLOCK_SIZE as u64,
-                length: 1,
-            })
+            .read::<_, u8>(ReadRange::one(BLOCK_SIZE as u64), Sequential)
             .unwrap();
 
         // Grow remote past the old tail block boundary.
@@ -491,10 +444,10 @@ mod tests_mod {
         // and the newly-grown tail [old_len..BLOCK_SIZE*2). Without the
         // invalidation, the second half would be zeros from `set_len`.
         let bytes = cache
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: BLOCK_SIZE as u64,
-                length: BLOCK_SIZE as u64,
-            })
+            .read::<_, u8>(
+                ReadRange::new(BLOCK_SIZE as u64, BLOCK_SIZE as u64),
+                Sequential,
+            )
             .unwrap();
         assert_eq!(&*bytes, &new_data[BLOCK_SIZE..BLOCK_SIZE * 2]);
     }
@@ -515,10 +468,7 @@ mod tests_mod {
 
         // A read within the prefetched range is served from the local mirror.
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 10,
-                length: 20,
-            })
+            .read::<_, u8>(ReadRange::new(10, 20), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[10..30]);
 
@@ -536,10 +486,7 @@ mod tests_mod {
         // A read outside the prefetched range faults its block in on demand.
         let start = (BLOCK_SIZE * 2) as u64;
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: start,
-                length: 30,
-            })
+            .read::<_, u8>(ReadRange::new(start, 30), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[start as usize..start as usize + 30]);
         assert!(file.state().unwrap().local.fetched.lock().contains(2));
@@ -554,10 +501,7 @@ mod tests_mod {
 
         // Nothing prefetched, so the first read must fault its block in.
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 16,
-            })
+            .read::<_, u8>(ReadRange::new(0, 16), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[0..16]);
         assert_eq!(file.len::<u8>().unwrap(), scn.data.len() as u64);
@@ -571,10 +515,7 @@ mod tests_mod {
         let file = scn.open_partial::<R>(BLOCK_SIZE as u64 * 4..BLOCK_SIZE as u64 * 5);
 
         let bytes = file
-            .read::<Sequential, u8>(ReadRange {
-                byte_offset: 0,
-                length: 100,
-            })
+            .read::<_, u8>(ReadRange::new(0, 100), Sequential)
             .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
         assert_eq!(file.len::<u8>().unwrap(), 100);

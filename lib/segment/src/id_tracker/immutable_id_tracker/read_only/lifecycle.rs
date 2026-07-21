@@ -90,10 +90,8 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
 
         let mappings_file = fs.open(mappings_path(segment_path), options, Default::default())?;
-        let mappings_bytes = mappings_file.read::<Sequential, u8>(ReadRange {
-            byte_offset: 0,
-            length: mappings_file.len::<u8>()?,
-        })?;
+        let mappings_bytes = mappings_file
+            .read::<_, u8>(ReadRange::new(0, mappings_file.len::<u8>()?), Sequential)?;
         let mappings = load_mapping(Cursor::new(mappings_bytes.as_ref()), Some(deleted_bitvec))?;
 
         Ok(Self {

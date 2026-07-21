@@ -205,7 +205,7 @@ where
 
         let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
 
-        let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
+        let header = store.read(ReadRange::one(0), Random)?[0];
 
         Ok(Self {
             file_name,
@@ -264,7 +264,7 @@ where
             return Ok(None);
         };
 
-        let bytes = self.store.read::<Random, u8>(bytes_range)?;
+        let bytes = self.store.read(bytes_range, Random)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
@@ -366,7 +366,7 @@ where
 
             let range = self
                 .store
-                .read::<Random, MmapRange>(ReadRange::one(range_offset as u64))?[0];
+                .read(ReadRange::one(range_offset as u64), Random)?[0];
             Ok(Some(range))
         } else {
             Ok(None)

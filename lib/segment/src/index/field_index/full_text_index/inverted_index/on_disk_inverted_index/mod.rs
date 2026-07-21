@@ -824,6 +824,6 @@ fn read_point_to_tokens_count<S: UniversalRead>(
     point_id: PointOffsetType,
 ) -> Option<usize> {
     let byte_offset = u64::from(point_id).checked_mul(size_of::<usize>() as u64)?;
-    let cow = storage.read::<Random>(ReadRange::one(byte_offset)).ok()?;
+    let cow = storage.read(ReadRange::one(byte_offset), Random).ok()?;
     cow.first().copied()
 }

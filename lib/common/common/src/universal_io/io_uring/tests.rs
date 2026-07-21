@@ -47,11 +47,11 @@ fn test_io_uring_read() -> UioResult<()> {
     // 2. Read data back and verify it matches what was written
 
     // Read all elements
-    let full = file.read::<Sequential>(read_range::<u64>(0, data.len()))?;
+    let full = file.read(read_range::<u64>(0, data.len()), Sequential)?;
     assert_eq!(full.as_ref(), &data);
 
     // Read a sub-range (elements 10..30)
-    let sub = file.read::<Sequential>(read_range::<u64>(10, 20))?;
+    let sub = file.read(read_range::<u64>(10, 20), Sequential)?;
     assert_eq!(sub.as_ref(), &data[10..30]);
 
     // Verify len()
