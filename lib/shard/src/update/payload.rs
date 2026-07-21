@@ -8,8 +8,11 @@ use segment::types::{Filter, Payload, PayloadKeyType, PointIdType, SeqNumberType
 use super::helpers::{check_unprocessed_points, points_by_filter};
 use crate::segment_holder::SegmentHolder;
 
-/// Batch size when modifying payload
-const PAYLOAD_OP_BATCH_SIZE: usize = 32;
+/// Batch size when modifying payload.
+///
+/// Also the overshoot bound of the appendable segment size cap: capacity is checked once per
+/// batch, so a CoW-move destination can grow past the cap by at most this many points.
+pub const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
 pub fn set_payload(
     segments: &SegmentHolder,

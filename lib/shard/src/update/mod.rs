@@ -15,8 +15,9 @@ use segment::types::{Payload, SeqNumberType};
 pub use self::field_index::{create_field_index, delete_field_index};
 pub(crate) use self::helpers::{points_by_filter, select_excluded_by_filter_ids};
 pub use self::payload::{
-    clear_payload, clear_payload_by_filter, delete_payload, delete_payload_by_filter,
-    overwrite_payload, overwrite_payload_by_filter, set_payload, set_payload_by_filter,
+    PAYLOAD_OP_BATCH_SIZE, clear_payload, clear_payload_by_filter, delete_payload,
+    delete_payload_by_filter, overwrite_payload, overwrite_payload_by_filter, set_payload,
+    set_payload_by_filter,
 };
 pub(crate) use self::points::retain_conditional_upsert_points;
 pub use self::points::{

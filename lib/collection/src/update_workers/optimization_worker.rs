@@ -156,8 +156,15 @@ impl UpdateWorkers {
                 // recovery resumes where it stopped (applied points are skipped by version).
                 // Progress-guarded: if the provisioned segment stayed empty, the next wake-up
                 // creates nothing and this re-signal chain stops.
-                if created_appendable_segment {
-                    let _ = sender.try_send(OptimizerSignal::Nop);
+                // `try_send` rather than an awaited send: this is our own signal channel, so
+                // awaiting a full one would deadlock the loop that drains it.
+                if created_appendable_segment
+                    && let Err(err) = sender.try_send(OptimizerSignal::Nop)
+                {
+                    log::warn!(
+                        "Could not re-signal the optimizer to continue capacity recovery, \
+                         it resumes on the next wake-up: {err}"
+                    );
                 }
                 let _ = optimization_finished_sender.send(());
                 continue;
