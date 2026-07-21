@@ -25,12 +25,13 @@ pub enum OperationError {
         expected_dim: usize,
         received_dim: usize,
     },
-    /// A storage-native (raw byte) vector blob whose length is incompatible with
-    /// the target storage. Classified as user error (maps to `BadInput`), not
-    /// `ServiceError`, so a malformed blob that reached the WAL is skipped on
-    /// replay instead of crash-looping recovery.
+    /// A storage-native (raw byte) vector blob that is incompatible with the
+    /// target storage (wrong length, undecodable, or out-of-range contents).
+    /// Classified as user error (maps to `BadInput`), not `ServiceError`, so a
+    /// malformed blob that reached the WAL is skipped on replay instead of
+    /// crash-looping recovery.
     #[error("{description}")]
-    WrongVectorBytesSize { description: String },
+    MalformedVectorBlob { description: String },
     #[error("Not existing vector name error: {received_name}")]
     VectorNameNotExists { received_name: VectorNameBuf },
     #[error("No point with id {missed_point_id}")]
@@ -139,8 +140,8 @@ impl OperationError {
         }
     }
 
-    pub fn wrong_vector_bytes_size(description: impl Into<String>) -> Self {
-        Self::WrongVectorBytesSize {
+    pub fn malformed_vector_blob(description: impl Into<String>) -> Self {
+        Self::MalformedVectorBlob {
             description: description.into(),
         }
     }
@@ -151,7 +152,7 @@ impl OperationError {
         match self {
             Self::OutOfAppendableCapacity { .. } => true,
             Self::WrongVectorDimension { .. }
-            | Self::WrongVectorBytesSize { .. }
+            | Self::MalformedVectorBlob { .. }
             | Self::VectorNameNotExists { .. }
             | Self::PointIdError { .. }
             | Self::TypeError { .. }
@@ -191,7 +192,7 @@ impl IsNotFound for OperationError {
         match self {
             Self::FileNotFound { .. } => true,
             Self::WrongVectorDimension { .. }
-            | Self::WrongVectorBytesSize { .. }
+            | Self::MalformedVectorBlob { .. }
             | Self::VectorNameNotExists { .. }
             | Self::PointIdError { .. }
             | Self::TypeError { .. }

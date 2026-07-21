@@ -100,7 +100,7 @@ impl TurboVectorStorage {
     ) -> OperationResult<()> {
         let expected_size = self.quantizer.quantized_size();
         if bytes.len() != expected_size {
-            return Err(OperationError::wrong_vector_bytes_size(format!(
+            return Err(OperationError::malformed_vector_blob(format!(
                 "Malformed dense TQ blob of {} bytes, expected {expected_size}",
                 bytes.len(),
             )));

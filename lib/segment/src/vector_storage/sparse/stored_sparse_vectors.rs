@@ -18,17 +18,17 @@ impl StoredSparseVector {
     /// Fallible counterpart of [`Blob::from_bytes`], for decoding bytes that
     /// arrive from outside this storage (e.g. raw point relocation).
     ///
-    /// Any failure is a user error (`WrongVectorBytesSize`), not a
+    /// Any failure is a user error (`MalformedVectorBlob`), not a
     /// `ServiceError`: the blob is untrusted input, and a malformed blob that
     /// reached the WAL is skipped on replay instead of crash-looping recovery.
     /// Reads of already-stored data use `TryFrom` instead, where a failure is
     /// genuine corruption (service error).
     pub(crate) fn decode_untrusted_bytes(data: &[u8]) -> Result<SparseVector, OperationError> {
         let stored: StoredSparseVector = bincode::deserialize(data).map_err(|err| {
-            OperationError::wrong_vector_bytes_size(format!("Malformed sparse vector blob: {err}"))
+            OperationError::malformed_vector_blob(format!("Malformed sparse vector blob: {err}"))
         })?;
         SparseVector::try_from(stored).map_err(|_| {
-            OperationError::wrong_vector_bytes_size(
+            OperationError::malformed_vector_blob(
                 "Malformed sparse vector blob: index out of u32 range",
             )
         })
