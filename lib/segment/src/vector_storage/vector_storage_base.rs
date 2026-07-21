@@ -905,9 +905,9 @@ fn insert_dense_bytes<T: PrimitiveVectorElement, S: DenseVectorStorageRead<T> + 
 ) -> OperationResult<()> {
     let expected_size = storage.vector_dim() * size_of::<T>();
     if bytes.len() != expected_size {
-        // `WrongVectorBytesSize` (not `service_error`) so a malformed blob that
+        // `MalformedVectorBlob` (not `service_error`) so a malformed blob that
         // reached the WAL is skipped on replay instead of crash-looping recovery.
-        return Err(OperationError::wrong_vector_bytes_size(format!(
+        return Err(OperationError::malformed_vector_blob(format!(
             "Malformed dense vector blob of {} bytes, expected {expected_size}",
             bytes.len(),
         )));
@@ -935,7 +935,7 @@ fn insert_multi_bytes<T: PrimitiveVectorElement, S: MultiVectorStorageRead<T> + 
 ) -> OperationResult<()> {
     let inner_size = storage.vector_dim() * size_of::<T>();
     if bytes.is_empty() || !bytes.len().is_multiple_of(inner_size) {
-        return Err(OperationError::wrong_vector_bytes_size(format!(
+        return Err(OperationError::malformed_vector_blob(format!(
             "Malformed multi vector blob of {} bytes, expected a positive multiple of {inner_size}",
             bytes.len(),
         )));

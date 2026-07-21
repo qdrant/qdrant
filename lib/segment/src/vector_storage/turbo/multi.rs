@@ -322,7 +322,7 @@ impl TurboMultiVectorStorage {
             // User error so WAL replay skips the op instead of crash-looping.
             // Reachable only internally (no `MAX_MULTIVECTOR_FLATTENED_LEN` check).
             let fresh_start = self.fresh_range_start(count).ok_or_else(|| {
-                OperationError::wrong_vector_bytes_size(exceeds_chunk_capacity_message(count))
+                OperationError::malformed_vector_blob(exceeds_chunk_capacity_message(count))
             })?;
             offset = MultivectorMmapOffset {
                 offset: fresh_start,
@@ -380,7 +380,7 @@ impl TurboMultiVectorStorage {
     ) -> OperationResult<()> {
         let record_size = self.quantizer.quantized_size();
         if bytes.is_empty() || !bytes.len().is_multiple_of(record_size) {
-            return Err(OperationError::wrong_vector_bytes_size(format!(
+            return Err(OperationError::malformed_vector_blob(format!(
                 "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
                 bytes.len(),
             )));
