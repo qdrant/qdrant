@@ -1393,7 +1393,16 @@ fn test_upsert_raw_malformed_blob_rejected() {
         &[(DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2])],
         &hw_counter,
     );
-    assert!(result.is_err(), "malformed blob must be rejected");
+    // Must be a user error (`WrongVectorBytesSize`), not a `ServiceError`: a
+    // malformed blob that reached the WAL is skipped on replay instead of
+    // crash-looping recovery.
+    assert!(
+        matches!(
+            result,
+            Err(crate::common::operation_error::OperationError::WrongVectorBytesSize { .. })
+        ),
+        "malformed blob must be rejected as WrongVectorBytesSize, got {result:?}",
+    );
 }
 
 /// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested

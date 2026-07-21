@@ -1124,6 +1124,9 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongVectorDimension { .. } => Self::BadInput {
                 description: err.to_string(),
             },
+            OperationError::WrongVectorBytesSize { .. } => Self::BadInput {
+                description: err.to_string(),
+            },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {
                 description: err.to_string(),
             },

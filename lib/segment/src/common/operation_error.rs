@@ -25,6 +25,12 @@ pub enum OperationError {
         expected_dim: usize,
         received_dim: usize,
     },
+    /// A storage-native (raw byte) vector blob whose length is incompatible with
+    /// the target storage. Classified as user error (maps to `BadInput`), not
+    /// `ServiceError`, so a malformed blob that reached the WAL is skipped on
+    /// replay instead of crash-looping recovery.
+    #[error("{description}")]
+    WrongVectorBytesSize { description: String },
     #[error("Not existing vector name error: {received_name}")]
     VectorNameNotExists { received_name: VectorNameBuf },
     #[error("No point with id {missed_point_id}")]
@@ -133,12 +139,19 @@ impl OperationError {
         }
     }
 
+    pub fn wrong_vector_bytes_size(description: impl Into<String>) -> Self {
+        Self::WrongVectorBytesSize {
+            description: description.into(),
+        }
+    }
+
     /// Whether this error signals that all appendable segments are at `max_segment_size` capacity,
     /// so the operation can be re-applied after provisioning a fresh appendable segment.
     pub fn is_out_of_appendable_capacity(&self) -> bool {
         match self {
             Self::OutOfAppendableCapacity { .. } => true,
             Self::WrongVectorDimension { .. }
+            | Self::WrongVectorBytesSize { .. }
             | Self::VectorNameNotExists { .. }
             | Self::PointIdError { .. }
             | Self::TypeError { .. }
@@ -178,6 +191,7 @@ impl IsNotFound for OperationError {
         match self {
             Self::FileNotFound { .. } => true,
             Self::WrongVectorDimension { .. }
+            | Self::WrongVectorBytesSize { .. }
             | Self::VectorNameNotExists { .. }
             | Self::PointIdError { .. }
             | Self::TypeError { .. }

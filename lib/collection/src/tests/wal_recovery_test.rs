@@ -4,11 +4,11 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
 use segment::types::{PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointStructRawPersisted,
 };
 use shard::segment_holder::FlushMode;
 use shard::wal::{SerdeWal, WalRawRecord};
@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::PointRequestInternal;
+use crate::operations::types::{CollectionError, PointRequestInternal};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::*;
@@ -1325,6 +1325,141 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
         present,
         vec![1.into(), 4.into(), 5.into()],
         "old-style filter record was not replayed with the by-filter apply semantics",
+    );
+
+    shard.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    // Single dense vector, dim 4, Distance::Dot (no cosine preprocessing, so the
+    // storage-native form is just the packed f32 bytes).
+    let config = create_collection_config();
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // A dim-4 dense f32 vector is exactly 16 storage-native bytes; 12 bytes
+    // (3 floats) is a dimension mismatch the storage must reject.
+    let good_bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+    let bad_bytes: Vec<u8> = [1.0f32, 2.0, 3.0]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+
+    let raw_upsert = |id: u64, bytes: Vec<u8>| {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
+            PointStructRawPersisted {
+                id: id.into(),
+                vectors: std::iter::once((DEFAULT_VECTOR_NAME.to_owned(), bytes)).collect(),
+                payload: None,
+            },
+        ]))
+    };
+
+    // Op 1: a valid raw point — applied and persisted to the WAL.
+    shard
+        .update(
+            raw_upsert(1, good_bytes).into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .expect("valid raw upsert should succeed");
+
+    // Op 2: a malformed raw point. `submit_update` writes to the WAL *before*
+    // applying, so this op survives its own failed apply and is replayed on
+    // reload. The apply must fail as a user error (`BadInput`), not a
+    // `ServiceError` — that is exactly what makes replay skip it.
+    let err = shard
+        .update(
+            raw_upsert(2, bad_bytes).into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .expect_err("malformed raw upsert must be rejected");
+    assert!(
+        matches!(err, CollectionError::BadInput { .. }),
+        "malformed raw blob must be a BadInput user error (skipped on replay), got {err:?}",
+    );
+
+    shard.stop_gracefully().await;
+
+    // Reload replays the WAL, including the malformed op. Before the fix this
+    // `LocalShard::load` would fail (or, in production, panic) because
+    // `load_from_wal` propagates the storage `ServiceError` and aborts recovery.
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        true,
+        update_runtime,
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .expect("shard must recover: the malformed raw op is skipped, not crash-looped");
+
+    // The valid point survives; the malformed one was never stored.
+    let request = Arc::new(PointRequestInternal {
+        ids: vec![1.into(), 2.into()],
+        with_payload: None,
+        with_vector: WithVector::Bool(false),
+    });
+    let retrieved = shard
+        .retrieve(
+            request,
+            &WithPayload::from(false),
+            &WithVector::Bool(false),
+            &current_runtime,
+            None,
+            hw_acc,
+            DeferredBehavior::VisibleOnly,
+        )
+        .await
+        .unwrap();
+
+    let present: Vec<_> = retrieved.iter().map(|record| record.id).collect();
+    assert_eq!(
+        present,
+        vec![1.into()],
+        "only the valid point should survive; the malformed raw op must be skipped on replay",
     );
 
     shard.stop_gracefully().await;
