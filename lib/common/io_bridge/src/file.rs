@@ -236,7 +236,7 @@ mod tests {
     use futures::stream::{BoxStream, StreamExt};
 
     use super::*;
-    use crate::AsyncWrite;
+    use crate::{AsyncWrite, OffsetByteStream};
 
     #[derive(Clone)]
     struct MockSource {
@@ -285,11 +285,15 @@ mod tests {
             &self,
             _path: &Path,
             from: u64,
-        ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
-        {
+        ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
             let size = self.data.len() as u64;
             let tail = self.data.slice(from as usize..);
-            async move { Ok((size, futures::stream::once(async move { Ok(tail) }).boxed())) }
+            async move {
+                Ok((
+                    size,
+                    futures::stream::once(async move { Ok((0, tail)) }).boxed(),
+                ))
+            }
         }
 
         fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
@@ -429,8 +433,7 @@ mod tests {
             &self,
             path: &Path,
             from: u64,
-        ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
-        {
+        ) -> impl Future<Output = Result<(u64, OffsetByteStream)>> + Send + 'static {
             let result = match &*self.store.lock().unwrap() {
                 Some(data) => Ok((
                     data.len() as u64,
@@ -440,7 +443,10 @@ mod tests {
             };
             async move {
                 let (size, tail) = result?;
-                Ok((size, futures::stream::once(async move { Ok(tail) }).boxed()))
+                Ok((
+                    size,
+                    futures::stream::once(async move { Ok((0, tail)) }).boxed(),
+                ))
             }
         }
 
