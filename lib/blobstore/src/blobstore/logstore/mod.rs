@@ -84,7 +84,7 @@ fn validate_consistency<S: UniversalRead>(
 ///
 /// Uses `Arc<RwLock<...>>` for the pages and tracker to support concurrent flushing.
 #[derive(Debug)]
-pub(super) struct Logstore<V, S>
+pub struct Logstore<V, S>
 where
     S: UniversalAppend + 'static,
 {

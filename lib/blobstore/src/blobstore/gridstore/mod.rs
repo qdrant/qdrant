@@ -37,7 +37,7 @@ use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, 
 /// Uses `Arc<RwLock<...>>` for pages and tracker to support concurrent flushing.
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub(super) struct Gridstore<V, S>
+pub struct Gridstore<V, S>
 where
     S: UniversalWrite + 'static,
 {
