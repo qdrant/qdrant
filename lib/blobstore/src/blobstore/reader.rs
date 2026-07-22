@@ -5,15 +5,16 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
+    CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
+use strum::IntoEnumIterator;
 
 use super::gridstore::GridstoreReader;
 use super::logstore::LogstoreReader;
 use super::view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::StorageConfig;
+use crate::config::{Mode, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 
@@ -48,18 +49,22 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         base_path: PathBuf,
         populate: Populate,
     ) -> Result<()> {
-        let config = read_config(fs, &base_path)?;
-
         // schedule config file, so the config read in `open` is served from the prefetch pool
         let config_path = base_path.join(CONFIG_FILENAME);
         fs.schedule_prefetch(&config_path, None, None)?;
 
-        match config {
-            StorageConfig::Mutable(_) => {
-                GridstoreReader::<V, S>::preopen(fs, &base_path, populate)
+        // Don't read config now; instead, probe all modes and ignore not-found errors
+        for mode in Mode::iter() {
+            match mode {
+                Mode::Mutable => {
+                    GridstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
+                }
+                Mode::AppendOnly => {
+                    LogstoreReader::<V, S>::preopen(fs, &base_path).ok_not_found()?;
+                }
             }
-            StorageConfig::AppendOnly(_) => LogstoreReader::<V, S>::preopen(fs, &base_path),
         }
+        Ok(())
     }
 
     /// Open an existing read-only storage at the given path.
