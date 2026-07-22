@@ -188,12 +188,14 @@ fn requested_vector_params(config: &VectorNameConfig) -> RequestedVectorParams {
             quantization_config: None,
             hnsw_config: None,
         }),
-        VectorNameConfig::Sparse(wrapper) => RequestedVectorParams::Sparse(EdgeSparseVectorParams {
-            full_scan_threshold: None,
-            on_disk: None,
-            modifier: wrapper.sparse.modifier,
-            datatype: wrapper.sparse.datatype,
-        }),
+        VectorNameConfig::Sparse(wrapper) => {
+            RequestedVectorParams::Sparse(EdgeSparseVectorParams {
+                full_scan_threshold: None,
+                on_disk: None,
+                modifier: wrapper.sparse.modifier,
+                datatype: wrapper.sparse.datatype,
+            })
+        }
     }
 }
 
