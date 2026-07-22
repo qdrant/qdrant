@@ -33,6 +33,18 @@ use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::*;
 use crate::update_workers::applied_seq::{APPLIED_SEQ_SAVE_INTERVAL, AppliedSeqHandler};
 
+/// Collection config with `prevent_unoptimized`.
+///
+/// `load_from_wal` honors the persisted `applied_seq` — and therefore splits the replay, handing
+/// the unapplied WAL tail to the update worker — only under that flag. Any test that needs that
+/// tail to exist must build its config through here, otherwise the replay is exhaustive and the
+/// test silently stops exercising the path it was written for.
+fn create_collection_config_with_prevent_unoptimized() -> CollectionConfigInternal {
+    let mut config = create_collection_config();
+    config.optimizer_config.prevent_unoptimized = Some(true);
+    config
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
     //  Init the logger
@@ -443,7 +455,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -597,6 +609,137 @@ async fn test_wal_replay_loads_pending_to_queue() {
     shard.stop_gracefully().await;
 }
 
+/// Without `prevent_unoptimized`, WAL replay must be exhaustive before `LocalShard::load` returns.
+///
+/// `applied_seq` splits the replay in two: everything past it is handed to the update worker and
+/// applied in the background, *after* `load` returns and the shard starts answering reads. Only
+/// `prevent_unoptimized` needs that routing, and doing it anywhere else is observable as data
+/// loss — an operation already acknowledged to a client is missing from reads until the worker
+/// catches up, then reappears.
+///
+/// Force `applied_seq` far below the WAL end and reload: every point must be visible immediately,
+/// with no plunger, no queue drain and no polling.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    // Plain config: no `prevent_unoptimized`, so `applied_seq` must not be honored.
+    let config = create_collection_config();
+    assert!(
+        !config
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or_default(),
+        "this test requires a collection without prevent_unoptimized",
+    );
+
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shared_storage_config = Arc::new(SharedStorageConfig {
+        update_queue_size: 10_000,
+        ..Default::default()
+    });
+
+    // Enough operations that a stale applied_seq would leave a large tail behind.
+    let total_ops = 500u64;
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        shared_storage_config.clone(),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Stop flush worker to prevent automatic WAL truncation.
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Every one of these is acknowledged with `WaitUntil::Visible`, so a client has been told
+    // they are durable *and* readable.
+    for i in 0..total_ops {
+        let point = PointStructPersisted {
+            id: i.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await
+            .unwrap();
+    }
+
+    // Stop the shard without flush to preserve WAL.
+    shard.stop_gracefully().await;
+
+    // Push applied_seq well below the WAL end. Under `prevent_unoptimized` this would send
+    // everything past `applied_seq + APPLIED_SEQ_SAVE_INTERVAL` to the update queue.
+    let applied_seq_handler = AppliedSeqHandler::load_or_init(collection_dir.path(), total_ops);
+    let low_applied_seq = total_ops.saturating_sub(100);
+    if applied_seq_handler.op_num().unwrap_or(0) > low_applied_seq {
+        applied_seq_handler
+            .force_set_and_persist(low_applied_seq)
+            .unwrap();
+    }
+
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        shared_storage_config,
+        payload_index_schema,
+        false,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .unwrap();
+
+    // Read first, exactly as a client would the moment the shard starts serving: no plunger, no
+    // drain, no polling. Both samples are taken before asserting, so the visible count is the
+    // earliest observation possible rather than one taken after the queue check gave the worker
+    // time to catch up.
+    let visible_points = shard.info().await.unwrap().points_count.unwrap_or(0);
+    let pending_updates = shard.local_update_queue_info().await.length;
+
+    // The symptom: every one of these was acknowledged as visible before the restart.
+    assert_eq!(
+        visible_points, total_ops as usize,
+        "all {total_ops} acknowledged points must be visible as soon as load returns",
+    );
+
+    // The cause: nothing may be left for the update worker to apply in the background.
+    assert_eq!(
+        pending_updates, 0,
+        "no WAL entry may be deferred to the update queue without prevent_unoptimized",
+    );
+
+    shard.stop_gracefully().await;
+}
+
 /// A deferred-tail WAL entry that fails deserialization must not fail shard load.
 ///
 /// `load_from_wal` reads the tail past `applied_seq` to advance the newest clocks before
@@ -608,7 +751,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -749,7 +892,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -887,7 +1030,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
