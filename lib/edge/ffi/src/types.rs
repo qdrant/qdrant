@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use segment::data_types::order_by::OrderValue as SegmentOrderValue;
 use segment::data_types::vectors::{
     MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
 };
@@ -9,7 +10,9 @@ use segment::types::{
 };
 use shard::operations::point_ops::{PointStructPersisted, VectorPersisted, VectorStructPersisted};
 use shard::retrieve::record_internal::RecordInternal;
-use sparse::common::sparse_vector::SparseVector as InternalSparseVector;
+use sparse::common::sparse_vector::{
+    SparseVector as InternalSparseVector, validate_sparse_vector_impl,
+};
 
 // ── PointId ─────────────────────────────────────────────────────────────────
 
@@ -71,11 +74,24 @@ pub struct SparseVector {
     pub values: Vec<f32>,
 }
 
-impl From<SparseVector> for InternalSparseVector {
-    fn from(v: SparseVector) -> Self {
-        let SparseVector { indices, values } = v;
-        InternalSparseVector { indices, values }
-    }
+/// Validate a host-supplied sparse vector at the boundary and convert it to the
+/// engine type. The engine assumes `indices.len() == values.len()` and unique
+/// indices (`validate_sparse_vector_impl`); without this check a length
+/// mismatch reaches an out-of-bounds index at insert/scoring time (a caught
+/// panic surfaced as an opaque error instead of a typed `InvalidArgument`), and
+/// duplicate indices silently double-count in scoring. Non-finite weights are
+/// rejected too, as everywhere else. There is deliberately no infallible
+/// `From<SparseVector>` — every host sparse vector must pass through here.
+fn to_internal_sparse(
+    v: SparseVector,
+    ctx: &str,
+) -> Result<InternalSparseVector, crate::error::EdgeError> {
+    let SparseVector { indices, values } = v;
+    reject_non_finite(&values, ctx)?;
+    validate_sparse_vector_impl(&indices, &values).map_err(|e| {
+        crate::error::EdgeError::invalid_argument(format!("invalid {ctx}: {e}"))
+    })?;
+    Ok(InternalSparseVector { indices, values })
 }
 
 impl From<InternalSparseVector> for SparseVector {
@@ -160,8 +176,7 @@ impl TryFrom<NamedVector> for VectorPersisted {
                 VectorPersisted::Dense(values)
             }
             NamedVector::Sparse { vector } => {
-                reject_non_finite(&vector.values, "sparse vector")?;
-                VectorPersisted::Sparse(InternalSparseVector::from(vector))
+                VectorPersisted::Sparse(to_internal_sparse(vector, "sparse vector")?)
             }
             NamedVector::MultiDense { vectors } => {
                 validate_multi_dense(&vectors, "named")?;
@@ -195,8 +210,7 @@ impl TryFrom<NamedVector> for VectorInternal {
                 VectorInternal::Dense(values)
             }
             NamedVector::Sparse { vector } => {
-                reject_non_finite(&vector.values, "sparse query vector")?;
-                VectorInternal::Sparse(InternalSparseVector::from(vector))
+                VectorInternal::Sparse(to_internal_sparse(vector, "sparse query vector")?)
             }
             NamedVector::MultiDense { vectors } => {
                 validate_multi_dense(&vectors, "query")?;
@@ -447,6 +461,34 @@ impl Point {
     }
 }
 
+// ── OrderValue ──────────────────────────────────────────────────────────────
+
+/// The value of the `order_by` key that a result was sorted on.
+///
+/// Present only on results of an order-by query
+/// ([`ScoringQuery::OrderBy`](crate::ops::query::ScoringQuery)) or scroll
+/// ([`ScrollRequest.order_by`](crate::ops::scroll::ScrollRequest)); `None`
+/// otherwise. Feed the last row's value into
+/// [`StartFrom`](crate::ops::query::StartFrom) to resume ordered pagination —
+/// ordered results carry no `next_offset` cursor and a constant score, so this
+/// is the only way to page forward.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum OrderValue {
+    /// An integer sort key (also used for datetime keys, as a timestamp).
+    Int { value: i64 },
+    /// A floating-point sort key.
+    Float { value: f64 },
+}
+
+impl From<SegmentOrderValue> for OrderValue {
+    fn from(v: SegmentOrderValue) -> Self {
+        match v {
+            SegmentOrderValue::Int(value) => OrderValue::Int { value },
+            SegmentOrderValue::Float(value) => OrderValue::Float { value },
+        }
+    }
+}
+
 // ── ScoredPoint ─────────────────────────────────────────────────────────────
 
 /// A single search hit returned from [`EdgeShard::search`] or
@@ -469,6 +511,10 @@ pub struct ScoredPoint {
     /// Vectors as a JSON string, or `None`/`null` if the request did not
     /// ask for vectors.
     pub vector: Option<String>,
+    /// The `order_by` key value this hit was sorted on, for an order-by query;
+    /// `None` otherwise. Feed into [`StartFrom`](crate::ops::query::StartFrom)
+    /// to resume ordered pagination.
+    pub order_value: Option<OrderValue>,
 }
 
 impl From<SegmentScoredPoint> for ScoredPoint {
@@ -479,10 +525,10 @@ impl From<SegmentScoredPoint> for ScoredPoint {
             score,
             payload,
             vector,
-            // Edge is single-shard and the FFI has no order-by-scored surface,
-            // so neither field reaches the host.
+            order_value,
+            // Edge is single-shard, so the multi-shard routing key is not
+            // surfaced.
             shard_key: _,
-            order_value: _,
         } = p;
         ScoredPoint {
             id: PointId::from(id),
@@ -490,6 +536,7 @@ impl From<SegmentScoredPoint> for ScoredPoint {
             score,
             payload: payload.map(|p| payload_to_json(&p)),
             vector: vector.as_ref().map(vector_struct_internal_to_json),
+            order_value: order_value.map(OrderValue::from),
         }
     }
 }
@@ -509,6 +556,10 @@ pub struct Record {
     pub payload: Option<String>,
     /// Vectors as a JSON string, or `None`/`null` if not requested.
     pub vector: Option<String>,
+    /// The `order_by` key value this record was sorted on, for an order-by
+    /// scroll; `None` otherwise. Feed into
+    /// [`StartFrom`](crate::ops::query::StartFrom) to resume ordered pagination.
+    pub order_value: Option<OrderValue>,
 }
 
 impl From<RecordInternal> for Record {
@@ -517,15 +568,16 @@ impl From<RecordInternal> for Record {
             id,
             payload,
             vector,
-            // Edge is single-shard and the FFI scroll surface has no
-            // order-by cursor, so neither field reaches the host.
+            order_value,
+            // Edge is single-shard, so the multi-shard routing key is not
+            // surfaced.
             shard_key: _,
-            order_value: _,
         } = r;
         Record {
             id: PointId::from(id),
             payload: payload.map(|p| payload_to_json(&p)),
             vector: vector.as_ref().map(vector_struct_internal_to_json),
+            order_value: order_value.map(OrderValue::from),
         }
     }
 }

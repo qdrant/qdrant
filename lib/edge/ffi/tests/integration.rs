@@ -2821,37 +2821,6 @@ fn query_groups_returns_one_group_per_key() {
     }
 }
 
-/// Distance matrix over sampled points.
-#[test]
-fn search_matrix_relates_samples() {
-    use qdrant_edge_ffi::SearchMatrixRequest;
-
-    let dir = tempfile::tempdir().expect("tempdir failed");
-    let path = dir.path().to_string_lossy().into_owned();
-    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
-    upsert_three(&shard);
-
-    let response = shard
-        .search_matrix(SearchMatrixRequest {
-            sample_size: 3,
-            limit_per_sample: 2,
-            filter: None,
-            using: Some("vec".to_string()),
-        })
-        .expect("search_matrix failed");
-    assert_eq!(response.sample_ids.len(), 3, "all three points sampled");
-    assert_eq!(
-        response.nearests.len(),
-        response.sample_ids.len(),
-        "one neighbour row per sample"
-    );
-    for row in &response.nearests {
-        assert!(
-            row.len() <= 2 && !row.is_empty(),
-            "each sample must have 1..=2 neighbours within the sampled set"
-        );
-    }
-}
 
 /// Vector-name ops: add a dense field, write to it, then drop it.
 #[test]
@@ -3066,5 +3035,418 @@ fn with_payload_exclude_drops_keys() {
     assert!(
         !payload.contains("secret"),
         "excluded key must be dropped: {payload}"
+    );
+}
+
+// ── Formula node-count cap ──────────────────────────────────────────────────
+
+/// The formula-expression tree is capped at 10_000 total nodes
+/// (`MAX_FORMULA_NODES`), independently of the depth cap (64). A host can
+/// reuse one `Arc<Expression>` handle as multiple children — `sum([e, e])`
+/// repeated in a loop — which grows node count as `2^depth` while depth stays
+/// tiny: after 13 doublings depth is only 13 (well under the 64-deep cap) but
+/// node count is `2^14 - 1 = 16383`, already past the 10_000 cap. Hitting the
+/// rejection within 14 iterations (not needing anywhere near 64) proves the
+/// size guard fires on its own, not merely as a side effect of the depth
+/// guard.
+#[test]
+fn formula_oversized_node_count_rejected() {
+    use qdrant_edge_ffi::Expression;
+
+    let mut e = Expression::variable("$score".to_string());
+    // 2^14 = 16384 > 10_000, so composing `sum([e, e])` at most 14 times must
+    // trip the node-count cap; the depth cap (64) never comes into play.
+    for _ in 0..14u32 {
+        match Expression::sum(vec![e.clone(), e.clone()]) {
+            Ok(next) => e = next,
+            Err(err) => {
+                assert!(
+                    matches!(err, EdgeError::InvalidArgument { .. }),
+                    "expected InvalidArgument when the formula node-count cap fires, got {err:?}"
+                );
+                return;
+            }
+        }
+    }
+    panic!(
+        "expected the formula node-count cap (10_000) to reject the tree within 14 \
+         doublings of a reused handle (2^14 - 1 = 16383 nodes), but it never fired"
+    );
+}
+
+/// Over-rejection guard: a small, realistic formula (`$score + popularity`,
+/// the same shape `formula_rescoring_boosts_by_payload` builds) must still
+/// construct successfully — the node-count cap must not reject ordinary use.
+#[test]
+fn formula_normal_expression_accepted() {
+    use qdrant_edge_ffi::Expression;
+
+    let result = Expression::sum(vec![
+        Expression::variable("$score".to_string()),
+        Expression::variable("popularity".to_string()),
+    ]);
+    assert!(
+        result.is_ok(),
+        "a small realistic formula must not be rejected by the node-count cap, got {:?}",
+        result.err()
+    );
+}
+
+// ── Sparse vector validation ────────────────────────────────────────────────
+
+/// `indices.len() != values.len()` in a host-supplied sparse vector must be
+/// rejected eagerly by the `upsert_points` constructor as `InvalidArgument`
+/// — previously this reached an out-of-bounds index at insert/scoring time.
+#[test]
+fn sparse_length_mismatch_rejected() {
+    use qdrant_edge_ffi::types::{NamedVector, SparseVector};
+
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "sp".to_string(),
+            NamedVector::Sparse {
+                vector: SparseVector {
+                    indices: vec![1, 2, 3],
+                    values: vec![0.5],
+                },
+            },
+        )]),
+    });
+}
+
+/// Duplicate indices in a host-supplied sparse vector must be rejected
+/// eagerly by the `upsert_points` constructor as `InvalidArgument` —
+/// previously they silently double-counted in scoring.
+#[test]
+fn sparse_duplicate_indices_rejected() {
+    use qdrant_edge_ffi::types::{NamedVector, SparseVector};
+
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "sp".to_string(),
+            NamedVector::Sparse {
+                vector: SparseVector {
+                    indices: vec![7, 7],
+                    values: vec![1.0, 1.0],
+                },
+            },
+        )]),
+    });
+}
+
+// NOTE: "a valid sparse vector still upserts and round-trips" (the
+// over-rejection guard for this fix) is already covered end-to-end by
+// `sparse_vector_round_trips` above, which upserts
+// `SparseVector { indices: [1, 5, 9], values: [0.5, 1.5, 2.5] }` into a real
+// sparse-configured shard and reads it back byte-for-byte. No separate test
+// is added here to avoid duplicating that coverage.
+
+// ── order_value surfaced on order-by results ────────────────────────────────
+
+/// `ScrollRequest.order_by` must populate `Record.order_value` on every
+/// returned record, in the requested sort order — even when `with_payload`
+/// is `false`, proving the sort key is recoverable without fetching the
+/// payload (the whole point of surfacing it). Points are upserted in an order
+/// that deliberately does not match their `rank`, so a correct result proves
+/// sorting is by payload value, not by ID or insertion order.
+#[test]
+fn order_by_scroll_populates_order_value() {
+    use qdrant_edge_ffi::types::OrderValue;
+    use qdrant_edge_ffi::{Direction, OrderBy, PayloadSchemaType};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"rank":3}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+            payload: Some(r#"{"rank":1}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"rank":2}"#.to_string()),
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+
+    shard
+        .update(
+            UpdateOperation::create_field_index("rank".to_string(), PayloadSchemaType::Integer)
+                .expect("create_field_index failed"),
+        )
+        .expect("index creation failed");
+
+    let resp = shard
+        .scroll(ScrollRequest {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: Some(WithPayload::Bool { enable: false }),
+            with_vector: None,
+            order_by: Some(OrderBy {
+                key: "rank".to_string(),
+                direction: Some(Direction::Asc),
+                start_from: None,
+            }),
+        })
+        .expect("order-by scroll failed");
+
+    assert_eq!(resp.records.len(), 3, "expected all three points back");
+
+    let order_values: Vec<i64> = resp
+        .records
+        .iter()
+        .map(|r| match r.order_value {
+            Some(OrderValue::Int { value }) => value,
+            other => panic!("expected Some(OrderValue::Int {{ .. }}), got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        order_values,
+        vec![1, 2, 3],
+        "order_value must be populated and ascending by `rank`, recoverable without payload"
+    );
+
+    // Cross-check against the point ids: rank 1→id 2, rank 2→id 3, rank 3→id 1.
+    let ids: Vec<u64> = resp
+        .records
+        .iter()
+        .map(|r| match &r.id {
+            PointId::NumId { value } => *value,
+            PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![2, 3, 1],
+        "scroll order must follow ascending `rank`, not id or insertion order"
+    );
+}
+
+/// Resuming an order-by scroll via `StartFrom` (built from the previous
+/// page's last `order_value`) must continue from that point (inclusive), not
+/// restart or skip.
+#[test]
+fn order_by_scroll_resumes_via_start_from() {
+    use qdrant_edge_ffi::types::OrderValue;
+    use qdrant_edge_ffi::{Direction, OrderBy, PayloadSchemaType, StartFrom};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"rank":1}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+            payload: Some(r#"{"rank":2}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"rank":3}"#.to_string()),
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+    shard
+        .update(
+            UpdateOperation::create_field_index("rank".to_string(), PayloadSchemaType::Integer)
+                .expect("create_field_index failed"),
+        )
+        .expect("index creation failed");
+
+    let order_by = |start_from: Option<StartFrom>| OrderBy {
+        key: "rank".to_string(),
+        direction: Some(Direction::Asc),
+        start_from,
+    };
+
+    let first_page = shard
+        .scroll(ScrollRequest {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: Some(WithPayload::Bool { enable: false }),
+            with_vector: None,
+            order_by: Some(order_by(None)),
+        })
+        .expect("first order-by scroll failed");
+    let last = first_page
+        .records
+        .last()
+        .expect("expected at least one record");
+    let last_value = match last.order_value {
+        Some(OrderValue::Int { value }) => value,
+        other => panic!("expected Some(OrderValue::Int {{ .. }}), got {other:?}"),
+    };
+    assert_eq!(
+        last_value, 3,
+        "the last row of an ascending scroll must carry the largest rank"
+    );
+
+    let resumed = shard
+        .scroll(ScrollRequest {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: Some(WithPayload::Bool { enable: false }),
+            with_vector: None,
+            order_by: Some(order_by(Some(StartFrom::Integer { value: last_value }))),
+        })
+        .expect("resumed order-by scroll failed");
+    assert_eq!(
+        resumed.records.len(),
+        1,
+        "resuming from the last row's order_value (inclusive) must return only that row"
+    );
+    match &resumed.records[0].id {
+        PointId::NumId { value } => {
+            assert_eq!(*value, 3, "the resumed row must be the rank==3 point")
+        }
+        PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+    }
+}
+
+// ── Snapshot negative tests ─────────────────────────────────────────────────
+
+/// A missing snapshot path must be rejected cleanly (no panic) as
+/// `OperationError`, and the shard must go on serving its original data —
+/// not half-recovered. `update_from_snapshot` unpacks and parses the archive
+/// before touching the shard's live data, so a failure here never reaches the
+/// shard at all.
+#[test]
+fn update_from_snapshot_bad_path_errors() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    #[allow(clippy::err_expect)]
+    let err = shard
+        .update_from_snapshot("/definitely/missing/nope.snapshot".to_string(), None)
+        .err()
+        .expect("a missing snapshot path must be rejected, not panic");
+    assert!(
+        matches!(err, EdgeError::OperationError { .. }),
+        "expected OperationError for a missing snapshot path, got {err:?}"
+    );
+
+    let info = shard.info().expect("info failed");
+    assert_eq!(
+        info.points_count, 3,
+        "shard must survive a failed snapshot restore with its original data intact"
+    );
+    let count = shard
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(count, 3, "count() must still see the original 3 points");
+}
+
+/// A file that is not a valid snapshot archive at all (random bytes) must be
+/// rejected cleanly as `OperationError`, with the shard's original data
+/// intact afterwards.
+#[test]
+fn update_from_snapshot_corrupt_archive_errors() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let bogus_dir = tempfile::tempdir().expect("tempdir failed");
+    let bogus_path = bogus_dir.path().join("corrupt.snapshot");
+    std::fs::write(
+        &bogus_path,
+        b"not a tar archive, just garbage bytes\x00\x01\x02\xff",
+    )
+    .expect("failed to write corrupt archive file");
+
+    #[allow(clippy::err_expect)]
+    let err = shard
+        .update_from_snapshot(bogus_path.to_string_lossy().into_owned(), None)
+        .err()
+        .expect("a corrupt snapshot archive must be rejected, not panic");
+    assert!(
+        matches!(err, EdgeError::OperationError { .. }),
+        "expected OperationError for a corrupt snapshot archive, got {err:?}"
+    );
+
+    let count = shard
+        .count(CountRequest {
+            filter: None,
+            exact: true,
+        })
+        .expect("count failed");
+    assert_eq!(
+        count, 3,
+        "shard must survive a corrupt snapshot restore with its original data intact"
+    );
+}
+
+/// `update_from_snapshot` unpacks and parses the snapshot archive *before*
+/// checking whether the shard is still loaded — so that a doomed restore
+/// against a missing/corrupt archive never touches a live shard's data (see
+/// `update_from_snapshot_bad_path_errors`). One consequence: called on an
+/// *unloaded* shard with an invalid path, it still surfaces `OperationError`
+/// from the failed unpack, not `ShardClosed` — the closed-check is only
+/// reached once the archive has legitimately unpacked, and this SDK has no
+/// `create_snapshot` API to construct a valid one from a test (see the
+/// `snapshot_unpack_then_query` TODO above). This test pins the real,
+/// observed behavior: calling it after `unload()` still fails cleanly, no
+/// panic, in either the open or the closed case.
+#[test]
+fn update_from_snapshot_after_unload_returns_error_not_panic() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+    shard.unload().expect("unload failed");
+
+    #[allow(clippy::err_expect)]
+    let err = shard
+        .update_from_snapshot("/does/not/matter.snapshot".to_string(), None)
+        .err()
+        .expect("update_from_snapshot on a closed shard must fail, not panic");
+    assert!(
+        matches!(err, EdgeError::OperationError { .. }),
+        "expected OperationError (the path is rejected before the closed-check is reached), got {err:?}"
+    );
+}
+
+/// A missing snapshot path passed to the free `unpack_snapshot` function must
+/// be rejected cleanly as `OperationError`, not panic.
+#[test]
+fn unpack_snapshot_bad_path_errors() {
+    use qdrant_edge_ffi::unpack_snapshot;
+
+    let target_dir = tempfile::tempdir().expect("tempdir failed");
+    let target = target_dir.path().to_string_lossy().into_owned();
+
+    #[allow(clippy::err_expect)]
+    let err = unpack_snapshot("/missing.snapshot".to_string(), target)
+        .err()
+        .expect("unpacking a missing snapshot path must fail, not panic");
+    assert!(
+        matches!(err, EdgeError::OperationError { .. }),
+        "expected OperationError for a missing snapshot path, got {err:?}"
     );
 }

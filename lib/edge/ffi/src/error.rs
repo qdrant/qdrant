@@ -147,6 +147,32 @@ pub(crate) fn check_nesting_depth(kind: &str, depth: u32) -> Result<()> {
     Ok(())
 }
 
+/// Maximum total node count for a host-supplied formula
+/// [`Expression`](crate::ops::formula::Expression) tree.
+///
+/// Depth alone ([`check_nesting_depth`]) does not bound an `Expression`: each
+/// combinator eagerly deep-clones its children's inner tree, and the host holds
+/// the node handles, so reusing one handle as several children (e.g.
+/// `sum([e, e])` repeated) grows the node count as `2^depth` while depth stays
+/// under the cap — an eager multi-gigabyte clone that aborts the process
+/// (uncatchable under `panic = "unwind"`). A legitimate scoring formula has a
+/// handful of nodes, so we reject anything in the thousands. Node count is
+/// tracked with saturating adds so the counter itself cannot wrap.
+pub(crate) const MAX_FORMULA_NODES: u64 = 10_000;
+
+/// Reject a formula expression tree with more than [`MAX_FORMULA_NODES`] nodes
+/// before the eager `ExpressionInternal` clone can exhaust memory. Complements
+/// [`check_nesting_depth`], which bounds height (stack safety) but not the node
+/// count (heap safety) — both guards are required.
+pub(crate) fn check_expression_size(size: u64) -> Result<()> {
+    if size > MAX_FORMULA_NODES {
+        return Err(EdgeError::invalid_argument(format!(
+            "formula expression size ({size}) exceeds the maximum of {MAX_FORMULA_NODES} nodes"
+        )));
+    }
+    Ok(())
+}
+
 pub type Result<T, E = EdgeError> = std::result::Result<T, E>;
 
 #[cfg(test)]

@@ -5,8 +5,12 @@
 //! `Box`, so — like [`UpdateOperation`](crate::update::UpdateOperation) — the
 //! tree node is an opaque object built via validating constructors and
 //! composed via handles. Each constructor validates its direct inputs and
-//! tracks nesting depth, so a hostile host cannot build a tree deep enough to
-//! overflow the stack in the conversion/drop recursion.
+//! tracks two quantities that together keep a hostile host from crashing the
+//! process: nesting **depth** (so the recursive clone/convert/drop cannot
+//! overflow the stack) and total **node count** (so the eager
+//! `ExpressionInternal` clone cannot exhaust the heap — a host can reuse one
+//! handle as several children, growing node count as `2^depth` while depth
+//! stays small). See [`crate::error::check_expression_size`].
 
 use std::sync::Arc;
 
@@ -14,7 +18,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::DecayKi
 use segment::types::{Condition as SegmentCondition, GeoPoint as SegmentGeoPoint};
 use shard::query::formula::ExpressionInternal;
 
-use crate::error::{EdgeError, Result, check_nesting_depth};
+use crate::error::{EdgeError, Result, check_expression_size, check_nesting_depth};
 use crate::filter::{Condition, GeoPoint};
 
 // ── DecayKind ───────────────────────────────────────────────────────────────
@@ -79,14 +83,24 @@ pub struct Expression {
     /// [`MAX_QUERY_NESTING_DEPTH`](crate::error::MAX_QUERY_NESTING_DEPTH) so
     /// the recursive clone/convert/drop over `inner` stays stack-safe.
     depth: u32,
+    /// Total node count of this subtree (saturating); constructors reject trees
+    /// larger than [`MAX_FORMULA_NODES`](crate::error::MAX_FORMULA_NODES) so the
+    /// eager `inner` clone cannot exhaust the heap. Depth alone does not bound
+    /// this — a reused handle grows node count as `2^depth`.
+    size: u64,
 }
 
 impl Expression {
     fn leaf(inner: ExpressionInternal) -> Arc<Self> {
-        Arc::new(Self { inner, depth: 0 })
+        Arc::new(Self {
+            inner,
+            depth: 0,
+            size: 1,
+        })
     }
 
-    /// Wrap `inner` one level above `children`, enforcing the depth cap.
+    /// Wrap `inner` one level above `children`, enforcing both the depth cap
+    /// (stack safety) and the node-count cap (heap safety).
     fn node(inner: ExpressionInternal, children: &[&Arc<Expression>]) -> Result<Arc<Self>> {
         let depth = children
             .iter()
@@ -95,7 +109,11 @@ impl Expression {
             .unwrap_or(0)
             .saturating_add(1);
         check_nesting_depth("formula expression", depth)?;
-        Ok(Arc::new(Self { inner, depth }))
+        let size = children
+            .iter()
+            .fold(1u64, |acc, c| acc.saturating_add(c.size));
+        check_expression_size(size)?;
+        Ok(Arc::new(Self { inner, depth, size }))
     }
 }
 
@@ -274,6 +292,10 @@ impl Expression {
         let child_depth = x.depth.max(target.as_ref().map_or(0, |t| t.depth));
         let depth = child_depth.saturating_add(1);
         check_nesting_depth("formula expression", depth)?;
+        let size = 1u64
+            .saturating_add(x.size)
+            .saturating_add(target.as_ref().map_or(0, |t| t.size));
+        check_expression_size(size)?;
         Ok(Arc::new(Self {
             inner: ExpressionInternal::Decay {
                 kind: SegmentDecayKind::from(kind),
@@ -283,6 +305,7 @@ impl Expression {
                 scale,
             },
             depth,
+            size,
         }))
     }
 }
