@@ -35,8 +35,7 @@ impl TryFrom<PointId> for PointIdType {
             PointId::Uuid { value } => {
                 let uuid = uuid::Uuid::parse_str(&value).map_err(|e| {
                     crate::error::EdgeError::invalid_argument(format!(
-                        "invalid point UUID {:?}: {e}",
-                        value
+                        "invalid point UUID {value:?}: {e}"
                     ))
                 })?;
                 Ok(PointIdType::Uuid(uuid))

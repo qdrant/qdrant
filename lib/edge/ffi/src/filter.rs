@@ -524,6 +524,9 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
 // ── Condition ───────────────────────────────────────────────────────────────
 
 /// A single filter clause, composed into larger filters by [`Filter`].
+// `FieldCondition` is the largest variant, but boxing variants is not supported
+// by `uniffi::Enum`, so we accept the size difference.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum Condition {
     /// Match against a specific payload field.
