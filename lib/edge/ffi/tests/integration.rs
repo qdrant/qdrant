@@ -2945,6 +2945,42 @@ fn create_vector_name_conflict_is_rejected() {
         .expect("a 4-dim write into the original 'extra' field must still work");
 }
 
+/// An identical re-create of a *construction-defined* vector (declared in the
+/// initial `EdgeConfig`, and so stored with `on_disk: Some(false)` while the op
+/// leaves it `None`) must be an idempotent no-op, not a false conflict — the
+/// create op only defines identity fields, so storage/tuning differences must
+/// not be compared.
+#[test]
+fn create_vector_name_identical_recreate_of_config_vector_is_idempotent() {
+    use qdrant_edge_ffi::config::Distance;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    // `make_config` declares "vec" as size 4 / Dot.
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    // Identical identity (size 4 / Dot) → idempotent Ok, despite the stored
+    // vector carrying on_disk: Some(false) that the op leaves None.
+    let op = UpdateOperation::create_dense_vector("vec".to_string(), 4, Distance::Dot, None, None)
+        .expect("create_dense_vector op build failed");
+    shard
+        .update(op)
+        .expect("identical re-create of a config-defined vector must be idempotent");
+
+    // A genuinely conflicting re-create of the same config vector is still rejected.
+    let bad =
+        UpdateOperation::create_dense_vector("vec".to_string(), 8, Distance::Cosine, None, None)
+            .expect("create_dense_vector op build failed");
+    let err = shard
+        .update(bad)
+        .expect_err("a conflicting re-create of a config-defined vector must be rejected");
+    assert!(
+        format!("{err:?}").contains("already exists"),
+        "expected an 'already exists' rejection, got {err:?}"
+    );
+}
+
 /// A non-finite `StartFrom::Float` must be rejected at the boundary as a clean
 /// `InvalidArgument`, never reaching the engine (where NaN panics on a
 /// float-indexed field and silently truncates the scan on an integer one).

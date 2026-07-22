@@ -98,19 +98,26 @@ impl EdgeShard {
         name: &str,
         config: &VectorNameConfig,
     ) -> OperationResult<()> {
+        // Compare only the identity fields a `CreateVectorName` op actually
+        // defines. Storage/tuning fields (`on_disk`, `quantization_config`,
+        // `hnsw_config`, `full_scan_threshold`) are populated from the initial
+        // config, the optimizer, or `set_*_config` — e.g. a config-defined
+        // vector is stored with `on_disk: Some(false)` while the op leaves it
+        // `None` — so full-struct equality would flag an otherwise-identical
+        // re-create as a false conflict.
         let conflict = match requested_vector_params(config) {
             RequestedVectorParams::Dense(params) => self
                 .config
                 .read()
                 .vectors
                 .get(name)
-                .is_some_and(|existing| *existing != params),
+                .is_some_and(|existing| !dense_identity_matches(existing, &params)),
             RequestedVectorParams::Sparse(params) => self
                 .config
                 .read()
                 .sparse_vectors
                 .get(name)
-                .is_some_and(|existing| *existing != params),
+                .is_some_and(|existing| !sparse_identity_matches(existing, &params)),
         };
         if conflict {
             return Err(OperationError::validation_error(format!(
@@ -188,6 +195,26 @@ fn requested_vector_params(config: &VectorNameConfig) -> RequestedVectorParams {
             datatype: wrapper.sparse.datatype,
         }),
     }
+}
+
+/// Whether two dense vectors share the identity a `CreateVectorName` op
+/// defines. Excludes storage/tuning fields (`on_disk`, `quantization_config`,
+/// `hnsw_config`) that the op cannot express and that are set elsewhere.
+fn dense_identity_matches(existing: &EdgeVectorParams, requested: &EdgeVectorParams) -> bool {
+    existing.size == requested.size
+        && existing.distance == requested.distance
+        && existing.multivector_config == requested.multivector_config
+        && existing.datatype == requested.datatype
+}
+
+/// Whether two sparse vectors share the identity a `CreateVectorName` op
+/// defines. Excludes `on_disk`/`full_scan_threshold`, which the op cannot
+/// express.
+fn sparse_identity_matches(
+    existing: &EdgeSparseVectorParams,
+    requested: &EdgeSparseVectorParams,
+) -> bool {
+    existing.modifier == requested.modifier && existing.datatype == requested.datatype
 }
 
 fn service_error(err: impl fmt::Display) -> OperationError {
