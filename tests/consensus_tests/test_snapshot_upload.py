@@ -162,8 +162,14 @@ def recover_from_uploaded_snapshot(tmp_path: pathlib.Path, n_replicas):
     # collection through its own local shards plus the remote shards. Asserting
     # a fixed remote count assumes a perfectly balanced placement, which is not
     # guaranteed and makes this test flaky.
-    peer_0_local_shards_new = get_local_shards(peer_api_uris[0])
-    peer_0_remote_shards_new = get_remote_shards(peer_api_uris[0])
+    # Fetch the cluster info once so local and remote shards come from the same
+    # cluster revision (two separate requests could observe placement changing
+    # between them and reintroduce flakiness).
+    res = requests.get(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster")
+    assert_http_ok(res)
+    cluster = res.json()["result"]
+    peer_0_local_shards_new = cluster["local_shards"]
+    peer_0_remote_shards_new = cluster["remote_shards"]
 
     all_shards = peer_0_local_shards_new + peer_0_remote_shards_new
     for shard in all_shards:
