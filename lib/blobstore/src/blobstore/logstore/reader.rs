@@ -13,7 +13,7 @@ use super::view::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
-use crate::config::LogstoreConfig;
+use crate::config::LogstoreOptions;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 use crate::tracker::append_only::AppendOnlyTracker;
@@ -26,7 +26,7 @@ use crate::tracker::append_only::AppendOnlyTracker;
 /// All data is read through the universal IO backend `S`.
 #[derive(Debug)]
 pub(crate) struct LogstoreReader<V, S: UniversalRead> {
-    config: LogstoreConfig,
+    config: LogstoreOptions,
     tracker: AppendOnlyTracker<S>,
     pages: AppendOnlyPages<S>,
     base_path: PathBuf,
@@ -48,7 +48,7 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,
-        config: LogstoreConfig,
+        config: LogstoreOptions,
     ) -> Result<Self> {
         let tracker = AppendOnlyTracker::open_read_only(fs, &base_path)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false)?;

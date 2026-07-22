@@ -14,7 +14,7 @@ use super::logstore::LogstoreReader;
 use super::view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::StorageConfig;
+use crate::config::StorageOptions;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 
@@ -56,8 +56,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         fs.schedule_prefetch(&config_path, None, None)?;
 
         match config {
-            StorageConfig::Mutable(_) => GridstoreReader::<V, S>::preopen(fs, &base_path, populate),
-            StorageConfig::AppendOnly(_) => LogstoreReader::<V, S>::preopen(fs, &base_path),
+            StorageOptions::Mutable(_) => {
+                GridstoreReader::<V, S>::preopen(fs, &base_path, populate)
+            }
+            StorageOptions::AppendOnly(_) => LogstoreReader::<V, S>::preopen(fs, &base_path),
         }
     }
 
@@ -75,13 +77,13 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         populate: Populate,
     ) -> Result<Self> {
         match read_config(fs, &base_path)? {
-            StorageConfig::Mutable(config) => {
+            StorageOptions::Mutable(config) => {
                 let reader = GridstoreReader::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: ReaderVariant::Gridstore(reader),
                 })
             }
-            StorageConfig::AppendOnly(config) => {
+            StorageOptions::AppendOnly(config) => {
                 let reader = LogstoreReader::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: ReaderVariant::Logstore(reader),
@@ -224,10 +226,10 @@ impl<V, S: UniversalRead> BlobstoreReader<V, S> {
 pub(super) fn read_config<Fs: UniversalReadFs>(
     fs: &Fs,
     base_path: &std::path::Path,
-) -> Result<StorageConfig> {
+) -> Result<StorageOptions> {
     let config_path = base_path.join(CONFIG_FILENAME);
     let config = read_whole_via(fs, &config_path, |bytes| {
-        StorageConfig::from_json(&bytes).map_err(UniversalIoError::from)
+        StorageOptions::from_json(&bytes).map_err(UniversalIoError::from)
     })
     .map_err(BlobstoreError::from)?;
     config

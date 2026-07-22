@@ -14,7 +14,7 @@ use common::universal_io::{
 use itertools::Either;
 
 use crate::Result;
-use crate::config::GridstoreConfig;
+use crate::config::GridstoreOptions;
 use crate::error::BlobstoreError;
 use crate::tracker::{PageId, ValuePointer};
 
@@ -167,7 +167,7 @@ impl<S: UniversalRead> Pages<S> {
     /// ```
     fn get_page_value_ranges(
         pointer: ValuePointer,
-        config: &GridstoreConfig,
+        config: &GridstoreOptions,
     ) -> impl Iterator<
         Item = (
             usize, // buf_offset - byte offset within the value buffer
@@ -226,7 +226,7 @@ impl<S: UniversalRead> Pages<S> {
         }))
     }
 
-    pub fn value_len_pages(pointer: ValuePointer, config: &GridstoreConfig) -> usize {
+    pub fn value_len_pages(pointer: ValuePointer, config: &GridstoreOptions) -> usize {
         let ValuePointer {
             page_id: _,
             block_offset,
@@ -249,7 +249,7 @@ impl<S: UniversalRead> Pages<S> {
     pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
-        config: &GridstoreConfig,
+        config: &GridstoreOptions,
     ) -> Result<Cow<'_, [u8]>> {
         let mut reads = Self::get_page_value_ranges(pointer, config)
             .map(|(buf_offset, page, range)| (buf_offset, &self.pages[page as usize], range));
@@ -294,7 +294,7 @@ impl<S: UniversalRead> Pages<S> {
     /// Batch-read values and execute callback for each value
     pub fn read_batch_from_pages<P, U, E>(
         &self,
-        config: &GridstoreConfig,
+        config: &GridstoreOptions,
         pointers: impl Iterator<Item = (U, ValuePointer)>,
         mut callback: impl FnMut(U, Cow<'_, [u8]>) -> Result<bool, E>,
     ) -> Result<bool, E>
@@ -488,7 +488,7 @@ impl<S: UniversalWrite> Pages<S> {
         &mut self,
         pointer: ValuePointer,
         value: &[u8],
-        config: &GridstoreConfig,
+        config: &GridstoreOptions,
     ) -> Result<()> {
         let writes =
             Self::get_page_value_ranges(pointer, config).map(|(buf_offset, page, range)| {

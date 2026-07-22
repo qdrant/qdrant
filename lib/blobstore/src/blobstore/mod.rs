@@ -23,7 +23,7 @@ pub use view::BlobstoreView;
 
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{GridstoreConfig, LogstoreConfig, Mode, StorageConfig, StorageOptions};
+use crate::config::StorageOptions;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 #[cfg(test)]
@@ -35,11 +35,11 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), BlobstoreError> +
 ///
 /// Operates in one of two modes, specified on creation and automatically selected when opening:
 ///
-/// - [`Mode::Mutable`]: backed by the inner `Gridstore` — values can be updated and deleted,
-///   freed blocks are tracked and reused.
-/// - [`Mode::AppendOnly`]: backed by the inner `Logstore` — append-only variant for serverless
-///   deployments, values cannot be updated or deleted, and must be put in monotonically
-///   increasing point offset order.
+/// - [`Mode::Mutable`](crate::config::Mode::Mutable): backed by the inner `Gridstore` — values
+///   can be updated and deleted, freed blocks are tracked and reused.
+/// - [`Mode::AppendOnly`](crate::config::Mode::AppendOnly): backed by the inner `Logstore` —
+///   append-only variant for serverless deployments, values cannot be updated or deleted, and
+///   must be put in monotonically increasing point offset order.
 ///
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
@@ -50,7 +50,7 @@ where
     variant: BlobstoreVariant<V, S>,
 }
 
-/// Mode specific implementation of the storage, see [`Mode`].
+/// Mode specific implementation of the storage, see [`Mode`](crate::config::Mode).
 #[derive(Debug)]
 enum BlobstoreVariant<V, S>
 where
@@ -99,24 +99,23 @@ where
         }
     }
 
-    /// Initializes a new storage in the mode given through the options.
+    /// Initializes a new storage in the mode of the given options variant.
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
     pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        match options.mode.unwrap_or_default() {
-            Mode::Mutable => {
-                let config =
-                    GridstoreConfig::try_from(options).map_err(BlobstoreError::service_error)?;
-                let storage = Gridstore::new(fs, base_path, config)?;
+        options
+            .validate()
+            .map_err(BlobstoreError::validation_error)?;
+        match options {
+            StorageOptions::Mutable(options) => {
+                let storage = Gridstore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
                 })
             }
-            Mode::AppendOnly => {
-                let config =
-                    LogstoreConfig::try_from(options).map_err(BlobstoreError::service_error)?;
-                let storage = Logstore::new(fs, base_path, config)?;
+            StorageOptions::AppendOnly(options) => {
+                let storage = Logstore::new(fs, base_path, options)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Logstore(storage),
                 })
@@ -129,13 +128,13 @@ where
     /// The operating mode is automatically selected based on the persisted config.
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
         match reader::read_config(&fs, &base_path)? {
-            StorageConfig::Mutable(config) => {
+            StorageOptions::Mutable(config) => {
                 let storage = Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Gridstore(storage),
                 })
             }
-            StorageConfig::AppendOnly(config) => {
+            StorageOptions::AppendOnly(config) => {
                 let storage = Logstore::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: BlobstoreVariant::Logstore(storage),

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use blobstore::Blobstore;
-use blobstore::config::StorageOptions;
+use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions, StorageOptions};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
@@ -13,16 +13,15 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoPoint, RawGeoPoint};
 
 /// Default options for Gridstore storage
-const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
-    // Size of geo point values in index
-    block_size_bytes: Some(size_of::<RawGeoPoint>()),
-    // Compressing geo point values is unreasonable
-    compression: Some(blobstore::config::Compression::None),
+const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions::Mutable(GridstoreOptions {
     // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
-    page_size_bytes: Some(size_of::<RawGeoPoint>() * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-    region_size_blocks: None,
-    mode: None,
-};
+    page_size_bytes: size_of::<RawGeoPoint>() * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
+    // Size of geo point values in index
+    block_size_bytes: size_of::<RawGeoPoint>(),
+    region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+    // Compressing geo point values is unreasonable
+    compression: blobstore::config::Compression::None,
+});
 
 impl MutableGeoIndex {
     /// Open and load mutable geo index from Gridstore storage

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use blobstore::config::StorageOptions;
+use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions, StorageOptions};
 use blobstore::{Blob, Blobstore};
 
 use super::Encodable;
@@ -14,16 +14,15 @@ mod read_ops;
 /// Default options for Gridstore storage
 pub(super) const fn default_gridstore_options<T: Sized>() -> StorageOptions {
     let block_size = size_of::<T>();
-    StorageOptions {
-        // Size of numeric values in index
-        block_size_bytes: Some(block_size),
-        // Compressing numeric values is unreasonable
-        compression: Some(blobstore::config::Compression::None),
+    StorageOptions::Mutable(GridstoreOptions {
         // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
-        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-        region_size_blocks: None,
-        mode: None,
-    }
+        page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
+        // Size of numeric values in index
+        block_size_bytes: block_size,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        // Compressing numeric values is unreasonable
+        compression: blobstore::config::Compression::None,
+    })
 }
 
 pub struct MutableNumericIndex<T: Encodable + Numericable>

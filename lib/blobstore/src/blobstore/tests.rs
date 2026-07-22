@@ -20,11 +20,11 @@ use super::*;
 use crate::blob::Blob;
 use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    GridstoreConfig, Mode, compress_lz4, decompress_lz4,
+    GridstoreOptions, LogstoreOptions, Mode, compress_lz4, decompress_lz4,
 };
 use crate::fixtures::{
-    HM_FIELDS, Payload, empty_storage, empty_storage_mode, empty_storage_sized, minimal_payload,
-    random_payload,
+    HM_FIELDS, Payload, default_options, empty_storage, empty_storage_mode, empty_storage_sized,
+    minimal_payload, random_payload,
 };
 
 #[rstest]
@@ -281,7 +281,7 @@ fn test_update_single_payload() {
 fn test_write_across_pages() {
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
     let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
-    let config = GridstoreConfig {
+    let config = GridstoreOptions {
         page_size_bytes: page_size,
         block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
         region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
@@ -693,10 +693,7 @@ fn test_storage_persistence_basic(#[values(Mode::Mutable, Mode::AppendOnly)] mod
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let options = StorageOptions {
-            mode: Some(mode),
-            ..Default::default()
-        };
+        let options = default_options(mode);
         let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), options).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
 
@@ -730,7 +727,8 @@ fn test_open_config_without_mode_as_mutable() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     {
-        let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+        let mut storage =
+            Blobstore::<_>::new(MmapFs, path.clone(), default_options(Mode::Mutable)).unwrap();
         storage
             .put_value(0, &minimal_payload(), hw_counter_ref)
             .unwrap();
@@ -771,10 +769,7 @@ fn test_open_rejects_corrupt_config(#[values(Mode::Mutable, Mode::AppendOnly)] m
     let path = dir.path().to_path_buf();
 
     {
-        let options = StorageOptions {
-            mode: Some(mode),
-            ..Default::default()
-        };
+        let options = default_options(mode);
         let storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         storage.flusher()().unwrap();
     }
@@ -938,10 +933,15 @@ fn test_different_block_sizes(
 
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let blocks_per_page = DEFAULT_PAGE_SIZE_BYTES / block_size_bytes;
-    let options = StorageOptions {
-        block_size_bytes: Some(block_size_bytes),
-        mode: Some(mode),
-        ..Default::default()
+    let options = match mode {
+        Mode::Mutable => StorageOptions::Mutable(GridstoreOptions {
+            page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
+            block_size_bytes,
+            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+            compression: Compression::LZ4,
+        }),
+        // Blocks are a mutable mode concept, the append-only mode packs values back to back
+        Mode::AppendOnly => StorageOptions::AppendOnly(LogstoreOptions::DEFAULT),
     };
     let mut storage = Blobstore::<_>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
@@ -1283,10 +1283,7 @@ fn test_live_reload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     };
 
     // Step 1: Write initial data and flush
-    let options = StorageOptions {
-        mode: Some(mode),
-        ..Default::default()
-    };
+    let options = default_options(mode);
     let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), options).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
@@ -1372,7 +1369,8 @@ fn test_live_reload_disk_cache() {
 
     // The writer works on the "remote" directly; the reader mirrors it into
     // `local_root` through the disk cache.
-    let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), Default::default()).unwrap();
+    let mut storage =
+        Blobstore::<_>::new(MmapFs, path.clone(), default_options(Mode::Mutable)).unwrap();
 
     let payload_0 = make_payload("key", "value_0");
     storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
@@ -1429,10 +1427,12 @@ fn test_live_reload_across_pages() {
 
     // Use small page size to force multiple pages
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-    let options = StorageOptions {
-        page_size_bytes: Some(page_size),
-        ..Default::default()
-    };
+    let options = StorageOptions::Mutable(GridstoreOptions {
+        page_size_bytes: page_size,
+        block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        compression: Compression::LZ4,
+    });
     let mut storage = Blobstore::<_>::new(MmapFs, path.clone(), options).unwrap();
 
     let payload = minimal_payload();
