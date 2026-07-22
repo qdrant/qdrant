@@ -43,16 +43,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), BlobstoreError> +
 ///
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub struct Blobstore<V, S = MmapFile>
-where
-    S: UniversalWrite + UniversalAppend + 'static,
-{
-    variant: BlobstoreVariant<V, S>,
-}
-
-/// Mode specific implementation of the storage, see [`Mode`](crate::config::Mode).
-#[derive(Debug)]
-enum BlobstoreVariant<V, S>
+pub enum Blobstore<V, S = MmapFile>
 where
     S: UniversalWrite + UniversalAppend + 'static,
 {
@@ -67,16 +58,16 @@ where
 {
     /// List all files belonging to this storage.
     pub fn files(&self) -> Vec<PathBuf> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.files(),
-            BlobstoreVariant::Logstore(storage) => storage.files(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.files(),
+            Blobstore::Logstore(storage) => storage.files(),
         }
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.immutable_files(),
-            BlobstoreVariant::Logstore(storage) => storage.immutable_files(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.immutable_files(),
+            Blobstore::Logstore(storage) => storage.immutable_files(),
         }
     }
 
@@ -110,15 +101,11 @@ where
         match options {
             StorageOptions::Mutable(options) => {
                 let storage = Gridstore::new(fs, base_path, options)?;
-                Ok(Self {
-                    variant: BlobstoreVariant::Gridstore(storage),
-                })
+                Ok(Self::Gridstore(storage))
             }
             StorageOptions::AppendOnly(options) => {
                 let storage = Logstore::new(fs, base_path, options)?;
-                Ok(Self {
-                    variant: BlobstoreVariant::Logstore(storage),
-                })
+                Ok(Self::Logstore(storage))
             }
         }
     }
@@ -130,15 +117,11 @@ where
         match reader::read_config(&fs, &base_path)? {
             StorageOptions::Mutable(config) => {
                 let storage = Gridstore::open(fs, base_path, config, populate)?;
-                Ok(Self {
-                    variant: BlobstoreVariant::Gridstore(storage),
-                })
+                Ok(Self::Gridstore(storage))
             }
             StorageOptions::AppendOnly(config) => {
                 let storage = Logstore::open(fs, base_path, config)?;
-                Ok(Self {
-                    variant: BlobstoreVariant::Logstore(storage),
-                })
+                Ok(Self::Logstore(storage))
             }
         }
     }
@@ -155,13 +138,9 @@ where
         value: &V,
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
-        match &mut self.variant {
-            BlobstoreVariant::Gridstore(storage) => {
-                storage.put_value(point_offset, value, hw_counter)
-            }
-            BlobstoreVariant::Logstore(storage) => {
-                storage.put_value(point_offset, value, hw_counter)
-            }
+        match self {
+            Blobstore::Gridstore(storage) => storage.put_value(point_offset, value, hw_counter),
+            Blobstore::Logstore(storage) => storage.put_value(point_offset, value, hw_counter),
         }
     }
 
@@ -172,9 +151,9 @@ where
     ///
     /// Not supported in append-only mode, returns an error.
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
-        match &mut self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.delete_value(point_offset),
-            BlobstoreVariant::Logstore(storage) => storage.delete_value(point_offset),
+        match self {
+            Blobstore::Gridstore(storage) => storage.delete_value(point_offset),
+            Blobstore::Logstore(storage) => storage.delete_value(point_offset),
         }
     }
 
@@ -182,9 +161,9 @@ where
     ///
     /// Completely wipes the storage, and recreates it in the same mode.
     pub fn clear(&mut self) -> Result<()> {
-        match &mut self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.clear(),
-            BlobstoreVariant::Logstore(storage) => storage.clear(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.clear(),
+            Blobstore::Logstore(storage) => storage.clear(),
         }
     }
 
@@ -193,17 +172,17 @@ where
     /// Takes ownership because this function leaves Blobstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
     pub fn wipe(self) -> Result<()> {
-        match self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.wipe(),
-            BlobstoreVariant::Logstore(storage) => storage.wipe(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.wipe(),
+            Blobstore::Logstore(storage) => storage.wipe(),
         }
     }
 
     /// Return the storage size in bytes.
     pub fn get_storage_size_bytes(&self) -> Result<usize> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.get_storage_size_bytes(),
-            BlobstoreVariant::Logstore(storage) => storage.get_storage_size_bytes(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.get_storage_size_bytes(),
+            Blobstore::Logstore(storage) => storage.get_storage_size_bytes(),
         }
     }
 
@@ -212,11 +191,9 @@ where
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => {
-                storage.get_value::<P>(point_offset, hw_counter)
-            }
-            BlobstoreVariant::Logstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
+        match self {
+            Blobstore::Gridstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
+            Blobstore::Logstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -234,11 +211,11 @@ where
         U: UserData,
         E: From<BlobstoreError>,
     {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => {
+        match self {
+            Blobstore::Gridstore(storage) => {
                 storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            BlobstoreVariant::Logstore(storage) => {
+            Blobstore::Logstore(storage) => {
                 storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -246,16 +223,16 @@ where
 
     #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.get_pointer(point_offset),
-            BlobstoreVariant::Logstore(storage) => storage.get_pointer(point_offset),
+        match self {
+            Blobstore::Gridstore(storage) => storage.get_pointer(point_offset),
+            Blobstore::Logstore(storage) => storage.get_pointer(point_offset),
         }
     }
 
     pub fn max_point_offset(&self) -> PointOffset {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.max_point_offset(),
-            BlobstoreVariant::Logstore(storage) => storage.max_point_offset(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.max_point_offset(),
+            Blobstore::Logstore(storage) => storage.max_point_offset(),
         }
     }
 
@@ -267,9 +244,9 @@ where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.iter(callback, hw_counter),
-            BlobstoreVariant::Logstore(storage) => storage.iter(callback, hw_counter),
+        match self {
+            Blobstore::Gridstore(storage) => storage.iter(callback, hw_counter),
+            Blobstore::Logstore(storage) => storage.iter(callback, hw_counter),
         }
     }
 }
@@ -277,9 +254,9 @@ where
 impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
     pub fn flusher(&self) -> Flusher {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.flusher(),
-            BlobstoreVariant::Logstore(storage) => storage.flusher(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.flusher(),
+            Blobstore::Logstore(storage) => storage.flusher(),
         }
     }
 
@@ -287,9 +264,9 @@ impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     ///
     /// No-op in append-only mode, which never populates its files into RAM.
     pub fn populate(&self) -> Result<()> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.populate(),
-            BlobstoreVariant::Logstore(storage) => storage.populate(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.populate(),
+            Blobstore::Logstore(storage) => storage.populate(),
         }
     }
 
@@ -297,9 +274,9 @@ impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     ///
     /// No-op in append-only mode, which never populates its files into RAM.
     pub fn clear_cache(&self) -> crate::Result<()> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage.clear_cache(),
-            BlobstoreVariant::Logstore(storage) => storage.clear_cache(),
+        match self {
+            Blobstore::Gridstore(storage) => storage.clear_cache(),
+            Blobstore::Logstore(storage) => storage.clear_cache(),
         }
     }
 }
@@ -308,25 +285,25 @@ impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
 impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
     fn as_gridstore(&self) -> &Gridstore<V, S> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage,
-            BlobstoreVariant::Logstore(_) => panic!("storage is not in mutable mode"),
+        match self {
+            Blobstore::Gridstore(storage) => storage,
+            Blobstore::Logstore(_) => panic!("storage is not in mutable mode"),
         }
     }
 
     /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
     fn as_gridstore_mut(&mut self) -> &mut Gridstore<V, S> {
-        match &mut self.variant {
-            BlobstoreVariant::Gridstore(storage) => storage,
-            BlobstoreVariant::Logstore(_) => panic!("storage is not in mutable mode"),
+        match self {
+            Blobstore::Gridstore(storage) => storage,
+            Blobstore::Logstore(_) => panic!("storage is not in mutable mode"),
         }
     }
 
     /// Get the inner Logstore (append-only mode storage), panics if the storage is in another mode.
     fn as_logstore(&self) -> &Logstore<V, S> {
-        match &self.variant {
-            BlobstoreVariant::Gridstore(_) => panic!("storage is not in append-only mode"),
-            BlobstoreVariant::Logstore(storage) => storage,
+        match self {
+            Blobstore::Gridstore(_) => panic!("storage is not in append-only mode"),
+            Blobstore::Logstore(storage) => storage,
         }
     }
 }
