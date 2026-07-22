@@ -111,7 +111,7 @@ fn persistence_survives_reload() {
                 exact: true,
             })
             .expect("count failed");
-        assert_eq!(n, 3, "count() returned {} after reload", n);
+        assert_eq!(n, 3, "count() returned {n} after reload");
 
         // retrieve() must return all 3 IDs.
         let ids = vec![
@@ -254,7 +254,7 @@ fn concurrent_reads_and_unload() {
                         Ok(_) => {}
                         Err(EdgeError::ShardClosed) => {}
                         Err(other) => {
-                            panic!("unexpected error during concurrent count: {:?}", other);
+                            panic!("unexpected error during concurrent count: {other:?}");
                         }
                     }
                 }
@@ -320,7 +320,7 @@ fn retrieve_missing_ids_omitted() {
     // Confirm the returned record is ID 1, not some phantom.
     match &records[0].id {
         PointId::NumId { value } => assert_eq!(*value, 1, "returned ID should be 1"),
-        other => panic!("unexpected PointId variant: {:?}", other),
+        other @ PointId::Uuid { .. } => panic!("unexpected PointId variant: {other:?}"),
     }
 }
 
@@ -3119,8 +3119,7 @@ fn formula_decay_oversized_node_count_rejected() {
         None,
         None,
     )
-    .err()
-    .expect(
+    .expect_err(
         "decay's own node-count guard must reject x+target combined size (16_383) \
              exceeding the 10_000 node cap",
     );
@@ -3172,12 +3171,10 @@ fn formula_wide_fanout_rejected() {
         );
     }
 
-    let err = Expression::sum(vec![e.clone(), e.clone(), e.clone(), e.clone()])
-        .err()
-        .expect(
-            "reusing one accepted handle as 4 children (~16_381 nodes) must be rejected by the \
+    let err = Expression::sum(vec![e.clone(), e.clone(), e.clone(), e.clone()]).expect_err(
+        "reusing one accepted handle as 4 children (~16_381 nodes) must be rejected by the \
              node-count cap",
-        );
+    );
     assert!(
         matches!(err, EdgeError::InvalidArgument { .. }),
         "expected InvalidArgument when the wide-fanout node-count cap fires, got {err:?}"
@@ -3796,6 +3793,7 @@ fn update_from_snapshot_corrupt_archive_errors() {
 
     let bogus_dir = tempfile::tempdir().expect("tempdir failed");
     let bogus_path = bogus_dir.path().join("corrupt.snapshot");
+    #[allow(clippy::disallowed_methods)]
     std::fs::write(
         &bogus_path,
         b"not a tar archive, just garbage bytes\x00\x01\x02\xff",
@@ -3890,8 +3888,7 @@ fn formula_node_count_exact_boundary() {
 
     // 10_001 nodes (1 sum node + 10_000 leaves) — rejected.
     let err = Expression::sum(vec![v.clone(); 10_000])
-        .err()
-        .expect("a formula with 10_001 nodes (cap + 1) must be rejected");
+        .expect_err("a formula with 10_001 nodes (cap + 1) must be rejected");
     assert!(
         matches!(err, EdgeError::InvalidArgument { .. }),
         "expected InvalidArgument at the node-count cap + 1, got {err:?}"

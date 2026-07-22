@@ -616,15 +616,13 @@ fn turbo4_datatype_round_trips() {
     let seg = SegmentVectorStorageDatatype::from(ffi_turbo);
     assert!(
         matches!(seg, SegmentVectorStorageDatatype::Turbo4),
-        "expected SegmentVectorStorageDatatype::Turbo4, got {:?}",
-        seg
+        "expected SegmentVectorStorageDatatype::Turbo4, got {seg:?}",
     );
 
     let back = VectorStorageDatatype::from(seg);
     assert!(
         matches!(back, VectorStorageDatatype::Turbo4),
-        "expected VectorStorageDatatype::Turbo4 back, got {:?}",
-        back
+        "expected VectorStorageDatatype::Turbo4 back, got {back:?}",
     );
 }
 
