@@ -1,5 +1,5 @@
 use super::{UniversalFlush, UniversalRead, UniversalWriteFileOps};
-use crate::universal_io::{ByteOffset, Result};
+use crate::universal_io::{ByteOffset, UioResult};
 
 /// A file handle that supports atomic appends at a caller-provided offset.
 ///
@@ -60,7 +60,7 @@ pub trait UniversalAppend: UniversalRead<Fs: UniversalWriteFileOps> + UniversalF
     /// [`AppendOffsetConflict`] otherwise.
     ///
     /// [`AppendOffsetConflict`]: crate::universal_io::UniversalIoError::AppendOffsetConflict
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> Result<()>;
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()>;
 
     /// Append several buffers contiguously, in order, starting at exactly
     /// `offset`, using as few operations as the backend allows (a single
@@ -69,7 +69,7 @@ pub trait UniversalAppend: UniversalRead<Fs: UniversalWriteFileOps> + UniversalF
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let mut offset = offset;
 
         for item in items {

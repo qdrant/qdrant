@@ -9,7 +9,7 @@ use super::*;
 pub const IO_URING_QUEUE_LENGTH: u32 = 16;
 
 /// Check that io_uring is supported.
-pub fn check_io_uring_support() -> Result<()> {
+pub fn check_io_uring_support() -> UioResult<()> {
     IO_URING_POOL
         .with_borrow_mut(IoUringPool::check_support)
         .map_err(UniversalIoError::IoUringNotSupported)
@@ -19,7 +19,7 @@ pub fn check_io_uring_support() -> Result<()> {
 ///
 /// The instance is automatically returned to the pool when the guard is dropped.
 /// Returns an error if io_uring is not supported on this system.
-pub fn get_io_uring() -> Result<IoUringGuard> {
+pub fn get_io_uring() -> UioResult<IoUringGuard> {
     IO_URING_POOL
         .with_borrow_mut(IoUringPool::get)
         .map_err(UniversalIoError::IoUringNotSupported)

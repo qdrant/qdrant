@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, Result, UniversalIoError, UniversalReadFileOps,
-    UniversalReadFs,
+    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
+    UniversalReadFileOps, UniversalReadFs,
 };
 
 #[derive(Clone, Debug)]
@@ -74,7 +74,7 @@ impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
 }
 
 impl<Fs: UniversalReadFs> CachedFs<Fs> {
-    pub fn new(fs: Fs, prefix_path: &Path) -> Result<Self> {
+    pub fn new(fs: Fs, prefix_path: &Path) -> UioResult<Self> {
         Ok(Self {
             fs,
             prefix_path: prefix_path.to_path_buf(),
@@ -137,7 +137,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
 }
 
 impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
-    fn cache_file_info(&mut self) -> Result<()> {
+    fn cache_file_info(&mut self) -> UioResult<()> {
         // List all files
         let list = self.fs.list_files(&self.prefix_path)?;
 
@@ -168,7 +168,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
@@ -205,19 +205,19 @@ pub struct CachedReadFsContext<C> {
 impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
     type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
 
-    fn from_context(context: Self::ContextConfig) -> Result<Self> {
+    fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
         let CachedReadFsContext { inner, prefix_path } = context;
         Self::new(Fs::from_context(inner)?, &prefix_path)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         match &self.files_info {
             Some(_) => Ok(self.cached_list_files(prefix_path)),
             None => self.fs.list_files(prefix_path),
         }
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> UioResult<bool> {
         match &self.files_info {
             Some(files_info) => Ok(files_info.contains_key(path)),
             None => self.fs.exists(path),
@@ -254,7 +254,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
-    ) -> Result<Fs::File> {
+    ) -> UioResult<Fs::File> {
         let path = path.as_ref();
 
         if options.writeable {

@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 
 use crate::is_alive_lock::IsAliveLock;
 use crate::universal_io::{
-    self, Flusher, OpenOptions, TypedStorage, UniversalReadFs, UniversalWrite,
+    Flusher, OpenOptions, TypedStorage, UioResult, UniversalReadFs, UniversalWrite,
 };
 
 /// A generic-storage wrapper for a type that should be possible to `read_whole` fairly cheaply.
@@ -29,7 +29,7 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
-    ) -> universal_io::Result<Self> {
+    ) -> UioResult<Self> {
         let storage = TypedStorage::<S, T>::open(fs, path, options, extra)?;
         let inner = storage.read_whole()?[0];
         Ok(Self {

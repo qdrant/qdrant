@@ -4,7 +4,9 @@ use std::ops::Range;
 use super::{IoUringFile, IoUringReadRuntime, KERNEL_PAGE_SIZE};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UniversalRead as _, UserData};
+use crate::universal_io::{
+    ReadPipeline, UioResult, UniversalIoError, UniversalRead as _, UserData,
+};
 
 pub struct IoUringPipeline<'file, U>
 where
@@ -17,7 +19,7 @@ where
 impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
     type File = IoUringFile;
 
-    fn new() -> Result<Self> {
+    fn new() -> UioResult<Self> {
         let pipeline = Self {
             runtime: IoUringReadRuntime::new()?,
             _phantom: PhantomData,
@@ -36,7 +38,7 @@ impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
         file: &'file IoUringFile,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         // IoUringPipeline is bound by 'file lifetime, so it can never outlive file
         // or hold fd longer than file is valid
 
@@ -54,7 +56,12 @@ impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file Self::File,
+        from: u64,
+    ) -> UioResult<()> {
         let eof = file.len::<u8>()?;
 
         if from >= eof {
@@ -65,7 +72,7 @@ impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
         self.schedule::<Sequential>(user_data, file, from..eof, align)
     }
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();

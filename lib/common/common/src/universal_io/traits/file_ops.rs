@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
-use crate::universal_io::{ListedFile, OpenOptions, Result};
+use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 
 /// Filesystem-level handle for read-only operations.
 ///
@@ -27,7 +27,7 @@ pub trait UniversalReadFileOps: Clone + Debug + Sized {
     type ContextConfig;
 
     /// Build a filesystem handle from its context.
-    fn from_context(context: Self::ContextConfig) -> Result<Self>;
+    fn from_context(context: Self::ContextConfig) -> UioResult<Self>;
 
     /// List files in the filesystem matching the given prefix, alongside
     /// their sizes in bytes.
@@ -36,10 +36,10 @@ pub trait UniversalReadFileOps: Clone + Debug + Sized {
     /// - `./gridstore/page_1.dat` (size in bytes)
     /// - `./gridstore/page_2.dat` (size in bytes)
     /// - `./gridstore/page_3.dat` (size in bytes)
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>>;
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>>;
 
     /// Check whether a file exists at the given path.
-    fn exists(&self, path: &Path) -> Result<bool>;
+    fn exists(&self, path: &Path) -> UioResult<bool>;
 
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.
@@ -56,26 +56,26 @@ pub trait UniversalWriteFileOps: UniversalReadFileOps {
     ///
     /// Local backends use `expected_length` to pre-size the file. Backends
     /// without fixed-size file objects may ignore it.
-    fn create(&self, path: &Path, expected_length: usize) -> Result<()>;
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()>;
 
     /// Create a directory at the given path.
     ///
     /// Backends without materialized directories may treat this as a no-op.
-    fn create_dir(&self, path: &Path) -> Result<()>;
+    fn create_dir(&self, path: &Path) -> UioResult<()>;
 
     /// Remove a file at the given path.
-    fn remove(&self, path: &Path) -> Result<()>;
+    fn remove(&self, path: &Path) -> UioResult<()>;
 
     /// Remove a directory at the given path.
     ///
     /// Backends without materialized directories may treat this as a no-op.
-    fn remove_dir(&self, path: &Path) -> Result<()>;
+    fn remove_dir(&self, path: &Path) -> UioResult<()>;
 
     /// Atomically save bytes at the given path.
     ///
     /// Local backends should use an atomic file replacement. Object-store
     /// backends may overwrite the full object.
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()>;
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()>;
 
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.
@@ -116,7 +116,7 @@ pub trait UniversalReadFs: UniversalReadFileOps {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
-    ) -> Result<Self::File>;
+    ) -> UioResult<Self::File>;
 }
 
 /// Capability extension over [`UniversalReadFs`]: a filesystem that snapshots
@@ -129,7 +129,7 @@ pub trait CachedReadFs: UniversalReadFs {
     /// Take the file listing snapshot. From this point on, listing and
     /// existence checks are answered locally and opens of unlisted paths
     /// fail with `NotFound` without touching the underlying filesystem.
-    fn cache_file_info(&mut self) -> Result<()>;
+    fn cache_file_info(&mut self) -> UioResult<()>;
 
     /// Open `path` in the background and park the handle in the prefetch
     /// pool, to be consumed by a later [`UniversalReadFs::open`] of the same
@@ -139,5 +139,5 @@ pub trait CachedReadFs: UniversalReadFs {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
-    ) -> Result<()>;
+    ) -> UioResult<()>;
 }

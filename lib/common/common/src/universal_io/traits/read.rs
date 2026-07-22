@@ -5,7 +5,7 @@ use std::ops::Range;
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadBytesItem, ReadRange, Result, UniversalKind};
+use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalKind};
 
 /// Per-file handle for universal read access.
 ///
@@ -56,23 +56,23 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// underlying file larger, so reopening can account for this growth.
     ///
     /// This may be a no-op in some implementations.
-    fn reopen(&mut self) -> Result<()>;
+    fn reopen(&mut self) -> UioResult<()>;
 
     /// Prefer [`read_batch`] if you need high performance.
     #[inline]
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
         let bytes = self.read_bytes::<P>(range.into_byte_range::<T>(), align_of::<T>())?;
         Ok(bytes.try_cast_bytemuck().unwrap())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>>;
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>>;
 
     /// Read the entire file in one logical access.
     ///
     /// Implementations may override this to avoid the two accesses that would
     /// result from `len()` followed by `read(0..len())`. Default implementation
     /// does exactly that.
-    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: 0,
             length: self.len::<T>()?,
@@ -84,8 +84,8 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn read_batch<P, T, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        mut callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
+        mut callback: impl FnMut(U, &[T]) -> UioResult<()>,
+    ) -> UioResult<()>
     where
         P: AccessPattern,
         T: Item,
@@ -116,7 +116,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn read_iter<P, T, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>>
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
         T: Item,
@@ -142,7 +142,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn read_bytes_iter<P, U>(
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
-    ) -> Result<impl Iterator<Item = Result<(U, ACow<'_>)>>>
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>>
     where
         P: AccessPattern,
         U: UserData,
@@ -168,12 +168,12 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         }))
     }
 
-    fn len<T>(&self) -> Result<u64>;
+    fn len<T>(&self) -> UioResult<u64>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_POPULATE_READ`.
-    fn populate(&self) -> Result<()>;
+    fn populate(&self) -> UioResult<()>;
 
     /// Whether the backend chooses to populate when using `Populate::Auto`
     fn populate_auto() -> bool;
@@ -181,7 +181,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// Ask to evict related data from RAM cache, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
-    fn clear_ram_cache(&self) -> Result<()>;
+    fn clear_ram_cache(&self) -> UioResult<()>;
 
     fn kind() -> UniversalKind;
 

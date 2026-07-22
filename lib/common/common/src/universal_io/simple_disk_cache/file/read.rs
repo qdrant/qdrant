@@ -11,7 +11,7 @@ use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
 use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
 use crate::universal_io::{
-    Item, ReadPipeline, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead, UserData,
+    Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
 };
 
 impl<R> DiskCache<R>
@@ -19,7 +19,7 @@ where
     R: DiskCacheRemote,
 {
     /// Make sure every byte in the range `byte_start..remote_len` is present on the local file
-    fn populate_from(&self, byte_start: u64) -> std::result::Result<(), UniversalIoError> {
+    fn populate_from(&self, byte_start: u64) -> UioResult<()> {
         if crate::low_memory::low_memory_mode().skip_populate() {
             return Ok(());
         }
@@ -54,18 +54,18 @@ where
         R: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> Result<()> {
+    fn reopen(&mut self) -> UioResult<()> {
         self.reopen_impl()
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
         let mut pipeline = DiskCachePipeline::<R, ()>::new()?;
         pipeline.schedule::<P>((), self, range, align)?;
         let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
         Ok(bytes)
     }
 
-    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         self.prefill_if_uninit()?;
         let length = self.len::<T>()?;
         self.read::<Sequential, T>(ReadRange {
@@ -74,11 +74,11 @@ where
         })
     }
 
-    fn len<T>(&self) -> Result<u64> {
+    fn len<T>(&self) -> UioResult<u64> {
         self.state()?.local.mmap().len::<T>()
     }
 
-    fn populate(&self) -> Result<()> {
+    fn populate(&self) -> UioResult<()> {
         self.populate_from(0)
     }
 
@@ -86,7 +86,7 @@ where
         false
     }
 
-    fn clear_ram_cache(&self) -> Result<()> {
+    fn clear_ram_cache(&self) -> UioResult<()> {
         // Only touch an already-live mirror; don't force initialization just to
         // clear a cache that may not exist yet.
         if self.is_ready() {

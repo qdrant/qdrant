@@ -15,7 +15,7 @@ use itertools::{Either, Itertools};
 use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
 use crate::universal_io::{
-    Flusher, OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
+    Flusher, OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
     UniversalReadFs, UniversalWrite,
 };
 
@@ -70,7 +70,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         let storage = TypedStorage::open(fs, path, options, extra)?;
         let element_len = storage.len()?;
         Ok(Self {
@@ -79,7 +79,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         })
     }
 
-    pub fn reopen(&mut self) -> Result<()> {
+    pub fn reopen(&mut self) -> UioResult<()> {
         self.storage.reopen()?;
         self.element_len = self.storage.len()?;
         Ok(())
@@ -121,7 +121,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     ///
     /// Returns `Cow::Borrowed` when the backend supports zero-copy reads
     /// (e.g., mmap), otherwise returns `Cow::Owned`.
-    pub fn read_all(&self) -> Result<Cow<'_, BitSlice>> {
+    pub fn read_all(&self) -> UioResult<Cow<'_, BitSlice>> {
         let elements = self.storage.read_whole()?;
         match elements {
             Cow::Borrowed(slice) => Ok(Cow::Borrowed(BitSlice::from_slice(slice))),
@@ -134,7 +134,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// The range is specified in bit indices. The underlying element reads are
     /// widened to cover full `u64` boundaries, and the returned slice is trimmed
     /// to the exact requested bit range.
-    pub fn read_bit_range(&self, range: std::ops::Range<u64>) -> Result<Cow<'_, BitSlice>> {
+    pub fn read_bit_range(&self, range: std::ops::Range<u64>) -> UioResult<Cow<'_, BitSlice>> {
         if range.is_empty() {
             return Ok(Cow::Borrowed(BitSlice::empty()));
         }
@@ -164,7 +164,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     }
 
     /// Count the number of set bits in the entire storage.
-    pub fn count_ones(&self) -> Result<usize> {
+    pub fn count_ones(&self) -> UioResult<usize> {
         Ok(self.read_all()?.count_ones())
     }
 
@@ -176,7 +176,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// intermediate `Vec` of set positions is allocated. Reads the whole storage
     /// including any trailing capacity, so callers that keep unused capacity
     /// cleared get back exactly their set positions.
-    pub fn iter_ones(&self) -> Result<impl Iterator<Item = u64> + '_> {
+    pub fn iter_ones(&self) -> UioResult<impl Iterator<Item = u64> + '_> {
         let cow_bitslice = self.read_all()?;
         let iter = match cow_bitslice {
             Cow::Borrowed(bitslice) => Either::Left(bitslice.iter_ones().map(|i| i as u64)),
@@ -191,7 +191,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// target bit.
     ///
     /// Returns `None` if `bit_index` is out of bounds.
-    pub fn get_bit(&self, bit_index: u64) -> Result<Option<bool>> {
+    pub fn get_bit(&self, bit_index: u64) -> UioResult<Option<bool>> {
         let element_index = Self::element_idx(bit_index);
         let bit_within_element = Self::bit_within_element(bit_index);
 
@@ -212,12 +212,12 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     }
 
     /// Populate the underlying storage's RAM cache.
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self) -> UioResult<()> {
         self.storage.populate()
     }
 
     /// Evict the underlying storage's data from RAM cache.
-    pub fn clear_ram_cache(&self) -> Result<()> {
+    pub fn clear_ram_cache(&self) -> UioResult<()> {
         self.storage.clear_ram_cache()
     }
 }
@@ -234,7 +234,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
     pub fn set_ascending_bits_batch(
         &mut self,
         updates: impl IntoIterator<Item = (u64, bool)>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         // Group updates into runs of consecutive elements. A new run starts
         // whenever the element index jumps by more than 1.
         let mut prev_element: Option<u64> = None;
@@ -292,7 +292,10 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
     /// `source.len()` must not exceed the storage's bit length.
     /// If length of source is less than self's bit length,
     /// only the prefix of the storage will be modified
-    pub fn write_bitslice<T2, O2>(&mut self, source: &bitvec::slice::BitSlice<T2, O2>) -> Result<()>
+    pub fn write_bitslice<T2, O2>(
+        &mut self,
+        source: &bitvec::slice::BitSlice<T2, O2>,
+    ) -> UioResult<()>
     where
         T2: bitvec::store::BitStore,
         O2: bitvec::order::BitOrder,
@@ -329,7 +332,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
     /// Read-modify-write a single bit. Returns the previous value.
     ///
     /// Only writes to the backend if the element actually changed.
-    pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> Result<bool> {
+    pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> UioResult<bool> {
         let element_index = Self::element_idx(bit_index);
         let bit_within_element = Self::bit_within_element(bit_index);
 
