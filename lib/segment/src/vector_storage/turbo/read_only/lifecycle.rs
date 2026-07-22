@@ -24,7 +24,7 @@ impl<S: UniversalRead> ReadOnlyTurboVectorStorage<S> {
             dim,
             TQDT_BITS,
             TQDT_MODE,
-            distance.into(),
+            quantization::DistanceType::from(distance),
             TQDT_ROTATION,
             None,
         )
@@ -81,8 +81,12 @@ impl<S: UniversalRead> ReadOnlyTurboVectorStorage<S> {
         };
 
         // The read-only backends map lazily; warm them when the load profile asks.
-        if !matches!(populate, Populate::No) {
-            storage.populate()?;
+        match populate {
+            Populate::No => {}
+            Populate::Auto
+            | Populate::Blocking
+            | Populate::PreferBackground
+            | Populate::Partial(_) => storage.populate()?,
         }
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_PATH))?;
@@ -139,8 +143,12 @@ impl<S: UniversalRead> ReadOnlyTurboMultiVectorStorage<S> {
             quantizer.quantized_size(),
         )?;
         // The chunked read backend maps lazily; warm it when the profile asks.
-        if !matches!(populate, Populate::No) {
-            storage.populate()?;
+        match populate {
+            Populate::No => {}
+            Populate::Auto
+            | Populate::Blocking
+            | Populate::PreferBackground
+            | Populate::Partial(_) => storage.populate()?,
         }
 
         let offsets = ChunkedVectorsRead::open(fs, &path.join(OFFSETS_PATH), 1, advice, populate)?;
