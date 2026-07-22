@@ -4,7 +4,7 @@ use common::bitvec::BitSlice;
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::IteratorExt as _;
 use common::types::{DeferredBehavior, PointOffsetType};
-use common::universal_io::{ReadRange, UniversalRead};
+use common::universal_io::{ReadRange, UioResult, UniversalRead};
 use itertools::Itertools as _;
 
 use super::ReadOnlyDiskIdTracker;
@@ -40,21 +40,12 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
         external_ids: impl IntoIterator<Item = PointIdType>,
         mut on_live: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
-        // Use `first_err` instead of `?` to avoid UniversalIoError vs OperationResult problems
-        let mut first_err = None;
         self.reader.lookup_batch(external_ids, |id, offset| {
-            match self.point_deleted(offset) {
-                Ok(false) => on_live(id, offset),
-                Ok(true) => {}
-                Err(err) => {
-                    first_err.get_or_insert(err);
-                }
+            if !self.point_deleted(offset)? {
+                on_live(id, offset);
             }
-        })?;
-        match first_err {
-            Some(err) => Err(err),
-            None => Ok(()),
-        }
+            Ok(())
+        })
     }
 }
 
@@ -69,10 +60,10 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         if u64::from(internal_id) >= self.versions_len {
             return None;
         }
-        match self.versions.read::<Random>(ReadRange {
-            byte_offset: u64::from(internal_id) * size_of::<SeqNumberType>() as u64,
-            length: 1,
-        }) {
+        match self.versions.read(
+            ReadRange::one(u64::from(internal_id) * size_of::<SeqNumberType>() as u64),
+            Random,
+        ) {
             Ok(values) => values.first().copied(),
             Err(err) => {
                 log::error!("disk id tracker version read failed: {err}");
@@ -130,11 +121,11 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
                 (internal_id, range)
             });
         self.versions
-            .read_batch::<Random, PointOffsetType>(ranges, |internal_id, values| {
+            .read_batch(ranges, Random, |internal_id, values| {
                 if let Some(&version) = values.first() {
                     callback(internal_id, version);
                 }
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         Ok(())
@@ -182,10 +173,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         let versions = self
             .versions
-            .read::<Sequential>(ReadRange {
-                byte_offset: 0,
-                length: self.versions_len,
-            })?
+            .read(ReadRange::new(0, self.versions_len), Sequential)?
             .into_owned();
         Ok(Box::new(versions.into_iter().enumerate().map(
             |(offset, version)| (offset as PointOffsetType, version),

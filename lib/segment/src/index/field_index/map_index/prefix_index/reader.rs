@@ -102,7 +102,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         )?;
 
         let header_size = size_of::<Header>() as u64;
-        let header_bytes = storage.read_bytes::<Random>(0..header_size, align_of::<Header>())?;
+        let header_bytes = storage.read_bytes(0..header_size, Random, align_of::<Header>())?;
         let header: Header = bytemuck::try_pod_read_unaligned(header_bytes.as_ref())
             .map_err(|_| OperationError::service_error("Failed to read prefix index header"))?;
 
@@ -118,8 +118,11 @@ impl<S: UniversalRead> PrefixIndex<S> {
             )));
         }
 
-        let index_bytes =
-            storage.read_bytes::<Random>(header_size..header_size + header.block_index_size, 1)?;
+        let index_bytes = storage.read_bytes(
+            header_size..header_size + header.block_index_size,
+            Random,
+            1,
+        )?;
         let blocks = Self::parse_block_index(
             index_bytes.as_ref(),
             header.block_count,
@@ -230,10 +233,10 @@ impl<S: UniversalRead> PrefixIndex<S> {
             .payload_index_io_read_counter()
             .incr_delta((last_block.bytes.end - bytes_start) as usize);
 
-        let bytes = self.storage.read::<Random, u8>(ReadRange::new(
-            bytes_start,
-            last_block.bytes.end - bytes_start,
-        ))?;
+        let bytes = self.storage.read::<_, u8>(
+            ReadRange::new(bytes_start, last_block.bytes.end - bytes_start),
+            Random,
+        )?;
 
         for block in &self.blocks[range] {
             let block_bytes = bytes
@@ -339,10 +342,10 @@ impl<S: UniversalRead> PrefixIndex<S> {
             .payload_index_io_read_counter()
             .incr_delta((block.bytes.end - block.bytes.start) as usize);
 
-        let bytes = self.storage.read::<Random, u8>(ReadRange::new(
-            block.bytes.start,
-            block.bytes.end - block.bytes.start,
-        ))?;
+        let bytes = self.storage.read::<_, u8>(
+            ReadRange::new(block.bytes.start, block.bytes.end - block.bytes.start),
+            Random,
+        )?;
         decode_block(bytes.as_ref(), block.key_count, f)
     }
 

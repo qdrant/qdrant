@@ -249,7 +249,7 @@ fn disk_cache_read_whole_skips_remote_len() {
     );
 
     let again = file
-        .read::<Sequential, u8>(ReadRange::new(0, DATA.len() as u64))
+        .read::<_, u8>(ReadRange::new(0, DATA.len() as u64), Sequential)
         .expect("local read");
     assert_eq!(&again[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);

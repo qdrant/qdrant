@@ -205,6 +205,7 @@ impl UniversalRead for MmapFile {
     fn read_bytes<P: AccessPattern>(
         &self,
         range: Range<u64>,
+        _access_pattern: P,
         _align: usize,
     ) -> UioResult<ACow<'_>> {
         let mmap = self.as_bytes::<P>();
@@ -216,6 +217,7 @@ impl UniversalRead for MmapFile {
     fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        _access_pattern: P,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
         let bytes = self.as_bytes::<P>();
         Ok(ranges.into_iter().map(move |(user_data, range)| {
@@ -225,11 +227,12 @@ impl UniversalRead for MmapFile {
     }
 
     /// Override the default pipeline-based for better performance.
-    fn read_batch<P: AccessPattern, T: Item, U: UserData>(
+    fn read_batch<P: AccessPattern, T: Item, U: UserData, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        mut callback: impl FnMut(U, &[T]) -> UioResult<()>,
-    ) -> UioResult<()> {
+        _access_pattern: P,
+        mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
         let bytes = self.as_bytes::<P>();
         for (user_data, range) in ranges {
             let items = read_bytemuck::<T>(bytes, range)?;

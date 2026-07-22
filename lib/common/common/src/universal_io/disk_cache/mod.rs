@@ -161,7 +161,12 @@ impl UniversalRead for CachedSlice {
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
         let start = usize::try_from(range.start).expect("range.start is within usize");
         let end = usize::try_from(range.end).expect("range.end is within usize");
         Ok(self.get_range_bytes(start..end, align)?)

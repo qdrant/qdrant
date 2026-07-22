@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalKind,
-    UniversalRead, UniversalReadFs, UserData,
+    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -116,13 +116,22 @@ where
     }
 
     #[inline]
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
-        self.0.read::<P, T>(range)
+    fn read<P: AccessPattern, T: Item>(
+        &self,
+        range: ReadRange,
+        access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
+        self.0.read(range, access_pattern)
     }
 
     #[inline]
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
-        self.0.read_bytes::<P>(range, align)
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        self.0.read_bytes(range, access_pattern, align)
     }
 
     #[inline]
@@ -131,42 +140,37 @@ where
     }
 
     #[inline]
-    fn read_batch<P, T, U>(
+    fn read_batch<P, T, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> UioResult<()>,
-    ) -> UioResult<()>
+        access_pattern: P,
+        callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E>
     where
         P: AccessPattern,
         T: Item,
         U: UserData,
+        E: From<UniversalIoError>,
     {
-        self.0.read_batch::<P, T, U>(ranges, callback)
+        self.0.read_batch(ranges, access_pattern, callback)
     }
 
     #[inline]
-    fn read_iter<P, T, U>(
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-    {
-        self.0.read_iter::<P, T, U>(ranges)
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
+        self.0.read_iter(ranges, access_pattern)
     }
 
     #[inline]
-    fn read_bytes_iter<P, U>(
+    fn read_bytes_iter<P: AccessPattern, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
-        self.0.read_bytes_iter::<P, U>(ranges)
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
+        self.0.read_bytes_iter(ranges, access_pattern)
     }
 
     #[inline]

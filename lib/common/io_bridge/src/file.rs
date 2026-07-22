@@ -102,7 +102,12 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let buf = self
@@ -230,6 +235,7 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
+    use common::generic_consts::{Random, Sequential};
     use common::universal_io::{
         ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs,
     };
@@ -313,7 +319,7 @@ mod tests {
             .open("obj", OpenOptions::new_for_test(), ())
             .expect("open");
         let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
+            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -326,7 +332,7 @@ mod tests {
             "obj",
         );
         let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
+            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -339,7 +345,7 @@ mod tests {
             "obj",
         );
         let cow = file
-            .read::<common::generic_consts::Random, u8>(ReadRange::new(6, 5))
+            .read::<_, u8>(ReadRange::new(6, 5), Random)
             .expect("read");
         assert_eq!(&cow[..], b"world");
     }
@@ -368,9 +374,9 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |u, s| {
+        file.read_batch(inputs, Random, |u, s| {
             got.insert(u, s.to_vec());
-            Ok(())
+            UioResult::Ok(())
         })
         .expect("read_batch");
         assert_eq!(got[&1], b"hello");

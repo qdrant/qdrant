@@ -349,8 +349,9 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     ) -> UioResult<()> {
         // Phase 1: read all headers as one contiguous range.
         let storage_len = self.storage.len::<u8>()?;
-        let headers = self.storage.read_bytes::<Sequential>(
+        let headers = self.storage.read_bytes(
             0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
+            Sequential,
             align_of::<PostingListFileHeader<W>>(),
         )?;
         hw_counter.vector_io_read().incr_delta(headers.len());
@@ -369,7 +370,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         });
 
         // Phase 2: read each posting's data via batched reads.
-        for record in self.storage.read_bytes_iter::<Random, _>(ranges)? {
+        for record in self.storage.read_bytes_iter(ranges, Random)? {
             let ((id, header), data) = record?;
             let view = CompressedPostingListView::new(header, &data, hw_counter)
                 .ok_or_else(corrupted_index)?;
@@ -403,7 +404,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         // Phase 2: read each posting's data via batched reads.
         let views = self
             .storage
-            .read_bytes_iter::<Random, _>(ranges)?
+            .read_bytes_iter(ranges, Random)?
             .map(move |record| {
                 let ((user_data, header), data) = record?;
                 let data = match data {
@@ -448,7 +449,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             })
         });
 
-        for record in self.storage.read_bytes_iter::<Random, _>(ranges)? {
+        for record in self.storage.read_bytes_iter(ranges, Random)? {
             let ((user_data, has_next), header_bytes) = record?;
             hw_counter.vector_io_read().incr_delta(header_bytes.len());
             let (&header, rest) = PostingListFileHeader::<W>::ref_from_prefix(&header_bytes)

@@ -150,7 +150,7 @@ fn read_slot<S: UniversalRead>(
     if end_offset as u64 > storage_len {
         return Ok(None);
     }
-    let opt = storage.read::<Random, OptionalPointer>(ReadRange::one(start_offset as u64))?[0];
+    let opt = storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), Random)?[0];
     Ok(opt.to_option())
 }
 
@@ -355,7 +355,7 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header = storage.read::<Random, TrackerHeader>(ReadRange::one(0))?[0];
+        let header = storage.read(ReadRange::one(0), Random)?[0];
         Ok(header)
     }
 

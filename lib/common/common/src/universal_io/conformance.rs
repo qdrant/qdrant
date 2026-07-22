@@ -53,7 +53,7 @@ where
         b"hello world".as_slice(),
     );
     assert_eq!(
-        file.read::<Random, u8>(ReadRange::new(6, 5))
+        file.read::<_, u8>(ReadRange::new(6, 5), Random)
             .unwrap()
             .as_ref(),
         b"world".as_slice(),
@@ -78,7 +78,7 @@ where
     file.append_batch(11, batch).unwrap();
     assert_eq!(file.len::<u8>().unwrap(), 17);
     assert_eq!(
-        file.read::<Random, u8>(ReadRange::new(11, 6))
+        file.read::<_, u8>(ReadRange::new(11, 6), Random)
             .unwrap()
             .as_ref(),
         b"abcdef".as_slice(),
@@ -94,7 +94,7 @@ where
     file.append_batch(17, buffers.iter().map(Vec::as_slice))
         .unwrap();
     assert_eq!(
-        file.read::<Random, u8>(ReadRange::new(17, expected.len() as u64))
+        file.read::<_, u8>(ReadRange::new(17, expected.len() as u64), Random)
             .unwrap()
             .as_ref(),
         expected.as_slice(),
@@ -112,7 +112,7 @@ where
     assert_eq!(reader.len::<u8>().unwrap(), eof + 4);
     assert_eq!(
         reader
-            .read::<Random, u8>(ReadRange::new(eof, 4))
+            .read::<_, u8>(ReadRange::new(eof, 4), Random)
             .unwrap()
             .as_ref(),
         b"tail".as_slice(),

@@ -164,7 +164,12 @@ impl UniversalRead for IoUringFile {
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
         if self.direct_io {
             // direct_io needs special handling
             let mut pipeline = IoUringPipeline::<()>::new()?;

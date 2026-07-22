@@ -60,10 +60,7 @@ impl<S: UniversalRead> StoredBitmask<S> {
             ));
         }
 
-        let header_bytes = storage.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: HEADER_SIZE as u64,
-        })?;
+        let header_bytes = storage.read(ReadRange::new(0, HEADER_SIZE as u64), Sequential)?;
         let header: BitmaskHeader = bytemuck::pod_read_unaligned(&header_bytes);
 
         if header.magic != MAGIC {
@@ -134,10 +131,10 @@ impl<S: UniversalRead> StoredBitmask<S> {
 
     /// Read and decode the payload, in the stored polarity.
     pub fn read(&self) -> UioResult<BitmaskContent<'_>> {
-        let payload = self.storage.read::<Sequential>(ReadRange {
-            byte_offset: HEADER_SIZE as u64,
-            length: self.payload_len,
-        })?;
+        let payload = self.storage.read(
+            ReadRange::new(HEADER_SIZE as u64, self.payload_len),
+            Sequential,
+        )?;
 
         match self.encoding {
             Encoding::Dense => {

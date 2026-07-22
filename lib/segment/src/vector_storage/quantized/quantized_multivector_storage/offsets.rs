@@ -6,8 +6,8 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, UniversalWrite,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
+    UniversalRead, UniversalReadFs, UniversalWrite,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -213,9 +213,10 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         let offset = self
             .offsets
-            .read::<Random>(ReadRange::one(
-                u64::from(idx) * size_of::<MultivectorOffset>() as u64,
-            ))
+            .read(
+                ReadRange::one(u64::from(idx) * size_of::<MultivectorOffset>() as u64),
+                Random,
+            )
             .expect("multi-vector offset read");
 
         let [offset] = offset.as_ref() else {
@@ -235,14 +236,13 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
             (idx, ReadRange::one(offset))
         });
 
-        self.offsets
-            .read_batch::<Random, _>(ranges, |idx, offset| {
-                let [offset] = offset else {
-                    unreachable!("multi-vector offsets are stored as a single-element slice");
-                };
-                callback(idx, *offset);
-                Ok(())
-            })?;
+        self.offsets.read_batch(ranges, Random, |idx, offset| {
+            let [offset] = offset else {
+                unreachable!("multi-vector offsets are stored as a single-element slice");
+            };
+            callback(idx, *offset);
+            UioResult::Ok(())
+        })?;
         Ok(())
     }
 

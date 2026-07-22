@@ -372,7 +372,8 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use common::universal_io::{ListedFile, ReadRange, UniversalAppend, UniversalRead};
+    use common::generic_consts::{Random, Sequential};
+    use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalAppend, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
     use object_store::memory::InMemory;
     use object_store::{PutMode, UpdateVersion};
@@ -501,7 +502,7 @@ mod tests {
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
         let cow = file
-            .read::<common::generic_consts::Sequential, u8>(ReadRange::new(0, 11))
+            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -512,7 +513,7 @@ mod tests {
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
         let cow = file
-            .read::<common::generic_consts::Random, u8>(ReadRange::new(6, 5))
+            .read::<_, u8>(ReadRange::new(6, 5), Random)
             .expect("read");
         assert_eq!(&cow[..], b"world");
     }
@@ -529,9 +530,9 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |u, s| {
+        file.read_batch(inputs, Random, |u, s| {
             got.insert(u, s.to_vec());
-            Ok(())
+            UioResult::Ok(())
         })
         .expect("read_batch");
         assert_eq!(got[&1], b"hello");

@@ -35,7 +35,9 @@ where
 
         // Read one byte per block purely to fault each block into the local
         // cache; the bytes themselves are discarded.
-        self.read_batch::<Sequential, u8, ()>(one_byte_per_block, |(), _bytes| Ok(()))?;
+        self.read_batch(one_byte_per_block, Sequential, |(), _bytes: &[u8]| {
+            UioResult::Ok(())
+        })?;
 
         Ok(())
     }
@@ -58,7 +60,12 @@ where
         self.reopen_impl()
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
         let mut pipeline = DiskCachePipeline::<R, ()>::new()?;
         pipeline.schedule::<P>((), self, range, align)?;
         let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
@@ -68,10 +75,7 @@ where
     fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         self.prefill_if_uninit()?;
         let length = self.len::<T>()?;
-        self.read::<Sequential, T>(ReadRange {
-            byte_offset: 0,
-            length,
-        })
+        self.read(ReadRange::new(0, length), Sequential)
     }
 
     fn len<T>(&self) -> UioResult<u64> {

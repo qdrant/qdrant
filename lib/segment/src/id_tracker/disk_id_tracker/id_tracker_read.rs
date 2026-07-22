@@ -46,6 +46,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTra
             if !self.point_deleted(offset) {
                 on_live(id, offset);
             }
+            Ok(())
         })
     }
 }

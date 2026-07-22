@@ -1,11 +1,11 @@
-pub trait AccessPattern: Copy {
+pub trait AccessPattern: Copy + Default {
     const IS_SEQUENTIAL: bool;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct Random;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct Sequential;
 
 impl AccessPattern for Random {

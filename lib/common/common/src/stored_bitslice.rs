@@ -143,10 +143,10 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         let elem_end = range.end.div_ceil(u64::from(BITS_PER_ELEMENT));
         let num_elements = elem_end - elem_start;
 
-        let elements = self.storage.read::<Random>(ReadRange {
-            byte_offset: elem_start * size_of::<BitStore>() as u64,
-            length: num_elements,
-        })?;
+        let elements = self.storage.read(
+            ReadRange::new(elem_start * size_of::<BitStore>() as u64, num_elements),
+            Random,
+        )?;
 
         let bit_offset = Self::bit_within_element(range.start) as usize;
         let bit_end = bit_offset + (range.end - range.start) as usize;
@@ -199,9 +199,10 @@ impl<S: UniversalRead> StoredBitSlice<S> {
             return Ok(None);
         }
 
-        let element = self
-            .storage
-            .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
+        let element = self.storage.read(
+            ReadRange::one(element_index * size_of::<BitStore>() as u64),
+            Random,
+        )?[0];
 
         let bitslice = BitSlice::from_element(&element);
 
@@ -266,10 +267,10 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
 
             let mut buf = self
                 .storage
-                .read::<Random>(ReadRange {
-                    byte_offset: element_start * size_of::<BitStore>() as u64,
-                    length: num_elements,
-                })?
+                .read(
+                    ReadRange::new(element_start * size_of::<BitStore>() as u64, num_elements),
+                    Random,
+                )?
                 .into_owned();
             let bitslice = BitSlice::from_slice_mut(&mut buf);
 
@@ -317,10 +318,9 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
         // Fetch existing, in case the source length is not a multiple of element size
         let element_count = bit_count.div_ceil(u64::from(BITS_PER_ELEMENT));
 
-        let existing = self.storage.read::<Random>(ReadRange {
-            byte_offset: 0,
-            length: element_count,
-        })?;
+        let existing = self
+            .storage
+            .read(ReadRange::new(0, element_count), Random)?;
 
         let mut buf = existing.into_owned();
         let buf_bits = BitSlice::from_slice_mut(&mut buf);
@@ -344,9 +344,10 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
             });
         }
 
-        let mut element = self
-            .storage
-            .read::<Random>(ReadRange::one(element_index * size_of::<BitStore>() as u64))?[0];
+        let mut element = self.storage.read(
+            ReadRange::one(element_index * size_of::<BitStore>() as u64),
+            Random,
+        )?[0];
 
         let element = &mut element;
 
