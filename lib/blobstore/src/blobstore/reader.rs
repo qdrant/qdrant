@@ -28,13 +28,7 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 /// Holds its data directly (no locks) since it provides only read access.
 /// For read-write access, use [`super::Blobstore`].
 #[derive(Debug)]
-pub struct BlobstoreReader<V, S: UniversalRead> {
-    variant: ReaderVariant<V, S>,
-}
-
-/// Mode specific implementation of the reader, see [`Mode`](crate::config::Mode).
-#[derive(Debug)]
-enum ReaderVariant<V, S: UniversalRead> {
+pub enum BlobstoreReader<V, S: UniversalRead> {
     Gridstore(GridstoreReader<V, S>),
     Logstore(LogstoreReader<V, S>),
 }
@@ -83,24 +77,20 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         match read_config(fs, &base_path)? {
             StorageConfig::Mutable(config) => {
                 let reader = GridstoreReader::open(fs, base_path, config, populate)?;
-                Ok(Self {
-                    variant: ReaderVariant::Gridstore(reader),
-                })
+                Ok(Self::Gridstore(reader))
             }
             StorageConfig::AppendOnly(config) => {
                 let reader = LogstoreReader::open(fs, base_path, config)?;
-                Ok(Self {
-                    variant: ReaderVariant::Logstore(reader),
-                })
+                Ok(Self::Logstore(reader))
             }
         }
     }
 
     /// Create a [`BlobstoreView`] borrowing this reader's data.
     pub fn view(&self) -> BlobstoreView<'_, V, S> {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => BlobstoreView::from_gridstore(reader.view()),
-            ReaderVariant::Logstore(reader) => BlobstoreView::from_logstore(reader.view()),
+        match self {
+            Self::Gridstore(reader) => BlobstoreView::from_gridstore(reader.view()),
+            Self::Logstore(reader) => BlobstoreView::from_logstore(reader.view()),
         }
     }
 
@@ -109,9 +99,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// Note: in mutable mode this does not include bitmask files. Use
     /// [`super::Blobstore::files`] for the full list.
     pub fn files(&self) -> Vec<PathBuf> {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.files(),
-            ReaderVariant::Logstore(reader) => reader.files(),
+        match self {
+            Self::Gridstore(reader) => reader.files(),
+            Self::Logstore(reader) => reader.files(),
         }
     }
 
@@ -121,9 +111,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// as of the last [`Self::live_reload`] — see
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
     pub fn max_point_offset(&self) -> Result<PointOffset> {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.max_point_offset(),
-            ReaderVariant::Logstore(reader) => Ok(reader.max_point_offset()),
+        match self {
+            Self::Gridstore(reader) => reader.max_point_offset(),
+            Self::Logstore(reader) => Ok(reader.max_point_offset()),
         }
     }
 
@@ -132,9 +122,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
-            ReaderVariant::Logstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
+        match self {
+            Self::Gridstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
+            Self::Logstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
         }
     }
 
@@ -152,9 +142,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.iter(max_id, callback, hw_counter),
-            ReaderVariant::Logstore(reader) => reader.iter(max_id, callback, hw_counter),
+        match self {
+            Self::Gridstore(reader) => reader.iter(max_id, callback, hw_counter),
+            Self::Logstore(reader) => reader.iter(max_id, callback, hw_counter),
         }
     }
 
@@ -169,11 +159,11 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         U: UserData,
         E: From<BlobstoreError>,
     {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => {
+        match self {
+            Self::Gridstore(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
-            ReaderVariant::Logstore(reader) => {
+            Self::Logstore(reader) => {
                 reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
             }
         }
@@ -183,9 +173,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     ///
     /// Approximate (total page capacity) in mutable mode, exact in append-only mode.
     pub fn get_storage_size_bytes(&self) -> usize {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.get_storage_size_bytes(),
-            ReaderVariant::Logstore(reader) => reader.get_storage_size_bytes(),
+        match self {
+            Self::Gridstore(reader) => reader.get_storage_size_bytes(),
+            Self::Logstore(reader) => reader.get_storage_size_bytes(),
         }
     }
 
@@ -198,9 +188,9 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
     pub fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
-        match &mut self.variant {
-            ReaderVariant::Gridstore(reader) => reader.live_reload(fs),
-            ReaderVariant::Logstore(reader) => reader.live_reload(fs),
+        match self {
+            Self::Gridstore(reader) => reader.live_reload(fs),
+            Self::Logstore(reader) => reader.live_reload(fs),
         }
     }
 }
@@ -208,17 +198,17 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 impl<V, S: UniversalRead> BlobstoreReader<V, S> {
     /// Returns `true` if BlobstoreReader is on disk, i.e. not populated on start/reload
     pub fn is_on_disk(&self) -> bool {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.is_on_disk(),
-            ReaderVariant::Logstore(reader) => reader.is_on_disk(),
+        match self {
+            Self::Gridstore(reader) => reader.is_on_disk(),
+            Self::Logstore(reader) => reader.is_on_disk(),
         }
     }
 
     /// Drop disk cache for pages.
     pub fn clear_cache(&self) -> crate::Result<()> {
-        match &self.variant {
-            ReaderVariant::Gridstore(reader) => reader.clear_cache(),
-            ReaderVariant::Logstore(reader) => reader.clear_cache(),
+        match self {
+            Self::Gridstore(reader) => reader.clear_cache(),
+            Self::Logstore(reader) => reader.clear_cache(),
         }
     }
 }
