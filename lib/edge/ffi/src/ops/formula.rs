@@ -99,9 +99,21 @@ impl Expression {
         })
     }
 
-    /// Wrap `inner` one level above `children`, enforcing both the depth cap
-    /// (stack safety) and the node-count cap (heap safety).
-    fn node(inner: ExpressionInternal, children: &[&Arc<Expression>]) -> Result<Arc<Self>> {
+    /// Wrap a node one level above `children`, enforcing both the depth cap
+    /// (stack safety) and the node-count cap (heap safety) **before** `inner` is
+    /// materialized.
+    ///
+    /// `build` is invoked only once both checks pass, so a rejected tree never
+    /// performs the eager `inner` deep-clone. This ordering is load-bearing: a
+    /// host can pass one accepted handle as many `children` (e.g.
+    /// `sum(vec![e; N])`), and cloning first would allocate `N × e.size` nodes —
+    /// the multi-gigabyte, uncatchable-abort blow-up — before the size check
+    /// could reject it. Size is computed from the cheap child handles, not the
+    /// cloned tree.
+    fn node(
+        children: &[&Arc<Expression>],
+        build: impl FnOnce() -> ExpressionInternal,
+    ) -> Result<Arc<Self>> {
         let depth = children
             .iter()
             .map(|c| c.depth)
@@ -113,7 +125,11 @@ impl Expression {
             .iter()
             .fold(1u64, |acc, c| acc.saturating_add(c.size));
         check_expression_size(size)?;
-        Ok(Arc::new(Self { inner, depth, size }))
+        Ok(Arc::new(Self {
+            inner: build(),
+            depth,
+            size,
+        }))
     }
 }
 
@@ -178,28 +194,27 @@ impl Expression {
     /// Product of `factors`.
     #[uniffi::constructor]
     pub fn mult(factors: Vec<Arc<Expression>>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Mult(factors.iter().map(|e| e.inner.clone()).collect()),
-            &factors.iter().collect::<Vec<_>>(),
-        )
+        let children: Vec<&Arc<Expression>> = factors.iter().collect();
+        Self::node(&children, || {
+            ExpressionInternal::Mult(factors.iter().map(|e| e.inner.clone()).collect())
+        })
     }
 
     /// Sum of `terms`.
     #[uniffi::constructor]
     pub fn sum(terms: Vec<Arc<Expression>>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Sum(terms.iter().map(|e| e.inner.clone()).collect()),
-            &terms.iter().collect::<Vec<_>>(),
-        )
+        let children: Vec<&Arc<Expression>> = terms.iter().collect();
+        Self::node(&children, || {
+            ExpressionInternal::Sum(terms.iter().map(|e| e.inner.clone()).collect())
+        })
     }
 
     /// Negation: `-expression`.
     #[uniffi::constructor]
     pub fn negate(expression: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Neg(Box::new(expression.inner.clone())),
-            &[&expression],
-        )
+        Self::node(&[&expression], || {
+            ExpressionInternal::Neg(Box::new(expression.inner.clone()))
+        })
     }
 
     /// Division: `left / right`. When `right` evaluates to zero the result is
@@ -210,71 +225,60 @@ impl Expression {
         right: Arc<Expression>,
         by_zero_default: Option<f32>,
     ) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Div {
-                left: Box::new(left.inner.clone()),
-                right: Box::new(right.inner.clone()),
-                by_zero_default,
-            },
-            &[&left, &right],
-        )
+        Self::node(&[&left, &right], || ExpressionInternal::Div {
+            left: Box::new(left.inner.clone()),
+            right: Box::new(right.inner.clone()),
+            by_zero_default,
+        })
     }
 
     /// Square root.
     #[uniffi::constructor]
     pub fn sqrt(expression: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Sqrt(Box::new(expression.inner.clone())),
-            &[&expression],
-        )
+        Self::node(&[&expression], || {
+            ExpressionInternal::Sqrt(Box::new(expression.inner.clone()))
+        })
     }
 
     /// `base` raised to `exponent`.
     #[uniffi::constructor]
     pub fn pow(base: Arc<Expression>, exponent: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Pow {
-                base: Box::new(base.inner.clone()),
-                exponent: Box::new(exponent.inner.clone()),
-            },
-            &[&base, &exponent],
-        )
+        Self::node(&[&base, &exponent], || ExpressionInternal::Pow {
+            base: Box::new(base.inner.clone()),
+            exponent: Box::new(exponent.inner.clone()),
+        })
     }
 
     /// Natural exponent: `e^expression`.
     #[uniffi::constructor]
     pub fn exp(expression: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Exp(Box::new(expression.inner.clone())),
-            &[&expression],
-        )
+        Self::node(&[&expression], || {
+            ExpressionInternal::Exp(Box::new(expression.inner.clone()))
+        })
     }
 
     /// Base-10 logarithm.
     #[uniffi::constructor]
     pub fn log10(expression: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Log10(Box::new(expression.inner.clone())),
-            &[&expression],
-        )
+        Self::node(&[&expression], || {
+            ExpressionInternal::Log10(Box::new(expression.inner.clone()))
+        })
     }
 
     /// Natural logarithm.
     #[uniffi::constructor]
     pub fn ln(expression: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Ln(Box::new(expression.inner.clone())),
-            &[&expression],
-        )
+        Self::node(&[&expression], || {
+            ExpressionInternal::Ln(Box::new(expression.inner.clone()))
+        })
     }
 
     /// Absolute value.
     #[uniffi::constructor]
     pub fn abs(expression: Arc<Expression>) -> Result<Arc<Self>> {
-        Self::node(
-            ExpressionInternal::Abs(Box::new(expression.inner.clone())),
-            &[&expression],
-        )
+        Self::node(&[&expression], || {
+            ExpressionInternal::Abs(Box::new(expression.inner.clone()))
+        })
     }
 
     /// Decay function over `x`: `1.0` at `target` (default `0`), decaying to

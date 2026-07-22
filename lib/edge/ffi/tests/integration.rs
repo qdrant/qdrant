@@ -2821,7 +2821,6 @@ fn query_groups_returns_one_group_per_key() {
     }
 }
 
-
 /// Vector-name ops: add a dense field, write to it, then drop it.
 #[test]
 fn create_and_delete_named_vector_field() {
@@ -3092,6 +3091,99 @@ fn formula_normal_expression_accepted() {
     );
 }
 
+/// `Expression::decay` has its own node-count guard (it does not go through
+/// the shared `Expression::node` helper, since it takes an `x` and an
+/// optional `target` rather than a homogeneous `children` slice), currently
+/// untested elsewhere. Build one accepted `x` handle near the cap (size
+/// 8_191, via 12 doublings of a reused handle) and pass it as both `x` and
+/// `target`: the combined size (1 + 8_191 + 8_191 = 16_383) exceeds
+/// `MAX_FORMULA_NODES` (10_000), so `decay` must reject it as
+/// `InvalidArgument` — proving its own guard fires before the eager
+/// `x.inner.clone()` / `target.inner.clone()`.
+#[test]
+fn formula_decay_oversized_node_count_rejected() {
+    use qdrant_edge_ffi::{DecayKind, Expression};
+
+    let mut big_x = Expression::variable("$score".to_string());
+    for _ in 0..12u32 {
+        big_x = Expression::sum(vec![big_x.clone(), big_x.clone()]).expect(
+            "building the oversized-decay fixture (ending at size 8_191) must itself stay \
+             within the node cap",
+        );
+    }
+
+    let err = Expression::decay(
+        DecayKind::Lin,
+        big_x.clone(),
+        Some(big_x.clone()),
+        None,
+        None,
+    )
+    .err()
+    .expect(
+        "decay's own node-count guard must reject x+target combined size (16_383) \
+             exceeding the 10_000 node cap",
+    );
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument when decay's node-count guard fires, got {err:?}"
+    );
+}
+
+/// Over-rejection guard for `decay`, mirroring `formula_normal_expression_accepted`:
+/// a small, realistic decay expression (`decay(Gauss, $score)`, no `target`) must
+/// still construct successfully.
+#[test]
+fn formula_decay_accepted() {
+    use qdrant_edge_ffi::{DecayKind, Expression};
+
+    let result = Expression::decay(
+        DecayKind::Gauss,
+        Expression::variable("$score".to_string()),
+        None,
+        None,
+        None,
+    );
+    assert!(
+        result.is_ok(),
+        "a small decay expression must not be rejected by the node-count cap, got {:?}",
+        result.err()
+    );
+}
+
+/// Regression test for the clone-ordering fix in `Expression::node`: `build`
+/// (the eager `ExpressionInternal` clone) must only run after both the depth
+/// and node-count checks pass, so a host cannot force an unbounded clone by
+/// reusing one accepted handle as many variadic children. Build one accepted
+/// handle `e` near the cap (size 4_095, via 11 doublings), then reuse it as
+/// all four children of a single `sum` — the combined size
+/// (1 + 4×4_095 = 16_381) exceeds the 10_000 cap and must be rejected, proving
+/// the guard covers the variadic-reuse path, not just repeated binary
+/// doubling (which `formula_oversized_node_count_rejected` already covers).
+#[test]
+fn formula_wide_fanout_rejected() {
+    use qdrant_edge_ffi::Expression;
+
+    let mut e = Expression::variable("$score".to_string());
+    for _ in 0..11u32 {
+        e = Expression::sum(vec![e.clone(), e.clone()]).expect(
+            "building the near-cap fixture (ending at size 4_095) must itself stay within the \
+             node cap",
+        );
+    }
+
+    let err = Expression::sum(vec![e.clone(), e.clone(), e.clone(), e.clone()])
+        .err()
+        .expect(
+            "reusing one accepted handle as 4 children (~16_381 nodes) must be rejected by the \
+             node-count cap",
+        );
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument when the wide-fanout node-count cap fires, got {err:?}"
+    );
+}
+
 // ── Sparse vector validation ────────────────────────────────────────────────
 
 /// `indices.len() != values.len()` in a host-supplied sparse vector must be
@@ -3108,6 +3200,27 @@ fn sparse_length_mismatch_rejected() {
                 vector: SparseVector {
                     indices: vec![1, 2, 3],
                     values: vec![0.5],
+                },
+            },
+        )]),
+    });
+}
+
+/// The complementary length mismatch — `values` longer than `indices` — must
+/// also be rejected eagerly by the `upsert_points` constructor as
+/// `InvalidArgument`. `sparse_length_mismatch_rejected` above only covers
+/// `indices` being the longer side.
+#[test]
+fn sparse_values_longer_rejected() {
+    use qdrant_edge_ffi::types::{NamedVector, SparseVector};
+
+    assert_vector_rejected(Vector::Named {
+        map: HashMap::from([(
+            "sp".to_string(),
+            NamedVector::Sparse {
+                vector: SparseVector {
+                    indices: vec![1],
+                    values: vec![0.5, 0.6],
                 },
             },
         )]),
@@ -3231,6 +3344,15 @@ fn order_by_scroll_populates_order_value() {
         vec![2, 3, 1],
         "scroll order must follow ascending `rank`, not id or insertion order"
     );
+
+    // The request set `with_payload: false`; a regression that ignores the
+    // flag on the order-by path must be caught here.
+    for record in &resp.records {
+        assert!(
+            record.payload.is_none(),
+            "payload must be omitted when with_payload is false"
+        );
+    }
 }
 
 /// Resuming an order-by scroll via `StartFrom` (built from the previous
@@ -3322,6 +3444,306 @@ fn order_by_scroll_resumes_via_start_from() {
         }
         PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
     }
+}
+
+/// The query/search side of the `order_value` fix: `EdgeShard::query` with
+/// `ScoringQuery::OrderBy` (no prefetches — a top-level order-by query is a
+/// supported standalone case, equivalent to a plain ordered scroll) must
+/// populate `ScoredPoint.order_value` on every hit, in the requested sort
+/// order. Mirrors `order_by_scroll_populates_order_value` above, but through
+/// `query()` instead of `scroll()` — previously this path had zero coverage.
+#[test]
+fn query_order_by_populates_order_value() {
+    use qdrant_edge_ffi::types::OrderValue;
+    use qdrant_edge_ffi::{Direction, OrderBy, PayloadSchemaType, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"rank":3}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+            payload: Some(r#"{"rank":1}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"rank":2}"#.to_string()),
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+
+    shard
+        .update(
+            UpdateOperation::create_field_index("rank".to_string(), PayloadSchemaType::Integer)
+                .expect("create_field_index failed"),
+        )
+        .expect("index creation failed");
+
+    let hits = shard
+        .query(QueryRequest {
+            limit: 10,
+            offset: None,
+            query: Some(ScoringQuery::OrderBy {
+                order_by: OrderBy {
+                    key: "rank".to_string(),
+                    direction: Some(Direction::Asc),
+                    start_from: None,
+                },
+            }),
+            prefetches: vec![],
+            with_vector: None,
+            with_payload: Some(WithPayload::Bool { enable: false }),
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("order-by query failed");
+
+    assert_eq!(hits.len(), 3, "expected all three points back");
+
+    let order_values: Vec<i64> = hits
+        .iter()
+        .map(|h| match h.order_value {
+            Some(OrderValue::Int { value }) => value,
+            other => panic!("expected Some(OrderValue::Int {{ .. }}), got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        order_values,
+        vec![1, 2, 3],
+        "order_value must be populated and ascending by `rank` on the query() path too"
+    );
+
+    // Cross-check against the point ids: rank 1→id 2, rank 2→id 3, rank 3→id 1.
+    let ids: Vec<u64> = hits
+        .iter()
+        .map(|h| match &h.id {
+            PointId::NumId { value } => *value,
+            PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![2, 3, 1],
+        "query order must follow ascending `rank`, not id or insertion order"
+    );
+
+    for hit in &hits {
+        assert!(
+            hit.payload.is_none(),
+            "payload must be omitted when with_payload is false"
+        );
+    }
+}
+
+/// Strengthens `order_by_scroll_resumes_via_start_from`: pages through 5
+/// points at `limit: Some(2)` — deliberately smaller than the point count —
+/// resuming via `StartFrom` built from each page's last `order_value`, and
+/// proves the pages together reconstruct the full, gap-free rank sequence
+/// with exactly the one documented inclusive-overlap row at each page
+/// boundary. A single resumed hop (as in `..._resumes_via_start_from`) could
+/// pass by accident; requiring more than two pages here proves real
+/// multi-page continuation, not a single-page degenerate case.
+#[test]
+fn order_by_scroll_multipage_continuation() {
+    use qdrant_edge_ffi::types::OrderValue;
+    use qdrant_edge_ffi::{Direction, OrderBy, PayloadSchemaType, StartFrom};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    // Ranks deliberately run opposite to id order, so a correct result proves
+    // sorting is by payload value, not by id or insertion order.
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"rank":5}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+            payload: Some(r#"{"rank":4}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"rank":3}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 4 },
+            vector: named_vec([0.3, 0.3, 0.3, 0.3]),
+            payload: Some(r#"{"rank":2}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 5 },
+            vector: named_vec([0.6, 0.1, 0.1, 0.1]),
+            payload: Some(r#"{"rank":1}"#.to_string()),
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+    shard
+        .update(
+            UpdateOperation::create_field_index("rank".to_string(), PayloadSchemaType::Integer)
+                .expect("create_field_index failed"),
+        )
+        .expect("index creation failed");
+
+    let order_by = |start_from: Option<StartFrom>| OrderBy {
+        key: "rank".to_string(),
+        direction: Some(Direction::Asc),
+        start_from,
+    };
+
+    // Page through with limit=2, resuming via StartFrom built from the
+    // previous page's last order_value, until a short page signals the end.
+    let mut pages: Vec<Vec<i64>> = Vec::new();
+    let mut start_from = None;
+    loop {
+        let page = shard
+            .scroll(ScrollRequest {
+                offset: None,
+                limit: Some(2),
+                filter: None,
+                with_payload: Some(WithPayload::Bool { enable: false }),
+                with_vector: None,
+                order_by: Some(order_by(start_from.clone())),
+            })
+            .expect("order-by scroll page failed");
+        assert!(
+            !page.records.is_empty(),
+            "a resumed page must never come back empty while ranks remain"
+        );
+        let ranks: Vec<i64> = page
+            .records
+            .iter()
+            .map(|r| match r.order_value {
+                Some(OrderValue::Int { value }) => value,
+                other => panic!("expected Some(OrderValue::Int {{ .. }}), got {other:?}"),
+            })
+            .collect();
+        let last_value = *ranks.last().expect("checked non-empty above");
+        let is_last_page = page.records.len() < 2;
+        pages.push(ranks);
+        if is_last_page {
+            break;
+        }
+        start_from = Some(StartFrom::Integer { value: last_value });
+    }
+
+    assert!(
+        pages.len() > 2,
+        "5 points at limit=2 must take more than 2 pages — proves real multi-page \
+         continuation, not a single resumed hop (got {} pages: {pages:?})",
+        pages.len()
+    );
+
+    // Each page after the first must start with exactly the previous page's
+    // last row (the inclusive StartFrom boundary); flatten and drop that one
+    // duplicate per boundary to recover the full rank sequence.
+    let mut flattened: Vec<i64> = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        if i == 0 {
+            flattened.extend(page.iter().copied());
+        } else {
+            let prev_last = *pages[i - 1].last().expect("pages are never empty");
+            assert_eq!(
+                page[0], prev_last,
+                "page {i} must start with the previous page's last order_value (inclusive resume)"
+            );
+            flattened.extend(page.iter().skip(1).copied());
+        }
+    }
+    assert_eq!(
+        flattened,
+        vec![1, 2, 3, 4, 5],
+        "pages must together cover all 5 ranks in ascending order, with no gaps and no extra \
+         rows beyond the single documented boundary overlap per page"
+    );
+}
+
+/// Exercises `OrderValue::Float`: a float-valued payload field indexed as
+/// `PayloadSchemaType::Float` and ordered on must surface
+/// `Record.order_value` as `Some(OrderValue::Float { .. })`, complementing
+/// the integer coverage above.
+#[test]
+fn order_by_scroll_float_order_value() {
+    use qdrant_edge_ffi::types::OrderValue;
+    use qdrant_edge_ffi::{Direction, OrderBy, PayloadSchemaType};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+            payload: Some(r#"{"score":3.5}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.2, 0.1, 0.4, 0.3]),
+            payload: Some(r#"{"score":1.5}"#.to_string()),
+        },
+        Point {
+            id: PointId::NumId { value: 3 },
+            vector: named_vec([0.5, 0.5, 0.5, 0.5]),
+            payload: Some(r#"{"score":2.5}"#.to_string()),
+        },
+    ];
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+    shard
+        .update(
+            UpdateOperation::create_field_index("score".to_string(), PayloadSchemaType::Float)
+                .expect("create_field_index failed"),
+        )
+        .expect("index creation failed");
+
+    let resp = shard
+        .scroll(ScrollRequest {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: Some(WithPayload::Bool { enable: false }),
+            with_vector: None,
+            order_by: Some(OrderBy {
+                key: "score".to_string(),
+                direction: Some(Direction::Asc),
+                start_from: None,
+            }),
+        })
+        .expect("order-by scroll failed");
+
+    assert_eq!(resp.records.len(), 3, "expected all three points back");
+    let values: Vec<f64> = resp
+        .records
+        .iter()
+        .map(|r| match r.order_value {
+            Some(OrderValue::Float { value }) => value,
+            other => panic!("expected Some(OrderValue::Float {{ .. }}), got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        values,
+        vec![1.5, 2.5, 3.5],
+        "float order_value must be populated and ascending by `score`"
+    );
 }
 
 // ── Snapshot negative tests ─────────────────────────────────────────────────
