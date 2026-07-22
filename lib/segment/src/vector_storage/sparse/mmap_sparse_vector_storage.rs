@@ -3,7 +3,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use blobstore::config::{Compression, StorageOptions};
+use blobstore::config::{
+    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
+    GridstoreOptions, StorageOptions,
+};
 use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -96,13 +99,15 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         fs::create_dir_all(&storage_dir)?;
-        let storage_config = StorageOptions {
+        let storage_options = StorageOptions::Mutable(GridstoreOptions {
+            page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
+            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
             // Don't use built-in compression, as we will use bitpacking instead
-            compression: Some(Compression::None),
-            ..Default::default()
-        };
+            compression: Compression::None,
+        });
 
-        let storage = Blobstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
+        let storage = Blobstore::new(MmapFs, storage_dir, storage_options).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))

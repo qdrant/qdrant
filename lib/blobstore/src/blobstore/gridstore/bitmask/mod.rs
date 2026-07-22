@@ -12,7 +12,7 @@ use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 
 use crate::Result;
-use crate::config::GridstoreConfig;
+use crate::config::GridstoreOptions;
 use crate::error::BlobstoreError;
 use crate::tracker::{BlockOffset, PageId};
 
@@ -34,7 +34,7 @@ pub type MmapBitmask = Bitmask<MmapFile>;
 
 #[derive(Debug)]
 pub struct Bitmask<S> {
-    config: GridstoreConfig,
+    config: GridstoreOptions,
 
     /// A summary of every 1KB (8_192 bits) of contiguous zeros in the bitmask, or less if it is the last region.
     regions_gaps: BitmaskGaps<S>,
@@ -65,7 +65,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Calculate the amount of bytes needed for covering the blocks of a page.
-    fn length_for_page(config: &GridstoreConfig) -> usize {
+    fn length_for_page(config: &GridstoreOptions) -> usize {
         assert_eq!(
             config.page_size_bytes % config.block_size_bytes,
             0,
@@ -80,7 +80,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Create a bitmask for one page
-    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
+    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: GridstoreOptions) -> Result<Self> {
         debug_assert!(
             config.page_size_bytes % config.block_size_bytes * config.region_size_blocks == 0,
             "Page size must be a multiple of block size * region size"
@@ -111,7 +111,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         })
     }
 
-    pub(crate) fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
+    pub(crate) fn open(fs: &S::Fs, dir: &Path, config: GridstoreOptions) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes
@@ -580,17 +580,18 @@ mod tests {
     use rand::{RngExt, rng};
 
     use super::MmapBitmask;
-    use crate::config::{DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
+    use crate::config::{
+        Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions,
+    };
 
     #[test]
     fn test_length_for_page() {
-        let config = &StorageOptions {
-            page_size_bytes: Some(8192),
-            region_size_blocks: Some(1),
-            ..Default::default()
-        }
-        .try_into()
-        .unwrap();
+        let config = &GridstoreOptions {
+            page_size_bytes: 8192,
+            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+            region_size_blocks: 1,
+            compression: Compression::LZ4,
+        };
         assert_eq!(MmapBitmask::length_for_page(config), 8);
     }
 
@@ -602,13 +603,15 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
 
-        let options = StorageOptions {
-            page_size_bytes: Some(page_size),
-            ..Default::default()
+        let options = GridstoreOptions {
+            page_size_bytes: page_size,
+            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+            compression: Compression::LZ4,
         };
 
         let mut bitmask: MmapBitmask =
-            super::Bitmask::create(&MmapFs, dir.path(), options.try_into().unwrap()).unwrap();
+            super::Bitmask::create(&MmapFs, dir.path(), options).unwrap();
         bitmask.cover_new_page().unwrap();
 
         assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);

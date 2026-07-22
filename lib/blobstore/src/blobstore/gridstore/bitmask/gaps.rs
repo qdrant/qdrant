@@ -6,7 +6,7 @@ use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
 use itertools::Itertools;
 
-use super::{GridstoreConfig, RegionId};
+use super::{GridstoreOptions, RegionId};
 use crate::Result;
 
 /// Gaps of contiguous zeros in a bitmask region.
@@ -82,7 +82,7 @@ fn gaps_file_path(dir: &Path) -> PathBuf {
 #[derive(Debug)]
 pub(super) struct BitmaskGaps<S> {
     path: PathBuf,
-    config: GridstoreConfig,
+    config: GridstoreOptions,
     slice_store: TypedStorage<S, RegionGaps>,
 }
 
@@ -95,7 +95,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         fs: &S::Fs,
         dir: &Path,
         iter: impl ExactSizeIterator<Item = RegionGaps>,
-        config: GridstoreConfig,
+        config: GridstoreOptions,
     ) -> Result<Self> {
         let path = gaps_file_path(dir);
 
@@ -122,7 +122,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         })
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
+    pub fn open(fs: &S::Fs, dir: &Path, config: GridstoreOptions) -> Result<Self> {
         let path = gaps_file_path(dir);
         let options = OpenOptions {
             writeable: true,
@@ -296,7 +296,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::config::{DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
+    use crate::config::DEFAULT_REGION_SIZE_BLOCKS;
 
     pub type MmapBitmaskGaps = BitmaskGaps<MmapFile>;
 
@@ -376,7 +376,7 @@ mod tests {
             num_blocks in 1..=(DEFAULT_REGION_SIZE_BLOCKS as u32 * 2)
         ) {
             let temp_dir = tempdir().unwrap();
-            let config = StorageOptions::default().try_into().unwrap();
+            let config = GridstoreOptions::DEFAULT;
             let bitmask_gaps: MmapBitmaskGaps = BitmaskGaps::create(&MmapFs, temp_dir.path(), gaps.clone().into_iter(), config).unwrap();
 
             let bitvec = regions_gaps_to_bitvec(&gaps, DEFAULT_REGION_SIZE_BLOCKS);
@@ -427,7 +427,7 @@ mod tests {
         ];
 
         let temp_dir = tempdir().unwrap();
-        let config = StorageOptions::default().try_into().unwrap();
+        let config = GridstoreOptions::DEFAULT;
         let bitmask_gaps: MmapBitmaskGaps =
             BitmaskGaps::create(&MmapFs, temp_dir.path(), gaps.into_iter(), config).unwrap();
         assert!(bitmask_gaps.len().unwrap() >= 3);
@@ -445,7 +445,7 @@ mod tests {
         const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
 
         let temp_dir = tempdir().unwrap();
-        let config: GridstoreConfig = StorageOptions::default().try_into().unwrap();
+        let config: GridstoreOptions = GridstoreOptions::DEFAULT;
 
         // 3 regions, all empty
         let gaps = vec![
@@ -604,7 +604,7 @@ mod tests {
         const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
 
         let temp_dir = tempdir().unwrap();
-        let config = StorageOptions::default().try_into().unwrap();
+        let config = GridstoreOptions::DEFAULT;
 
         // 3 regions with 1.5 regions occupied and 1.5 regions available
         let gaps = vec![
@@ -678,7 +678,7 @@ mod tests {
 
         // Create RegionGaps and write gaps
         {
-            let config = StorageOptions::default().try_into().unwrap();
+            let config = GridstoreOptions::DEFAULT;
             let region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::create(&MmapFs, dir_path, gaps.clone().into_iter(), config).unwrap();
             assert_eq!(region_gaps.len().unwrap(), gaps.len());
@@ -689,7 +689,7 @@ mod tests {
 
         // Reopen RegionGaps and verify gaps
         {
-            let config = StorageOptions::default().try_into().unwrap();
+            let config = GridstoreOptions::DEFAULT;
             let region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
             assert_eq!(region_gaps.len().unwrap(), gaps.len());
@@ -705,7 +705,7 @@ mod tests {
         ];
 
         {
-            let config = StorageOptions::default().try_into().unwrap();
+            let config = GridstoreOptions::DEFAULT;
             let mut region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
             region_gaps.extend(more_gaps.clone().into_iter()).unwrap();
@@ -717,7 +717,7 @@ mod tests {
 
         // Reopen RegionGaps and verify all gaps
         {
-            let config = StorageOptions::default().try_into().unwrap();
+            let config = GridstoreOptions::DEFAULT;
             let region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
             assert_eq!(region_gaps.len().unwrap(), gaps.len() + more_gaps.len());

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use blobstore::config::StorageOptions;
+use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions, StorageOptions};
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -15,14 +15,13 @@ use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Default options for Gridstore storage
 const fn default_gridstore_options(block_size: usize) -> StorageOptions {
-    StorageOptions {
+    StorageOptions::Mutable(GridstoreOptions {
+        page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size dependent on map value type
-        block_size_bytes: Some(block_size),
-        compression: Some(blobstore::config::Compression::None),
-        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-        region_size_blocks: None,
-        mode: None,
-    }
+        block_size_bytes: block_size,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        compression: blobstore::config::Compression::None,
+    })
 }
 
 impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>

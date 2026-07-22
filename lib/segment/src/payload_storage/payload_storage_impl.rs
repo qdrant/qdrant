@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use blobstore::config::StorageOptions;
+use blobstore::config::{GridstoreOptions, StorageOptions};
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
@@ -62,7 +62,11 @@ where
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Blobstore::new(S::Fs::default(), path, StorageOptions::default())?;
+        let storage = Blobstore::new(
+            S::Fs::default(),
+            path,
+            StorageOptions::Mutable(GridstoreOptions::DEFAULT),
+        )?;
 
         if populate {
             storage.populate()?;

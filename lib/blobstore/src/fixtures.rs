@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
-use crate::config::{Compression, Mode, StorageOptions};
+use crate::config::{
+    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions,
+    LogstoreOptions, Mode, StorageOptions,
+};
 use crate::{Blob, Blobstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -40,25 +43,30 @@ pub fn empty_storage_append_only() -> (TempDir, Blobstore<Payload>) {
 /// Create an empty storage in the given mode with the default configuration
 pub fn empty_storage_mode(mode: Mode) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let options = StorageOptions {
-        mode: Some(mode),
-        ..Default::default()
-    };
-    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), default_options(mode)).unwrap();
     (dir, storage)
 }
 
-/// Create an empty storage with a specific page size
+/// Default creation options for the given mode
+pub fn default_options(mode: Mode) -> StorageOptions {
+    match mode {
+        Mode::Mutable => StorageOptions::Mutable(GridstoreOptions::DEFAULT),
+        Mode::AppendOnly => StorageOptions::AppendOnly(LogstoreOptions::DEFAULT),
+    }
+}
+
+/// Create an empty mutable storage with a specific page size
 pub fn empty_storage_sized(
     page_size: usize,
     compression: Compression,
 ) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let options = StorageOptions {
-        page_size_bytes: Some(page_size),
-        compression: Some(compression),
-        ..Default::default()
-    };
+    let options = StorageOptions::Mutable(GridstoreOptions {
+        page_size_bytes: page_size,
+        block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        compression,
+    });
     let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }

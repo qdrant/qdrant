@@ -5,9 +5,9 @@ use fs_err as fs;
 use tempfile::TempDir;
 
 use crate::blobstore::reader::CONFIG_FILENAME;
-use crate::config::{Compression, Mode, StorageOptions};
+use crate::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreOptions, Mode, StorageOptions};
 use crate::error::BlobstoreError;
-use crate::fixtures::{Payload, empty_storage_append_only, random_payload};
+use crate::fixtures::{Payload, default_options, empty_storage_append_only, random_payload};
 use crate::tracker::ValuePointer;
 use crate::{Blobstore, BlobstoreReader};
 
@@ -17,11 +17,10 @@ const TRACKER_ENTRY_SIZE: u64 = 16;
 /// Create an empty append-only storage of raw byte values, for precise size assertions.
 fn empty_byte_storage(compression: Compression) -> (TempDir, Blobstore<Vec<u8>>) {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(compression),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression,
+    });
     let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
@@ -69,11 +68,10 @@ fn test_empty_storage() {
 #[case(Compression::LZ4)]
 fn test_put_get_roundtrip(#[case] compression: Compression) {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(compression),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression,
+    });
     let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
@@ -123,11 +121,10 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
 #[test]
 fn test_put_buffers_value_and_mapping_until_flush() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
     let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -396,11 +393,10 @@ fn test_empty_and_huge_values() {
 #[test]
 fn test_unflushed_puts_are_lost_after_reopen() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
     let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -434,10 +430,7 @@ fn test_unflushed_puts_are_lost_after_reopen() {
 #[test]
 fn test_stale_flusher_is_noop() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions::DEFAULT);
     let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -550,30 +543,30 @@ fn test_open_or_create_keeps_mode_on_disk() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("storage");
 
-    let options = StorageOptions {
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions::DEFAULT);
     let storage =
         Blobstore::<Payload>::open_or_create(MmapFs, path.clone(), options, Populate::No).unwrap();
     storage.as_logstore();
     drop(storage);
 
     // Opening again ignores the create options, the mode comes from the persisted config
-    let storage =
-        Blobstore::<Payload>::open_or_create(MmapFs, path, StorageOptions::default(), Populate::No)
-            .unwrap();
+    let storage = Blobstore::<Payload>::open_or_create(
+        MmapFs,
+        path,
+        default_options(Mode::Mutable),
+        Populate::No,
+    )
+    .unwrap();
     storage.as_logstore();
 }
 
 #[test]
 fn test_reader_on_append_only_storage() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
     let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -650,11 +643,10 @@ fn test_reader_on_append_only_storage() {
 #[test]
 fn test_reader_live_reload() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
     let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -706,11 +698,10 @@ fn test_reader_live_reload() {
 #[test]
 fn test_reader_iter_many_values() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
     let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -766,11 +757,10 @@ fn test_reader_iter_many_values() {
 #[test]
 fn test_open_rejects_truncated_page_file() {
     let dir = TempDir::new().unwrap();
-    let options = StorageOptions {
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
     let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
@@ -1187,10 +1177,7 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_path_buf();
 
-    let options = StorageOptions {
-        mode: Some(created),
-        ..Default::default()
-    };
+    let options = default_options(created);
     let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
     let hw_counter = HardwareCounterCell::new();
     storage
@@ -1233,10 +1220,7 @@ fn test_replayed_puts_leave_storage_intact() {
 
     let payloads: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
     {
-        let options = StorageOptions {
-            mode: Some(Mode::AppendOnly),
-            ..Default::default()
-        };
+        let options = StorageOptions::AppendOnly(LogstoreOptions::DEFAULT);
         let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
@@ -1297,10 +1281,7 @@ fn test_zero_extended_tracker_reads_none() {
 
     let payloads: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
     {
-        let options = StorageOptions {
-            mode: Some(Mode::AppendOnly),
-            ..Default::default()
-        };
+        let options = StorageOptions::AppendOnly(LogstoreOptions::DEFAULT);
         let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
@@ -1382,10 +1363,7 @@ fn test_reader_never_writes() {
 
     let payloads: Vec<_> = (0..5).map(|_| random_payload(rng, 1)).collect();
     {
-        let options = StorageOptions {
-            mode: Some(Mode::AppendOnly),
-            ..Default::default()
-        };
+        let options = StorageOptions::AppendOnly(LogstoreOptions::DEFAULT);
         let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
@@ -1459,10 +1437,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
-    let options = StorageOptions {
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions::DEFAULT);
     let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), options).unwrap();
 
     // The values that must be visible after a reopen
@@ -1531,12 +1506,10 @@ fn test_reopen_always_exposes_flushed_prefix() {
 /// Create an empty append-only storage of raw byte values with a small page size, so a few
 /// small values roll over to new pages.
 fn small_page_storage(dir: &TempDir, page_size_bytes: usize) -> Blobstore<Vec<u8>> {
-    let options = StorageOptions {
-        page_size_bytes: Some(page_size_bytes),
-        compression: Some(Compression::None),
-        mode: Some(Mode::AppendOnly),
-        ..Default::default()
-    };
+    let options = StorageOptions::AppendOnly(LogstoreOptions {
+        page_capacity_bytes: page_size_bytes,
+        compression: Compression::None,
+    });
     Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap()
 }
 

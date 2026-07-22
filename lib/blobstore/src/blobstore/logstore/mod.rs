@@ -23,7 +23,7 @@ use super::Flusher;
 use super::reader::CONFIG_FILENAME;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::{LogstoreConfig, StorageConfig};
+use crate::config::{LogstoreOptions, StorageOptions};
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
@@ -89,7 +89,7 @@ where
     S: UniversalAppend + 'static,
 {
     fs: S::Fs,
-    pub(super) config: LogstoreConfig,
+    pub(super) config: LogstoreOptions,
     tracker: Arc<RwLock<AppendOnlyTracker<S>>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
@@ -119,12 +119,12 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
+    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: LogstoreOptions) -> Result<Self> {
         let tracker = AppendOnlyTracker::new(&fs, &base_path)?;
         let pages = AppendOnlyPages::new(&fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
-        let config_bytes = serde_json::to_vec(&StorageConfig::AppendOnly(config.clone()))?;
+        let config_bytes = serde_json::to_vec(&StorageOptions::AppendOnly(config.clone()))?;
         fs.atomic_save(&config_path, &config_bytes)?;
 
         Ok(Self {
@@ -139,7 +139,7 @@ where
     }
 
     /// Open an existing storage at the given path, with the already read config.
-    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
+    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: LogstoreOptions) -> Result<Self> {
         let tracker = AppendOnlyTracker::open_writable(&fs, &base_path)?;
         let pages = AppendOnlyPages::open(&fs, &base_path, true)?;
         validate_consistency(&tracker, &pages)?;
