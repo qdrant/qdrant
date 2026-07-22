@@ -110,19 +110,24 @@ jobs:
         working-directory: lib/edge
         run: just rs-check
 
-      - name: 🦀 Test qdrant-edge-ffi (conversions + integration)
+      - name: 🦀 Test qdrant-edge-ffi (default features)
         # Run on nightly: the workspace uses unstable features (cfg_select in
         # lib/common), so stable can't compile it. nightly is already installed
         # above (for fmt). +nightly also makes doctests use the nightly rustdoc,
         # avoiding the E0514 toolchain-mismatch seen with a stray stable rustdoc.
-        # This is the mobile-facing config: default features, so the off-by-default
-        # `matrix` op is excluded (matching the Swift/Kotlin binding surface).
+        # Default features (matrix on) — the surface general/non-mobile UniFFI
+        # consumers get.
         run: cargo +nightly test --locked -p qdrant-edge-ffi
 
+      - name: 🦀 Test qdrant-edge-ffi (mobile surface, no default features)
+        # --no-default-features drops `matrix`, matching what the mobile
+        # Swift/Kotlin bindgen builds. Guards that the crate still compiles and
+        # passes with the O(n^2) search_matrix op excluded from the surface.
+        run: cargo +nightly test --locked -p qdrant-edge-ffi --no-default-features
+
       - name: 🦀 Test qdrant-edge-ffi (all features)
-        # Also build/test the off-by-default feature-gated surface (`matrix`,
-        # `staging`) so it can't bit-rot: the coverage-map exhaustiveness guards
-        # and the matrix op only compile under these features.
+        # matrix + staging together, so the feature-gated surface can't bit-rot:
+        # the `staging` coverage-map exhaustiveness arm only compiles under it.
         run: cargo +nightly test --locked -p qdrant-edge-ffi --all-features
 
       - name: 🦀 Build Rust examples

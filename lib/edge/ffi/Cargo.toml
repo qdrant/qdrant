@@ -13,15 +13,19 @@ license = "Apache-2.0"
 edition = "2024"
 
 [features]
+# `matrix` is on by default so general (desktop/server/Rust) UniFFI consumers
+# get the full surface. The mobile Swift/Kotlin bindgen (a follow-up PR) builds
+# with `--no-default-features` to drop the O(n^2) `search_matrix` op from the
+# mobile binding surface.
+default = ["matrix"]
+
 # Passthrough so the update-operation coverage map in `src/update.rs` stays
 # exhaustive when the workspace is built with staging operations enabled
 # (mirrors the same passthrough in `edge`).
 staging = ["edge/staging", "shard/staging"]
 
-# Off-by-default. Exposes `EdgeShard::search_matrix` (see `src/ops/matrix.rs`).
-# The mobile Swift/Kotlin bindgen (a follow-up PR) must build with default
-# features so this O(n^2) analytics op stays off the mobile surface; non-mobile
-# consumers opt in.
+# Exposes `EdgeShard::search_matrix` (see `src/ops/matrix.rs`). On by default;
+# the mobile bindgen excludes it via `--no-default-features`.
 matrix = []
 
 [lints]

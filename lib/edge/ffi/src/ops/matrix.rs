@@ -3,13 +3,13 @@
 //!
 //! # Kept off the mobile surface
 //!
-//! This whole module is gated behind the off-by-default `matrix` Cargo
-//! feature. Because the exported items self-register at compile time (UniFFI
+//! This whole module is gated behind the `matrix` Cargo feature, which is **on
+//! by default** — general (desktop / server-side / Rust) UniFFI consumers get
+//! it for free. Because the exported items self-register at compile time (UniFFI
 //! proc-macro mode, no UDL), gating the module removes them from the generated
 //! bindings entirely when the feature is off. The mobile Swift/Kotlin bindgen
-//! (added in a follow-up PR) must build with default features so this op stays
-//! off the mobile surface; it exists for non-mobile UniFFI consumers
-//! (desktop / server-side / Rust callers) that opt in explicitly.
+//! (added in a follow-up PR) must therefore build with **`--no-default-features`**
+//! to keep this O(n²) analytics op off the mobile binding surface.
 //!
 //! # Cost — the opting-in consumer owns the bound
 //!
