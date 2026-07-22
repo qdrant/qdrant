@@ -4,11 +4,11 @@ severity: error
 message: Default batch method in trait
 note: |-
   Batch methods on traits must be mandatory so that every implementation makes
-  an explicit choice (see #9935). If the streaming fallback is the right body
-  for some implementors, move it into a `default_*` free function next to the
-  trait and call it explicitly from each of them.
+  an explicit choice. If the streaming fallback is the right body for some
+  implementors, move it into a `default_*` free function next to the trait and
+  call it explicitly from each of them.
 rule:
-  # In a trait body, only methods WITH a default body are `function_item`s;
+  # Methods with a body are `function_item`s;
   # body-less signatures are `function_signature_item`s.
   kind: function_item
   has:
@@ -20,6 +20,5 @@ rule:
     not:
       has:
         field: name
-        # The universal_io primitives (`UniversalRead::read_batch`, etc.)
-        # keep their intentional default bodies.
+        # The universal_io primitives keep their intentional default bodies.
         regex: Universal
