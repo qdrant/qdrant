@@ -610,8 +610,7 @@ mod tests {
             compression: Compression::LZ4,
         };
 
-        let mut bitmask: MmapBitmask =
-            super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        let mut bitmask: MmapBitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
         bitmask.cover_new_page().unwrap();
 
         assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);

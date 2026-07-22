@@ -21,7 +21,7 @@ use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
 /// Holds pages and tracker directly (no locks) since it provides only read access.
 /// For read-write access, use [`super::Gridstore`].
 #[derive(Debug)]
-pub(crate) struct GridstoreReader<V, S: UniversalRead> {
+pub struct GridstoreReader<V, S: UniversalRead> {
     config: GridstoreConfig,
     tracker: ReadOnlyTracker<S>,
     pages: Pages<S>,

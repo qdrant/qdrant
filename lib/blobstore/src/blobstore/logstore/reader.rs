@@ -25,7 +25,7 @@ use crate::tracker::append_only::AppendOnlyTracker;
 ///
 /// All data is read through the universal IO backend `S`.
 #[derive(Debug)]
-pub(crate) struct LogstoreReader<V, S: UniversalRead> {
+pub struct LogstoreReader<V, S: UniversalRead> {
     config: LogstoreConfig,
     tracker: AppendOnlyTracker<S>,
     pages: AppendOnlyPages<S>,
