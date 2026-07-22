@@ -36,6 +36,19 @@ use crate::types::{
     RangeInterface, UuidIntType, ValueVariants,
 };
 
+fn typed_range<T>(range: &RangeInterface) -> Range<T>
+where
+    T: Numericable,
+{
+    match range {
+        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
+        RangeInterface::Integer(int_range) => T::from_i64_range(*int_range),
+        RangeInterface::DateTime(datetime_range) => {
+            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
+        }
+    }
+}
+
 /// Histogram-driven cardinality estimation for a range condition.
 pub(super) fn range_cardinality<T, I>(
     index: &I,
@@ -50,12 +63,7 @@ where
         return Ok(CardinalityEstimation::exact(0));
     }
 
-    let range = match range {
-        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
-        RangeInterface::DateTime(datetime_range) => {
-            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
-        }
-    };
+    let range = typed_range::<T>(range);
 
     let lbound = if let Some(lte) = range.lte {
         Included(lte)
@@ -161,13 +169,7 @@ where
         return Ok(None);
     };
 
-    let (start_bound, end_bound) = match range_cond {
-        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
-        RangeInterface::DateTime(datetime_range) => {
-            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
-        }
-    }
-    .as_index_key_bounds();
+    let (start_bound, end_bound) = typed_range::<T>(range_cond).as_index_key_bounds();
 
     // map.range
     // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -329,17 +331,9 @@ where
 
     let range = range.as_ref()?;
     // Convert the range bounds into the index's storage type `T`.
-    // `T::from_f64_range` / `T::from_u128` are total functions provided by
-    // `Numericable`, so every numeric variant (Int / Float / Datetime /
-    // Uuid) can serve any `RangeInterface` shape. For integer `T`, the
-    // float-range conversion rounds each bound *away* from the matching
-    // set so fractional bounds keep their `f64`-comparison semantics.
-    let typed_range = match range {
-        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
-        RangeInterface::DateTime(datetime_range) => {
-            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
-        }
-    };
+    // `Numericable` keeps JSON integer ranges exact for integer indexes,
+    // while preserving the existing float/date-time conversions.
+    let typed_range = typed_range::<T>(range);
 
     Some(RangeConditionChecker {
         index,
@@ -453,12 +447,7 @@ where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     I: NumericIndexRead<T>,
 {
-    let range = match range {
-        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
-        RangeInterface::DateTime(datetime_range) => {
-            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
-        }
-    };
+    let range = typed_range::<T>(range);
     let (start_bound, end_bound) = range.as_index_key_bounds();
 
     // map.range
