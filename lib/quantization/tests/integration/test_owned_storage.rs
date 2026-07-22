@@ -18,6 +18,7 @@ mod tests {
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
         EncodedStorage, EncodedStorageBuilder, TestEncodedStorage, TestEncodedStorageBuilder,
+        default_for_each_batch,
     };
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
@@ -36,6 +37,14 @@ mod tests {
         fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
             let Self(inner) = self;
             Some(Cow::Owned(inner.get_vector_data_opt(index)?.into_owned()))
+        }
+
+        fn for_each_batch(
+            &self,
+            offsets: &[PointOffsetType],
+            callback: impl FnMut(usize, Cow<'_, [u8]>),
+        ) {
+            default_for_each_batch(self, offsets, callback);
         }
 
         fn is_in_ram_or_mmap() -> bool {

@@ -8,7 +8,7 @@ use super::DiskIdTracker;
 use super::mappings::{DiskMappingsSource, log_lookup_err};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum, default_internal_versions_batch};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalWrite> DiskIdTracker<S> {
@@ -35,6 +35,19 @@ impl<S: UniversalWrite + Send + Sync + 'static> DiskMappingsSource for DiskIdTra
         // Resident bitvec, so this never fails.
         Ok(&self.deleted)
     }
+
+    fn resolve_internal_batch(
+        &self,
+        external_ids: impl IntoIterator<Item = PointIdType>,
+        mut on_live: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        // The deleted bitvec is resident, so the per-point check is infallible.
+        self.reader.lookup_batch(external_ids, |id, offset| {
+            if !self.point_deleted(offset) {
+                on_live(id, offset);
+            }
+        })
+    }
 }
 
 impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<S> {
@@ -45,11 +58,19 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for DiskIdTracker<
     }
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        // Resident versions, mutated in place. `internal_versions_batch` is
-        // deliberately NOT overridden: its default loop hits this resident
-        // store, so there is no IO to pipeline. Only the read-only tracker,
-        // whose versions file stays on disk, batches it.
+        // Resident versions, mutated in place.
         self.internal_to_version.get(internal_id)
+    }
+
+    /// The default single-lookup loop hits the resident version store, so
+    /// there is no IO to pipeline. Only the read-only tracker, whose versions
+    /// file stays on disk, batches the reads.
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
     }
 
     fn internal_id_with_behavior(

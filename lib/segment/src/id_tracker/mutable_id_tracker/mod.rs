@@ -30,7 +30,10 @@ use self::versions_storage::{
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{
+    DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
+    default_external_ids_batch, default_internal_versions_batch,
+};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// Mutable in-memory ID tracker with simple file based backing storage
@@ -175,6 +178,14 @@ impl IdTrackerRead for MutableIdTracker {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
+    }
+
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,
@@ -186,6 +197,14 @@ impl IdTrackerRead for MutableIdTracker {
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         self.mappings.external_id(internal_id)
+    }
+
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        default_external_ids_batch(self, internal_ids, callback)
     }
 
     type Backend = common::universal_io::MmapFile;

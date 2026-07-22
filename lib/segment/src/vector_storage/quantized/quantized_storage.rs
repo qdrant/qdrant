@@ -235,6 +235,15 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
             .ok()
     }
 
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        self.for_each_in_batch(offsets, |idx, data| callback(idx, Cow::Borrowed(data)))
+            .expect("vectors exist and are read correctly");
+    }
+
     fn upsert_vector(
         &mut self,
         _id: PointOffsetType,

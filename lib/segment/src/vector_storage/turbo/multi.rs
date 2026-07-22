@@ -260,7 +260,7 @@ impl TurboMultiVectorStorage {
     }
 
     /// Two-pass batched read for records. First offsets, then vectors.
-    fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
+    pub fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, &[u8]),
@@ -457,6 +457,25 @@ impl TurboMultiVectorStorage {
             .collect()
     }
 
+    /// Score query directly against records directly, without fetching from storage.
+    pub fn score_records_max_similarity(
+        &self,
+        query: &[EncodedQueryTQ],
+        records: &[u8],
+    ) -> ScoreType {
+        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
+
+        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
+            for (qi, inner_query) in query.iter().enumerate() {
+                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
+                if max_sim[qi] < sim {
+                    max_sim[qi] = sim;
+                }
+            }
+        }
+        max_sim.into_iter().sum()
+    }
+
     /// Asymmetric MaxSim score of a precomputed multi-query against stored point
     /// `key`: each inner query vector takes its best similarity to any of the
     /// point's inner records, summed.
@@ -482,17 +501,7 @@ impl TurboMultiVectorStorage {
 
         hw_counter.vector_io_read().incr_delta(records.len());
 
-        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
-
-        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
-            for (qi, inner_query) in query.iter().enumerate() {
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
-                if max_sim[qi] < sim {
-                    max_sim[qi] = sim;
-                }
-            }
-        }
-        max_sim.into_iter().sum()
+        self.score_records_max_similarity(query, &records)
     }
 
     /// Symmetric MaxSim score between two stored points. Reads both points'
