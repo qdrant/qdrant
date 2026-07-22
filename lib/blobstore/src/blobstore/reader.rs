@@ -5,8 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    CachedReadFs, Populate, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
-    read_whole_via,
+    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 
 use super::gridstore::GridstoreReader;
@@ -228,10 +227,7 @@ pub(super) fn read_config<Fs: UniversalReadFs>(
     base_path: &std::path::Path,
 ) -> Result<StorageOptions> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config = read_whole_via(fs, &config_path, |bytes| {
-        StorageOptions::from_json(&bytes).map_err(UniversalIoError::from)
-    })
-    .map_err(BlobstoreError::from)?;
+    let config: StorageOptions = read_json_via(fs, &config_path)?;
     config
         .validate()
         .map_err(|message| invalid_config_error(base_path, message))?;
