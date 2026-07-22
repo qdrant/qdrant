@@ -146,14 +146,23 @@ impl UpdateWorkers {
                             Some(operation) => operation,
                             None => {
                                 let wal_clone = wal.clone();
-                                let reread = tokio::task::spawn_blocking(move || {
+                                let read_result = tokio::task::spawn_blocking(move || {
                                     wal_clone.blocking_lock().read_raw_record(op_num)
                                 })
-                                .await
-                                .ok()
-                                .flatten()
-                                .and_then(|record| record.deserialize().ok())
-                                .map(|deserialized| deserialized.operation);
+                                .await;
+                                let reread = match read_result {
+                                    Ok(record) => record
+                                        .and_then(|record| record.deserialize().ok())
+                                        .map(|deserialized| deserialized.operation),
+                                    // A panicked or cancelled blocking task is not a missing
+                                    // record: surface the real failure instead of masking it as
+                                    // one. Breaking with an applied-operation error rather than
+                                    // the join error keeps the transient handling below, which
+                                    // nudges the optimizer to recover the queued operation.
+                                    Err(join_error) => {
+                                        break Ok(Err(CollectionError::from(join_error)));
+                                    }
+                                };
                                 match reread {
                                     Some(operation) => operation,
                                     None => {
@@ -628,7 +637,8 @@ mod tests {
     /// A capacity failure must not surface to the client: the worker signals the optimizer, waits
     /// for the fresh appendable segment and re-applies the operation, so the caller sees added
     /// latency instead of an error. The re-apply reads the operation back from the WAL rather than
-    /// keeping a clone, so this also locks that the queued operation is readable at its op number.
+    /// keeping a clone, so this also verifies that the queued operation is readable at its op
+    /// number.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_worker_retries_capacity_failure_inline() {
         let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
