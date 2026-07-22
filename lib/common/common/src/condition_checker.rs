@@ -43,7 +43,10 @@ pub trait ConditionChecker {
         rest: Rest,
     ) -> Result<usize, Self::Error>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        panic!()
+    }
 }
 
 /// See [`ConditionChecker::check_batched`].

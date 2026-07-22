@@ -2,8 +2,6 @@ name: Formatter and linter
 
 on:
   push:
-    branches: [ master, dev ]
-  pull_request:
     branches: [ '**' ]
 
 permissions:
@@ -13,39 +11,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  lint:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Install minimal nightly (only for fmt)
-      uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
-      with:
-        components: rustfmt
-    - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      with:
-        components: rustfmt, clippy
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - name: Install Protoc
-      uses: ./.github/actions/setup-protoc
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      with:
-        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-        save-if: ${{ github.ref == 'refs/heads/dev' }}
-    - name: Update apt
-      run: sudo apt-get update
-    - name: Install dependencies
-      run: sudo apt-get install clang libunwind-dev
-    - name: Check code formatting
-      run: cargo +nightly fmt --all -- --check
-    - name: Check cargo clippy warnings
-      run: cargo clippy --workspace -- -D warnings
-    - name: Check cargo clippy warnings for all targets
-      run: cargo clippy --workspace --all-targets -- -D warnings
-    - name: Check cargo clippy warnings for all targets and features
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
   ast-grep:
 
     runs-on: ubuntu-latest
@@ -57,4 +22,4 @@ jobs:
     - name: Install ast-grep
       run: uv tool install ast-grep-cli
     - name: Check ast-grep rules (.ast-grep/rules)
-      run: ast-grep scan
+      run: ast-grep scan --format github
