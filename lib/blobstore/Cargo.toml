@@ -24,6 +24,7 @@ thiserror = { workspace = true }
 lz4_flex = { version = "0.14.0", default-features = false, features = ["alloc"] }
 log = { workspace = true }
 rand = { workspace = true }
+strum = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
 zerocopy = { workspace = true }

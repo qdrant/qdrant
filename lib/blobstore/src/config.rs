@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use lz4_flex::compress_prepend_size;
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 /// Expect JSON values to have roughly 3–5 fields with mostly small values.
 /// For 1M values, this would require 128MB of memory.
@@ -47,7 +48,7 @@ pub(crate) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 }
 
 /// Operating mode of the storage
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// Use Gridstore

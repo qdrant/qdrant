@@ -989,6 +989,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "blobstore"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "bitvec",
+ "bustle",
+ "bytemuck",
+ "common",
+ "criterion",
+ "csv",
+ "dataset",
+ "ecow",
+ "env_logger",
+ "fs-err",
+ "itertools 0.15.0",
+ "log",
+ "lz4_flex",
+ "parking_lot",
+ "proptest",
+ "rand 0.10.2",
+ "rstest",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+ "smallvec",
+ "strum",
+ "tempfile",
+ "thiserror 2.0.18",
+ "zerocopy",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
