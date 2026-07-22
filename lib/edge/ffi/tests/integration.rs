@@ -3873,6 +3873,31 @@ fn unpack_snapshot_bad_path_errors() {
     );
 }
 
+/// Pins the exact `MAX_FORMULA_NODES` (10_000) threshold: a `sum` over N leaf
+/// handles has size `1 + N`, so 9_999 leaves is exactly at the cap (accepted)
+/// and 10_000 leaves is one over (rejected).
+#[test]
+fn formula_node_count_exact_boundary() {
+    use qdrant_edge_ffi::Expression;
+
+    let v = Expression::variable("$score".to_string());
+
+    // Exactly 10_000 nodes (1 sum node + 9_999 leaves) — accepted.
+    assert!(
+        Expression::sum(vec![v.clone(); 9_999]).is_ok(),
+        "a formula with exactly MAX_FORMULA_NODES (10_000) nodes must be accepted"
+    );
+
+    // 10_001 nodes (1 sum node + 10_000 leaves) — rejected.
+    let err = Expression::sum(vec![v.clone(); 10_000])
+        .err()
+        .expect("a formula with 10_001 nodes (cap + 1) must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument at the node-count cap + 1, got {err:?}"
+    );
+}
+
 /// Distance matrix over sampled points. Gated behind the off-by-default
 /// `matrix` feature (the op is kept off the mobile binding surface); run with
 /// `--features matrix`.

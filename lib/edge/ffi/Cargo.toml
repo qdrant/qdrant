@@ -19,8 +19,9 @@ edition = "2024"
 staging = ["edge/staging", "shard/staging"]
 
 # Off-by-default. Exposes `EdgeShard::search_matrix` (see `src/ops/matrix.rs`).
-# The mobile Swift/Kotlin bindings build WITHOUT this feature, so the O(n^2)
-# analytics op stays off the mobile surface; non-mobile consumers opt in.
+# The mobile Swift/Kotlin bindgen (a follow-up PR) must build with default
+# features so this O(n^2) analytics op stays off the mobile surface; non-mobile
+# consumers opt in.
 matrix = []
 
 [lints]

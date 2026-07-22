@@ -1,25 +1,30 @@
 //! [`EdgeShard::search_matrix`] — pairwise distance matrix over sampled
 //! points.
 //!
-//! # Not part of the mobile surface
+//! # Kept off the mobile surface
 //!
 //! This whole module is gated behind the off-by-default `matrix` Cargo
-//! feature, so it is **absent from the generated Swift/Kotlin bindings** — the
-//! mobile SDKs build without the feature. It exists for non-mobile UniFFI
-//! consumers (desktop / server-side / Rust callers) that opt in explicitly.
+//! feature. Because the exported items self-register at compile time (UniFFI
+//! proc-macro mode, no UDL), gating the module removes them from the generated
+//! bindings entirely when the feature is off. The mobile Swift/Kotlin bindgen
+//! (added in a follow-up PR) must build with default features so this op stays
+//! off the mobile surface; it exists for non-mobile UniFFI consumers
+//! (desktop / server-side / Rust callers) that opt in explicitly.
 //!
-//! # Cost — the caller owns the bound
+//! # Cost — the opting-in consumer owns the bound
 //!
 //! `search_matrix` is an analytics operation: it computes each sampled point's
 //! neighbours *within the sample*, i.e. **O(sample_size²)** distance
 //! evaluations, and materializes up to `sample_size × limit_per_sample`
 //! results. The per-field [`bounded_limit`](crate::error::bounded_limit) checks
-//! only stop a single absurd (`u64::MAX`) value; they do **not** bound the
-//! quadratic compute — a large `sample_size` on a large shard can hang and
-//! exhaust memory. This is deliberately left uncapped here: the operation is
-//! opt-in (feature-gated, off the mobile surface), and a consumer that enables
-//! it is responsible for constraining `sample_size`/`limit_per_sample` to what
-//! its environment can afford (enforced at the SDK/wrapper layer, not here).
+//! cap each of `sample_size`/`limit_per_sample` at
+//! [`MAX_RESULT_COUNT`](crate::error::MAX_RESULT_COUNT) (1,048,576) — which is
+//! itself far too large for an O(n²) op — so they do **not** bound the
+//! quadratic compute: a large `sample_size` on a large shard can hang and
+//! exhaust memory. This is deliberately left uncapped here. The operation is
+//! opt-in (feature-gated, off the mobile surface), so the consumer that enables
+//! it owns the responsibility of constraining `sample_size`/`limit_per_sample`
+//! to what its environment can afford; there is no bound enforced in this crate.
 
 use edge::EdgeShardRead as _;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
