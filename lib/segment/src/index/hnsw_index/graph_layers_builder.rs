@@ -606,7 +606,7 @@ mod tests {
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use itertools::Itertools;
     use rand::SeedableRng;
-    use rand::prelude::StdRng;
+    use rand::prelude::SmallRng;
     use rstest::rstest;
 
     use super::*;
@@ -716,7 +716,7 @@ mod tests {
         let num_vectors = 1000;
         let dim = 8;
 
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
 
         // let (vector_holder, graph_layers_builder) =
         //     create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
@@ -797,8 +797,8 @@ mod tests {
         let num_vectors = 1000;
         let dim = 8;
 
-        let mut rng = StdRng::seed_from_u64(42);
-        let mut rng2 = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng2 = SmallRng::seed_from_u64(42);
 
         let (vector_holder, graph_layers_builder) = create_graph_layer(
             num_vectors,
@@ -911,7 +911,7 @@ mod tests {
         const EF_CONSTRUCT: usize = 64;
         const USE_HEURISTIC: bool = true;
 
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
 
         let vector_holder = TestRawScorerProducer::new(
             DIM,
@@ -969,7 +969,7 @@ mod tests {
         use std::time::{Duration, Instant};
 
         const DIM: usize = 4;
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
 
         // Build a one-point graph the normal way. `link_new_point` sees an
         // empty entry-points list, takes the "new empty entry" branch, and
