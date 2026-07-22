@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use blobstore::Blobstore;
-use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions, StorageOptions};
+use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig, StorageConfig};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
@@ -13,7 +13,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoPoint, RawGeoPoint};
 
 /// Default options for Gridstore storage
-const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions::Mutable(GridstoreOptions {
+const GRIDSTORE_OPTIONS: StorageConfig = StorageConfig::Mutable(GridstoreConfig {
     // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
     page_size_bytes: size_of::<RawGeoPoint>() * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
     // Size of geo point values in index

@@ -78,7 +78,7 @@ pub enum Mode {
 /// written before the mode field existed deserialize into exactly this type, so the field names
 /// must not change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GridstoreOptions {
+pub struct GridstoreConfig {
     /// Size of a page in bytes
     ///
     /// Must be a multiple of (`block_size_bytes` * `region_size_blocks`)
@@ -97,7 +97,7 @@ pub struct GridstoreOptions {
     pub compression: Compression,
 }
 
-impl GridstoreOptions {
+impl GridstoreConfig {
     /// Default options
     pub const DEFAULT: Self = Self {
         page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
@@ -152,7 +152,7 @@ impl GridstoreOptions {
 /// The serde representation is the persisted config format, see [`StorageOptions`], so the field
 /// names must not change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogstoreOptions {
+pub struct LogstoreConfig {
     /// Capacity in bytes at which a page rolls over to the next one
     ///
     /// Persisted as `page_size_bytes`, the field name shared with the mutable mode.
@@ -164,7 +164,7 @@ pub struct LogstoreOptions {
     pub compression: Compression,
 }
 
-impl LogstoreOptions {
+impl LogstoreConfig {
     /// Default options
     pub const DEFAULT: Self = Self {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
@@ -191,12 +191,12 @@ impl LogstoreOptions {
 /// `"mode"` tag is not present.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", try_from = "serde_json::Value")]
-pub enum StorageOptions {
-    Mutable(GridstoreOptions),
-    AppendOnly(LogstoreOptions),
+pub enum StorageConfig {
+    Mutable(GridstoreConfig),
+    AppendOnly(LogstoreConfig),
 }
 
-impl TryFrom<serde_json::Value> for StorageOptions {
+impl TryFrom<serde_json::Value> for StorageConfig {
     type Error = serde_json::Error;
 
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
@@ -205,13 +205,13 @@ impl TryFrom<serde_json::Value> for StorageOptions {
             None => Mode::default(),
         };
         match mode {
-            Mode::Mutable => GridstoreOptions::deserialize(value).map(Self::Mutable),
-            Mode::AppendOnly => LogstoreOptions::deserialize(value).map(Self::AppendOnly),
+            Mode::Mutable => GridstoreConfig::deserialize(value).map(Self::Mutable),
+            Mode::AppendOnly => LogstoreConfig::deserialize(value).map(Self::AppendOnly),
         }
     }
 }
 
-impl StorageOptions {
+impl StorageConfig {
     /// Validate the mode specific config values.
     pub(crate) fn validate(&self) -> Result<(), String> {
         match self {
@@ -234,7 +234,7 @@ mod tests {
             "region_size_blocks": 8192,
             "compression": "LZ4"
         }"#;
-        let StorageOptions::Mutable(config) = serde_json::from_str(json).unwrap()
+        let StorageConfig::Mutable(config) = serde_json::from_str(json).unwrap()
         else {
             panic!("expected a mutable config");
         };
@@ -248,13 +248,13 @@ mod tests {
     /// persists its page capacity under the shared `page_size_bytes` name.
     #[test]
     fn test_config_serializes_mode() {
-        let config = GridstoreOptions::DEFAULT;
-        let json = serde_json::to_string(&StorageOptions::Mutable(config)).unwrap();
+        let config = GridstoreConfig::DEFAULT;
+        let json = serde_json::to_string(&StorageConfig::Mutable(config)).unwrap();
         assert!(json.contains(r#""mode":"mutable""#));
         assert!(json.contains(r#""block_size_bytes""#));
 
-        let config = LogstoreOptions::DEFAULT;
-        let json = serde_json::to_string(&StorageOptions::AppendOnly(config)).unwrap();
+        let config = LogstoreConfig::DEFAULT;
+        let json = serde_json::to_string(&StorageConfig::AppendOnly(config)).unwrap();
         assert!(json.contains(r#""mode":"append_only""#));
         assert!(json.contains(r#""page_size_bytes""#));
         assert!(!json.contains(r#""page_capacity_bytes""#));
@@ -265,18 +265,18 @@ mod tests {
     /// The mode specific configs must survive the round trip through the persisted format.
     #[test]
     fn test_configs_survive_storage_config_round_trip() {
-        let config = GridstoreOptions::DEFAULT;
-        let json = serde_json::to_vec(&StorageOptions::Mutable(config.clone())).unwrap();
-        let StorageOptions::Mutable(restored) = serde_json::from_slice(&json).unwrap() else {
+        let config = GridstoreConfig::DEFAULT;
+        let json = serde_json::to_vec(&StorageConfig::Mutable(config.clone())).unwrap();
+        let StorageConfig::Mutable(restored) = serde_json::from_slice(&json).unwrap() else {
             panic!("expected a mutable config");
         };
         assert_eq!(restored.page_size_bytes, config.page_size_bytes);
         assert_eq!(restored.block_size_bytes, config.block_size_bytes);
         assert_eq!(restored.region_size_blocks, config.region_size_blocks);
 
-        let config = LogstoreOptions::DEFAULT;
-        let json = serde_json::to_vec(&StorageOptions::AppendOnly(config.clone())).unwrap();
-        let StorageOptions::AppendOnly(restored) = serde_json::from_slice(&json).unwrap() else {
+        let config = LogstoreConfig::DEFAULT;
+        let json = serde_json::to_vec(&StorageConfig::AppendOnly(config.clone())).unwrap();
+        let StorageConfig::AppendOnly(restored) = serde_json::from_slice(&json).unwrap() else {
             panic!("expected an append-only config");
         };
         assert_eq!(restored.page_capacity_bytes, config.page_capacity_bytes);
@@ -288,12 +288,12 @@ mod tests {
     #[test]
     fn test_gridstore_config_requires_block_and_region_sizes() {
         let json = r#"{"page_size_bytes": 33554432, "mode": "mutable"}"#;
-        assert!(serde_json::from_str::<StorageOptions>(json).is_err());
+        assert!(serde_json::from_str::<StorageConfig>(json).is_err());
 
         let json = r#"{"page_size_bytes": 33554432, "mode": "append_only"}"#;
         assert!(matches!(
             serde_json::from_str(json).unwrap(),
-            StorageOptions::AppendOnly(_)
+            StorageConfig::AppendOnly(_)
         ));
 
         let json = r#"{
@@ -304,7 +304,7 @@ mod tests {
         }"#;
         assert!(matches!(
             serde_json::from_str(json).unwrap(),
-            StorageOptions::AppendOnly(_)
+            StorageConfig::AppendOnly(_)
         ));
     }
 }

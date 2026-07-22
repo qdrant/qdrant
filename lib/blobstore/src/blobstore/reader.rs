@@ -13,7 +13,7 @@ use super::logstore::LogstoreReader;
 use super::view::BlobstoreView;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::StorageOptions;
+use crate::config::StorageConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 
@@ -55,10 +55,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         fs.schedule_prefetch(&config_path, None, None)?;
 
         match config {
-            StorageOptions::Mutable(_) => {
+            StorageConfig::Mutable(_) => {
                 GridstoreReader::<V, S>::preopen(fs, &base_path, populate)
             }
-            StorageOptions::AppendOnly(_) => LogstoreReader::<V, S>::preopen(fs, &base_path),
+            StorageConfig::AppendOnly(_) => LogstoreReader::<V, S>::preopen(fs, &base_path),
         }
     }
 
@@ -76,13 +76,13 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         populate: Populate,
     ) -> Result<Self> {
         match read_config(fs, &base_path)? {
-            StorageOptions::Mutable(config) => {
+            StorageConfig::Mutable(config) => {
                 let reader = GridstoreReader::open(fs, base_path, config, populate)?;
                 Ok(Self {
                     variant: ReaderVariant::Gridstore(reader),
                 })
             }
-            StorageOptions::AppendOnly(config) => {
+            StorageConfig::AppendOnly(config) => {
                 let reader = LogstoreReader::open(fs, base_path, config)?;
                 Ok(Self {
                     variant: ReaderVariant::Logstore(reader),
@@ -225,9 +225,9 @@ impl<V, S: UniversalRead> BlobstoreReader<V, S> {
 pub(super) fn read_config<Fs: UniversalReadFs>(
     fs: &Fs,
     base_path: &std::path::Path,
-) -> Result<StorageOptions> {
+) -> Result<StorageConfig> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageOptions = read_json_via(fs, &config_path)?;
+    let config: StorageConfig = read_json_via(fs, &config_path)?;
     config
         .validate()
         .map_err(|message| invalid_config_error(base_path, message))?;

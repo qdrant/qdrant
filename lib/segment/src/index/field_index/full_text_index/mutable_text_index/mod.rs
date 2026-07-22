@@ -1,7 +1,7 @@
 use blobstore::Blobstore;
 use blobstore::config::{
     DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    GridstoreOptions, StorageOptions,
+    GridstoreConfig, StorageConfig,
 };
 
 use self::inner::MutableFullTextIndexInner;
@@ -13,7 +13,7 @@ mod read_ops;
 #[cfg(test)]
 mod tests;
 
-pub(super) const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions::Mutable(GridstoreOptions {
+pub(super) const GRIDSTORE_OPTIONS: StorageConfig = StorageConfig::Mutable(GridstoreConfig {
     page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
     block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
     region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
