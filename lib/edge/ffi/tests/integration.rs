@@ -3872,3 +3872,38 @@ fn unpack_snapshot_bad_path_errors() {
         "expected OperationError for a missing snapshot path, got {err:?}"
     );
 }
+
+/// Distance matrix over sampled points. Gated behind the off-by-default
+/// `matrix` feature (the op is kept off the mobile binding surface); run with
+/// `--features matrix`.
+#[cfg(feature = "matrix")]
+#[test]
+fn search_matrix_relates_samples() {
+    use qdrant_edge_ffi::SearchMatrixRequest;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let response = shard
+        .search_matrix(SearchMatrixRequest {
+            sample_size: 3,
+            limit_per_sample: 2,
+            filter: None,
+            using: Some("vec".to_string()),
+        })
+        .expect("search_matrix failed");
+    assert_eq!(response.sample_ids.len(), 3, "all three points sampled");
+    assert_eq!(
+        response.nearests.len(),
+        response.sample_ids.len(),
+        "one neighbour row per sample"
+    );
+    for row in &response.nearests {
+        assert!(
+            row.len() <= 2 && !row.is_empty(),
+            "each sample must have 1..=2 neighbours within the sampled set"
+        );
+    }
+}

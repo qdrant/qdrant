@@ -25,5 +25,7 @@ pub use crate::ops::{
     OrderBy, Prefetch, Query, QueryRequest, RecommendStrategy, RetrieveRequest, Sample,
     ScoringQuery, ScrollRequest, ScrollResponse, SearchParams, SearchRequest, ShardInfo, StartFrom,
 };
+#[cfg(feature = "matrix")]
+pub use crate::ops::{SearchMatrixRequest, SearchMatrixResponse};
 pub use crate::shard::{EdgeShard, unpack_snapshot};
 pub use crate::update::{PayloadSchemaType, UpdateMode, UpdateOperation};

@@ -115,7 +115,15 @@ jobs:
         # lib/common), so stable can't compile it. nightly is already installed
         # above (for fmt). +nightly also makes doctests use the nightly rustdoc,
         # avoiding the E0514 toolchain-mismatch seen with a stray stable rustdoc.
+        # This is the mobile-facing config: default features, so the off-by-default
+        # `matrix` op is excluded (matching the Swift/Kotlin binding surface).
         run: cargo +nightly test --locked -p qdrant-edge-ffi
+
+      - name: 🦀 Test qdrant-edge-ffi (all features)
+        # Also build/test the off-by-default feature-gated surface (`matrix`,
+        # `staging`) so it can't bit-rot: the coverage-map exhaustiveness guards
+        # and the matrix op only compile under these features.
+        run: cargo +nightly test --locked -p qdrant-edge-ffi --all-features
 
       - name: 🦀 Build Rust examples
         working-directory: lib/edge
