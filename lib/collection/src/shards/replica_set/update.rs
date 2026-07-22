@@ -737,6 +737,16 @@ impl ShardReplicaSet {
                 continue;
             }
 
+            // Ignore capacity errors: every appendable segment of that replica reached
+            // `max_segment_size`, which is local, expected and self-healing. The operation is
+            // queued in `failed_operation` and pins the WAL acknowledge, so the optimizer
+            // wake-up provisions a fresh appendable segment and recovery re-applies it. Marking
+            // the replica dead over it would force a full transfer to recover a replica that
+            // catches up on its own.
+            if err.is_out_of_appendable_capacity() {
+                continue;
+            }
+
             if err.is_transient() || peer_state == ReplicaState::Initializing {
                 // If the error is transient, we should not deactivate the peer
                 // before allowing other operations to continue.
@@ -875,6 +885,7 @@ mod tests {
 
     use common::budget::ResourceBudget;
     use common::save_on_disk::SaveOnDisk;
+    use segment::common::operation_error::OperationError;
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
     use tokio::runtime::Handle;
@@ -972,6 +983,42 @@ mod tests {
 
         assert_eq!(rs.highest_replica_peer_id(), Some(5));
         assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
+    }
+
+    /// A replica that ran out of appendable capacity must keep its state: the operation is
+    /// pinned in `failed_operation` and re-applied once the optimizer provisions a fresh
+    /// appendable segment, so deactivating would force a full transfer to recover a replica
+    /// that catches up on its own.
+    #[tokio::test]
+    async fn test_capacity_failure_does_not_deactivate_replica() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let rs = new_shard_replica_set(&collection_dir).await;
+
+        for peer_id in [1, 2, 3] {
+            rs.set_replica_state(peer_id, ReplicaState::Active)
+                .await
+                .unwrap();
+        }
+
+        let capacity_failures = vec![(
+            2,
+            CollectionError::from(OperationError::OutOfAppendableCapacity {
+                max_segment_size_bytes: 1024,
+            }),
+        )];
+        let wait_for_deactivation =
+            rs.handle_failed_replicas(&capacity_failures, &rs.replica_state.read(), false);
+
+        assert!(!wait_for_deactivation);
+        assert!(!rs.is_locally_disabled(2));
+
+        // Any other transient failure still deactivates the replica.
+        let service_failures = vec![(3, CollectionError::service_error("something went wrong"))];
+        let wait_for_deactivation =
+            rs.handle_failed_replicas(&service_failures, &rs.replica_state.read(), false);
+
+        assert!(wait_for_deactivation);
+        assert!(rs.is_locally_disabled(3));
     }
 
     const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
