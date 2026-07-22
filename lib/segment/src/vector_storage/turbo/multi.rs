@@ -691,6 +691,19 @@ pub trait TurboMultiScoring: MultiTQVectorStorageRead {
         point_b: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType;
+
+    /// Score a precomputed multi-query directly against a point's concatenated
+    /// encoded records, without a separate storage fetch.
+    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType;
+
+    /// Two-pass batched read for records (offsets, then vectors), invoking
+    /// `callback` once per requested point. Lets the query scorers batch the
+    /// underlying reads over either backend.
+    fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, &[u8]),
+    ) -> OperationResult<()>;
 }
 
 impl TurboMultiScoring for TurboMultiVectorStorage {
@@ -714,6 +727,18 @@ impl TurboMultiScoring for TurboMultiVectorStorage {
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         TurboMultiVectorStorage::score_internal_max_similarity(self, point_a, point_b, hw_counter)
+    }
+
+    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
+        TurboMultiVectorStorage::score_records_max_similarity(self, query, records)
+    }
+
+    fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, &[u8]),
+    ) -> OperationResult<()> {
+        TurboMultiVectorStorage::for_each_record_range::<P, _>(self, keys, callback)
     }
 }
 

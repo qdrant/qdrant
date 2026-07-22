@@ -400,17 +400,7 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyTurboMultiVectorStorage<S> 
             .incr_delta(records.len() * query.len());
         hw_counter.vector_io_read().incr_delta(records.len());
 
-        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
-
-        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
-            for (qi, inner_query) in query.iter().enumerate() {
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
-                if max_sim[qi] < sim {
-                    max_sim[qi] = sim;
-                }
-            }
-        }
-        max_sim.into_iter().sum()
+        self.score_records_max_similarity(query, &records)
     }
 
     fn score_internal_max_similarity(
@@ -457,5 +447,27 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyTurboMultiVectorStorage<S> 
             sum += max_sim;
         }
         sum
+    }
+
+    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
+        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
+
+        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
+            for (qi, inner_query) in query.iter().enumerate() {
+                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
+                if max_sim[qi] < sim {
+                    max_sim[qi] = sim;
+                }
+            }
+        }
+        max_sim.into_iter().sum()
+    }
+
+    fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, &[u8]),
+    ) -> OperationResult<()> {
+        self.for_each_record_range::<P, _>(keys, callback)
     }
 }
