@@ -737,7 +737,35 @@ impl LocalShard {
 
         let from = wal.first_index();
         let last_wal_index = from + wal.len(false);
-        let op_num_upper_bound = self.applied_seq_handler.op_num_upper_bound();
+
+        // Honor `applied_seq` only when the collection prevents unoptimized segments, the same
+        // condition that gates the update worker's deferred-points wait.
+        //
+        // The split it drives skips no work: the synchronous pass below still starts at
+        // `first_index` and covers `[from, applied_seq + APPLIED_SEQ_SAVE_INTERVAL + 1)`, which is
+        // the *already applied* prefix. What it hands to the update worker instead is the
+        // genuinely unapplied tail. Routing that tail through the worker is what deferred points
+        // need: the worker signals the optimizer per operation, and optimization is the only thing
+        // that makes deferred points visible.
+        //
+        // Everywhere else that routing buys nothing and costs correctness. The tail is applied in
+        // the background *after* `load` returns, so the shard starts serving reads while
+        // operations that were already acknowledged to a client are still missing, and they
+        // reappear one by one as the worker catches up. Replaying the whole WAL synchronously here
+        // (the pre-`applied_seq` behavior) keeps the shard unavailable until every acknowledged
+        // operation is applied, which is what every read path assumes.
+        let prevent_unoptimized = self
+            .collection_config
+            .read()
+            .await
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or_default();
+        let op_num_upper_bound = if prevent_unoptimized {
+            self.applied_seq_handler.op_num_upper_bound()
+        } else {
+            None
+        };
         let to = op_num_upper_bound.unwrap_or(last_wal_index);
 
         // Cap the number of WAL entries to move to the update queue size,
@@ -926,9 +954,9 @@ impl LocalShard {
             // regress across a restart, and the first post-restart updates would then reuse
             // clock ticks that earlier WAL entries already carry for different operations.
             //
-            // This tail is queued whenever the persisted `applied_seq` lags the WAL end, so it
-            // runs independently of the `prevent_unoptimized` flag's value: the flag only gates
-            // the worker's deferred-points wait, not whether the tail is queued here.
+            // This tail is only ever non-empty under `prevent_unoptimized`: the
+            // `op_num_upper_bound` gate above gives up on `applied_seq` otherwise, which makes
+            // the synchronous replay exhaustive and leaves nothing to queue here.
             //
             // An unreadable entry is logged and skipped (its clock tag is lost, but its op_num is
             // still enqueued below): the worker re-reads it and tolerates the same failure by
