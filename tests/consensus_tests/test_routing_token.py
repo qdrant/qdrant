@@ -38,6 +38,11 @@ def retrieve_marker(peer_uri, headers={}):
     return points[0]["payload"]["marker"] if points else None
 
 
+def markers_by_peer(peer_api_uris, headers={}):
+    """Retrieve the marker through *every* peer, returning a {uri: marker} map."""
+    return {uri: retrieve_marker(uri, headers=headers) for uri in peer_api_uris}
+
+
 def retrieve_marker_on_all_peers(peer_api_uris, headers={}):
     """Retrieve the marker through *every* peer and assert they all agree.
 
@@ -45,10 +50,32 @@ def retrieve_marker_on_all_peers(peer_api_uris, headers={}):
     identical on every node, so every peer must resolve the token to the same replica
     no matter which peer received the request. Returns that single agreed-upon marker.
     """
-    by_peer = {uri: retrieve_marker(uri, headers=headers) for uri in peer_api_uris}
+    by_peer = markers_by_peer(peer_api_uris, headers=headers)
     distinct = set(by_peer.values())
     assert len(distinct) == 1, f"peers disagreed on the routed replica: {by_peer}"
     return distinct.pop()
+
+
+def wait_for_stable_routing(peer_api_uris, tokens):
+    """Wait until every peer agrees on the routed replica for each of `tokens`.
+
+    Right after a `no_sync` snapshot recovery, the recovered replica serves *local*
+    reads immediately, but there is a brief window where a *remote* read to it can
+    transiently fail. When that happens the read path falls back to the next replica
+    in hash order on just the requesting peer, so a token momentarily resolves to
+    different replicas across peers (e.g. `{A, B, B}`). This is expected fallback
+    behaviour, not a routing bug, so poll until that window has passed before we
+    assert determinism. Tokens are checked without the agreement assertion so the
+    poll can retry instead of failing.
+    """
+    def all_tokens_agree():
+        for token in tokens:
+            by_peer = markers_by_peer(peer_api_uris, headers={ROUTING_HEADER: token})
+            if len(set(by_peer.values())) != 1:
+                return False
+        return True
+
+    wait_for(all_tokens_agree)
 
 
 def create_snapshot(peer_uri):
@@ -164,6 +191,16 @@ def test_routing_token_sticky_reads(tmp_path: pathlib.Path):
     # readable on the read path.
     wait_for(replicas_diverged, peer_a, peer_b)
 
+    # `replicas_diverged` only confirms each replica is readable *locally*. A remote
+    # read to the freshly recovered peer_a can still transiently fail for a short
+    # while, and the read path then falls back to the other replica in hash order on
+    # just the requesting peer — making a single token look like it resolves to
+    # different replicas across peers. Wait until token-routed reads are stable
+    # across all peers for every token we are about to assert on.
+    sticky_token = "user-sticky"
+    per_token_tokens = [f"user-{i}" for i in range(32)]
+    wait_for_stable_routing(peer_api_uris, [sticky_token, *per_token_tokens])
+
     n_reads = 40
 
     # 1. No routing token: the coordinator routes each read to a random replica, so
@@ -177,7 +214,7 @@ def test_routing_token_sticky_reads(tmp_path: pathlib.Path):
     # 2. With a routing token: the read is pinned to one replica, and *every* peer
     #    resolves the token to the same replica (`retrieve_marker_on_all_peers` asserts
     #    the peers agree). Repeated rounds must therefore yield a single stable marker.
-    sticky_headers = {ROUTING_HEADER: "user-sticky"}
+    sticky_headers = {ROUTING_HEADER: sticky_token}
     with_token = {
         retrieve_marker_on_all_peers(peer_api_uris, headers=sticky_headers)
         for _ in range(n_reads)
@@ -192,8 +229,8 @@ def test_routing_token_sticky_reads(tmp_path: pathlib.Path):
     #    via `hash(token, peer_id)`; since peer ids are random per cluster, use enough
     #    tokens to make an all-same-replica split vanishingly unlikely (~2 * 0.5**32).
     per_token = {
-        retrieve_marker_on_all_peers(peer_api_uris, headers={ROUTING_HEADER: f"user-{i}"})
-        for i in range(32)
+        retrieve_marker_on_all_peers(peer_api_uris, headers={ROUTING_HEADER: token})
+        for token in per_token_tokens
     }
     assert per_token == {"A", "B"}, (
         f"expected different routing tokens to reach different replicas, observed {per_token}"
