@@ -94,8 +94,8 @@ pub enum OperationError {
     /// the operation; already-applied points are skipped by their point version.
     ///
     /// The message must keep starting with [`OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX`]: the
-    /// collection-level error conversion flattens this variant into a generic service error, and
-    /// the update worker recognizes the condition by that prefix.
+    /// collection-level error conversion flattens this variant into a generic shard-unavailable
+    /// error, and the update worker recognizes the condition by that prefix.
     #[error(
         "All appendable segments reached the maximum segment size of {max_segment_size_bytes} bytes"
     )]

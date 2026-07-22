@@ -30,7 +30,17 @@ impl CollectionUpdater {
                 if collection_error.is_transient() {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {collection_error}")
+                    if collection_error.is_out_of_appendable_capacity() {
+                        // Expected backpressure rather than a failure: the update worker retries
+                        // inline and recovery re-applies the operation once the optimizer
+                        // provisions a fresh appendable segment.
+                        log::debug!(
+                            "Update operation {op_num} ran out of appendable capacity, \
+                             it will be retried: {collection_error}"
+                        )
+                    } else {
+                        log::error!("Update operation failed: {collection_error}")
+                    }
                 } else if !segments.read().failed_operation.is_empty()
                     && segments.write().failed_operation.remove(&op_num)
                 {
