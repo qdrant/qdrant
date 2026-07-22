@@ -191,7 +191,11 @@ impl LogstoreConfig {
 /// `config.json`. Uses the `try_from` implementation to default to mutable when
 /// `"mode"` tag is not present.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case", try_from = "serde_json::Value")]
+#[serde(
+    tag = "mode",
+    rename_all = "snake_case",
+    try_from = "serde_json::Value"
+)]
 pub enum StorageConfig {
     Mutable(GridstoreConfig),
     AppendOnly(LogstoreConfig),
@@ -235,8 +239,7 @@ mod tests {
             "region_size_blocks": 8192,
             "compression": "LZ4"
         }"#;
-        let StorageConfig::Mutable(config) = serde_json::from_str(json).unwrap()
-        else {
+        let StorageConfig::Mutable(config) = serde_json::from_str(json).unwrap() else {
             panic!("expected a mutable config");
         };
         assert_eq!(config.page_size_bytes, 33554432);
