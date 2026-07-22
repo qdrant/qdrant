@@ -120,7 +120,7 @@ pub struct ShardReplicaSet {
     update_runtime: Handle,
     search_runtime: AdaptiveSearchHandle,
     optimizer_resource_budget: ResourceBudget,
-    /// Lock to serialized write operations on the replicaset when a write ordering is used.
+    /// Lock to serialize strong write operations on this replica set.
     write_ordering_lock: Mutex<()>,
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
