@@ -10,8 +10,9 @@ pub mod facet;
 pub mod formula;
 pub mod grouping;
 pub mod info;
-/// Gated behind the off-by-default `matrix` feature — kept off the mobile
-/// (Swift/Kotlin) binding surface. See the module docs.
+/// Gated behind the `matrix` feature, which is **on by default**. The mobile
+/// (Swift/Kotlin) bindgen must build `--no-default-features` to keep this op off
+/// the mobile binding surface. See the module docs.
 #[cfg(feature = "matrix")]
 pub mod matrix;
 pub mod query;

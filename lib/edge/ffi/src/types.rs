@@ -88,9 +88,8 @@ fn to_internal_sparse(
 ) -> Result<InternalSparseVector, crate::error::EdgeError> {
     let SparseVector { indices, values } = v;
     reject_non_finite(&values, ctx)?;
-    validate_sparse_vector_impl(&indices, &values).map_err(|e| {
-        crate::error::EdgeError::invalid_argument(format!("invalid {ctx}: {e}"))
-    })?;
+    validate_sparse_vector_impl(&indices, &values)
+        .map_err(|e| crate::error::EdgeError::invalid_argument(format!("invalid {ctx}: {e}")))?;
     Ok(InternalSparseVector { indices, values })
 }
 

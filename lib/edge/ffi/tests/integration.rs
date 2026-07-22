@@ -3898,9 +3898,9 @@ fn formula_node_count_exact_boundary() {
     );
 }
 
-/// Distance matrix over sampled points. Gated behind the off-by-default
-/// `matrix` feature (the op is kept off the mobile binding surface); run with
-/// `--features matrix`.
+/// Distance matrix over sampled points. Gated behind the `matrix` feature,
+/// which is on by default (the mobile bindgen excludes it via
+/// `--no-default-features`); this test therefore runs by default.
 #[cfg(feature = "matrix")]
 #[test]
 fn search_matrix_relates_samples() {
