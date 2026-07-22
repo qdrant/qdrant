@@ -6,7 +6,7 @@
 
 use common::bitvec::BitSliceExt;
 use common::generic_consts::{Random, Sequential};
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use tempfile::Builder;
 
@@ -18,7 +18,7 @@ use crate::types::MultiVectorConfig;
 use crate::vector_storage::MultiTQVectorStorage;
 
 /// Random unit vector with a fixed fallback for an all-zero draw.
-fn random_unit_vector(rng: &mut StdRng, dim: usize) -> DenseVector {
+fn random_unit_vector(rng: &mut SmallRng, dim: usize) -> DenseVector {
     let v: DenseVector = (0..dim).map(|_| rng.random_range(-1.0f32..1.0)).collect();
     let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
     if norm == 0.0 {
@@ -212,7 +212,7 @@ fn congruent_upsert_read_all_distances() {
     ] {
         for dim in [1, 127, 128] {
             for seed in SEEDS {
-                let mut rng = StdRng::seed_from_u64(seed);
+                let mut rng = SmallRng::seed_from_u64(seed);
                 let dense_dir = Builder::new().prefix("tq_congr_dense").tempdir().unwrap();
                 let multi_dir = Builder::new().prefix("tq_congr_multi").tempdir().unwrap();
                 let hw = HardwareCounterCell::new();
@@ -244,7 +244,7 @@ fn congruent_upsert_read_all_distances() {
 /// fresh storages via `update_from` (the optimizer move) and check the
 /// destinations live and after a reload.
 fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     let dense_dir = Builder::new().prefix("tq_congr_dense").tempdir().unwrap();
     let multi_dir = Builder::new().prefix("tq_congr_multi").tempdir().unwrap();
     let dense_dst_dir = Builder::new()
