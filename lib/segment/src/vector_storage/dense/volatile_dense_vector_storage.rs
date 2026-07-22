@@ -17,7 +17,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
-    VectorStorageRead, default_read_vector_bytes_impl,
+    VectorStorageRead, default_for_each_in_dense_batch, default_read_vector_bytes_impl,
 };
 
 /// In-memory vector storage that is volatile
@@ -84,6 +84,14 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for VolatileDenseVecto
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
         Cow::Borrowed(self.vectors.get(key as VectorOffsetType))
+    }
+
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_in_dense_batch(self, keys, f)
     }
 }
 

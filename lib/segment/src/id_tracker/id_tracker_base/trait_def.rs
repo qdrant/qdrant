@@ -140,21 +140,15 @@ pub trait IdTrackerRead {
     /// `callback` receives each `(internal_id, version)` as it resolves; ids
     /// without a version (e.g. out of range) are skipped.
     ///
-    /// The in-RAM default streams the single lookup; disk-resident trackers
+    /// Trackers with resident versions stream the single lookup
+    /// ([`default_internal_versions_batch`]); disk-resident trackers
     /// pipeline the reads and propagate any storage error. Neither buffers —
     /// the input is walked once and the pairs go straight to `callback`.
     fn internal_versions_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(PointOffsetType, SeqNumberType),
-    ) -> OperationResult<()> {
-        for internal_id in internal_ids {
-            if let Some(version) = self.internal_version(internal_id) {
-                callback(internal_id, version);
-            }
-        }
-        Ok(())
-    }
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()>;
 
     /// Returns the internal ID of the point under explicit deferred
     /// semantics — see [`PointMappings::internal_id_with_behavior`].
@@ -177,21 +171,14 @@ pub trait IdTrackerRead {
     /// unknown points are skipped, and delivery order is unspecified — callers
     /// pair results by internal id, not input position.
     ///
-    /// The default streams the iterator through the single lookup, which is
-    /// what in-RAM trackers want; disk-resident trackers override it to
-    /// pipeline the reads, propagating storage errors.
+    /// In-RAM trackers stream the iterator through the single lookup
+    /// ([`default_external_ids_batch`]); disk-resident trackers pipeline the
+    /// reads, propagating storage errors.
     fn external_ids_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(PointOffsetType, PointIdType),
-    ) -> OperationResult<()> {
-        for internal_id in internal_ids {
-            if let Some(external_id) = self.external_id(internal_id) {
-                callback(internal_id, external_id);
-            }
-        }
-        Ok(())
-    }
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()>;
 
     /// Number of total points
     ///
@@ -301,4 +288,36 @@ pub trait IdTrackerRead {
         }
         Ok(())
     }
+}
+
+/// Default [`external_ids_batch`](IdTrackerRead::external_ids_batch) for
+/// in-RAM trackers: streams the iterator through the single lookup, no IO to
+/// pipeline.
+pub fn default_external_ids_batch<T: IdTrackerRead + ?Sized>(
+    this: &T,
+    internal_ids: impl IntoIterator<Item = PointOffsetType>,
+    mut callback: impl FnMut(PointOffsetType, PointIdType),
+) -> OperationResult<()> {
+    for internal_id in internal_ids {
+        if let Some(external_id) = this.external_id(internal_id) {
+            callback(internal_id, external_id);
+        }
+    }
+    Ok(())
+}
+
+/// Default [`internal_versions_batch`](IdTrackerRead::internal_versions_batch)
+/// for trackers with resident versions: streams the single lookup, no IO to
+/// pipeline.
+pub fn default_internal_versions_batch<T: IdTrackerRead + ?Sized>(
+    this: &T,
+    internal_ids: impl IntoIterator<Item = PointOffsetType>,
+    mut callback: impl FnMut(PointOffsetType, SeqNumberType),
+) -> OperationResult<()> {
+    for internal_id in internal_ids {
+        if let Some(version) = this.internal_version(internal_id) {
+            callback(internal_id, version);
+        }
+    }
+    Ok(())
 }

@@ -304,13 +304,24 @@ pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
         &self,
         keys: &[PointOffsetType],
-        mut f: F,
-    ) -> OperationResult<()> {
-        for (idx, &key) in keys.iter().enumerate() {
-            f(idx, &self.get_dense::<Random>(key));
-        }
-        Ok(())
+        f: F,
+    ) -> OperationResult<()>;
+}
+
+pub fn default_for_each_in_dense_batch<T, F, D>(
+    this: &D,
+    keys: &[u32],
+    mut callback: F,
+) -> Result<(), OperationError>
+where
+    T: PrimitiveVectorElement,
+    F: FnMut(usize, &[T]),
+    D: DenseVectorStorageRead<T> + ?Sized,
+{
+    for (idx, &key) in keys.iter().enumerate() {
+        callback(idx, &this.get_dense::<Random>(key));
     }
+    Ok(())
 }
 
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: DenseVectorStorageRead<T> {
@@ -474,33 +485,18 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
     fn for_each_in_dense_tq_batch<F: FnMut(usize, &[u8])>(
         &self,
         keys: &[PointOffsetType],
-        mut f: F,
-    ) -> OperationResult<()> {
-        for (idx, &key) in keys.iter().enumerate() {
-            f(idx, &self.get_dense_tq::<Random>(key));
-        }
-        Ok(())
-    }
+        f: F,
+    ) -> OperationResult<()>;
 
     /// Batched byte counterpart of [`VectorStorageRead::read_vectors`]: calls
     /// `callback` with the raw encoded bytes of each vector. TQ counterpart of
     /// [`DenseVectorStorageRead::read_dense_bytes`], with the same valid-keys
     /// precondition.
-    ///
-    /// The default reads one vector at a time; storages with batched readers
-    /// override this so bulk byte reads keep the same read pipelining as
-    /// `read_vectors` (io_uring submission batching for on-disk storages).
     fn read_dense_tq_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
-    ) -> OperationResult<()> {
-        for (user_data, key) in keys {
-            let bytes = self.get_dense_tq::<P>(key);
-            callback(user_data, key, bytes.to_vec());
-        }
-        Ok(())
-    }
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()>;
 }
 
 /// Read + bulk-ingest access to a multivector storage of TurboQuant encoded

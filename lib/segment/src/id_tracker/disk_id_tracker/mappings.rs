@@ -80,25 +80,8 @@ pub trait DiskMappingsSource {
     fn resolve_internal_batch(
         &self,
         external_ids: impl IntoIterator<Item = PointIdType>,
-        mut on_live: impl FnMut(PointIdType, PointOffsetType),
-    ) -> OperationResult<()> {
-        // Use `first_err` instead of `?` to avoid UniversalIoError vs OperationResult problems
-        let mut first_err = None;
-        self.mapping_reader()
-            .lookup_batch(external_ids, |id, offset| {
-                match self.point_deleted(offset) {
-                    Ok(false) => on_live(id, offset),
-                    Ok(true) => {}
-                    Err(err) => {
-                        first_err.get_or_insert(err);
-                    }
-                }
-            })?;
-        match first_err {
-            Some(err) => Err(err),
-            None => Ok(()),
-        }
-    }
+        on_live: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()>;
 }
 
 /// A borrowed `(reader, deleted)` view; a `Copy` pair of references whose
