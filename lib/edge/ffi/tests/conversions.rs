@@ -539,11 +539,10 @@ fn geo_radius_zero_converts() {
     );
 }
 
-// ── FieldCondition: at-least-one predicate ────────────────────────────────────
+// ── FieldCondition: exactly-one predicate ─────────────────────────────────────
 
 /// A FieldCondition with no predicate set is a silent no-op (matches every
-/// point); the FFI rejects it, mirroring the engine's `validate_field_condition`
-/// ("at least one", NOT "exactly one").
+/// point); the FFI rejects it. A field condition must set exactly one predicate.
 #[test]
 fn field_condition_no_predicate_returns_error() {
     let cond = Condition::Field {
@@ -566,10 +565,13 @@ fn field_condition_no_predicate_returns_error() {
     assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
 }
 
-/// Setting MORE than one predicate is allowed (they AND together) — this is the
-/// contract the engine/gRPC/REST/Python SDK use, so the FFI must not reject it.
+/// Setting MORE than one predicate is rejected: the engine has no well-defined
+/// semantics for multiple predicates in one field condition (it evaluates only
+/// one, and which one depends on the field's indexes), so the FFI fails loud and
+/// steers callers to separate `must` conditions instead of silently diverging
+/// from a Qdrant server.
 #[test]
-fn field_condition_multiple_predicates_converts() {
+fn field_condition_multiple_predicates_rejected() {
     use qdrant_edge_ffi::filter::{RangeFloat, ValuesCount};
     let cond = Condition::Field {
         condition: FieldCondition {
@@ -597,9 +599,8 @@ fn field_condition_multiple_predicates_converts() {
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(
-        r.is_ok(),
-        "multiple predicates must be allowed (AND-combined), got: {:?}",
-        r.err()
+        matches!(r, Err(EdgeError::InvalidArgument { .. })),
+        "multiple predicates must be rejected, got: {r:?}"
     );
 }
 

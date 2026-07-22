@@ -217,14 +217,23 @@ impl Expression {
         })
     }
 
-    /// Division: `left / right`. When `right` evaluates to zero the result is
-    /// `by_zero_default`, or the point is discarded when unset.
+    /// Division: `left / right`. If `right` evaluates to zero, the result is
+    /// `by_zero_default` when set; when unset, the division yields a non-finite
+    /// value that fails the whole query with an error (it is *not* silently
+    /// skipped). A zero numerator always short-circuits to `0.0`.
     #[uniffi::constructor(default(by_zero_default = None))]
     pub fn div(
         left: Arc<Expression>,
         right: Arc<Expression>,
         by_zero_default: Option<f32>,
     ) -> Result<Arc<Self>> {
+        // A non-finite fallback would reach the scorer unchecked; reject it at
+        // construction, mirroring `constant`.
+        if by_zero_default.is_some_and(|d| !d.is_finite()) {
+            return Err(EdgeError::invalid_argument(
+                "div by_zero_default must be finite",
+            ));
+        }
         Self::node(&[&left, &right], || ExpressionInternal::Div {
             left: Box::new(left.inner.clone()),
             right: Box::new(right.inner.clone()),
@@ -300,6 +309,17 @@ impl Expression {
             .saturating_add(x.size)
             .saturating_add(target.as_ref().map_or(0, |t| t.size));
         check_expression_size(size)?;
+        // Non-finite `midpoint`/`scale` would slip past the engine's
+        // comparison-based range checks (every comparison is `false` for NaN),
+        // yielding a NaN decay lambda: a debug-build panic on the search worker
+        // (crossing the FFI boundary) or a silent all-zero rescore in release.
+        // Reject at construction, mirroring `constant`.
+        if midpoint.is_some_and(|m| !m.is_finite()) {
+            return Err(EdgeError::invalid_argument("decay midpoint must be finite"));
+        }
+        if scale.is_some_and(|s| !s.is_finite()) {
+            return Err(EdgeError::invalid_argument("decay scale must be finite"));
+        }
         Ok(Arc::new(Self {
             inner: ExpressionInternal::Decay {
                 kind: SegmentDecayKind::from(kind),

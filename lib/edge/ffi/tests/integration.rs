@@ -2515,7 +2515,6 @@ fn overwrite_payload_replaces_wholesale() {
     let op = UpdateOperation::overwrite_payload(
         vec![PointId::NumId { value: 1 }],
         r#"{"only":"this"}"#.to_string(),
-        None,
     )
     .expect("overwrite_payload failed");
     shard.update(op).expect("update failed");
@@ -2877,6 +2876,132 @@ fn create_and_delete_named_vector_field() {
     // And the field can be dropped again.
     let op = UpdateOperation::delete_vector_name("extra".to_string());
     shard.update(op).expect("deleting the vector field failed");
+}
+
+/// Re-creating an existing vector name with **different** params must be
+/// rejected loudly instead of silently no-op'ing storage while overwriting the
+/// advertised config (a config/storage desync). An **identical** re-create is
+/// an idempotent no-op.
+#[test]
+fn create_vector_name_conflict_is_rejected() {
+    use qdrant_edge_ffi::config::Distance;
+    use qdrant_edge_ffi::types::NamedVector;
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let create = |size: u64, distance: Distance| {
+        UpdateOperation::create_dense_vector("extra".to_string(), size, distance, None, None)
+            .expect("create_dense_vector op build failed")
+    };
+
+    shard
+        .update(create(4, Distance::Dot))
+        .expect("initial create failed");
+    // Identical re-create: idempotent, not an error.
+    shard
+        .update(create(4, Distance::Dot))
+        .expect("identical re-create must be idempotent");
+
+    // Conflicting re-create: rejected, so config() cannot drift from storage.
+    let err = shard
+        .update(create(8, Distance::Cosine))
+        .expect_err("a conflicting re-create must be rejected");
+    assert!(
+        format!("{err:?}").contains("already exists"),
+        "expected an 'already exists' rejection, got {err:?}"
+    );
+
+    // Storage still holds the original 4-dim field: a 4-dim write succeeds.
+    let op = UpdateOperation::upsert_points(
+        vec![Point {
+            id: PointId::NumId { value: 9 },
+            vector: Vector::Named {
+                map: HashMap::from([
+                    (
+                        "vec".to_string(),
+                        NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                    ),
+                    (
+                        "extra".to_string(),
+                        NamedVector::Dense {
+                            values: vec![0.2, 0.2, 0.2, 0.2],
+                        },
+                    ),
+                ]),
+            },
+            payload: None,
+        }],
+        None,
+        None,
+    )
+    .expect("upsert build failed");
+    shard
+        .update(op)
+        .expect("a 4-dim write into the original 'extra' field must still work");
+}
+
+/// A non-finite `StartFrom::Float` must be rejected at the boundary as a clean
+/// `InvalidArgument`, never reaching the engine (where NaN panics on a
+/// float-indexed field and silently truncates the scan on an integer one).
+#[test]
+fn order_by_start_from_non_finite_is_rejected() {
+    use qdrant_edge_ffi::{Direction, OrderBy, PayloadSchemaType, StartFrom};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+    shard
+        .update(
+            UpdateOperation::create_field_index("rank".to_string(), PayloadSchemaType::Integer)
+                .expect("create_field_index failed"),
+        )
+        .expect("index creation failed");
+
+    let result = shard.scroll(ScrollRequest {
+        offset: None,
+        limit: Some(10),
+        filter: None,
+        with_payload: Some(WithPayload::Bool { enable: false }),
+        with_vector: None,
+        order_by: Some(OrderBy {
+            key: "rank".to_string(),
+            direction: Some(Direction::Asc),
+            start_from: Some(StartFrom::Float { value: f64::NAN }),
+        }),
+    });
+    assert!(
+        matches!(result, Err(EdgeError::InvalidArgument { .. })),
+        "NaN start_from must be a clean InvalidArgument, got {result:?}"
+    );
+}
+
+/// `decay` and `div` must reject non-finite tuning params at construction (like
+/// `constant`): a NaN evades the engine's comparison-based range checks and
+/// produces a NaN score — a debug-build panic across the FFI boundary, or a
+/// silent all-zero rescore in release.
+#[test]
+fn formula_decay_and_div_reject_non_finite_params() {
+    use qdrant_edge_ffi::{DecayKind, Expression};
+
+    let x = Expression::variable("$score".to_string());
+
+    let midpoint_err = Expression::decay(DecayKind::Lin, x.clone(), None, Some(f32::NAN), None)
+        .expect_err("NaN decay midpoint must be rejected");
+    assert!(matches!(midpoint_err, EdgeError::InvalidArgument { .. }));
+
+    let scale_err = Expression::decay(DecayKind::Lin, x.clone(), None, None, Some(f32::NAN))
+        .expect_err("NaN decay scale must be rejected");
+    assert!(matches!(scale_err, EdgeError::InvalidArgument { .. }));
+
+    let div_err = Expression::div(x.clone(), x.clone(), Some(f32::NAN))
+        .expect_err("NaN div by_zero_default must be rejected");
+    assert!(matches!(div_err, EdgeError::InvalidArgument { .. }));
 }
 
 /// The lifecycle additions: `path`, `snapshot_manifest`, and the config

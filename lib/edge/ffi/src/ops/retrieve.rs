@@ -11,8 +11,11 @@ impl EdgeShard {
     /// Fetches the points with the given IDs.
     ///
     /// IDs that do not exist in the shard are simply omitted from the
-    /// returned list; no error is raised. Set `request.with_payload` and/or
-    /// `request.with_vector` to control what is included in each returned
+    /// returned list; no error is raised. Duplicate IDs are collapsed — each
+    /// existing point appears at most once regardless of how many times its ID
+    /// is requested, and the result order is not guaranteed to match the
+    /// request order. Set `request.with_payload` and/or `request.with_vector`
+    /// to control what is included in each returned
     /// [`Record`](crate::types::Record).
     ///
     /// # Errors

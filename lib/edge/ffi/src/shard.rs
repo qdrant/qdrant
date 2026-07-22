@@ -313,6 +313,12 @@ impl EdgeShard {
     /// recovery fails. If a *full* recovery fails after the shard's data
     /// directory was already cleared, the shard is left unloaded and
     /// subsequent operations fail with [`EdgeError::ShardClosed`].
+    ///
+    /// A *partial* recovery merges files into the live data directory in place
+    /// and is **not** atomic: if it fails partway (e.g. disk full, or a file
+    /// the manifest references is missing from a truncated archive) the on-disk
+    /// directory may be left half-merged. Recover from a full snapshot to
+    /// return to a known-good state.
     #[uniffi::method(default(tmp_dir = None))]
     pub fn update_from_snapshot(
         &self,

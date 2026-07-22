@@ -416,13 +416,15 @@ impl From<ValuesCount> for SegmentValuesCount {
 
 /// A filter condition applied to a single payload field.
 ///
-/// At least one of `match`, `range`, `geo_bounding_box`, `geo_radius`,
-/// `geo_polygon`, or `values_count` must be set — a condition with none set is
-/// rejected (it would silently match every point). Setting more than one is
-/// allowed and combines them with logical AND, matching the engine's
-/// `validate_field_condition` and the gRPC/REST/Python contract (this is *not*
-/// an exactly-one constraint). The payload `key` uses JSON-path syntax for
-/// nested fields (e.g. `"meta.location"`).
+/// Exactly one predicate must be set — `match`, `range`/`datetime_range`,
+/// `geo_bounding_box`, `geo_radius`, `geo_polygon`, or `values_count`. A
+/// condition with none set is rejected (it would silently match every point),
+/// and so is one with more than one: the engine has no well-defined semantics
+/// for multiple predicates in a single field condition — it evaluates only one,
+/// and *which* one depends on the field's indexes — so results would silently
+/// diverge from a Qdrant server. To AND several predicates on the same key, add
+/// one `FieldCondition` per predicate to the filter's `must` clause. The payload
+/// `key` uses JSON-path syntax for nested fields (e.g. `"meta.location"`).
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct FieldCondition {
     /// Payload key to test (JSON-path syntax supported).
@@ -467,22 +469,37 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         } = c;
         let key = crate::error::parse_json_path(&key)?;
 
-        // Mirror the engine's `validate_field_condition`: a condition with no
-        // predicate set is a silent no-op (it matches every point), so reject it
-        // at the boundary. This is "at least one", NOT "exactly one" — multiple
-        // predicates are valid and combine with AND.
-        if r#match.is_none()
-            && range.is_none()
-            && datetime_range.is_none()
-            && geo_bounding_box.is_none()
-            && geo_radius.is_none()
-            && geo_polygon.is_none()
-            && values_count.is_none()
-        {
+        // Exactly one predicate per field condition. The engine has no
+        // well-defined semantics for multiple predicates in one condition — it
+        // evaluates only one, and which one depends on the field's indexes — so
+        // passing several through would silently diverge from a Qdrant server.
+        // None set matches every point (a silent no-op); >1 is ambiguous. Reject
+        // both; callers AND predicates via separate `must` conditions. (`range`
+        // and `datetime_range` share the engine's single range slot, so they
+        // count as one predicate here; setting both is caught below.)
+        let predicate_count = [
+            r#match.is_some(),
+            range.is_some() || datetime_range.is_some(),
+            geo_bounding_box.is_some(),
+            geo_radius.is_some(),
+            geo_polygon.is_some(),
+            values_count.is_some(),
+        ]
+        .into_iter()
+        .filter(|&set| set)
+        .count();
+        if predicate_count == 0 {
             return Err(crate::error::EdgeError::invalid_argument(
-                "field condition has no predicate set: specify at least one of \
+                "field condition has no predicate set: specify exactly one of \
                  match, range, datetime_range, geo_bounding_box, geo_radius, geo_polygon, \
                  or values_count",
+            ));
+        }
+        if predicate_count > 1 {
+            return Err(crate::error::EdgeError::invalid_argument(
+                "field condition has more than one predicate set: a field condition tests \
+                 exactly one predicate. To AND several predicates on the same key, add one \
+                 field condition per predicate to the filter's `must` clause",
             ));
         }
 

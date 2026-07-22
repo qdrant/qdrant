@@ -344,19 +344,19 @@ impl UpdateOperation {
     /// points with `payload_json`.
     ///
     /// Unlike [`UpdateOperation::set_payload`], keys not present in
-    /// `payload_json` are removed. When `key` (JSON-path syntax) is set, only
-    /// the payload under that location is replaced.
+    /// `payload_json` are removed. Overwrite is always root-scoped — the whole
+    /// payload is replaced. To replace only a sub-tree, use
+    /// [`UpdateOperation::set_payload`] with a `key` (a merge at that path).
     ///
     /// # Errors
     ///
     /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
-    /// `payload_json` is not a valid JSON object string, any UUID ID is
-    /// malformed, or `key` is not a valid JSON path.
-    #[uniffi::constructor(default(key = None))]
+    /// `payload_json` is not a valid JSON object string or any UUID ID is
+    /// malformed.
+    #[uniffi::constructor]
     pub fn overwrite_payload(
         point_ids: Vec<PointId>,
         payload_json: String,
-        key: Option<String>,
     ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
         let payload = json_to_payload(&payload_json).map_err(|e| {
             crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
@@ -365,11 +365,14 @@ impl UpdateOperation {
             .into_iter()
             .map(PointIdType::try_from)
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        // The engine's overwrite path has no payload selector: the server
+        // discards `key` here too (`do_overwrite_payload` sets `key: None`), so
+        // exposing it would be a silent no-op. Overwrite is always root-scoped.
         let operation = payload_ops::PayloadOps::OverwritePayload(payload_ops::SetPayloadOp {
             payload,
             points: Some(ids),
             filter: None,
-            key: key.map(|k| crate::error::parse_json_path(&k)).transpose()?,
+            key: None,
         });
         Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::PayloadOperation(operation),
@@ -380,28 +383,29 @@ impl UpdateOperation {
     /// matching `filter` with `payload_json`.
     ///
     /// Unlike [`UpdateOperation::set_payload_by_filter`], keys not present in
-    /// `payload_json` are removed. When `key` (JSON-path syntax) is set, only
-    /// the payload under that location is replaced.
+    /// `payload_json` are removed. Overwrite is always root-scoped — the whole
+    /// payload is replaced. To replace only a sub-tree, use
+    /// [`UpdateOperation::set_payload_by_filter`] with a `key`.
     ///
     /// # Errors
     ///
     /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
-    /// `payload_json` is not a valid JSON object string, the filter is
-    /// invalid, or `key` is not a valid JSON path.
-    #[uniffi::constructor(default(key = None))]
+    /// `payload_json` is not a valid JSON object string or the filter is
+    /// invalid.
+    #[uniffi::constructor]
     pub fn overwrite_payload_by_filter(
         filter: Filter,
         payload_json: String,
-        key: Option<String>,
     ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
         let payload = json_to_payload(&payload_json).map_err(|e| {
             crate::error::EdgeError::invalid_argument(format!("invalid payload JSON: {e}"))
         })?;
+        // See `overwrite_payload`: the engine ignores `key` on overwrite.
         let operation = payload_ops::PayloadOps::OverwritePayload(payload_ops::SetPayloadOp {
             payload,
             points: None,
             filter: Some(SegmentFilter::try_from(filter)?),
-            key: key.map(|k| crate::error::parse_json_path(&k)).transpose()?,
+            key: None,
         });
         Ok(Arc::new(Self {
             inner: CollectionUpdateOperations::PayloadOperation(operation),

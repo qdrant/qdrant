@@ -98,8 +98,9 @@ impl From<SearchParams> for SegmentSearchParams {
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum RecommendStrategy {
     /// Score each point by its best similarity against any positive example,
-    /// penalized by its best similarity against any negative example
-    /// (the server default).
+    /// penalized by its best similarity against any negative example. This is
+    /// the strategy used when [`Query::Recommend`] is given no explicit
+    /// `strategy`.
     BestScore,
     /// Score each point by the sum of its similarities to all examples
     /// (negatives contribute negatively).
@@ -137,14 +138,20 @@ pub struct FeedbackItem {
     pub score: f32,
 }
 
-/// Tuning coefficients for [`Query::Feedback`] scoring.
+/// Tuning coefficients for [`Query::Feedback`] scoring, which computes
+/// `a * similarity(target) + Σ(confidence^b * c * delta)` over feedback pairs
+/// (`confidence` is a pair's feedback-score difference, `delta` its
+/// target-similarity difference).
 #[derive(Clone, Copy, Debug, uniffi::Record)]
 pub struct FeedbackCoefficients {
-    /// Weight of the target-similarity component.
+    /// Coefficient `a`: weight of the target-similarity term.
     pub a: f32,
-    /// Weight of the feedback-context component.
+    /// Coefficient `b`: exponent applied to each pair's feedback-score
+    /// difference (`confidence^b`).
     pub b: f32,
-    /// Margin above which a pair of feedback items forms a context pair.
+    /// Coefficient `c`: multiplier applied to each feedback pair's contribution
+    /// (`confidence^b * c`). This is *not* a margin — the context-pair margin
+    /// is fixed at `0.0`.
     pub c: f32,
 }
 
@@ -492,7 +499,14 @@ impl TryFrom<StartFrom> for SegmentStartFrom {
     fn try_from(s: StartFrom) -> Result<Self, Self::Error> {
         Ok(match s {
             StartFrom::Integer { value } => SegmentStartFrom::Integer(value),
-            StartFrom::Float { value } => SegmentStartFrom::Float(value),
+            StartFrom::Float { value } => {
+                if !value.is_finite() {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "order-by start_from float ({value}) must be finite"
+                    )));
+                }
+                SegmentStartFrom::Float(value)
+            }
             StartFrom::Datetime { value } => {
                 SegmentStartFrom::Datetime(value.parse().map_err(|e| {
                     crate::error::EdgeError::invalid_argument(format!(
