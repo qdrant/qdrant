@@ -10,11 +10,11 @@ use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{
     DiskCache, DiskCacheRemote, block_aligned_fetch, to_block_range,
 };
-use crate::universal_io::{self, ReadPipeline, Result, UniversalIoError, UniversalRead, UserData};
+use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData};
 
 #[cfg(target_os = "linux")]
 /// Required alignment when using io_uring with `O_DIRECT` on Linux
-pub(super) const REMOTE_READ_ALIGNMENT: usize = universal_io::io_uring::KERNEL_PAGE_SIZE;
+pub(super) const REMOTE_READ_ALIGNMENT: usize = crate::universal_io::io_uring::KERNEL_PAGE_SIZE;
 
 #[cfg(not(target_os = "linux"))]
 /// Default alignment on non-Linux platforms
@@ -60,7 +60,7 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<P>(local: &LocalState, range: Range<u64>) -> Result<Source>
+fn pick_source<P>(local: &LocalState, range: Range<u64>) -> UioResult<Source>
 where
     P: AccessPattern,
 {
@@ -112,7 +112,7 @@ unsafe fn read_local<R>(
     file: &DiskCache<R>,
     range: Range<u64>,
     is_sequential: bool,
-) -> universal_io::Result<&[u8]>
+) -> UioResult<&[u8]>
 where
     R: DiskCacheRemote,
 {
@@ -137,7 +137,7 @@ unsafe fn commit_and_read<'file, R, U>(
     fetch: InFlightFetch<'file, R, U>,
     bytes: &[u8],
     results: &mut VecDeque<(U, &'file [u8])>,
-) -> universal_io::Result<()>
+) -> UioResult<()>
 where
     R: DiskCacheRemote,
     U: UserData,
@@ -189,7 +189,7 @@ where
     /// borrows of other fields (see the `vacant_entry` in `schedule`).
     fn get_or_init_remote_pipeline<'a>(
         remote_pipeline: &'a mut OnceCell<RemotePipeline<'file, R>>,
-    ) -> universal_io::Result<&'a mut RemotePipeline<'file, R>> {
+    ) -> UioResult<&'a mut RemotePipeline<'file, R>> {
         if remote_pipeline.get().is_none() {
             let remote = R::ReadPipeline::new()?;
             // We just observed the cell as empty and hold `&mut`, so set cannot fail.
@@ -212,7 +212,7 @@ where
 {
     type File = DiskCache<R>;
 
-    fn new() -> universal_io::Result<Self> {
+    fn new() -> UioResult<Self> {
         Ok(Self {
             remote_pipeline: OnceCell::new(),
             in_flight: Slab::new(),
@@ -234,7 +234,7 @@ where
         file: &'file DiskCache<R>,
         range: Range<u64>,
         _align: usize,
-    ) -> universal_io::Result<()> {
+    ) -> UioResult<()> {
         let state = file.state()?;
         match pick_source::<P>(state.local, range.clone())? {
             Source::Local {
@@ -283,7 +283,12 @@ where
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U, file: &'file DiskCache<R>, from: u64) -> Result<()>
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file DiskCache<R>,
+        from: u64,
+    ) -> UioResult<()>
     where
         Self::File: UniversalRead,
     {
@@ -297,7 +302,7 @@ where
         self.schedule::<Sequential>(user_data, file, from..eof, 1)
     }
 
-    fn wait(&mut self) -> universal_io::Result<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         if let Some((user_data, slice)) = self.results.pop_front() {
             return Ok(Some((user_data, ACow::Borrowed(slice))));
         }

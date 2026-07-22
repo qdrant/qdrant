@@ -1,6 +1,6 @@
 //! Microsoft Azure Blob Storage backend.
 
-use common::universal_io::{Result, UniversalIoError, UniversalKind};
+use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::azure::{MicrosoftAzure, MicrosoftAzureBuilder};
 
 use crate::backend::BlobBackend;
@@ -42,7 +42,7 @@ pub enum AzureCredentials {
 impl BlobBackend for MicrosoftAzure {
     type Config = AzureConfig;
 
-    fn build_store(config: &Self::Config) -> Result<Self> {
+    fn build_store(config: &Self::Config) -> UioResult<Self> {
         let mut builder = MicrosoftAzureBuilder::new()
             .with_account(&config.account)
             .with_container_name(&config.container);

@@ -7,7 +7,7 @@ use fs_err as fs;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ListedFile, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    ListedFile, OpenOptions, UioResult, UniversalIoError, UniversalRead, UniversalReadFileOps,
     UniversalReadFs, UniversalWriteFileOps, UserData, local_file_ops,
 };
 
@@ -85,39 +85,39 @@ pub struct BlockCacheFs {
 impl UniversalReadFileOps for BlockCacheFs {
     type ContextConfig = BlockCacheConfigContext;
 
-    fn from_context(ctx: BlockCacheConfigContext) -> Result<Self> {
+    fn from_context(ctx: BlockCacheConfigContext) -> UioResult<Self> {
         Ok(Self {
             controller: ctx.controller,
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> UioResult<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
 }
 
 impl UniversalWriteFileOps for BlockCacheFs {
-    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
         local_file_ops::local_create(path, expected_length)
     }
 
-    fn create_dir(&self, path: &Path) -> Result<()> {
+    fn create_dir(&self, path: &Path) -> UioResult<()> {
         local_file_ops::local_create_dir(path)
     }
 
-    fn remove(&self, path: &Path) -> Result<()> {
+    fn remove(&self, path: &Path) -> UioResult<()> {
         local_file_ops::local_remove(path)
     }
 
-    fn remove_dir(&self, path: &Path) -> Result<()> {
+    fn remove_dir(&self, path: &Path) -> UioResult<()> {
         local_file_ops::local_remove_dir(path)
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         local_file_ops::local_atomic_save(path, bytes)
     }
 }
@@ -131,7 +131,7 @@ impl UniversalReadFs for BlockCacheFs {
         path: impl AsRef<Path>,
         options: OpenOptions,
         _extra: (),
-    ) -> Result<CachedSlice> {
+    ) -> UioResult<CachedSlice> {
         let OpenOptions {
             writeable,
             need_sequential: _,
@@ -154,24 +154,24 @@ impl UniversalRead for CachedSlice {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> Result<()> {
+    fn reopen(&mut self) -> UioResult<()> {
         // TODO: revise if this is the best way to reopen
         *self = CachedSlice::open(&self.controller, &self.path)
             .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
+    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>> {
         let start = usize::try_from(range.start).expect("range.start is within usize");
         let end = usize::try_from(range.end).expect("range.end is within usize");
         Ok(self.get_range_bytes(start..end, align)?)
     }
 
-    fn len<T>(&self) -> Result<u64> {
+    fn len<T>(&self) -> UioResult<u64> {
         Ok(Self::len::<T>(self) as u64)
     }
 
-    fn populate(&self) -> Result<()> {
+    fn populate(&self) -> UioResult<()> {
         Ok(self.populate()?)
     }
 
@@ -179,7 +179,7 @@ impl UniversalRead for CachedSlice {
         false
     }
 
-    fn clear_ram_cache(&self) -> Result<()> {
+    fn clear_ram_cache(&self) -> UioResult<()> {
         // TODO: issue fadvise DONTNEED on the cache file's backing mmap region.
         Ok(())
     }

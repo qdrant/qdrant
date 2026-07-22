@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use fs_err as fs;
 
-use crate::universal_io::{Result, UniversalIoError};
+use crate::universal_io::{UioResult, UniversalIoError};
 
 /// Suffix appended to every local cache file so local mirrors can't be
 /// mistaken for the "real" (remote) copy.
@@ -22,7 +22,7 @@ impl DiskCacheConfig {
     /// Initialize the config for [`DiskCacheConfig`]
     ///
     /// The `remote_dir` may be a network store, but `local_dir` must be a local path.
-    pub fn new(remote_dir: PathBuf, local_dir: PathBuf) -> Result<Self> {
+    pub fn new(remote_dir: PathBuf, local_dir: PathBuf) -> UioResult<Self> {
         let local_dir = fs::canonicalize(&local_dir)
             .map_err(|err| UniversalIoError::extract_not_found(err, &local_dir))?;
         Ok(Self {
@@ -37,7 +37,7 @@ impl DiskCacheConfig {
 
     /// Maps a remote path to its local mirror (`<local_dir>/<rel>` + `.partial`);
     /// `NotFound` if `remote_path` isn't under `remote_dir`.
-    pub fn local_path_for(&self, remote_path: &Path) -> Result<PathBuf> {
+    pub fn local_path_for(&self, remote_path: &Path) -> UioResult<PathBuf> {
         let resolved = canonicalize_remote(remote_path);
         let rel =
             resolved

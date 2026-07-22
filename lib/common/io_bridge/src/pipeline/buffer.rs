@@ -2,7 +2,7 @@ use std::future::Future;
 use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::universal_io::{Result, UniversalIoError};
+use common::universal_io::{UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
 use crate::file::BlobFile;
@@ -21,7 +21,7 @@ pub fn read_into_byte_buffer<A: AsyncRead>(
     file: &BlobFile<A>,
     range: Range<u64>,
     align: usize,
-) -> impl Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static {
+) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
     let len = (range.end - range.start) as usize;
     let stream_fut = file.inner.read_range(&file.path, range);
     async move {
@@ -35,7 +35,7 @@ pub fn read_into_byte_buffer<A: AsyncRead>(
 pub fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     align: usize,
-) -> impl Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static {
+) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
     read_from_into_byte_buffer(file, 0, align)
 }
 
@@ -52,7 +52,7 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     from: u64,
     align: usize,
-) -> impl Future<Output = Result<AVec<u8, RuntimeAlign>>> + Send + 'static {
+) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
     let read_fut = file.inner.read_from(&file.path, from);
     // Cloned for the cold disambiguation path only; building the `len` future is
     // deferred until a read error actually occurs.
@@ -88,7 +88,7 @@ async fn scatter_stream_into_buffer(
     mut stream: OffsetByteStream,
     expected_len: usize,
     align: usize,
-) -> Result<AVec<u8, RuntimeAlign>> {
+) -> UioResult<AVec<u8, RuntimeAlign>> {
     let mut buf = AVec::<u8, RuntimeAlign>::with_capacity(align, expected_len);
     // Disjoint runs of already-written bytes, grown/merged as chunks land.
     // There are few in practice — an in-order stream is a single run, an
@@ -158,7 +158,7 @@ mod tests {
     fn scatter(
         chunks: Vec<(u64, &'static [u8])>,
         expected_len: usize,
-    ) -> Result<AVec<u8, RuntimeAlign>> {
+    ) -> UioResult<AVec<u8, RuntimeAlign>> {
         let stream = futures::stream::iter(
             chunks
                 .into_iter()

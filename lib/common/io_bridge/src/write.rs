@@ -2,7 +2,7 @@ use std::future::Future;
 use std::path::Path;
 
 use bytes::Bytes;
-use common::universal_io::Result;
+use common::universal_io::UioResult;
 
 use crate::read::AsyncRead;
 
@@ -17,13 +17,17 @@ use crate::read::AsyncRead;
 /// [`UniversalWriteFileOps`]: common::universal_io::UniversalWriteFileOps
 pub trait AsyncWrite: AsyncRead {
     /// Create (or truncate to empty) the object at `path`.
-    fn create(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static;
+    fn create(&self, path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static;
 
     /// Delete the object at `path`.
-    fn remove(&self, path: &Path) -> impl Future<Output = Result<()>> + Send + 'static;
+    fn remove(&self, path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static;
 
     /// Atomically replace the object at `path` with `bytes` in a single put.
-    fn save(&self, path: &Path, bytes: Bytes) -> impl Future<Output = Result<()>> + Send + 'static;
+    fn save(
+        &self,
+        path: &Path,
+        bytes: Bytes,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static;
 }
 
 /// Blob backends supporting native single-request appends.
@@ -47,5 +51,5 @@ pub trait AsyncAppend: AsyncWrite {
         path: &Path,
         offset: u64,
         data: Bytes,
-    ) -> impl Future<Output = Result<u64>> + Send + 'static;
+    ) -> impl Future<Output = UioResult<u64>> + Send + 'static;
 }

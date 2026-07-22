@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    Result, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    UioResult, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 use super::posting_list_common::PostingListIter;
@@ -28,19 +28,19 @@ pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
 pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
     /// See [`InvertedIndex::open_ro`].
-    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self>;
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> UioResult<Self>;
 }
 
 pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {
     /// See [`InvertedIndex::open_rw`].
-    fn open_rw_impl(fs: &S::Fs, path: &Path) -> Result<Self>;
+    fn open_rw_impl(fs: &S::Fs, path: &Path) -> UioResult<Self>;
 
     /// See [`InvertedIndex::from_ram_index`].
     fn from_ram_index_impl<P: AsRef<Path>>(
         fs: &S::Fs,
         ram_index: Cow<InvertedIndexRam>,
         path: P,
-    ) -> Result<Self>;
+    ) -> UioResult<Self>;
 }
 
 pub trait InvertedIndex: Sized + Debug + 'static {
@@ -53,7 +53,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn is_on_disk(&self) -> bool;
 
     /// Open existing index based on path.
-    fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> Result<Self>
+    fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
     where
         Self: InvertedIndexReadOnly<Fs::File>,
     {
@@ -67,7 +67,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     /// TODO(uio): probably, this can be refactored into a single `open` with
     /// boolean parameter, if we add something like
     /// `UniversalReadFs::try_write(&self) -> Option<&impl UniversalWriteFs>`.
-    fn open_rw<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> Result<Self>
+    fn open_rw<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
     where
         Self: InvertedIndexReadWrite<Fs::File>,
         Fs::File: UniversalWrite<Fs = Fs>,
@@ -76,7 +76,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     }
 
     /// Save index
-    fn save(&self, path: &Path) -> Result<()>;
+    fn save(&self, path: &Path) -> UioResult<()>;
 
     /// Get the posting lists for the given dimension ids.
     fn get_batch<'a, U: UserData>(
@@ -84,8 +84,8 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell,
-        callback: impl FnMut(U, Self::Iter<'a>) -> Result<()>,
-    ) -> Result<()>;
+        callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
+    ) -> UioResult<()>;
 
     /// Get number of posting lists
     fn len(&self) -> usize;
@@ -100,8 +100,8 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         hw_counter: &HardwareCounterCell,
-        callback: impl FnMut(U, usize) -> Result<()>,
-    ) -> Result<()>;
+        callback: impl FnMut(U, usize) -> UioResult<()>,
+    ) -> UioResult<()>;
 
     /// Files used by this index
     fn files(path: &Path) -> Vec<PathBuf>;
@@ -123,7 +123,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         fs: &Fs,
         ram_index: Cow<InvertedIndexRam>,
         path: P,
-    ) -> Result<Self>
+    ) -> UioResult<Self>
     where
         Self: InvertedIndexReadWrite<Fs::File>,
         Fs::File: UniversalWrite<Fs = Fs>,

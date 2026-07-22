@@ -7,7 +7,7 @@ use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalAppend,
+    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult, UniversalAppend,
     UniversalFlush, UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
@@ -62,21 +62,21 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         fs.open(path, options, extra).map(Self::new)
     }
 
-    pub fn reopen(&mut self) -> Result<()> {
+    pub fn reopen(&mut self) -> UioResult<()> {
         self.inner.reopen()
     }
 
     #[inline]
-    pub fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
+    pub fn read<P: AccessPattern>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
         self.inner.read::<P, T>(range)
     }
 
     #[inline]
-    pub fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+    pub fn read_whole(&self) -> UioResult<Cow<'_, [T]>> {
         self.inner.read_whole::<T>()
     }
 
@@ -84,8 +84,8 @@ where
     pub fn read_batch<P, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
+        callback: impl FnMut(U, &[T]) -> UioResult<()>,
+    ) -> UioResult<()>
     where
         P: AccessPattern,
         U: UserData,
@@ -97,7 +97,7 @@ where
     pub fn read_iter<P, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>>
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
         U: UserData,
@@ -106,17 +106,17 @@ where
     }
 
     #[inline]
-    pub fn len(&self) -> Result<u64> {
+    pub fn len(&self) -> UioResult<u64> {
         self.inner.len::<T>()
     }
 
     #[inline]
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self) -> UioResult<()> {
         self.inner.populate()
     }
 
     #[inline]
-    pub fn clear_ram_cache(&self) -> Result<()> {
+    pub fn clear_ram_cache(&self) -> UioResult<()> {
         self.inner.clear_ram_cache()
     }
 
@@ -131,7 +131,7 @@ where
     T: bytemuck::Pod,
 {
     #[inline]
-    pub fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()> {
+    pub fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> UioResult<()> {
         self.inner.write::<T>(byte_offset, data)
     }
 
@@ -139,7 +139,7 @@ where
     pub fn write_batch<'a>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
         T: 'a,
     {
@@ -150,7 +150,7 @@ where
     pub fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
         T: 'a,
     {
@@ -178,7 +178,7 @@ where
     /// Append `data` at exactly byte offset `offset`, which must equal the
     /// current end of file.
     #[inline]
-    pub fn append(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+    pub fn append(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         self.inner.append::<T>(offset, data)
     }
 
@@ -189,7 +189,7 @@ where
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
         T: 'a,
     {

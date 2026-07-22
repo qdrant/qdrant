@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
-use crate::universal_io::{ListedFile, UniversalIoError};
+use crate::universal_io::{ListedFile, UioResult, UniversalIoError};
 
 /// `writev(2)`-family syscalls accept at most this many iovecs per call
 /// (`IOV_MAX`, 1024 on Linux).
@@ -58,25 +58,25 @@ pub(super) fn write_all_vectored(
     Ok(())
 }
 
-pub fn local_create(path: &Path, expected_length: usize) -> crate::universal_io::Result<()> {
+pub fn local_create(path: &Path, expected_length: usize) -> UioResult<()> {
     create_and_ensure_length(path, expected_length)
         .map(drop)
         .map_err(|err| UniversalIoError::extract_not_found(err, path))
 }
 
-pub fn local_create_dir(path: &Path) -> crate::universal_io::Result<()> {
+pub fn local_create_dir(path: &Path) -> UioResult<()> {
     fs_err::create_dir_all(path).map_err(|err| UniversalIoError::extract_not_found(err, path))
 }
 
-pub fn local_remove(path: &Path) -> crate::universal_io::Result<()> {
+pub fn local_remove(path: &Path) -> UioResult<()> {
     fs_err::remove_file(path).map_err(|err| UniversalIoError::extract_not_found(err, path))
 }
 
-pub fn local_remove_dir(path: &Path) -> crate::universal_io::Result<()> {
+pub fn local_remove_dir(path: &Path) -> UioResult<()> {
     fs_err::remove_dir_all(path).map_err(|err| UniversalIoError::extract_not_found(err, path))
 }
 
-pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Result<()> {
+pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> UioResult<()> {
     atomic_save(path, |writer| {
         writer.write_all(bytes).map_err(UniversalIoError::from)
     })
@@ -91,7 +91,7 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> crate::universal_io::Resu
 /// everything under `dir/chunk_extra/`. Matching is name-based, never a
 /// whole-path string comparison — a joined prefix may mix `/` and `\` on
 /// Windows, where entry paths use `\` throughout.
-pub fn local_list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<ListedFile>> {
+pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
     let name_prefix = prefix_path
         .file_name()

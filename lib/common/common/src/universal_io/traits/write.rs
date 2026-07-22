@@ -1,5 +1,5 @@
 use super::{UniversalRead, UniversalWriteFileOps};
-use crate::universal_io::{ByteOffset, FileIndex, Flusher, Result, UniversalIoError};
+use crate::universal_io::{ByteOffset, FileIndex, Flusher, UioResult, UniversalIoError};
 
 /// Durability control for mutating file handles.
 ///
@@ -20,18 +20,18 @@ pub trait UniversalFlush {
 /// ([`UniversalWriteFileOps`]): a backend that can open files for writing
 /// must also be able to create and remove them.
 pub trait UniversalWrite: UniversalRead<Fs: UniversalWriteFileOps> + UniversalFlush {
-    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()>;
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, data: &[T]) -> UioResult<()>;
 
     fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
-    ) -> Result<()>;
+    ) -> UioResult<()>;
 
     /// Write to multiple files in a single operation.
     fn write_multi<'a, T: bytemuck::Pod>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let files_len = files.len();
 
         for (file_index, offset, data) in writes {

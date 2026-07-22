@@ -2,7 +2,8 @@ use std::path::Path;
 
 use bytes::Bytes;
 use common::universal_io::{
-    ListedFile, OpenOptions, Result, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
+    ListedFile, OpenOptions, UioResult, UniversalReadFileOps, UniversalReadFs,
+    UniversalWriteFileOps,
 };
 
 use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
@@ -35,13 +36,13 @@ impl<A: AsyncRead> BlobFs<A> {
 impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     type ContextConfig = A::Config;
 
-    fn from_context(config: Self::ContextConfig) -> Result<Self> {
+    fn from_context(config: Self::ContextConfig) -> UioResult<Self> {
         // The context carries no runtime, so use the process-wide BridgeRuntime;
         // callers needing an isolated runtime construct via `BlobFs::new`.
         Ok(Self::new(A::open(&config)?, BridgeRuntime::global()))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let result = self.runtime.block_on(self.inner.list_files(prefix_path));
@@ -57,7 +58,7 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         result
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> UioResult<bool> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let result = self.runtime.block_on(self.inner.exists(path));
@@ -74,27 +75,27 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
 }
 
 impl<A: AsyncWrite + Clone> UniversalWriteFileOps for BlobFs<A> {
-    fn create(&self, path: &Path, _expected_length: usize) -> Result<()> {
+    fn create(&self, path: &Path, _expected_length: usize) -> UioResult<()> {
         // Object stores have no fixed-size preallocation; the expected
         // length is ignored, as the trait allows.
         self.runtime.block_on(self.inner.create(path))
     }
 
-    fn create_dir(&self, _path: &Path) -> Result<()> {
+    fn create_dir(&self, _path: &Path) -> UioResult<()> {
         // No materialized directories.
         Ok(())
     }
 
-    fn remove(&self, path: &Path) -> Result<()> {
+    fn remove(&self, path: &Path) -> UioResult<()> {
         self.runtime.block_on(self.inner.remove(path))
     }
 
-    fn remove_dir(&self, _path: &Path) -> Result<()> {
+    fn remove_dir(&self, _path: &Path) -> UioResult<()> {
         // No materialized directories.
         Ok(())
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         // A whole-object put is atomic on object stores.
         self.runtime
             .block_on(self.inner.save(path, Bytes::copy_from_slice(bytes)))
@@ -112,7 +113,7 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         _extra: (),
-    ) -> Result<BlobFile<A>> {
+    ) -> UioResult<BlobFile<A>> {
         Ok(
             BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
                 .with_writeable(options.writeable),

@@ -3,7 +3,7 @@ use std::ops::Range;
 use super::CachedSlice;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UserData};
+use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UserData};
 
 pub struct DiskCacheReadPipeline<'file, U> {
     result: Option<(U, ACow<'file>)>,
@@ -15,7 +15,7 @@ where
 {
     type File = CachedSlice;
 
-    fn new() -> Result<Self> {
+    fn new() -> UioResult<Self> {
         Ok(Self { result: None })
     }
 
@@ -29,7 +29,7 @@ where
         file: &'file CachedSlice,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
         P: AccessPattern,
     {
@@ -42,12 +42,17 @@ where
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file Self::File,
+        from: u64,
+    ) -> UioResult<()> {
         let eof = file.len::<u8>() as u64;
         self.schedule::<Sequential>(user_data, file, from..eof, 1)
     }
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         Ok(self.result.take())
     }
 }

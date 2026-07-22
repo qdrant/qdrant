@@ -30,7 +30,7 @@ use std::ops::Range;
 use super::{Item, UniversalRead};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{Result, UserData};
+use crate::universal_io::{UioResult, UserData};
 
 /// File-borrowing read pipeline.
 ///
@@ -47,7 +47,7 @@ where
 {
     type File: 'file;
 
-    fn new() -> Result<Self>;
+    fn new() -> UioResult<Self>;
 
     fn can_schedule(&mut self) -> bool;
 
@@ -68,17 +68,18 @@ where
         file: &'file Self::File,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()>;
+    ) -> UioResult<()>;
 
     /// Like `Self::schedule`, but doesn't need to know file length upfront.
     /// Reads starting at `from` offset until the end of file.
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()>;
+    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64)
+    -> UioResult<()>;
 
     /// Block until any scheduled operation completes and consume its result.
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>>;
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>>;
 
     #[inline]
-    fn wait_bytemuck<T: Item>(&mut self) -> Result<Option<(U, Cow<'file, [T]>)>> {
+    fn wait_bytemuck<T: Item>(&mut self) -> UioResult<Option<(U, Cow<'file, [T]>)>> {
         let Some((user_data, bytes)) = self.wait()? else {
             return Ok(None);
         };
@@ -129,7 +130,7 @@ where
     R: UniversalRead + 'static,
     U: UserData,
 {
-    pub fn new(file: R) -> Result<Self> {
+    pub fn new(file: R) -> UioResult<Self> {
         let pipeline = R::ReadPipeline::new()?;
 
         let pipeline = Self {
@@ -150,7 +151,7 @@ where
         user_data: U,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         // SAFETY:
         //
         // Safe, because neither inner pipeline, nor returned data can ever outlive file.
@@ -165,7 +166,7 @@ where
     }
 
     /// Like [`schedule`](Self::schedule), but reads the entire file
-    pub fn schedule_whole(&mut self, user_data: U, from: u64) -> Result<()> {
+    pub fn schedule_whole(&mut self, user_data: U, from: u64) -> UioResult<()> {
         // SAFETY:
         //
         // Same as schedule
@@ -177,7 +178,7 @@ where
     }
 
     #[inline]
-    pub fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
+    pub fn wait(&mut self) -> UioResult<Option<(U, ACow<'_>)>> {
         // pipeline returns ACow<'static>, but we shorten its lifetime to ACow<'_>,
         // which mutably borrows self, so pipeline can only be dropped after all returned
         // ACow-s are dropped
@@ -186,7 +187,7 @@ where
     }
 
     #[inline]
-    pub fn wait_bytemuck<T: Item>(&mut self) -> Result<Option<(U, Cow<'_, [T]>)>> {
+    pub fn wait_bytemuck<T: Item>(&mut self) -> UioResult<Option<(U, Cow<'_, [T]>)>> {
         let Some((user_data, bytes)) = self.wait()? else {
             return Ok(None);
         };

@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::VecExt;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFs, Result, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    MmapFs, UioResult, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
@@ -33,7 +33,7 @@ type Storage = common::universal_io::MmapFile;
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     for InvertedIndexCompressedImmutableRam<W>
 {
-    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> Result<Self> {
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> UioResult<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::<W, S>::open_ro(fs, path)?;
         Self::from_mmap_index(mmap_inverted_index)
     }
@@ -42,7 +42,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
     for InvertedIndexCompressedImmutableRam<W>
 {
-    fn open_rw_impl(fs: &<S as UniversalRead>::Fs, path: &Path) -> Result<Self> {
+    fn open_rw_impl(fs: &<S as UniversalRead>::Fs, path: &Path) -> UioResult<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::<W, S>::open_rw(fs, path)?;
         Self::from_mmap_index(mmap_inverted_index)
     }
@@ -51,7 +51,7 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
         _fs: &S::Fs,
         ram_index: Cow<InvertedIndexRam>,
         _path: P,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         let mut postings = Vec::with_capacity(ram_index.postings.len());
         for old_posting_list in &ram_index.postings {
             let mut new_posting_list = CompressedPostingBuilder::new();
@@ -85,7 +85,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         false
     }
 
-    fn save(&self, path: &Path) -> Result<()> {
+    fn save(&self, path: &Path) -> UioResult<()> {
         InvertedIndexCompressedMmap::<W, Storage>::convert_and_save(&MmapFs, self, path)?;
         Ok(())
     }
@@ -95,8 +95,8 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         ids: impl Iterator<Item = (U, DimOffset)>,
         _arena: &'a Blink,
         hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
-        mut callback: impl FnMut(U, Self::Iter<'a>) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
+    ) -> UioResult<()> {
         for (user_data, id) in ids {
             callback(user_data, self.get(id, hw_counter)?.iter())?;
         }
@@ -111,8 +111,8 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         hw_counter: &HardwareCounterCell,
-        mut callback: impl FnMut(U, usize) -> Result<()>,
-    ) -> Result<()> {
+        mut callback: impl FnMut(U, usize) -> UioResult<()>,
+    ) -> UioResult<()> {
         for (user_data, id) in ids {
             callback(user_data, self.get(id, hw_counter)?.len())?;
         }
@@ -159,7 +159,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 
 impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     /// Materialize an mmap-layout index into owned in-RAM postings.
-    fn from_mmap_index<S>(mmap_inverted_index: InvertedIndexCompressedMmap<W, S>) -> Result<Self>
+    fn from_mmap_index<S>(mmap_inverted_index: InvertedIndexCompressedMmap<W, S>) -> UioResult<Self>
     where
         S: UniversalRead + 'static,
     {
@@ -188,7 +188,7 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
         &'a self,
         id: DimOffset,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Result<CompressedPostingListView<'a, W>> {
+    ) -> UioResult<CompressedPostingListView<'a, W>> {
         let Some(posting) = self.postings.get(id as usize) else {
             return Err(out_of_bounds(id, self.len()));
         };
