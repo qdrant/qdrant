@@ -3237,11 +3237,13 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
                     .map_err(serde::de::Error::custom);
             }
 
-            let has_integer_bounds = keys.iter().any(|k| obj.contains_key(*k))
-                && keys
-                    .iter()
-                    .filter_map(|k| obj.get(*k))
-                    .all(|bound| bound.as_i64().is_some());
+            let bounds: Vec<_> = keys
+                .iter()
+                .filter_map(|k| obj.get(*k))
+                .filter(|bound| !bound.is_null())
+                .collect();
+            let has_integer_bounds =
+                !bounds.is_empty() && bounds.iter().all(|bound| bound.as_i64().is_some());
 
             if has_integer_bounds {
                 return serde_json::from_value::<Range<IntPayloadType>>(value)
@@ -5010,6 +5012,30 @@ mod tests {
 
         assert_eq!(range.gte, Some(value));
         assert_eq!(range.lte, Some(value));
+    }
+
+    #[test]
+    fn test_json_integer_range_ignores_null_bounds_for_detection() {
+        let value = 9_223_372_036_854_775_807_i64;
+        let json = format!(
+            r#"{{
+                "key": "x",
+                "range": {{
+                    "gte": {value},
+                    "lte": null
+                }}
+            }}"#
+        );
+
+        let Condition::Field(condition) = serde_json::from_str::<Condition>(&json).unwrap() else {
+            panic!("expected field condition");
+        };
+        let Some(RangeInterface::Integer(range)) = condition.range else {
+            panic!("expected integer range, got {:?}", condition.range);
+        };
+
+        assert_eq!(range.gte, Some(value));
+        assert_eq!(range.lte, None);
     }
 
     #[test]

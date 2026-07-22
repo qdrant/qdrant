@@ -2003,7 +2003,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
 
         let mut range = range.map(Range::into);
         if range.is_none() {
-            range = integer_range.map(IntegerRange::into);
+            range = integer_range.map(segment::types::RangeInterface::from);
         }
         if range.is_none() {
             range = datetime_range
