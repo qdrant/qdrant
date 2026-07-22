@@ -8,7 +8,7 @@ use common::universal_io::{UniversalRead, UserData};
 use super::pages::Pages;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::GridstoreOptions;
+use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
@@ -20,14 +20,14 @@ use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 /// [`crate::Blobstore`], the [`ReadOnlyTracker`](crate::tracker::ReadOnlyTracker)
 /// for [`crate::BlobstoreReader`].
 pub(crate) struct GridstoreView<'a, V, S: UniversalRead, T: TrackerRead<S>> {
-    config: &'a GridstoreOptions,
+    config: &'a GridstoreConfig,
     tracker: &'a T,
     pages: &'a Pages<S>,
     _value_type: std::marker::PhantomData<V>,
 }
 
 impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
-    pub(super) fn new(config: &'a GridstoreOptions, tracker: &'a T, pages: &'a Pages<S>) -> Self {
+    pub(super) fn new(config: &'a GridstoreConfig, tracker: &'a T, pages: &'a Pages<S>) -> Self {
         Self {
             config,
             tracker,

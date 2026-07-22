@@ -23,7 +23,7 @@ pub use view::BlobstoreView;
 
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::StorageOptions;
+use crate::config::StorageConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
 #[cfg(test)]
@@ -78,7 +78,7 @@ where
     pub fn open_or_create(
         fs: S::Fs,
         base_path: PathBuf,
-        create_options: StorageOptions,
+        config_if_create: StorageConfig,
         populate: Populate,
     ) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
@@ -86,25 +86,25 @@ where
             Self::open(fs, base_path, populate)
         } else {
             fs.create_dir(&base_path)?;
-            Self::new(fs, base_path, create_options)
+            Self::new(fs, base_path, config_if_create)
         }
     }
 
-    /// Initializes a new storage in the mode of the given options variant.
+    /// Initializes a new storage in the mode of the given config variant.
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub fn new(fs: S::Fs, base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        options
+    pub fn new(fs: S::Fs, base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+        config
             .validate()
             .map_err(BlobstoreError::validation_error)?;
-        match options {
-            StorageOptions::Mutable(options) => {
-                let storage = Gridstore::new(fs, base_path, options)?;
+        match config {
+            StorageConfig::Mutable(config) => {
+                let storage = Gridstore::new(fs, base_path, config)?;
                 Ok(Self::Gridstore(storage))
             }
-            StorageOptions::AppendOnly(options) => {
-                let storage = Logstore::new(fs, base_path, options)?;
+            StorageConfig::AppendOnly(config) => {
+                let storage = Logstore::new(fs, base_path, config)?;
                 Ok(Self::Logstore(storage))
             }
         }
@@ -115,11 +115,11 @@ where
     /// The operating mode is automatically selected based on the persisted config.
     pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
         match reader::read_config(&fs, &base_path)? {
-            StorageOptions::Mutable(config) => {
+            StorageConfig::Mutable(config) => {
                 let storage = Gridstore::open(fs, base_path, config, populate)?;
                 Ok(Self::Gridstore(storage))
             }
-            StorageOptions::AppendOnly(config) => {
+            StorageConfig::AppendOnly(config) => {
                 let storage = Logstore::open(fs, base_path, config)?;
                 Ok(Self::Logstore(storage))
             }

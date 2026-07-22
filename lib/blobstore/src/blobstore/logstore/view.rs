@@ -10,7 +10,7 @@ use common::universal_io::{UniversalRead, UserData};
 use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::LogstoreOptions;
+use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::{PointOffset, ValuePointer};
@@ -21,7 +21,7 @@ use crate::tracker::{PointOffset, ValuePointer};
 ///
 /// All data is read through the universal IO backend `S`.
 pub(crate) struct LogstoreView<'a, V, S: UniversalRead> {
-    config: &'a LogstoreOptions,
+    config: &'a LogstoreConfig,
     tracker: &'a AppendOnlyTracker<S>,
     pages: &'a AppendOnlyPages<S>,
     _phantom: PhantomData<V>,
@@ -29,7 +29,7 @@ pub(crate) struct LogstoreView<'a, V, S: UniversalRead> {
 
 impl<'a, V, S: UniversalRead> LogstoreView<'a, V, S> {
     pub(super) fn new(
-        config: &'a LogstoreOptions,
+        config: &'a LogstoreConfig,
         tracker: &'a AppendOnlyTracker<S>,
         pages: &'a AppendOnlyPages<S>,
     ) -> Self {

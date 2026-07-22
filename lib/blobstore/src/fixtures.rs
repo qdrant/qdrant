@@ -6,8 +6,8 @@ use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
 use crate::config::{
-    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreOptions,
-    LogstoreOptions, Mode, StorageOptions,
+    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig,
+    LogstoreConfig, Mode, StorageConfig,
 };
 use crate::{Blob, Blobstore};
 
@@ -43,15 +43,15 @@ pub fn empty_storage_append_only() -> (TempDir, Blobstore<Payload>) {
 /// Create an empty storage in the given mode with the default configuration
 pub fn empty_storage_mode(mode: Mode) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), default_options(mode)).unwrap();
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), default_config(mode)).unwrap();
     (dir, storage)
 }
 
-/// Default creation options for the given mode
-pub fn default_options(mode: Mode) -> StorageOptions {
+/// Default creation config for the given mode
+pub fn default_config(mode: Mode) -> StorageConfig {
     match mode {
-        Mode::Mutable => StorageOptions::Mutable(GridstoreOptions::DEFAULT),
-        Mode::AppendOnly => StorageOptions::AppendOnly(LogstoreOptions::DEFAULT),
+        Mode::Mutable => StorageConfig::Mutable(GridstoreConfig::DEFAULT),
+        Mode::AppendOnly => StorageConfig::AppendOnly(LogstoreConfig::DEFAULT),
     }
 }
 
@@ -61,13 +61,13 @@ pub fn empty_storage_sized(
     compression: Compression,
 ) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let options = StorageOptions::Mutable(GridstoreOptions {
+    let config = StorageConfig::Mutable(GridstoreConfig {
         page_size_bytes: page_size,
         block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
         region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         compression,
     });
-    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), options).unwrap();
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
     (dir, storage)
 }
 

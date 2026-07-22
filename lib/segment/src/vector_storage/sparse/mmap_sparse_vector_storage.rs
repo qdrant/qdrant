@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use blobstore::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    GridstoreOptions, StorageOptions,
+    GridstoreConfig, StorageConfig,
 };
 use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
@@ -99,7 +99,7 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         fs::create_dir_all(&storage_dir)?;
-        let storage_options = StorageOptions::Mutable(GridstoreOptions {
+        let storage_options = StorageConfig::Mutable(GridstoreConfig {
             page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
             block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
             region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
