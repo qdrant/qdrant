@@ -8,7 +8,8 @@ use bytemuck::TransparentWrapper;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult, UniversalAppend,
-    UniversalFlush, UniversalKind, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs,
+    UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -71,8 +72,12 @@ where
     }
 
     #[inline]
-    pub fn read<P: AccessPattern>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
-        self.inner.read::<P, T>(range)
+    pub fn read<P: AccessPattern>(
+        &self,
+        range: ReadRange,
+        access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
+        self.inner.read(range, access_pattern)
     }
 
     #[inline]
@@ -81,28 +86,26 @@ where
     }
 
     #[inline]
-    pub fn read_batch<P, U>(
+    pub fn read_batch<P: AccessPattern, U: UserData, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> UioResult<()>,
-    ) -> UioResult<()>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
-        self.inner.read_batch::<P, T, U>(ranges, callback)
+        access_pattern: P,
+        callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.inner.read_batch(ranges, access_pattern, callback)
     }
 
     #[inline]
     pub fn read_iter<P, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        access_pattern: P,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
         U: UserData,
     {
-        self.inner.read_iter::<P, T, U>(ranges)
+        self.inner.read_iter(ranges, access_pattern)
     }
 
     #[inline]

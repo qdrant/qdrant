@@ -10,8 +10,8 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead, UniversalReadFs,
-    UserData,
+    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalRead,
+    UniversalReadFs, UserData,
 };
 use zerocopy::IntoBytes;
 
@@ -205,7 +205,7 @@ where
 
         let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
 
-        let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
+        let header = store.read(ReadRange::one(0), Random)?[0];
 
         Ok(Self {
             file_name,
@@ -264,7 +264,7 @@ where
             return Ok(None);
         };
 
-        let bytes = self.store.read::<Random, u8>(bytes_range)?;
+        let bytes = self.store.read(bytes_range, Random)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
@@ -304,7 +304,7 @@ where
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
         self.store
-            .read_batch::<Random, MmapRange, _>(range_reads, |user_data, ranges| {
+            .read_batch(range_reads, Random, |user_data, ranges| {
                 let MmapRange { start, count } = ranges[0];
 
                 // Use next point's start as end offset for this one.
@@ -322,7 +322,7 @@ where
                 // usually marked in `deleted`.
                 value_reads.push((user_data, count as usize, ReadRange::new(start, length)));
 
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
@@ -330,9 +330,9 @@ where
             .into_iter()
             .map(|(user_data, count, range)| ((user_data, count), range));
         self.store
-            .read_batch::<Random, u8, _>(value_reads, |(user_data, count), bytes| {
+            .read_batch(value_reads, Random, |(user_data, count), bytes| {
                 f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         Ok(())
@@ -366,7 +366,7 @@ where
 
             let range = self
                 .store
-                .read::<Random, MmapRange>(ReadRange::one(range_offset as u64))?[0];
+                .read(ReadRange::one(range_offset as u64), Random)?[0];
             Ok(Some(range))
         } else {
             Ok(None)

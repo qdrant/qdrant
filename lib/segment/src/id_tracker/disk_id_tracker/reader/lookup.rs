@@ -1,5 +1,6 @@
 //! Point lookups: sparse-index binary search plus one data-block read.
 
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead};
 use uuid::Uuid;
@@ -40,7 +41,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
         let bytes = self
             .e2i
-            .read::<common::generic_consts::Random, u8>(self.num_block_range(block))?;
+            .read::<_, u8>(self.num_block_range(block), Random)?;
         Ok(decode_num_block(bytes.as_ref()))
     }
 
@@ -50,7 +51,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
         let bytes = self
             .e2i
-            .read::<common::generic_consts::Random, u8>(self.uuid_block_range(block))?;
+            .read::<_, u8>(self.uuid_block_range(block), Random)?;
         Ok(decode_uuid_block(bytes.as_ref()))
     }
 
@@ -119,7 +120,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// completes; absent ids are dropped. Delivery is in read-completion order,
     /// not input order — the id is rebuilt from `is_uuid` + key, so callers
     /// never need the input position. Deletion is NOT applied (same contract as
-    /// `lookup`); storage errors propagate.
+    /// `lookup`); storage errors and `on_found` errors propagate, aborting the
+    /// pass.
     ///
     /// Ids are not grouped by block up front: a block is one ~16 KiB DiskCache
     /// block, so reads landing in the same block are deduplicated by the cache
@@ -128,7 +130,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     pub fn lookup_batch(
         &self,
         external_ids: impl IntoIterator<Item = PointIdType>,
-        mut on_found: impl FnMut(PointIdType, PointOffsetType),
+        mut on_found: impl FnMut(PointIdType, PointOffsetType) -> OperationResult<()>,
     ) -> OperationResult<()> {
         // Each read is tagged with `(is_uuid, key)` so the callback can pick the
         // decoder, binary-search, and rebuild the id. Ids outside every block
@@ -148,27 +150,22 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             });
 
         self.e2i
-            .read_batch::<common::generic_consts::Random, u8, (bool, u128)>(
-                ranges,
-                |(is_uuid, key), bytes| {
-                    let entries = if is_uuid {
-                        decode_uuid_block(bytes)
+            .read_batch(ranges, Random, |(is_uuid, key), bytes| {
+                let entries = if is_uuid {
+                    decode_uuid_block(bytes)
+                } else {
+                    decode_num_block(bytes)
+                };
+                if let Ok(pos) = entries.binary_search_by_key(&key, |(k, _)| *k) {
+                    let id = if is_uuid {
+                        PointIdType::Uuid(Uuid::from_u128(key))
                     } else {
-                        decode_num_block(bytes)
+                        PointIdType::NumId(key as u64)
                     };
-                    if let Ok(pos) = entries.binary_search_by_key(&key, |(k, _)| *k) {
-                        let id = if is_uuid {
-                            PointIdType::Uuid(Uuid::from_u128(key))
-                        } else {
-                            PointIdType::NumId(key as u64)
-                        };
-                        on_found(id, entries[pos].1);
-                    }
-                    Ok(())
-                },
-            )?;
-
-        Ok(())
+                    on_found(id, entries[pos].1)?;
+                }
+                Ok(())
+            })
     }
 
     /// Internal→external lookup ignoring deletion. `Ok(None)` for out-of-range
@@ -207,20 +204,14 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 (offset, range)
             });
 
-        self.i2e
-            .read_batch::<common::generic_consts::Random, u8, PointOffsetType>(
-                ranges,
-                |offset, bytes| {
-                    let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-                    on_found(
-                        offset,
-                        decode_external(value, self.is_uuid.contains(offset)),
-                    );
-                    Ok(())
-                },
-            )?;
-
-        Ok(())
+        self.i2e.read_batch(ranges, Random, |offset, bytes| {
+            let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
+            on_found(
+                offset,
+                decode_external(value, self.is_uuid.contains(offset)),
+            );
+            Ok(())
+        })
     }
 
     /// One 16-byte i2e read; the `is_uuid` flag comes from the RAM-resident
@@ -229,10 +220,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         let data_offset = self.i2e_header.data_offset + u64::from(offset) * 16;
         let data = self
             .i2e
-            .read::<common::generic_consts::Random, u8>(ReadRange {
-                byte_offset: data_offset,
-                length: 16,
-            })?;
+            .read::<_, u8>(ReadRange::new(data_offset, 16), Random)?;
         let value = u128::from_le_bytes(data.as_ref().try_into().expect("16 data bytes"));
         Ok(decode_external(value, self.is_uuid.contains(offset)))
     }

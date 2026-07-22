@@ -189,7 +189,7 @@ where
                 .open(&path, open_options, Default::default())
                 .map_err(io_error_to_status)?;
             let cow = storage
-                .read::<Random, u8>(ReadRange::new(byte_offset, length))
+                .read(ReadRange::new(byte_offset, length), Random)
                 .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
@@ -255,7 +255,7 @@ where
 
                 let data = tokio::task::spawn_blocking(move || {
                     storage_for_read
-                        .read::<Random, u8>(ReadRange::new(current_offset, chunk_size))
+                        .read(ReadRange::new(current_offset, chunk_size), Random)
                         .map(|cow| cow.into_owned())
                         .map_err(io_error_to_status)
                 })
@@ -345,7 +345,7 @@ where
                 .map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             storage
-                .read_batch::<Random, u8, _>(ranges.into_iter().enumerate(), |idx, chunk| {
+                .read_batch(ranges.into_iter().enumerate(), Random, |idx, chunk| {
                     results[idx].extend_from_slice(chunk);
                     Ok(())
                 })

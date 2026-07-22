@@ -5,7 +5,7 @@ use std::ops::Range;
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalKind};
+use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError, UniversalKind};
 
 /// Per-file handle for universal read access.
 ///
@@ -60,12 +60,25 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
 
     /// Prefer [`read_batch`] if you need high performance.
     #[inline]
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> UioResult<Cow<'_, [T]>> {
-        let bytes = self.read_bytes::<P>(range.into_byte_range::<T>(), align_of::<T>())?;
+    fn read<P: AccessPattern, T: Item>(
+        &self,
+        range: ReadRange,
+        access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
+        let bytes = self.read_bytes(
+            range.into_byte_range::<T>(),
+            access_pattern,
+            align_of::<T>(),
+        )?;
         Ok(bytes.try_cast_bytemuck().unwrap())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> UioResult<ACow<'_>>;
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>>;
 
     /// Read the entire file in one logical access.
     ///
@@ -78,18 +91,20 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
             length: self.len::<T>()?,
         };
 
-        self.read::<Sequential, T>(range)
+        self.read(range, Sequential)
     }
 
-    fn read_batch<P, T, U>(
+    fn read_batch<P, T, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        mut callback: impl FnMut(U, &[T]) -> UioResult<()>,
-    ) -> UioResult<()>
+        _access_pattern: P,
+        mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E>
     where
         P: AccessPattern,
         T: Item,
         U: UserData,
+        E: From<UniversalIoError>,
     {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
@@ -113,15 +128,11 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
 
     /// Like [`read_batch`](Self::read_batch), but returns a fallible iterator
     /// instead of accepting a callback.
-    fn read_iter<P, T, U>(
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-    {
+        _access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
 
@@ -139,14 +150,11 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         }))
     }
 
-    fn read_bytes_iter<P, U>(
+    fn read_bytes_iter<P: AccessPattern, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
-    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
+        _access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
 
