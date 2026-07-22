@@ -56,5 +56,5 @@ jobs:
       uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
     - name: Install ast-grep
       run: uv tool install ast-grep-cli
-    - name: Check ast-grep rules (.ast-grep/rules)
-      run: ast-grep scan
+    - name: Check ast-grep rules (tools/ast-grep/rules)
+      run: sg scan --config tools/ast-grep/sgconfig.yml
