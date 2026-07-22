@@ -1098,13 +1098,13 @@ impl CollectionError {
 
     /// Whether this is the flattened [`OperationError::OutOfAppendableCapacity`] error: all
     /// appendable segments reached `max_segment_size`. The typed variant does not survive the
-    /// conversion to a (transient) service error, so it is recognized by its message prefix,
-    /// which a test on the variant locks in place.
+    /// conversion to a (transient) shard-unavailable error, so it is recognized by its message
+    /// prefix, which a test on the variant locks in place.
     pub fn is_out_of_appendable_capacity(&self) -> bool {
         matches!(
             self,
-            Self::ServiceError { error, .. }
-                if error.starts_with(
+            Self::ShardUnavailable { description }
+                if description.starts_with(
                     segment::common::operation_error::OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX,
                 )
         )
@@ -1189,10 +1189,11 @@ impl From<OperationError> for CollectionError {
             OperationError::VariableTypeError { .. } => Self::bad_input(err.to_string()),
             OperationError::NonFiniteNumber { .. } => Self::bad_input(err.to_string()),
             // Normally handled by segment provisioning before reaching this conversion; if it
-            // leaks, stay transient so failed-operation recovery re-applies the operation.
-            OperationError::OutOfAppendableCapacity { .. } => Self::ServiceError {
-                error: err.to_string(),
-                backtrace: None,
+            // leaks, stay transient so failed-operation recovery re-applies the operation. It is
+            // temporary backpressure rather than an internal failure, so it maps to the
+            // unavailable (503) family instead of a service error (500).
+            OperationError::OutOfAppendableCapacity { .. } => Self::ShardUnavailable {
+                description: err.to_string(),
             },
         }
     }
