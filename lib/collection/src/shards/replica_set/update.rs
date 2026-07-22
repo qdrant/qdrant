@@ -189,7 +189,9 @@ impl ShardReplicaSet {
             self.forward_update(leader_peer, operation, wait, timeout, ordering, hw_measurement_acc)
                 .await
                 .map_err(|err| {
-                    if err.is_transient() {
+                    // A leader that ran out of appendable capacity recovers on its own, so it is
+                    // not deactivated over that either (see `handle_failed_replicas`).
+                    if err.is_transient() && !err.is_out_of_appendable_capacity() {
                         // Deactivate the peer if forwarding failed with transient error
                         let replica_state = self.replica_state.read();
 
