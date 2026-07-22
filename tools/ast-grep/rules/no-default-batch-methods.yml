@@ -1,4 +1,4 @@
-id: batch-trait-default-methods
+id: no-default-batch-methods
 language: rust
 severity: error
 message: Default batch method in trait
