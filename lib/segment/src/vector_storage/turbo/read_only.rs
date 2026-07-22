@@ -71,9 +71,10 @@ impl<S: UniversalRead> ReadOnlyTurboEncoded<S> {
         }
     }
 
-    /// Run `f` for each vector in the batch, batching the underlying reads where
-    /// the backend supports it (the single-file backend pipelines io_uring /
-    /// prefetches mmap; the chunked backend reads one record at a time).
+    /// Run `f` for each vector in the batch, batching the underlying reads
+    /// where the backend supports it (the single-file backend pipelines
+    /// io_uring / prefetches mmap; the chunked backend batches through
+    /// [`EncodedStorage::for_each_batch`]).
     fn for_each_in_batch<F: FnMut(usize, &[u8])>(
         &self,
         keys: &[PointOffsetType],
@@ -82,9 +83,7 @@ impl<S: UniversalRead> ReadOnlyTurboEncoded<S> {
         match self {
             Self::Single(s) => s.for_each_in_batch(keys, f),
             Self::Chunked(s) => {
-                for (idx, &key) in keys.iter().enumerate() {
-                    f(idx, &s.get_vector_data(key));
-                }
+                s.for_each_batch(keys, |idx, bytes| f(idx, &bytes));
                 Ok(())
             }
         }
