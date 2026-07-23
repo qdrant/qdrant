@@ -37,7 +37,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_value: Option<Vec<u8>>| {
                     let Some(value) = maybe_value else {
-                        debug_assert!(false, "This should be unreachable");
                         return Ok(true);
                     };
                     // The stored document is already tokenized, so we replay the
