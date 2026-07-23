@@ -1,7 +1,8 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
+use common::sorted_slice::SortedSlice;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -14,10 +15,15 @@ use crate::common::operation_error::{OperationError, OperationResult};
 /// In-memory counterpart of `BitvecFlags`: persisted flags materialized into an
 /// owned `BitVec`, no write path.
 ///
-/// Only consumer is the vector storages' `deleted` set, where the live-reload
-/// delta is authoritative (deleted offsets set, appended offsets live so absent).
-/// So unlike `ReadOnlyRoaringFlags` it keeps no file handle and never reopens —
-/// the owned bitvec is the whole state.
+/// The only consumer is the vector storages' `deleted` set. On live-reload the
+/// id-tracker delta supplies whole-point deletions ([`Self::insert_all`]), but
+/// an appended point can also carry a per-vector deletion recorded only in the
+/// on-disk flags file — a missing named vector is stored as a placeholder and
+/// its slot deleted. So the backing directory is retained and
+/// [`Self::reload_appended`] reopens the flags file to read the persisted bit
+/// of each appended offset. The set only ever grows, so a whole-point deletion
+/// already folded in but not yet flushed to the flags file is never lost to a
+/// re-read.
 #[derive(Debug)]
 #[allow(dead_code)] // pending: read-only vector storages will hold `deleted` as this
 pub struct InMemoryBitvecFlags {
@@ -25,6 +31,9 @@ pub struct InMemoryBitvecFlags {
     bitvec: BitVec,
     /// Set-flag count, kept in sync with `bitvec`.
     count: usize,
+    /// Backing directory of the dynamic flags file, so [`Self::reload_appended`]
+    /// can reopen it. `None` for flags built via [`Self::from_bitvec`].
+    directory: Option<PathBuf>,
 }
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
@@ -56,6 +65,24 @@ impl InMemoryBitvecFlags {
         Ok(())
     }
 
+    /// Logical flag count from the status file; the flags file itself is padded
+    /// past this.
+    fn persisted_len<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> OperationResult<usize> {
+        // TypedStorage, not StoredStruct which is write-bound.
+        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
+            status_file(directory),
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )?);
+        Ok(status
+            .read_whole()?
+            .first()
+            .map_or(0, DynamicFlagsStatus::len))
+    }
+
     /// Open persisted flags read-only into an owned `BitVec`; creates and writes
     /// nothing. The flags file is padded past the logical length (held in the
     /// status file), so the bitvec is truncated to it and `count` is exact.
@@ -63,16 +90,7 @@ impl InMemoryBitvecFlags {
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
     ) -> OperationResult<Self> {
-        // Length via TypedStorage; StoredStruct is write-bound.
-        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
-            status_file(directory),
-            bitslice_open_options(Populate::No),
-            Default::default(),
-        )?);
-        let len = status
-            .read_whole()?
-            .first()
-            .map_or(0, DynamicFlagsStatus::len);
+        let len = Self::persisted_len(fs, directory)?;
 
         let flags_path = directory.join(FLAGS_FILE);
         let flags = StoredBitSlice::<S>::open(
@@ -90,7 +108,11 @@ impl InMemoryBitvecFlags {
         })?;
         let count = bitvec.count_ones();
 
-        Ok(Self { bitvec, count })
+        Ok(Self {
+            bitvec,
+            count,
+            directory: Some(directory.to_path_buf()),
+        })
     }
 
     /// Wrap an already-materialized deletion `bitvec`, computing the set-flag
@@ -98,7 +120,11 @@ impl InMemoryBitvecFlags {
     /// flags read by [`Self::open`] (e.g. the immutable dense `deleted.dat`).
     pub fn from_bitvec(bitvec: BitVec) -> Self {
         let count = bitvec.count_ones();
-        Self { bitvec, count }
+        Self {
+            bitvec,
+            count,
+            directory: None,
+        }
     }
 
     /// Whether the flag at `key` is set; out-of-range keys read as unset.
@@ -128,6 +154,51 @@ impl InMemoryBitvecFlags {
                 self.count += 1;
             }
         }
+    }
+
+    /// Fold the persisted deletion bit of each appended offset into the set.
+    ///
+    /// An appended point can carry a deleted vector slot whose flag lives only
+    /// in the on-disk flags file, not the id-tracker delta (see the type doc).
+    /// `new_points` is sorted, so the covering range up to the persisted length
+    /// is read in one batched read. A no-op for [`Self::from_bitvec`] flags.
+    pub fn reload_appended<S: UniversalRead>(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let Some(directory) = self.directory.clone() else {
+            return Ok(());
+        };
+        let (Some(&first), Some(&last)) = (new_points.first(), new_points.last()) else {
+            return Ok(());
+        };
+
+        let len = Self::persisted_len(fs, &directory)? as u64;
+        let start = u64::from(first);
+        let end = u64::from(last).saturating_add(1).min(len);
+        if start >= end {
+            return Ok(());
+        }
+
+        let flags = StoredBitSlice::<S>::open(
+            fs,
+            &directory.join(FLAGS_FILE),
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )?;
+        let bits = flags.read_bit_range(start..end)?;
+
+        let mut deleted = Vec::new();
+        for &point in new_points.iter() {
+            let index = (u64::from(point) - start) as usize;
+            if bits.get(index).as_deref().copied().unwrap_or(false) {
+                deleted.push(point);
+            }
+        }
+        self.insert_all(&deleted);
+
+        Ok(())
     }
 }
 
