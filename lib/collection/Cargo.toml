@@ -16,6 +16,7 @@ testing = ["common/testing", "segment/testing", "shard/testing"]
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
 staging = ["shard/staging"]
+edge-verify = ["dep:edge"]
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -73,6 +74,7 @@ cancel = { path = "../common/cancel" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false, features = ["api"] }
+edge = { path = "../edge", optional = true }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 wal = { path = "../wal" }
