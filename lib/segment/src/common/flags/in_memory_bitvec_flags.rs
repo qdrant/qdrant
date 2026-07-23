@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
@@ -14,10 +14,15 @@ use crate::common::operation_error::{OperationError, OperationResult};
 /// In-memory counterpart of `BitvecFlags`: persisted flags materialized into an
 /// owned `BitVec`, no write path.
 ///
-/// Only consumer is the vector storages' `deleted` set, where the live-reload
-/// delta is authoritative (deleted offsets set, appended offsets live so absent).
-/// So unlike `ReadOnlyRoaringFlags` it keeps no file handle and never reopens —
-/// the owned bitvec is the whole state.
+/// The only consumer is the vector storages' `deleted` set. On live-reload the
+/// id-tracker delta supplies whole-point deletions ([`Self::insert_all`]), but
+/// an appended point can also carry a per-vector deletion recorded only in the
+/// on-disk flags file — a missing named vector is stored as a placeholder and
+/// its slot deleted. So the backing directory is retained and
+/// [`Self::reload_appended`] reopens the flags file to read the persisted bit
+/// of each appended offset. The set only ever grows, so a whole-point deletion
+/// already folded in but not yet flushed to the flags file is never lost to a
+/// re-read.
 #[derive(Debug)]
 #[allow(dead_code)] // pending: read-only vector storages will hold `deleted` as this
 pub struct InMemoryBitvecFlags {
@@ -25,6 +30,9 @@ pub struct InMemoryBitvecFlags {
     bitvec: BitVec,
     /// Set-flag count, kept in sync with `bitvec`.
     count: usize,
+    /// Backing directory of the dynamic flags file, so [`Self::reload_appended`]
+    /// can reopen it. `None` for flags built via [`Self::from_bitvec`].
+    directory: Option<PathBuf>,
 }
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
@@ -90,7 +98,11 @@ impl InMemoryBitvecFlags {
         })?;
         let count = bitvec.count_ones();
 
-        Ok(Self { bitvec, count })
+        Ok(Self {
+            bitvec,
+            count,
+            directory: Some(directory.to_path_buf()),
+        })
     }
 
     /// Wrap an already-materialized deletion `bitvec`, computing the set-flag
@@ -98,7 +110,11 @@ impl InMemoryBitvecFlags {
     /// flags read by [`Self::open`] (e.g. the immutable dense `deleted.dat`).
     pub fn from_bitvec(bitvec: BitVec) -> Self {
         let count = bitvec.count_ones();
-        Self { bitvec, count }
+        Self {
+            bitvec,
+            count,
+            directory: None,
+        }
     }
 
     /// Whether the flag at `key` is set; out-of-range keys read as unset.
@@ -128,6 +144,43 @@ impl InMemoryBitvecFlags {
                 self.count += 1;
             }
         }
+    }
+
+    /// Fold the persisted deletion bit of each appended offset into the set.
+    ///
+    /// An appended point can carry a deleted vector slot whose flag lives only
+    /// in the on-disk flags file, not the id-tracker delta (see the type doc).
+    /// The flags file is reopened and the persisted bit of every `new_point` is
+    /// read back; live offsets read unset and change nothing. A no-op for flags
+    /// built via [`Self::from_bitvec`], which have no dynamic flags file.
+    pub fn reload_appended<S: UniversalRead>(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        new_points: &[PointOffsetType],
+    ) -> OperationResult<()> {
+        let Some(directory) = self.directory.clone() else {
+            return Ok(());
+        };
+        if new_points.is_empty() {
+            return Ok(());
+        }
+
+        let flags = StoredBitSlice::<S>::open(
+            fs,
+            &directory.join(FLAGS_FILE),
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )?;
+
+        let mut deleted = Vec::new();
+        for &point in new_points {
+            if flags.get_bit(u64::from(point))?.unwrap_or(false) {
+                deleted.push(point);
+            }
+        }
+        self.insert_all(&deleted);
+
+        Ok(())
     }
 }
 

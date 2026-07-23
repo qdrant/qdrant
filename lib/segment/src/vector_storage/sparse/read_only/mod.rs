@@ -235,4 +235,53 @@ mod tests {
         }
         assert!(!reader.is_deleted_vector(0));
     }
+
+    /// An appended sparse point can have its slot deleted; the deletion is
+    /// recorded only in the on-disk flags file, never the id-tracker delta, so
+    /// `live_reload` must read it back for the appended offset.
+    #[test]
+    fn live_reload_picks_up_appended_vector_deletion() {
+        let dir = Builder::new()
+            .prefix("ro_sparse_appended_deleted")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        fn make(id: usize) -> SparseVector {
+            SparseVector {
+                indices: vec![1, 5, 9],
+                values: vec![id as f32 + 0.1, id as f32 + 0.2, id as f32 + 0.3],
+            }
+        }
+
+        let mut writer = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+        writer
+            .insert_vector(0, VectorRef::from(&make(0)), &hw)
+            .unwrap();
+        writer.flusher()().unwrap();
+
+        let mut reader =
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
+
+        // Append offset 1, then delete it.
+        writer
+            .insert_vector(1, VectorRef::from(&make(1)), &hw)
+            .unwrap();
+        writer.delete_vector(1).unwrap();
+        writer.flusher()().unwrap();
+
+        let deleted_ids: Vec<PointOffsetType> = vec![];
+        let new_ids: Vec<PointOffsetType> = vec![1];
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+                &hw,
+            )
+            .unwrap();
+
+        assert!(reader.is_deleted_vector(1));
+    }
 }
