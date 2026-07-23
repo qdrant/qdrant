@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
+use blobstore::BlobstoreReader;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use gridstore::GridstoreReader;
 
 use super::ReadOnlyPayloadStorage;
 use crate::common::operation_error::OperationResult;
@@ -15,7 +15,7 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
         populate: Populate,
     ) -> OperationResult<()> {
         let path = storage_dir(path);
-        GridstoreReader::<Payload, S>::preopen(fs, path, populate)?;
+        BlobstoreReader::<Payload, S>::preopen(fs, path, populate)?;
         Ok(())
     }
 
@@ -29,7 +29,7 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
         populate: Populate,
     ) -> OperationResult<Self> {
         let path = storage_dir(path);
-        let storage = GridstoreReader::<Payload, S>::open(fs, path, populate)?;
+        let storage = BlobstoreReader::<Payload, S>::open(fs, path, populate)?;
 
         Ok(Self { storage })
     }

@@ -1,5 +1,5 @@
+use blobstore::Blob;
 use common::delta_pack::{delta_pack, delta_unpack};
-use gridstore::Blob;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{SparseVector, double_sort};
 use sparse::common::types::{DimId, DimId64, DimWeight};

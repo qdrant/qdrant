@@ -18,8 +18,11 @@ use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 /// the [`UniversalReadFs`] subtrait, and mutating operations live on the
 /// [`UniversalWriteFileOps`] subtrait.
 ///
+/// Handles are cheap to clone and shareable across threads, e.g. to move
+/// them into background flushers.
+///
 /// [`UniversalWrite`]: super::UniversalWrite
-pub trait UniversalReadFileOps: Clone + Debug + Sized {
+pub trait UniversalReadFileOps: Clone + Debug + Send + Sync + Sized {
     /// Implementation-specific construction config. Backends are free to
     /// require explicit construction; callers that want to opt into the
     /// `<Fs::ContextConfig>::default()` pattern must constrain

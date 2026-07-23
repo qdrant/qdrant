@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::hint::black_box;
 use std::path::Path;
 
+use blobstore::Blob;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use ecow::EcoString;
-use gridstore::Blob;
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::Builder;

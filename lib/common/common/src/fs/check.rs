@@ -189,7 +189,7 @@ pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     }
 }
 
-/// This function simulates an access pattern we use in vector storage and gridstore
+/// This function simulates an access pattern we use in vector storage and blobstore
 /// This check fails, it means that fundamental assumptions about file system are violated
 /// therefore, there are no guarantees that data will be safe
 pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {

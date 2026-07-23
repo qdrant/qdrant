@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use gridstore::config::StorageOptions;
-use gridstore::{Blob, Gridstore};
+use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig, StorageConfig};
+use blobstore::{Blob, Blobstore};
 
 use super::Encodable;
 use crate::index::field_index::histogram::Histogram;
@@ -12,17 +12,17 @@ pub mod read_only;
 mod read_ops;
 
 /// Default options for Gridstore storage
-pub(super) const fn default_gridstore_options<T: Sized>() -> StorageOptions {
+pub(super) const fn default_gridstore_options<T: Sized>() -> StorageConfig {
     let block_size = size_of::<T>();
-    StorageOptions {
-        // Size of numeric values in index
-        block_size_bytes: Some(block_size),
-        // Compressing numeric values is unreasonable
-        compression: Some(gridstore::config::Compression::None),
+    StorageConfig::Mutable(GridstoreConfig {
         // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
-        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-        region_size_blocks: None,
-    }
+        page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
+        // Size of numeric values in index
+        block_size_bytes: block_size,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        // Compressing numeric values is unreasonable
+        compression: blobstore::config::Compression::None,
+    })
 }
 
 pub struct MutableNumericIndex<T: Encodable + Numericable>
@@ -30,7 +30,7 @@ where
     Vec<T>: Blob,
 {
     // Backing storage, source of state, persists deletions
-    pub(super) storage: Gridstore<Vec<T>>,
+    pub(super) storage: Blobstore<Vec<T>>,
     pub(super) in_memory_index: InMemoryNumericIndex<T>,
 }
 

@@ -773,7 +773,7 @@ fn test_retrieve_raw_multivec_bytes() {
 /// `StoredSparseVector` bincode form, which decodes back to the original vector.
 #[test]
 fn test_retrieve_raw_sparse_bytes() {
-    use gridstore::Blob;
+    use blobstore::Blob;
 
     use crate::vector_storage::sparse::StoredSparseVector;
 

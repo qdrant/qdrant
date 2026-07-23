@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
@@ -12,7 +13,6 @@ use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
 use common::universal_io::UserData;
-use gridstore::Blob;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::dense_vector_storage::DenseVectorStorageImpl;

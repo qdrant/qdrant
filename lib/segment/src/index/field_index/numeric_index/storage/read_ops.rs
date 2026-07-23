@@ -7,9 +7,9 @@
 
 use std::ops::Bound;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::numeric_index_read::NumericIndexRead;

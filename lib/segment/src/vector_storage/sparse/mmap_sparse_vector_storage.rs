@@ -3,6 +3,11 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use blobstore::config::{
+    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
+    GridstoreConfig, StorageConfig,
+};
+use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
@@ -10,8 +15,6 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
-use gridstore::config::{Compression, StorageOptions};
-use gridstore::{Blob, Gridstore};
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -31,7 +34,7 @@ pub(crate) const STORAGE_DIRNAME: &str = "store";
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
-    storage: Gridstore<StoredSparseVector>,
+    storage: Blobstore<StoredSparseVector>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -61,7 +64,7 @@ impl MmapSparseVectorStorage {
 
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(MmapFs, storage_dir, populate).map_err(|err| {
+        let storage = Blobstore::open(MmapFs, storage_dir, populate).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
@@ -96,13 +99,15 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         fs::create_dir_all(&storage_dir)?;
-        let storage_config = StorageOptions {
+        let storage_options = StorageConfig::Mutable(GridstoreConfig {
+            page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
+            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
             // Don't use built-in compression, as we will use bitpacking instead
-            compression: Some(Compression::None),
-            ..Default::default()
-        };
+            compression: Compression::None,
+        });
 
-        let storage = Gridstore::new(MmapFs, storage_dir, storage_config).map_err(|err| {
+        let storage = Blobstore::new(MmapFs, storage_dir, storage_options).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))

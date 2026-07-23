@@ -1,5 +1,5 @@
+use blobstore::Blob;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;

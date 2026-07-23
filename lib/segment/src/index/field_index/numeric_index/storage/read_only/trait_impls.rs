@@ -4,10 +4,10 @@
 //! [`query`](super::super::super::query) helpers over [`NumericIndexRead`];
 //! this impl just plugs the read-only enum into them.
 
+use blobstore::Blob;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 
 use super::super::super::numeric_index_read::NumericIndexRead;
 use super::super::super::{NumericIndexValue, query};

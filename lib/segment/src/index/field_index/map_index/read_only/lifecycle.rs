@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;

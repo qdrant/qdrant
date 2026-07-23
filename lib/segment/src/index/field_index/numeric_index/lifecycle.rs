@@ -4,10 +4,10 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 
 use super::numeric_index_read::NumericIndexRead;
 use super::storage::NumericIndexInner;

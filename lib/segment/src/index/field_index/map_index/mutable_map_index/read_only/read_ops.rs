@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 
 use super::super::super::read_ops::MapIndexRead;
 use super::super::super::{IdIter, MapIndexKey};

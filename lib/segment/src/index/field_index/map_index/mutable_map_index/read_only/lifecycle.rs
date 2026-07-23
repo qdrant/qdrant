@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
+use blobstore::error::BlobstoreError;
+use blobstore::{Blob, BlobstoreReader};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::error::GridstoreError;
-use gridstore::{Blob, GridstoreReader};
 
 use super::super::MapIndexKey;
 use super::super::in_memory::InMemoryMapIndex;
@@ -15,9 +15,9 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
-        // Gridstore reader
+        // Blobstore reader
         Ok(
-            GridstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::preopen(
+            BlobstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::preopen(
                 fs,
                 dir,
                 Populate::PreferBackground,
@@ -30,11 +30,11 @@ where
     /// Open the appendable (Gridstore) map index read-only, threading every
     /// file open through the filesystem handle `fs`.
     ///
-    /// Opens a [`GridstoreReader`] over the generic filesystem object, then
+    /// Opens a [`BlobstoreReader`] over the generic filesystem object, then
     /// rebuilds the in-memory state by feeding every stored value through
     /// [`MutableMapIndexInner::ingest`] — the exact reconstruction the writable
     /// [`MutableMapIndex::open_gridstore`][1] performs over a writable
-    /// [`gridstore::Gridstore`]. No write path; the reader is retained for
+    /// [`blobstore::Blobstore`]. No write path; the reader is retained for
     /// later `files` / `clear_cache` use.
     ///
     /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching
@@ -46,7 +46,7 @@ where
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
     ) -> OperationResult<Option<Self>> {
-        let Some(storage) = GridstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(
+        let Some(storage) = BlobstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(
             fs,
             path,
             Populate::Blocking,
@@ -62,7 +62,7 @@ where
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
         let hw_counter = HardwareCounterCell::disposable();
-        storage.iter::<_, GridstoreError>(
+        storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?,
             |idx, values: Vec<_>| {
                 in_memory_index.add_many_to_map(idx, values);

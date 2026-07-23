@@ -1,5 +1,5 @@
+use blobstore::Blob;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 
 use crate::index::field_index::map_index::MapIndexKey;
 use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;

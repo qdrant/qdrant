@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
+use blobstore::error::BlobstoreError;
 use common::mmap::Error as MmapError;
 use common::universal_io::{IsNotFound, UniversalIoError};
-use gridstore::error::GridstoreError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
@@ -358,18 +358,19 @@ impl From<TryReserveError> for OperationError {
     }
 }
 
-impl From<GridstoreError> for OperationError {
-    fn from(err: GridstoreError) -> Self {
+impl From<BlobstoreError> for OperationError {
+    fn from(err: BlobstoreError) -> Self {
         match err {
-            GridstoreError::ServiceError { description } => {
-                Self::service_error(format!("Gridstore error: {description}"))
+            BlobstoreError::ServiceError { description } => {
+                Self::service_error(format!("Blobstore error: {description}"))
             }
-            GridstoreError::FlushCancelled => Self::cancelled("Gridstore flushing was cancelled"),
-            GridstoreError::Io(_) | GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
+            BlobstoreError::FlushCancelled => Self::cancelled("Blobstore flushing was cancelled"),
+            BlobstoreError::Io(_) | BlobstoreError::Mmap(_) | BlobstoreError::SerdeJson(_) => {
                 Self::service_error(err.to_string())
             }
-            GridstoreError::ValidationError { message } => Self::validation_error(message),
-            GridstoreError::UniversalIo(err) => match err {
+            BlobstoreError::ValidationError { message } => Self::validation_error(message),
+            BlobstoreError::UnsupportedOperation { .. } => Self::service_error(err.to_string()),
+            BlobstoreError::UniversalIo(err) => match err {
                 UniversalIoError::NotFound { path } => Self::FileNotFound { path },
                 err @ (UniversalIoError::Io(_)
                 | UniversalIoError::Mmap(_)
@@ -388,8 +389,8 @@ impl From<GridstoreError> for OperationError {
                     Self::service_error(format!("Gridstore IO error: {err}"))
                 }
             },
-            GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
-            GridstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
+            BlobstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
+            BlobstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
         }
     }
 }
@@ -451,7 +452,7 @@ mod tests {
         assert!(err.is_not_found());
         assert!(err.to_string().contains("matrix.dat"));
 
-        let err = OperationError::from(GridstoreError::UniversalIo(UniversalIoError::NotFound {
+        let err = OperationError::from(BlobstoreError::UniversalIo(UniversalIoError::NotFound {
             path: "page_0.dat".into(),
         }));
         assert!(err.is_not_found());
