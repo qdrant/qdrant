@@ -1,0 +1,4 @@
+[bindings.kotlin]
+# UniFFI-generated Kotlin lands in the internal `:qdrant-edge-ffi` module.
+# The public `:qdrant-edge` module re-exports it as `tech.qdrant.edge.*`.
+package_name = "tech.qdrant.edge.ffi"

@@ -203,11 +203,25 @@ impl EdgeShard {
         vector_name: &str,
         hnsw_config: segment::types::HnswConfig,
     ) -> OperationResult<()> {
-        let mut cfg = self.config.read().clone();
-        cfg.set_vector_hnsw_config(vector_name, hnsw_config)?;
+        // Run the fallible mutation on a clone *inside* the config lock via
+        // write_optional, rather than read()-clone-mutate-then-write(). The
+        // latter releases the read lock before writing, so a concurrent config
+        // update between the two would be silently overwritten (a lost-update
+        // TOCTOU). Returning None on failure aborts the persist+swap.
+        let mut mutation = Ok(());
         self.config
-            .write(|c| *c = cfg)
+            .write_optional(|cfg| {
+                let mut updated = cfg.clone();
+                match updated.set_vector_hnsw_config(vector_name, hnsw_config) {
+                    Ok(()) => Some(updated),
+                    Err(e) => {
+                        mutation = Err(e);
+                        None
+                    }
+                }
+            })
             .map_err(|e| OperationError::service_error(e.to_string()))
+            .and(mutation)
     }
 
     /// Update optimizer config and persist.
@@ -217,24 +231,35 @@ impl EdgeShard {
             .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
-    pub fn flush(&self) {
+    /// Persist the WAL and all segments to disk.
+    ///
+    /// Blocks until the WAL and segment locks are free, so a flush issued
+    /// concurrently with an in-flight `update`/`optimize` waits for it and then
+    /// persists, rather than spuriously failing with a "lock busy" error — the
+    /// same blocking-lock semantics those operations already use. Still fallible:
+    /// a genuine WAL/segment flush I/O error is surfaced instead of panicking.
+    ///
+    /// Must not be called while already holding the `wal` mutex or a `segments`
+    /// guard on the same thread — parking_lot locks are non-reentrant and would
+    /// self-deadlock. No current caller does (the FFI boundary, `Drop`, the
+    /// Python bindings, and tests all invoke it without holding those locks).
+    pub fn flush(&self) -> OperationResult<()> {
         self.wal
-            .try_lock()
-            .expect("WAL lock acquired")
+            .lock()
             .flush()
-            .expect("WAL flushed");
+            .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
 
-        self.segments
-            .try_read()
-            .expect("segment holder lock acquired")
-            .flush_all(FlushMode::Sync, true)
-            .expect("segments flushed");
+        self.segments.read().flush_all(FlushMode::Sync, true)?;
+
+        Ok(())
     }
 }
 
 impl Drop for EdgeShard {
     fn drop(&mut self) {
-        self.flush();
+        if let Err(e) = self.flush() {
+            log::error!("EdgeShard flush during drop failed: {e}");
+        }
     }
 }
 
