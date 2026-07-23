@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from .helpers.collection_setup import drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import qdrant_host_headers, request_with_validation
 from .helpers.settings import QDRANT_HOST
 
 
@@ -43,7 +43,8 @@ def test_vector_dimension_limit(collection_name):
                 "size": dim_max + 1,
                 "distance": "Dot",
             },
-        }
+        },
+        headers=qdrant_host_headers(),
     )
     assert not response.ok
     error = response.json()['status']['error']
