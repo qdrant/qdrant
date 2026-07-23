@@ -1,8 +1,8 @@
 use std::borrow::Cow;
+use std::fmt;
 
-use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
+use serde::de::{Error, MapAccess, SeqAccess, Visitor};
+use serde::{Deserializer, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 // Multivector should be small enough to fit the chunk of vector storage
@@ -75,8 +75,8 @@ pub fn deserialize_usize_field<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    value_to_usize(value, field, min)
+    let number = deserialize_number(deserializer, field)?;
+    number_to_usize(number, field, min)
 }
 
 pub fn deserialize_option_usize_field<'de, D>(
@@ -87,9 +87,9 @@ pub fn deserialize_option_usize_field<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    value
-        .map(|value| value_to_usize(value, field, min))
+    let number = deserialize_optional_number(deserializer, field)?;
+    number
+        .map(|number| number_to_usize(number, field, min))
         .transpose()
 }
 
@@ -101,8 +101,8 @@ pub fn deserialize_u32_field<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let value = value_to_usize(value, field, min as usize)?;
+    let number = deserialize_number(deserializer, field)?;
+    let value = number_to_usize(number, field, min as usize)?;
     u32::try_from(value).map_err(|_| {
         D::Error::custom(format!(
             "{field}: value {value} invalid, must fit into a 32-bit unsigned integer"
@@ -117,73 +117,161 @@ pub fn deserialize_option_f32_field<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    value.map(|value| value_to_f32(value, field)).transpose()
+    let number = deserialize_optional_number(deserializer, field)?;
+    number
+        .map(|number| number_to_f32(number, field))
+        .transpose()
 }
 
-fn value_to_usize<E>(value: Value, field: &str, min: usize) -> Result<usize, E>
+/// Numeric token captured without materializing or echoing mismatched request data.
+#[derive(Clone, Copy)]
+enum Number {
+    Unsigned(u64),
+    Signed(i64),
+    Float(f64),
+}
+
+struct NumberVisitor<'a> {
+    field: &'a str,
+}
+
+impl NumberVisitor<'_> {
+    fn invalid_type<E: Error>(&self, actual: &str) -> E {
+        E::custom(format!(
+            "{}: invalid type {actual}, expected a number",
+            self.field
+        ))
+    }
+}
+
+impl<'de> Visitor<'de> for NumberVisitor<'_> {
+    type Value = Number;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a number")
+    }
+
+    fn visit_u64<E: Error>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(Number::Unsigned(value))
+    }
+
+    fn visit_i64<E: Error>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(Number::Signed(value))
+    }
+
+    fn visit_f64<E: Error>(self, value: f64) -> Result<Self::Value, E> {
+        Ok(Number::Float(value))
+    }
+
+    fn visit_bool<E: Error>(self, _value: bool) -> Result<Self::Value, E> {
+        Err(self.invalid_type("boolean"))
+    }
+
+    fn visit_str<E: Error>(self, _value: &str) -> Result<Self::Value, E> {
+        Err(self.invalid_type("string"))
+    }
+
+    fn visit_bytes<E: Error>(self, _value: &[u8]) -> Result<Self::Value, E> {
+        Err(self.invalid_type("byte array"))
+    }
+
+    fn visit_unit<E: Error>(self) -> Result<Self::Value, E> {
+        Err(self.invalid_type("null"))
+    }
+
+    fn visit_none<E: Error>(self) -> Result<Self::Value, E> {
+        Err(self.invalid_type("null"))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, _sequence: A) -> Result<Self::Value, A::Error> {
+        Err(self.invalid_type("array"))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, _map: A) -> Result<Self::Value, A::Error> {
+        Err(self.invalid_type("object"))
+    }
+}
+
+struct OptionalNumberVisitor<'a> {
+    field: &'a str,
+}
+
+impl<'de> Visitor<'de> for OptionalNumberVisitor<'_> {
+    type Value = Option<Number>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a number or null")
+    }
+
+    fn visit_none<E: Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_unit<E: Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        deserialize_number(deserializer, self.field).map(Some)
+    }
+}
+
+fn deserialize_number<'de, D>(deserializer: D, field: &str) -> Result<Number, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(NumberVisitor { field })
+}
+
+fn deserialize_optional_number<'de, D>(
+    deserializer: D,
+    field: &str,
+) -> Result<Option<Number>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_option(OptionalNumberVisitor { field })
+}
+
+fn number_to_usize<E>(number: Number, field: &str, min: usize) -> Result<usize, E>
 where
     E: Error,
 {
-    match value {
-        Value::Number(number) => {
-            if let Some(value) = number.as_u64() {
-                usize::try_from(value).map_err(|_| {
-                    E::custom(format!(
-                        "{field}: value {value} invalid, must fit into an unsigned integer"
-                    ))
-                })
-            } else if let Some(value) = number.as_i64() {
-                Err(E::custom(format!(
-                    "{field}: value {value} invalid, must be {min} or larger"
-                )))
-            } else {
-                Err(E::custom(format!(
-                    "{field}: invalid value {number}, expected an integer"
-                )))
-            }
-        }
-        other => Err(E::custom(format!(
-            "{field}: invalid type {}, expected an integer",
-            json_type_name(&other)
+    match number {
+        Number::Unsigned(value) => usize::try_from(value).map_err(|_| {
+            E::custom(format!(
+                "{field}: value {value} invalid, must fit into an unsigned integer"
+            ))
+        }),
+        Number::Signed(value) if value >= 0 => usize::try_from(value).map_err(|_| {
+            E::custom(format!(
+                "{field}: value {value} invalid, must fit into an unsigned integer"
+            ))
+        }),
+        Number::Signed(value) => Err(E::custom(format!(
+            "{field}: value {value} invalid, must be {min} or larger"
+        ))),
+        Number::Float(value) => Err(E::custom(format!(
+            "{field}: invalid value {value}, expected an integer"
         ))),
     }
 }
 
-fn value_to_f32<E>(value: Value, field: &str) -> Result<f32, E>
+fn number_to_f32<E>(number: Number, field: &str) -> Result<f32, E>
 where
     E: Error,
 {
-    match value {
-        Value::Number(number) => {
-            let Some(value) = number.as_f64() else {
-                return Err(E::custom(format!(
-                    "{field}: invalid value {number}, expected a finite number"
-                )));
-            };
-            if !value.is_finite() || value < f32::MIN as f64 || value > f32::MAX as f64 {
-                return Err(E::custom(format!(
-                    "{field}: value {value} invalid, expected a finite 32-bit float"
-                )));
-            }
-            Ok(value as f32)
-        }
-        other => Err(E::custom(format!(
-            "{field}: invalid type {}, expected a number",
-            json_type_name(&other)
-        ))),
+    let value = match number {
+        Number::Unsigned(value) => value as f64,
+        Number::Signed(value) => value as f64,
+        Number::Float(value) => value,
+    };
+    if !value.is_finite() || value < f64::from(f32::MIN) || value > f64::from(f32::MAX) {
+        return Err(E::custom(format!(
+            "{field}: value {value} invalid, expected a finite 32-bit float"
+        )));
     }
-}
-
-fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
+    Ok(value as f32)
 }
 
 /// Build the `ValidationError` for a sparse vector configured with the

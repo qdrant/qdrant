@@ -86,13 +86,8 @@ fn deserialize_optional_recommend_strategy<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    value
-        .map(|value| {
-            serde_json::from_value(value)
-                .map_err(|err| serde::de::Error::custom(format!("strategy: {err}")))
-        })
-        .transpose()
+    Option::<api::rest::RecommendStrategy>::deserialize(deserializer)
+        .map_err(|err| serde::de::Error::custom(format!("strategy: {err}")))
 }
 
 /// Current state of the collection.
