@@ -4,6 +4,13 @@ use segment::types::{Filter, PointIdType, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+fn deserialize_optional_limit<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_usize_field(deserializer, "limit", 1)
+}
+
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Clone, Debug, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
@@ -12,6 +19,7 @@ pub struct ScrollRequestInternal {
     pub offset: Option<PointIdType>,
 
     /// Page size. Default: 10
+    #[serde(default, deserialize_with = "deserialize_optional_limit")]
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
@@ -54,5 +62,20 @@ impl ScrollRequestInternal {
 
     pub const fn default_with_vector() -> WithVector {
         WithVector::Bool(false)
+    }
+}
+
+#[cfg(test)]
+mod serde_error_tests {
+    use super::*;
+
+    #[test]
+    fn scroll_limit_deserialization_error_names_field() {
+        let err = serde_json::from_str::<ScrollRequestInternal>(r#"{"limit":-1}"#)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("limit"), "{err}");
+        assert!(!err.contains("usize"), "{err}");
     }
 }
