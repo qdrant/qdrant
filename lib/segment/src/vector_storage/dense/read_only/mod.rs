@@ -195,11 +195,6 @@ mod tests {
         assert!(!reader.is_deleted_vector(0));
     }
 
-    /// A point can be appended live while one of its named vectors is missing:
-    /// the writer stores a placeholder and deletes that vector slot. The
-    /// deletion is recorded only in the on-disk flags file, never in the
-    /// id-tracker delta, so `live_reload` must read it back for the appended
-    /// offset instead of assuming every appended point is live.
     #[test]
     fn live_reload_picks_up_appended_vector_deletion() {
         const DIM: usize = 4;
@@ -232,7 +227,6 @@ mod tests {
         )
         .unwrap();
 
-        // Append offset 1 as a placeholder, then delete its vector slot.
         writer
             .insert_vector(1, VectorRef::from(&vec![0.0; DIM]), &hw)
             .unwrap();
@@ -252,5 +246,72 @@ mod tests {
 
         assert_eq!(reader.total_vector_count(), 2);
         assert!(reader.is_deleted_vector(1));
+    }
+
+    #[test]
+    fn live_reload_batches_appended_vector_deletions() {
+        const DIM: usize = 4;
+        let dir = Builder::new()
+            .prefix("ro_dense_appended_batch")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        for id in 0..3u32 {
+            writer
+                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
+                .unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        for id in 3..8u32 {
+            writer
+                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]), &hw)
+                .unwrap();
+        }
+        let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
+        for &id in &deleted_appended {
+            writer.delete_vector(id).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let deleted_ids: Vec<PointOffsetType> = vec![];
+        let new_ids: Vec<PointOffsetType> = (3..8).collect();
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+                &hw,
+            )
+            .unwrap();
+
+        assert_eq!(reader.total_vector_count(), 8);
+        for id in 3..8 {
+            assert_eq!(
+                reader.is_deleted_vector(id),
+                deleted_appended.contains(&id),
+                "appended offset {id}",
+            );
+        }
+        assert!(!reader.is_deleted_vector(0));
     }
 }

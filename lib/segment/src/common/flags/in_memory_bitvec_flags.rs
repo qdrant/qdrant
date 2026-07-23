@@ -65,6 +65,24 @@ impl InMemoryBitvecFlags {
         Ok(())
     }
 
+    /// Logical flag count from the status file; the flags file itself is padded
+    /// past this.
+    fn persisted_len<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> OperationResult<usize> {
+        // TypedStorage, not StoredStruct which is write-bound.
+        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
+            status_file(directory),
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )?);
+        Ok(status
+            .read_whole()?
+            .first()
+            .map_or(0, DynamicFlagsStatus::len))
+    }
+
     /// Open persisted flags read-only into an owned `BitVec`; creates and writes
     /// nothing. The flags file is padded past the logical length (held in the
     /// status file), so the bitvec is truncated to it and `count` is exact.
@@ -72,16 +90,7 @@ impl InMemoryBitvecFlags {
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
     ) -> OperationResult<Self> {
-        // Length via TypedStorage; StoredStruct is write-bound.
-        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
-            status_file(directory),
-            bitslice_open_options(Populate::No),
-            Default::default(),
-        )?);
-        let len = status
-            .read_whole()?
-            .first()
-            .map_or(0, DynamicFlagsStatus::len);
+        let len = Self::persisted_len(fs, directory)?;
 
         let flags_path = directory.join(FLAGS_FILE);
         let flags = StoredBitSlice::<S>::open(
@@ -151,11 +160,8 @@ impl InMemoryBitvecFlags {
     ///
     /// An appended point can carry a deleted vector slot whose flag lives only
     /// in the on-disk flags file, not the id-tracker delta (see the type doc).
-    /// `new_points` is sorted ascending, so its offsets span one contiguous
-    /// range: the flags file is reopened and that range is read in a single
-    /// batched read, then each appended offset's bit is folded in (live offsets
-    /// read unset and change nothing). A no-op for flags built via
-    /// [`Self::from_bitvec`], which have no dynamic flags file.
+    /// `new_points` is sorted, so the covering range up to the persisted length
+    /// is read in one batched read. A no-op for [`Self::from_bitvec`] flags.
     pub fn reload_appended<S: UniversalRead>(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
@@ -168,20 +174,19 @@ impl InMemoryBitvecFlags {
             return Ok(());
         };
 
+        let len = Self::persisted_len(fs, &directory)? as u64;
+        let start = u64::from(first);
+        let end = u64::from(last).saturating_add(1).min(len);
+        if start >= end {
+            return Ok(());
+        }
+
         let flags = StoredBitSlice::<S>::open(
             fs,
             &directory.join(FLAGS_FILE),
             bitslice_open_options(Populate::No),
             Default::default(),
         )?;
-
-        // Offsets past the file read unset (the writer pads past the logical
-        // length), so clamp the range to what the file holds.
-        let start = u64::from(first);
-        let end = u64::from(last).saturating_add(1).min(flags.bit_len());
-        if start >= end {
-            return Ok(());
-        }
         let bits = flags.read_bit_range(start..end)?;
 
         let mut deleted = Vec::new();

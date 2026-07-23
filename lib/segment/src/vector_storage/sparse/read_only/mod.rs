@@ -236,9 +236,6 @@ mod tests {
         assert!(!reader.is_deleted_vector(0));
     }
 
-    /// An appended sparse point can have its slot deleted; the deletion is
-    /// recorded only in the on-disk flags file, never the id-tracker delta, so
-    /// `live_reload` must read it back for the appended offset.
     #[test]
     fn live_reload_picks_up_appended_vector_deletion() {
         let dir = Builder::new()
@@ -264,7 +261,6 @@ mod tests {
             ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
                 .unwrap();
 
-        // Append offset 1, then delete it.
         writer
             .insert_vector(1, VectorRef::from(&make(1)), &hw)
             .unwrap();

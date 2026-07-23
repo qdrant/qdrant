@@ -258,10 +258,6 @@ mod tests {
         assert!(!reader.is_deleted_vector(0));
     }
 
-    /// An appended multivector point can have its slot deleted (missing named
-    /// vector → placeholder + delete); the deletion is recorded only in the
-    /// on-disk flags file, never the id-tracker delta, so `live_reload` must
-    /// read it back for the appended offset.
     #[test]
     fn live_reload_picks_up_appended_vector_deletion() {
         const DIM: usize = 8;
@@ -301,7 +297,6 @@ mod tests {
             )
             .unwrap();
 
-        // Append offset 1 as a placeholder, then delete its vector slot.
         writer
             .insert_vector(1, VectorRef::from(&multi(0.0)), &hw)
             .unwrap();
