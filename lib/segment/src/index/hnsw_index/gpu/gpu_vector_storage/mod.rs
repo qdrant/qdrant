@@ -29,7 +29,7 @@ use crate::vector_storage::quantized::quantized_vectors::{
 use crate::vector_storage::turbo::TurboVectorStorage;
 use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
 use crate::vector_storage::{
-    DenseTQVectorStorage, DenseVectorStorage, MultiTQVectorStorage, MultiVectorStorage,
+    DenseTQVectorStorageRead, DenseVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage,
     VectorStorageEnum, VectorStorageRead,
 };
 

@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
+use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -55,6 +55,29 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.data.clear_cache()
+    }
+
+    /// Concatenated records `[index, index + count)` in one contiguous read.
+    /// `None` if out of bounds or the range straddles a chunk boundary
+    /// (read-only counterpart of [`super::QuantizedChunkedStorage::get_many`]).
+    pub fn get_many<P: AccessPattern>(
+        &self,
+        index: PointOffsetType,
+        count: usize,
+    ) -> Option<Cow<'_, [u8]>> {
+        self.data.get_many::<P>(index as VectorOffsetType, count)
+    }
+
+    /// Batched counterpart of [`Self::get_many`]: invoke `callback` with the
+    /// concatenated records of each `(user_data, start, count)` range, batching
+    /// the underlying reads. Like [`Self::get_many`], a range must not straddle
+    /// a chunk boundary.
+    pub fn for_each_many<P: AccessPattern, U: UserData>(
+        &self,
+        ranges: impl Iterator<Item = (U, PointOffsetType, u32)>,
+        callback: impl FnMut(U, Cow<'_, [u8]>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.data.for_each_vector::<P, _>(ranges, callback)
     }
 }
 

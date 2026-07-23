@@ -15,7 +15,9 @@ use super::*;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVectorRef};
 use crate::types::MultiVectorConfig;
-use crate::vector_storage::MultiTQVectorStorage;
+use crate::vector_storage::{
+    DenseTQVectorStorageRead, MultiTQVectorStorage, MultiTQVectorStorageRead,
+};
 
 /// Random unit vector with a fixed fallback for an all-zero draw.
 fn random_unit_vector(rng: &mut SmallRng, dim: usize) -> DenseVector {
@@ -102,8 +104,8 @@ fn assert_congruent(dense: &TurboVectorStorage, multi: &TurboMultiVectorStorage,
     assert_eq!(dense.is_on_disk(), multi.is_on_disk(), "{ctx}: is_on_disk");
     assert_eq!(dense.vector_dim(), multi.vector_dim(), "{ctx}: vector_dim");
     assert_eq!(
-        DenseTQVectorStorage::quantized_vector_size(dense),
-        MultiTQVectorStorage::quantized_vector_size(multi),
+        DenseTQVectorStorageRead::quantized_vector_size(dense),
+        MultiTQVectorStorageRead::quantized_vector_size(multi),
         "{ctx}: quantized_vector_size",
     );
 

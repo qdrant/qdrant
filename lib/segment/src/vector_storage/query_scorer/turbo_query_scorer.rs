@@ -4,26 +4,24 @@ use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
 use crate::data_types::vectors::DenseVector;
-use crate::vector_storage::DenseTQVectorStorage;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::turbo::TurboVectorStorage;
-use crate::vector_storage::vector_storage_base::VectorStorageRead;
+use crate::vector_storage::turbo::TurboScoring;
 
-/// Asymmetric raw scorer for [`TurboVectorStorage`].
+/// Asymmetric raw scorer for a dense TurboQuant storage ([`TurboScoring`]).
 ///
 /// Holds the query precomputed once (rotation + SIMD encoding) and scores it
 /// against the stored TurboQuant bytes, delegating the actual arithmetic and
 /// the metric sign convention to the storage.
-pub struct TurboQueryScorer<'a> {
+pub struct TurboQueryScorer<'a, TStorage: TurboScoring> {
     query: EncodedQueryTQ,
-    storage: &'a TurboVectorStorage,
+    storage: &'a TStorage,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a> TurboQueryScorer<'a> {
+impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
     pub fn new(
         query: DenseVector,
-        storage: &'a TurboVectorStorage,
+        storage: &'a TStorage,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self {
         // Preprocess (per distance) and precompute the query once, so the
@@ -45,7 +43,7 @@ impl<'a> TurboQueryScorer<'a> {
     }
 }
 
-impl QueryScorer for TurboQueryScorer<'_> {
+impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let bytes = self.storage.get_quantized_vector(idx);
         self.hardware_counter.vector_io_read().incr();

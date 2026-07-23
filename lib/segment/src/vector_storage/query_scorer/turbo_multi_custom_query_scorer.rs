@@ -7,31 +7,32 @@ use quantization::turboquant::EncodedQueryTQ;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
-use crate::vector_storage::vector_storage_base::VectorStorageRead;
+use crate::vector_storage::turbo::multi::TurboMultiScoring;
 
 /// Raw scorer for multi-vector queries (reco / discover / context / feedback)
-/// against a [`TurboMultiVectorStorage`].
+/// against a multivector TurboQuant storage ([`TurboMultiScoring`]).
 ///
 /// Each sub-query multivector is preprocessed and precomputed once at
 /// construction; scoring a stored point reads its encoded records once and
 /// folds the per-example MaxSim similarities through the query's combinator.
-pub struct TurboMultiCustomQueryScorer<'a, TQuery>
+pub struct TurboMultiCustomQueryScorer<'a, TStorage, TQuery>
 where
+    TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
     query: TQuery,
-    storage: &'a TurboMultiVectorStorage,
+    storage: &'a TStorage,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TQuery> TurboMultiCustomQueryScorer<'a, TQuery>
+impl<'a, TStorage, TQuery> TurboMultiCustomQueryScorer<'a, TStorage, TQuery>
 where
+    TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
     pub fn new<TInputQuery>(
         raw_query: TInputQuery,
-        storage: &'a TurboMultiVectorStorage,
+        storage: &'a TStorage,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
@@ -53,8 +54,9 @@ where
     }
 }
 
-impl<TQuery> QueryScorer for TurboMultiCustomQueryScorer<'_, TQuery>
+impl<TStorage, TQuery> QueryScorer for TurboMultiCustomQueryScorer<'_, TStorage, TQuery>
 where
+    TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
