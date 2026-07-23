@@ -45,7 +45,11 @@ pub(super) struct AppendOnlyPages<S> {
 impl<S: UniversalRead> AppendOnlyPages<S> {
     /// Schedule prefetches of all page files, so a subsequent open is served from the prefetch
     /// pool.
-    pub(super) fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path) -> Result<()> {
+    pub(super) fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+    ) -> Result<()> {
         let page_files: HashSet<_> = fs
             .list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
@@ -57,7 +61,11 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             if !page_files.contains(&path) {
                 break;
             }
-            fs.schedule_prefetch(&path, Some(AppendOnlyPage::<S>::open_options(false)), None)?;
+            fs.schedule_prefetch(
+                &path,
+                Some(AppendOnlyPage::<S>::open_options(populate, false)),
+                None,
+            )?;
         }
         Ok(())
     }
@@ -70,6 +78,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         fs: &Fs,
         dir: &Path,
         writeable: bool,
+        populate: Populate,
     ) -> Result<Self> {
         let page_files: HashSet<_> = fs
             .list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
@@ -83,7 +92,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             if !page_files.contains(&path) {
                 break;
             }
-            pages.push(AppendOnlyPage::open(fs, path, writeable)?);
+            pages.push(AppendOnlyPage::open(fs, path, populate, writeable)?);
         }
 
         if pages.is_empty() {
@@ -204,7 +213,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
     ///
     /// Reloads the last held page, the only one that can have grown, and adopts page files
     /// created since. Earlier pages never change once a newer page exists.
-    pub(super) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
+    pub(super) fn live_reload(&mut self, fs: &S::Fs, populate: Populate) -> Result<()> {
         if let Some(last) = self.pages.last_mut() {
             last.live_reload()?;
         }
@@ -214,9 +223,26 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             if !fs.exists(&path)? {
                 break;
             }
-            self.pages.push(AppendOnlyPage::open(fs, path, false)?);
+            self.pages
+                .push(AppendOnlyPage::open(fs, path, populate, false)?);
         }
 
+        Ok(())
+    }
+
+    /// Populate all page files into the RAM cache.
+    pub(super) fn populate(&self) -> Result<()> {
+        for page in &self.pages {
+            page.file.populate()?;
+        }
+        Ok(())
+    }
+
+    /// Ask to evict the page files from the RAM cache.
+    pub(super) fn clear_cache(&self) -> Result<()> {
+        for page in &self.pages {
+            page.file.clear_ram_cache()?;
+        }
         Ok(())
     }
 }
@@ -325,12 +351,11 @@ struct AppendOnlyPage<S> {
 
 impl<S: UniversalRead> AppendOnlyPage<S> {
     /// Universal IO open options for a page file.
-    fn open_options(writeable: bool) -> OpenOptions {
+    fn open_options(populate: Populate, writeable: bool) -> OpenOptions {
         OpenOptions {
             writeable,
             need_sequential: true,
-            // The append-only mode never populates, see [`super::Logstore::populate`]
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Advice(Advice::Random),
         }
     }
@@ -341,10 +366,15 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
     fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         path: PathBuf,
+        populate: Populate,
         writeable: bool,
     ) -> Result<Self> {
         let file = fs
-            .open(&path, Self::open_options(writeable), Default::default())
+            .open(
+                &path,
+                Self::open_options(populate, writeable),
+                Default::default(),
+            )
             .map_err(|err| {
                 if err.is_not_found() {
                     BlobstoreError::service_error(format!(
@@ -435,7 +465,11 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// The directory must exist already.
     fn new(fs: &S::Fs, path: PathBuf) -> Result<Self> {
         fs.create(&path, 0)?;
-        let file = fs.open(&path, Self::open_options(true), Default::default())?;
+        let file = fs.open(
+            &path,
+            Self::open_options(Populate::No, true),
+            Default::default(),
+        )?;
         Ok(Self {
             path,
             file,

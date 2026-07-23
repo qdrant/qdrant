@@ -54,7 +54,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
                     GridstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
                 }
                 Mode::AppendOnly => {
-                    LogstoreReader::<V, S>::preopen(fs, &base_path).ok_not_found()?;
+                    LogstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
                 }
             }
         }
@@ -80,7 +80,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
                 Ok(Self::Gridstore(reader))
             }
             StorageConfig::AppendOnly(config) => {
-                let reader = LogstoreReader::open(fs, base_path, config)?;
+                let reader = LogstoreReader::open(fs, base_path, config, populate)?;
                 Ok(Self::Logstore(reader))
             }
         }

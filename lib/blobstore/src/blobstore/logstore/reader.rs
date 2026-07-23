@@ -5,7 +5,7 @@ use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use super::page::AppendOnlyPages;
 use super::validate_consistency;
@@ -30,6 +30,8 @@ pub struct LogstoreReader<V, S: UniversalRead> {
     tracker: AppendOnlyTracker<S>,
     pages: AppendOnlyPages<S>,
     base_path: PathBuf,
+    /// How to populate the files on open, and pages adopted on live reload
+    populate: Populate,
     _phantom: PhantomData<V>,
 }
 
@@ -39,9 +41,13 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     ///
     /// The config file is scheduled by the mode dispatching reader, which reads it first to
     /// select the operating mode.
-    pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, base_path: &Path) -> Result<()> {
-        AppendOnlyTracker::<S>::preopen(fs, base_path)?;
-        AppendOnlyPages::<S>::preopen(fs, base_path)
+    pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        base_path: &Path,
+        populate: Populate,
+    ) -> Result<()> {
+        AppendOnlyTracker::<S>::preopen(fs, base_path, populate)?;
+        AppendOnlyPages::<S>::preopen(fs, base_path, populate)
     }
 
     /// Open an existing read-only storage at the given path, with the already read config.
@@ -49,9 +55,10 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         fs: &Fs,
         base_path: PathBuf,
         config: LogstoreConfig,
+        populate: Populate,
     ) -> Result<Self> {
-        let tracker = AppendOnlyTracker::open_read_only(fs, &base_path)?;
-        let pages = AppendOnlyPages::open(fs, &base_path, false)?;
+        let tracker = AppendOnlyTracker::open_read_only(fs, &base_path, populate)?;
+        let pages = AppendOnlyPages::open(fs, &base_path, false, populate)?;
         validate_consistency(&tracker, &pages)?;
 
         Ok(Self {
@@ -59,6 +66,7 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
             tracker,
             pages,
             base_path,
+            populate,
             _phantom: PhantomData,
         })
     }
@@ -162,26 +170,30 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         // A writer always updates pages before the tracker, it is not synchronized with readers
         // Here we read the tracker first, so that we're sure all pages are already updated
         self.tracker.live_reload()?;
-        self.pages.live_reload(fs)?;
+        self.pages.live_reload(fs, self.populate)?;
 
         Ok(())
     }
 }
 
 impl<V, S: UniversalRead> LogstoreReader<V, S> {
-    /// Returns `true`: append-only storage always reads from disk, it is never populated into
-    /// RAM.
-    #[allow(clippy::unused_self)]
+    /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
     pub(crate) fn is_on_disk(&self) -> bool {
-        true
+        !self.populate.to_bool::<S>()
     }
 
-    /// Dropping disk cache is a no-op in append-only mode.
-    ///
-    /// Files are never populated into RAM, the OS page cache manages caching.
-    // Signature parity with the mutable variant
-    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    /// Ask to evict the tracker and all pages from the RAM cache.
     pub(crate) fn clear_cache(&self) -> crate::Result<()> {
+        let Self {
+            config: _,
+            tracker,
+            pages,
+            base_path: _,
+            populate: _,
+            _phantom,
+        } = self;
+        tracker.clear_cache()?;
+        pages.clear_cache()?;
         Ok(())
     }
 }

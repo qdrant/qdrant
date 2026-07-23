@@ -13,7 +13,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData};
+use common::universal_io::{
+    Populate, UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData,
+};
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
 pub(super) use reader::LogstoreReader;
@@ -139,9 +141,14 @@ where
     }
 
     /// Open an existing storage at the given path, with the already read config.
-    pub(super) fn open(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
-        let tracker = AppendOnlyTracker::open_writable(&fs, &base_path)?;
-        let pages = AppendOnlyPages::open(&fs, &base_path, true)?;
+    pub(super) fn open(
+        fs: S::Fs,
+        base_path: PathBuf,
+        config: LogstoreConfig,
+        populate: Populate,
+    ) -> Result<Self> {
+        let tracker = AppendOnlyTracker::open_writable(&fs, &base_path, populate)?;
+        let pages = AppendOnlyPages::open(&fs, &base_path, true, populate)?;
         validate_consistency(&tracker, &pages)?;
 
         Ok(Self {
@@ -410,21 +417,26 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
         })
     }
 
-    /// Populating is a no-op in append-only mode.
-    ///
-    /// Files are never populated into RAM, the OS page cache manages caching.
-    // Signature parity with the mutable variant
-    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    /// Populate the tracker and all pages into the RAM cache.
     pub(super) fn populate(&self) -> Result<()> {
+        self.pages.read().populate()?;
+        self.tracker.read().populate()?;
         Ok(())
     }
 
-    /// Dropping disk cache is a no-op in append-only mode.
-    ///
-    /// Files are never populated into RAM, the OS page cache manages caching.
-    // Signature parity with the mutable variant
-    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    /// Ask to evict the tracker and all pages from the RAM cache.
     pub(super) fn clear_cache(&self) -> crate::Result<()> {
+        let Self {
+            fs: _,
+            config: _,
+            tracker,
+            pages,
+            base_path: _,
+            is_alive_flush_lock: _,
+            _phantom,
+        } = self;
+        tracker.read().clear_cache()?;
+        pages.read().clear_cache()?;
         Ok(())
     }
 }
