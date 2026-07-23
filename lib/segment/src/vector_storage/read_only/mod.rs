@@ -10,8 +10,12 @@ use crate::vector_storage::dense::read_only::{
 };
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
+use crate::vector_storage::turbo::read_only::{
+    ReadOnlyTurboMultiVectorStorage, ReadOnlyTurboVectorStorage,
+};
 use crate::vector_storage::{
     RawScorer, RawScorerBuilder, raw_multi_scorer_impl, raw_scorer_impl, raw_sparse_scorer_impl,
+    raw_turbo_multi_scorer_impl, raw_turbo_scorer_impl,
 };
 
 mod lifecycle;
@@ -32,6 +36,8 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
+    DenseTurbo(Box<ReadOnlyTurboVectorStorage<S>>),
+    MultiDenseTurbo(Box<ReadOnlyTurboMultiVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
 }
 
@@ -66,6 +72,12 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
                 raw_multi_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseTurbo(s) => {
+                raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::MultiDenseTurbo(s) => {
+                raw_turbo_multi_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::Sparse(s) => {
                 raw_sparse_scorer_impl(query, s.as_ref(), hardware_counter)
@@ -531,6 +543,245 @@ mod tests {
         assert_eq!(storage.deleted_vector_count(), deleted_ids.len());
         for &id in &deleted_ids {
             assert!(storage.is_deleted_vector(id));
+        }
+    }
+
+    fn turbo_config(
+        storage_type: VectorStorageType,
+        multivector_config: Option<MultiVectorConfig>,
+    ) -> VectorDataConfig {
+        VectorDataConfig {
+            size: DIM,
+            distance: Distance::Dot,
+            storage_type,
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config,
+            datatype: Some(VectorStorageDatatype::Turbo4),
+        }
+    }
+
+    #[test]
+    fn read_only_turbo_dense_round_trip() {
+        use std::borrow::Cow;
+        use std::sync::atomic::AtomicBool;
+
+        use crate::data_types::vectors::QueryVector;
+        use crate::vector_storage::turbo::{
+            TurboVectorStorage, open_appendable_turbo_vector_storage, open_turbo_vector_storage,
+        };
+        use crate::vector_storage::{DenseTQVectorStorage, raw_turbo_scorer_impl};
+
+        const COUNT: PointOffsetType = 300;
+
+        let mut rng = StdRng::seed_from_u64(17);
+        let hw = HardwareCounterCell::disposable();
+        let stopped = AtomicBool::new(false);
+        let vectors: Vec<DenseVector> = (0..COUNT).map(|_| rand_vec(&mut rng)).collect();
+        let mut deleted_ids = Vec::new();
+
+        let ref_dir = Builder::new().prefix("ro_turbo_ref").tempdir().unwrap();
+        let mut reference =
+            open_appendable_turbo_vector_storage(ref_dir.path(), DIM, Distance::Dot, false)
+                .unwrap();
+        for (id, vector) in vectors.iter().enumerate() {
+            reference
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .unwrap();
+        }
+        for id in 0..COUNT {
+            if rng.random_bool(0.1) {
+                reference.delete_vector(id).unwrap();
+                deleted_ids.push(id);
+            }
+        }
+        reference.flusher()().unwrap();
+
+        let encoded: Vec<(Vec<u8>, bool)> = (0..COUNT)
+            .map(|id| {
+                (
+                    reference.get_quantized_vector(id).to_vec(),
+                    reference.is_deleted_vector(id),
+                )
+            })
+            .collect();
+
+        for storage_type in [VectorStorageType::Mmap, VectorStorageType::ChunkedMmap] {
+            let dir = Builder::new().prefix("ro_turbo").tempdir().unwrap();
+
+            let mut target: TurboVectorStorage = match storage_type {
+                VectorStorageType::Mmap => {
+                    open_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap()
+                }
+                VectorStorageType::ChunkedMmap => {
+                    open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false)
+                        .unwrap()
+                }
+                VectorStorageType::InRamMmap
+                | VectorStorageType::InRamChunkedMmap
+                | VectorStorageType::Memory
+                | VectorStorageType::Empty => {
+                    unreachable!("unexpected storage type {storage_type:?}")
+                }
+            };
+            let mut source = encoded
+                .iter()
+                .map(|(bytes, deleted)| (Cow::Borrowed(bytes.as_slice()), *deleted));
+            target.update_from(&mut source, &stopped).unwrap();
+            target.flusher()().unwrap();
+
+            let ro = VectorStorageReadEnum::<MmapFile>::open(
+                &MmapFs,
+                &turbo_config(storage_type, None),
+                dir.path(),
+                None,
+            )
+            .unwrap()
+            .unwrap();
+
+            assert!(
+                matches!(ro, VectorStorageReadEnum::DenseTurbo(_)),
+                "{storage_type:?} should route to DenseTurbo",
+            );
+            assert_eq!(ro.total_vector_count(), vectors.len());
+            assert_eq!(ro.deleted_vector_count(), deleted_ids.len());
+            for id in 0..COUNT {
+                assert_eq!(
+                    ro.is_deleted_vector(id),
+                    deleted_ids.contains(&id),
+                    "{storage_type:?} deleted flag @{id}",
+                );
+            }
+
+            for id in [0, 7, 42, COUNT - 1] {
+                let ro_vec: DenseVector =
+                    ro.get_vector::<Random>(id).to_owned().try_into().unwrap();
+                let ref_vec: DenseVector = reference
+                    .get_vector::<Random>(id)
+                    .to_owned()
+                    .try_into()
+                    .unwrap();
+                assert_eq!(ro_vec, ref_vec, "{storage_type:?} get_vector @{id}");
+            }
+
+            ro.read_vector_bytes::<Random, _>((0..COUNT).map(|id| ((), id)), |(), id, bytes| {
+                assert_eq!(
+                    bytes, encoded[id as usize].0,
+                    "{storage_type:?} raw bytes @{id}",
+                );
+            })
+            .unwrap();
+
+            let query = QueryVector::Nearest(vectors[3].clone().into());
+            let ro_scorer = ro
+                .build_raw_scorer(query.clone(), HardwareCounterCell::disposable())
+                .unwrap();
+            let ref_scorer =
+                raw_turbo_scorer_impl(query, &reference, HardwareCounterCell::disposable())
+                    .unwrap();
+            for id in 0..COUNT {
+                assert_eq!(
+                    ro_scorer.score_point(id),
+                    ref_scorer.score_point(id),
+                    "{storage_type:?} score @{id}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn read_only_turbo_multi_round_trip() {
+        use crate::data_types::vectors::QueryVector;
+        use crate::vector_storage::turbo::multi::open_appendable_turbo_multi_vector_storage;
+        use crate::vector_storage::{MultiTQVectorStorageRead, raw_turbo_multi_scorer_impl};
+
+        const COUNT: PointOffsetType = 128;
+        let multivector_config = MultiVectorConfig::default();
+        let dir = Builder::new().prefix("ro_turbo_multi").tempdir().unwrap();
+        let mut rng = StdRng::seed_from_u64(23);
+        let hw = HardwareCounterCell::disposable();
+
+        let multis: Vec<MultiDenseVectorInternal> = (0..COUNT)
+            .map(|_| {
+                let n = rng.random_range(1..=3usize);
+                let flattened: Vec<f32> = std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                    .take(n * DIM)
+                    .collect();
+                MultiDenseVectorInternal::new(flattened, DIM)
+            })
+            .collect();
+        let mut deleted_ids = Vec::new();
+
+        let mut writable = open_appendable_turbo_multi_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            multivector_config,
+            false,
+        )
+        .unwrap();
+        for (id, multi) in multis.iter().enumerate() {
+            writable
+                .insert_vector(
+                    id as PointOffsetType,
+                    TypedMultiDenseVectorRef::from(multi).into(),
+                    &hw,
+                )
+                .unwrap();
+        }
+        for id in 0..COUNT {
+            if rng.random_bool(0.1) {
+                writable.delete_vector(id).unwrap();
+                deleted_ids.push(id);
+            }
+        }
+        writable.flusher()().unwrap();
+
+        let ro = VectorStorageReadEnum::<MmapFile>::open(
+            &MmapFs,
+            &turbo_config(VectorStorageType::ChunkedMmap, Some(multivector_config)),
+            dir.path(),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(
+            matches!(ro, VectorStorageReadEnum::MultiDenseTurbo(_)),
+            "multivector Turbo4 should route to MultiDenseTurbo",
+        );
+        assert_eq!(ro.total_vector_count(), multis.len());
+        assert_eq!(ro.deleted_vector_count(), deleted_ids.len());
+        for id in 0..COUNT {
+            assert_eq!(
+                ro.is_deleted_vector(id),
+                deleted_ids.contains(&id),
+                "deleted flag @{id}",
+            );
+        }
+
+        ro.read_vector_bytes::<Random, _>((0..COUNT).map(|id| ((), id)), |(), id, bytes| {
+            assert_eq!(
+                bytes,
+                writable.get_multi_tq::<Random>(id).to_vec(),
+                "raw records @{id}",
+            );
+        })
+        .unwrap();
+
+        let query = QueryVector::Nearest(multis[5].clone().into());
+        let ro_scorer = ro
+            .build_raw_scorer(query.clone(), HardwareCounterCell::disposable())
+            .unwrap();
+        let wr_scorer =
+            raw_turbo_multi_scorer_impl(query, &writable, HardwareCounterCell::disposable())
+                .unwrap();
+        for id in 0..COUNT {
+            assert_eq!(
+                ro_scorer.score_point(id),
+                wr_scorer.score_point(id),
+                "score @{id}",
+            );
         }
     }
 }

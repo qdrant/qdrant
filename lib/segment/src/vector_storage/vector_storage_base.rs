@@ -439,7 +439,7 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: MultiVectorStorageRead<
     ) -> OperationResult<Range<PointOffsetType>>;
 }
 
-pub trait DenseTQVectorStorage: VectorStorageRead {
+pub trait DenseTQVectorStorageRead: VectorStorageRead {
     /// Original dimension of the vector, without quantization applied.
     fn vector_dim(&self) -> usize;
 
@@ -448,18 +448,6 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
 
     /// Get the quantized vector by the given key
     fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
-
-    /// Add the given dense TQ vectors to the storage.
-    ///
-    /// # Returns
-    /// The range of point offsets that were added to the storage.
-    ///
-    /// If stopped, the operation returns a cancellation error.
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>>;
 
     /// Call `f` with the raw encoded bytes of the vector if it exists.
     fn with_dense_tq_bytes_opt<P: AccessPattern, R>(
@@ -499,9 +487,15 @@ pub trait DenseTQVectorStorage: VectorStorageRead {
     ) -> OperationResult<()>;
 }
 
-/// Read + bulk-ingest access to a multivector storage of TurboQuant encoded
-/// inner vectors. Multi counterpart of [`DenseTQVectorStorage`].
-pub trait MultiTQVectorStorage: VectorStorageRead {
+pub trait DenseTQVectorStorage: DenseTQVectorStorageRead {
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
+}
+
+pub trait MultiTQVectorStorageRead: VectorStorageRead {
     /// Original dimension of each inner vector, without quantization applied.
     fn vector_dim(&self) -> usize;
 
@@ -515,18 +509,6 @@ pub trait MultiTQVectorStorage: VectorStorageRead {
     /// must read inner records individually to avoid the concatenation.
     fn get_multi_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
 
-    /// Add the given multi TQ vectors to the storage.
-    ///
-    /// # Returns
-    /// The range of point offsets that were added to the storage.
-    ///
-    /// If stopped, the operation returns a cancellation error.
-    fn update_from<'a>(
-        &mut self,
-        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>>;
-
     /// Call `f` with the concatenated encoded inner vectors, if any.
     /// Inner-vector count = `len() / quantized_vector_size()`.
     fn with_multi_tq_bytes_opt<P: AccessPattern, R>(
@@ -539,6 +521,14 @@ pub trait MultiTQVectorStorage: VectorStorageRead {
             f(&multi_tq)
         })
     }
+}
+
+pub trait MultiTQVectorStorage: MultiTQVectorStorageRead {
+    fn update_from<'a>(
+        &mut self,
+        other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
 }
 
 #[derive(Debug)]
