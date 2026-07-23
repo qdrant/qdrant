@@ -10620,6 +10620,12 @@ pub struct PointStructRaw {
     >,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore. None = point has no payload.
+    #[prost(bytes = "vec", optional, tag = "4")]
+    pub raw_payload: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(enumeration = "RawPayloadEncoding", tag = "5")]
+    pub raw_payload_encoding: i32,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -11436,6 +11442,33 @@ pub struct FacetResponseInternal {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
+}
+/// Encoding of `PointStructRaw.raw_payload`.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    JsonBytes = 0,
+}
+impl RawPayloadEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::JsonBytes => "JsonBytes",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "JsonBytes" => Some(Self::JsonBytes),
+            _ => None,
+        }
+    }
 }
 /// Controls how an update operation waits for completion.
 /// When present, fully overrides the `wait` boolean from the wrapped public message.

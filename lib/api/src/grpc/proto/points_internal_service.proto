@@ -46,10 +46,21 @@ service PointsInternal {
   rpc Facet(FacetCountsInternal) returns (FacetResponseInternal) {}
 }
 
+// Encoding of `PointStructRaw.raw_payload`.
+enum RawPayloadEncoding {
+  // serde_json encoding of the whole payload object, uncompressed,
+  // exactly as stored in gridstore.
+  JsonBytes = 0;
+}
+
 message PointStructRaw {
   PointId id = 1;
   map<string, bytes> vectors = 2;
   map<string, Value> payload = 3;
+  // serde_json encoding of the whole payload object, uncompressed,
+  // exactly as stored in gridstore. None = point has no payload.
+  optional bytes raw_payload = 4;
+  RawPayloadEncoding raw_payload_encoding = 5;
 }
 
 message SyncPoints {

@@ -498,6 +498,8 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
             payload: payload
                 .map(api::conversions::json::payload_to_proto)
                 .unwrap_or_default(),
+            raw_payload: None,
+            raw_payload_encoding: api::grpc::qdrant::RawPayloadEncoding::JsonBytes as i32,
         }
     }
 }
@@ -511,6 +513,8 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             id,
             vectors,
             payload,
+            raw_payload,
+            raw_payload_encoding: _,
         } = value;
 
         let id = id
@@ -522,6 +526,13 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
         } else {
             Some(api::conversions::json::proto_to_payloads(payload)?)
         };
+
+        // TODO(payload bytes): Implement.
+        if raw_payload.is_some() {
+            return Err(tonic::Status::invalid_argument(
+                "Payload as bytes not yet implemented",
+            ));
+        }
 
         Ok(Self {
             id,
