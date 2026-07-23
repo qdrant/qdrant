@@ -833,9 +833,19 @@ mod tests {
             false,
         );
 
+        // Cancel once the first apply has failed and queued the operation, not after a fixed
+        // delay: from that point the worker is provably past picking the operation up and into
+        // the retry logic, so cancelling cannot race the outer receive loop and drop the
+        // feedback channel instead.
+        let queued = segments.clone();
         let cancel_after = cancel.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            loop {
+                if !queued.read().failed_operation.is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
             cancel_after.cancel();
         });
 
