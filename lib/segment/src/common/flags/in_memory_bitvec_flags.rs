@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
+use common::sorted_slice::SortedSlice;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -150,20 +151,22 @@ impl InMemoryBitvecFlags {
     ///
     /// An appended point can carry a deleted vector slot whose flag lives only
     /// in the on-disk flags file, not the id-tracker delta (see the type doc).
-    /// The flags file is reopened and the persisted bit of every `new_point` is
-    /// read back; live offsets read unset and change nothing. A no-op for flags
-    /// built via [`Self::from_bitvec`], which have no dynamic flags file.
+    /// `new_points` is sorted ascending, so its offsets span one contiguous
+    /// range: the flags file is reopened and that range is read in a single
+    /// batched read, then each appended offset's bit is folded in (live offsets
+    /// read unset and change nothing). A no-op for flags built via
+    /// [`Self::from_bitvec`], which have no dynamic flags file.
     pub fn reload_appended<S: UniversalRead>(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
-        new_points: &[PointOffsetType],
+        new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
         let Some(directory) = self.directory.clone() else {
             return Ok(());
         };
-        if new_points.is_empty() {
+        let (Some(&first), Some(&last)) = (new_points.first(), new_points.last()) else {
             return Ok(());
-        }
+        };
 
         let flags = StoredBitSlice::<S>::open(
             fs,
@@ -172,9 +175,19 @@ impl InMemoryBitvecFlags {
             Default::default(),
         )?;
 
+        // Offsets past the file read unset (the writer pads past the logical
+        // length), so clamp the range to what the file holds.
+        let start = u64::from(first);
+        let end = u64::from(last).saturating_add(1).min(flags.bit_len());
+        if start >= end {
+            return Ok(());
+        }
+        let bits = flags.read_bit_range(start..end)?;
+
         let mut deleted = Vec::new();
-        for &point in new_points {
-            if flags.get_bit(u64::from(point))?.unwrap_or(false) {
+        for &point in new_points.iter() {
+            let index = (u64::from(point) - start) as usize;
+            if bits.get(index).as_deref().copied().unwrap_or(false) {
                 deleted.push(point);
             }
         }
