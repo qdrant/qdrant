@@ -1,0 +1,59 @@
+[package]
+name = "qdrant-edge-ffi"
+# This version tracks the native (Swift/Kotlin) Edge SDK line, kept equal to the
+# Python Edge SDK (`lib/edge/python/Cargo.toml`) and the publish amalgamation
+# (`lib/edge/publish/amalgamate.py`). There is no automated cross-check yet:
+# until the Swift/Android SDK PRs land, bump these three by hand together. The
+# `lib/edge/VERSION` single-source-of-truth file and its CI `version-sync` check
+# (also covering the Gradle `VERSION_NAME` and Swift release tag) are introduced
+# with the Gradle/Swift packaging in those follow-up PRs.
+version = "0.7.2"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+[features]
+# `matrix` is on by default so general (desktop/server/Rust) UniFFI consumers
+# get the full surface. The mobile Swift/Kotlin bindgen (a follow-up PR) builds
+# with `--no-default-features` to drop the O(n^2) `search_matrix` op from the
+# mobile binding surface.
+default = ["matrix"]
+
+# Passthrough so the update-operation coverage map in `src/update.rs` stays
+# exhaustive when the workspace is built with staging operations enabled
+# (mirrors the same passthrough in `edge`).
+staging = ["edge/staging", "shard/staging"]
+
+# Exposes `EdgeShard::search_matrix` (see `src/ops/matrix.rs`). On by default;
+# the mobile bindgen excludes it via `--no-default-features`.
+matrix = []
+
+[lints]
+workspace = true
+
+[lib]
+name = "qdrant_edge_ffi"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[dependencies]
+edge = { path = ".." }
+segment = { path = "../../segment", default-features = false }
+# default-features = false drops shard's `default = ["api"]` (the gRPC/prost
+# `api` types crate), which the FFI never uses — matching the `edge` and
+# `edge-python` siblings. (Note: `tonic`/`tokio` are still pulled in via
+# non-optional deps of `shard`/`common`, so this trims the `api`/prost crate,
+# not the whole server stack.)
+shard = { path = "../../shard", default-features = false }
+sparse = { path = "../../sparse" }
+
+uniffi = "0.31"
+thiserror = "2"
+uuid = "1"
+ahash = { workspace = true }
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
+ordered-float = { workspace = true }
+tempfile = { workspace = true }
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }

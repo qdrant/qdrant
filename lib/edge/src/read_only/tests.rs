@@ -153,7 +153,7 @@ fn follower_sees_flushed_data() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=100);
-    leader.flush();
+    leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
     follower.refresh().unwrap();
@@ -176,7 +176,7 @@ fn follower_with_load_profile_serves_reads() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=100);
-    leader.flush();
+    leader.flush().unwrap();
 
     let scroll_request = ScrollRequestBuilder::new()
         .limit(10_000)
@@ -200,7 +200,7 @@ fn follower_with_load_profile_serves_reads() {
 
     // Segments discovered by a refresh load under the same profile.
     upsert(&leader, 101..=150);
-    leader.flush();
+    leader.flush().unwrap();
     follower.refresh().unwrap();
     assert_eq!(exact_count(&follower), 150);
 }
@@ -214,7 +214,7 @@ fn refresh_picks_up_incremental_writes() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=50);
-    leader.flush();
+    leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
     follower.refresh().unwrap();
@@ -222,7 +222,7 @@ fn refresh_picks_up_incremental_writes() {
 
     // Second batch: appended in place to the same (appendable) segment.
     upsert(&leader, 51..=100);
-    leader.flush();
+    leader.flush().unwrap();
     follower.refresh().unwrap();
 
     assert_eq!(exact_count(&follower), 100);
@@ -239,14 +239,14 @@ fn follower_reflects_deletes() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=100);
-    leader.flush();
+    leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
     follower.refresh().unwrap();
     assert_eq!(exact_count(&follower), 100);
 
     delete(&leader, 1..=40);
-    leader.flush();
+    leader.flush().unwrap();
     follower.refresh().unwrap();
 
     assert_eq!(exact_count(&follower), 60);
@@ -276,7 +276,7 @@ fn follower_tracks_optimization_swap() {
     upsert(&leader, 1..=1000);
     // Delete enough to make the segment a vacuum candidate (>20%).
     delete(&leader, 1..=300);
-    leader.flush();
+    leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
     follower.refresh().unwrap();
@@ -285,7 +285,7 @@ fn follower_tracks_optimization_swap() {
     // Vacuum rebuilds the segment under a new UUID and removes the old one.
     let optimized = leader.optimize().unwrap();
     assert!(optimized, "expected a vacuum optimization to run");
-    leader.flush();
+    leader.flush().unwrap();
     follower.refresh().unwrap();
 
     // Follower drops the old UUID, opens the new one, and serves the same data.
@@ -303,7 +303,7 @@ fn refresh_on_unchanged_dir_is_noop() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=10);
-    leader.flush();
+    leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
     follower.refresh().unwrap();
@@ -327,7 +327,7 @@ fn open_without_config_derives_from_segments() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=10);
-    leader.flush();
+    leader.flush().unwrap();
     let expected = leader_exact_count(&leader);
     drop(leader);
 
@@ -353,7 +353,7 @@ fn provided_config_overrides_tunables_at_open() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=10);
-    leader.flush();
+    leader.flush().unwrap();
 
     // Tunables only — no vector params. Those must come from the segments.
     let provided = EdgeConfig {
@@ -387,7 +387,7 @@ fn provided_config_overrides_tunables_at_open() {
     // Refresh re-derives the config from the segments alone: the provided tunables are dropped
     // (segments never carry `max_search_threads`), the segment-derived values remain.
     upsert(&leader, 11..=15);
-    leader.flush();
+    leader.flush().unwrap();
     follower.refresh().unwrap();
 
     let config = follower.config_snapshot();
@@ -422,7 +422,7 @@ fn follower_uses_injected_enumerator() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=100);
-    leader.flush();
+    leader.flush().unwrap();
 
     let segments_path = dir.path().join(SEGMENTS_PATH);
     let all_segments = scan_segment_dirs(&segments_path).unwrap();
@@ -464,7 +464,7 @@ fn manifest_enumerator_requires_manifest() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=100);
-    leader.flush();
+    leader.flush().unwrap();
 
     let segments_path = dir.path().join(SEGMENTS_PATH);
     let on_disk: HashSet<Uuid> = scan_segment_dirs(&segments_path)
@@ -508,7 +508,7 @@ fn leader_writes_manifest_and_follower_loads_it() {
 
     let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
     upsert(&leader, 1..=100);
-    leader.flush();
+    leader.flush().unwrap();
 
     // The leader wrote a manifest listing every live segment.
     let manifest_path = segment_manifest_path(dir.path());

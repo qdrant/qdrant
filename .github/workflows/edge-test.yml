@@ -44,6 +44,11 @@ jobs:
 
       - name: Checkout Qdrant
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Don't leave GITHUB_TOKEN in .git/config: later steps build and run
+          # repository-controlled code (Rust/Python examples), which could
+          # otherwise read or exfiltrate the token. This job never pushes.
+          persist-credentials: false
 
       - name: Install Rust nightly (for fmt)
         uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
@@ -104,6 +109,26 @@ jobs:
       - name: 🦀 Check Rust
         working-directory: lib/edge
         run: just rs-check
+
+      - name: 🦀 Test qdrant-edge-ffi (default features)
+        # Run on nightly: the workspace uses unstable features (cfg_select in
+        # lib/common), so stable can't compile it. nightly is already installed
+        # above (for fmt). +nightly also makes doctests use the nightly rustdoc,
+        # avoiding the E0514 toolchain-mismatch seen with a stray stable rustdoc.
+        # Default features (matrix on) — the surface general/non-mobile UniFFI
+        # consumers get.
+        run: cargo +nightly test --locked -p qdrant-edge-ffi
+
+      - name: 🦀 Test qdrant-edge-ffi (mobile surface, no default features)
+        # --no-default-features drops `matrix`, matching what the mobile
+        # Swift/Kotlin bindgen builds. Guards that the crate still compiles and
+        # passes with the O(n^2) search_matrix op excluded from the surface.
+        run: cargo +nightly test --locked -p qdrant-edge-ffi --no-default-features
+
+      - name: 🦀 Test qdrant-edge-ffi (all features)
+        # matrix + staging together, so the feature-gated surface can't bit-rot:
+        # the `staging` coverage-map exhaustiveness arm only compiles under it.
+        run: cargo +nightly test --locked -p qdrant-edge-ffi --all-features
 
       - name: 🦀 Build Rust examples
         working-directory: lib/edge
