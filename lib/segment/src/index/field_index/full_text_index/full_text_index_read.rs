@@ -84,13 +84,8 @@ pub trait FullTextIndexRead {
         &self,
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
-        mut on_match: impl FnMut(U, bool),
-    ) -> OperationResult<()> {
-        for (tag, point_id) in items {
-            on_match(tag, self.check_match(query, point_id)?);
-        }
-        Ok(())
-    }
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()>;
 
     /// Walk the inverted-index vocab and emit one [`PayloadBlockCondition`] per
     /// token with at least `threshold` postings. Used to seed payload-block
@@ -243,4 +238,18 @@ pub trait FullTextIndexRead {
                 }
             })
     }
+}
+
+/// Default [`check_match_batch`](FullTextIndexRead::check_match_batch) for
+/// in-RAM indexes: streams the single lookup, no IO to pipeline.
+pub fn default_check_match_batch<T: FullTextIndexRead + ?Sized, U: UserData>(
+    this: &T,
+    query: &ParsedQuery,
+    items: impl Iterator<Item = (U, PointOffsetType)>,
+    mut on_match: impl FnMut(U, bool),
+) -> OperationResult<()> {
+    for (tag, point_id) in items {
+        on_match(tag, this.check_match(query, point_id)?);
+    }
+    Ok(())
 }

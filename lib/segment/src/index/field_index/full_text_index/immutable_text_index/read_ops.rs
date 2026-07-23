@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
-use super::super::full_text_index_read::FullTextIndexRead;
+use super::super::full_text_index_read::{FullTextIndexRead, default_check_match_batch};
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
 use super::ImmutableFullTextIndex;
@@ -61,6 +61,15 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
         self.inverted_index.check_match(query, point_id)
+    }
+
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        default_check_match_batch(self, query, items, on_match)
     }
 
     fn for_each_payload_block_inner(
