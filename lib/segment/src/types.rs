@@ -704,8 +704,31 @@ impl Validate for IdfCorpusParams {
 /// Configuration for vectors.
 #[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
 pub struct VectorsConfigDefaults {
+    /// Deprecated: use `memory` instead.
     #[serde(default)]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Default memory placement of the original vector storage for newly created collections.
+    /// Overrides the deprecated `on_disk` flag if both are set. `pinned` is not supported for
+    /// dense vector storage.
+    #[serde(default)]
+    #[validate(custom(function = "validate_dense_vector_memory"))]
+    pub memory: Option<Memory>,
+}
+
+/// Reject memory placements not supported by dense vector storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Cached => Ok(()),
+        Memory::Pinned => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(Cow::from(
+                "`pinned` memory placement is not supported for dense vector storage",
+            ));
+            Err(error)
+        }
+    }
 }
 
 /// Vector index configuration

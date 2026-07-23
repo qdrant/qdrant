@@ -6,12 +6,15 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::config::{self, CollectionConfigInternal, CollectionParams, ShardingMethod};
+use collection::config::{
+    self, CollectionConfigInternal, CollectionParams, PayloadStorageParams, ShardingMethod,
+};
 use collection::operations::config_diff::DiffConfig as _;
-use collection::operations::types::{CollectionResult, VectorsConfig};
+use collection::operations::types::{CollectionResult, VectorParams, VectorsConfig};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
+use segment::types::VectorsConfigDefaults;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
 use crate::common::utils::try_unwrap_with_timeout_async;
@@ -19,6 +22,37 @@ use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
+
+/// Fill exactly one placement level, by precedence: request `memory`, request legacy `on_disk`,
+/// default `memory`, default `on_disk`. Filling a lower level alongside a higher one would cause
+/// spurious `memory`-vs-legacy mismatch warnings at resolution time.
+fn apply_vector_placement_defaults(params: &mut VectorParams, defaults: &VectorsConfigDefaults) {
+    let VectorsConfigDefaults { on_disk, memory } = defaults;
+    if params.memory.is_some() || params.on_disk.is_some() {
+        return;
+    }
+    if memory.is_some() {
+        params.memory = *memory;
+    } else {
+        params.on_disk = *on_disk;
+    }
+}
+
+/// Service-level `payload.memory` default applies unless the request specifies `payload.memory`
+/// or the legacy `on_disk_payload` flag.
+fn apply_payload_placement_defaults(
+    payload: Option<PayloadStorageParams>,
+    on_disk_payload: Option<bool>,
+    defaults: Option<PayloadStorageParams>,
+) -> Option<PayloadStorageParams> {
+    if on_disk_payload.is_some() {
+        return payload;
+    }
+    match (defaults, payload) {
+        (Some(defaults), Some(payload)) => Some(defaults.update(&payload)),
+        (defaults, payload) => payload.or(defaults),
+    }
+}
 
 impl TableOfContent {
     pub(super) async fn create_collection(
@@ -120,19 +154,18 @@ impl TableOfContent {
         if let Some(vectors_defaults) = vectors_defaults {
             match &mut vectors {
                 VectorsConfig::Single(s) => {
-                    if let Some(on_disk_default) = vectors_defaults.on_disk {
-                        s.on_disk.get_or_insert(on_disk_default);
-                    }
+                    apply_vector_placement_defaults(s, vectors_defaults);
                 }
                 VectorsConfig::Multi(m) => {
                     for vec_params in m.values_mut() {
-                        if let Some(on_disk_default) = vectors_defaults.on_disk {
-                            vec_params.on_disk.get_or_insert(on_disk_default);
-                        }
+                        apply_vector_placement_defaults(vec_params, vectors_defaults);
                     }
                 }
             };
         }
+
+        let payload =
+            apply_payload_placement_defaults(payload, on_disk_payload, self.storage_config.payload);
 
         let collection_params = CollectionParams {
             vectors,

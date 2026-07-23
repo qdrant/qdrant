@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -5,7 +9,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::common::snapshots_manager::SnapshotsConfig;
-use collection::config::{WalConfig, default_on_disk_payload};
+use collection::config::{PayloadStorageParams, WalConfig, default_on_disk_payload};
 use collection::operations::config_diff::OptimizersConfigDiff;
 use collection::operations::shared_storage_config::{
     DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH, SharedStorageConfig,
@@ -76,8 +80,15 @@ pub struct StorageConfig {
     #[validate(custom(function = validate_path))]
     #[serde(default)]
     pub temp_path: Option<PathBuf>,
+    /// Deprecated: use `payload.memory` instead.
     #[serde(default = "default_on_disk_payload")]
+    #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
     pub on_disk_payload: bool,
+    /// Default configuration of the payload storage for newly created collections.
+    /// Overrides the deprecated `on_disk_payload` flag if both are set.
+    #[serde(default)]
+    #[validate(nested)]
+    pub payload: Option<PayloadStorageParams>,
     #[validate(nested)]
     pub optimizers: OptimizersConfig,
     #[validate(nested)]
