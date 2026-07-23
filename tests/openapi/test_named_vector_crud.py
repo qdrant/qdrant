@@ -133,8 +133,7 @@ def test_unnamed_vector_in_named_vector_collection_rejected(collection_name):
         method="GET",
         path_params={'collection_name': collection_name, 'id': 1000},
     )
-    assert response.ok
-    assert response.json()["result"] is None
+    assert response.status_code == 404
 
 
 # Input-validation tests below intentionally use plain `requests` because
