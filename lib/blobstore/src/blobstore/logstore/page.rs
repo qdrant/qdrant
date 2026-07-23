@@ -385,7 +385,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
                 byte_offset: start,
                 length: u64::from(pointer.length),
             };
-            return Ok(self.file.read::<P, u8>(range)?);
+            return Ok(self.file.read(range, P::default())?);
         }
 
         Ok(Cow::Borrowed(self.pending_value(pointer)?))
