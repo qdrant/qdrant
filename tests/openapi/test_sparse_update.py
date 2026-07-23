@@ -174,3 +174,75 @@ def test_unknown_sparse_vector_name_rejected(collection_name):
     assert response.status_code == 400
     assert "vector name" in response.json()["status"]["error"].lower()
     assert "missing" in response.json()["status"]["error"].lower()
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 2},
+    )
+    assert response.status_code == 404
+
+
+def test_batch_sparse_vector_names_are_validated(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "batch": {
+                "ids": [3],
+                "vectors": {
+                    "text": [
+                        {
+                            "indices": [10],
+                            "values": [0.9],
+                        }
+                    ]
+                },
+            }
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 3},
+    )
+    assert response.ok
+    assert response.json()["result"]["vector"]["text"] == {
+        "indices": [10],
+        "values": [0.9],
+    }
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "batch": {
+                "ids": [4],
+                "vectors": {
+                    "missing": [
+                        {
+                            "indices": [10],
+                            "values": [0.9],
+                        }
+                    ]
+                },
+            }
+        },
+    )
+    assert not response.ok
+    assert response.status_code == 400
+    assert "vector name" in response.json()["status"]["error"].lower()
+    assert "missing" in response.json()["status"]["error"].lower()
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 4},
+    )
+    assert response.status_code == 404

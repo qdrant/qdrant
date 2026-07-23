@@ -370,19 +370,17 @@ impl Collection {
             .clone()
     }
 
-    pub async fn vectors_config(&self) -> VectorsConfig {
-        self.collection_config.read().await.params.vectors.clone()
-    }
-
-    pub async fn sparse_vectors_config(
+    pub async fn vector_configs(
         &self,
-    ) -> Option<BTreeMap<VectorNameBuf, SparseVectorParams>> {
-        self.collection_config
-            .read()
-            .await
-            .params
-            .sparse_vectors
-            .clone()
+    ) -> (
+        VectorsConfig,
+        Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
+    ) {
+        let config = self.collection_config.read().await;
+        (
+            config.params.vectors.clone(),
+            config.params.sparse_vectors.clone(),
+        )
     }
 
     pub async fn info(
