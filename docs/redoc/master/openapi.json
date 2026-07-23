@@ -15227,12 +15227,14 @@
             "$ref": "#/components/schemas/ReshardingDirection"
           },
           "peer_id": {
+            "description": "Peer to create the new shard on, or to migrate points away from when scaling down. If not specified, the least loaded peer is picked when scaling up, a peer holding the removed shard when scaling down.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0,
             "nullable": true
           },
           "shard_key": {
+            "description": "Custom shard key to reshard, must already exist. If not specified, shards without a shard key are resharded.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ShardKey"
