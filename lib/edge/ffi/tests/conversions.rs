@@ -820,3 +820,343 @@ fn order_by_start_from_converts() {
     let r: Result<SegmentOrderBy, _> = bad.try_into();
     assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
 }
+
+// ── Payload index params ────────────────────────────────────────────────────
+
+#[test]
+fn payload_index_params_all_variants_convert_to_matching_engine_type() {
+    use qdrant_edge_ffi::{
+        BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
+        KeywordIndexParams, PayloadIndexParams, TextIndexParams, UuidIndexParams,
+    };
+    use segment::types::{PayloadSchemaParams, PayloadSchemaType as SegmentPayloadSchemaType};
+
+    let cases = vec![
+        (
+            PayloadIndexParams::Keyword {
+                config: KeywordIndexParams {
+                    is_tenant: None,
+                    memory: None,
+                    enable_hnsw: None,
+                    prefix: None,
+                },
+            },
+            SegmentPayloadSchemaType::Keyword,
+        ),
+        (
+            PayloadIndexParams::Integer {
+                config: IntegerIndexParams {
+                    lookup: None,
+                    range: None,
+                    is_principal: None,
+                    memory: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Integer,
+        ),
+        (
+            PayloadIndexParams::Float {
+                config: FloatIndexParams {
+                    is_principal: None,
+                    memory: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Float,
+        ),
+        (
+            PayloadIndexParams::Geo {
+                config: GeoIndexParams {
+                    memory: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Geo,
+        ),
+        (
+            PayloadIndexParams::Text {
+                config: TextIndexParams {
+                    tokenizer: None,
+                    min_token_len: None,
+                    max_token_len: None,
+                    lowercase: None,
+                    ascii_folding: None,
+                    phrase_matching: None,
+                    stopwords: None,
+                    memory: None,
+                    stemmer: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Text,
+        ),
+        (
+            PayloadIndexParams::Bool {
+                config: BoolIndexParams {
+                    memory: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Bool,
+        ),
+        (
+            PayloadIndexParams::Datetime {
+                config: DatetimeIndexParams {
+                    is_principal: None,
+                    memory: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Datetime,
+        ),
+        (
+            PayloadIndexParams::Uuid {
+                config: UuidIndexParams {
+                    is_tenant: None,
+                    memory: None,
+                    enable_hnsw: None,
+                },
+            },
+            SegmentPayloadSchemaType::Uuid,
+        ),
+    ];
+
+    for (params, expected_kind) in cases {
+        let converted =
+            PayloadSchemaParams::try_from(params).expect("params with no options must convert");
+        assert_eq!(converted.kind(), expected_kind);
+    }
+}
+
+#[test]
+fn integer_index_params_both_capabilities_disabled_rejected() {
+    use qdrant_edge_ffi::update::UpdateOperation;
+    use qdrant_edge_ffi::{IntegerIndexParams, PayloadIndexParams};
+
+    let r = UpdateOperation::create_field_index_with_params(
+        "rank".to_string(),
+        PayloadIndexParams::Integer {
+            config: IntegerIndexParams {
+                lookup: Some(false),
+                range: Some(false),
+                is_principal: None,
+                memory: None,
+                enable_hnsw: None,
+            },
+        },
+    );
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+
+    // One capability disabled is fine.
+    let r = UpdateOperation::create_field_index_with_params(
+        "rank".to_string(),
+        PayloadIndexParams::Integer {
+            config: IntegerIndexParams {
+                lookup: Some(false),
+                range: Some(true),
+                is_principal: None,
+                memory: None,
+                enable_hnsw: None,
+            },
+        },
+    );
+    assert!(r.is_ok(), "lookup-off/range-on must convert");
+}
+
+#[test]
+fn payload_index_params_bad_field_name_rejected() {
+    use qdrant_edge_ffi::update::UpdateOperation;
+    use qdrant_edge_ffi::{KeywordIndexParams, PayloadIndexParams};
+
+    let r = UpdateOperation::create_field_index_with_params(
+        "bad[".to_string(),
+        PayloadIndexParams::Keyword {
+            config: KeywordIndexParams {
+                is_tenant: None,
+                memory: None,
+                enable_hnsw: None,
+                prefix: None,
+            },
+        },
+    );
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+}
+
+#[test]
+fn text_index_params_full_fidelity_round_trip() {
+    use qdrant_edge_ffi::config::Memory;
+    use qdrant_edge_ffi::{
+        Language, PayloadIndexParams, SnowballLanguage, Stemmer, Stopwords, TextIndexParams,
+        TokenizerType,
+    };
+    use segment::data_types::index as segment_index;
+    use segment::types::PayloadSchemaParams;
+
+    let params = PayloadIndexParams::Text {
+        config: TextIndexParams {
+            tokenizer: Some(TokenizerType::Multilingual),
+            min_token_len: Some(2),
+            max_token_len: Some(20),
+            lowercase: Some(false),
+            ascii_folding: Some(true),
+            phrase_matching: Some(true),
+            stopwords: Some(Stopwords::Set {
+                languages: Some(vec![Language::English, Language::Spanish]),
+                custom: Some(vec!["qdrant".to_string()]),
+            }),
+            memory: Some(Memory::Cold),
+            stemmer: Some(Stemmer::Snowball {
+                language: SnowballLanguage::English,
+            }),
+            enable_hnsw: Some(false),
+        },
+    };
+
+    // FFI → engine: every option must land in the engine struct.
+    let engine = PayloadSchemaParams::try_from(params).expect("text params must convert");
+    let PayloadSchemaParams::Text(engine_text) = &engine else {
+        panic!("expected Text params, got {engine:?}");
+    };
+    assert_eq!(
+        engine_text.tokenizer,
+        segment_index::TokenizerType::Multilingual
+    );
+    assert_eq!(engine_text.min_token_len, Some(2));
+    assert_eq!(engine_text.max_token_len, Some(20));
+    assert_eq!(engine_text.lowercase, Some(false));
+    assert_eq!(engine_text.ascii_folding, Some(true));
+    assert_eq!(engine_text.phrase_matching, Some(true));
+    assert_eq!(
+        engine_text.stopwords,
+        Some(segment_index::StopwordsInterface::Set(
+            segment_index::StopwordsSet {
+                languages: Some(
+                    [
+                        segment_index::Language::English,
+                        segment_index::Language::Spanish,
+                    ]
+                    .into_iter()
+                    .collect()
+                ),
+                custom: Some(["qdrant".to_string()].into_iter().collect()),
+            }
+        ))
+    );
+    assert_eq!(engine_text.memory, Some(segment::types::Memory::Cold));
+    assert_eq!(
+        engine_text.stemmer,
+        Some(segment_index::StemmingAlgorithm::Snowball(
+            segment_index::SnowballParams {
+                r#type: segment_index::Snowball::Snowball,
+                language: segment_index::SnowballLanguage::English,
+            }
+        ))
+    );
+    assert_eq!(engine_text.enable_hnsw, Some(false));
+
+    // Engine → FFI: converting back must echo every option.
+    let echoed = qdrant_edge_ffi::PayloadIndexParams::from(engine);
+    let PayloadIndexParams::Text { config } = echoed else {
+        panic!("expected Text params after round-trip");
+    };
+    assert!(matches!(
+        config.tokenizer,
+        Some(TokenizerType::Multilingual)
+    ));
+    assert_eq!(config.min_token_len, Some(2));
+    assert_eq!(config.max_token_len, Some(20));
+    assert_eq!(config.lowercase, Some(false));
+    assert_eq!(config.ascii_folding, Some(true));
+    assert_eq!(config.phrase_matching, Some(true));
+    let Some(Stopwords::Set { languages, custom }) = config.stopwords else {
+        panic!("expected stopwords set after round-trip");
+    };
+    assert!(matches!(
+        languages.as_deref(),
+        Some([Language::English, Language::Spanish])
+    ));
+    assert_eq!(custom, Some(vec!["qdrant".to_string()]));
+    assert!(matches!(config.memory, Some(Memory::Cold)));
+    assert!(matches!(
+        config.stemmer,
+        Some(Stemmer::Snowball {
+            language: SnowballLanguage::English
+        })
+    ));
+    assert_eq!(config.enable_hnsw, Some(false));
+}
+
+#[test]
+fn stemmer_disabled_round_trips_as_explicit_opt_out() {
+    use qdrant_edge_ffi::Stemmer;
+    use segment::data_types::index as segment_index;
+
+    let engine = segment_index::StemmingAlgorithm::from(Stemmer::Disabled);
+    assert!(matches!(
+        engine,
+        segment_index::StemmingAlgorithm::Disabled(_)
+    ));
+    assert!(matches!(Stemmer::from(engine), Stemmer::Disabled));
+}
+
+#[test]
+fn stopwords_duplicates_collapse_on_write() {
+    use qdrant_edge_ffi::{Language, Stopwords};
+    use segment::data_types::index as segment_index;
+
+    let engine = segment_index::StopwordsInterface::from(Stopwords::Set {
+        languages: Some(vec![Language::English, Language::English]),
+        custom: Some(vec!["a".to_string(), "a".to_string(), "b".to_string()]),
+    });
+    let segment_index::StopwordsInterface::Set(set) = engine else {
+        panic!("expected stopwords set");
+    };
+    assert_eq!(set.languages.map(|l| l.len()), Some(1));
+    assert_eq!(set.custom.map(|c| c.len()), Some(2));
+}
+
+/// Configs written by pre-`memory` tooling carry only the deprecated
+/// `on_disk` flag; the boundary must fold it into the reported `memory`
+/// placement instead of dropping it (heap-component rule: on-disk data reads
+/// lazily as `Cold`, in-RAM field indexes are `Pinned`). The explicit
+/// `memory` parameter wins when both are set.
+#[test]
+#[allow(deprecated)]
+fn legacy_on_disk_flag_resolves_to_memory_on_read() {
+    use qdrant_edge_ffi::PayloadIndexParams;
+    use qdrant_edge_ffi::config::Memory;
+    use segment::data_types::index as segment_index;
+    use segment::types::{Memory as SegmentMemory, PayloadSchemaParams};
+
+    let keyword = |on_disk: Option<bool>, memory: Option<SegmentMemory>| {
+        PayloadSchemaParams::Keyword(segment_index::KeywordIndexParams {
+            r#type: segment_index::KeywordIndexType::Keyword,
+            is_tenant: None,
+            on_disk,
+            memory,
+            enable_hnsw: None,
+            prefix: None,
+        })
+    };
+    let reported_memory = |params: PayloadSchemaParams| {
+        let PayloadIndexParams::Keyword { config } = PayloadIndexParams::from(params) else {
+            panic!("expected Keyword params");
+        };
+        config.memory
+    };
+
+    assert!(matches!(
+        reported_memory(keyword(Some(true), None)),
+        Some(Memory::Cold)
+    ));
+    assert!(matches!(
+        reported_memory(keyword(Some(false), None)),
+        Some(Memory::Pinned)
+    ));
+    assert!(matches!(
+        reported_memory(keyword(Some(true), Some(SegmentMemory::Cached))),
+        Some(Memory::Cached)
+    ));
+    assert!(reported_memory(keyword(None, None)).is_none());
+}

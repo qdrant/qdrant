@@ -4090,3 +4090,169 @@ fn search_matrix_relates_samples() {
         );
     }
 }
+
+// ── Payload schema in info() ──────────────────────────────────────────────────
+
+/// `info()` must report every payload index: a bare-type index shows its
+/// `data_type` with no params, and the indexed point count.
+#[test]
+fn info_reports_payload_schema_for_bare_index() {
+    use qdrant_edge_ffi::PayloadSchemaType;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    upsert_three(&shard);
+    shard
+        .update(
+            UpdateOperation::create_field_index("title".to_string(), PayloadSchemaType::Keyword)
+                .expect("create_field_index failed"),
+        )
+        .expect("update failed");
+
+    let info = shard.info().expect("info failed");
+    let index = info
+        .payload_schema
+        .get("title")
+        .expect("'title' index missing from payload_schema");
+    assert!(matches!(index.data_type, PayloadSchemaType::Keyword));
+    assert!(
+        index.params.is_none(),
+        "bare-type index must report no params, got {:?}",
+        index.params
+    );
+    assert_eq!(index.points, 3, "all three points carry 'title'");
+}
+
+/// Parameters passed to `create_field_index_with_params` must be echoed back
+/// by `info()`, and must survive flush → unload → reload (they are part of
+/// the persisted index configuration, not session state).
+#[test]
+fn field_index_params_echo_in_info_and_survive_reload() {
+    use qdrant_edge_ffi::config::Memory;
+    use qdrant_edge_ffi::{KeywordIndexParams, PayloadIndexParams, PayloadSchemaType};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+
+    let assert_echoed = |shard: &EdgeShard| {
+        let info = shard.info().expect("info failed");
+        let index = info
+            .payload_schema
+            .get("title")
+            .expect("'title' index missing from payload_schema");
+        assert!(matches!(index.data_type, PayloadSchemaType::Keyword));
+        let Some(PayloadIndexParams::Keyword { config }) = &index.params else {
+            panic!("expected echoed keyword params, got {:?}", index.params);
+        };
+        assert_eq!(config.is_tenant, Some(true));
+        assert!(matches!(config.memory, Some(Memory::Cold)));
+        assert_eq!(config.enable_hnsw, Some(false));
+        assert_eq!(config.prefix, Some(true));
+        assert_eq!(index.points, 3);
+    };
+
+    {
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path.clone(), Some(make_config())).expect("load failed");
+        upsert_three(&shard);
+        shard
+            .update(
+                UpdateOperation::create_field_index_with_params(
+                    "title".to_string(),
+                    PayloadIndexParams::Keyword {
+                        config: KeywordIndexParams {
+                            is_tenant: Some(true),
+                            memory: Some(Memory::Cold),
+                            enable_hnsw: Some(false),
+                            prefix: Some(true),
+                        },
+                    },
+                )
+                .expect("create_field_index_with_params failed"),
+            )
+            .expect("update failed");
+
+        assert_echoed(&shard);
+
+        shard.flush().expect("flush failed");
+        shard.unload().expect("unload failed");
+    }
+
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, None).expect("reload failed");
+    assert_echoed(&shard);
+}
+
+/// A params-created full-text index must be a working index (not just stored
+/// config): the tokenizer/stopwords options apply to matching.
+#[test]
+fn text_index_with_params_filters_with_stopwords() {
+    use qdrant_edge_ffi::filter::{Condition, FieldCondition, Match};
+    use qdrant_edge_ffi::{PayloadIndexParams, Stopwords, TextIndexParams};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    upsert_three(&shard);
+    shard
+        .update(
+            UpdateOperation::create_field_index_with_params(
+                "title".to_string(),
+                PayloadIndexParams::Text {
+                    config: TextIndexParams {
+                        tokenizer: None,
+                        min_token_len: None,
+                        max_token_len: None,
+                        lowercase: None,
+                        ascii_folding: None,
+                        phrase_matching: None,
+                        stopwords: Some(Stopwords::Set {
+                            languages: None,
+                            custom: Some(vec!["point".to_string()]),
+                        }),
+                        memory: None,
+                        stemmer: None,
+                        enable_hnsw: None,
+                    },
+                },
+            )
+            .expect("create_field_index_with_params failed"),
+        )
+        .expect("update failed");
+
+    let count_matching = |text: &str| {
+        let filter = qdrant_edge_ffi::filter::Filter {
+            must: Some(vec![Condition::Field {
+                condition: FieldCondition {
+                    key: "title".to_string(),
+                    r#match: Some(Match::Text {
+                        text: text.to_string(),
+                    }),
+                    range: None,
+                    datetime_range: None,
+                    geo_bounding_box: None,
+                    geo_radius: None,
+                    geo_polygon: None,
+                    values_count: None,
+                },
+            }]),
+            should: None,
+            must_not: None,
+            min_should: None,
+        };
+        shard
+            .count(CountRequest {
+                filter: Some(filter),
+                exact: true,
+            })
+            .expect("count failed")
+    };
+
+    // "two" is a real token: exactly one point ("point two") matches.
+    assert_eq!(count_matching("two"), 1);
+    // "point" is in the custom stopword set: it was never indexed, so no
+    // point matches even though every title contains it.
+    assert_eq!(count_matching("point"), 0);
+}

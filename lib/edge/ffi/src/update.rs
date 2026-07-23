@@ -19,6 +19,7 @@ use shard::operations::{
 use crate::EdgeShard;
 use crate::config::{Distance, Modifier, MultiVectorConfig, VectorStorageDatatype};
 use crate::filter::Filter;
+use crate::payload_index::PayloadIndexParams;
 use crate::types::{Point, PointId, PointVectors, json_to_payload};
 
 #[uniffi::export]
@@ -545,6 +546,39 @@ impl UpdateOperation {
         }))
     }
 
+    /// Builds an operation that creates a payload index on `field_name` with
+    /// explicit per-type parameters.
+    ///
+    /// Same as [`UpdateOperation::create_field_index`], but takes the full
+    /// parameter form instead of a bare type: the index type is implied by
+    /// the [`PayloadIndexParams`] variant, and its `config` carries the
+    /// type's tuning options (tenant/principal hints, memory placement, HNSW
+    /// linking, keyword prefix matching, full-text tokenizer/stopwords/
+    /// stemmer). The parameters are echoed back by
+    /// [`EdgeShard::info`](crate::EdgeShard::info).
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`EdgeError::InvalidArgument`](crate::error::EdgeError) if
+    /// `field_name` is not a valid JSON path, or if the parameters are
+    /// contradictory (an integer index with both `lookup` and `range`
+    /// disabled).
+    #[uniffi::constructor]
+    pub fn create_field_index_with_params(
+        field_name: String,
+        params: PayloadIndexParams,
+    ) -> std::result::Result<Arc<Self>, crate::error::EdgeError> {
+        let operation = FieldIndexOperations::CreateIndex(CreateIndex {
+            field_name: crate::error::parse_json_path(&field_name)?,
+            field_schema: Some(PayloadFieldSchema::FieldParams(
+                PayloadSchemaParams::try_from(params)?,
+            )),
+        });
+        Ok(Arc::new(Self {
+            inner: CollectionUpdateOperations::FieldIndexOperation(operation),
+        }))
+    }
+
     /// Builds an operation that drops the payload index on `field_name`.
     ///
     /// Dropping a non-existent index is a no-op.
@@ -679,6 +713,21 @@ impl From<PayloadSchemaType> for SegmentPayloadSchemaType {
     }
 }
 
+impl From<SegmentPayloadSchemaType> for PayloadSchemaType {
+    fn from(t: SegmentPayloadSchemaType) -> Self {
+        match t {
+            SegmentPayloadSchemaType::Keyword => PayloadSchemaType::Keyword,
+            SegmentPayloadSchemaType::Integer => PayloadSchemaType::Integer,
+            SegmentPayloadSchemaType::Float => PayloadSchemaType::Float,
+            SegmentPayloadSchemaType::Geo => PayloadSchemaType::Geo,
+            SegmentPayloadSchemaType::Text => PayloadSchemaType::Text,
+            SegmentPayloadSchemaType::Bool => PayloadSchemaType::Bool,
+            SegmentPayloadSchemaType::Datetime => PayloadSchemaType::Datetime,
+            SegmentPayloadSchemaType::Uuid => PayloadSchemaType::Uuid,
+        }
+    }
+}
+
 // ── Coverage map ────────────────────────────────────────────────────────────
 
 /// Compile-time map of the engine's update-operation tree onto the
@@ -760,9 +809,8 @@ fn assert_every_update_operation_is_mapped(op: CollectionUpdateOperations) {
                     SegmentPayloadSchemaType::Datetime => {}
                     SegmentPayloadSchemaType::Uuid => {}
                 },
-                // Not exposed yet: the per-type index-parameter forms
-                // (`is_tenant`, `on_disk`, text tokenizers, …). The FFI only
-                // emits the parameterless `FieldType` schema above.
+                // [`UpdateOperation::create_field_index_with_params`], via
+                // [`PayloadIndexParams`] (one FFI variant per params type)
                 Some(PayloadFieldSchema::FieldParams(p)) => match p {
                     PayloadSchemaParams::Keyword(_) => {}
                     PayloadSchemaParams::Integer(_) => {}
