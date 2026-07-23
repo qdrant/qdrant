@@ -58,22 +58,25 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     }
 
     /// Universal IO open options for the tracker file.
-    fn open_options(writeable: bool) -> OpenOptions {
+    fn open_options(populate: Populate, writeable: bool) -> OpenOptions {
         OpenOptions {
             writeable,
             need_sequential: false,
-            // The append-only mode never populates, see [`crate::blobstore::logstore::Logstore`]
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Advice(Advice::Random),
         }
     }
 
     /// Schedule a prefetch of the tracker file, so a subsequent open is served from the prefetch
     /// pool.
-    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path) -> Result<()> {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+    ) -> Result<()> {
         fs.schedule_prefetch(
             &Self::tracker_file_name(dir),
-            Some(Self::open_options(false)),
+            Some(Self::open_options(populate, false)),
             None,
         )?;
         Ok(())
@@ -83,21 +86,26 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     fn open_file<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         path: &Path,
+        populate: Populate,
         writeable: bool,
     ) -> Result<S> {
-        fs.open(path, Self::open_options(writeable), Default::default())
-            .map_err(|err| {
-                if err.is_not_found() {
-                    // If config exists and this file doesn't, it should be treated as
-                    // inconsistent storage rather than a missing one
-                    BlobstoreError::service_error(format!(
-                        "Append-only tracker file does not exist: {}",
-                        path.display(),
-                    ))
-                } else {
-                    BlobstoreError::from(err)
-                }
-            })
+        fs.open(
+            path,
+            Self::open_options(populate, writeable),
+            Default::default(),
+        )
+        .map_err(|err| {
+            if err.is_not_found() {
+                // If config exists and this file doesn't, it should be treated as
+                // inconsistent storage rather than a missing one
+                BlobstoreError::service_error(format!(
+                    "Append-only tracker file does not exist: {}",
+                    path.display(),
+                ))
+            } else {
+                BlobstoreError::from(err)
+            }
+        })
     }
 
     /// Open an existing tracker in the given directory, read-only.
@@ -105,9 +113,13 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     /// If the file does not exist, return an error.
     ///
     /// A trailing partial entry due to a torn write is ignored, the file is left untouched.
-    pub fn open_read_only<Fs: UniversalReadFs<File = S>>(fs: &Fs, dir: &Path) -> Result<Self> {
+    pub fn open_read_only<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let file = Self::open_file(fs, &path, false)?;
+        let file = Self::open_file(fs, &path, populate, false)?;
         let len = file.len::<u8>()?;
 
         Ok(Self {
@@ -120,6 +132,16 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
 
     pub fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
+    }
+
+    /// Populate the tracker file into the RAM cache.
+    pub fn populate(&self) -> Result<()> {
+        self.file.populate().map_err(Into::into)
+    }
+
+    /// Ask to evict the tracker file from the RAM cache.
+    pub fn clear_cache(&self) -> Result<()> {
+        self.file.clear_ram_cache().map_err(Into::into)
     }
 
     /// Number of mappings, including pending ones.
@@ -248,7 +270,11 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     pub fn new(fs: &S::Fs, dir: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
         fs.create(&path, 0)?;
-        let file = fs.open(&path, Self::open_options(true), Default::default())?;
+        let file = fs.open(
+            &path,
+            Self::open_options(Populate::No, true),
+            Default::default(),
+        )?;
         Ok(Self {
             path,
             file,
@@ -263,9 +289,9 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     ///
     /// A trailing partial entry due to a torn write is truncated away, so that appends always
     /// start at a whole entry offset.
-    pub fn open_writable(fs: &S::Fs, dir: &Path) -> Result<Self> {
+    pub fn open_writable(fs: &S::Fs, dir: &Path, populate: Populate) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let mut file = Self::open_file(fs, &path, true)?;
+        let mut file = Self::open_file(fs, &path, populate, true)?;
 
         let len = file.len::<u8>()?;
         let aligned_len = len - (len % ENTRY_SIZE);
@@ -274,7 +300,7 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
             // opened from scratch afterwards, shrinking is not supported through an open handle.
             drop(file);
             fs.create(&path, aligned_len as usize)?;
-            file = Self::open_file(fs, &path, true)?;
+            file = Self::open_file(fs, &path, populate, true)?;
         }
 
         Ok(Self {
@@ -484,8 +510,14 @@ mod tests {
     #[test]
     fn test_open_missing_tracker_fails() {
         let dir = TempDir::new().unwrap();
-        assert!(AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path()).is_err());
-        assert!(AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path()).is_err());
+        assert!(
+            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
+                .is_err()
+        );
+        assert!(
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
+                .is_err()
+        );
     }
 
     #[test]
@@ -558,7 +590,9 @@ mod tests {
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         drop(tracker);
 
-        let tracker = AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path()).unwrap();
+        let tracker =
+            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
             assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
@@ -635,14 +669,18 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().len(), 5 * ENTRY_SIZE + 7);
 
         // A read-only open ignores the partial entry, but leaves the file untouched
-        let tracker = AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path()).unwrap();
+        let tracker =
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE + 7);
         drop(tracker);
 
         // A writable open truncates the partial entry away
-        let tracker = AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path()).unwrap();
+        let tracker =
+            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
@@ -702,7 +740,8 @@ mod tests {
         writer.write_pending(writer.pointer_count()).unwrap();
 
         let mut reader =
-            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path()).unwrap();
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
         assert_eq!(reader.pointer_count(), 3);
         assert!(!reader.live_reload().unwrap());
 

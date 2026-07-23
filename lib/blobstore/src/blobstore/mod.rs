@@ -120,7 +120,7 @@ where
                 Ok(Self::Gridstore(storage))
             }
             StorageConfig::AppendOnly(config) => {
-                let storage = Logstore::open(fs, base_path, config)?;
+                let storage = Logstore::open(fs, base_path, config, populate)?;
                 Ok(Self::Logstore(storage))
             }
         }
@@ -260,9 +260,7 @@ impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
         }
     }
 
-    /// Populate all parts of the storage in the mmap.
-    ///
-    /// No-op in append-only mode, which never populates its files into RAM.
+    /// Populate all parts of the storage into the RAM cache.
     pub fn populate(&self) -> Result<()> {
         match self {
             Blobstore::Gridstore(storage) => storage.populate(),
@@ -271,8 +269,6 @@ impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     }
 
     /// Drop disk cache.
-    ///
-    /// No-op in append-only mode, which never populates its files into RAM.
     pub fn clear_cache(&self) -> crate::Result<()> {
         match self {
             Blobstore::Gridstore(storage) => storage.clear_cache(),
