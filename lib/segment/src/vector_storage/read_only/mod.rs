@@ -10,8 +10,9 @@ use crate::vector_storage::dense::read_only::{
 };
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
+use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::vector_storage::turbo::read_only::{
-    ReadOnlyTurboMultiVectorStorage, ReadOnlyTurboVectorStorage,
+    ReadOnlyChunkedTurboVectorStorage, ReadOnlyImmutableTurboVectorStorage,
 };
 use crate::vector_storage::{
     RawScorer, RawScorerBuilder, raw_multi_scorer_impl, raw_scorer_impl, raw_sparse_scorer_impl,
@@ -36,8 +37,9 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    DenseTurbo(Box<ReadOnlyTurboVectorStorage<S>>),
-    MultiDenseTurbo(Box<ReadOnlyTurboMultiVectorStorage<S>>),
+    DenseTurbo(Box<ReadOnlyImmutableTurboVectorStorage<S>>),
+    DenseTurboChunked(Box<ReadOnlyChunkedTurboVectorStorage<S>>),
+    MultiDenseTurbo(Box<ReadOnlyChunkedMultiTurboVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
 }
 
@@ -74,6 +76,9 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
                 raw_multi_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::DenseTurbo(s) => {
+                raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
                 raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
@@ -568,9 +573,23 @@ mod tests {
 
         use crate::data_types::vectors::QueryVector;
         use crate::vector_storage::turbo::{
-            TurboVectorStorage, open_appendable_turbo_vector_storage, open_turbo_vector_storage,
+            TurboVectorStorageImpl, open_appendable_turbo_vector_storage,
         };
-        use crate::vector_storage::{DenseTQVectorStorage, raw_turbo_scorer_impl};
+        use crate::vector_storage::{DenseTQVectorStorage, VectorStorage, raw_turbo_scorer_impl};
+
+        /// Bulk-load `encoded` into a freshly-opened writable target and flush it,
+        /// so the read-only reopen below must round-trip through disk.
+        fn build_target(
+            target: &mut (impl DenseTQVectorStorage + VectorStorage),
+            encoded: &[(Vec<u8>, bool)],
+            stopped: &std::sync::atomic::AtomicBool,
+        ) {
+            let mut source = encoded
+                .iter()
+                .map(|(bytes, deleted)| (Cow::Borrowed(bytes.as_slice()), *deleted));
+            target.update_from(&mut source, stopped).unwrap();
+            target.flusher()().unwrap();
+        }
 
         const COUNT: PointOffsetType = 300;
 
@@ -609,13 +628,29 @@ mod tests {
         for storage_type in [VectorStorageType::Mmap, VectorStorageType::ChunkedMmap] {
             let dir = Builder::new().prefix("ro_turbo").tempdir().unwrap();
 
-            let mut target: TurboVectorStorage = match storage_type {
+            // The two writable backends are distinct concrete types, so each
+            // builds its own target; the read-only reopen then routes to the
+            // matching read-only variant.
+            match storage_type {
                 VectorStorageType::Mmap => {
-                    open_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap()
+                    let mut target = TurboVectorStorageImpl::<MmapFile>::open_mmap(
+                        dir.path(),
+                        DIM,
+                        Distance::Dot,
+                        false,
+                    )
+                    .unwrap();
+                    build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::ChunkedMmap => {
-                    open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false)
-                        .unwrap()
+                    let mut target = open_appendable_turbo_vector_storage(
+                        dir.path(),
+                        DIM,
+                        Distance::Dot,
+                        false,
+                    )
+                    .unwrap();
+                    build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::InRamMmap
                 | VectorStorageType::InRamChunkedMmap
@@ -623,12 +658,7 @@ mod tests {
                 | VectorStorageType::Empty => {
                     unreachable!("unexpected storage type {storage_type:?}")
                 }
-            };
-            let mut source = encoded
-                .iter()
-                .map(|(bytes, deleted)| (Cow::Borrowed(bytes.as_slice()), *deleted));
-            target.update_from(&mut source, &stopped).unwrap();
-            target.flusher()().unwrap();
+            }
 
             let ro = VectorStorageReadEnum::<MmapFile>::open(
                 &MmapFs,
@@ -639,9 +669,16 @@ mod tests {
             .unwrap()
             .unwrap();
 
+            let routed = match storage_type {
+                VectorStorageType::Mmap => matches!(ro, VectorStorageReadEnum::DenseTurbo(_)),
+                VectorStorageType::ChunkedMmap => {
+                    matches!(ro, VectorStorageReadEnum::DenseTurboChunked(_))
+                }
+                _ => false,
+            };
             assert!(
-                matches!(ro, VectorStorageReadEnum::DenseTurbo(_)),
-                "{storage_type:?} should route to DenseTurbo",
+                routed,
+                "{storage_type:?} should route to its dense Turbo read-only variant",
             );
             assert_eq!(ro.total_vector_count(), vectors.len());
             assert_eq!(ro.deleted_vector_count(), deleted_ids.len());
@@ -692,7 +729,7 @@ mod tests {
     #[test]
     fn read_only_turbo_multi_round_trip() {
         use crate::data_types::vectors::QueryVector;
-        use crate::vector_storage::turbo::multi::open_appendable_turbo_multi_vector_storage;
+        use crate::vector_storage::turbo::multi_turbo::open_appendable_turbo_multi_vector_storage;
         use crate::vector_storage::{MultiTQVectorStorageRead, raw_turbo_multi_scorer_impl};
 
         const COUNT: PointOffsetType = 128;

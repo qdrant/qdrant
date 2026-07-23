@@ -68,7 +68,10 @@ impl MemoryReporter for VectorStorageEnum {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
 
-            VectorStorageEnum::DenseTurbo(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            VectorStorageEnum::DenseTurboMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
             VectorStorageEnum::MultiDenseTurbo(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }

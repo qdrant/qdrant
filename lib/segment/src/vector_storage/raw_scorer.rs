@@ -34,8 +34,8 @@ use crate::vector_storage::query_scorer::turbo_multi_custom_query_scorer::TurboM
 use crate::vector_storage::query_scorer::turbo_multi_query_scorer::TurboMultiQueryScorer;
 use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
-use crate::vector_storage::turbo::TurboScoring;
-use crate::vector_storage::turbo::multi::TurboMultiScoring;
+use crate::vector_storage::TurboScoring;
+use crate::vector_storage::TurboMultiScoring;
 
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
@@ -84,7 +84,10 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseTurbo(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseTurboMemmap(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseTurboUring(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseTurboAppendableMemmap(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),

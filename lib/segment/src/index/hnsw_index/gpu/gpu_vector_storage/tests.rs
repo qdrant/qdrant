@@ -28,7 +28,7 @@ use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::{
     new_volatile_multi_dense_vector_storage_half,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
-use crate::vector_storage::turbo::multi::open_appendable_turbo_multi_vector_storage;
+use crate::vector_storage::turbo::multi_turbo::open_appendable_turbo_multi_vector_storage;
 use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
 use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, VectorStorage, new_raw_scorer_for_test};
 
@@ -607,7 +607,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
     );
 }
 
-/// A primary `VectorStorageEnum::DenseTurbo` storage built on GPU dequantizes
+/// A primary `VectorStorageEnum::DenseTurboAppendable` storage built on GPU dequantizes
 /// each encoded vector back to float and uploads it as a regular dense storage.
 /// This pins that path by comparing GPU scores of the TurboQuant storage against
 /// GPU scores of a plain `f32` storage holding the *same* dequantized vectors —
@@ -660,7 +660,7 @@ fn test_gpu_vector_storage_turbo_dense(
             .unwrap();
     }
 
-    let turbo_storage = VectorStorageEnum::DenseTurbo(Box::new(turbo));
+    let turbo_storage = VectorStorageEnum::DenseTurboAppendable(Box::new(turbo));
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
     // `skip_half_precision = true`: the TQ path always picks f16 when the

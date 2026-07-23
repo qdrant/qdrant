@@ -1,4 +1,4 @@
-//! mmap vs io_uring batch scoring for `TurboVectorStorage` (TQDT).
+//! mmap vs io_uring batch scoring for the single-file TurboQuant storage (TQDT).
 //!
 //! Three modes over the same single-file on-disk dataset:
 //! - `unbatched-mmap`: per-point `score_point` loop — the pre-batching behavior;
@@ -36,8 +36,10 @@ use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
+use common::universal_io::MmapFile;
 use segment::vector_storage::turbo::{
-    open_appendable_turbo_vector_storage, open_turbo_vector_storage_with_uring,
+    TurboVectorStorageImpl, open_appendable_turbo_vector_storage,
+    open_turbo_vector_storage_with_uring,
 };
 use segment::vector_storage::{
     DEFAULT_STOPPED, DenseTQVectorStorage, VectorStorage, VectorStorageEnum, new_raw_scorer,
@@ -86,7 +88,7 @@ fn build_dataset(dir: &Path) {
             .expect("vector inserted");
     }
 
-    let mut storage = open_turbo_vector_storage_with_uring(dir, DIM, DISTANCE, false, false)
+    let mut storage = TurboVectorStorageImpl::<MmapFile>::open_mmap(dir, DIM, DISTANCE, false)
         .expect("single-file storage created");
     let mut encoded =
         (0..VECTORS as PointOffsetType).map(|key| (encoder.get_quantized_vector(key), false));
@@ -153,10 +155,9 @@ fn benchmark(c: &mut Criterion) {
         .expect("bench data dir created");
     build_dataset(data_dir.path());
 
-    let mmap_storage = VectorStorageEnum::DenseTurbo(Box::new(
+    let mmap_storage =
         open_turbo_vector_storage_with_uring(data_dir.path(), DIM, DISTANCE, false, false)
-            .expect("mmap storage opened"),
-    ));
+            .expect("mmap storage opened");
 
     let modes: Vec<(&str, bool, &VectorStorageEnum)> = vec![
         ("unbatched-mmap", false, &mmap_storage),
@@ -165,10 +166,9 @@ fn benchmark(c: &mut Criterion) {
 
     cfg_select! {
         target_os = "linux" => {
-            let uring_storage = VectorStorageEnum::DenseTurbo(Box::new(
+            let uring_storage =
                 open_turbo_vector_storage_with_uring(data_dir.path(), DIM, DISTANCE, false, true)
-                    .expect("uring storage opened"),
-            ));
+                    .expect("uring storage opened");
 
             let mut modes = modes;
             modes.push(("batched-uring", true, &uring_storage));

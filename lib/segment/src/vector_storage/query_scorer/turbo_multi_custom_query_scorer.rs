@@ -7,7 +7,7 @@ use quantization::turboquant::EncodedQueryTQ;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::turbo::multi::TurboMultiScoring;
+use crate::vector_storage::TurboMultiScoring;
 
 /// Raw scorer for multi-vector queries (reco / discover / context / feedback)
 /// against a multivector TurboQuant storage ([`TurboMultiScoring`]).

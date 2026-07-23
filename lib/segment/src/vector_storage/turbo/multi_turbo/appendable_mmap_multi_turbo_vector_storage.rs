@@ -1,11 +1,13 @@
 //! TurboQuant-backed multivector storage.
 //!
-//! [`TurboMultiVectorStorage`] is the multivector counterpart of
-//! [`TurboVectorStorage`](super::TurboVectorStorage): a *primary* storage that
-//! keeps only TQ-encoded inner vectors, per-point offsets and deletion state.
+//! [`AppendableMmapMultiTurboVectorStorage`] is the multivector counterpart of the dense
+//! TurboQuant storages: a *primary* storage that keeps only TQ-encoded inner
+//! vectors, per-point offsets and deletion state. Multivectors are always stored
+//! in the appendable chunked layout, so — unlike the dense storage — there is a
+//! single backend and no layout split.
 //!
-//! It intentionally implements only [`VectorStorageRead`] + [`VectorStorage`] +
-//! [`MultiTQVectorStorage`], **not** `MultiVectorStorageRead<T>`.
+//! It intentionally implements only `VectorStorageRead` + `VectorStorage` +
+//! `MultiTQVectorStorage`, **not** `MultiVectorStorageRead<T>`.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -23,7 +25,7 @@ use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
 use smallvec::{SmallVec, smallvec};
 
-use super::{DELETED_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_PATH};
+use super::super::shared::{DELETED_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
@@ -40,14 +42,15 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::{
-    MultiTQVectorStorage, MultiTQVectorStorageRead, VectorOffsetType, VectorStorage,
+    MultiTQVectorStorage, MultiTQVectorStorageRead, TurboMultiScoring, VectorOffsetType,
+    VectorStorage,
     VectorStorageRead,
 };
 
-pub(super) const OFFSETS_PATH: &str = "tq_offsets.dat";
+pub(crate) const OFFSETS_PATH: &str = "tq_offsets.dat";
 
 /// Multivector storage for TurboQuant encoded inner vectors.
-pub struct TurboMultiVectorStorage {
+pub struct AppendableMmapMultiTurboVectorStorage {
     /// Flat inner-vector space: one fixed-size encoded record per inner vector.
     storage: QuantizedChunkedStorage<MmapFile>,
 
@@ -73,7 +76,7 @@ pub struct TurboMultiVectorStorage {
     quantization_buffer: Vec<f64>,
 }
 
-impl std::fmt::Debug for TurboMultiVectorStorage {
+impl std::fmt::Debug for AppendableMmapMultiTurboVectorStorage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self {
             dim,
@@ -86,7 +89,7 @@ impl std::fmt::Debug for TurboMultiVectorStorage {
             multi_vector_config: _,
             quantization_buffer: _,
         } = self;
-        f.debug_struct("TurboMultiVectorStorage")
+        f.debug_struct("AppendableMmapMultiTurboVectorStorage")
             .field("dim", dim)
             .field("distance", distance)
             .field("total_vector_count", &offsets.len())
@@ -102,7 +105,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     in_ram: bool,
-) -> OperationResult<TurboMultiVectorStorage> {
+) -> OperationResult<AppendableMmapMultiTurboVectorStorage> {
     fs_err::create_dir_all(path)?;
 
     let populate = Populate::from(in_ram);
@@ -139,7 +142,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
 
     let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
 
-    Ok(TurboMultiVectorStorage {
+    Ok(AppendableMmapMultiTurboVectorStorage {
         storage,
         offsets,
         quantizer,
@@ -153,14 +156,14 @@ pub fn open_appendable_turbo_multi_vector_storage(
 }
 
 /// Rejection message for a multivector that cannot fit a whole storage chunk
-/// ([`TurboMultiVectorStorage::fresh_range_start`] returning `None`). Single
+/// ([`AppendableMmapMultiTurboVectorStorage::fresh_range_start`] returning `None`). Single
 /// source of truth for both write paths; only the error class differs by call
 /// site (user error on ingest, service error on the optimizer merge).
 fn exceeds_chunk_capacity_message(count: PointOffsetType) -> String {
     format!("Multivector of {count} subvectors exceeds the chunk capacity")
 }
 
-impl TurboMultiVectorStorage {
+impl AppendableMmapMultiTurboVectorStorage {
     /// Offset record for `key`, if the point exists.
     fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
         let record = self.offsets.get::<P>(key as VectorOffsetType)?;
@@ -554,7 +557,7 @@ impl TurboMultiVectorStorage {
     }
 }
 
-impl VectorStorageRead for TurboMultiVectorStorage {
+impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -624,7 +627,7 @@ impl VectorStorageRead for TurboMultiVectorStorage {
     }
 }
 
-impl VectorStorage for TurboMultiVectorStorage {
+impl VectorStorage for AppendableMmapMultiTurboVectorStorage {
     fn insert_vector(
         &mut self,
         key: PointOffsetType,
@@ -666,49 +669,9 @@ impl VectorStorage for TurboMultiVectorStorage {
     }
 }
 
-/// Scoring surface the Turbo multivector query scorers need from a multivector
-/// TurboQuant storage. Multi counterpart of
-/// [`TurboScoring`](super::TurboScoring): implemented by the writable
-/// [`TurboMultiVectorStorage`] and its read-only counterpart, so the shared
-/// `raw_turbo_multi_scorer_impl` works over either.
-pub trait TurboMultiScoring: MultiTQVectorStorageRead {
-    /// Preprocess and precompute each inner query vector of a multi-query once.
-    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ>;
-
-    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
-    /// `key`.
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType;
-
-    /// Symmetric MaxSim score between two stored points.
-    fn score_internal_max_similarity(
-        &self,
-        point_a: PointOffsetType,
-        point_b: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType;
-
-    /// Score a precomputed multi-query directly against a point's concatenated
-    /// encoded records, without a separate storage fetch.
-    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType;
-
-    /// Two-pass batched read for records (offsets, then vectors), invoking
-    /// `callback` once per requested point. Lets the query scorers batch the
-    /// underlying reads over either backend.
-    fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
-        &self,
-        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-        callback: impl FnMut(U, PointOffsetType, &[u8]),
-    ) -> OperationResult<()>;
-}
-
-impl TurboMultiScoring for TurboMultiVectorStorage {
+impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
     fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
-        TurboMultiVectorStorage::preprocess_query(self, query)
+        AppendableMmapMultiTurboVectorStorage::preprocess_query(self, query)
     }
 
     fn score_point_max_similarity(
@@ -717,7 +680,7 @@ impl TurboMultiScoring for TurboMultiVectorStorage {
         key: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        TurboMultiVectorStorage::score_point_max_similarity(self, query, key, hw_counter)
+        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(self, query, key, hw_counter)
     }
 
     fn score_internal_max_similarity(
@@ -726,11 +689,11 @@ impl TurboMultiScoring for TurboMultiVectorStorage {
         point_b: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        TurboMultiVectorStorage::score_internal_max_similarity(self, point_a, point_b, hw_counter)
+        AppendableMmapMultiTurboVectorStorage::score_internal_max_similarity(self, point_a, point_b, hw_counter)
     }
 
     fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
-        TurboMultiVectorStorage::score_records_max_similarity(self, query, records)
+        AppendableMmapMultiTurboVectorStorage::score_records_max_similarity(self, query, records)
     }
 
     fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(
@@ -738,11 +701,11 @@ impl TurboMultiScoring for TurboMultiVectorStorage {
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, &[u8]),
     ) -> OperationResult<()> {
-        TurboMultiVectorStorage::for_each_record_range::<P, _>(self, keys, callback)
+        AppendableMmapMultiTurboVectorStorage::for_each_record_range::<P, _>(self, keys, callback)
     }
 }
 
-impl MultiTQVectorStorageRead for TurboMultiVectorStorage {
+impl MultiTQVectorStorageRead for AppendableMmapMultiTurboVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -767,7 +730,7 @@ impl MultiTQVectorStorageRead for TurboMultiVectorStorage {
     }
 }
 
-impl MultiTQVectorStorage for TurboMultiVectorStorage {
+impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
@@ -870,7 +833,7 @@ mod tests {
 
     /// Insert `vectors` at contiguous keys starting from 0.
     fn insert_all(
-        storage: &mut TurboMultiVectorStorage,
+        storage: &mut AppendableMmapMultiTurboVectorStorage,
         vectors: &[MultiDenseVectorInternal],
         hw: &HardwareCounterCell,
     ) {
@@ -1240,10 +1203,10 @@ mod tests {
         let record_size = storage.quantized_vector_size();
         // Inner record count probe; valid while nothing is deleted.
         let inner_records =
-            |s: &TurboMultiVectorStorage| s.size_of_available_vectors_in_bytes() / record_size;
+            |s: &AppendableMmapMultiTurboVectorStorage| s.size_of_available_vectors_in_bytes() / record_size;
         let oracle = Oracle::new(DIM, distance);
         // Byte-exact stored blob vs the oracle encoding of `m`.
-        let assert_blob = |s: &TurboMultiVectorStorage, m: &MultiDenseVectorInternal| {
+        let assert_blob = |s: &AppendableMmapMultiTurboVectorStorage, m: &MultiDenseVectorInternal| {
             assert_eq!(
                 s.get_multi_tq::<Random>(0).as_ref(),
                 oracle.encode_multi(m).concat().as_slice(),
@@ -1667,7 +1630,7 @@ mod tests {
 
     /// Full comparison of a storage against the reference model.
     fn assert_matches_model(
-        storage: &TurboMultiVectorStorage,
+        storage: &AppendableMmapMultiTurboVectorStorage,
         model: &[Slot],
         oracle: &Oracle,
         ctx: &str,

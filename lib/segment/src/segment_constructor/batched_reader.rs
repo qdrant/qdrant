@@ -108,7 +108,18 @@ pub(crate) fn merge_from<'a>(
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
-        VectorStorageEnum::DenseTurbo(target) => {
+        VectorStorageEnum::DenseTurboMemmap(target) => {
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
+            let range = target.update_from(&mut reader, stopped);
+            reader.finish(range)
+        }
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseTurboUring(target) => {
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
+            let range = target.update_from(&mut reader, stopped);
+            reader.finish(range)
+        }
+        VectorStorageEnum::DenseTurboAppendableMemmap(target) => {
             let mut reader = BatchedReader::new(points, sources, read_dense_tq);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
@@ -337,7 +348,8 @@ fn read_dense_f32(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
             return Err(OperationError::service_error(
@@ -354,7 +366,7 @@ fn read_dense_f32(
             ));
         }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringByte(_) | VectorStorageEnum::DenseUringHalf(_) => {
+        VectorStorageEnum::DenseUringByte(_) | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a f32 dense storage",
             ));
@@ -386,7 +398,8 @@ fn read_dense_byte(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
@@ -403,7 +416,7 @@ fn read_dense_byte(
             ));
         }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(_) | VectorStorageEnum::DenseUringHalf(_) => {
+        VectorStorageEnum::DenseUring(_) | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a byte dense storage",
             ));
@@ -435,7 +448,8 @@ fn read_dense_half(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
@@ -452,7 +466,7 @@ fn read_dense_half(
             ));
         }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(_) | VectorStorageEnum::DenseUringByte(_) => {
+        VectorStorageEnum::DenseUring(_) | VectorStorageEnum::DenseUringByte(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a half dense storage",
             ));
@@ -467,7 +481,10 @@ fn read_dense_tq(
 ) -> OperationResult<(Cow<'_, [u8]>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
-        VectorStorageEnum::DenseTurbo(v) => v.get_dense_tq::<Sequential>(key),
+        VectorStorageEnum::DenseTurboMemmap(v) => v.get_dense_tq::<Sequential>(key),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseTurboUring(v) => v.get_dense_tq::<Sequential>(key),
+        VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_dense_tq::<Sequential>(key),
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -523,7 +540,8 @@ fn read_multi_tq(
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::SparseVolatile(_)
         | VectorStorageEnum::SparseMmap(_)
         | VectorStorageEnum::MultiDenseVolatile(_)
@@ -548,7 +566,7 @@ fn read_multi_tq(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) => {
+        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a multi turbo storage",
             ));
@@ -576,7 +594,8 @@ fn read_multi_f32(
         | VectorStorageEnum::SparseMmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
@@ -596,7 +615,7 @@ fn read_multi_f32(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) => {
+        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a f32 multi-dense storage",
             ));
@@ -626,7 +645,8 @@ fn read_multi_byte(
         | VectorStorageEnum::MultiDenseVolatile(_)
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
@@ -645,7 +665,7 @@ fn read_multi_byte(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) => {
+        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a byte multi-dense storage",
             ));
@@ -675,7 +695,8 @@ fn read_multi_half(
         | VectorStorageEnum::MultiDenseVolatile(_)
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
@@ -694,7 +715,7 @@ fn read_multi_half(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) => {
+        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a half multi-dense storage",
             ));
@@ -735,7 +756,8 @@ fn read_sparse(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::DenseTurbo(_)
+        | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptyDense(_) => {
             return Err(OperationError::service_error(
@@ -754,7 +776,7 @@ fn read_sparse(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) => {
+        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a sparse storage",
             ));
