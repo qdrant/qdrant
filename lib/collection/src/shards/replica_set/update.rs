@@ -7,6 +7,8 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
+use shard::locked_segment::LockedSegment;
+use shard::segment_holder::FlushMode;
 use tokio::sync::oneshot;
 use tokio::task::yield_now;
 use tokio_util::task::AbortOnDropHandle;
@@ -844,6 +846,66 @@ impl ShardReplicaSet {
         match self.local.read().await.deref() {
             Some(local) => local.plunge_async().await.map(Some),
             None => Ok(None),
+        }
+    }
+
+    /// Synchronously force-flush the local shard's segments (WAL-applied state → disk).
+    ///
+    /// Model-testing helper, like [`Self::plunge_local_async`]: an Edge read-only follower
+    /// only sees flushed state, so the soak flushes before comparing follower reads against
+    /// its model. Panics on a missing or proxied local shard — the soak never transfers
+    /// shards, so anything but a plain local shard is a harness bug.
+    pub async fn full_flush_local(&self) {
+        let local = self.local.read().await;
+        match local.as_ref() {
+            Some(Shard::Local(shard)) => {
+                // Same as the testing-gated `LocalShard::full_flush`, inlined because that
+                // helper needs `feature = "testing"` and this must compile in plain builds.
+                shard
+                    .segments
+                    .read()
+                    .flush_all(FlushMode::Sync, true)
+                    .unwrap();
+            }
+            Some(
+                shard @ (Shard::Proxy(_)
+                | Shard::ForwardProxy(_)
+                | Shard::QueueProxy(_)
+                | Shard::Dummy(_)),
+            ) => panic!(
+                "full_flush_local: expected a plain local shard, got {}",
+                shard.variant_name(),
+            ),
+            None => panic!("full_flush_local: replica set has no local shard"),
+        }
+    }
+
+    /// Whether the local shard currently holds any proxy segments, i.e. an optimization is
+    /// in flight.
+    ///
+    /// Model-testing helper, like [`Self::full_flush_local`]: deletes against a proxied
+    /// segment are buffered in the proxy's in-memory `deleted_points` map and reach segment
+    /// files only when the optimization finishes, so no flush can make an Edge follower see
+    /// them — edge checkpoints are skipped while this is true. Same local-shard contract as
+    /// `full_flush_local`: panics on a missing or proxied (shard-level) local shard.
+    pub async fn local_has_proxy_segments(&self) -> bool {
+        let local = self.local.read().await;
+        match local.as_ref() {
+            Some(Shard::Local(shard)) => shard
+                .segments
+                .read()
+                .iter()
+                .any(|(_id, segment)| matches!(segment, LockedSegment::Proxy(_))),
+            Some(
+                shard @ (Shard::Proxy(_)
+                | Shard::ForwardProxy(_)
+                | Shard::QueueProxy(_)
+                | Shard::Dummy(_)),
+            ) => panic!(
+                "local_has_proxy_segments: expected a plain local shard, got {}",
+                shard.variant_name(),
+            ),
+            None => panic!("local_has_proxy_segments: replica set has no local shard"),
         }
     }
 }

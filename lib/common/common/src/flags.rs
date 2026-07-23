@@ -80,6 +80,12 @@ impl FeatureFlags {
         self.serverless_compatible
     }
 
+    /// Turn on serverless-compatible mode. The implied sub-flags are applied
+    /// when the flags are passed to [`init_feature_flags`].
+    pub fn enable_serverless_compatible(&mut self) {
+        self.serverless_compatible = true;
+    }
+
     fn all() -> Self {
         Self {
             all: true,

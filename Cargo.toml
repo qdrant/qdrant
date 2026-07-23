@@ -37,6 +37,8 @@ data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
 staging = ["collection/staging", "storage/staging", "shard/staging"]
+# Edge-follower verification in the model_testing binary (see lib/collection model_testing).
+edge-verify = ["collection/edge-verify"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"

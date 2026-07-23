@@ -1,4 +1,5 @@
 mod apply;
+mod edge_verify;
 mod fixture;
 mod op;
 mod trace;
@@ -505,6 +506,12 @@ pub(super) enum VectorValue {
 /// `shutdown` lets the caller request an early stop (e.g. on Ctrl-C). The op loop
 /// checks it before each iteration and exits cleanly when set; post-run verification
 /// + summary + reload still run with whatever ops were applied.
+///
+/// With `edge_verify`, every shard directory is also opened through an Edge read-only
+/// follower ([`edge_verify::EdgeVerifier`]) and compared against the model at quiesced
+/// checkpoints: end of run and each mid-run restart. Requires the `edge-verify` cargo
+/// feature and the `write_segment_manifest` feature flag. The flag draws no rng and does
+/// not change the candidate universe, so op streams are seed-comparable with non-edge runs.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     seed: u64,
@@ -523,6 +530,7 @@ pub async fn run(
     pre_restart_check: bool,
     enable_force_off: bool,
     disable_snapshots: bool,
+    edge_verify: bool,
     duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -541,6 +549,11 @@ pub async fn run(
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
     // keeps writing to it. Reassigned (restart / final reload) by replacing the `Arc`.
     let mut collection = Arc::new(collection);
+
+    // Edge read-only followers over the shard dirs, kept open across checkpoints so each
+    // one exercises refresh/live_reload deltas. `None` without --edge-verify.
+    let edge_verifier =
+        edge_verify.then(|| edge_verify::EdgeVerifier::open(&collection_dir, shard_count));
 
     // Trace lives at the storage-path root (next to `collection/` and `snapshots/`) so the
     // fixture's per-run wipe of those subdirs leaves it alone; `File::create` truncates so each
@@ -562,6 +575,7 @@ pub async fn run(
         swarm_interval,
         enable_force_off,
         disable_snapshots,
+        edge_verify,
         duration,
     );
 
@@ -728,6 +742,19 @@ pub async fn run(
             // the task ends — and reopening the same dir with the old collection still open is
             // unsafe.
             drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
+            // Edge checkpoint at the restart boundary: quiesced (snapshot drained, op loop
+            // idle), and the follower survives the leader's close+reopen below for free.
+            if let Some(verifier) = &edge_verifier {
+                edge_checkpoint(
+                    &collection,
+                    verifier,
+                    &model,
+                    &mut trace,
+                    i,
+                    &format!("edge at restart op:{i}"),
+                )
+                .await;
+            }
             // Newest-clocks recovery point must survive the close+reopen exactly; captured here
             // (snapshot drained, op loop idle) and compared after the reload below. See
             // [`verify::assert_clocks_match`] for why both mismatch directions are bugs.
@@ -854,6 +881,19 @@ pub async fn run(
     // Finish any background snapshot before closing (it holds an `Arc` clone — see the restart
     // path), then close and reopen and re-verify — mirrors gridstore tests.rs:488-516.
     drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
+    // Final edge checkpoint: after the optimizer settled and the snapshot drained, before
+    // the leader closes for the reload check.
+    if let Some(verifier) = &edge_verifier {
+        edge_checkpoint(
+            &collection,
+            verifier,
+            &model,
+            &mut trace,
+            applied,
+            "edge final",
+        )
+        .await;
+    }
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;
     collection.stop_gracefully().await;
@@ -879,6 +919,33 @@ pub async fn run(
     // After the model check, same as the restart path (see the comment there for ordering).
     let post_clocks = verify::collect_clock_ticks(&collection).await;
     verify::assert_clocks_match(&pre_clocks, &post_clocks, "reloaded");
+}
+
+/// Quiesced edge-follower checkpoint: force-flush every shard (a follower only sees
+/// flushed state), refresh + scroll the followers, and compare against the model. Callers
+/// must be between ops with any background snapshot drained.
+///
+/// Skipped (with a warning) while an optimization is in flight: deletes against a proxied
+/// segment are buffered in the proxy's in-memory map and cannot reach segment files until
+/// the optimization finishes, so a follower comparison at such a boundary would report
+/// deleted points as live. The trace record is only written for checkpoints that actually
+/// run.
+async fn edge_checkpoint(
+    collection: &Collection,
+    verifier: &edge_verify::EdgeVerifier,
+    model: &Model,
+    trace: &mut trace::Trace,
+    tick: usize,
+    ctx: &str,
+) {
+    if verify::has_proxy_segments(collection).await {
+        log::warn!("{ctx}: optimizer busy (proxy segments present), skipping edge checkpoint");
+        return;
+    }
+    trace.edge_verify(tick, model.len());
+    verify::flush_all_local_shards(collection).await;
+    let observed = verifier.observe(ctx);
+    verify::assert_matches_model(&observed, model, ctx);
 }
 
 /// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung
@@ -987,6 +1054,7 @@ mod tests {
         restart_probability: f64,
         disable_snapshots: bool,
         op_num: usize,
+        edge_verify: bool,
     ) {
         let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
         let seed = rand::rng().random();
@@ -1013,6 +1081,7 @@ mod tests {
             false, // pre_restart_check
             false, // enable_force_off
             disable_snapshots,
+            edge_verify,
             None, // duration: bounded by op_num
             Arc::new(AtomicBool::new(false)),
         )
@@ -1037,6 +1106,7 @@ mod tests {
             0.0,
             SNAPSHOTS_OFF,
             OP_NUM,
+            false,
         )
         .await;
     }
@@ -1058,7 +1128,15 @@ mod tests {
     async fn harness_no_restarts() {
         // op_num halved: optimizer churn makes this the slowest no-restart variant; trim it so
         // it isn't marked SLOW by nextest (coverage is recovered across many seeded CI runs).
-        smoke("harness_no_restarts", false, 0.0, SNAPSHOTS_OFF, OP_NUM / 2).await;
+        smoke(
+            "harness_no_restarts",
+            false,
+            0.0,
+            SNAPSHOTS_OFF,
+            OP_NUM / 2,
+            false,
+        )
+        .await;
     }
 
     /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
@@ -1070,7 +1148,15 @@ mod tests {
     /// seed the op stream differs from a no-restart run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer() {
-        smoke("harness_no_optimizer", true, 0.002, SNAPSHOTS_OFF, OP_NUM).await;
+        smoke(
+            "harness_no_optimizer",
+            true,
+            0.002,
+            SNAPSHOTS_OFF,
+            OP_NUM,
+            false,
+        )
+        .await;
     }
 
     /// Same configuration as [`harness_no_optimizer`], but with the optimizer enabled:
@@ -1089,7 +1175,7 @@ mod tests {
     async fn harness() {
         // op_num quartered: optimizer churn + restarts make this the slowest variant; trim it so
         // it isn't the suite's long pole (coverage is recovered across many seeded CI runs).
-        smoke("harness", false, 0.002, SNAPSHOTS_OFF, OP_NUM / 4).await;
+        smoke("harness", false, 0.002, SNAPSHOTS_OFF, OP_NUM / 4, false).await;
     }
 
     /// Snapshot-focused gate: snapshots enabled (`SNAPSHOTS_ON`) plus seeded restarts. Each
@@ -1111,6 +1197,36 @@ mod tests {
             0.001,
             SNAPSHOTS_ON,
             OP_NUM,
+            false,
+        )
+        .await;
+    }
+
+    /// Edge-follower gate (`edge-verify` feature): the optimizer-on, restarts-on cell with
+    /// an Edge read-only follower verified at every restart and at end of run. Optimizer
+    /// churn exercises manifest-driven segment discovery under the follower (segments
+    /// appear and vanish between refreshes); restarts exercise the quiesced
+    /// flush + refresh + full-compare checkpoints mid-run.
+    ///
+    /// Not run by default CI (needs the feature):
+    /// `cargo nextest run -p collection --features edge-verify -E 'test(harness_edge_verify)'`
+    #[cfg(feature = "edge-verify")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_edge_verify() {
+        // Followers discover segments through the manifest, which the leader only writes
+        // when this flag is on; set it before the fixture builds the collection. A second
+        // init in the same process (plain `cargo test`) only logs a warning, and manifests
+        // turning on for sibling tests is harmless.
+        let mut flags = common::flags::FeatureFlags::default();
+        flags.write_segment_manifest = true;
+        common::flags::init_feature_flags(flags);
+        smoke(
+            "harness_edge_verify",
+            false,
+            0.002,
+            SNAPSHOTS_OFF,
+            OP_NUM / 4,
+            true,
         )
         .await;
     }
