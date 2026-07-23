@@ -107,6 +107,35 @@ def test_delete_recreate_vector_scroll(collection_name):
         assert len(point['vector']['vec_b']) == VECTOR_SIZE2
 
 
+def test_unnamed_vector_in_named_vector_collection_rejected(collection_name):
+    """Unnamed vector input should not be accepted by named-vector collections."""
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1000,
+                    "vector": [0.1, 0.2, 0.3, 0.4],
+                }
+            ]
+        },
+    )
+    assert not response.ok
+    assert response.status_code == 400
+    assert "vector name" in response.json()["status"]["error"].lower()
+    assert "unnamed vector" in response.json()["status"]["error"].lower()
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1000},
+    )
+    assert response.status_code == 404
+
+
 # Input-validation tests below intentionally use plain `requests` because
 # `request_with_validation` would reject the body client-side (size violates
 # the spec's minimum/maximum), preventing the server-side rejection from

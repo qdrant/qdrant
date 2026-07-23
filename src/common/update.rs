@@ -375,8 +375,8 @@ pub async fn do_upsert_points(
             .unlogged_access()
             .check_collection_access(&collection_name, AccessRequirements::new())?;
         let collection = toc.get_collection(&collection_pass).await?;
-        let vectors_config = collection.vectors_config().await;
-        validate_vector_dimensions(&operation, &vectors_config)?;
+        let (vectors_config, sparse_vectors_config) = collection.vector_configs().await;
+        validate_vector_dimensions(&operation, &vectors_config, sparse_vectors_config.as_ref())?;
     }
 
     // Decide which operation to use based on update_filter and update_mode
