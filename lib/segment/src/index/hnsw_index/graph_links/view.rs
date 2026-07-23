@@ -70,7 +70,7 @@ pub(super) enum CompressionInfo<'a> {
         /// Where
         /// 1. `c` are compressed links (i.e. a compressed form of `Vec<u32>`).
         neighbors: &'a [u8],
-        offsets: bitpacking_ordered::Reader<'a>,
+        offsets: bitpacking_ordered::SliceReader<'a>,
         hnsw_m: HnswM,
         bits_per_unsorted: u8,
     },
@@ -96,7 +96,7 @@ pub(super) enum CompressionInfo<'a> {
         /// 6. `_` is a padding to make the next base vector aligned.
         ///    Only present on level 0, omitted on higher levels.
         neighbors: &'a [u8],
-        offsets: bitpacking_ordered::Reader<'a>,
+        offsets: bitpacking_ordered::SliceReader<'a>,
         hnsw_m: HnswM,
         bits_per_unsorted: u8,
         base_vector_layout: Layout,
@@ -145,10 +145,7 @@ impl GraphLinksView<'_> {
         )?;
         let (reindex, data) = get_slice::<PointOffsetType>(data, header.point_count.get())?;
         let (neighbors, data) = get_slice::<u8>(data, header.total_neighbors_bytes.get())?;
-        let (offsets, _bytes) = bitpacking_ordered::Reader::new(header.offsets_parameters, data)
-            .map_err(|e| {
-                OperationError::service_error(format!("Can't create decompressor: {e}"))
-            })?;
+        let offsets = header.offsets_parameters.validate()?.slice_reader(data)?;
         Ok(GraphLinksView {
             reindex,
             compression: CompressionInfo::Compressed {
@@ -187,10 +184,7 @@ impl GraphLinksView<'_> {
             (pos.next_multiple_of(alignment) - pos) as u64
         })?;
         let (neighbors, data) = get_slice::<u8>(data, header.total_neighbors_bytes.get())?;
-        let (offsets, _bytes) = bitpacking_ordered::Reader::new(header.offsets_parameters, data)
-            .map_err(|e| {
-                OperationError::service_error(format!("Can't create decompressor: {e}"))
-            })?;
+        let offsets = header.offsets_parameters.validate()?.slice_reader(data)?;
         Ok(GraphLinksView {
             reindex,
             compression: CompressionInfo::CompressedWithVectors {
@@ -231,7 +225,7 @@ impl GraphLinksView<'_> {
                 offsets[idx].get() == offsets[idx + 1].get()
             }
             CompressionInfo::Compressed { ref offsets, .. } => {
-                offsets.get(idx + 1).unwrap() == offsets.get(idx).unwrap()
+                offsets.read_pair(idx).unwrap().is_empty()
             }
             CompressionInfo::CompressedWithVectors { .. } => {
                 // Not intended to be used outside of tests.
@@ -253,10 +247,9 @@ impl GraphLinksView<'_> {
                 ref hnsw_m,
                 bits_per_unsorted,
             } => {
-                let neighbors_range =
-                    offsets.get(idx).unwrap() as usize..offsets.get(idx + 1).unwrap() as usize;
+                let range = offsets.read_pair(idx).unwrap();
                 Either::Right(iterate_packed_links(
-                    &neighbors[neighbors_range],
+                    &neighbors[range.start as usize..range.end as usize],
                     bits_per_unsorted,
                     hnsw_m.level_m(level),
                 ))
@@ -301,8 +294,8 @@ impl GraphLinksView<'_> {
                 link_vector_size,
                 link_vector_alignment,
             } => {
-                let start = offsets.get(idx).unwrap() as usize;
-                let end = offsets.get(idx + 1).unwrap() as usize;
+                let range = offsets.read_pair(idx).unwrap();
+                let (start, end) = (range.start as usize, range.end as usize);
 
                 common::mmap::advice::will_need_multiple_pages(&neighbors[start..end]);
 
@@ -402,6 +395,6 @@ fn get_slice<T: FromBytes + Immutable>(data: &[u8], length: u64) -> OperationRes
     <[T]>::ref_from_prefix_with_elems(data, length as usize).map_err(|_| error_unsufficent_size())
 }
 
-fn error_unsufficent_size() -> OperationError {
+pub(super) fn error_unsufficent_size() -> OperationError {
     OperationError::service_error("Unsufficent file size for GraphLinks file")
 }
