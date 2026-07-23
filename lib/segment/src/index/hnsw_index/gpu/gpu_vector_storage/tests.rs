@@ -607,7 +607,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
     );
 }
 
-/// A primary `VectorStorageEnum::DenseTurboAppendable` storage built on GPU dequantizes
+/// A primary `VectorStorageEnum::DenseTurboAppendableMemmap` storage built on GPU dequantizes
 /// each encoded vector back to float and uploads it as a regular dense storage.
 /// This pins that path by comparing GPU scores of the TurboQuant storage against
 /// GPU scores of a plain `f32` storage holding the *same* dequantized vectors —
@@ -660,7 +660,7 @@ fn test_gpu_vector_storage_turbo_dense(
             .unwrap();
     }
 
-    let turbo_storage = VectorStorageEnum::DenseTurboAppendable(Box::new(turbo));
+    let turbo_storage = VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(turbo));
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
     // `skip_half_precision = true`: the TQ path always picks f16 when the

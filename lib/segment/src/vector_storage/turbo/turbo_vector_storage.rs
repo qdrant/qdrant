@@ -205,8 +205,8 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
     }
 
     /// Upsert one vector from its already-encoded TurboQuant bytes, verbatim.
-    /// Rejected for the single-file backend (data is not appendable), but
-    /// clearing the deleted flag is left to the caller-visible error.
+    /// The single-file backend is not appendable, so `upsert_vector` rejects the
+    /// write with an unsupported error and nothing is mutated.
     pub(crate) fn insert_tq_bytes(
         &mut self,
         key: PointOffsetType,
