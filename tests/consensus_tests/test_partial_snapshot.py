@@ -79,11 +79,23 @@ def test_partial_snapshot(
 ):
     assert_project_root()
 
+    # Wait for the write peer to finish indexing before the recover_read
+    # collection snapshot is taken. Otherwise the snapshot can capture a
+    # mid-optimization appendable segment that the write peer later drops;
+    # partial recovery merges into the read peer and preserves that leftover,
+    # so assert_files_consistency fails (see test_partial_snapshot[100-True-0--5]).
     write_peer, read_peer = bootstrap_peers(
         tmp_path,
         bootstrap_points = bootstrap_points,
         recover_read = recover_read,
+        wait_for_green = True,
     )
+
+    if recover_read:
+        # Same race as test_partial_snapshot_empty: after collection-snapshot
+        # recovery, async optimization on the read peer can reshape segments
+        # before we take the partial snapshot.
+        wait_collection_green(read_peer, COLLECTION)
 
     if append_points > 0:
         upsert(write_peer, append_points, offset = bootstrap_points)
@@ -93,6 +105,11 @@ def test_partial_snapshot(
 
     if update_points < 0:
         delete(write_peer, -update_points)
+
+    if append_points > 0 or update_points != 0:
+        # Mutations (especially appends with indexing_threshold=1) can start
+        # another optimization; wait so the partial snapshot is not mid-opt.
+        wait_collection_green(write_peer, COLLECTION)
 
     recover_partial_snapshot_from(read_peer, write_peer)
     assert_consistency(read_peer, write_peer)
