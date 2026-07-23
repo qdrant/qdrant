@@ -1372,6 +1372,7 @@ impl From<Datatype> for VectorStorageDatatype {
 pub struct VectorParams {
     /// Size of a vectors used
     #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
+    #[schemars(range(min = 1, max = 65536))]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
