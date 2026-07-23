@@ -10580,6 +10580,11 @@ pub struct PointStructRaw {
     >,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    #[prost(map = "string, bytes", tag = "4")]
+    pub payload_raw: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
