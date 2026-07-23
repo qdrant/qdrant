@@ -1784,3 +1784,57 @@ fn test_rollover_writes_no_value_data_before_flush() {
         100,
     );
 }
+
+/// A reader that live-reloads between a page rollover and the following flush adopts the new,
+/// still empty page. The previous page is then no longer the last one and is never reloaded
+/// again, so its late-flushed tail stays invisible to the reader forever.
+///
+/// Currently fails: `AppendOnlyPages::live_reload` only reloads the last held page.
+#[test]
+fn test_live_reload_sees_late_flushed_tail_of_rolled_over_page() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // One flushed value so the reader can open
+    storage
+        .put_value(0, &vec![0u8; 100], hw_counter_ref)
+        .unwrap();
+    storage.flusher()().unwrap();
+
+    let mut reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+
+    // Writer buffers a second value into page 0, then rolls over to page 1 (created on disk,
+    // empty), all without flushing
+    storage
+        .put_value(1, &vec![1u8; 100], hw_counter_ref)
+        .unwrap();
+    storage
+        .put_value(2, &vec![2u8; 100], hw_counter_ref)
+        .unwrap();
+
+    // Reader reloads in the rollover-to-flush window: it adopts the empty page 1, page 0 is no
+    // longer the last page
+    reader.live_reload(&MmapFs).unwrap();
+
+    // The flush appends value 1 to page 0 and value 2 to page 1
+    storage.flusher()().unwrap();
+
+    // Reader reloads again: only the last page (1) is refreshed, page 0 stays stale
+    reader.live_reload(&MmapFs).unwrap();
+
+    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    assert_eq!(
+        reader.get_value::<Random>(1, &hw_counter).unwrap(),
+        Some(vec![1u8; 100]),
+        "value 1 lives in page 0's late-flushed tail",
+    );
+    assert_eq!(
+        reader.get_value::<Random>(2, &hw_counter).unwrap(),
+        Some(vec![2u8; 100]),
+    );
+}
