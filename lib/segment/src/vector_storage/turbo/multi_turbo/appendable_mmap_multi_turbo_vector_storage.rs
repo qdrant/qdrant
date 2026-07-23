@@ -43,8 +43,7 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::{
     MultiTQVectorStorage, MultiTQVectorStorageRead, TurboMultiScoring, VectorOffsetType,
-    VectorStorage,
-    VectorStorageRead,
+    VectorStorage, VectorStorageRead,
 };
 
 pub(crate) const OFFSETS_PATH: &str = "tq_offsets.dat";
@@ -680,7 +679,9 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         key: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(self, query, key, hw_counter)
+        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(
+            self, query, key, hw_counter,
+        )
     }
 
     fn score_internal_max_similarity(
@@ -689,7 +690,9 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         point_b: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        AppendableMmapMultiTurboVectorStorage::score_internal_max_similarity(self, point_a, point_b, hw_counter)
+        AppendableMmapMultiTurboVectorStorage::score_internal_max_similarity(
+            self, point_a, point_b, hw_counter,
+        )
     }
 
     fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
@@ -1202,11 +1205,13 @@ mod tests {
         .unwrap();
         let record_size = storage.quantized_vector_size();
         // Inner record count probe; valid while nothing is deleted.
-        let inner_records =
-            |s: &AppendableMmapMultiTurboVectorStorage| s.size_of_available_vectors_in_bytes() / record_size;
+        let inner_records = |s: &AppendableMmapMultiTurboVectorStorage| {
+            s.size_of_available_vectors_in_bytes() / record_size
+        };
         let oracle = Oracle::new(DIM, distance);
         // Byte-exact stored blob vs the oracle encoding of `m`.
-        let assert_blob = |s: &AppendableMmapMultiTurboVectorStorage, m: &MultiDenseVectorInternal| {
+        let assert_blob = |s: &AppendableMmapMultiTurboVectorStorage,
+                           m: &MultiDenseVectorInternal| {
             assert_eq!(
                 s.get_multi_tq::<Random>(0).as_ref(),
                 oracle.encode_multi(m).concat().as_slice(),

@@ -4,8 +4,8 @@ use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
 use crate::data_types::vectors::DenseVector;
-use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::TurboScoring;
+use crate::vector_storage::query_scorer::QueryScorer;
 
 /// Asymmetric raw scorer for a dense TurboQuant storage ([`TurboScoring`]).
 ///

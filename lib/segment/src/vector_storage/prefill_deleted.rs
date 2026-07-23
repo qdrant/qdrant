@@ -131,7 +131,9 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseTurboMemmap(v) => fill_turbo(&mut **v, count, &stopped),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(v) => fill_turbo(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => fill_turbo(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
+                fill_turbo(&mut **v, count, &stopped)
+            }
             VectorStorageEnum::MultiDenseTurbo(v) => fill_turbo_multi(&mut **v, count, &stopped),
 
             VectorStorageEnum::MultiDenseVolatile(v) => fill_multi(v, count, &stopped),

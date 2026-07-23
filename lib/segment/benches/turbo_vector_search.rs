@@ -25,6 +25,7 @@ use std::time::Duration;
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::MmapFile;
 use criterion::measurement::WallTime;
 use criterion::{BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use rand::distr::StandardUniform;
@@ -36,7 +37,6 @@ use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
-use common::universal_io::MmapFile;
 use segment::vector_storage::turbo::{
     TurboVectorStorageImpl, open_appendable_turbo_vector_storage,
     open_turbo_vector_storage_with_uring,

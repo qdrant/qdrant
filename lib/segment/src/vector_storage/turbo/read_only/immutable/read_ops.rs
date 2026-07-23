@@ -38,7 +38,11 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyImmutableTurboVectorStorage
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        shared::dequantize_vector(&self.quantizer, self.dim, &self.storage.get_vector_data(key))
+        shared::dequantize_vector(
+            &self.quantizer,
+            self.dim,
+            &self.storage.get_vector_data(key),
+        )
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
@@ -110,9 +114,10 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyImmutableTurboVector
     ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
-        self.storage.for_each_in_batch(&point_offsets, |idx, bytes| {
-            callback(user_data[idx], point_offsets[idx], bytes.to_vec());
-        })
+        self.storage
+            .for_each_in_batch(&point_offsets, |idx, bytes| {
+                callback(user_data[idx], point_offsets[idx], bytes.to_vec());
+            })
     }
 
     fn get_dense_for_requantization(

@@ -20,9 +20,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::vector_storage_base::VectorStorageRead;
-use crate::vector_storage::{
-    MultiTQVectorStorageRead, TurboMultiScoring, VectorOffsetType,
-};
+use crate::vector_storage::{MultiTQVectorStorageRead, TurboMultiScoring, VectorOffsetType};
 
 impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
     /// Offset record for `key`, if the point exists.

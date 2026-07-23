@@ -26,19 +26,16 @@ use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::shared::{self, DELETED_PATH, VECTORS_PATH};
-use crate::vector_storage::TurboScoring;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::{
-    OperationError, OperationResult, check_process_stopped,
-};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::{
-    DenseTQVectorStorage, DenseTQVectorStorageRead, VectorStorage, VectorStorageEnum,
+    DenseTQVectorStorage, DenseTQVectorStorageRead, TurboScoring, VectorStorage, VectorStorageEnum,
     VectorStorageRead,
 };
 
@@ -301,7 +298,11 @@ impl<S: UniversalRead> VectorStorageRead for TurboVectorStorageImpl<S> {
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        shared::dequantize_vector(&self.quantizer, self.dim, &self.storage.get_vector_data(key))
+        shared::dequantize_vector(
+            &self.quantizer,
+            self.dim,
+            &self.storage.get_vector_data(key),
+        )
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
@@ -353,7 +354,9 @@ impl<S: UniversalRead> VectorStorage for TurboVectorStorageImpl<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let dense: &[VectorElementType] = vector.try_into()?;
-        let quantized = self.quantizer.quantize(dense, &mut self.quantization_buffer);
+        let quantized = self
+            .quantizer
+            .quantize(dense, &mut self.quantization_buffer);
         // The single-file backend is not appendable: `upsert_vector` returns the
         // "unsupported" error, matching the immutable dense storage.
         self.storage.upsert_vector(key, &quantized, hw_counter)?;
@@ -437,9 +440,10 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for TurboVectorStorageImpl<S> {
     ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
-        self.storage.for_each_in_batch(&point_offsets, |idx, bytes| {
-            callback(user_data[idx], point_offsets[idx], bytes.to_vec());
-        })
+        self.storage
+            .for_each_in_batch(&point_offsets, |idx, bytes| {
+                callback(user_data[idx], point_offsets[idx], bytes.to_vec());
+            })
     }
 
     fn get_dense_for_requantization(

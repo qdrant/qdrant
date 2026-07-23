@@ -93,7 +93,11 @@ pub(super) fn score_query_bytes(
     bytes: &[u8],
 ) -> ScoreType {
     let score = quantizer.score_precomputed(query, bytes);
-    if invert_score(distance) { -score } else { score }
+    if invert_score(distance) {
+        -score
+    } else {
+        score
+    }
 }
 
 /// Symmetric score between two encoded vectors, applying the metric sign
@@ -105,7 +109,11 @@ pub(super) fn score_symmetric_bytes(
     b: &[u8],
 ) -> ScoreType {
     let score = quantizer.score_symmetric(a, b);
-    if invert_score(distance) { -score } else { score }
+    if invert_score(distance) {
+        -score
+    } else {
+        score
+    }
 }
 
 /// Dequantize + inverse-rotate a stored encoded vector back to `f32`, dropping

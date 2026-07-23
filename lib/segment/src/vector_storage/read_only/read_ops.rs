@@ -249,7 +249,9 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
                 Ok(s.with_multi_bytes_opt::<P, R>(key, f))
             }
             VectorStorageReadEnum::DenseTurbo(s) => Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f)),
-            VectorStorageReadEnum::DenseTurboChunked(s) => Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
+                Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f))
+            }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
                 Ok(s.with_multi_tq_bytes_opt::<P, R>(key, f))
             }
@@ -326,7 +328,9 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
                 s.read_vector_bytes::<P, U>(keys, callback)
             }
             VectorStorageReadEnum::DenseTurbo(s) => s.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback)
+            }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
                 s.read_vector_bytes::<P, U>(keys, callback)
             }

@@ -38,7 +38,11 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedTurboVectorStorage<S
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        shared::dequantize_vector(&self.quantizer, self.dim, &self.storage.get_vector_data(key))
+        shared::dequantize_vector(
+            &self.quantizer,
+            self.dim,
+            &self.storage.get_vector_data(key),
+        )
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
@@ -98,7 +102,8 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyChunkedTurboVectorSt
         keys: &[PointOffsetType],
         mut f: F,
     ) -> OperationResult<()> {
-        self.storage.for_each_batch(keys, |idx, bytes| f(idx, &bytes));
+        self.storage
+            .for_each_batch(keys, |idx, bytes| f(idx, &bytes));
         Ok(())
     }
 

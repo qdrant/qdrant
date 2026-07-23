@@ -21,19 +21,16 @@ use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::shared::{self, DELETED_PATH, VECTORS_PATH};
-use crate::vector_storage::TurboScoring;
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
-use crate::common::operation_error::{
-    OperationError, OperationResult, check_process_stopped,
-};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
 use crate::vector_storage::{
-    DenseTQVectorStorage, DenseTQVectorStorageRead, VectorStorage, VectorStorageRead,
+    DenseTQVectorStorage, DenseTQVectorStorageRead, TurboScoring, VectorStorage, VectorStorageRead,
 };
 
 /// Appendable TurboQuant dense vector storage backed by chunked mmap files.
@@ -216,7 +213,11 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        shared::dequantize_vector(&self.quantizer, self.dim, &self.storage.get_vector_data(key))
+        shared::dequantize_vector(
+            &self.quantizer,
+            self.dim,
+            &self.storage.get_vector_data(key),
+        )
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
@@ -225,8 +226,11 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) {
         for (user_data, key) in keys {
-            let vector =
-                shared::dequantize_vector(&self.quantizer, self.dim, &self.storage.get_vector_data(key));
+            let vector = shared::dequantize_vector(
+                &self.quantizer,
+                self.dim,
+                &self.storage.get_vector_data(key),
+            );
             callback(user_data, key, vector);
         }
     }
@@ -265,7 +269,9 @@ impl VectorStorage for AppendableMmapTurboVectorStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let dense: &[VectorElementType] = vector.try_into()?;
-        let quantized = self.quantizer.quantize(dense, &mut self.quantization_buffer);
+        let quantized = self
+            .quantizer
+            .quantize(dense, &mut self.quantization_buffer);
         self.storage.upsert_vector(key, &quantized, hw_counter)?;
         self.set_deleted(key, false);
         Ok(())

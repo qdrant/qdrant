@@ -35,11 +35,8 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
         populate: Populate,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance);
-        let storage = QuantizedStorage::from_file(
-            fs,
-            &path.join(VECTORS_PATH),
-            quantizer.quantized_size(),
-        )?;
+        let storage =
+            QuantizedStorage::from_file(fs, &path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
         // The read-only backend maps lazily; warm it when the load profile asks.
         if !matches!(populate, Populate::No) {

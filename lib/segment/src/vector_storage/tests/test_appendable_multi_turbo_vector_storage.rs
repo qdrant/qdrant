@@ -4,29 +4,26 @@
 //! from a dense storage fed the same vectors — the dense storage acts as the
 //! oracle for the multi one.
 
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSliceExt;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
+use common::types::PointOffsetType;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use tempfile::Builder;
 
-use std::path::Path;
-
-use common::types::PointOffsetType;
-
-use crate::types::Distance;
+use crate::data_types::named_vectors::{CowMultiVector, CowVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef};
+use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::turbo::multi_turbo::{
     AppendableMmapMultiTurboVectorStorage, open_appendable_turbo_multi_vector_storage,
 };
 use crate::vector_storage::turbo::{
     AppendableMmapTurboVectorStorage, open_appendable_turbo_vector_storage,
 };
-use crate::data_types::named_vectors::{CowMultiVector, CowVector};
-use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef};
-use crate::types::MultiVectorConfig;
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, MultiTQVectorStorage, MultiTQVectorStorageRead,
     VectorStorage, VectorStorageRead,
@@ -69,7 +66,10 @@ fn open_both_appendable(
     dim: usize,
     distance: Distance,
     in_ram: bool,
-) -> (AppendableMmapTurboVectorStorage, AppendableMmapMultiTurboVectorStorage) {
+) -> (
+    AppendableMmapTurboVectorStorage,
+    AppendableMmapMultiTurboVectorStorage,
+) {
     let dense = open_appendable_turbo_vector_storage(dense_dir, dim, distance, in_ram).unwrap();
     let multi = open_appendable_turbo_multi_vector_storage(
         multi_dir,
@@ -111,7 +111,11 @@ fn delete_both(
 }
 
 /// Full observable-state comparison of the two storages.
-fn assert_congruent(dense: &AppendableMmapTurboVectorStorage, multi: &AppendableMmapMultiTurboVectorStorage, ctx: &str) {
+fn assert_congruent(
+    dense: &AppendableMmapTurboVectorStorage,
+    multi: &AppendableMmapMultiTurboVectorStorage,
+    ctx: &str,
+) {
     assert_eq!(dense.distance(), multi.distance(), "{ctx}: distance");
     assert_eq!(dense.datatype(), multi.datatype(), "{ctx}: datatype");
     assert_eq!(dense.is_on_disk(), multi.is_on_disk(), "{ctx}: is_on_disk");

@@ -366,7 +366,9 @@ fn read_dense_f32(
             ));
         }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringByte(_) | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        VectorStorageEnum::DenseUringByte(_)
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a f32 dense storage",
             ));
@@ -416,7 +418,9 @@ fn read_dense_byte(
             ));
         }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(_) | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        VectorStorageEnum::DenseUring(_)
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a byte dense storage",
             ));
@@ -466,7 +470,9 @@ fn read_dense_half(
             ));
         }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(_) | VectorStorageEnum::DenseUringByte(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        VectorStorageEnum::DenseUring(_)
+        | VectorStorageEnum::DenseUringByte(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a half dense storage",
             ));
@@ -566,7 +572,8 @@ fn read_multi_tq(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a multi turbo storage",
             ));
@@ -615,7 +622,8 @@ fn read_multi_f32(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a f32 multi-dense storage",
             ));
@@ -665,7 +673,8 @@ fn read_multi_byte(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a byte multi-dense storage",
             ));
@@ -715,7 +724,8 @@ fn read_multi_half(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a half multi-dense storage",
             ));
@@ -776,7 +786,8 @@ fn read_sparse(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(_)
         | VectorStorageEnum::DenseUringByte(_)
-        | VectorStorageEnum::DenseUringHalf(_) | VectorStorageEnum::DenseTurboUring(_) => {
+        | VectorStorageEnum::DenseUringHalf(_)
+        | VectorStorageEnum::DenseTurboUring(_) => {
             return Err(OperationError::service_error(
                 "Cannot merge vector storage: source is not a sparse storage",
             ));

@@ -643,13 +643,9 @@ mod tests {
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::ChunkedMmap => {
-                    let mut target = open_appendable_turbo_vector_storage(
-                        dir.path(),
-                        DIM,
-                        Distance::Dot,
-                        false,
-                    )
-                    .unwrap();
+                    let mut target =
+                        open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false)
+                            .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::InRamMmap
