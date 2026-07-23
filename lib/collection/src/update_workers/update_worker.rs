@@ -201,6 +201,13 @@ impl UpdateWorkers {
                         if !out_of_capacity {
                             break result;
                         }
+                        // Stop retrying once this worker is asked to stop: `wait_workers_stops`
+                        // awaits this task, so a retry in flight would hold up shard drops and
+                        // the worker restart an optimizer config update performs. The operation
+                        // stays queued in `failed_operation`, where recovery picks it up.
+                        if cancel.is_cancelled() {
+                            break result;
+                        }
                         // The budget clock starts at the first capacity failure, so it covers
                         // the retries only and not the initial apply.
                         let deadline = *retry_deadline
@@ -237,9 +244,14 @@ impl UpdateWorkers {
                                     break false;
                                 }
                                 let slice = CAPACITY_WAIT_SLICE.min(round_deadline - now);
-                                let _ =
-                                    tokio::time::timeout(slice, optimization_finished.changed())
-                                        .await;
+                                tokio::select! {
+                                    biased; // biased to check cancellation first
+                                    _ = cancel.cancelled() => break false,
+                                    _ = tokio::time::timeout(
+                                        slice,
+                                        optimization_finished.changed(),
+                                    ) => {}
+                                }
                             };
                             if !capacity_appeared {
                                 break result;
@@ -572,6 +584,7 @@ mod tests {
         mpsc::Sender<UpdateSignal>,
         JoinHandle<Receiver<UpdateSignal>>,
         JoinHandle<usize>,
+        CancellationToken,
     ) {
         let (update_sender, update_receiver) = mpsc::channel(8);
         let (optimize_sender, mut optimize_receiver) = mpsc::channel(8);
@@ -594,6 +607,7 @@ mod tests {
         });
 
         let last_wal_index = wal.first_index() + wal.len(false);
+        let cancel = CancellationToken::new();
         let worker = tokio::spawn(UpdateWorkers::update_worker_fn(
             "test_collection".to_string(),
             update_receiver,
@@ -605,10 +619,10 @@ mod tests {
             false,
             optimization_finished_receiver,
             Arc::new(AppliedSeqHandler::load_or_init(shard_dir, last_wal_index)),
-            CancellationToken::new(),
+            cancel.clone(),
         ));
 
-        (update_sender, worker, optimizer)
+        (update_sender, worker, optimizer, cancel)
     }
 
     async fn submit(
@@ -666,7 +680,7 @@ mod tests {
             .unwrap();
         assert!(op_num > 0, "the operation must outrank the seeded points");
 
-        let (update_sender, worker, optimizer) = spawn_worker(
+        let (update_sender, worker, optimizer, _cancel) = spawn_worker(
             segments.clone(),
             wal,
             shard_dir.path(),
@@ -749,7 +763,7 @@ mod tests {
             .unwrap();
 
         // The stand-in optimizer never provisions, so capacity never returns.
-        let (update_sender, worker, optimizer) = spawn_worker(
+        let (update_sender, worker, optimizer, _cancel) = spawn_worker(
             segments.clone(),
             wal,
             shard_dir.path(),
@@ -781,6 +795,80 @@ mod tests {
         optimizer.await.unwrap();
     }
 
+    /// A retry in flight must give up as soon as the worker is asked to stop: `wait_workers_stops`
+    /// awaits this task, so holding on for the round wait would delay shard drops and the worker
+    /// restart an optimizer config update performs. Fails without the cancellation checks, where
+    /// the worker keeps waiting for capacity for a full `CAPACITY_WAIT_PER_ROUND`.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_stops_retrying_when_cancelled() {
+        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
+        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
+
+        let segments = segments_at_capacity(segments_dir.path());
+
+        let mut wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
+        wal.write(
+            &WalRawRecord::new(&OperationWithClockTag::new(
+                set_payload_op(&[], "filler"),
+                None,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let operation = set_payload_op(&[1, 2], "blue");
+        let op_num = wal
+            .write(
+                &WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap(),
+            )
+            .unwrap();
+
+        // The stand-in optimizer never provisions, so the worker settles into the retry wait.
+        let (update_sender, worker, optimizer, cancel) = spawn_worker(
+            segments.clone(),
+            wal,
+            shard_dir.path(),
+            segments_dir.path(),
+            false,
+        );
+
+        let cancel_after = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            cancel_after.cancel();
+        });
+
+        let started = Instant::now();
+        let err = submit(&update_sender, op_num, operation)
+            .await
+            .expect_err("a cancelled worker cannot apply the operation");
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "expected the capacity error, got: {err}",
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the worker must abandon the retry on cancellation, took {:?}",
+            started.elapsed(),
+        );
+
+        assert_eq!(
+            segments
+                .read()
+                .failed_operation
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![op_num],
+            "the abandoned operation stays queued for recovery",
+        );
+
+        drop(update_sender);
+        worker.await.unwrap();
+        optimizer.await.unwrap();
+    }
+
     /// The retry re-reads the operation from WAL instead of keeping a clone on the hot path. If it
     /// is not there, the worker must report that rather than silently reporting success or hanging.
     #[tokio::test(flavor = "multi_thread")]
@@ -805,7 +893,7 @@ mod tests {
         // only the retry goes looking for it on disk.
         let op_num = wal.first_index() + wal.len(false) + 5;
 
-        let (update_sender, worker, optimizer) = spawn_worker(
+        let (update_sender, worker, optimizer, _cancel) = spawn_worker(
             segments.clone(),
             wal,
             shard_dir.path(),
