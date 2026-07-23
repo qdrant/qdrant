@@ -41,9 +41,7 @@ impl CollectionUpdater {
                     } else {
                         log::error!("Update operation failed: {collection_error}")
                     }
-                } else if !segments.read().failed_operation.is_empty()
-                    && segments.write().failed_operation.remove(&op_num)
-                {
+                } else if segments.write().failed_operation.remove(&op_num) {
                     // A previously failed operation declined non-transiently on re-apply: it can
                     // never succeed anymore (e.g. later operations deleted the points it
                     // references). Drop it so it stops pinning the WAL acknowledge forever.
