@@ -144,7 +144,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         }
 
         let range = ReadRange::one(u64::from(point_offset) * ENTRY_SIZE);
-        let pointer = self.file.read::<P, OptionalPointer>(range)?[0];
+        let pointer = self.file.read::<_, OptionalPointer>(range, P::default())?[0];
         Ok(pointer.to_option())
     }
 
@@ -170,7 +170,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
                 byte_offset: u64::from(start) * ENTRY_SIZE,
                 length: u64::from(persisted_end - start),
             };
-            let entries = self.file.read::<P, OptionalPointer>(range)?;
+            let entries = self.file.read::<_, OptionalPointer>(range, P::default())?;
             pointers.extend(entries.iter().map(|entry| entry.to_option()));
         }
 
