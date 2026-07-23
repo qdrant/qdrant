@@ -197,8 +197,13 @@ storage:
     # On small CPUs, less threads are used.
     max_indexing_threads: 0
 
+    # Deprecated: use `memory` instead.
     # Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     on_disk: false
+
+    # Memory placement of the HNSW index: cold, cached or pinned.
+    # Overrides the deprecated `on_disk` flag if both are set.
+    # memory: cached
 
     # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     payload_m: null
