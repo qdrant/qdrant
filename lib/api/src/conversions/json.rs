@@ -26,6 +26,11 @@ pub fn json_to_proto(json_value: serde_json::Value) -> Value {
         serde_json::Value::Number(n) => {
             if let Some(int) = n.as_i64() {
                 Kind::IntegerValue(int)
+            } else if let Some(uint) = n.as_u64() {
+                // A u64 above i64::MAX has no lossless proto int or double slot,
+                // so preserve it as a string instead of silently narrowing it to
+                // a lossy f64.
+                Kind::StringValue(uint.to_string())
             } else {
                 Kind::DoubleValue(n.as_f64().unwrap())
             }
@@ -103,6 +108,20 @@ mod tests {
     use super::*;
     use crate::grpc::qdrant::value::Kind;
     use crate::grpc::qdrant::{Struct, Value};
+
+    #[test]
+    fn u64_above_i64_max_is_preserved_not_narrowed() {
+        // serde_json stores this as a u64 (no arbitrary_precision feature), and
+        // it does not fit in an i64, so the old code narrowed it to a lossy f64.
+        let v = serde_json::json!(18446744073709551615u64);
+        assert!(v.as_i64().is_none(), "test value must exceed i64::MAX");
+
+        let kind = json_to_proto(v).kind.expect("kind present");
+        assert!(
+            matches!(&kind, Kind::StringValue(s) if s == "18446744073709551615"),
+            "u64 > i64::MAX should be preserved losslessly, not narrowed to f64"
+        );
+    }
 
     fn gen_proto_json_dicts() -> (HashMap<String, serde_json::Value>, HashMap<String, Value>) {
         let raw_json = r#"
