@@ -49,6 +49,13 @@ PACKAGE_NAME="qdrant-edge-ffi"
 # catchable error instead of aborting the host — important for an on-device DB.)
 PROFILE="release-mobile"
 CARGO_FLAGS="--profile release-mobile"
+# The mobile binding surface excludes the `matrix` feature (on by default for
+# general/desktop/server UniFFI consumers). `search_matrix` is an O(n^2) op with
+# a DoS profile unsuitable for the on-device default surface, so the Swift/Kotlin
+# bindgen drops it. `default = ["matrix"]` is the crate's only default feature,
+# so --no-default-features removes exactly that (a fail-closed CI symbol gate
+# should enforce its absence from the shipped library).
+FEATURE_FLAGS="--no-default-features"
 ALL_PLATFORMS=false
 
 for arg in "$@"; do
@@ -107,7 +114,7 @@ done
 echo "==> Building static libraries..."
 for target in "${STABLE_TARGETS[@]}"; do
     echo "    Building for $target (stable)..."
-    cargo build --locked $CARGO_FLAGS \
+    cargo build --locked $CARGO_FLAGS $FEATURE_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
         --target "$target" \
@@ -115,7 +122,7 @@ for target in "${STABLE_TARGETS[@]}"; do
 done
 for target in ${TIER3_TARGETS[@]+"${TIER3_TARGETS[@]}"}; do
     echo "    Building for $target (nightly + build-std)..."
-    cargo +nightly build --locked $CARGO_FLAGS \
+    cargo +nightly build --locked $CARGO_FLAGS $FEATURE_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
         --target "$target" \
