@@ -1,4 +1,3 @@
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -8,7 +7,6 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
-use segment::common::BYTES_IN_KB;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -199,15 +197,9 @@ impl UpdateHandler {
         // recovery re-applies the operation. Synchronous WAL replay disarms the cap for its own
         // window (see `load_from_wal`), since no recovery loop is processing signals there.
         if let Some(optimizer) = self.optimizers.first() {
-            let max_segment_size_bytes = NonZeroUsize::new(
-                optimizer
-                    .threshold_config()
-                    .max_segment_size_kb
-                    .saturating_mul(BYTES_IN_KB),
-            );
             self.segments
                 .write()
-                .set_max_segment_size_bytes(max_segment_size_bytes);
+                .set_max_segment_size_bytes(optimizer.threshold_config().max_segment_size_bytes());
         }
 
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);

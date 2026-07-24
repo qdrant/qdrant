@@ -473,16 +473,9 @@ impl UpdateWorkers {
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<bool> {
-        let no_segment_with_capacity = {
-            let max_segment_size_bytes = std::num::NonZeroUsize::new(
-                thresholds_config
-                    .max_segment_size_kb
-                    .saturating_mul(segment::common::BYTES_IN_KB),
-            );
-            !segments
-                .read()
-                .has_appendable_segment_with_capacity(max_segment_size_bytes)
-        };
+        let no_segment_with_capacity = !segments
+            .read()
+            .has_appendable_segment_with_capacity(thresholds_config.max_segment_size_bytes());
 
         if no_segment_with_capacity {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
