@@ -11,8 +11,9 @@ use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
 };
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
+use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::vector_storage::turbo::read_only::{
-    ReadOnlyTurboMultiVectorStorage, ReadOnlyTurboVectorStorage,
+    ReadOnlyChunkedTurboVectorStorage, ReadOnlyImmutableTurboVectorStorage,
 };
 
 /// How the [`VectorStorageType`] maps onto the read-only open path: mmap
@@ -81,7 +82,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     )
                 }
                 VectorStorageDatatype::Turbo4 => {
-                    ReadOnlyTurboMultiVectorStorage::<S>::preopen(fs, path, advice, populate)
+                    ReadOnlyChunkedMultiTurboVectorStorage::<S>::preopen(fs, path, advice, populate)
                 }
             };
         }
@@ -105,7 +106,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     )
                 }
                 VectorStorageDatatype::Turbo4 => {
-                    ReadOnlyTurboVectorStorage::<S>::preopen(fs, path, true, populate)
+                    ReadOnlyChunkedTurboVectorStorage::<S>::preopen(fs, path, populate)
                 }
             }
         } else {
@@ -123,7 +124,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     S,
                 >::preopen(fs, path, populate),
                 VectorStorageDatatype::Turbo4 => {
-                    ReadOnlyTurboVectorStorage::<S>::preopen(fs, path, false, populate)
+                    ReadOnlyImmutableTurboVectorStorage::<S>::preopen(fs, path, populate)
                 }
             }
         }
@@ -186,7 +187,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     )?,
                 )),
                 VectorStorageDatatype::Turbo4 => {
-                    Self::MultiDenseTurbo(Box::new(ReadOnlyTurboMultiVectorStorage::open(
+                    Self::MultiDenseTurbo(Box::new(ReadOnlyChunkedMultiTurboVectorStorage::open(
                         fs,
                         path,
                         dim,
@@ -217,8 +218,8 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, dim, distance, advice, populate,
                     )?))
                 }
-                VectorStorageDatatype::Turbo4 => Self::DenseTurbo(Box::new(
-                    ReadOnlyTurboVectorStorage::open(fs, path, dim, distance, true, populate)?,
+                VectorStorageDatatype::Turbo4 => Self::DenseTurboChunked(Box::new(
+                    ReadOnlyChunkedTurboVectorStorage::open(fs, path, dim, distance, populate)?,
                 )),
             }
         } else {
@@ -233,7 +234,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     ReadOnlyImmutableDenseVectorStorage::open(fs, path, dim, distance, populate)?,
                 )),
                 VectorStorageDatatype::Turbo4 => Self::DenseTurbo(Box::new(
-                    ReadOnlyTurboVectorStorage::open(fs, path, dim, distance, false, populate)?,
+                    ReadOnlyImmutableTurboVectorStorage::open(fs, path, dim, distance, populate)?,
                 )),
             }
         }))

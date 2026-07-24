@@ -5,8 +5,8 @@ use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
 use crate::data_types::vectors::MultiDenseVectorInternal;
+use crate::vector_storage::TurboMultiScoring;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::turbo::multi::TurboMultiScoring;
 
 /// Asymmetric MaxSim raw scorer for a multivector TurboQuant storage
 /// ([`TurboMultiScoring`]).

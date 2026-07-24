@@ -18,8 +18,7 @@ use crate::types::{
     ScalarQuantization, TurboQuantization, VectorStorageDatatype,
 };
 use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffset;
-use crate::vector_storage::turbo::TurboVectorStorage;
-use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
+use crate::vector_storage::turbo::multi_turbo::AppendableMmapMultiTurboVectorStorage;
 use crate::vector_storage::{
     DenseTQVectorStorageRead, DenseVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage,
     VectorStorageEnum, VectorStorageRead,
@@ -136,8 +135,25 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
-            VectorStorageEnum::DenseTurbo(v) => Self::create_turbo_impl(
-                v,
+            VectorStorageEnum::DenseTurboMemmap(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => Self::create_turbo_impl(
+                v.as_ref(),
                 quantization_config,
                 storage_type,
                 path,
@@ -254,7 +270,7 @@ impl QuantizedVectors {
     }
 
     fn create_turbo_impl(
-        vector_storage: &TurboVectorStorage,
+        vector_storage: &(impl DenseTQVectorStorageRead + Sync),
         quantization_config: &QuantizationConfig,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
@@ -438,7 +454,7 @@ impl QuantizedVectors {
 
     /// Multivector counterpart of [`Self::create_turbo_impl`].
     fn create_turbo_multi_impl(
-        vector_storage: &TurboMultiVectorStorage,
+        vector_storage: &AppendableMmapMultiTurboVectorStorage,
         quantization_config: &QuantizationConfig,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
