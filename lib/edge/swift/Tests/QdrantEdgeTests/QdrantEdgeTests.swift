@@ -391,4 +391,148 @@ final class QdrantEdgeTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Parity tests for the expanded FFI surface
+    //
+    // The tests above cover the original core. These exercise the surface added
+    // after the first cut — parameterized payload indexes, order-by/order_value,
+    // recommend, grouping, and formula rescoring — proving each is reachable and
+    // works through the generated Swift bindings. (search_matrix is deliberately
+    // absent: the mobile build drops the `matrix` feature.)
+
+    /// Loads a shard and upserts 3 points carrying an integer `rank` and a
+    /// keyword `label`, for the index / order-by / grouping tests.
+    private func loadWithRankedPoints(_ name: String) throws -> EdgeShard {
+        let shardURL = testDir.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        let shard = try EdgeShard.load(path: shardURL.path, config: makeConfig())
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .single(values: [1.0, 0.0, 0.0, 0.0]), payload: "{\"rank\": 30, \"label\": \"a\"}"),
+            Point(id: .numId(value: 2), vector: .single(values: [0.0, 1.0, 0.0, 0.0]), payload: "{\"rank\": 10, \"label\": \"b\"}"),
+            Point(id: .numId(value: 3), vector: .single(values: [0.0, 0.0, 1.0, 0.0]), payload: "{\"rank\": 20, \"label\": \"a\"}"),
+        ]))
+        return shard
+    }
+
+    /// Creates a parameterized integer payload index and confirms info()
+    /// reports it back via payloadSchema.
+    func testCreateFieldIndexWithParamsAndIntrospect() throws {
+        let shard = try loadWithRankedPoints("payload-index")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createFieldIndexWithParams(
+            fieldName: "rank",
+            params: .integer(config: IntegerIndexParams(lookup: true, range: true))
+        ))
+
+        let schema = try shard.info().payloadSchema
+        let rankIndex = try XCTUnwrap(schema["rank"], "created payload index should be reported by info()")
+        XCTAssertEqual(rankIndex.dataType, .integer, "rank index should report Integer data type")
+    }
+
+    /// Scrolls ordered by an indexed integer field and confirms each record
+    /// carries its order_value.
+    func testOrderByScrollPopulatesOrderValue() throws {
+        let shard = try loadWithRankedPoints("order-value")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createFieldIndex(fieldName: "rank", schema: .integer))
+
+        let page = try shard.scroll(request: ScrollRequest(
+            offset: nil,
+            limit: 10,
+            filter: nil,
+            withPayload: .bool(enable: false),
+            withVector: .bool(enable: false),
+            orderBy: OrderBy(key: "rank", direction: .asc, startFrom: nil)
+        ))
+        XCTAssertEqual(page.records.count, 3, "scroll should return all 3 points")
+        // Ascending by rank: the first record is rank 10 (point 2).
+        guard case let .int(value) = page.records.first?.orderValue else {
+            return XCTFail("order-by scroll should populate an integer order_value, got \(String(describing: page.records.first?.orderValue))")
+        }
+        XCTAssertEqual(value, 10, "smallest rank should sort first")
+    }
+
+    /// A recommendation query (one positive example) returns ranked results.
+    func testRecommendReturnsResults() throws {
+        let shard = try loadWithThreePoints("recommend")
+        defer { try? shard.unload() }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 10,
+            offset: nil,
+            query: .vector(query: .recommend(
+                positives: [.dense(values: [1.0, 0.0, 0.0, 0.0])],
+                negatives: [],
+                strategy: nil,
+                using: nil
+            )),
+            prefetches: [],
+            withVector: nil,
+            withPayload: nil,
+            filter: nil,
+            scoreThreshold: nil,
+            params: nil
+        ))
+        XCTAssertFalse(results.isEmpty, "recommend should return results")
+    }
+
+    /// A grouped query returns one group per distinct label value.
+    func testQueryGroupsReturnsGroups() throws {
+        let shard = try loadWithRankedPoints("grouping")
+        defer { try? shard.unload() }
+
+        let groups = try shard.queryGroups(request: GroupRequest(
+            query: QueryRequest(
+                limit: 10,
+                offset: nil,
+                query: .vector(query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil)),
+                prefetches: [],
+                withVector: nil,
+                withPayload: nil,
+                filter: nil,
+                scoreThreshold: nil,
+                params: nil
+            ),
+            groupBy: "label",
+            groups: 10,
+            groupSize: 10
+        ))
+        // Two distinct labels ("a", "b") -> two groups.
+        XCTAssertEqual(groups.count, 2, "grouping by label should yield one group per distinct value")
+    }
+
+    /// Formula rescoring: re-rank a prefetch's results by an Expression over
+    /// its score. Exercises both the Expression constructors and the
+    /// `ScoringQuery.formula` path.
+    func testFormulaRescoringQuery() throws {
+        let shard = try loadWithThreePoints("formula")
+        defer { try? shard.unload() }
+
+        // Trivial but valid formula: re-rank by the prefetch score.
+        let expression = Expression.variable(name: "$score")
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 10,
+            offset: nil,
+            query: .formula(expression: expression, defaults: [:]),
+            prefetches: [
+                Prefetch(
+                    limit: 10,
+                    query: .vector(query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil)),
+                    prefetches: [],
+                    filter: nil,
+                    scoreThreshold: nil,
+                    params: nil
+                )
+            ],
+            withVector: nil,
+            withPayload: nil,
+            filter: nil,
+            scoreThreshold: nil,
+            params: nil
+        ))
+        XCTAssertEqual(results.count, 3, "formula rescoring should return all prefetched points")
+    }
 }
