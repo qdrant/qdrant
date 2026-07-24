@@ -535,4 +535,326 @@ final class QdrantEdgeTests: XCTestCase {
         ))
         XCTAssertEqual(results.count, 3, "formula rescoring should return all prefetched points")
     }
+
+    // MARK: - Coverage-gap tests (SDK review)
+    //
+    // The tests below close specific gaps flagged in the SDK review: filtered
+    // reads, a *ByFilter update, the ShardClosed / OperationError error variants,
+    // a uuid happy path, the vector DECODE path, a handful of untested
+    // UpdateOperation constructors, and a concurrency smoke test.
+
+    /// Decodes a returned vector JSON string (the binding surfaces vectors as a
+    /// JSON string, not `[Float]`) into its float components. Handles both the
+    /// bare-array form and the named `{"field": [...]}` object form.
+    private static func extractVectorFloats(_ json: String) throws -> [Float] {
+        let data = try XCTUnwrap(json.data(using: .utf8), "vector JSON should be UTF-8")
+        let obj = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        if let arr = obj as? [Any] {
+            return arr.compactMap { ($0 as? NSNumber)?.floatValue }
+        }
+        if let dict = obj as? [String: Any], let arr = dict.values.first as? [Any] {
+            return arr.compactMap { ($0 as? NSNumber)?.floatValue }
+        }
+        return []
+    }
+
+    // MARK: - testFilteredSearchNarrowsResults
+
+    /// Headline gap: a search with a non-nil `Filter` (keyword match on the
+    /// `label` payload key) must narrow the result set vs the unfiltered search.
+    func testFilteredSearchNarrowsResults() throws {
+        let shard = try loadWithThreePoints("filtered-search")
+        defer { try? shard.unload() }
+
+        let unfiltered = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0]), using: nil),
+            limit: 10, offset: nil, filter: nil, params: nil,
+            withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(unfiltered.count, 3, "unfiltered search should see all 3 points")
+
+        let labelB = Filter(
+            must: [.field(condition: FieldCondition(key: "label", match: .value(value: .string(value: "b"))))],
+            should: nil,
+            mustNot: nil
+        )
+        let filtered = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0]), using: nil),
+            limit: 10, offset: nil, filter: labelB, params: nil,
+            withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(filtered.count, 1, "filter label=b should match exactly one point")
+        if case let .numId(value) = filtered.first?.id {
+            XCTAssertEqual(value, 2, "point 2 is the one carrying label=b")
+        } else {
+            XCTFail("filtered result id should be numId(2)")
+        }
+    }
+
+    // MARK: - testSetPayloadByFilterAffectsMatchingOnly
+
+    /// A `*ByFilter` update op: `setPayloadByFilter` must mutate only the points
+    /// matching the filter, leaving the rest untouched.
+    func testSetPayloadByFilterAffectsMatchingOnly() throws {
+        let shard = try loadWithThreePoints("set-payload-by-filter")
+        defer { try? shard.unload() }
+
+        let labelA = Filter(
+            must: [.field(condition: FieldCondition(key: "label", match: .value(value: .string(value: "a"))))],
+            should: nil,
+            mustNot: nil
+        )
+        try shard.update(operation: try UpdateOperation.setPayloadByFilter(
+            filter: labelA,
+            payloadJson: "{\"tag\": \"hot\"}"
+        ))
+
+        // Point 1 (label=a) should gain the tag.
+        let matched = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil
+        ))
+        let matchedPayload = try XCTUnwrap(matched.first?.payload, "point 1 should have a payload")
+        XCTAssertTrue(matchedPayload.contains("\"tag\""), "matching point should gain 'tag': \(matchedPayload)")
+
+        // Point 2 (label=b) should be untouched.
+        let unmatched = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.numId(value: 2)], withPayload: .bool(enable: true), withVector: nil
+        ))
+        let unmatchedPayload = try XCTUnwrap(unmatched.first?.payload, "point 2 should have a payload")
+        XCTAssertFalse(unmatchedPayload.contains("\"tag\""), "non-matching point should be untouched: \(unmatchedPayload)")
+    }
+
+    // MARK: - testCountAfterUnloadThrowsShardClosed
+
+    /// After `unload()`, an operation on the same handle must throw a catchable
+    /// `EdgeError.ShardClosed` — not crash the process.
+    func testCountAfterUnloadThrowsShardClosed() throws {
+        let shard = try loadWithThreePoints("shard-closed")
+        try shard.unload()
+
+        XCTAssertThrowsError(
+            try shard.count(request: CountRequest(filter: nil, exact: true))
+        ) { error in
+            guard case EdgeError.ShardClosed = error else {
+                return XCTFail("Expected EdgeError.ShardClosed after unload, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - testDimensionMismatchThrowsOperationError
+
+    /// Upserting a 2-dim vector into a 4-dim field is an engine-level failure
+    /// (the FFI boundary can't know the field size), surfaced as the non-
+    /// InvalidArgument variant `EdgeError.OperationError`.
+    func testDimensionMismatchThrowsOperationError() throws {
+        let shard = try loadWithThreePoints("dim-mismatch")
+        defer { try? shard.unload() }
+
+        XCTAssertThrowsError(
+            try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+                Point(id: .numId(value: 99), vector: .single(values: [1.0, 2.0]), payload: nil),
+            ]))
+        ) { error in
+            guard case EdgeError.OperationError = error else {
+                return XCTFail("Expected EdgeError.OperationError for dimension mismatch, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - testUuidPointRoundTrips
+
+    /// A point upserted with a valid `.uuid` id round-trips: it is counted and
+    /// retrievable by the same uuid, with the id preserved.
+    func testUuidPointRoundTrips() throws {
+        let shardURL = testDir.appendingPathComponent("uuid-roundtrip")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        let shard = try EdgeShard.load(path: shardURL.path, config: makeConfig())
+        defer { try? shard.unload() }
+
+        let uuid = "e9408f2b-b917-4af1-ab75-d97ac6b2c047"
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .uuid(value: uuid), vector: .single(values: [1.0, 0.0, 0.0, 0.0]), payload: "{\"label\": \"u\"}"),
+        ]))
+
+        let count = try shard.count(request: CountRequest(filter: nil, exact: true))
+        XCTAssertEqual(count, 1, "the single uuid point should be counted")
+
+        let got = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.uuid(value: uuid)], withPayload: .bool(enable: true), withVector: nil
+        ))
+        XCTAssertEqual(got.count, 1, "uuid point should be retrievable by the same uuid")
+        if case let .uuid(value) = got.first?.id {
+            XCTAssertEqual(value, uuid, "retrieved id should equal the upserted uuid")
+        } else {
+            XCTFail("retrieved id should be a .uuid")
+        }
+    }
+
+    // MARK: - testSearchAndRetrieveDecodeUpsertedVector
+
+    /// Vector DECODE path: with `withVector: .bool(enable: true)`, both
+    /// `ScoredPoint.vector` and `Record.vector` must carry the upserted values.
+    /// The binding returns vectors as a JSON string (not `[Float]`), so we decode
+    /// and compare; Dot distance stores vectors unnormalized, so they round-trip
+    /// exactly.
+    func testSearchAndRetrieveDecodeUpsertedVector() throws {
+        let shardURL = testDir.appendingPathComponent("vector-roundtrip")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        let shard = try EdgeShard.load(path: shardURL.path, config: makeConfig())
+        defer { try? shard.unload() }
+
+        let upserted: [Float] = [1.0, 2.0, 3.0, 4.0]
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .single(values: upserted), payload: nil),
+        ]))
+
+        let results = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .dense(values: upserted), using: nil),
+            limit: 1, offset: nil, filter: nil, params: nil,
+            withVector: .bool(enable: true), withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(results.count, 1)
+        let searchVectorJson = try XCTUnwrap(results.first?.vector, "withVector:true should populate ScoredPoint.vector")
+        let searchDecoded = try Self.extractVectorFloats(searchVectorJson)
+        XCTAssertEqual(searchDecoded.count, 4, "decoded vector should have 4 components: \(searchVectorJson)")
+        for (i, expected) in upserted.enumerated() {
+            XCTAssertEqual(searchDecoded[i], expected, accuracy: 1e-5, "search component \(i) should round-trip")
+        }
+
+        let records = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.numId(value: 1)], withPayload: nil, withVector: .bool(enable: true)
+        ))
+        let recordVectorJson = try XCTUnwrap(records.first?.vector, "withVector:true should populate Record.vector")
+        let recordDecoded = try Self.extractVectorFloats(recordVectorJson)
+        XCTAssertEqual(recordDecoded.count, 4, "decoded record vector should have 4 components: \(recordVectorJson)")
+        for (i, expected) in upserted.enumerated() {
+            XCTAssertEqual(recordDecoded[i], expected, accuracy: 1e-5, "retrieve component \(i) should round-trip")
+        }
+    }
+
+    // MARK: - testOverwritePayloadReplacesWholePayload
+
+    /// `overwritePayload` replaces the entire payload (unlike `setPayload`, which
+    /// merges): the original key must be gone and only the new key present.
+    func testOverwritePayloadReplacesWholePayload() throws {
+        let shard = try loadWithThreePoints("overwrite-payload")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.overwritePayload(
+            pointIds: [.numId(value: 1)],
+            payloadJson: "{\"tag\": \"hot\"}"
+        ))
+
+        let got = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil
+        ))
+        let payload = try XCTUnwrap(got.first?.payload, "payload should be present after overwrite")
+        XCTAssertTrue(payload.contains("\"tag\""), "new key should be present: \(payload)")
+        XCTAssertFalse(payload.contains("\"label\""), "original key should be gone after overwrite: \(payload)")
+    }
+
+    // MARK: - testDeletePayloadRemovesKey
+
+    /// `deletePayload` removes only the named key, leaving other keys intact.
+    func testDeletePayloadRemovesKey() throws {
+        let shard = try loadWithThreePoints("delete-payload")
+        defer { try? shard.unload() }
+
+        // Add a second key so we can prove only the targeted key is removed.
+        try shard.update(operation: try UpdateOperation.setPayload(
+            pointIds: [.numId(value: 1)],
+            payloadJson: "{\"tag\": \"hot\"}"
+        ))
+        try shard.update(operation: try UpdateOperation.deletePayload(
+            pointIds: [.numId(value: 1)],
+            keys: ["label"]
+        ))
+
+        let got = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil
+        ))
+        let payload = try XCTUnwrap(got.first?.payload, "payload should still be present")
+        XCTAssertFalse(payload.contains("\"label\""), "deleted key 'label' should be gone: \(payload)")
+        XCTAssertTrue(payload.contains("\"tag\""), "untargeted key 'tag' should survive: \(payload)")
+    }
+
+    // MARK: - testClearPayloadEmptiesPayload
+
+    /// `clearPayload` drops all payload keys but keeps the point itself.
+    func testClearPayloadEmptiesPayload() throws {
+        let shard = try loadWithThreePoints("clear-payload")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.clearPayload(pointIds: [.numId(value: 1)]))
+
+        let got = try shard.retrieve(request: RetrieveRequest(
+            pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil
+        ))
+        XCTAssertEqual(got.count, 1, "clearPayload must not delete the point")
+        // Empty payload may come back as `nil` or `{}`; either way the key is gone.
+        let payload = got.first?.payload ?? "{}"
+        XCTAssertFalse(payload.contains("\"label\""), "cleared payload should not contain the original key: \(payload)")
+    }
+
+    // MARK: - testCreateDenseVectorAndUpdateVectors
+
+    /// Adds a new named dense vector field (`createDenseVector`), writes it on a
+    /// single point (`updateVectors`), and confirms a search on that named field
+    /// returns only the point that has the vector.
+    func testCreateDenseVectorAndUpdateVectors() throws {
+        let shard = try loadWithThreePoints("named-vector")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createDenseVector(
+            vectorName: "extra",
+            size: 2,
+            distance: .dot
+        ))
+        try shard.update(operation: try UpdateOperation.updateVectors(pointVectors: [
+            PointVectors(id: .numId(value: 1), vector: .named(map: ["extra": .dense(values: [5.0, 6.0])])),
+        ]))
+
+        let results = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .dense(values: [5.0, 6.0]), using: "extra"),
+            limit: 10, offset: nil, filter: nil, params: nil,
+            withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(results.count, 1, "only point 1 has the 'extra' vector")
+        if case let .numId(value) = results.first?.id {
+            XCTAssertEqual(value, 1, "the point carrying the 'extra' vector is id=1")
+        } else {
+            XCTFail("named-vector search result id should be numId(1)")
+        }
+    }
+
+    // MARK: - testConcurrentSearchesAreConsistent
+
+    /// Concurrency smoke test substantiating `@unchecked Sendable`: 8 concurrent
+    /// searches against one loaded shard must all succeed and return the same
+    /// expected count, with no throw/crash.
+    func testConcurrentSearchesAreConsistent() throws {
+        let shard = try loadWithThreePoints("concurrency")
+        defer { try? shard.unload() }
+
+        let lock = NSLock()
+        var counts: [Int] = []
+        var failures: [Error] = []
+
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in
+            do {
+                let results = try shard.search(request: SearchRequest(
+                    query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil),
+                    limit: 10, offset: nil, filter: nil, params: nil,
+                    withVector: nil, withPayload: nil, scoreThreshold: nil
+                ))
+                lock.lock(); counts.append(results.count); lock.unlock()
+            } catch {
+                lock.lock(); failures.append(error); lock.unlock()
+            }
+        }
+
+        XCTAssertTrue(failures.isEmpty, "no concurrent search should throw: \(failures)")
+        XCTAssertEqual(counts.count, 8, "all 8 concurrent searches should complete")
+        XCTAssertTrue(counts.allSatisfy { $0 == 3 }, "every concurrent search should return all 3 points, got \(counts)")
+    }
 }
