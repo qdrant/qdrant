@@ -387,7 +387,8 @@ impl CompressedPostingBuilder {
                 let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
                 chunks.push(CompressedPostingChunk {
                     initial,
-                    offset: data_size as u32,
+                    offset: u32::try_from(data_size)
+                        .expect("posting id_data should fit in u32 (< 4GB)"),
                     weights: chunk
                         .iter()
                         .map(|e| Weight::from_f32(quantization_params, e.weight))
