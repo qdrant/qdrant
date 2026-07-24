@@ -12,6 +12,7 @@ use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::validation::validate_range_generic;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
@@ -25,13 +26,17 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements, Auth};
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
 use crate::common::validate_vectors::validate_vector_dimensions;
+
+fn validate_timeout(duration: &Duration) -> Result<(), ValidationError> {
+    validate_range_generic(duration.as_secs(), Some(1), None)
+}
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
@@ -41,6 +46,7 @@ pub struct UpdateParams {
     #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde_as(as = "Option<DurationSeconds<String>>")]
+    #[validate(custom(function = "validate_timeout"))]
     pub timeout: Option<Duration>,
 }
 
@@ -1338,5 +1344,77 @@ fn get_shard_selector_for_update(
         }
         (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
         (None, None) => ShardSelectorInternal::Empty,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::time::Duration;
+
+    use validator::ValidationErrors;
+
+    use super::*;
+
+    #[test]
+    fn test_update_params_timeout_validation_valid() {
+        // Valid timeout values (>= 1 second)
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_secs(1)),
+        };
+        assert!(params.validate().is_ok());
+
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_secs(60)),
+        };
+        assert!(params.validate().is_ok());
+
+        // None timeout should be valid
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: None,
+        };
+        assert!(params.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_params_timeout_validation_invalid() {
+        // timeout = 0 should be invalid
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_secs(0)),
+        };
+        assert_timeout_range_error(params.validate().unwrap_err());
+
+        // Sub-second, non-zero timeout should also be rejected
+        let params = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::from_millis(999)),
+        };
+        assert_timeout_range_error(params.validate().unwrap_err());
+    }
+
+    /// Assert the rejection carries the same `range`/`min` shape as
+    /// `#[validate(range(min = 1))]` fields, so clients see a consistent body.
+    fn assert_timeout_range_error(errors: ValidationErrors) {
+        let field_errors = errors.field_errors();
+        let timeout_errors = field_errors
+            .get("timeout")
+            .expect("timeout field should have errors");
+        assert_eq!(timeout_errors.len(), 1);
+        assert_eq!(timeout_errors[0].code, "range");
+        assert_eq!(
+            timeout_errors[0]
+                .params
+                .get("min")
+                .and_then(|min| min.as_u64()),
+            Some(1),
+        );
     }
 }
