@@ -40,6 +40,10 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     # Wait until peer is up
     wait_for_peer_online(peer_url)
 
+    # Snapshot request needs a known leader; recover before that is a silent no-op
+    # (POST /cluster/recover returns 200 even when raft drops the request).
+    wait_for(leader_is_defined, peer_url)
+
     # Recover Raft state
     recover_raft_state(peer_url)
 
