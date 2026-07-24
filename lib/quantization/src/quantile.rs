@@ -59,9 +59,12 @@ pub(crate) fn find_quantile_interval<'a>(
         return Ok(None);
     }
 
+    // Trim `(1 - quantile) / 2` of the pooled *values* per tail. The pool is
+    // `count * dim` flattened values, so the fraction is of `data_slice_len`,
+    // not of the vector count.
     let cut_index = std::cmp::min(
         (data_slice_len - 1) / 2,
-        (selected_vectors_count as f32 * (1.0 - quantile) / 2.0) as usize,
+        (data_slice_len as f32 * (1.0 - quantile) / 2.0) as usize,
     );
     let cut_index = std::cmp::max(cut_index, 1);
     let comparator = |a: &f32, b: &f32| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal);
@@ -375,5 +378,35 @@ mod tests {
                 "Max value is out of expected range: got {max}, expected ~{max_result}"
             );
         }
+    }
+
+    /// Regression: the quantile trim must be a fraction of the pooled
+    /// *values* (`count * dim`), not of the vectors. With `dim > 1` the old
+    /// code trimmed `dim`x too few, leaving outliers inside the clipped range.
+    #[test]
+    fn test_quantile_interval_clips_by_value_count() {
+        const DIM: usize = 8;
+        const COUNT: usize = 200; // >= 127 so the quantile path runs
+        const OUTLIERS_PER_TAIL: usize = 20;
+
+        // A tight [0, 1) bulk plus a few extreme values on each tail.
+        let mut values: Vec<f32> = (0..COUNT * DIM).map(|i| (i % 100) as f32 / 100.0).collect();
+        for i in 0..OUTLIERS_PER_TAIL {
+            values[i] = 1000.0;
+            values[COUNT * DIM - 1 - i] = -1000.0;
+        }
+        let vectors: Vec<Vec<f32>> = values.chunks(DIM).map(|c| c.to_vec()).collect();
+
+        let (min, max) =
+            find_quantile_interval(vectors.iter(), DIM, COUNT, 0.9, &AtomicBool::new(false))
+                .unwrap()
+                .expect("quantile interval should be computed");
+
+        // (1 - 0.9) / 2 = 5% per tail; of 1600 values that is 80, so all 20
+        // outliers per tail fall inside the trimmed region and the interval
+        // hugs the [0, 1) bulk. The old vector-count trim removed only ~10 per
+        // tail, leaving outliers and a range near +/-1000.
+        assert!(max < 100.0, "max not clipped, outliers leaked: {max}");
+        assert!(min > -100.0, "min not clipped, outliers leaked: {min}");
     }
 }
