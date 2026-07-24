@@ -136,6 +136,11 @@ pub trait GraphLayersBase {
                 }
             });
 
+            // Warm the CPU cache with the candidates' vectors before the
+            // scattered-load scoring pass below. No-op for storages whose reads
+            // copy (e.g. io_uring); see `DenseVectorStorageRead::prefetch_dense`.
+            points_scorer.prefetch_points(&points_ids);
+
             points_scorer
                 .score_points(&mut points_ids, limit)
                 .for_each(|score_point| {

@@ -30,27 +30,32 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let (vector_holder, mut graph_layers) =
         fixture::make_cached_graph::<Metric>(NUM_VECTORS, DIM, M, EF_CONSTRUCT, USE_HEURISTIC);
 
-    let mut rng = SmallRng::seed_from_u64(42);
-    group.bench_function("uncompressed", |b| {
-        b.iter(|| {
-            let query = random_vector(&mut rng, DIM);
+    let (_mmap_tmp, mmap_holder) = fixture::make_memmap_producer::<Metric>(NUM_VECTORS, DIM);
 
-            let scorer = vector_holder.scorer(query);
+    // Search the same graph over in-RAM and mmap-backed vector storage.
+    for (name, holder) in [("uncompressed", &vector_holder), ("mmap", &mmap_holder)] {
+        let mut rng = SmallRng::seed_from_u64(42);
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                let query = random_vector(&mut rng, DIM);
 
-            black_box(
-                graph_layers
-                    .search(
-                        TOP,
-                        EF,
-                        SearchAlgorithm::Hnsw,
-                        scorer,
-                        None,
-                        &DEFAULT_STOPPED,
-                    )
-                    .unwrap(),
-            );
-        })
-    });
+                let scorer = holder.scorer(query);
+
+                black_box(
+                    graph_layers
+                        .search(
+                            TOP,
+                            EF,
+                            SearchAlgorithm::Hnsw,
+                            scorer,
+                            None,
+                            &DEFAULT_STOPPED,
+                        )
+                        .unwrap(),
+                );
+            })
+        });
+    }
 
     graph_layers.compress_ram();
     let mut rng = SmallRng::seed_from_u64(42);

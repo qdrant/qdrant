@@ -40,6 +40,11 @@ use crate::vector_storage::turbo::multi::TurboMultiScoring;
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
 
+    /// Best-effort prefetch of the stored vectors for `points` (experimental).
+    ///
+    /// Default is a no-op.
+    fn prefetch_points(&self, _points: &[PointOffsetType]) {}
+
     /// Score stored vector with vector under the given index
     fn score_point(&self, point: PointOffsetType) -> ScoreType;
 
@@ -557,6 +562,10 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
         assert_eq!(points.len(), scores.len());
         self.query_scorer.score_stored_batch(points, scores);
+    }
+
+    fn prefetch_points(&self, points: &[PointOffsetType]) {
+        self.query_scorer.prefetch_stored(points);
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
