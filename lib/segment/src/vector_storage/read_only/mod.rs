@@ -670,7 +670,10 @@ mod tests {
                 VectorStorageType::ChunkedMmap => {
                     matches!(ro, VectorStorageReadEnum::DenseTurboChunked(_))
                 }
-                _ => false,
+                VectorStorageType::Memory
+                | VectorStorageType::InRamChunkedMmap
+                | VectorStorageType::InRamMmap
+                | VectorStorageType::Empty => false,
             };
             assert!(
                 routed,
