@@ -50,6 +50,7 @@ message PointStructRaw {
   PointId id = 1;
   map<string, bytes> vectors = 2;
   map<string, Value> payload = 3;
+  map<string, bytes> payload_raw = 4;
 }
 
 message SyncPoints {
