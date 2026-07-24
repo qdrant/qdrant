@@ -16,8 +16,12 @@ pre-compiled static libraries for iOS, macOS, and (optionally) tvOS/visionOS.
 | `visionos-arm64`                 | arm64            | Apple Vision Pro                     |
 | `visionos-arm64-simulator`       | arm64            | visionOS Simulator                   |
 
-`make build` covers iOS + macOS. `make build-all` adds tvOS and visionOS;
-those are Rust tier-3 targets and require the nightly toolchain.
+The **shipped package declares only iOS + macOS** (`Package.swift`), and the
+default `make build` produces only those three slices. The tvOS/visionOS rows
+above are produced by `make build-all` only (Rust tier-3 targets, nightly +
+`-Z build-std`) and are **not** declared in `Package.swift` in this release —
+add them back once their slices ship. (All targets build on nightly, pinned by
+`rust-toolchain.toml`, since the workspace uses unstable std features.)
 
 ## Quick start
 
@@ -45,6 +49,23 @@ let shard = try EdgeShard.load(path: dataDir, config: config)
 
 See `example/` for a complete demo app.
 
+### Distribution
+
+This package lives in a subdirectory of the qdrant monorepo, so it is consumed
+via a **local `path:` dependency** (as above) — SwiftPM resolves a `.package(url:)`
+dependency only against a `Package.swift` at a repository's **root**, so
+`.package(url: "…/qdrant")` cannot reach `lib/edge/swift`. Public,
+version-tagged distribution over `binaryTarget(url:checksum:)` follows the
+established Rust-UniFFI pattern (e.g. `mozilla/rust-components-swift`,
+`matrix-org/matrix-rust-components-swift`): a small dedicated release repo whose
+`Package.swift` sits at its root, commits the generated bindings, and points its
+XCFramework `binaryTarget` at a GitHub-release artifact published from this
+monorepo. `release-xcframework.sh` builds and checksums that artifact; wiring up
+the release repo is tracked as follow-up work. The `QDRANT_EDGE_RELEASE`
+url+checksum mode in `Package.swift` exists for that release repo's manifest and
+for CI verification — the manifest here defaults to the local build for
+development.
+
 ## Project layout
 
 ```
@@ -66,9 +87,9 @@ The Rust crate and `uniffi-bindgen` CLI live under `lib/edge/ffi/`.
 UniFFI emits `QdrantEdge.swift` with a mix of user-facing domain types
 (`EdgeShard`, `Point`, `Query`, `Filter`, …) and FFI plumbing
 (`FfiConverter*`, `RustBuffer`, `Uniffi*`, `*_lift`/`*_lower`, …). After
-generation, `demote-ffi-internals.sh` rewrites the plumbing declarations
-from `public` to `internal`, so `import QdrantEdge` in consumer code only
-surfaces the real domain API.
+generation, `demote-ffi-internals.sh` rewrites the top-level plumbing
+declarations from `public` to `internal`, so `import QdrantEdge` surfaces the
+real domain API in Xcode's autocomplete and Quick Help (with the caveat below).
 
 The rewrite is safe because `QdrantEdge.swift` compiles into a single
 Swift module; the plumbing is only referenced from within that file, and
@@ -77,6 +98,15 @@ Swift module; the plumbing is only referenced from within that file, and
 Every public type and method carries doc comments authored in Rust that
 UniFFI propagates to Swift Quick Help. ⌥-click in Xcode for summaries,
 error notes, and examples.
+
+A handful of UniFFI object-lifecycle internals (`uniffiCloneHandle()`,
+`init(noHandle:)`, `NoHandle`) stay technically `public` — the demote pass only
+rewrites top-level declarations, and these are indented members UniFFI requires
+for its `FfiConverter` conformance. UniFFI tags them
+`@_documentation(visibility: private)`, so they don't appear in autocomplete or
+Quick Help; treat them as reserved, not API. Because the public Swift surface is
+generated, a UniFFI upgrade can reshape it — treat UniFFI version bumps as semver
+events for this package.
 
 ## Threading
 
@@ -102,11 +132,14 @@ so they cross the actor boundary cleanly under Swift 6 strict concurrency.
 Fallible calls throw `EdgeError`, a branchable enum so you can react to the
 error category:
 
-- `.shardClosed` — the shard was unloaded; reopen it via `EdgeShard.load`.
-- `.invalidArgument(reason)` — host-supplied input was invalid (bad UUID,
+- `.ShardClosed` — the shard was unloaded; reopen it via `EdgeShard.load`.
+- `.InvalidArgument(reason)` — host-supplied input was invalid (bad UUID,
   out-of-range vector size, unsupported config, …); fix the input and retry.
-- `.operationError(reason)` — any other engine failure (I/O, missing payload
+- `.OperationError(reason)` — any other engine failure (I/O, missing payload
   index, dimension mismatch, …).
+
+(The cases are PascalCase: UniFFI does not lower-case the variants of an
+`Error`-typed enum the way it does for a plain `Enum`.)
 
 ```swift
 do {

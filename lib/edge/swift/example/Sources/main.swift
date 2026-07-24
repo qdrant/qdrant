@@ -129,7 +129,7 @@ print("\n---- Query ----")
 let queryResults = try shard.query(request: QueryRequest(
     limit: 10,
     offset: nil,
-    query: .vector(query: .nearest(vector: [6.0, 9.0, 4.0, 2.0], using: nil)),
+    query: .vector(query: .nearest(vector: .dense(values: [6.0, 9.0, 4.0, 2.0]), using: nil)),
     prefetches: [],
     withVector: .bool(enable: true),
     withPayload: .bool(enable: true),
@@ -148,7 +148,7 @@ for point in queryResults {
 print("\n---- Search ----")
 
 let searchResults = try shard.search(request: SearchRequest(
-    query: .nearest(vector: [1.0, 1.0, 1.0, 1.0], using: nil),
+    query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0]), using: nil),
     limit: 10,
     offset: nil,
     filter: nil,
@@ -193,7 +193,7 @@ let searchFilter = Filter(
 )
 
 let filteredResults = try shard.search(request: SearchRequest(
-    query: .nearest(vector: [1.0, 1.0, 1.0, 1.0], using: nil),
+    query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0]), using: nil),
     limit: 10,
     offset: nil,
     filter: searchFilter,
@@ -212,11 +212,11 @@ for point in filteredResults {
 
 print("\n---- Retrieve ----")
 
-let retrieved = try shard.retrieve(
+let retrieved = try shard.retrieve(request: RetrieveRequest(
     pointIds: [.numId(value: 1)],
     withPayload: .bool(enable: true),
     withVector: .bool(enable: true)
-)
+))
 
 print("Retrieved \(retrieved.count) records:")
 for record in retrieved {
@@ -295,12 +295,12 @@ print("Segments: \(info.segmentsCount), Points: \(info.pointsCount), Indexed vec
 
 print("\n---- Close and reopen shard ----")
 
-shard.unload()
+try shard.unload()
 print("Shard closed.")
 
 let reopenedShard = try EdgeShard.load(path: dataDir, config: nil)
 let reopenedInfo = try reopenedShard.info()
 print("Reopened shard - Segments: \(reopenedInfo.segmentsCount), Points: \(reopenedInfo.pointsCount), Indexed vectors: \(reopenedInfo.indexedVectorsCount)")
 
-reopenedShard.unload()
+try reopenedShard.unload()
 print("\nDone!")
