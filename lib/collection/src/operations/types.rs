@@ -949,8 +949,33 @@ pub enum CollectionError {
         retry_after: Option<Duration>,
     },
     #[error("Shard temporarily unavailable: {description}")]
-    ShardUnavailable { description: String },
+    ShardUnavailable {
+        description: String,
+        reason: ShardUnavailableReason,
+    },
 }
+
+/// Why a shard reported itself temporarily unavailable. Carried as a type rather than parsed out
+/// of the error message, and preserved across the gRPC boundary via status metadata, so the
+/// update worker and replica set recognize the recoverable capacity condition structurally.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShardUnavailableReason {
+    /// Every appendable segment reached `max_segment_size`, so there is no destination for new or
+    /// moved points. Recoverable: the optimizer provisions a fresh appendable segment and the
+    /// operation is re-applied, so a replica reporting it self-heals and must not be deactivated.
+    OutOfAppendableCapacity { max_segment_size_bytes: usize },
+    /// Any other transient unavailability (peer down, transfer in flight, ...).
+    Unspecified,
+}
+
+/// gRPC status metadata key carrying the [`ShardUnavailableReason`] across the wire, so a replica
+/// set recognizes a remote capacity condition structurally instead of by message text.
+pub const SHARD_UNAVAILABLE_REASON_METADATA_KEY: &str = "x-qdrant-shard-unavailable-reason";
+/// [`SHARD_UNAVAILABLE_REASON_METADATA_KEY`] value marking
+/// [`ShardUnavailableReason::OutOfAppendableCapacity`].
+pub const OUT_OF_APPENDABLE_CAPACITY_REASON: &str = "out-of-appendable-capacity";
+/// Metadata key carrying the `max_segment_size` bytes alongside the capacity reason.
+pub const MAX_SEGMENT_SIZE_METADATA_KEY: &str = "x-qdrant-max-segment-size-bytes";
 
 /// Which rate limiter rejected an operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1064,6 +1089,7 @@ impl CollectionError {
     pub fn shard_unavailable(description: impl Into<String>) -> Self {
         Self::ShardUnavailable {
             description: description.into(),
+            reason: ShardUnavailableReason::Unspecified,
         }
     }
 
@@ -1096,27 +1122,18 @@ impl CollectionError {
         matches!(self, Self::PreConditionFailed { .. })
     }
 
-    /// Whether this is the flattened [`OperationError::OutOfAppendableCapacity`] error: all
-    /// appendable segments reached `max_segment_size`. The typed variant does not survive the
-    /// conversion to a (transient) shard-unavailable error, so it is recognized by its message,
-    /// which a test on the variant locks in place.
-    ///
-    /// Matched anywhere in the message rather than at its start: a replica that reports the
-    /// condition over gRPC comes back as a service error wrapping the status text, and the
-    /// replica set must recognize that form too or it deactivates a replica that recovers on
-    /// its own.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
+    /// Whether this is the recoverable "all appendable segments reached `max_segment_size`"
+    /// condition. Matched on the typed [`ShardUnavailableReason`], including when a remote replica
+    /// reported it: the reason survives the gRPC round trip via status metadata (see the
+    /// `From<tonic::Status>` decoder here and the `StorageError` -> `Status` encoder).
     pub fn is_out_of_appendable_capacity(&self) -> bool {
-        let message = match self {
-            // Raised on this peer.
-            Self::ShardUnavailable { description } => description.as_str(),
-            // Reported by a remote replica, wrapped in the gRPC status text.
-            Self::ServiceError { error, .. } => error.as_str(),
-            _ => return false,
-        };
-
-        message
-            .contains(segment::common::operation_error::OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX)
+        matches!(
+            self,
+            Self::ShardUnavailable {
+                reason: ShardUnavailableReason::OutOfAppendableCapacity { .. },
+                ..
+            }
+        )
     }
 
     pub fn is_missing_point(&self) -> bool {
@@ -1201,8 +1218,13 @@ impl From<OperationError> for CollectionError {
             // leaks, stay transient so failed-operation recovery re-applies the operation. It is
             // temporary backpressure rather than an internal failure, so it maps to the
             // unavailable (503) family instead of a service error (500).
-            OperationError::OutOfAppendableCapacity { .. } => Self::ShardUnavailable {
+            OperationError::OutOfAppendableCapacity {
+                max_segment_size_bytes,
+            } => Self::ShardUnavailable {
                 description: err.to_string(),
+                reason: ShardUnavailableReason::OutOfAppendableCapacity {
+                    max_segment_size_bytes,
+                },
             },
         }
     }
@@ -1293,6 +1315,30 @@ impl From<tonic::Status> for CollectionError {
                 Self::RateLimitExceeded {
                     description: err.to_string(),
                     retry_after,
+                }
+            }
+            // A replica reporting a shard-unavailable condition tags the status with its reason
+            // metadata; rebuild the typed reason so the replica set recognizes a self-healing
+            // capacity failure structurally instead of matching the message text. An untagged
+            // `Unavailable` keeps the generic handling in the catch-all below.
+            tonic::Code::Unavailable
+                if err
+                    .metadata()
+                    .get(SHARD_UNAVAILABLE_REASON_METADATA_KEY)
+                    .and_then(|value| value.to_str().ok())
+                    == Some(OUT_OF_APPENDABLE_CAPACITY_REASON) =>
+            {
+                let max_segment_size_bytes = err
+                    .metadata()
+                    .get(MAX_SEGMENT_SIZE_METADATA_KEY)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(0);
+                Self::ShardUnavailable {
+                    description: format!("Tonic status error: {err}"),
+                    reason: ShardUnavailableReason::OutOfAppendableCapacity {
+                        max_segment_size_bytes,
+                    },
                 }
             }
             tonic::Code::Ok
@@ -1939,16 +1985,26 @@ impl PeerMetadata {
 mod tests {
     use super::*;
 
-    /// The update worker recognizes the capacity condition by message, because the typed variant
-    /// does not survive the conversion below. This locks the whole chain: the variant's message,
-    /// the conversion into a shard-unavailable error, and the detection. Asserting on
-    /// `OperationError` alone would still pass if the conversion started wrapping the message.
+    /// The capacity condition carries a typed reason through the `OperationError` conversion, so
+    /// the update worker and replica set detect it structurally rather than by message text.
     #[test]
-    fn test_out_of_appendable_capacity_survives_conversion() {
+    fn test_out_of_appendable_capacity_is_typed() {
         let err = CollectionError::from(OperationError::OutOfAppendableCapacity {
             max_segment_size_bytes: 1024,
         });
 
+        assert!(
+            matches!(
+                err,
+                CollectionError::ShardUnavailable {
+                    reason: ShardUnavailableReason::OutOfAppendableCapacity {
+                        max_segment_size_bytes: 1024,
+                    },
+                    ..
+                }
+            ),
+            "capacity failures must carry the typed reason with its payload: {err}",
+        );
         assert!(
             err.is_out_of_appendable_capacity(),
             "the update worker would stop retrying capacity failures: {err}",
@@ -1959,21 +2015,33 @@ mod tests {
         );
     }
 
-    /// A replica reporting the condition sends it as an unavailable status carrying the error
-    /// message (see the `StorageError` conversion), which comes back as a service error wrapping
-    /// that text. The replica set must still recognize it, or it deactivates a replica that
-    /// recovers on its own.
+    /// A replica reports the condition as an `Unavailable` status tagged with reason metadata (the
+    /// `StorageError` -> `Status` encoder attaches it; tested storage-side). Decoding that status
+    /// must rebuild the typed reason, or the replica set deactivates a replica that self-heals.
     #[test]
-    fn test_out_of_appendable_capacity_survives_remote_round_trip() {
-        let err = CollectionError::from(OperationError::OutOfAppendableCapacity {
-            max_segment_size_bytes: 1024,
-        });
+    fn test_out_of_appendable_capacity_decoded_from_status_metadata() {
+        let mut status = tonic::Status::unavailable("shard is out of appendable capacity");
+        status.metadata_mut().insert(
+            SHARD_UNAVAILABLE_REASON_METADATA_KEY,
+            OUT_OF_APPENDABLE_CAPACITY_REASON.parse().unwrap(),
+        );
+        status
+            .metadata_mut()
+            .insert(MAX_SEGMENT_SIZE_METADATA_KEY, "1024".parse().unwrap());
 
-        let remote_err = CollectionError::from(tonic::Status::unavailable(err.to_string()));
+        let err = CollectionError::from(status);
 
         assert!(
-            remote_err.is_out_of_appendable_capacity(),
-            "the replica set would deactivate the reporting replica: {remote_err}",
+            err.is_out_of_appendable_capacity(),
+            "the replica set would deactivate the reporting replica: {err}",
         );
+    }
+
+    /// An untagged `Unavailable` status is any other transient unavailability, not the capacity
+    /// condition; the guard must keep it out of the recovery path.
+    #[test]
+    fn test_untagged_unavailable_is_not_capacity() {
+        let err = CollectionError::from(tonic::Status::unavailable("peer down"));
+        assert!(!err.is_out_of_appendable_capacity());
     }
 }
