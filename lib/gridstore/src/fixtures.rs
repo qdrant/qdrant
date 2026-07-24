@@ -6,6 +6,7 @@ use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
 use crate::config::{Compression, StorageOptions};
+use crate::error::GridstoreError;
 use crate::{Blob, Gridstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -22,8 +23,8 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self, GridstoreError> {
+        Ok(serde_json::from_slice(data)?)
     }
 }
 
@@ -137,7 +138,7 @@ mod tests {
         );
         let bytes = payload.to_bytes();
 
-        let deserialized = Payload::from_bytes(&bytes);
+        let deserialized = Payload::from_bytes(&bytes).unwrap();
         assert_eq!(payload, deserialized);
     }
 }

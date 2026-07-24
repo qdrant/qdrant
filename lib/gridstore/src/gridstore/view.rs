@@ -102,7 +102,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed);
+        let value = V::from_bytes(&decompressed)?;
 
         Ok(Some(value))
     }
@@ -144,7 +144,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
                 hw_counter_cell.incr_delta(bytes.len());
 
                 let decompressed = self.decompress(bytes);
-                let value = V::from_bytes(&decompressed);
+                let value = V::from_bytes(&decompressed)?;
                 callback(user_data, point_offset, Some(value))
             },
         )

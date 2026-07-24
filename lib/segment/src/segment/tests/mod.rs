@@ -830,7 +830,7 @@ fn test_retrieve_raw_sparse_bytes() {
         .find(|(name, _)| name == sparse_name)
         .expect("sparse vector must be present");
 
-    let decoded = SparseVector::try_from(StoredSparseVector::from_bytes(bytes)).unwrap();
+    let decoded = SparseVector::try_from(StoredSparseVector::from_bytes(bytes).unwrap()).unwrap();
     assert_eq!(decoded, sparse);
 }
 
