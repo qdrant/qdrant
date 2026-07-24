@@ -1480,6 +1480,14 @@ impl ShardHolder {
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
         self.assert_shard_is_local_or_queue_proxy(shard_id).await?;
+        Self::shard_snapshot_path(snapshots_path, shard_id, snapshot_file_name)
+    }
+
+    pub(super) fn shard_snapshot_path(
+        snapshots_path: &Path,
+        shard_id: ShardId,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
         Self::shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)
     }
 
