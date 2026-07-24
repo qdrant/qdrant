@@ -1279,6 +1279,7 @@ pub struct StrictModeConfig {
     // Search
     /// Max HNSW ef value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub search_max_hnsw_ef: Option<usize>,
 
     /// Whether exact search is allowed.
@@ -1291,14 +1292,17 @@ pub struct StrictModeConfig {
 
     /// Max batchsize when upserting
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub upsert_max_batchsize: Option<usize>,
 
     /// Max batchsize when searching
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub search_max_batchsize: Option<usize>,
 
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub max_collection_vector_size_bytes: Option<usize>,
 
     /// Max number of read operations per minute per replica
@@ -1313,6 +1317,7 @@ pub struct StrictModeConfig {
 
     /// Max size of a collections payload storage in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub max_collection_payload_size_bytes: Option<usize>,
 
     /// Max number of points estimated in a collection
@@ -1322,10 +1327,12 @@ pub struct StrictModeConfig {
 
     /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub filter_max_conditions: Option<usize>,
 
     /// Max size of a condition, eg. items in `MatchAny`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub condition_max_size: Option<usize>,
 
     /// Multivector strict mode configuration
@@ -6277,6 +6284,49 @@ impl Display for ShardKey {
         match self {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod strict_mode_validation_tests {
+    use validator::Validate;
+
+    use super::StrictModeConfig;
+
+    /// Every numeric strict-mode limit must reject 0 consistently: a collection
+    /// created with a zero limit blocks all matching operations and is unusable.
+    /// <https://github.com/qdrant/qdrant/issues/9372>
+    #[test]
+    fn zero_limits_are_rejected() {
+        let cases: &[fn(&mut StrictModeConfig, usize)] = &[
+            |c, v| c.max_query_limit = Some(v),
+            |c, v| c.max_timeout = Some(v),
+            |c, v| c.search_max_hnsw_ef = Some(v),
+            |c, v| c.upsert_max_batchsize = Some(v),
+            |c, v| c.search_max_batchsize = Some(v),
+            |c, v| c.max_collection_vector_size_bytes = Some(v),
+            |c, v| c.read_rate_limit = Some(v),
+            |c, v| c.write_rate_limit = Some(v),
+            |c, v| c.max_collection_payload_size_bytes = Some(v),
+            |c, v| c.max_points_count = Some(v),
+            |c, v| c.filter_max_conditions = Some(v),
+            |c, v| c.condition_max_size = Some(v),
+        ];
+        for (i, set) in cases.iter().enumerate() {
+            let mut config = StrictModeConfig {
+                enabled: Some(true),
+                ..Default::default()
+            };
+            set(&mut config, 0);
+            assert!(config.validate().is_err(), "case {i} must reject 0");
+
+            let mut config = StrictModeConfig {
+                enabled: Some(true),
+                ..Default::default()
+            };
+            set(&mut config, 1);
+            assert!(config.validate().is_ok(), "case {i} must accept 1");
         }
     }
 }
