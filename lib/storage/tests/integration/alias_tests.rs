@@ -36,6 +36,7 @@ fn test_alias_operation() {
         snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,
+        payload: None,
         optimizers: OptimizersConfig {
             deleted_threshold: 0.5,
             vacuum_min_vector_number: 100,
