@@ -35,6 +35,108 @@ pub(crate) fn validate_non_empty_dense(vector: &[f32]) -> Result<(), ValidationE
         errors.add("vector", err);
         return Err(errors);
     }
+    // Reject values that are non-finite (NaN, ±Inf). This can happen when an
+    // incoming JSON f64 value exceeds f32::MAX and is silently overflowed to
+    // +Inf by the deserializer. Storing such values corrupts distance metrics
+    // and breaks HNSW ordering.
+    if any_non_finite(vector) {
+        let mut err = ValidationError::new("non_finite_value");
+        err.message = Some(Cow::Borrowed(
+            "vector values must be finite (no NaN or Inf); values exceeding the f32 range are not allowed",
+        ));
+        let mut errors = ValidationErrors::new();
+        errors.add("vector", err);
+        return Err(errors);
+    }
+    Ok(())
+}
+
+fn any_non_finite(vector: &[f32]) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx") {
+        return unsafe { any_non_finite_avx(vector) };
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    return unsafe { any_non_finite_neon(vector) };
+
+    #[cfg_attr(
+        any(target_arch = "x86_64", target_arch = "aarch64"),
+        allow(unreachable_code)
+    )]
+    vector.iter().any(|v| !v.is_finite())
+}
+
+/// Checks 8 floats per iteration using 256-bit AVX registers.
+///
+/// Strips the sign bit and compares against +Inf using an ordered less-than.
+/// `_CMP_LT_OS` returns 0 for NaN lanes (ordered comparisons with NaN are false),
+/// so both NaN and ±Inf are correctly detected as non-finite.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn any_non_finite_avx(vector: &[f32]) -> bool {
+    use std::arch::x86_64::*;
+
+    let inf = _mm256_set1_ps(f32::INFINITY);
+    let abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFF_FFFFi32));
+
+    let chunks = vector.chunks_exact(8);
+    let remainder = chunks.remainder();
+
+    for chunk in chunks {
+        // SAFETY: chunk is exactly 8 elements; _mm256_loadu_ps does not require alignment
+        let non_finite = unsafe {
+            let v = _mm256_loadu_ps(chunk.as_ptr());
+            let abs_v = _mm256_and_ps(v, abs_mask);
+            let is_finite = _mm256_cmp_ps::<_CMP_LT_OS>(abs_v, inf);
+            _mm256_movemask_ps(is_finite) != 0xFF
+        };
+        if non_finite {
+            return true;
+        }
+    }
+
+    remainder.iter().any(|v| !v.is_finite())
+}
+
+/// Checks 4 floats per iteration using 128-bit NEON registers.
+///
+/// A float is non-finite (Inf or NaN) iff its exponent bits are all 1s (0x7F80_0000).
+/// This bit-level check correctly handles NaN, which vcageq_f32 would miss because
+/// ordered comparisons with NaN always return false.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn any_non_finite_neon(vector: &[f32]) -> bool {
+    use std::arch::aarch64::*;
+
+    let exp_mask = vdupq_n_u32(0x7F80_0000u32);
+
+    let chunks = vector.chunks_exact(4);
+    let remainder = chunks.remainder();
+
+    for chunk in chunks {
+        // SAFETY: chunk is exactly 4 elements; vld1q_f32 does not require alignment
+        let non_finite = unsafe {
+            let v = vld1q_f32(chunk.as_ptr());
+            let bits = vreinterpretq_u32_f32(v);
+            let exp = vandq_u32(bits, exp_mask);
+            // Non-finite iff exponent bits == 0x7F80_0000
+            let is_non_finite = vceqq_u32(exp, exp_mask);
+            vmaxvq_u32(is_non_finite) != 0
+        };
+        if non_finite {
+            return true;
+        }
+    }
+
+    remainder.iter().any(|v| !v.is_finite())
+}
+
+pub(crate) fn validate_multi_dense_vector(m: &MultiDenseVector) -> Result<(), ValidationErrors> {
+    validate_multi_vector(m)?;
+    for vec in m {
+        validate_non_empty_dense(vec)?;
+    }
     Ok(())
 }
 
@@ -66,7 +168,7 @@ impl Validate for Vector {
         match self {
             Vector::Dense(v) => validate_non_empty_dense(v),
             Vector::Sparse(v) => v.validate(),
-            Vector::MultiDense(m) => validate_multi_vector(m),
+            Vector::MultiDense(m) => validate_multi_dense_vector(m),
             Vector::Document(_) => Ok(()),
             Vector::Image(_) => Ok(()),
             Vector::Object(_) => Ok(()),
@@ -147,7 +249,7 @@ impl Validate for VectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             VectorStruct::Single(v) => validate_non_empty_dense(v),
-            VectorStruct::MultiDense(v) => validate_multi_vector(v),
+            VectorStruct::MultiDense(v) => validate_multi_dense_vector(v),
             VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
             VectorStruct::Document(_) => Ok(()),
             VectorStruct::Image(_) => Ok(()),
@@ -295,9 +397,57 @@ pub enum DocumentOptions {
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches;
+    use validator::Validate as _;
 
     use super::*;
+
+    #[test]
+    fn test_validate_non_empty_dense_rejects_nan() {
+        assert!(validate_non_empty_dense(&[1.0, f32::NAN, 3.0]).is_err());
+    }
+
+    #[test]
+    fn test_validate_non_empty_dense_rejects_inf() {
+        assert!(validate_non_empty_dense(&[1.0, f32::INFINITY, 3.0]).is_err());
+        assert!(validate_non_empty_dense(&[f32::NEG_INFINITY, 2.0]).is_err());
+    }
+
+    #[test]
+    fn test_validate_non_empty_dense_accepts_finite() {
+        assert!(validate_non_empty_dense(&[1.0, -2.5, 3.0]).is_ok());
+    }
+
+    #[test]
+    fn test_vector_dense_rejects_non_finite() {
+        assert!(Vector::Dense(vec![1.0, f32::NAN]).validate().is_err());
+        assert!(Vector::Dense(vec![f32::INFINITY]).validate().is_err());
+    }
+
+    #[test]
+    fn test_vector_struct_single_rejects_non_finite() {
+        assert!(
+            VectorStruct::Single(vec![1.0, f32::NAN])
+                .validate()
+                .is_err()
+        );
+        assert!(
+            VectorStruct::Single(vec![f32::NEG_INFINITY])
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_vector_struct_multi_dense_rejects_non_finite() {
+        let multi = vec![vec![1.0, f32::NAN], vec![2.0, 3.0]];
+        assert!(VectorStruct::MultiDense(multi).validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_multi_dense_rejects_non_finite() {
+        let multi = vec![vec![f32::INFINITY, 1.0], vec![2.0, 3.0]];
+        assert!(validate_multi_dense_vector(&multi).is_err());
+    }
 
     #[test]
     fn test_document_options_should_deserialize_into_common() {
@@ -308,7 +458,7 @@ mod tests {
         let valid_bm25_config = serde_json::to_string(&json).unwrap();
         let options: DocumentOptions = serde_json::from_str(&valid_bm25_config).unwrap();
         // Bm25 option is used only for schema, actual deserialization will happen in specialized code
-        assert_matches!(options, DocumentOptions::Common(_));
+        assert!(matches!(options, DocumentOptions::Common(_)));
     }
 }
 
