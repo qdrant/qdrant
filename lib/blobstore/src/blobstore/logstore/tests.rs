@@ -1786,10 +1786,9 @@ fn test_rollover_writes_no_value_data_before_flush() {
 }
 
 /// A reader that live-reloads between a page rollover and the following flush adopts the new,
-/// still empty page. The previous page is then no longer the last one and is never reloaded
-/// again, so its late-flushed tail stays invisible to the reader forever.
-///
-/// Currently fails: `AppendOnlyPages::live_reload` only reloads the last held page.
+/// still empty page. The previous page is then no longer the last one, but its late-flushed
+/// tail must still become visible: the tracker mappings gained since the last reload tell the
+/// reader which pages to reload.
 #[test]
 fn test_live_reload_sees_late_flushed_tail_of_rolled_over_page() {
     let dir = TempDir::new().unwrap();
@@ -1836,5 +1835,51 @@ fn test_live_reload_sees_late_flushed_tail_of_rolled_over_page() {
     assert_eq!(
         reader.get_value::<Random>(2, &hw_counter).unwrap(),
         Some(vec![2u8; 100]),
+    );
+}
+
+/// Counterexample check: a flusher created before a rollover grows only the old page. A reader
+/// that opened during the rollover-to-flush window already holds the new page, still empty and
+/// unchanged by this flush. The reload must still refresh the old page's late-flushed tail.
+#[test]
+fn test_live_reload_refreshes_old_page_behind_unchanged_empty_page() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // One flushed value so the reader can open
+    storage
+        .put_value(0, &vec![0u8; 100], hw_counter_ref)
+        .unwrap();
+    storage.flusher()().unwrap();
+
+    // Buffer a second value into page 0, capture a flusher BEFORE the rollover
+    storage
+        .put_value(1, &vec![1u8; 100], hw_counter_ref)
+        .unwrap();
+    let flusher = storage.flusher();
+
+    // Rollover: page 1 is created on disk (empty), value 2 stays buffered for it
+    storage
+        .put_value(2, &vec![2u8; 100], hw_counter_ref)
+        .unwrap();
+
+    // Reader opens in the rollover-to-flush window: holds page 0 (100 bytes) and page 1 (empty)
+    let mut reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+
+    // The pre-rollover flusher appends value 1 to page 0 only; page 1 stays empty
+    flusher().unwrap();
+
+    reader.live_reload(&MmapFs).unwrap();
+
+    assert_eq!(reader.max_point_offset().unwrap(), 2);
+    assert_eq!(
+        reader.get_value::<Random>(1, &hw_counter).unwrap(),
+        Some(vec![1u8; 100]),
+        "value 1 lives in page 0's late-flushed tail, behind the unchanged empty page 1",
     );
 }

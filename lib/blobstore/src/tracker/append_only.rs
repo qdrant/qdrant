@@ -236,7 +236,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     /// - Mappings are append-only, existing entries never change.
     /// - Partial writes are possible, but ignored: a trailing partial entry is not counted.
     ///
-    /// Returns `true` if there are new mappings, `false` if the tracker is already up to date.
+    /// Returns the point offset range of new mappings.
     pub fn live_reload(&mut self) -> Result<bool> {
         debug_assert!(
             self.pending.is_empty(),
@@ -248,17 +248,17 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         let new_count = count_from_len(len)?;
 
         if new_count < self.persisted_count {
-            Err(BlobstoreError::service_error(format!(
+            return Err(BlobstoreError::service_error(format!(
                 "live reload cannot decrease mapping count, possible data loss: old count {}, new count {new_count}",
                 self.persisted_count,
-            )))
-        } else if new_count == self.persisted_count {
-            // No new mappings, no need to reload
-            Ok(false)
-        } else {
-            self.persisted_count = new_count;
-            Ok(true)
+            )));
         }
+
+        let changed = new_count != self.persisted_count;
+
+        self.persisted_count = new_count;
+
+        Ok(changed)
     }
 }
 

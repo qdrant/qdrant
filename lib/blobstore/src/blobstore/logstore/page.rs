@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use ahash::HashSet;
+use ahash::{HashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
@@ -211,16 +211,36 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
     /// Reload the pages from "disk", making newly appended value data visible to reads and the
     /// reported storage size.
     ///
-    /// Reloads the last held page, the only one that can have grown, and adopts page files
-    /// created since. Earlier pages never change once a newer page exists.
+    /// Reloads the held pages starting at `reload_from` (at least the last page), and adopts
+    /// page files created since.
     pub(super) fn live_reload(&mut self, fs: &S::Fs, populate: Populate) -> Result<()> {
-        if let Some(last) = self.pages.last_mut() {
-            last.live_reload()?;
+        let page_list: HashMap<_, _> = fs
+            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
+            .into_iter()
+            .map(|listed| (listed.path, listed.size))
+            .collect();
+
+        // Reload pages if they grew their size
+        for (page_idx, page) in self.pages.iter_mut().enumerate() {
+            let path = page_file_name(&self.dir, page_idx as PageId);
+            let Some(&new_size) = page_list.get(&path) else {
+                continue;
+            };
+            if page.len() == new_size {
+                continue;
+            }
+            if page.len() > new_size {
+                return Err(BlobstoreError::service_error(format!(
+                    "Page {page_idx} is truncated"
+                )));
+            }
+            page.live_reload()?;
         }
 
+        // Load new pages
         for page_id in self.pages.len() as PageId.. {
             let path = page_file_name(&self.dir, page_id);
-            if !fs.exists(&path)? {
+            if !page_list.contains_key(&path) {
                 break;
             }
             self.pages

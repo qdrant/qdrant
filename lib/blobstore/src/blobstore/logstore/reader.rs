@@ -170,6 +170,8 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         // A writer always updates pages before the tracker, it is not synchronized with readers
         // Here we read the tracker first, so that we're sure all pages are already updated
         self.tracker.live_reload()?;
+
+        // The new mappings name the pages whose flushed data must be visible now.
         self.pages.live_reload(fs, self.populate)?;
 
         Ok(())
