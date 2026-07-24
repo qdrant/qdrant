@@ -248,6 +248,10 @@ impl CollectionsTelemetry {
         let mut update_queue_length = Vec::with_capacity(num_collections);
         let mut deferred_points_count = Vec::with_capacity(num_collections);
 
+        // Storage size estimations (raw storage, excluding indices)
+        let mut vectors_size_per_collection = Vec::with_capacity(num_collections);
+        let mut payloads_size_per_collection = Vec::with_capacity(num_collections);
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -401,6 +405,16 @@ impl CollectionsTelemetry {
             update_queue_length.push(gauge(total_queue_length as f64, &[("id", &collection.id)]));
             deferred_points_count.push(gauge(
                 total_deferred_count as f64,
+                &[("id", &collection.id)],
+            ));
+
+            // Storage size estimations
+            vectors_size_per_collection.push(gauge(
+                collection.count_vectors_size_bytes() as f64,
+                &[("id", &collection.id)],
+            ));
+            payloads_size_per_collection.push(gauge(
+                collection.count_payloads_size_bytes() as f64,
                 &[("id", &collection.id)],
             ));
         }
@@ -558,6 +572,22 @@ impl CollectionsTelemetry {
             "number of points currently hidden during read operations as they're not yet optimized",
             MetricType::GAUGE,
             deferred_points_count,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_vectors_size_bytes",
+            "estimated size of raw vector storage per collection in bytes (excludes indices)",
+            MetricType::GAUGE,
+            vectors_size_per_collection,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_payloads_size_bytes",
+            "estimated size of raw payload storage per collection in bytes (excludes indices)",
+            MetricType::GAUGE,
+            payloads_size_per_collection,
             prefix,
         ));
     }
@@ -1563,6 +1593,86 @@ mod tests {
         assert!(
             !output.contains("collection=\"col\""),
             "Non-whitelisted endpoint should not appear:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_collection_storage_size_metrics() {
+        use std::collections::HashMap;
+
+        use collection::shards::telemetry::{LocalShardTelemetry, ReplicaSetTelemetry};
+        use collection::telemetry::CollectionTelemetry;
+
+        use super::MetricsData;
+        use crate::common::telemetry_ops::collections_telemetry::{
+            CollectionTelemetryEnum, CollectionsTelemetry,
+        };
+
+        // Two shards, so the per-collection metric must sum their sizes.
+        let local_shard_a = LocalShardTelemetry {
+            vectors_size_bytes: Some(2000),
+            payloads_size_bytes: Some(700),
+            ..Default::default()
+        };
+        let local_shard_b = LocalShardTelemetry {
+            vectors_size_bytes: Some(48),
+            payloads_size_bytes: Some(324),
+            ..Default::default()
+        };
+
+        let make_replica_set = |id, local| ReplicaSetTelemetry {
+            id,
+            key: None,
+            local: Some(local),
+            remote: vec![],
+            replicate_states: HashMap::new(),
+            partial_snapshot: None,
+        };
+
+        let collection = CollectionTelemetry {
+            id: "my_collection".to_string(),
+            init_time_ms: None,
+            config: None,
+            shards: Some(vec![
+                make_replica_set(0, local_shard_a),
+                make_replica_set(1, local_shard_b),
+            ]),
+            transfers: None,
+            resharding: None,
+            shard_clean_tasks: None,
+        };
+
+        let telemetry = CollectionsTelemetry {
+            number_of_collections: 1,
+            collections: Some(vec![CollectionTelemetryEnum::Full(Box::new(collection))]),
+            ..Default::default()
+        };
+
+        let mut metrics = MetricsData::empty();
+        telemetry.add_metrics(&mut metrics, None, None);
+        let output = metrics.format_metrics();
+
+        // Metric families are present and labeled per collection
+        assert!(
+            output.contains("collection_vectors_size_bytes"),
+            "Expected vectors size metric in output:\n{output}"
+        );
+        assert!(
+            output.contains("collection_payloads_size_bytes"),
+            "Expected payloads size metric in output:\n{output}"
+        );
+        assert!(
+            output.contains("id=\"my_collection\""),
+            "Expected collection label in output:\n{output}"
+        );
+        // Values are summed across shards: 2000 + 48 = 2048, 700 + 324 = 1024
+        assert!(
+            output.contains("collection_vectors_size_bytes{id=\"my_collection\"} 2048"),
+            "Expected summed vectors size of 2048 in output:\n{output}"
+        );
+        assert!(
+            output.contains("collection_payloads_size_bytes{id=\"my_collection\"} 1024"),
+            "Expected summed payloads size of 1024 in output:\n{output}"
         );
     }
 }
