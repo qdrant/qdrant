@@ -1,3 +1,30 @@
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// TTL for the cached total memory; matches the disk-usage cache.
+const CACHE_TTL: Duration = Duration::from_secs(5);
+
+static TOTAL_MEMORY_CACHE: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+
+/// Total memory in bytes (cgroup limit if set, else host), cached for `CACHE_TTL`
+/// since `Mem::new()` is not free. Short TTL keeps it in step with limit resizes.
+pub fn total_memory_bytes() -> u64 {
+    let now = Instant::now();
+
+    if let Ok(guard) = TOTAL_MEMORY_CACHE.lock()
+        && let Some((cached_at, value)) = *guard
+        && now.duration_since(cached_at) < CACHE_TTL
+    {
+        return value;
+    }
+
+    let value = Mem::new().total_memory_bytes();
+    if let Ok(mut guard) = TOTAL_MEMORY_CACHE.lock() {
+        *guard = Some((now, value));
+    }
+    value
+}
+
 #[derive(Debug)]
 pub struct Mem {
     #[cfg(target_os = "linux")]
