@@ -1248,6 +1248,24 @@ mod tests {
             "Expected at least 2 indexed segments after optimization, got {indexed_count}",
         );
 
+        // Guarantee the recovery path is actually exercised. Each appendable segment can absorb
+        // data only until it reaches `max_segment_size`, so if the data to move exceeds the
+        // combined capacity of every currently-appendable segment, the first apply must run out
+        // of eligible destinations and hit `OutOfAppendableCapacity` at least once (asserted via
+        // `capacity_failures > 0` below). Without this, extra empty appendable segments could
+        // silently absorb the whole move and turn this into a no-op regression test.
+        let appendable_count = locked_holder
+            .read()
+            .iter()
+            .filter(|(_sid, segment)| segment.get().read().is_appendable())
+            .count();
+        assert!(
+            indexed_total > appendable_count * max_segment_size_bytes,
+            "Data to move ({indexed_total}) must exceed the combined appendable capacity \
+             ({appendable_count} segments * {max_segment_size_bytes} bytes) so a capacity \
+             failure is forced",
+        );
+
         // Arm the appendable segment size cap, as `UpdateHandler::run_workers` does on a real
         // shard.
         locked_holder
