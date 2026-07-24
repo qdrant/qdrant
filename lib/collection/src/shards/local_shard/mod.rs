@@ -770,7 +770,10 @@ impl LocalShard {
 
         // Cap the number of WAL entries to move to the update queue size,
         // since the update queue is limited and must hold all pending operations.
-        let update_queue_size = self.update_sender.load().capacity();
+        // Use the total configured buffer (`max_capacity`), not the currently
+        // available slots (`capacity`), which is what `update_queue_length` below
+        // treats as the total too.
+        let update_queue_size = self.update_sender.load().max_capacity();
         let to = cmp::max(
             to,
             last_wal_index.saturating_sub(update_queue_size as u64 - 1),
