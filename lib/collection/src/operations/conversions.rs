@@ -844,9 +844,12 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                 })
                 .transpose()?,
             modifier: modifier
-                .and_then(|x|
-                    // XXX: Invalid values silently converted to None
-                    api::grpc::qdrant::Modifier::try_from(x).ok())
+                .map(|x| {
+                    api::grpc::qdrant::Modifier::try_from(x).map_err(|_| {
+                        Status::invalid_argument(format!("Cannot convert Modifier: {x}"))
+                    })
+                })
+                .transpose()?
                 .map(Modifier::from),
         })
     }

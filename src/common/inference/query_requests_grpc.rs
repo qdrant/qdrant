@@ -253,7 +253,12 @@ fn convert_query_with_inferred(
             let reco_query = RecoQuery::new(positives, negatives);
 
             let strategy = strategy
-                .and_then(|x| grpc::RecommendStrategy::try_from(x).ok())
+                .map(|x| {
+                    grpc::RecommendStrategy::try_from(x).map_err(|_| {
+                        Status::invalid_argument(format!("Unknown recommend strategy: {x}"))
+                    })
+                })
+                .transpose()?
                 .map(RecommendStrategy::from)
                 .unwrap_or_default();
 
@@ -606,5 +611,54 @@ mod tests {
                 .message()
                 .contains("positive is missing"),
         );
+    }
+
+    fn make_recommend_query(strategy: Option<i32>) -> grpc::Query {
+        grpc::Query {
+            variant: Some(api::grpc::qdrant::query::Variant::Recommend(
+                RecommendInput {
+                    positive: vec![grpc::VectorInput {
+                        variant: Some(Variant::Dense(grpc::DenseVector {
+                            data: vec![1.0, 2.0, 3.0],
+                        })),
+                    }],
+                    negative: vec![],
+                    strategy,
+                },
+            )),
+        }
+    }
+
+    #[test]
+    fn test_convert_query_rejects_unknown_recommend_strategy() {
+        let inferred = create_test_inferred_batch();
+        let query = make_recommend_query(Some(9999));
+
+        let result = convert_query_with_inferred(query, &inferred);
+        let err = result.expect_err("unknown strategy should be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("Unknown recommend strategy"),
+            "unexpected message: {}",
+            err.message(),
+        );
+    }
+
+    #[test]
+    fn test_convert_query_accepts_known_recommend_strategy() {
+        let inferred = create_test_inferred_batch();
+        let query = make_recommend_query(Some(grpc::RecommendStrategy::BestScore as i32));
+
+        let result = convert_query_with_inferred(query, &inferred);
+        assert!(result.is_ok(), "expected ok, got {result:?}");
+    }
+
+    #[test]
+    fn test_convert_query_accepts_missing_recommend_strategy() {
+        let inferred = create_test_inferred_batch();
+        let query = make_recommend_query(None);
+
+        let result = convert_query_with_inferred(query, &inferred);
+        assert!(result.is_ok(), "expected ok, got {result:?}");
     }
 }
