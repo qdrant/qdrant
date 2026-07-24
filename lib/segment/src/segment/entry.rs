@@ -727,7 +727,10 @@ impl NonAppendableSegmentEntry for Segment {
         vector_name: &VectorName,
         vector_config: &VectorNameConfig,
     ) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| {
+        // Schema op: must run even on stale (low-`op_num`) replay so a segment that lacks this
+        // vector gets its storage (re)created, otherwise later replayed upserts referencing it
+        // are declined and their points are lost. `create_vector_name_impl` is idempotent.
+        self.handle_segment_schema_op_and_failure(op_num, |segment| {
             segment.create_vector_name_impl(op_num, vector_name, vector_config)
         })
     }
@@ -737,7 +740,9 @@ impl NonAppendableSegmentEntry for Segment {
         op_num: SeqNumberType,
         vector_name: &VectorName,
     ) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| {
+        // Schema op: mirror of `create_vector_name`, must run on stale replay so the deletion is
+        // reconstructed in lockstep with the create. `delete_vector_name_impl` is idempotent.
+        self.handle_segment_schema_op_and_failure(op_num, |segment| {
             segment.delete_vector_name_impl(op_num, vector_name)
         })
     }
