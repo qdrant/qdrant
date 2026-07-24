@@ -2,6 +2,7 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use shard::query::formula::ExpressionInternal;
 
@@ -82,6 +83,22 @@ impl FromPyObject<'_, '_> for PyExpression {
                 midpoint,
                 scale,
             },
+            PyExpressionInterface::StrDist { field, query, func } => {
+                // Reject empty or whitespace-only queries here so Python callers
+                // get a direct construction-time error before the expression
+                // reaches shared parsing and scoring layers.
+                if query.trim().is_empty() {
+                    return Err(PyValueError::new_err(
+                        "str_dist query must not be empty or whitespace-only",
+                    ));
+                }
+
+                ExpressionInternal::StrDist {
+                    field: segment::json_path::JsonPath::from(field),
+                    query,
+                    func: segment::index::query_optimization::rescore_formula::parsed_formula::StrDistKind::from(func),
+                }
+            }
         };
 
         Ok(Self(expr))
@@ -175,6 +192,11 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 midpoint,
                 scale,
             },
+            ExpressionInternal::StrDist { field, query, func } => PyExpressionInterface::StrDist {
+                field: crate::types::json_path::PyJsonPath(field),
+                query,
+                func: PyStrDistKind::from(func),
+            },
         };
 
         Bound::new(py, helper)
@@ -260,6 +282,14 @@ impl Repr for PyExpression {
                     ),
                     ("midpoint", midpoint),
                     ("scale", scale),
+                ],
+            ),
+            ExpressionInternal::StrDist { field, query, func } => (
+                "StrDist",
+                &[
+                    ("field", PyJsonPath::wrap_ref(field)),
+                    ("query", query),
+                    ("func", &PyStrDistKind::from(*func)),
                 ],
             ),
         };

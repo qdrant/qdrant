@@ -16848,6 +16848,9 @@
           },
           {
             "$ref": "#/components/schemas/GaussDecayExpression"
+          },
+          {
+            "$ref": "#/components/schemas/StrDistExpression"
           }
         ]
       },
@@ -17117,6 +17120,45 @@
             "$ref": "#/components/schemas/DecayParamsExpression"
           }
         }
+      },
+      "StrDistExpression": {
+        "type": "object",
+        "required": [
+          "str_dist"
+        ],
+        "properties": {
+          "str_dist": {
+            "$ref": "#/components/schemas/StrDistParamsExpression"
+          }
+        }
+      },
+      "StrDistParamsExpression": {
+        "type": "object",
+        "required": [
+          "field",
+          "func",
+          "query"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1
+          },
+          "func": {
+            "$ref": "#/components/schemas/StrDistFunc"
+          }
+        }
+      },
+      "StrDistFunc": {
+        "type": "string",
+        "enum": [
+          "levenshtein",
+          "jaro_winkler"
+        ]
       },
       "SampleQuery": {
         "type": "object",

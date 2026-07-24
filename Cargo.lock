@@ -7118,6 +7118,7 @@ dependencies = [
  "siphasher 1.0.3",
  "smallvec",
  "sparse",
+ "strsim 0.11.1",
  "strum",
  "sysinfo",
  "tap",
