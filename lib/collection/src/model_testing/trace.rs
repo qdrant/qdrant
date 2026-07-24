@@ -97,6 +97,7 @@ impl Trace {
         swarm_interval: usize,
         enable_force_off: bool,
         disable_snapshots: bool,
+        edge_verify: bool,
         duration: Option<Duration>,
     ) {
         self.write(&json!({
@@ -113,6 +114,7 @@ impl Trace {
             "restart_probability": restart_probability,
             "swarm_interval": swarm_interval,
             "disable_snapshots": disable_snapshots,
+            "edge_verify": edge_verify,
             "enable_force_off": enable_force_off,
             // null in op-count mode; seconds when the run is time-bounded (`--duration`).
             "duration_sec": duration.map(|d| d.as_secs()),
@@ -150,6 +152,17 @@ impl Trace {
             "kind": "Restart",
             "pre_points": pre_points,
             "pre_segments": pre_segments,
+        }));
+    }
+
+    /// Records a quiesced edge-follower checkpoint (force-flush + refresh + full compare)
+    /// at op `tick`. Written BEFORE the checkpoint runs, so a divergence panic is
+    /// attributable to it in the trace.
+    pub(super) fn edge_verify(&mut self, tick: usize, points: usize) {
+        self.write(&json!({
+            "op": tick,
+            "kind": "EdgeVerify",
+            "points": points,
         }));
     }
 
