@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -7,7 +8,8 @@ use segment::entry::ReadSegmentEntry as _;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::payload_json;
 use segment::types::{
-    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, ValueVariants,
+    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, PointIdType,
+    ValueVariants,
 };
 use tempfile::Builder;
 
@@ -18,8 +20,8 @@ use crate::operations::point_ops::PointStructRawPersisted;
 use crate::segment_holder::{FlushMode, SegmentHolder};
 use crate::update::{
     clear_payload_by_filter, create_field_index, delete_payload_by_filter, delete_points_by_filter,
-    delete_vectors_by_filter, overwrite_payload_by_filter, set_payload_by_filter, sync_points_raw,
-    upsert_points_raw,
+    delete_vectors_by_filter, overwrite_payload_by_filter, set_payload, set_payload_by_filter,
+    sync_points_raw, upsert_points_raw,
 };
 
 #[test]
@@ -898,5 +900,62 @@ fn create_field_index_pins_pending_payload_state() {
     assert!(
         hits.is_empty(),
         "filtered reads must agree with payload storage: the row was cleared",
+    );
+}
+
+/// Fixtures use dim-4 f32 vectors: 16 bytes per point.
+const TEST_POINT_SIZE_BYTES: usize = 16;
+
+#[test]
+fn test_capacity_error_when_all_appendable_at_cap() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut non_appendable = build_segment_1(dir.path()); // points 1-5
+    non_appendable.appendable_flag = false;
+
+    // Fill the only appendable segment up to the cap of 2 points.
+    let mut appendable = empty_segment(dir.path());
+    for point_id in [100u64, 101] {
+        appendable
+            .upsert_point(
+                10,
+                point_id.into(),
+                only_default_vector(&[1.0, 0.0, 1.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(non_appendable);
+    holder.add_new(appendable);
+    holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+
+    // Setting payload on the points of the non-appendable segment needs to CoW-move them,
+    // but no appendable segment is below the cap: the operation must fail with the
+    // recoverable capacity error instead of growing the full destination further.
+    let points: Vec<PointIdType> = (1..=5u64).map(PointIdType::from).collect();
+    let err = set_payload(
+        &holder,
+        100,
+        &payload_json! {"town": "Amsterdam"},
+        &points,
+        &None,
+        &hw_counter,
+    )
+    .expect_err("no appendable segment below the cap can accept the moved points");
+    assert!(
+        err.is_out_of_appendable_capacity(),
+        "expected OutOfAppendableCapacity, got: {err}",
+    );
+
+    // The insert path reports the same error instead of writing past the cap.
+    let err = holder
+        .smallest_appendable_segment()
+        .expect_err("even the smallest appendable segment is at the cap");
+    assert!(
+        err.is_out_of_appendable_capacity(),
+        "expected OutOfAppendableCapacity, got: {err}",
     );
 }

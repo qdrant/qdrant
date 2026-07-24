@@ -1096,6 +1096,29 @@ impl CollectionError {
         matches!(self, Self::PreConditionFailed { .. })
     }
 
+    /// Whether this is the flattened [`OperationError::OutOfAppendableCapacity`] error: all
+    /// appendable segments reached `max_segment_size`. The typed variant does not survive the
+    /// conversion to a (transient) shard-unavailable error, so it is recognized by its message,
+    /// which a test on the variant locks in place.
+    ///
+    /// Matched anywhere in the message rather than at its start: a replica that reports the
+    /// condition over gRPC comes back as a service error wrapping the status text, and the
+    /// replica set must recognize that form too or it deactivates a replica that recovers on
+    /// its own.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
+    pub fn is_out_of_appendable_capacity(&self) -> bool {
+        let message = match self {
+            // Raised on this peer.
+            Self::ShardUnavailable { description } => description.as_str(),
+            // Reported by a remote replica, wrapped in the gRPC status text.
+            Self::ServiceError { error, .. } => error.as_str(),
+            _ => return false,
+        };
+
+        message
+            .contains(segment::common::operation_error::OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX)
+    }
+
     pub fn is_missing_point(&self) -> bool {
         #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
@@ -1175,10 +1198,11 @@ impl From<OperationError> for CollectionError {
             OperationError::VariableTypeError { .. } => Self::bad_input(err.to_string()),
             OperationError::NonFiniteNumber { .. } => Self::bad_input(err.to_string()),
             // Normally handled by segment provisioning before reaching this conversion; if it
-            // leaks, stay transient so failed-operation recovery re-applies the operation.
-            OperationError::OutOfAppendableCapacity { .. } => Self::ServiceError {
-                error: err.to_string(),
-                backtrace: None,
+            // leaks, stay transient so failed-operation recovery re-applies the operation. It is
+            // temporary backpressure rather than an internal failure, so it maps to the
+            // unavailable (503) family instead of a service error (500).
+            OperationError::OutOfAppendableCapacity { .. } => Self::ShardUnavailable {
+                description: err.to_string(),
             },
         }
     }
@@ -1908,5 +1932,48 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The update worker recognizes the capacity condition by message, because the typed variant
+    /// does not survive the conversion below. This locks the whole chain: the variant's message,
+    /// the conversion into a shard-unavailable error, and the detection. Asserting on
+    /// `OperationError` alone would still pass if the conversion started wrapping the message.
+    #[test]
+    fn test_out_of_appendable_capacity_survives_conversion() {
+        let err = CollectionError::from(OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: 1024,
+        });
+
+        assert!(
+            err.is_out_of_appendable_capacity(),
+            "the update worker would stop retrying capacity failures: {err}",
+        );
+        assert!(
+            err.is_transient(),
+            "failed-operation recovery must re-apply the operation",
+        );
+    }
+
+    /// A replica reporting the condition sends it as an unavailable status carrying the error
+    /// message (see the `StorageError` conversion), which comes back as a service error wrapping
+    /// that text. The replica set must still recognize it, or it deactivates a replica that
+    /// recovers on its own.
+    #[test]
+    fn test_out_of_appendable_capacity_survives_remote_round_trip() {
+        let err = CollectionError::from(OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: 1024,
+        });
+
+        let remote_err = CollectionError::from(tonic::Status::unavailable(err.to_string()));
+
+        assert!(
+            remote_err.is_out_of_appendable_capacity(),
+            "the replica set would deactivate the reporting replica: {remote_err}",
+        );
     }
 }

@@ -110,17 +110,21 @@ impl UpdateWorkers {
 
             // Ensure we have at least one appendable segment with enough capacity
             // Source required parameters from first optimizer
-            let result = Self::ensure_appendable_segment_with_capacity(
+            let created_appendable_segment = match Self::ensure_appendable_segment_with_capacity(
                 &segments,
                 some_optimizer.segments_path(),
                 some_optimizer.segment_optimizer_config(),
                 some_optimizer.threshold_config(),
                 payload_index_schema.clone(),
-            );
-            if let Err(err) = result {
-                log::error!("Failed to ensure there are appendable segments with capacity: {err}");
-                panic!("Failed to ensure there are appendable segments with capacity: {err}");
-            }
+            ) {
+                Ok(created) => created,
+                Err(err) => {
+                    log::error!(
+                        "Failed to ensure there are appendable segments with capacity: {err}"
+                    );
+                    panic!("Failed to ensure there are appendable segments with capacity: {err}");
+                }
+            };
 
             // Backstop: reconcile the segment manifest with the live segment set. Registration
             // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
@@ -144,6 +148,24 @@ impl UpdateWorkers {
             .await
             .is_err()
             {
+                // Failed-operation recovery could not complete. When this wake-up just
+                // provisioned a fresh appendable segment, the failure is likely
+                // `OutOfAppendableCapacity` part-way through an operation that moves more data
+                // than one segment holds: it filled the new segment and needs another. Wake
+                // ourselves again so the next capacity-ensure provisions the next segment and
+                // recovery resumes where it stopped (applied points are skipped by version).
+                // Progress-guarded: if the provisioned segment stayed empty, the next wake-up
+                // creates nothing and this re-signal chain stops.
+                // `try_send` rather than an awaited send: this is our own signal channel, so
+                // awaiting a full one would deadlock the loop that drains it.
+                if created_appendable_segment
+                    && let Err(err) = sender.try_send(OptimizerSignal::Nop)
+                {
+                    log::warn!(
+                        "Could not re-signal the optimizer to continue capacity recovery, \
+                         it resumes on the next wake-up: {err}"
+                    );
+                }
                 let _ = optimization_finished_sender.send(());
                 continue;
             }
@@ -442,31 +464,24 @@ impl UpdateWorkers {
     /// created.
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
+    ///
+    /// Returns whether a new segment was created.
     pub fn ensure_appendable_segment_with_capacity(
         segments: &LockedSegmentHolder,
         segments_path: &Path,
         segment_config: &SegmentOptimizerConfig,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<bool> {
         let no_segment_with_capacity = {
-            let segments_read = segments.read();
-            segments_read
-                .appendable_segments_ids()
-                .into_iter()
-                .filter_map(|segment_id| segments_read.get(segment_id))
-                .all(|segment| {
-                    let max_vector_size_bytes = segment
-                        .get()
-                        .read()
-                        .max_available_vectors_size_in_bytes()
-                        .unwrap_or_default();
-                    let max_segment_size_bytes = thresholds_config
-                        .max_segment_size_kb
-                        .saturating_mul(segment::common::BYTES_IN_KB);
-
-                    max_vector_size_bytes >= max_segment_size_bytes
-                })
+            let max_segment_size_bytes = std::num::NonZeroUsize::new(
+                thresholds_config
+                    .max_segment_size_kb
+                    .saturating_mul(segment::common::BYTES_IN_KB),
+            );
+            !segments
+                .read()
+                .has_appendable_segment_with_capacity(max_segment_size_bytes)
         };
 
         if no_segment_with_capacity {
@@ -486,7 +501,7 @@ impl UpdateWorkers {
             write_guard.add_new_locked(new_segment);
         }
 
-        Ok(())
+        Ok(no_segment_with_capacity)
     }
 
     /// Trigger optimizers when CPU budget is available
@@ -530,17 +545,155 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    CollectionUpdater::update(
+                    let result = CollectionUpdater::update(
                         &segments,
                         op_num,
                         operation.operation,
                         update_operation_lock.clone(),
                         update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                    );
+                    match result {
+                        Ok(_) => {}
+                        // Abort recovery and retry on a later wake-up.
+                        Err(err) if err.is_transient() => return Err(err),
+                        // A non-transient decline can never succeed; skip it like WAL replay
+                        // does on shard load, instead of aborting recovery forever. A replayed
+                        // operation can legitimately decline this way when later (already
+                        // applied) operations changed the state it sees, e.g. deleted one of
+                        // its points. `CollectionUpdater` already dropped it from
+                        // `failed_operation`, unblocking the WAL acknowledge.
+                        Err(err) => {
+                            log::warn!(
+                                "Skipping failed operation {op_num} during recovery, \
+                                 it was declined: {err}"
+                            );
+                        }
+                    }
                 }
             }
         };
         Ok(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicBool;
+
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::types::DeferredBehavior;
+    use segment::data_types::vectors::only_default_vector;
+    use segment::entry::entry_point::SegmentEntry as _;
+    use segment::payload_json;
+    use segment::types::{PayloadContainer, WithPayload};
+    use shard::operations::OperationWithClockTag;
+    use shard::retrieve::retrieve_blocking::retrieve_blocking;
+    use shard::segment_holder::SegmentHolder;
+    use shard::wal::{SerdeWal, WalRawRecord};
+    use tempfile::Builder;
+    use wal::WalOptions;
+
+    use super::*;
+    use crate::collection_manager::fixtures::{TEST_TIMEOUT, empty_segment};
+    use crate::operations::CollectionUpdateOperations;
+    use crate::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use crate::shards::update_tracker::UpdateTracker;
+
+    fn set_payload_op(point_id: u64, color: &str) -> CollectionUpdateOperations {
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"color": color},
+            points: Some(vec![point_id.into()]),
+            filter: None,
+            key: None,
+        }))
+    }
+
+    /// A queued operation can start declining non-transiently once later operations changed the
+    /// state it sees. Recovery used to propagate that error, which aborted the whole pass and left
+    /// the operation queued, so every later wake-up retried the same doomed operation and the WAL
+    /// acknowledge never advanced. It must be skipped instead, exactly like WAL replay does.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_try_recover_skips_declined_operation_and_continues() {
+        let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+        let wal_dir = Builder::new().prefix("wal").tempdir().unwrap();
+
+        // Seed the point at version 0 so the replayed operations below, whose op numbers are WAL
+        // indices starting at 0, are not skipped as already applied.
+        let hw_counter = HardwareCounterCell::new();
+        let mut segment = empty_segment(segments_dir.path());
+        segment
+            .upsert_point(
+                0,
+                1.into(),
+                only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+                &hw_counter,
+            )
+            .unwrap();
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(segment);
+        let segments = LockedSegmentHolder::new(holder);
+
+        let mut wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
+
+        // Declines with `PointNotFound`, which is not transient: point 999 does not exist.
+        let declining_op_num = wal
+            .write(
+                &WalRawRecord::new(&OperationWithClockTag::new(
+                    set_payload_op(999, "red"),
+                    None,
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+        // Queued behind it, and must still be applied once the declined one is skipped.
+        wal.write(
+            &WalRawRecord::new(&OperationWithClockTag::new(set_payload_op(1, "blue"), None))
+                .unwrap(),
+        )
+        .unwrap();
+
+        segments.write().failed_operation.insert(declining_op_num);
+
+        UpdateWorkers::try_recover(
+            segments.clone(),
+            Arc::new(TokioMutex::new(wal)),
+            Arc::new(tokio::sync::RwLock::new(())),
+            UpdateTracker::default(),
+        )
+        .await
+        .expect("a declined operation must not abort recovery");
+
+        assert!(
+            segments.read().failed_operation.is_empty(),
+            "the declined operation must stop pinning the WAL acknowledge",
+        );
+
+        let is_stopped = AtomicBool::new(false);
+        let records = retrieve_blocking(
+            segments,
+            &[1.into()],
+            &WithPayload::from(true),
+            &false.into(),
+            TEST_TIMEOUT,
+            &is_stopped,
+            HwMeasurementAcc::new(),
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+        assert_eq!(
+            records[&1.into()]
+                .payload
+                .as_ref()
+                .and_then(|payload| payload
+                    .get_value(&"color".parse().unwrap())
+                    .first()
+                    .cloned()),
+            Some(&serde_json::json!("blue")),
+            "recovery must keep applying the operations queued behind the declined one",
+        );
     }
 }
