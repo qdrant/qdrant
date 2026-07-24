@@ -59,8 +59,7 @@ fn open_mmap_vector_storage(
                 vector_config.size,
                 vector_config.distance,
                 populate,
-            )
-            .map(|s| VectorStorageEnum::DenseTurbo(Box::new(s))),
+            ),
         }
     }
 }

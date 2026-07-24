@@ -48,6 +48,9 @@ impl<S: UniversalRead> LiveReload for VectorStorageReadEnum<S> {
             VectorStorageReadEnum::DenseTurbo(s) => {
                 s.live_reload(fs, deleted_points, new_points, hw_counter)
             }
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
+                s.live_reload(fs, deleted_points, new_points, hw_counter)
+            }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
                 s.live_reload(fs, deleted_points, new_points, hw_counter)
             }
