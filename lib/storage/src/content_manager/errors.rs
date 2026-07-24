@@ -2,7 +2,7 @@ use std::backtrace::Backtrace;
 use std::io::Error as IoError;
 use std::time::Duration;
 
-use collection::operations::types::CollectionError;
+use collection::operations::types::{CollectionError, ShardUnavailableReason};
 use collection::shards::shard::ShardId;
 use tempfile::PersistError;
 use thiserror::Error;
@@ -46,7 +46,10 @@ pub enum StorageError {
         retry_after: Option<Duration>,
     },
     #[error("Shard temporarily unavailable: {description}")]
-    ShardUnavailable { description: String },
+    ShardUnavailable {
+        description: String,
+        reason: ShardUnavailableReason,
+    },
     #[error("Partial snapshot for shard {shard_id} contains no changes")]
     EmptyPartialSnapshot { shard_id: ShardId },
 }
@@ -184,8 +187,9 @@ impl StorageError {
                 description,
                 retry_after,
             },
-            CollectionError::ShardUnavailable { .. } => StorageError::ShardUnavailable {
+            CollectionError::ShardUnavailable { reason, .. } => StorageError::ShardUnavailable {
                 description: overriding_description,
+                reason,
             },
         }
     }
@@ -243,9 +247,13 @@ impl From<CollectionError> for StorageError {
                 description,
                 retry_after,
             },
-            CollectionError::ShardUnavailable { description } => {
-                StorageError::ShardUnavailable { description }
-            }
+            CollectionError::ShardUnavailable {
+                description,
+                reason,
+            } => StorageError::ShardUnavailable {
+                description,
+                reason,
+            },
         }
     }
 }
