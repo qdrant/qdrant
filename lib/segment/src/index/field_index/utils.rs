@@ -24,9 +24,16 @@ where
 pub fn value_to_integer(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| {
         value.as_f64().and_then(|v| {
-            let int = v as i64;
-            // This covers fractions, ranges, infinity and NaN cases
-            (int as f64 == v).then_some(int)
+            // Reject NaN, infinity, and values outside i64 range.
+            // Without the range check, out-of-range f64 values saturate during
+            // the `v as i64` cast and then pass the round-trip equality test
+            // (e.g. 9223372036854775808.0 → i64::MAX → 9223372036854775808.0).
+            if v.is_finite() && v >= (i64::MIN as f64) && v < (i64::MAX as f64) {
+                let int = v as i64;
+                (int as f64 == v).then_some(int)
+            } else {
+                None
+            }
         })
     })
 }
