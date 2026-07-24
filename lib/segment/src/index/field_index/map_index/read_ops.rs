@@ -13,8 +13,8 @@ use itertools::Itertools;
 use super::key::MapIndexKey;
 use super::{IdIter, MapIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::stat_tools::number_of_selected_points;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -382,6 +382,33 @@ where
             MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
             MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
             MapIndex::OnDisk(index) => index.get_iterator(value, hw_counter),
+        }
+    }
+
+    fn match_cardinality(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        match self {
+            MapIndex::Mutable(index) => index.match_cardinality(value, hw_counter),
+            MapIndex::Immutable(index) => index.match_cardinality(value, hw_counter),
+            MapIndex::OnDisk(index) => index.match_cardinality(value, hw_counter),
+        }
+    }
+
+    fn except_cardinality<'b>(
+        &self,
+        excluded: impl Iterator<Item = &'b N>,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation
+    where
+        N: 'b,
+    {
+        match self {
+            MapIndex::Mutable(index) => index.except_cardinality(excluded, hw_counter),
+            MapIndex::Immutable(index) => index.except_cardinality(excluded, hw_counter),
+            MapIndex::OnDisk(index) => index.except_cardinality(excluded, hw_counter),
         }
     }
 
