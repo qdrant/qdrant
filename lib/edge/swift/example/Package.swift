@@ -3,11 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "QdrantEdgeExample",
+    // iOS + macOS only, matching the QdrantEdge package's shipped slices.
     platforms: [
         .iOS(.v15),
         .macOS(.v13),
-        .tvOS(.v15),
-        .visionOS(.v1),
     ],
     dependencies: [
         .package(name: "QdrantEdge", path: ".."),

@@ -75,26 +75,33 @@ jobs:
 
       # Fail-closed mobile-safety gate: the mobile build drops the default-on
       # `matrix` feature, so the O(n^2) `search_matrix` op must be absent from
-      # both the generated Swift surface and the compiled static libraries. A
-      # regression (e.g. a dropped --no-default-features flag) turns this red.
+      # the shipped surface. A regression (e.g. a dropped --no-default-features
+      # flag) turns this red.
+      #
+      # Checked against the generated Swift bindings AND the generated C header
+      # (`QdrantEdgeFFI.h`) — the real exported FFI vocabulary, which is
+      # feature-gated and NOT stripped. (An earlier `nm` scan of the static libs
+      # was vacuous: `release-mobile` sets `strip = "symbols"`, so `nm` sees no
+      # UniFFI symbols at all and would pass regardless. A `strings` scan is also
+      # wrong — it false-positives on engine-internal `SearchMatrixRequestBuilder`
+      # that is compiled in regardless of the FFI feature.)
       - name: Enforce search_matrix exclusion
         working-directory: lib/edge/swift
         run: |
           set -euo pipefail
-          if grep -qE 'searchMatrix|SearchMatrixRequest|SearchMatrixResponse' out/swift-bindings/QdrantEdge.swift; then
-            echo "::error::search_matrix leaked onto the mobile Swift surface (expected --no-default-features to drop it)"
-            exit 1
-          fi
-          leaked=0
-          for lib in ../../../target/*/release-mobile/libqdrant_edge_ffi.a; do
-            [ -e "$lib" ] || continue
-            if nm "$lib" 2>/dev/null | grep -qi 'search_matrix'; then
-              echo "::error::search_matrix symbol present in $lib"
-              leaked=1
+          for f in out/swift-bindings/QdrantEdge.swift out/swift-bindings/QdrantEdgeFFI.h; do
+            if grep -qiE 'search_?matrix' "$f"; then
+              echo "::error::search_matrix present in $f (expected --no-default-features to drop it)"
+              exit 1
             fi
           done
-          [ "$leaked" -eq 0 ] || exit 1
-          echo "OK: search_matrix absent from the mobile surface and libraries"
+          # Canary: the gate must be able to SEE a symbol that is definitely
+          # present, so it cannot pass vacuously if the header path/format drifts.
+          if ! grep -q 'edgeshard_search' out/swift-bindings/QdrantEdgeFFI.h; then
+            echo "::error::canary failed — 'edgeshard_search' absent from QdrantEdgeFFI.h; the gate is scanning the wrong file"
+            exit 1
+          fi
+          echo "OK: search_matrix absent from the mobile surface (canary present)"
 
       # The Swift release tag, XCFramework URL, and crate all reference one
       # version; keep lib/edge/VERSION and the crate in lock-step.
@@ -107,20 +114,33 @@ jobs:
             echo "::error::lib/edge/VERSION ($version) != qdrant-edge-ffi crate version ($crate)"
             exit 1
           fi
-          echo "OK: version $version in sync"
+          # The committed release tag/URL in Package.swift must also track VERSION
+          # (release-xcframework.sh regenerates it, but nothing forces that step
+          # before a version bump — catch a stale edge-v<old> URL here).
+          if ! grep -q "edge-v${version}/" lib/edge/swift/Package.swift; then
+            echo "::error::Package.swift releaseURL does not embed edge-v${version}; re-run release-xcframework.sh after bumping VERSION"
+            exit 1
+          fi
+          echo "OK: version $version in sync (VERSION == crate == Package.swift release tag)"
 
       # Runtime tests on the macOS slice.
       - name: Swift test (macOS)
         working-directory: lib/edge/swift
         run: swift test
 
-      # Compile + link the SDK and its tests for the iOS Simulator arch. Proves
-      # the iOS slice links without booting a simulator (kept out of CI for
-      # reliability; `swift test` above covers runtime on macOS).
-      - name: Build for iOS Simulator
+      # Runtime tests on the iOS Simulator slice (device names vary across
+      # runners, so pick the first available iPhone simulator by UDID).
+      - name: Swift test (iOS Simulator)
         working-directory: lib/edge/swift
         run: |
-          xcodebuild build-for-testing \
-            -scheme QdrantEdge \
-            -destination 'generic/platform=iOS Simulator' \
-            -skipPackagePluginValidation
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available | grep -m1 'iPhone' \
+            | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}')"
+          if [ -z "$udid" ]; then echo '::error::no iPhone simulator available on the runner'; exit 1; fi
+          echo "Using iOS Simulator $udid"
+          xcodebuild test -scheme QdrantEdge -destination "id=$udid" -skipPackagePluginValidation
+
+      # The shipped example must compile against the SDK's current API.
+      - name: Build example
+        working-directory: lib/edge/swift/example
+        run: swift build

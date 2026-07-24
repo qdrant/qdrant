@@ -16,7 +16,7 @@ setup-homebrew: ## Install Homebrew dependencies (protobuf)
 	brew install protobuf
 
 .PHONY: setup-rust
-setup-rust: ## Install Rust toolchain (stable + nightly for tier-3 targets)
+setup-rust: ## Install the nightly Rust toolchain (required — the workspace uses unstable std features)
 	@if ! command -v rustup >/dev/null 2>&1; then \
 		echo "Installing rustup..."; \
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
@@ -28,13 +28,13 @@ setup-rust: ## Install Rust toolchain (stable + nightly for tier-3 targets)
 
 .PHONY: setup-targets
 setup-targets: ## Install required Rust cross-compilation targets
-	rustup target add \
+	rustup target add --toolchain nightly \
 		aarch64-apple-ios \
 		aarch64-apple-ios-sim \
 		x86_64-apple-ios \
 		aarch64-apple-darwin \
 		x86_64-apple-darwin
-	@echo "tvOS/visionOS targets are tier-3 and will be built with nightly -Z build-std"
+	@echo "All targets build on nightly (pinned by rust-toolchain.toml); tvOS/visionOS additionally need -Z build-std (make build-all)."
 
 # ── Build ────────────────────────────────────────────────────────────────────
 

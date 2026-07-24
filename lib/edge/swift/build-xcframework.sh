@@ -81,7 +81,11 @@ export XROS_DEPLOYMENT_TARGET="${XROS_DEPLOYMENT_TARGET:-1.0}"
 
 # ── Targets ──────────────────────────────────────────────────────────────────
 
-# Tier 1/2 — build with stable toolchain
+# Tier 1/2 targets. Note: despite the tier, these still build on NIGHTLY (pinned
+# by lib/edge/swift/rust-toolchain.toml) because the workspace uses unstable std
+# features (ptr_as_ref_unchecked/cfg_select in lib/common). The tier-3 targets
+# below additionally require `-Z build-std`, which is the only nightly-specific
+# extra they carry.
 STABLE_TARGETS=(
     "aarch64-apple-ios"           # iOS devices
     "aarch64-apple-ios-sim"       # iOS Simulator (Apple Silicon)
@@ -102,8 +106,6 @@ if $ALL_PLATFORMS; then
     )
 fi
 
-ALL_TARGETS=("${STABLE_TARGETS[@]}" ${TIER3_TARGETS[@]+"${TIER3_TARGETS[@]}"})
-
 # ── Build ────────────────────────────────────────────────────────────────────
 
 echo "==> Installing required Rust targets..."
@@ -113,7 +115,7 @@ done
 
 echo "==> Building static libraries..."
 for target in "${STABLE_TARGETS[@]}"; do
-    echo "    Building for $target (stable)..."
+    echo "    Building for $target (nightly)..."
     cargo build --locked $CARGO_FLAGS $FEATURE_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
