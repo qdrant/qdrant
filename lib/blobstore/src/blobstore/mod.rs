@@ -13,7 +13,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    MmapFile, Populate, UniversalAppend, UniversalWrite, UniversalWriteFileOps, UserData,
+    MmapFile, Populate, UniversalAppend, UniversalReadFileOps, UniversalWrite,
+    UniversalWriteFileOps, UserData,
 };
 use gridstore::Gridstore;
 use logstore::Logstore;
@@ -82,7 +83,7 @@ where
         populate: Populate,
     ) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
-        if config_path.exists() {
+        if fs.exists(&config_path)? {
             Self::open(fs, base_path, populate)
         } else {
             fs.create_dir(&base_path)?;
