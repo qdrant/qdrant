@@ -82,7 +82,9 @@ impl<S: UniversalWrite> Bitmask<S> {
     /// Create a bitmask for one page
     pub(crate) fn create(fs: &S::Fs, dir: &Path, config: StorageConfig) -> Result<Self> {
         debug_assert!(
-            config.page_size_bytes % config.block_size_bytes * config.region_size_blocks == 0,
+            config
+                .page_size_bytes
+                .is_multiple_of(config.block_size_bytes * config.region_size_blocks),
             "Page size must be a multiple of block size * region size"
         );
 
