@@ -1,0 +1,126 @@
+name: Qdrant Edge Swift SDK
+
+# Consistency gate for the Swift SDK: the Swift bindings are regenerated from
+# the `qdrant-edge-ffi` crate on every build, so a change to the FFI can silently
+# change (or break) the SDK. This workflow rebuilds the XCFramework from the
+# current FFI, runs the Swift tests, and enforces the mobile-safety invariants,
+# so an FFI change that breaks the SDK — or re-leaks the excluded `search_matrix`
+# op onto the mobile surface — turns the build red.
+#
+# macOS-only (needs Xcode + the Apple cross-compilation targets), and gated to
+# the edge FFI/Swift paths so the macOS runner minutes are spent only when
+# relevant.
+
+on:
+  push:
+    branches: [ master, dev ]
+    paths:
+      - 'lib/edge/ffi/**'
+      - 'lib/edge/swift/**'
+      - 'lib/edge/VERSION'
+      - '.github/workflows/edge-swift.yml'
+  pull_request:
+    branches: [ '**' ]
+    paths:
+      - 'lib/edge/ffi/**'
+      - 'lib/edge/swift/**'
+      - 'lib/edge/VERSION'
+      - '.github/workflows/edge-swift.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  edge-swift:
+    name: Build & test Swift SDK
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Later steps build repository-controlled Rust; never leave the token
+          # in .git/config. This job never pushes.
+          persist-credentials: false
+
+      # The workspace uses unstable features (cfg_select in lib/common,
+      # ptr_as_ref_unchecked), so nightly is required — make it the default
+      # toolchain so build-xcframework.sh's plain `cargo build` uses it. The
+      # Apple targets are installed here for that toolchain.
+      - name: Install Rust nightly + Apple targets
+        uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
+        with:
+          targets: >-
+            aarch64-apple-ios,
+            aarch64-apple-ios-sim,
+            x86_64-apple-ios,
+            aarch64-apple-darwin,
+            x86_64-apple-darwin
+
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: edge-swift
+          # Only save on dev; feature-branch caches just get evicted under the budget.
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+
+      # Regenerates the bindings from the current FFI and builds the iOS+macOS
+      # XCFramework (tvOS/visionOS are tier-3, excluded here).
+      - name: Build XCFramework (iOS + macOS)
+        working-directory: lib/edge/swift
+        run: make build
+
+      # Fail-closed mobile-safety gate: the mobile build drops the default-on
+      # `matrix` feature, so the O(n^2) `search_matrix` op must be absent from
+      # both the generated Swift surface and the compiled static libraries. A
+      # regression (e.g. a dropped --no-default-features flag) turns this red.
+      - name: Enforce search_matrix exclusion
+        working-directory: lib/edge/swift
+        run: |
+          set -euo pipefail
+          if grep -qE 'searchMatrix|SearchMatrixRequest|SearchMatrixResponse' out/swift-bindings/QdrantEdge.swift; then
+            echo "::error::search_matrix leaked onto the mobile Swift surface (expected --no-default-features to drop it)"
+            exit 1
+          fi
+          leaked=0
+          for lib in ../../../target/*/release-mobile/libqdrant_edge_ffi.a; do
+            [ -e "$lib" ] || continue
+            if nm "$lib" 2>/dev/null | grep -qi 'search_matrix'; then
+              echo "::error::search_matrix symbol present in $lib"
+              leaked=1
+            fi
+          done
+          [ "$leaked" -eq 0 ] || exit 1
+          echo "OK: search_matrix absent from the mobile surface and libraries"
+
+      # The Swift release tag, XCFramework URL, and crate all reference one
+      # version; keep lib/edge/VERSION and the crate in lock-step.
+      - name: Version sync
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < lib/edge/VERSION)"
+          crate="$(grep -m1 '^version = ' lib/edge/ffi/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$version" != "$crate" ]; then
+            echo "::error::lib/edge/VERSION ($version) != qdrant-edge-ffi crate version ($crate)"
+            exit 1
+          fi
+          echo "OK: version $version in sync"
+
+      # Runtime tests on the macOS slice.
+      - name: Swift test (macOS)
+        working-directory: lib/edge/swift
+        run: swift test
+
+      # Compile + link the SDK and its tests for the iOS Simulator arch. Proves
+      # the iOS slice links without booting a simulator (kept out of CI for
+      # reliability; `swift test` above covers runtime on macOS).
+      - name: Build for iOS Simulator
+        working-directory: lib/edge/swift
+        run: |
+          xcodebuild build-for-testing \
+            -scheme QdrantEdge \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation
