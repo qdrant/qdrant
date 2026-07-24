@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+mod fuzzy_index;
 use std::path::PathBuf;
 
 use common::universal_io::MmapFile;
@@ -8,6 +10,7 @@ use self::on_disk_text_index::OnDiskFullTextIndex;
 use crate::data_types::index::TextIndexParams;
 
 pub mod full_text_index_read;
+
 mod immutable_text_index;
 mod inverted_index;
 mod lifecycle;

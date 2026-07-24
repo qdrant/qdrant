@@ -2762,6 +2762,9 @@ name = "fst"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab85b9b05e3978cc9a9cf8fea7f01b494e1a09ed3037e16ba39edc7a29eb61a"
+dependencies = [
+ "utf8-ranges",
+]
 
 [[package]]
 name = "funty"
@@ -7067,6 +7070,7 @@ dependencies = [
  "fnv",
  "fs-err 3.3.1",
  "fs_extra",
+ "fst",
  "geo",
  "geohash",
  "gpu",
@@ -7118,6 +7122,7 @@ dependencies = [
  "siphasher 1.0.3",
  "smallvec",
  "sparse",
+ "strsim 0.11.1",
  "strum",
  "sysinfo",
  "tap",
@@ -8877,6 +8882,12 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "utf8-ranges"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcfc827f90e53a02eaef5e535ee14266c1d569214c6aa70133a624d8a3164ba"
 
 [[package]]
 name = "utf8_iter"
