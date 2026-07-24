@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -7,6 +8,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
+use segment::common::BYTES_IN_KB;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -189,6 +191,25 @@ impl UpdateHandler {
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
+        // Mirror the resolved optimizer size threshold into the segment holder, both on shard
+        // creation and on optimizer config updates (which restart the workers). With the cap set,
+        // the update path reports `OutOfAppendableCapacity` instead of growing an appendable
+        // segment past `max_segment_size`; the failed operation then wakes the optimizer, whose
+        // capacity-ensure step provisions a fresh appendable segment, and failed-operation
+        // recovery re-applies the operation. Synchronous WAL replay disarms the cap for its own
+        // window (see `load_from_wal`), since no recovery loop is processing signals there.
+        if let Some(optimizer) = self.optimizers.first() {
+            let max_segment_size_bytes = NonZeroUsize::new(
+                optimizer
+                    .threshold_config()
+                    .max_segment_size_kb
+                    .saturating_mul(BYTES_IN_KB),
+            );
+            self.segments
+                .write()
+                .set_max_segment_size_bytes(max_segment_size_bytes);
+        }
+
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
 
         // Optimization notifier is triggered when a new optimization is finished

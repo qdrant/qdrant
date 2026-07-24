@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use parking_lot::RwLockWriteGuard;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{Filter, Payload, PointIdType, SeqNumberType, VectorNameBuf};
@@ -187,18 +187,17 @@ where
 
         res += updated_points.len();
         // Insert new points, which was not updated or existed
-        let new_point_ids = ids_chunk
+        let new_point_ids: Vec<PointIdType> = ids_chunk
             .iter()
             .copied()
-            .filter(|x| !updated_points.contains(x));
+            .filter(|x| !updated_points.contains(x))
+            .collect();
 
-        {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+        // Only look up an insert destination when there is something to insert: the lookup
+        // fails with `OutOfAppendableCapacity` when all appendable segments are at the size
+        // cap, and a chunk that updated every point in place needs no capacity at all.
+        if !new_point_ids.is_empty() {
+            let default_write_segment = segments.smallest_appendable_segment()?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
@@ -210,7 +209,7 @@ where
                 )?);
             }
             RwLockWriteGuard::unlock_fair(write_segment);
-        };
+        }
     }
 
     Ok(res)

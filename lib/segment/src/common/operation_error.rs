@@ -92,11 +92,20 @@ pub enum OperationError {
     /// All appendable segments reached `max_segment_size`, so there is no valid destination for
     /// new or moved points. Recoverable by provisioning a fresh appendable segment and re-applying
     /// the operation; already-applied points are skipped by their point version.
+    ///
+    /// The message must keep starting with [`OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX`]: the
+    /// collection-level error conversion flattens this variant into a generic shard-unavailable
+    /// error, and the update worker recognizes the condition by that prefix.
     #[error(
         "All appendable segments reached the maximum segment size of {max_segment_size_bytes} bytes"
     )]
     OutOfAppendableCapacity { max_segment_size_bytes: usize },
 }
+
+/// Message prefix of [`OperationError::OutOfAppendableCapacity`], for recognizing the condition
+/// after the variant is flattened into an untyped error (locked by a test below).
+pub const OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX: &str =
+    "All appendable segments reached the maximum segment size";
 
 impl OperationError {
     /// Create a new service error with a description and a backtrace
@@ -437,6 +446,18 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn test_out_of_appendable_capacity_message_prefix() {
+        let err = OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: 1024,
+        };
+        assert!(
+            err.to_string()
+                .starts_with(OUT_OF_APPENDABLE_CAPACITY_MESSAGE_PREFIX),
+            "the update worker recognizes the flattened error by this prefix",
+        );
+    }
 
     #[test]
     fn test_not_found_classification() {
