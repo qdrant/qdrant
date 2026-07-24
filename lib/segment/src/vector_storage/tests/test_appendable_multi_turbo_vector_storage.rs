@@ -1,22 +1,32 @@
-//! Congruence tests between [`TurboVectorStorage`] and
-//! [`TurboMultiVectorStorage`]: both build the same deterministic quantizer, so
+//! Congruence tests between [`AppendableMmapTurboVectorStorage`] and
+//! [`AppendableMmapMultiTurboVectorStorage`]: both build the same deterministic quantizer, so
 //! a multi storage fed only count=1 points must be observably indistinguishable
 //! from a dense storage fed the same vectors — the dense storage acts as the
 //! oracle for the multi one.
 
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+
 use common::bitvec::BitSliceExt;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
+use common::types::PointOffsetType;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use tempfile::Builder;
 
-use super::multi::{TurboMultiVectorStorage, open_appendable_turbo_multi_vector_storage};
-use super::*;
-use crate::data_types::named_vectors::CowMultiVector;
-use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVectorRef};
-use crate::types::MultiVectorConfig;
+use crate::data_types::named_vectors::{CowMultiVector, CowVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef};
+use crate::types::{Distance, MultiVectorConfig};
+use crate::vector_storage::turbo::multi_turbo::{
+    AppendableMmapMultiTurboVectorStorage, open_appendable_turbo_multi_vector_storage,
+};
+use crate::vector_storage::turbo::{
+    AppendableMmapTurboVectorStorage, open_appendable_turbo_vector_storage,
+};
 use crate::vector_storage::{
-    DenseTQVectorStorageRead, MultiTQVectorStorage, MultiTQVectorStorageRead,
+    DenseTQVectorStorage, DenseTQVectorStorageRead, MultiTQVectorStorage, MultiTQVectorStorageRead,
+    VectorStorage, VectorStorageRead,
 };
 
 /// Random unit vector with a fixed fallback for an all-zero draw.
@@ -56,7 +66,10 @@ fn open_both_appendable(
     dim: usize,
     distance: Distance,
     in_ram: bool,
-) -> (TurboVectorStorage, TurboMultiVectorStorage) {
+) -> (
+    AppendableMmapTurboVectorStorage,
+    AppendableMmapMultiTurboVectorStorage,
+) {
     let dense = open_appendable_turbo_vector_storage(dense_dir, dim, distance, in_ram).unwrap();
     let multi = open_appendable_turbo_multi_vector_storage(
         multi_dir,
@@ -71,8 +84,8 @@ fn open_both_appendable(
 
 /// Insert the same vector into both storages at `key`, as dense and as count=1 multi.
 fn insert_both(
-    dense: &mut TurboVectorStorage,
-    multi: &mut TurboMultiVectorStorage,
+    dense: &mut AppendableMmapTurboVectorStorage,
+    multi: &mut AppendableMmapMultiTurboVectorStorage,
     key: PointOffsetType,
     v: &DenseVector,
     hw: &HardwareCounterCell,
@@ -85,8 +98,8 @@ fn insert_both(
 
 /// Soft-delete `key` in both storages; the reported transition must match.
 fn delete_both(
-    dense: &mut TurboVectorStorage,
-    multi: &mut TurboMultiVectorStorage,
+    dense: &mut AppendableMmapTurboVectorStorage,
+    multi: &mut AppendableMmapMultiTurboVectorStorage,
     key: PointOffsetType,
 ) {
     let dense_was_live = dense.delete_vector(key).unwrap();
@@ -98,7 +111,11 @@ fn delete_both(
 }
 
 /// Full observable-state comparison of the two storages.
-fn assert_congruent(dense: &TurboVectorStorage, multi: &TurboMultiVectorStorage, ctx: &str) {
+fn assert_congruent(
+    dense: &AppendableMmapTurboVectorStorage,
+    multi: &AppendableMmapMultiTurboVectorStorage,
+    ctx: &str,
+) {
     assert_eq!(dense.distance(), multi.distance(), "{ctx}: distance");
     assert_eq!(dense.datatype(), multi.datatype(), "{ctx}: datatype");
     assert_eq!(dense.is_on_disk(), multi.is_on_disk(), "{ctx}: is_on_disk");

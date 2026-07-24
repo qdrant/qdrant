@@ -26,8 +26,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
-use crate::vector_storage::turbo::TurboVectorStorage;
-use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
+use crate::vector_storage::turbo::multi_turbo::AppendableMmapMultiTurboVectorStorage;
 use crate::vector_storage::{
     DenseTQVectorStorageRead, DenseVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage,
     VectorStorageEnum, VectorStorageRead,
@@ -492,8 +491,15 @@ impl GpuVectorStorage {
             // TurboQuant has no native GPU element type: dequantize each vector
             // back to float (or half-float, when the device supports it) and
             // upload it as a regular dense storage.
-            VectorStorageEnum::DenseTurbo(vector_storage) => {
-                Self::new_dense_tq(device, vector_storage, stopped)
+            VectorStorageEnum::DenseTurboMemmap(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::DenseTurboAppendableMemmap(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
             }
             VectorStorageEnum::MultiDenseTurbo(vector_storage) => {
                 Self::new_multi_tq(device, vector_storage, stopped)
@@ -585,7 +591,7 @@ impl GpuVectorStorage {
     /// memory and bandwidth. Falls back to `f32` on devices without f16.
     fn new_dense_tq(
         device: Arc<gpu::Device>,
-        vector_storage: &TurboVectorStorage,
+        vector_storage: &impl DenseTQVectorStorageRead,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let count = vector_storage.total_vector_count();
@@ -648,7 +654,7 @@ impl GpuVectorStorage {
     /// multivector case and uploads the multivector offsets alongside.
     fn new_multi_tq(
         device: Arc<gpu::Device>,
-        vector_storage: &TurboMultiVectorStorage,
+        vector_storage: &AppendableMmapMultiTurboVectorStorage,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let point_count = vector_storage.total_vector_count();

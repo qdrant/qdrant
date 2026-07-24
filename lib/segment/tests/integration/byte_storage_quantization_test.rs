@@ -311,7 +311,10 @@ fn test_quantization_over_typed_storage_hnsw(
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
         match storage_data_type {
             VectorStorageDatatype::Turbo4 => {
-                assert_matches!(raw_storage, &VectorStorageEnum::DenseTurbo(_));
+                assert_matches!(
+                    raw_storage,
+                    &VectorStorageEnum::DenseTurboAppendableMemmap(_)
+                );
             }
             _ => assert_matches!(
                 raw_storage,
