@@ -3182,6 +3182,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<OrderedFloat<FloatPayloadType>>),
+    Integer(Range<IntPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
 
@@ -3189,6 +3190,13 @@ impl Hash for RangeInterface {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         match self {
             RangeInterface::Float(range) => {
+                let Range { lt, gt, gte, lte } = range;
+                lt.hash(state);
+                gt.hash(state);
+                gte.hash(state);
+                lte.hash(state);
+            }
+            RangeInterface::Integer(range) => {
                 let Range { lt, gt, gte, lte } = range;
                 lt.hash(state);
                 gt.hash(state);
@@ -3209,6 +3217,14 @@ impl Hash for RangeInterface {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum RangeInterfaceUntagged {
+    Integer(Range<IntPayloadType>),
+    Float(Range<OrderedFloatPayloadType>),
+    DateTime(Range<DateTimePayloadType>),
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum HumanReadableRangeInterfaceFallback {
     Float(Range<OrderedFloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
@@ -3223,6 +3239,7 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
     {
         if !deserializer.is_human_readable() {
             return RangeInterfaceUntagged::deserialize(deserializer).map(|parsed| match parsed {
+                RangeInterfaceUntagged::Integer(r) => RangeInterface::Integer(r),
                 RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
                 RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
             });
@@ -3242,15 +3259,29 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
                     .map(RangeInterface::DateTime)
                     .map_err(serde::de::Error::custom);
             }
+
+            let bounds: Vec<_> = keys
+                .iter()
+                .filter_map(|k| obj.get(*k))
+                .filter(|bound| !bound.is_null())
+                .collect();
+            let has_integer_bounds =
+                !bounds.is_empty() && bounds.iter().all(|bound| bound.as_i64().is_some());
+
+            if has_integer_bounds {
+                return serde_json::from_value::<Range<IntPayloadType>>(value)
+                    .map(RangeInterface::Integer)
+                    .map_err(serde::de::Error::custom);
+            }
         }
 
-        // Fallback to existing untagged behavior
-        let parsed = serde_json::from_value::<RangeInterfaceUntagged>(value)
+        // Fallback to existing REST/JSON behavior.
+        let parsed = serde_json::from_value::<HumanReadableRangeInterfaceFallback>(value)
             .map_err(serde::de::Error::custom)?;
 
         Ok(match parsed {
-            RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
-            RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
+            HumanReadableRangeInterfaceFallback::Float(r) => RangeInterface::Float(r),
+            HumanReadableRangeInterfaceFallback::DateTime(r) => RangeInterface::DateTime(r),
         })
     }
 }
@@ -3259,7 +3290,7 @@ type OrderedFloatPayloadType = OrderedFloat<FloatPayloadType>;
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(< OrderedFloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
+#[derive_args(< OrderedFloatPayloadType > => "Range", < IntPayloadType > => "IntegerRange", < DateTimePayloadType > => "DatetimeRange")]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
@@ -3568,6 +3599,20 @@ impl FieldCondition {
             key,
             r#match: None,
             range: Some(RangeInterface::Float(range)),
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+            is_empty: None,
+            is_null: None,
+        }
+    }
+
+    pub fn new_int_range(key: PayloadKeyType, range: Range<IntPayloadType>) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: Some(RangeInterface::Integer(range)),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -4969,6 +5014,84 @@ mod tests {
     }
 
     #[test]
+    fn test_json_integer_range_preserves_i64_bounds() {
+        let value = -9_223_372_036_854_775_807_i64;
+        let json = format!(
+            r#"{{
+                "key": "x",
+                "range": {{
+                    "gte": {value},
+                    "lte": {value}
+                }}
+            }}"#
+        );
+
+        let Condition::Field(condition) = serde_json::from_str::<Condition>(&json).unwrap() else {
+            panic!("expected field condition");
+        };
+        let Some(RangeInterface::Integer(range)) = condition.range else {
+            panic!("expected integer range, got {:?}", condition.range);
+        };
+
+        assert_eq!(range.gte, Some(value));
+        assert_eq!(range.lte, Some(value));
+    }
+
+    #[test]
+    fn test_json_integer_range_ignores_null_bounds_for_detection() {
+        let value = 9_223_372_036_854_775_807_i64;
+        let json = format!(
+            r#"{{
+                "key": "x",
+                "range": {{
+                    "gte": {value},
+                    "lte": null
+                }}
+            }}"#
+        );
+
+        let Condition::Field(condition) = serde_json::from_str::<Condition>(&json).unwrap() else {
+            panic!("expected field condition");
+        };
+        let Some(RangeInterface::Integer(range)) = condition.range else {
+            panic!("expected integer range, got {:?}", condition.range);
+        };
+
+        assert_eq!(range.gte, Some(value));
+        assert_eq!(range.lte, None);
+    }
+
+    #[test]
+    fn test_json_fractional_range_stays_float() {
+        let json = r#"{
+            "key": "x",
+            "range": {
+                "gte": 1.5
+            }
+        }"#;
+
+        let Condition::Field(condition) = serde_json::from_str::<Condition>(json).unwrap() else {
+            panic!("expected field condition");
+        };
+
+        assert_matches!(condition.range, Some(RangeInterface::Float(_)));
+    }
+
+    #[test]
+    fn test_json_empty_range_stays_float() {
+        let json = r#"{
+            "key": "x",
+            "range": {}
+        }"#;
+
+        let Condition::Field(condition) = serde_json::from_str::<Condition>(json).unwrap() else {
+            panic!("expected field condition");
+        };
+
+        assert_matches!(condition.range, Some(RangeInterface::Float(_)));
+    }
+
+    #[test]
     fn test_condition_non_string_key_returns_clear_error() {
         for json in [
             r#"{"key": null, "match": {"value": "A"}}"#,
@@ -5014,6 +5137,21 @@ mod tests {
         });
 
         // rmp-serde uses non-human-readable format
+        let binary = rmp_serde::to_vec(&range).expect("serialize");
+        let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(range, restored);
+    }
+
+    #[test]
+    fn test_range_interface_integer_binary_roundtrip() {
+        let range = RangeInterface::Integer(Range {
+            lt: None,
+            gt: None,
+            gte: Some(-9_223_372_036_854_775_807_i64),
+            lte: Some(-9_223_372_036_854_775_807_i64),
+        });
+
         let binary = rmp_serde::to_vec(&range).expect("serialize");
         let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
 

@@ -290,6 +290,7 @@ impl Validate for grpc::FieldCondition {
                 values_count: None,
                 is_empty: None,
                 is_null: None,
+                integer_range: None,
             },
         );
 
@@ -313,6 +314,7 @@ impl Validate for grpc::FieldCondition {
             values_count: _,
             is_empty: _,
             is_null: _,
+            integer_range: _,
         } = self;
 
         errors.merge_self("geo_bounding_box", geo_bounding_box.validate());

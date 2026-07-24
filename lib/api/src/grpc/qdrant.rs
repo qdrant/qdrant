@@ -263,6 +263,9 @@ pub struct FieldCondition {
     /// Check if field is null
     #[prost(bool, optional, tag = "10")]
     pub is_null: ::core::option::Option<bool>,
+    /// Check if integer points value lies in a given range
+    #[prost(message, optional, tag = "11")]
+    pub integer_range: ::core::option::Option<IntegerRange>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -333,6 +336,18 @@ pub struct Range {
     pub gte: ::core::option::Option<f64>,
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IntegerRange {
+    #[prost(int64, optional, tag = "1")]
+    pub lt: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "2")]
+    pub gt: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "3")]
+    pub gte: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "4")]
+    pub lte: ::core::option::Option<i64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

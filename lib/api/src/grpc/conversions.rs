@@ -25,7 +25,8 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{
-    DateTimePayloadType, FloatPayloadType, VectorStorageDatatype, default_quantization_ignore_value,
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, VectorStorageDatatype,
+    default_quantization_ignore_value,
 };
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
@@ -36,8 +37,8 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads, Memory,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    IntegerRange, KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads,
+    Memory, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, SliceCondition, StartFrom, StrictModeMultivector,
     StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize,
@@ -1992,6 +1993,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             datetime_range,
             is_empty,
             is_null,
+            integer_range,
         } = value;
 
         let geo_bounding_box =
@@ -2000,6 +2002,9 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
         let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
 
         let mut range = range.map(Range::into);
+        if range.is_none() {
+            range = integer_range.map(segment::types::RangeInterface::from);
+        }
         if range.is_none() {
             range = datetime_range
                 .map(segment::types::RangeInterface::try_from)
@@ -2034,10 +2039,17 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             is_null,
         } = value;
 
-        let (range, datetime_range) = match range {
-            Some(segment::types::RangeInterface::Float(range)) => (Some(Range::from(range)), None),
-            Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
-            None => (None, None),
+        let (range, integer_range, datetime_range) = match range {
+            Some(segment::types::RangeInterface::Float(range)) => {
+                (Some(Range::from(range)), None, None)
+            }
+            Some(segment::types::RangeInterface::Integer(range)) => {
+                (None, Some(IntegerRange::from(range)), None)
+            }
+            Some(segment::types::RangeInterface::DateTime(range)) => {
+                (None, None, Some(range.into()))
+            }
+            None => (None, None, None),
         };
 
         Self {
@@ -2051,6 +2063,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             datetime_range,
             is_empty,
             is_null,
+            integer_range,
         }
     }
 }
@@ -2203,6 +2216,26 @@ impl From<segment::types::Range<OrderedFloat<FloatPayloadType>>> for Range {
 impl From<Range> for segment::types::RangeInterface {
     fn from(value: Range) -> Self {
         Self::Float(value.into())
+    }
+}
+
+impl From<IntegerRange> for segment::types::Range<IntPayloadType> {
+    fn from(value: IntegerRange) -> Self {
+        let IntegerRange { lt, gt, gte, lte } = value;
+        Self { lt, gt, gte, lte }
+    }
+}
+
+impl From<segment::types::Range<IntPayloadType>> for IntegerRange {
+    fn from(value: segment::types::Range<IntPayloadType>) -> Self {
+        let segment::types::Range { lt, gt, gte, lte } = value;
+        Self { lt, gt, gte, lte }
+    }
+}
+
+impl From<IntegerRange> for segment::types::RangeInterface {
+    fn from(value: IntegerRange) -> Self {
+        Self::Integer(value.into())
     }
 }
 
@@ -3829,5 +3862,60 @@ fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
         VectorStorageDatatype::Float16 => grpc::Datatype::Float16,
         VectorStorageDatatype::Uint8 => grpc::Datatype::Uint8,
         VectorStorageDatatype::Turbo4 => grpc::Datatype::Turbo4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::json_path::JsonPath;
+    use segment::types::{
+        FieldCondition as SegmentFieldCondition, Range as SegmentRange, RangeInterface,
+    };
+
+    use super::*;
+
+    #[test]
+    fn grpc_integer_range_converts_to_integer_range_interface() {
+        let value = -9_223_372_036_854_775_807_i64;
+        let condition = FieldCondition {
+            key: "x".into(),
+            integer_range: Some(IntegerRange {
+                gte: Some(value),
+                lte: Some(value),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let condition = SegmentFieldCondition::try_from(condition).unwrap();
+        let Some(RangeInterface::Integer(range)) = condition.range else {
+            panic!("expected integer range, got {:?}", condition.range);
+        };
+
+        assert_eq!(range.gte, Some(value));
+        assert_eq!(range.lte, Some(value));
+    }
+
+    #[test]
+    fn segment_integer_range_converts_to_grpc_integer_range() {
+        let value = -9_223_372_036_854_775_807_i64;
+        let key: JsonPath = "x".parse().unwrap();
+        let condition = SegmentFieldCondition::new_int_range(
+            key,
+            SegmentRange {
+                lt: None,
+                gt: None,
+                gte: Some(value),
+                lte: Some(value),
+            },
+        );
+
+        let condition = FieldCondition::from(condition);
+
+        assert!(condition.range.is_none());
+        assert!(condition.datetime_range.is_none());
+        let integer_range = condition.integer_range.unwrap();
+        assert_eq!(integer_range.gte, Some(value));
+        assert_eq!(integer_range.lte, Some(value));
     }
 }
