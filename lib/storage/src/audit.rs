@@ -21,7 +21,13 @@ pub const TRACING_ID_HEADERS: &[&str] = &["x-request-id", "x-tracing-id", "trace
 pub fn extract_tracing_id(get_header: impl Fn(&str) -> Option<String>) -> Option<String> {
     let value = TRACING_ID_HEADERS.iter().find_map(|h| get_header(h))?;
     if value.len() > MAX_TRACING_ID_LEN {
-        Some(value.chars().take(MAX_TRACING_ID_LEN).collect())
+        // Floor to a char boundary at or below MAX_TRACING_ID_LEN bytes so the
+        // cap is enforced in bytes (as documented) without splitting a code point.
+        let end = (0..=MAX_TRACING_ID_LEN)
+            .rev()
+            .find(|&i| value.is_char_boundary(i))
+            .unwrap_or(0);
+        Some(value[..end].to_string())
     } else {
         Some(value)
     }
@@ -273,4 +279,31 @@ pub fn audit_trust_forwarded_headers() -> bool {
 /// Returns `true` if the audit logger is configured to log API method paths.
 pub fn audit_log_api() -> bool {
     LOG_API.get().copied().unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracing_id_is_capped_in_bytes_for_multibyte_input() {
+        // 300 four-byte chars ~= 1200 bytes. The old char-count truncation kept
+        // 256 chars (~1024 bytes), overshooting the documented byte cap.
+        let long = "😀".repeat(300);
+        let out = extract_tracing_id(|h| (h == TRACING_ID_HEADERS[0]).then(|| long.clone()))
+            .expect("header is present");
+        assert!(
+            out.len() <= MAX_TRACING_ID_LEN,
+            "tracing id not capped in bytes: {} bytes",
+            out.len()
+        );
+        assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn tracing_id_below_cap_is_unchanged() {
+        let out =
+            extract_tracing_id(|h| (h == TRACING_ID_HEADERS[0]).then(|| "req-123".to_string()));
+        assert_eq!(out.as_deref(), Some("req-123"));
+    }
 }
