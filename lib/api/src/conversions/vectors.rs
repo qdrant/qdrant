@@ -664,6 +664,9 @@ mod tests {
             )),
         };
 
-        assert!(VectorInternal::try_from(raw).is_err());
+        assert_eq!(
+            VectorInternal::try_from(raw).unwrap_err().code(),
+            tonic::Code::InvalidArgument,
+        );
     }
 }
