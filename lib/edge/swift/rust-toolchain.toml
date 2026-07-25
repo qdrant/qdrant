@@ -1,11 +1,17 @@
 # The Edge workspace uses unstable std/library features (e.g.
 # `ptr_as_ref_unchecked` and `cfg_select` in lib/common), so ALL cargo builds
 # under this SDK require nightly — not just the tier-3 tvOS/visionOS targets that
-# additionally need `-Z build-std`. Pinning nightly here lets `make build` work
-# with a plain rustup `cargo` invocation and removes the stable-vs-nightly
-# ambiguity in build-xcframework.sh. (Applies only when cargo is invoked from
-# within lib/edge/swift/, e.g. by the Makefile; the rest of the workspace is
-# unaffected.)
+# additionally need `-Z build-std`. Selecting the nightly CHANNEL here lets
+# `make build` work with a plain rustup `cargo` invocation and removes the
+# stable-vs-nightly ambiguity in build-xcframework.sh.
+#
+# This intentionally tracks the FLOATING nightly channel, matching the rest of
+# the qdrant workspace (CI installs `dtolnay/rust-toolchain@nightly`); it is NOT
+# pinned to a dated `nightly-YYYY-MM-DD`. Date-pinning only this subdirectory
+# would diverge it from the toolchain the rest of the workspace builds with. If
+# reproducible codegen is ever needed, pin the whole workspace, not just here.
+# (Applies only when cargo is invoked from within lib/edge/swift/, e.g. by the
+# Makefile; the rest of the workspace is unaffected.)
 [toolchain]
 channel = "nightly"
 components = ["rust-src"]
