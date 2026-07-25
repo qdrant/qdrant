@@ -26,6 +26,7 @@ wal = { path = "../wal" }
 ahash = { workspace = true }
 chrono = { workspace = true }
 fnv = { workspace = true }
+fs4 = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
@@ -48,7 +49,6 @@ tempfile = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tonic = { workspace = true }
-fs4 = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"] }

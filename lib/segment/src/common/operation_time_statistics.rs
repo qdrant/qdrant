@@ -1,8 +1,7 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
-use common::time::Instant;
 use common::types::DetailsLevel::Level1;
 use common::types::TelemetryDetail;
 use itertools::Itertools as _;

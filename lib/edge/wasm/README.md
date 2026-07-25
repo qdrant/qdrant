@@ -1,95 +1,93 @@
-# `edge-wasm` — a read-only edge shard in the browser
+# `edge-wasm` — a read-only edge shard on WASI
 
-Compiles the read-only edge-shard query path to `wasm32-unknown-unknown` and serves searches
-directly out of object storage, with no Qdrant server in the loop.
+Compiles the read-only edge-shard query path to `wasm32-wasip2` and serves searches directly out of
+object storage, with no Qdrant server in the loop.
 
 ```
-       browser                                    S3 / GCS / any HTTP object store
-  ┌──────────────────────┐                       ┌────────────────────────────────┐
-  │ open(base, prefix) ──┼── fetch: list ───────►│ GET /?list-type=2&prefix=…      │
-  │                    ──┼── fetch: get × N ────►│ GET /<key>                      │
-  │                      │                       └────────────────────────────────┘
-  │   MemFs  (linear memory)                        ▲ async — happens once, at open
-  │     │                                           │
-  │     ▼                                           │
-  │   ReadOnlyEdgeShard<MemFile> ── search/scroll ──┘ sync — every read is a slice
+   wasm32-wasip2 guest                          S3 / GCS / any HTTP object store
+  ┌──────────────────────┐                     ┌────────────────────────────────┐
+  │ object_store::list ──┼── blocking GET ────►│ GET /?list-type=2&prefix=…      │
+  │ object_store::get  ──┼── blocking GET ────►│ GET /<key>                      │
+  │                      │                     └────────────────────────────────┘
+  │   MemFs  (linear memory)
+  │     │
+  │     ▼
+  │   ReadOnlyEdgeShard<MemFile> ── search / scroll / info
   └──────────────────────┘
 ```
 
-## Why it is split at that line
+## Why WASI, and not the browser
 
-[`UniversalRead`][universal-read] — the interface every segment component reads through — is
-**synchronous**. The native blob backends satisfy that by blocking a thread on a Tokio runtime
-(`io_bridge`), which a browser cannot do: `fetch` only resolves when the JS event loop runs, so
-blocking the thread that would run it deadlocks.
+`UniversalRead` — the interface every segment component reads through — is **synchronous**. WASI
+gives the guest synchronous sockets and a synchronous filesystem, so that interface is satisfiable
+directly: no async runtime, no threads, and none of the sync/async bridging `io_bridge` does for the
+native blob backends.
 
-So the fetching is hoisted out of the read path entirely. `open` is `async`: it lists the prefix,
-downloads every object, and parks the bytes in `MemFs`. From that point on every read is a slice of
-linear memory, and the synchronous interface is honest.
+A browser cannot do this. There `fetch` only resolves when the JS event loop runs, so blocking the
+calling thread deadlocks; the read path would have to move into a Web Worker blocking on
+`Atomics.wait`, or onto OPFS sync access handles. That is separate work — this crate deliberately
+stops at the target where the existing synchronous interface already fits.
 
-The cost is that the whole shard is resident. Lazy range reads would need either a Web Worker
-blocking on `Atomics.wait` against a fetching main thread, or OPFS sync access handles — both keep
-this same `UniversalRead` impl and only change where the bytes come from.
-
-[universal-read]: ../../common/common/src/universal_io/traits/read.rs
+Nothing in the crate is `cfg`-gated on the target: the same code runs natively, which is what the
+round-trip test and a native `cargo run` exercise.
 
 ## Layout
 
 | File | Role |
 |------|------|
-| `src/mem_fs.rs` | `MemFs`/`MemFile`: the in-memory `UniversalRead` backend |
-| `src/shard.rs` | Target-independent core — open, search, scroll, JSON rendering |
-| `src/object_store.rs` | `fetch`-based `ListObjectsV2` + object GET (wasm only) |
-| `src/lib.rs` | The `wasm-bindgen` surface (wasm only) |
-| `demo/` | A browser page and a local S3-compatible stub to point it at |
+| `src/mem_fs.rs` | `MemFs`/`MemFile`: an in-memory `UniversalRead` backend |
+| `src/object_store.rs` | Blocking `ListObjectsV2` + object GET over `ureq` |
+| `src/shard.rs` | Open, search, scroll, JSON rendering |
+| `src/main.rs` | CLI, runnable natively and under a WASI runtime |
+| `s3_stub.py` | A local read-only S3-compatible server, for trying it out |
 
-## Build
-
-```sh
-cargo build -p edge-wasm --target wasm32-unknown-unknown --release
-wasm-bindgen --target web --out-dir lib/edge/wasm/demo/pkg \
-    target/wasm32-unknown-unknown/release/edge_wasm.wasm
-```
-
-The `.wasm` is ~19 MB unoptimised; `wasm-opt -Oz` and stripping the unused index kinds cut that
-substantially, and neither was attempted here.
-
-## Try it locally
+## Try it
 
 ```sh
-# 1. write a real shard (256 points, 4-dim, named vector "demo", payload field "parity")
+# a real shard: 256 points, 4-dim, named vector "demo", payload field "parity"
 cargo run -p edge-wasm --example make_fixture -- /tmp/bucket/collection/0
+python3 lib/edge/wasm/s3_stub.py /tmp/bucket 9000 &
 
-# 2. serve it as if it were a bucket, with CORS
-python3 lib/edge/wasm/demo/s3_stub.py /tmp/bucket 9000
+# natively
+cargo run -p edge-wasm -- http://localhost:9000 collection/0 \
+    search --vector 10,10.01,10.02,10.03 --vector-name demo --with-payload
 
-# 3. build + bind (see above), then serve the demo directory and open index.html
-python3 -m http.server -d lib/edge/wasm/demo 8080
+# as a wasm component
+cargo build -p edge-wasm --target wasm32-wasip2 --release
+wasmtime -S inherit-network -S allow-ip-name-lookup \
+    target/wasm32-wasip2/release/edge-wasm.wasm \
+    http://localhost:9000 collection/0 \
+    search --vector 10,10.01,10.02,10.03 --vector-name demo --with-payload
 ```
 
-The demo defaults to `http://localhost:9000/test-bucket`; point it at
-`http://localhost:9000` with prefix `collection/0` to match the stub above.
-
-Against a real bucket the requirements are anonymous read access and CORS headers permitting the
-page's origin. Requests are unsigned; presigned URLs would slot into `object_store.rs` the same way.
+Against a real bucket the only requirement is anonymous read access. `ureq` is built with default
+features off, so there is no TLS backend and this speaks `http://` only; adding one, or presigned
+URLs, touches nothing outside `object_store.rs`.
 
 ## What works, and what does not
 
-Verified end-to-end (`tests/mem_fs_round_trip.rs`, plus a Node run against the stub): shard open
-from a segment manifest, vector search with exact-match scoring, filtered search, scroll, payload
-retrieval, and `info`.
+Verified end-to-end: shard open from a segment manifest, vector search with exact-match scoring,
+filtered search, scroll, payload retrieval and `info` — natively and under `wasmtime`.
+`tests/mem_fs_round_trip.rs` covers the same path without a network, by writing a real shard with
+the ordinary read-write path and reading it back through `MemFs`.
 
 Known limits of this target:
 
-- **Single-threaded.** `wasm32-unknown-unknown` cannot spawn threads, so the shard's rayon pool is
+- **Single-threaded.** Plain `wasm32-wasip2` cannot spawn threads, so the shard's rayon pool is
   built with `use_current_thread()` and one worker. Per-segment reads run serially.
+  `wasm32-wasip1-threads` would lift this.
 - **Scalar distance kernels.** The SSE/AVX/NEON paths in `quantization` and `segment::spaces` are
   architecture-gated with scalar fallbacks; no `simd128` implementation exists yet.
 - **Whole objects only.** Vector chunks and Gridstore pages are *pre-allocated*: a 256-point shard
   has 32 MiB of mostly-zero `chunk_0.mmap` and `page_0.dat`. On a local filesystem those are sparse
   files (164 KiB actual), but an object store stores — and this client downloads — the full extent.
   The leader's `wal/` is skipped for the same reason, and because a follower never replays it.
+
+  This is a property of the preload, not of the target. Because reads already block, a backend
+  issuing an HTTP Range request per read drops into the same `UniversalRead` slot and removes both
+  the up-front download and the resident-set ceiling. That is the obvious next step.
 - **≤ 4 GiB.** 32-bit address space, so that is the hard ceiling on a shard's resident size.
-- **No mmap, no WAL, no writes.** `memmap2` has no wasm backend at all; the mapping constructors in
-  `common::mmap` return `ErrorKind::Unsupported` there, and `lib/wal` compiles but cannot open a
-  segment. The read-only path touches none of it.
+- **No mmap, no WAL, no writes.** `memmap2` selects its `stub` backend on any non-unix, non-windows
+  target, where every mapping call returns `ErrorKind::Unsupported`; the constructors in
+  `common::mmap` return the same there, and `lib/wal` compiles but cannot open a segment. The
+  read-only path touches none of it.

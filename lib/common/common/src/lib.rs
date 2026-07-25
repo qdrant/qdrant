@@ -15,7 +15,6 @@ pub mod cpu_utilization;
 pub mod defaults;
 pub mod delta_pack;
 pub mod disk;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod disk_usage;
 pub mod either_variant;
 pub mod ext;
@@ -50,7 +49,6 @@ pub mod stored_bitslice;
 pub mod tar_ext;
 pub mod tar_unpack;
 pub mod tempfile_ext;
-pub mod time;
 pub mod top_k;
 pub mod toposort;
 pub mod typelevel;

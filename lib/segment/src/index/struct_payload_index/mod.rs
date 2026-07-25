@@ -11,11 +11,11 @@ mod tests;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::defaults::log_load_timing;
-use common::time::Instant;
 use fs_err as fs;
 
 use super::field_index::FieldIndex;

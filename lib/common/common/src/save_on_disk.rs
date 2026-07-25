@@ -84,9 +84,9 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let deadline = crate::time::Instant::now() + timeout;
+        let deadline = std::time::Instant::now() + timeout;
         loop {
-            let remaining = deadline.saturating_duration_since(crate::time::Instant::now());
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
                 return false;
             }

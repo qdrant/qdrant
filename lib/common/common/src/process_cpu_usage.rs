@@ -10,12 +10,11 @@
 //! platforms return `None`.
 
 use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 
 #[cfg(target_os = "linux")]
 use parking_lot::Mutex;
-
-#[cfg(target_os = "linux")]
-use crate::time::Instant;
 
 /// Sampling window: how often we query the OS for process CPU time.
 /// Also doubles as the averaging window for the returned value.

@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 use common::defaults::log_load_timing;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::storage_version::StorageVersion;
-use common::time::Instant;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFs;
 use fs_err as fs;

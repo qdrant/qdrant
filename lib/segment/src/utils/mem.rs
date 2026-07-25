@@ -131,7 +131,6 @@ mod cgroups_mem {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 mod sysinfo_mem {
     use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 
@@ -158,33 +157,6 @@ mod sysinfo_mem {
 
         pub fn available_memory_bytes(&self) -> u64 {
             self.system.available_memory()
-        }
-    }
-}
-
-/// wasm32 has no host to query: the linear memory is the whole world, and it grows on demand up
-/// to the 32-bit address space. Report that ceiling so the callers' budget heuristics stay sane.
-#[cfg(target_arch = "wasm32")]
-mod sysinfo_mem {
-    /// 4 GiB, the largest a wasm32 linear memory can ever be.
-    const WASM32_ADDRESS_SPACE_BYTES: u64 = u32::MAX as u64 + 1;
-
-    #[derive(Debug)]
-    pub struct SysinfoMem;
-
-    impl SysinfoMem {
-        pub fn new() -> Self {
-            Self
-        }
-
-        pub fn refresh(&mut self) {}
-
-        pub fn total_memory_bytes(&self) -> u64 {
-            WASM32_ADDRESS_SPACE_BYTES
-        }
-
-        pub fn available_memory_bytes(&self) -> u64 {
-            WASM32_ADDRESS_SPACE_BYTES
         }
     }
 }

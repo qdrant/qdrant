@@ -1,6 +1,4 @@
-use std::time::Duration;
-
-use crate::time::Instant;
+use std::time::{Duration, Instant};
 
 /// A rate limiter based on the token bucket algorithm.
 /// Designed to limit the number of requests per minute.

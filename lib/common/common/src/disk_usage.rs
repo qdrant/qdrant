@@ -13,11 +13,9 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-
-use crate::time::Instant;
 
 /// How long to reuse a previously observed `(total, available)` pair before
 /// refreshing. Chosen to match the resident-memory cache so both strict-mode
@@ -76,9 +74,18 @@ pub fn disk_usage(path: &Path) -> Option<DiskUsage> {
 /// Direct, uncached read of disk usage. Exposed for callers that want to
 /// bypass the cache (e.g. tests).
 pub fn read_disk_usage(path: &Path) -> Option<DiskUsage> {
-    let total = fs4::total_space(path).ok()?;
-    let available = fs4::available_space(path).ok()?;
-    Some(DiskUsage { total, available })
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        return None;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let total = fs4::total_space(path).ok()?;
+        let available = fs4::available_space(path).ok()?;
+        Some(DiskUsage { total, available })
+    }
 }
 
 #[cfg(test)]

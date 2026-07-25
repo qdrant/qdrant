@@ -1,19 +1,17 @@
-//! Minimal S3-compatible object-store client built on the browser's `fetch`.
+//! Minimal S3-compatible object-store client.
 //!
 //! Only the two operations a read-only shard open needs are implemented, both as plain HTTP GETs:
-//! `ListObjectsV2` to discover the objects under a prefix, and a whole-object read for each. That
-//! is deliberately the entire surface — anything richer (range reads, retries, signing) belongs on
-//! the async side of the fetch boundary, and the shard itself never gets to see it: by the time
-//! [`ReadOnlyEdgeShard`](edge::ReadOnlyEdgeShard) is opened, every byte is already in
-//! [`MemFs`](crate::mem_fs::MemFs).
+//! `ListObjectsV2` to discover the objects under a prefix, and a whole-object read for each.
 //!
-//! Requests are unsigned, so the bucket must allow anonymous reads (and, from a browser, must send
-//! permissive CORS headers). Presigned URLs would slot in the same way.
+//! The client is *blocking*, which is the whole reason this crate targets `wasm32-wasip2` rather
+//! than the browser: WASI gives the guest synchronous sockets, so the same code runs natively and
+//! under a WASI runtime with no async runtime, no threads, and no sync/async bridge.
+//!
+//! Requests are unsigned, so the bucket must allow anonymous reads. TLS is not enabled — `ureq`'s
+//! default features are off, so this speaks `http://` only. Presigned URLs and a TLS backend would
+//! slot in here without touching anything downstream.
 
-use js_sys::{ArrayBuffer, Uint8Array};
-use wasm_bindgen::{JsCast, JsValue};
-use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request, RequestInit, Response};
+use std::io::Read as _;
 
 /// An object listed under a prefix.
 pub struct ListedObject {
@@ -23,47 +21,28 @@ pub struct ListedObject {
     pub size: u64,
 }
 
-/// Fetch `url` and return the response body, or an error carrying the HTTP status.
-pub async fn get(url: &str) -> Result<Vec<u8>, String> {
-    let opts = RequestInit::new();
-    opts.set_method("GET");
+/// Fetch `url` and return the response body.
+pub fn get(url: &str) -> Result<Vec<u8>, String> {
+    let mut response = ureq::get(url)
+        .call()
+        .map_err(|err| format!("fetching {url}: {err}"))?;
 
-    let request = Request::new_with_str_and_init(url, &opts)
-        .map_err(|err| format!("building request for {url}: {}", describe(&err)))?;
+    let mut body = Vec::new();
+    response
+        .body_mut()
+        .as_reader()
+        .read_to_end(&mut body)
+        .map_err(|err| format!("reading {url}: {err}"))?;
 
-    let response: Response = JsFuture::from(global_fetch(&request)?)
-        .await
-        .map_err(|err| format!("fetching {url}: {}", describe(&err)))?
-        .dyn_into()
-        .map_err(|_| format!("fetching {url}: response was not a Response"))?;
-
-    if !response.ok() {
-        return Err(format!(
-            "fetching {url}: HTTP {} {}",
-            response.status(),
-            response.status_text()
-        ));
-    }
-
-    let buffer: ArrayBuffer = JsFuture::from(
-        response
-            .array_buffer()
-            .map_err(|err| format!("reading {url}: {}", describe(&err)))?,
-    )
-    .await
-    .map_err(|err| format!("reading {url}: {}", describe(&err)))?
-    .dyn_into()
-    .map_err(|_| format!("reading {url}: body was not an ArrayBuffer"))?;
-
-    Ok(Uint8Array::new(&buffer).to_vec())
+    Ok(body)
 }
 
 /// List every object under `prefix` in the bucket rooted at `base_url`, following continuation
 /// tokens until the listing is exhausted.
 ///
-/// `base_url` is the bucket endpoint (e.g. `https://s3.example.com/my-bucket`), `prefix` the key
+/// `base_url` is the bucket endpoint (e.g. `http://localhost:9000/my-bucket`), `prefix` the key
 /// prefix to list under (e.g. `collection/0`).
-pub async fn list(base_url: &str, prefix: &str) -> Result<Vec<ListedObject>, String> {
+pub fn list(base_url: &str, prefix: &str) -> Result<Vec<ListedObject>, String> {
     let base_url = base_url.trim_end_matches('/');
     let mut objects = Vec::new();
     let mut continuation: Option<String> = None;
@@ -74,7 +53,7 @@ pub async fn list(base_url: &str, prefix: &str) -> Result<Vec<ListedObject>, Str
             url.push_str(&format!("&continuation-token={}", encode(token)));
         }
 
-        let body = get(&url).await?;
+        let body = get(&url)?;
         let body = String::from_utf8(body)
             .map_err(|err| format!("listing {prefix}: response was not UTF-8: {err}"))?;
 
@@ -104,23 +83,6 @@ pub async fn list(base_url: &str, prefix: &str) -> Result<Vec<ListedObject>, Str
     }
 
     Ok(objects)
-}
-
-/// `fetch` lives on `window` in a page and on the global scope in a worker; reach it through the
-/// global object so the module works in both.
-fn global_fetch(request: &Request) -> Result<js_sys::Promise, String> {
-    let global = js_sys::global();
-    let fetch = js_sys::Reflect::get(&global, &JsValue::from_str("fetch"))
-        .map_err(|_| "no global `fetch` available".to_string())?;
-    let fetch: js_sys::Function = fetch
-        .dyn_into()
-        .map_err(|_| "global `fetch` is not callable".to_string())?;
-
-    fetch
-        .call1(&global, request)
-        .map_err(|err| format!("calling fetch: {}", describe(&err)))?
-        .dyn_into()
-        .map_err(|_| "fetch did not return a Promise".to_string())
 }
 
 /// Iterate the text content of every `<tag>…</tag>` in `xml`.
@@ -165,13 +127,38 @@ fn encode(value: &str) -> String {
     out
 }
 
-/// Best-effort human-readable form of a JS exception.
-fn describe(err: &JsValue) -> String {
-    err.as_string()
-        .or_else(|| {
-            js_sys::Reflect::get(err, &JsValue::from_str("message"))
-                .ok()
-                .and_then(|message| message.as_string())
-        })
-        .unwrap_or_else(|| format!("{err:?}"))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LISTING: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult><Name>bucket</Name><IsTruncated>false</IsTruncated>
+        <Contents><Key>collection/0/segments_manifest.json</Key><Size>412</Size></Contents>
+        <Contents><Key>collection/0/a&amp;b.dat</Key><Size>7</Size></Contents>
+        </ListBucketResult>"#;
+
+    #[test]
+    fn parses_keys_and_sizes_from_a_listing() {
+        let keys: Vec<_> = tags(LISTING, "Contents")
+            .map(|contents| {
+                let key = unescape(tags(contents, "Key").next().unwrap());
+                let size: u64 = tags(contents, "Size").next().unwrap().parse().unwrap();
+                (key, size)
+            })
+            .collect();
+
+        assert_eq!(
+            keys,
+            vec![
+                ("collection/0/segments_manifest.json".to_string(), 412),
+                ("collection/0/a&b.dat".to_string(), 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn encodes_query_values() {
+        assert_eq!(encode("collection/0"), "collection/0");
+        assert_eq!(encode("a b&c"), "a%20b%26c");
+    }
 }

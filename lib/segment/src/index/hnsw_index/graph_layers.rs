@@ -750,7 +750,7 @@ impl GraphLayers {
             return Ok(());
         }
 
-        let start = common::time::Instant::now();
+        let start = std::time::Instant::now();
 
         let links = GraphLinks::load_universal(
             &MmapFs,
