@@ -130,10 +130,23 @@ jobs:
           fi
           echo "OK: version $version in sync (VERSION == crate == Package.swift release tag)"
 
-      # Runtime tests on the macOS slice.
+      # Runtime tests on the macOS slice. `swift test`/`xcodebuild test` exit 0
+      # with "TEST SUCCEEDED" even when ZERO tests are discovered (e.g. a
+      # mistyped test path or an accidental #if that guards out the whole
+      # suite), so assert a floor on the executed count — the whole test suite
+      # is the primary correctness gate; a vacuous green here validates nothing.
       - name: Swift test (macOS)
         working-directory: lib/edge/swift
-        run: swift test
+        run: |
+          set -euo pipefail
+          log="$(mktemp)"
+          swift test 2>&1 | tee "$log"
+          n="$(grep -oE 'Executed [0-9]+ test' "$log" | grep -oE '[0-9]+' | sort -rn | head -1 || true)"
+          if [ -z "${n:-}" ] || [ "$n" -lt 20 ]; then
+            echo "::error::macOS test run executed ${n:-0} tests (expected >= 20) — the suite may not be running"
+            exit 1
+          fi
+          echo "macOS: executed $n tests"
 
       # Runtime tests on the iOS Simulator slice (device names vary across
       # runners, so pick the first available iPhone simulator by UDID).
@@ -145,7 +158,14 @@ jobs:
             | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}')"
           if [ -z "$udid" ]; then echo '::error::no iPhone simulator available on the runner'; exit 1; fi
           echo "Using iOS Simulator $udid"
-          xcodebuild test -scheme QdrantEdge -destination "id=$udid" -skipPackagePluginValidation
+          log="$(mktemp)"
+          xcodebuild test -scheme QdrantEdge -destination "id=$udid" -skipPackagePluginValidation 2>&1 | tee "$log"
+          n="$(grep -oE 'Executed [0-9]+ test' "$log" | grep -oE '[0-9]+' | sort -rn | head -1 || true)"
+          if [ -z "${n:-}" ] || [ "$n" -lt 20 ]; then
+            echo "::error::iOS test run executed ${n:-0} tests (expected >= 20) — the suite may not be running"
+            exit 1
+          fi
+          echo "iOS: executed $n tests"
 
       # The shipped example must compile against the SDK's current API.
       - name: Build example

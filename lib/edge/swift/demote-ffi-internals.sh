@@ -59,6 +59,21 @@ if [ "$DEMOTED" -eq 0 ]; then
     exit 1
 fi
 
+# Positive post-condition: assert NO known-plumbing-shaped declaration is still
+# `public`. The count-based guard above only fires on a TOTAL vocabulary change
+# (0 demotions); it misses a PARTIAL leak where uniffi-bindgen adds or renames
+# ONE plumbing family alongside the recognized ones — the known prefixes still
+# demote plenty, so DEMOTED > 0 and the build passes while the new family leaks
+# into the public surface. Re-scan for any surviving public plumbing so that
+# partial case fails closed too.
+REMAINING=$(grep -cE "^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)" "$SWIFT_FILE" || true)
+REMAINING_LIFTLOWER=$(grep -cE "^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b" "$SWIFT_FILE" || true)
+if [ "$REMAINING" -ne 0 ] || [ "$REMAINING_LIFTLOWER" -ne 0 ]; then
+    echo "ERROR: $((REMAINING + REMAINING_LIFTLOWER)) FFI-plumbing declaration(s) remain \`public\` after demotion." >&2
+    grep -nE "^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)|^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b" "$SWIFT_FILE" >&2 || true
+    exit 1
+fi
+
 if command -v swift-format >/dev/null 2>&1; then
     echo "==> Running swift-format..."
     # Cosmetic only — never fail the build on it. A non-Apple `swift-format` may
