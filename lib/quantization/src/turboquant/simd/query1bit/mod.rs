@@ -237,6 +237,17 @@ impl<const BITS: usize> Query1bitSimd<BITS> {
 
     /// Number of full 128-dim blocks the SIMD main-loop should iterate over.
     /// Exposed to arch backends so they don't depend on the internal field name.
+    #[cfg_attr(
+        not(any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_feature = "neon")
+        )),
+        expect(
+            dead_code,
+            reason = "Only reachable from the architecture-gated SIMD kernels"
+        )
+    )]
     #[inline]
     pub(crate) fn num_full_blocks(&self) -> usize {
         self.num_full_blocks

@@ -10,7 +10,6 @@ use common::universal_io::{
     UniversalRead, UniversalReadFs, UniversalWrite,
 };
 use fs_err as fs;
-use memmap2::MmapMut;
 
 use super::{MultivectorOffset, MultivectorOffsetsStorage};
 use crate::common::operation_error::OperationResult;
@@ -37,7 +36,7 @@ impl MultivectorOffsetsStorageRam {
 
     pub fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = fs::OpenOptions::new().read(true).write(true).open(path)?;
-        let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
+        let offsets_mmap = unsafe { common::mmap::map_mut(&offsets_file) }?;
         let mut offsets_mmap_type =
             unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
         Ok(MultivectorOffsetsStorageRam {
@@ -532,7 +531,7 @@ fn create_offsets_file_from_iter(
         .open(path)?;
     offsets_file.set_len(offsets_file_size as u64)?;
 
-    let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
+    let offsets_mmap = unsafe { common::mmap::map_mut(&offsets_file) }?;
     let mut offsets_mmap_type = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
     let offsets_mut: &mut [MultivectorOffset] = offsets_mmap_type.deref_mut();
     for (dst, src) in offsets_mut.iter_mut().zip(iter) {

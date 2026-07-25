@@ -5,7 +5,7 @@ use std::path::Path;
 use roaring::RoaringBitmap;
 
 use super::format::{BitmaskContent, BitmaskHeader, Encoding, HEADER_SIZE, MAGIC, VERSION};
-use crate::bitvec::{BitSlice, BitVec};
+use crate::bitvec::{BitSlice, BitStoreType, BitVec};
 use crate::generic_consts::Sequential;
 use crate::universal_io::{
     OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
@@ -28,8 +28,8 @@ pub struct StoredBitmask<S> {
 
 /// Copy little-endian payload bytes into an owned [`BitVec`] of `len` bits.
 fn dense_to_bitvec(bytes: &[u8], len: usize) -> BitVec {
-    let mut words = vec![0u64; bytes.len().div_ceil(size_of::<u64>())];
-    bytemuck::cast_slice_mut::<u64, u8>(&mut words)[..bytes.len()].copy_from_slice(bytes);
+    let mut words = vec![0 as BitStoreType; bytes.len().div_ceil(size_of::<BitStoreType>())];
+    bytemuck::cast_slice_mut::<BitStoreType, u8>(&mut words)[..bytes.len()].copy_from_slice(bytes);
     let mut bits = BitVec::from_vec(words);
     bits.truncate(len);
     bits
@@ -141,12 +141,14 @@ impl<S: UniversalRead> StoredBitmask<S> {
                 let len = self.logical_len as usize;
                 let bits = match payload {
                     // Zero-copy when the backend exposes its bytes and they
-                    // cast cleanly to whole u64 words (the payload starts at
-                    // a u64-aligned offset and the writer pads it to words).
-                    Cow::Borrowed(bytes) => match bytemuck::try_cast_slice::<u8, u64>(bytes) {
-                        Ok(words) => Cow::Borrowed(&BitSlice::from_slice(words)[..len]),
-                        Err(_) => Cow::Owned(dense_to_bitvec(bytes, len)),
-                    },
+                    // cast cleanly to whole words (the payload starts at a
+                    // u64-aligned offset and the writer pads it to words).
+                    Cow::Borrowed(bytes) => {
+                        match bytemuck::try_cast_slice::<u8, BitStoreType>(bytes) {
+                            Ok(words) => Cow::Borrowed(&BitSlice::from_slice(words)[..len]),
+                            Err(_) => Cow::Owned(dense_to_bitvec(bytes, len)),
+                        }
+                    }
                     Cow::Owned(bytes) => Cow::Owned(dense_to_bitvec(&bytes, len)),
                 };
                 Ok(BitmaskContent::Dense(bits))

@@ -1,9 +1,9 @@
 use std::io::{Error, Result, Write};
 use std::path::Path;
 
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use semver::Version;
 
+use crate::atomic_file::{AllowOverwrite, AtomicFile};
 use crate::universal_io::{OkNotFound as _, UioResult, UniversalReadFs, read_whole_via};
 
 pub const VERSION_FILE: &str = "version.info";

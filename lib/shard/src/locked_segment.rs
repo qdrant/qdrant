@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use common::time::Instant;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::{ReadSegmentEntry, SegmentEntry, StorageSegmentEntry as _};

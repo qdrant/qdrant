@@ -695,6 +695,9 @@ fn check_segments_size(
         })?;
     }
 
+    #[cfg(target_arch = "wasm32")]
+    let space_available: Option<u64> = None;
+    #[cfg(not(target_arch = "wasm32"))]
     let space_available = match fs4::available_space(temp_path) {
         Ok(available) => Some(available),
         Err(err) => {

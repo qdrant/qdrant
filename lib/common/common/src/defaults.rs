@@ -1,10 +1,11 @@
 use std::path::Path;
 use std::sync::LazyLock;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use semver::Version;
 
 use crate::cpu;
+use crate::time::Instant;
 
 /// Current Qdrant version string
 pub const QDRANT_VERSION_STRING: &str = "1.18.3-dev";

@@ -357,7 +357,7 @@ impl<S> QuantizedStorageBuilder<S> {
             .open(path)?;
         file.set_len(encoded_storage_size as u64)?;
 
-        let mmap = unsafe { MmapMut::map_mut(&file) }?;
+        let mmap = unsafe { common::mmap::map_mut(&file) }?;
         advice::madvise(&mmap, advice::get_global())?;
         Ok(Self {
             mmap,

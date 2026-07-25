@@ -30,6 +30,16 @@ impl MmapViewSync {
         }
     }
 
+    /// `memmap2` has no wasm32 backend, so there is nothing to map a WAL segment into.
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_file(_file: &File, _offset: usize, _capacity: usize) -> Result<MmapViewSync> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "the write-ahead log is not available on wasm32",
+        ))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(file: &File, offset: usize, capacity: usize) -> Result<MmapViewSync> {
         let mmap = unsafe {
             MmapOptions::new()

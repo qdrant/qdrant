@@ -1,5 +1,5 @@
 mod cached_fs;
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_arch = "wasm32")))]
 #[expect(dead_code, reason = "Not yet used")]
 mod disk_cache;
 mod error;

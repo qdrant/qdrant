@@ -23,7 +23,7 @@ env_logger = { workspace = true }
 
 [dependencies]
 ahash = { workspace = true }
-fs-err = { workspace = true }
+fs-err = { workspace = true, features = ["tokio"] }
 thiserror = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }

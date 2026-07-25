@@ -161,6 +161,7 @@ impl Wal {
         // syscall, which Android supports. We call it via UFCS on the underlying
         // `std::fs::File` because the trait method collides with the inherent one
         // (which would otherwise win method resolution).
+        #[cfg(not(target_arch = "wasm32"))]
         fs4::FileExt::try_lock(dir.file())?;
 
         // Holds open segments in the directory.

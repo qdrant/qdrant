@@ -13,9 +13,11 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ahash::AHashMap;
+
+use crate::time::Instant;
 
 /// How long to reuse a previously observed `(total, available)` pair before
 /// refreshing. Chosen to match the resident-memory cache so both strict-mode

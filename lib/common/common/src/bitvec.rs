@@ -3,8 +3,23 @@ use bitvec::store::BitStore;
 
 use crate::types::PointOffsetType;
 
-pub type BitVec = bitvec::vec::BitVec<u64, Lsb0>;
-pub type BitSlice = bitvec::slice::BitSlice<u64, Lsb0>;
+/// Element type backing every [`BitVec`]/[`BitSlice`] in the codebase, including the on-disk
+/// representations in [`stored_bitslice`](crate::stored_bitslice) and
+/// [`stored_bitmask`](crate::stored_bitmask).
+///
+/// `bitvec` only implements `BitStore` for integers up to the target's pointer width, so 32-bit
+/// targets (wasm32) cannot use `u64`. The narrower element is format-compatible: with `Lsb0`
+/// ordering on a little-endian target, global bit `i` lives in byte `i / 8` at bit `i % 8`
+/// regardless of element width, so a file written by either reads identically on the other —
+/// except that a 32-bit writer may leave a length that is a multiple of 4 but not of 8, whose last
+/// four bytes a 64-bit reader would drop. 32-bit builds are read-only, so that does not arise.
+#[cfg(target_pointer_width = "64")]
+pub type BitStoreType = u64;
+#[cfg(not(target_pointer_width = "64"))]
+pub type BitStoreType = u32;
+
+pub type BitVec = bitvec::vec::BitVec<BitStoreType, Lsb0>;
+pub type BitSlice = bitvec::slice::BitSlice<BitStoreType, Lsb0>;
 
 /// Set deleted state in given bitvec.
 ///

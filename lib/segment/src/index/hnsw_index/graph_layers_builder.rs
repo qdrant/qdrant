@@ -966,7 +966,9 @@ mod tests {
     fn test_subgraph_connectivity_isolated_entry_point_does_not_hang() {
         use std::sync::Arc;
         use std::thread;
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
+
+        use common::time::Instant;
 
         const DIM: usize = 4;
         let mut rng = SmallRng::seed_from_u64(42);

@@ -27,10 +27,10 @@ rand = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
 zerocopy = { workspace = true }
-dataset = { path = "../common/dataset" }
 common = { path = "../common/common" }
 
 [dev-dependencies]
+dataset = { path = "../common/dataset" }
 criterion = { workspace = true }
 csv = "1.4.0"
 fs-err = { workspace = true, features = ["debug"] }

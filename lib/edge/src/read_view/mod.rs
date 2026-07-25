@@ -78,12 +78,18 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 /// during shard open/load and follower open, so a transient resource failure must not abort the
 /// process.
 pub(crate) fn build_search_pool(num_threads: usize) -> OperationResult<Arc<ThreadPool>> {
-    let pool = ThreadPoolBuilder::new()
+    let builder = ThreadPoolBuilder::new()
         .num_threads(num_threads)
-        .thread_name(|idx| format!("edge-search-{idx}"))
-        .build()
-        .map_err(|err| {
-            OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
-        })?;
+        .thread_name(|idx| format!("edge-search-{idx}"));
+
+    // wasm32 cannot spawn threads: `std::thread::spawn` fails, so a pool with any worker of its
+    // own fails to build. `use_current_thread` seats the calling thread at index 0, and with a
+    // single-thread pool that leaves nothing to spawn — `install` then runs the closure inline.
+    #[cfg(target_arch = "wasm32")]
+    let builder = builder.num_threads(1).use_current_thread();
+
+    let pool = builder.build().map_err(|err| {
+        OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
+    })?;
     Ok(Arc::new(pool))
 }

@@ -16,7 +16,6 @@ use common::universal_io::{
     TypedStorage, UioResult, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 use fs_err as fs;
-use memmap2::MmapMut;
 
 use super::super::mutable_geo_index::InMemoryGeoIndex;
 use super::{
@@ -62,7 +61,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 &points_map_path,
                 dynamic_index.points_map.len() * size_of::<PointKeyValue>(),
             )?;
-            let points_map_file = unsafe { MmapMut::map_mut(&points_map_file)? };
+            let points_map_file = unsafe { common::mmap::map_mut(&points_map_file)? };
             let mut points_map = unsafe { MmapSlice::<PointKeyValue>::try_from(points_map_file)? };
 
             let points_map_ids_file = create_and_ensure_length(
@@ -74,7 +73,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                     .sum::<usize>()
                     * size_of::<PointOffsetType>(),
             )?;
-            let points_map_ids_file = unsafe { MmapMut::map_mut(&points_map_ids_file)? };
+            let points_map_ids_file = unsafe { common::mmap::map_mut(&points_map_ids_file)? };
             let mut points_map_ids =
                 unsafe { MmapSlice::<PointOffsetType>::try_from(points_map_ids_file)? };
 
@@ -102,7 +101,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                     dynamic_index.values_per_hash.len(),
                 ) * size_of::<Counts>(),
             )?;
-            let counts_per_hash_file = unsafe { MmapMut::map_mut(&counts_per_hash_file)? };
+            let counts_per_hash_file = unsafe { common::mmap::map_mut(&counts_per_hash_file)? };
             let mut counts_per_hash =
                 unsafe { MmapSlice::<Counts>::try_from(counts_per_hash_file)? };
             for ((hash, points), dst) in dynamic_index

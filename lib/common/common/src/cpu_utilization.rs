@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+
+use crate::time::Instant;
 
 /// Tracks CPU utilization across multiple `spawn_blocking` tasks for a single request.
 ///

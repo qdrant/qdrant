@@ -7,7 +7,9 @@ use fs_err as fs;
 use fs_err::{File, OpenOptions};
 use memmap2::{Mmap, MmapMut};
 
-use super::advice::{AdviceSetting, Madviseable, madvise};
+use super::advice::AdviceSetting;
+#[cfg(not(target_arch = "wasm32"))]
+use super::advice::{Madviseable, madvise};
 
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
 
@@ -83,6 +85,52 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
     }
 }
 
+/// Error returned by the wasm32 bodies of [`open_read_mmap`]/[`open_write_mmap`].
+///
+/// `memmap2` compiles for wasm32 but implements no backend there: the `Mmap`/`MmapMut` types
+/// exist, yet nothing can produce one.
+#[cfg(target_arch = "wasm32")]
+const MMAP_UNSUPPORTED: &str = "memory maps are not available on wasm32";
+
+#[cfg(target_arch = "wasm32")]
+pub fn open_read_mmap(_path: &Path, _advice: AdviceSetting, _populate: bool) -> io::Result<Mmap> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, MMAP_UNSUPPORTED))
+}
+
+/// Map an already-open file for writing.
+///
+/// The counterpart of [`open_write_mmap`] for callers that already hold the [`File`] — typically
+/// because they just created it at a known length with [`create_and_ensure_length`].
+///
+/// # Safety
+///
+/// Same contract as [`memmap2::MmapMut::map_mut`]: the mapped file must not be modified through
+/// any other handle, in this or another process, while the returned map is alive.
+#[cfg(not(target_arch = "wasm32"))]
+pub unsafe fn map_mut(file: &File) -> io::Result<MmapMut> {
+    unsafe { MmapMut::map_mut(file) }
+}
+
+/// wasm32 stub of [`map_mut`]; see [`MMAP_UNSUPPORTED`].
+///
+/// # Safety
+///
+/// Always fails, so the caller's obligations are vacuous.
+#[cfg(target_arch = "wasm32")]
+pub unsafe fn map_mut(_file: &File) -> io::Result<MmapMut> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, MMAP_UNSUPPORTED))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn open_write_mmap(
+    _path: &Path,
+    _advice: AdviceSetting,
+    _populate: bool,
+) -> io::Result<MmapMut> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, MMAP_UNSUPPORTED))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<Mmap> {
     let file = OpenOptions::new().read(true).open(path)?;
 
@@ -99,6 +147,7 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io:
     Ok(mmap)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<MmapMut> {
     let file = OpenOptions::new().read(true).write(true).open(path)?;
 

@@ -10,7 +10,6 @@ use common::universal_io::{
     UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
-use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::super::Encodable;
@@ -73,7 +72,7 @@ where
                 &pairs_path,
                 in_memory_index.map.len() * size_of::<Point<T>>(),
             )?;
-            let pairs_mmap = unsafe { MmapMut::map_mut(&pairs_file)? };
+            let pairs_mmap = unsafe { common::mmap::map_mut(&pairs_file)? };
             let mut pairs = unsafe { MmapSlice::<Point<T>>::try_from(pairs_mmap)? };
             for (src, dst) in in_memory_index.map.iter().zip(pairs.iter_mut()) {
                 *dst = *src;

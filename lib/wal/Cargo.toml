@@ -16,7 +16,6 @@ workspace = true
 [dependencies]
 byteorder = { workspace = true }
 crc32c = "0.6.8"
-fs4 = { workspace = true }
 fs-err = { workspace = true }
 log = { workspace = true }
 memmap2 = { workspace = true }
@@ -24,12 +23,15 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 # fs4 depends on rustix, but pulling this dependency explicitly into the tree
 # to use direct functions on FreeBSD
-rustix = { version = "1", features = ["fs"] }
 
 # Binary dependencies
 docopt = "1.1"
 env_logger = { workspace = true }
 serde = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+fs4 = { workspace = true }
+rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
 chrono = { workspace = true }

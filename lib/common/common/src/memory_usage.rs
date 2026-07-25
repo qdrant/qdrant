@@ -8,7 +8,9 @@
 //! as "memory check unavailable" and skip the check.
 
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use crate::time::Instant;
 
 /// How long to reuse a previously read memory value before refreshing.
 const CACHE_TTL: Duration = Duration::from_secs(5);

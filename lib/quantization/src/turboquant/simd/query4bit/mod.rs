@@ -352,6 +352,17 @@ impl Query4bitSimd {
     /// lane, high nibble = odd lane.  Unused lanes are zero: with
     /// `tail_low[tail_dims..] = tail_high[tail_dims..] = 0` they contribute
     /// nothing to `maddubs` / `vmull` products.
+    #[cfg_attr(
+        not(any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_feature = "neon")
+        )),
+        expect(
+            dead_code,
+            reason = "Only reachable from the architecture-gated SIMD kernels"
+        )
+    )]
     #[inline]
     pub(crate) fn tail_chunk_scratch(&self, vector: &[u8]) -> Option<[u8; 8]> {
         if self.tail_dims == 0 {

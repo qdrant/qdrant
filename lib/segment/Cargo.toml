@@ -44,7 +44,6 @@ tokio = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
-io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 blink-alloc = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
@@ -65,7 +64,6 @@ serde-untagged = "0.1.9"
 ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
-atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
@@ -95,7 +93,6 @@ tap = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
-sysinfo = "0.38"
 charabia = { version = "0.9.9", default-features = false, features = [
     "greek",
     "hebrew",
@@ -119,6 +116,14 @@ nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
 duplicate = "2.0.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+io_bridge_object_store = { path = "../common/io_bridge_object_store" }
+atomicwrites = { workspace = true }
+sysinfo = "0.38"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.5"

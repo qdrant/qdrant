@@ -249,7 +249,7 @@ impl HNSWIndex {
 
         #[cfg(feature = "gpu")]
         let gpu_vectors = if needs_gpu_vectors {
-            let timer = std::time::Instant::now();
+            let timer = common::time::Instant::now();
             let gpu_vectors = super::gpu_build::create_gpu_vectors(
                 gpu_device,
                 &vector_storage_ref,
@@ -290,7 +290,7 @@ impl HNSWIndex {
             if let Some(old_index) = old_index {
                 progress_migrate.start();
 
-                let timer = std::time::Instant::now();
+                let timer = common::time::Instant::now();
 
                 let mut healer = GraphLayersHealer::new(
                     old_index.graph(),
@@ -319,7 +319,7 @@ impl HNSWIndex {
             }
             drop(progress_migrate);
 
-            let timer = std::time::Instant::now();
+            let timer = common::time::Instant::now();
 
             progress_main_graph.start();
             let counter = progress_main_graph

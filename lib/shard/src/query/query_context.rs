@@ -58,7 +58,7 @@ pub fn fill_query_context(
     timeout: Duration,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Option<QueryContext>> {
-    let start = std::time::Instant::now();
+    let start = common::time::Instant::now();
 
     let segments: Vec<_> = {
         let Some(holder_guard) = segments.try_read_for(timeout) else {

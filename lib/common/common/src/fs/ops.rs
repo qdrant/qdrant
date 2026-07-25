@@ -1,10 +1,11 @@
 use std::io::{BufReader, BufWriter, Error, Write};
 use std::path::Path;
 
-use atomicwrites::{AtomicFile, OverwriteBehavior};
 use fs_err::File;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+
+use crate::atomic_file::{AtomicFile, OverwriteBehavior};
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -30,8 +31,8 @@ where
         Ok(())
     })
     .map_err(|e| match e {
-        atomicwrites::Error::Internal(err) => E::from(err),
-        atomicwrites::Error::User(err) => err,
+        crate::atomic_file::Error::Internal(err) => E::from(err),
+        crate::atomic_file::Error::User(err) => err,
     })
 }
 

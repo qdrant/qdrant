@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use common::defaults::log_load_timing;
 use common::is_alive_lock::IsAliveLock;
+use common::time::Instant;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFs;
 use parking_lot::Mutex;

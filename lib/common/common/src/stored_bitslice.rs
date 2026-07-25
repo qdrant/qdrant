@@ -44,7 +44,7 @@ impl Iterator for OwnedOnes {
 /// Number of bits per `BitStore` element.
 const BITS_PER_ELEMENT: u32 = BitStore::BITS;
 
-type BitStore = u64;
+type BitStore = crate::bitvec::BitStoreType;
 type BitSlice = bitvec::slice::BitSlice<BitStore, Lsb0>;
 
 /// Convenience alias for a bitslice backed by a memory-mapped file.

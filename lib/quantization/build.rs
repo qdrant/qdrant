@@ -38,5 +38,9 @@ fn main() {
         builder.flag("-O3");
     }
 
-    builder.compile("simd_utils");
+    // `cc::Build::compile` errors out when no source files were added, which is the case on
+    // every architecture without a SIMD backend above (e.g. wasm32).
+    if builder.get_files().next().is_some() {
+        builder.compile("simd_utils");
+    }
 }

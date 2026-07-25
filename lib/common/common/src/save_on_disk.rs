@@ -3,12 +3,13 @@ use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use atomicwrites::OverwriteBehavior::AllowOverwrite;
-use atomicwrites::{AtomicFile, Error as AtomicWriteError};
-use fs_err::{File, tokio as tokio_fs};
+use fs_err::File;
+#[cfg(not(target_arch = "wasm32"))]
+use fs_err::tokio as tokio_fs;
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
+use crate::atomic_file::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use crate::tar_ext;
 
 /// Functions as a smart pointer which gives a write guard and saves data on disk
@@ -83,9 +84,9 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let deadline = std::time::Instant::now() + timeout;
+        let deadline = crate::time::Instant::now() + timeout;
         loop {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            let remaining = deadline.saturating_duration_since(crate::time::Instant::now());
             if remaining.is_zero() {
                 return false;
             }
@@ -176,6 +177,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn delete(self) -> std::io::Result<()> {
         tokio_fs::remove_file(self.path).await
     }

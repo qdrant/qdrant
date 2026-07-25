@@ -1,0 +1,40 @@
+[package]
+name = "edge-wasm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+common = { path = "../../common/common" }
+edge = { path = ".." }
+segment = { path = "../../segment", default-features = false }
+shard = { path = "../../shard", default-features = false }
+
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+walkdir = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1.7"
+console_log = "1.0.0"
+js-sys = "0.3.81"
+wasm-bindgen = "0.2.104"
+wasm-bindgen-futures = "0.4.54"
+web-sys = { version = "0.3.81", features = [
+    "Headers",
+    "Request",
+    "RequestInit",
+    "Response",
+    "Window",
+    "WorkerGlobalScope",
+] }
