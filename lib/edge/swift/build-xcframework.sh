@@ -116,7 +116,12 @@ done
 echo "==> Building static libraries..."
 for target in "${STABLE_TARGETS[@]}"; do
     echo "    Building for $target (nightly)..."
-    cargo build --locked $CARGO_FLAGS $FEATURE_FLAGS \
+    # Explicit `+nightly` (not just the rust-toolchain.toml override): this makes
+    # a Homebrew `cargo` on PATH fail loudly ("no such command: +nightly")
+    # instead of silently building with the wrong toolchain — the exact
+    # miscompile this project has hit before. Matters most for
+    # release-xcframework.sh, which runs this manually, outside CI.
+    cargo +nightly build --locked $CARGO_FLAGS $FEATURE_FLAGS \
         --lib \
         --package "$PACKAGE_NAME" \
         --target "$target" \
@@ -165,7 +170,7 @@ fi
 echo "==> Generating Swift bindings..."
 mkdir -p "$BINDINGS_DIR"
 
-cargo run --locked \
+cargo +nightly run --locked \
     --package "qdrant-edge-ffi-bindgen" \
     --bin uniffi-bindgen \
     --manifest-path "$WORKSPACE_ROOT/Cargo.toml" \

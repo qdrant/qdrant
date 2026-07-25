@@ -37,6 +37,17 @@ perl -i -pe '
     s/^public (func) ([A-Za-z_][A-Za-z0-9_]*_(lift|lower))\b/internal $1 $2/;
 ' "$SWIFT_FILE"
 
+# NOTE: UniFFI also emits raw-handle plumbing as INDENTED members inside each
+# opaque-object class (init(unsafeFromHandle:), init(noHandle:), NoHandle,
+# uniffiCloneHandle()). These CANNOT be demoted: the classes are `open`, and
+# Swift requires a `required` initializer to be at least as accessible as the
+# class, so demoting `required public init(unsafeFromHandle:)` fails to compile
+# ("required initializer must be accessible wherever class can be subclassed").
+# They are tagged @_documentation(visibility: private) by UniFFI and are
+# documented as reserved in README.md — the same as every other Rust-UniFFI
+# Swift SDK (mozilla/rust-components-swift, matrix-org/...). So the positive
+# post-condition below intentionally covers only the top-level plumbing.
+
 PUBLIC_AFTER=$(grep -cE "^public " "$SWIFT_FILE" || true)
 DEMOTED=$((PUBLIC_BEFORE - PUBLIC_AFTER))
 
@@ -66,11 +77,11 @@ fi
 # demote plenty, so DEMOTED > 0 and the build passes while the new family leaks
 # into the public surface. Re-scan for any surviving public plumbing so that
 # partial case fails closed too.
-REMAINING=$(grep -cE "^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)" "$SWIFT_FILE" || true)
-REMAINING_LIFTLOWER=$(grep -cE "^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b" "$SWIFT_FILE" || true)
-if [ "$REMAINING" -ne 0 ] || [ "$REMAINING_LIFTLOWER" -ne 0 ]; then
-    echo "ERROR: $((REMAINING + REMAINING_LIFTLOWER)) FFI-plumbing declaration(s) remain \`public\` after demotion." >&2
-    grep -nE "^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)|^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b" "$SWIFT_FILE" >&2 || true
+PLUMBING_RE='^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)|^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b'
+REMAINING=$(grep -cE "$PLUMBING_RE" "$SWIFT_FILE" || true)
+if [ "$REMAINING" -ne 0 ]; then
+    echo "ERROR: $REMAINING FFI-plumbing declaration(s) remain \`public\` after demotion:" >&2
+    grep -nE "$PLUMBING_RE" "$SWIFT_FILE" >&2 || true
     exit 1
 fi
 
