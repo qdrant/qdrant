@@ -995,7 +995,8 @@ def test_nearest_query_group(collection_name):
     "average_vector",
 ])
 def test_recommend_group(strategy, collection_name):
-    # Smoke test: ensure the recommend grouping query succeeds.
+    # Smoke test: every point in the collection is used as an example, so
+    # all of them are excluded from the result and no group survives.
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
         method="POST",
