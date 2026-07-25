@@ -17,14 +17,16 @@ setup-homebrew: ## Install Homebrew dependencies (protobuf)
 
 .PHONY: setup-rust
 setup-rust: ## Install the nightly Rust toolchain (required — the workspace uses unstable std features)
-	@if ! command -v rustup >/dev/null 2>&1; then \
+	@set -e; \
+	if ! command -v rustup >/dev/null 2>&1; then \
 		echo "Installing rustup..."; \
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
-		echo 'NOTE: add  source "$$HOME/.cargo/env"  to your shell profile, or restart your shell.'; \
-	fi
-	rustup toolchain install nightly --profile minimal
-	rustup component add rust-src --toolchain nightly
-	@echo "Rust toolchain OK: $$(rustc --version 2>/dev/null || echo 'restart shell to activate')"
+		echo 'NOTE: add  source "$$HOME/.cargo/env"  to your shell profile, or restart your shell, before running `make build`.'; \
+	fi; \
+	export PATH="$$HOME/.cargo/bin:$$PATH"; \
+	rustup toolchain install nightly --profile minimal; \
+	rustup component add rust-src --toolchain nightly; \
+	echo "Rust toolchain OK: $$(rustc --version 2>/dev/null || echo 'restart shell to activate')"
 
 .PHONY: setup-targets
 setup-targets: ## Install required Rust cross-compilation targets
@@ -34,7 +36,7 @@ setup-targets: ## Install required Rust cross-compilation targets
 		x86_64-apple-ios \
 		aarch64-apple-darwin \
 		x86_64-apple-darwin
-	@echo "All targets build on nightly (pinned by rust-toolchain.toml); tvOS/visionOS additionally need -Z build-std (make build-all)."
+	@echo "All targets build on nightly (pinned by rust-toolchain.toml). tvOS/visionOS are tier-3 (nightly + -Z build-std, via 'make build-all') and are NOT in the shipped package yet."
 
 # ── Build ────────────────────────────────────────────────────────────────────
 

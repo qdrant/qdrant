@@ -90,6 +90,13 @@ jobs:
         run: |
           set -euo pipefail
           for f in out/swift-bindings/QdrantEdge.swift out/swift-bindings/QdrantEdgeFFI.h; do
+            # Fail closed if a file we must scan is missing (an `if grep … "$f"`
+            # on an absent file is a false condition under set -e, i.e. would
+            # silently pass the exclusion check).
+            if [ ! -f "$f" ]; then
+              echo "::error::expected generated file $f is missing — did the build run?"
+              exit 1
+            fi
             if grep -qiE 'search_?matrix' "$f"; then
               echo "::error::search_matrix present in $f (expected --no-default-features to drop it)"
               exit 1
