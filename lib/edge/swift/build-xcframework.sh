@@ -109,8 +109,13 @@ fi
 # ── Build ────────────────────────────────────────────────────────────────────
 
 echo "==> Installing required Rust targets..."
+# Install into the nightly toolchain explicitly — the builds below use
+# `cargo +nightly`, so a target added to a different active toolchain would not
+# be found. No stderr suppression / `|| true`: a genuine install failure
+# (network, disk) should stop setup with a clear error rather than surface later
+# as a confusing "can't find crate for `core`" from cargo.
 for target in "${STABLE_TARGETS[@]}"; do
-    rustup target add "$target" 2>/dev/null || true
+    rustup target add --toolchain nightly "$target"
 done
 
 echo "==> Building static libraries..."

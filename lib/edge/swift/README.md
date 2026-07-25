@@ -20,7 +20,7 @@ The **shipped package declares only iOS + macOS** (`Package.swift`), and the
 default `make build` produces only those three slices. The tvOS/visionOS rows
 above are produced by `make build-all` only (Rust tier-3 targets, nightly +
 `-Z build-std`) and are **not** declared in `Package.swift` in this release —
-add them back once their slices ship. (All targets build on nightly, pinned by
+add them back once their slices ship. (All targets build on nightly, selected by
 `rust-toolchain.toml`, since the workspace uses unstable std features.)
 
 ## Quick start

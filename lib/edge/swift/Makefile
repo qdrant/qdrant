@@ -36,7 +36,7 @@ setup-targets: ## Install required Rust cross-compilation targets
 		x86_64-apple-ios \
 		aarch64-apple-darwin \
 		x86_64-apple-darwin
-	@echo "All targets build on nightly (pinned by rust-toolchain.toml). tvOS/visionOS are tier-3 (nightly + -Z build-std, via 'make build-all') and are NOT in the shipped package yet."
+	@echo "All targets build on nightly (selected by rust-toolchain.toml). tvOS/visionOS are tier-3 (nightly + -Z build-std, via 'make build-all') and are NOT in the shipped package yet."
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
