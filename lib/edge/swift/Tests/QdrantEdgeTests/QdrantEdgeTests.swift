@@ -857,4 +857,564 @@ final class QdrantEdgeTests: XCTestCase {
         XCTAssertEqual(counts.count, 8, "all 8 concurrent searches should complete")
         XCTAssertTrue(counts.allSatisfy { $0 == 3 }, "every concurrent search should return all 3 points, got \(counts)")
     }
+
+    // MARK: - Full-surface coverage tests (SDK review)
+    //
+    // The tests below close the remaining public-surface gaps: sparse and
+    // multi-vector fields, the discover/context/feedback/fusion/mmr/sample
+    // scoring queries, faceting, the create() constructor, the config setters,
+    // snapshot manifest + restore, path(), the *ByFilter update family, and
+    // index/vector-name deletion. Each drives the real engine through the
+    // generated bindings. (search_matrix stays out — the mobile build drops the
+    // `matrix` feature.)
+
+    /// A keyword `label` field-condition filter, reused by the *ByFilter tests.
+    private func labelFilter(_ value: String) -> Filter {
+        Filter(
+            must: [.field(condition: FieldCondition(key: "label", match: .value(value: .string(value: value))))],
+            should: nil,
+            mustNot: nil
+        )
+    }
+
+    // MARK: - testSparseVectorSearchRanksByOverlap  (gap 1)
+
+    /// A sparse-only shard: upsert two sparse points and query with a sparse
+    /// vector. Sparse similarity is the dot of overlapping index weights, so a
+    /// query touching an index that only one point carries returns exactly that
+    /// point, with a score equal to the overlapping term.
+    func testSparseVectorSearchRanksByOverlap() throws {
+        let shardURL = testDir.appendingPathComponent("sparse")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        // Empty dense vectorData + one sparse field "sp" (mirrors the FFI test).
+        let config = EdgeConfig(vectorData: [:], sparseVectorData: ["sp": SparseVectorDataConfig()])
+        let shard = try EdgeShard.load(path: shardURL.path, config: config)
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1),
+                  vector: .named(map: ["sp": .sparse(vector: SparseVector(indices: [1, 5, 9], values: [0.5, 1.5, 2.5]))]),
+                  payload: nil),
+            Point(id: .numId(value: 2),
+                  vector: .named(map: ["sp": .sparse(vector: SparseVector(indices: [0, 1], values: [1.0, 1.0]))]),
+                  payload: nil),
+        ]))
+
+        // Query overlaps only index 9, carried by point 1 alone.
+        let results = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .sparse(vector: SparseVector(indices: [9], values: [1.0])), using: "sp"),
+            limit: 10, offset: nil, filter: nil, params: nil,
+            withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(results.count, 1, "a sparse query touching only index 9 must match exactly point 1")
+        if case let .numId(value) = results.first?.id {
+            XCTAssertEqual(value, 1, "the only point carrying index 9 is id=1")
+        } else {
+            XCTFail("sparse search result id should be numId(1)")
+        }
+        // Dot of the single overlapping term: 2.5 (stored) * 1.0 (query).
+        XCTAssertEqual(results.first?.score ?? 0, 2.5, accuracy: 1e-4, "sparse score should be the overlapping-term dot product")
+    }
+
+    // MARK: - testMultiVectorMaxSimSearch  (gap 2)
+
+    /// A multi-vector field (MaxSim comparator): upsert two multi-vector points,
+    /// query with a single row, and confirm MaxSim ranking (sum over query rows
+    /// of the best per-row dot) picks the right winner with the expected score.
+    func testMultiVectorMaxSimSearch() throws {
+        let shardURL = testDir.appendingPathComponent("multivector")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        let config = EdgeConfig(
+            vectorData: ["mv": VectorDataConfig(
+                size: 2,
+                distance: .dot,
+                quantizationConfig: nil,
+                multivectorConfig: MultiVectorConfig(comparator: .maxSim),
+                datatype: nil,
+                hnswConfig: nil
+            )],
+            sparseVectorData: [:]
+        )
+        let shard = try EdgeShard.load(path: shardURL.path, config: config)
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .named(map: ["mv": .multiDense(vectors: [[1.0, 2.0], [3.0, 4.0]])]), payload: nil),
+            Point(id: .numId(value: 2), vector: .named(map: ["mv": .multiDense(vectors: [[0.0, 1.0]])]), payload: nil),
+        ]))
+
+        let results = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .multiDense(vectors: [[3.0, 4.0]]), using: "mv"),
+            limit: 10, offset: nil, filter: nil, params: nil,
+            withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(results.count, 2, "both multi-vector points should be scored")
+        if case let .numId(value) = results.first?.id {
+            XCTAssertEqual(value, 1, "MaxSim: point 1 (best row dot 25) beats point 2 (4)")
+        } else {
+            XCTFail("multi-vector search top id should be numId(1)")
+        }
+        // One query row [3,4]: max(dot([3,4],[1,2])=11, dot([3,4],[3,4])=25) = 25.
+        XCTAssertEqual(results.first?.score ?? 0, 25.0, accuracy: 1e-3, "MaxSim score should be the best per-row dot product")
+    }
+
+    // MARK: - testDiscoverQueryReturnsResults  (gap 3)
+
+    /// `Query.discover`: a target vector guided by one context pair. Discover's
+    /// ranking is context-driven and subtle, so the meaningful assertions are
+    /// that it returns a non-empty, in-range result set through the bindings.
+    func testDiscoverQueryReturnsResults() throws {
+        let shard = try loadWithThreePoints("discover")
+        defer { try? shard.unload() }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 10, offset: nil,
+            query: .vector(query: .discover(
+                target: .dense(values: [1.0, 0.0, 0.0, 0.0]),
+                context: [ContextPair(
+                    positive: .dense(values: [1.0, 0.0, 0.0, 0.0]),
+                    negative: .dense(values: [0.0, 1.0, 0.0, 0.0])
+                )],
+                using: nil
+            )),
+            prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertFalse(results.isEmpty, "discover should return results")
+        XCTAssertLessThanOrEqual(results.count, 3, "discover cannot return more than the 3 upserted points")
+        for r in results {
+            guard case let .numId(v) = r.id, (1...3).contains(v) else {
+                return XCTFail("discover returned an unexpected id: \(r.id)")
+            }
+        }
+    }
+
+    // MARK: - testContextQueryReturnsResults  (gap 4)
+
+    /// `Query.context`: rank purely by fit to the context pairs, no target.
+    func testContextQueryReturnsResults() throws {
+        let shard = try loadWithThreePoints("context")
+        defer { try? shard.unload() }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 10, offset: nil,
+            query: .vector(query: .context(
+                context: [ContextPair(
+                    positive: .dense(values: [1.0, 0.0, 0.0, 0.0]),
+                    negative: .dense(values: [0.0, 1.0, 0.0, 0.0])
+                )],
+                using: nil
+            )),
+            prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertFalse(results.isEmpty, "context should return results")
+        XCTAssertLessThanOrEqual(results.count, 3, "context cannot return more than the 3 upserted points")
+    }
+
+    // MARK: - testFeedbackQueryReturnsResults  (gap 5)
+
+    /// `Query.feedback`: fully constructible from the bindings (a target, graded
+    /// FeedbackItems, and a/b/c FeedbackCoefficients), so it is exercised for
+    /// real rather than smoke-tested. Re-ranking is graded-relevance-driven, so
+    /// the assertion is a non-empty, in-range result set.
+    func testFeedbackQueryReturnsResults() throws {
+        let shard = try loadWithThreePoints("feedback")
+        defer { try? shard.unload() }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 10, offset: nil,
+            query: .vector(query: .feedback(
+                target: .dense(values: [1.0, 0.0, 0.0, 0.0]),
+                feedback: [FeedbackItem(vector: .dense(values: [0.0, 1.0, 0.0, 0.0]), score: 1.0)],
+                coefficients: FeedbackCoefficients(a: 1.0, b: 1.0, c: 1.0),
+                using: nil
+            )),
+            prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertFalse(results.isEmpty, "feedback query should return results")
+        XCTAssertLessThanOrEqual(results.count, 3, "feedback cannot return more than the 3 upserted points")
+    }
+
+    // MARK: - testRrfFusionOverPrefetches  (gap 6)
+
+    /// `ScoringQuery.fusion` (RRF) over two vector prefetches must fuse into a
+    /// single ranked set containing every point exactly once, in descending
+    /// score order. Mirrors the FFI `rrf_fusion_over_prefetches` test.
+    func testRrfFusionOverPrefetches() throws {
+        let shard = try loadWithThreePoints("fusion")
+        defer { try? shard.unload() }
+
+        let branch: ([Float]) -> Prefetch = { vector in
+            Prefetch(
+                limit: 3,
+                query: .vector(query: .nearest(vector: .dense(values: vector), using: nil)),
+                prefetches: [], filter: nil, scoreThreshold: nil, params: nil
+            )
+        }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 3, offset: nil,
+            query: .fusion(fusion: .rrf(k: 60, weights: nil)),
+            prefetches: [branch([1.0, 0.0, 0.0, 0.0]), branch([0.0, 0.0, 1.0, 0.0])],
+            withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertEqual(results.count, 3, "RRF over two prefetches should fuse to all three points")
+        var ids = results.compactMap { p -> UInt64? in
+            if case let .numId(v) = p.id { return v } else { return nil }
+        }
+        ids.sort()
+        XCTAssertEqual(ids, [1, 2, 3], "fused result set should contain each point exactly once")
+        for i in 1..<results.count {
+            XCTAssertGreaterThanOrEqual(results[i - 1].score, results[i].score, "fused scores must be in descending order")
+        }
+    }
+
+    // MARK: - testMmrQueryReturnsResults / testMmrInvalidLambdaThrows  (gap 7)
+
+    /// `ScoringQuery.mmr`: nearest-neighbor re-ranked for diversity. A valid
+    /// lambda in [0,1] returns results.
+    func testMmrQueryReturnsResults() throws {
+        let shard = try loadWithThreePoints("mmr")
+        defer { try? shard.unload() }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 3, offset: nil,
+            query: .mmr(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil, lambda: 0.5, candidatesLimit: 10),
+            prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertFalse(results.isEmpty, "mmr query should return results")
+        XCTAssertLessThanOrEqual(results.count, 3, "mmr cannot return more than the 3 upserted points")
+    }
+
+    /// The FFI guards MMR `lambda` into `[0, 1]`: a NaN or out-of-range value
+    /// must surface as a catchable `EdgeError.InvalidArgument`, not a panic.
+    func testMmrInvalidLambdaThrowsInvalidArgument() throws {
+        let shard = try loadWithThreePoints("mmr-bad")
+        defer { try? shard.unload() }
+
+        for badLambda: Float in [Float.nan, 2.0, -1.0] {
+            XCTAssertThrowsError(try shard.query(request: QueryRequest(
+                limit: 3, offset: nil,
+                query: .mmr(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil, lambda: badLambda, candidatesLimit: 10),
+                prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+            ))) { error in
+                guard case EdgeError.InvalidArgument = error else {
+                    return XCTFail("MMR lambda=\(badLambda) should throw InvalidArgument, got \(error)")
+                }
+            }
+        }
+    }
+
+    // MARK: - testSampleQueryReturnsLimited  (gap 8)
+
+    /// `ScoringQuery.sample(.random)` returns up to `limit` points at random.
+    func testSampleQueryReturnsLimited() throws {
+        let shard = try loadWithThreePoints("sample")
+        defer { try? shard.unload() }
+
+        let results = try shard.query(request: QueryRequest(
+            limit: 2, offset: nil,
+            query: .sample(sample: .random),
+            prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertEqual(results.count, 2, "random sample with limit 2 over 3 points returns 2")
+        for r in results {
+            guard case let .numId(v) = r.id, (1...3).contains(v) else {
+                return XCTFail("sample returned an unexpected id: \(r.id)")
+            }
+        }
+    }
+
+    // MARK: - testFacetCountsMatchDistribution  (gap 9)
+
+    /// Facet happy path: index a keyword field, then facet and assert the hit
+    /// counts match the upserted distribution (label a×2, b×1, summing to 3).
+    func testFacetCountsMatchDistribution() throws {
+        let shard = try loadWithRankedPoints("facet") // labels: a, b, a
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createFieldIndex(fieldName: "label", schema: .keyword))
+
+        let response = try shard.facet(request: FacetRequest(key: "label", limit: 10, exact: true, filter: nil))
+        var counts: [String: UInt64] = [:]
+        for hit in response.hits { counts[hit.value] = hit.count }
+        XCTAssertEqual(response.hits.count, 2, "two distinct labels -> two facet hits")
+        XCTAssertEqual(counts["a"], 2, "label 'a' appears on points 1 and 3")
+        XCTAssertEqual(counts["b"], 1, "label 'b' appears on point 2")
+        XCTAssertEqual(response.hits.reduce(0) { $0 + $1.count }, 3, "facet counts must sum to all 3 points")
+    }
+
+    // MARK: - testCreateSucceedsOnFreshDirAndFailsOnOccupied  (gap 10)
+
+    /// `EdgeShard.create` succeeds on a fresh dir but — unlike `load` — fails
+    /// with a catchable `EdgeError.OperationError` on an already-initialized dir.
+    func testCreateSucceedsOnFreshDirAndFailsOnOccupied() throws {
+        let shardURL = testDir.appendingPathComponent("create-fresh")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+
+        let shard = try EdgeShard.create(path: shardURL.path, config: makeConfig())
+        defer { try? shard.unload() }
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .single(values: [1.0, 0.0, 0.0, 0.0]), payload: nil),
+        ]))
+        XCTAssertEqual(try shard.count(request: CountRequest(filter: nil, exact: true)), 1, "create() then upsert should count 1")
+
+        XCTAssertThrowsError(try EdgeShard.create(path: shardURL.path, config: makeConfig())) { error in
+            guard case EdgeError.OperationError = error else {
+                return XCTFail("create() on an occupied dir should throw OperationError, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - testConfigSettersPersist  (gap 11)
+
+    /// The three config setters apply without throwing, and the per-vector HNSW
+    /// change round-trips through `config()`.
+    func testConfigSettersPersist() throws {
+        let shard = try loadWithThreePoints("config-setters")
+        defer { try? shard.unload() }
+
+        try shard.setHnswConfig(hnswConfig: HnswIndexConfig(
+            m: 16, efConstruct: 100, fullScanThreshold: 10000, maxIndexingThreads: 1, memory: .cached, payloadM: nil
+        ))
+        try shard.setVectorHnswConfig(vectorName: "", hnswConfig: HnswIndexConfig(
+            m: 8, efConstruct: 64, fullScanThreshold: 10000, maxIndexingThreads: 1, memory: nil, payloadM: nil
+        ))
+        try shard.setOptimizersConfig(optimizers: OptimizersConfig(
+            deletedThreshold: 0.5, vacuumMinVectorNumber: 100, defaultSegmentNumber: 1,
+            maxSegmentSizeKb: nil, indexingThresholdKb: 1000, preventUnoptimized: nil
+        ))
+
+        // The per-vector HNSW override round-trips through config().
+        let hnsw = try XCTUnwrap(
+            shard.config().vectorData[""]?.hnswConfig,
+            "vector HNSW config should be present after setVectorHnswConfig"
+        )
+        XCTAssertEqual(hnsw.m, 8, "setVectorHnswConfig should persist m=8")
+        XCTAssertEqual(hnsw.efConstruct, 64, "setVectorHnswConfig should persist efConstruct=64")
+    }
+
+    // MARK: - testSnapshotManifestAndBadRestore  (gap 12)
+
+    /// `snapshotManifest()` returns a non-empty, valid-JSON manifest, and
+    /// `updateFromSnapshot` with a bad path throws a catchable EdgeError while
+    /// leaving the shard's data intact (no crash, no half-recovery).
+    func testSnapshotManifestAndBadRestore() throws {
+        let shard = try loadWithThreePoints("snapshot")
+        defer { try? shard.unload() }
+
+        let manifest = try shard.snapshotManifest()
+        XCTAssertFalse(manifest.isEmpty, "snapshotManifest should return a non-empty string")
+        let data = try XCTUnwrap(manifest.data(using: .utf8), "manifest should be UTF-8")
+        XCTAssertNoThrow(
+            try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+            "snapshot manifest must be valid JSON: \(manifest)"
+        )
+
+        XCTAssertThrowsError(
+            try shard.updateFromSnapshot(snapshotPath: "/definitely/missing/nope.snapshot", tmpDir: nil)
+        ) { error in
+            guard case EdgeError.OperationError = error else {
+                return XCTFail("a missing snapshot path should throw OperationError, got \(error)")
+            }
+        }
+        XCTAssertEqual(try shard.info().pointsCount, 3, "shard must survive a failed restore with its data intact")
+    }
+
+    // MARK: - testPathReturnsLoadedDir  (gap 13)
+
+    /// `path()` returns the directory the shard was loaded from.
+    func testPathReturnsLoadedDir() throws {
+        let shardURL = testDir.appendingPathComponent("path-check")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        let shard = try EdgeShard.load(path: shardURL.path, config: makeConfig())
+        defer { try? shard.unload() }
+
+        XCTAssertEqual(try shard.path(), shardURL.path, "path() should echo the dir the shard was loaded from")
+    }
+
+    // MARK: - *ByFilter update family  (gap 14)
+
+    /// `deletePointsByFilter` removes only the points matching the filter.
+    func testDeletePointsByFilterRemovesMatchingOnly() throws {
+        let shard = try loadWithRankedPoints("del-points-by-filter") // labels: a, b, a
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.deletePointsByFilter(filter: labelFilter("a")))
+        XCTAssertEqual(try shard.count(request: CountRequest(filter: nil, exact: true)), 1, "deleting label=a (2 points) leaves 1")
+
+        let remaining = try shard.scroll(request: ScrollRequest(
+            offset: nil, limit: 10, filter: nil,
+            withPayload: .bool(enable: false), withVector: .bool(enable: false), orderBy: nil
+        ))
+        XCTAssertEqual(remaining.records.count, 1)
+        if case let .numId(v) = remaining.records.first?.id {
+            XCTAssertEqual(v, 2, "only the label=b point (id 2) should survive")
+        } else {
+            XCTFail("survivor id should be numId(2)")
+        }
+    }
+
+    /// `deletePayloadByFilter` removes a named key only from matching points.
+    func testDeletePayloadByFilterRemovesKeyOnMatchingOnly() throws {
+        let shard = try loadWithRankedPoints("del-payload-by-filter")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.deletePayloadByFilter(filter: labelFilter("a"), keys: ["rank"]))
+
+        let p1 = try shard.retrieve(request: RetrieveRequest(pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil))
+        let p1Payload = try XCTUnwrap(p1.first?.payload)
+        XCTAssertFalse(p1Payload.contains("\"rank\""), "matching point 1 should lose 'rank': \(p1Payload)")
+        XCTAssertTrue(p1Payload.contains("\"label\""), "matching point 1 keeps 'label': \(p1Payload)")
+
+        let p2 = try shard.retrieve(request: RetrieveRequest(pointIds: [.numId(value: 2)], withPayload: .bool(enable: true), withVector: nil))
+        XCTAssertTrue((p2.first?.payload ?? "").contains("\"rank\""), "non-matching point 2 keeps 'rank': \(p2.first?.payload ?? "")")
+    }
+
+    /// `clearPayloadByFilter` empties the payload only on matching points.
+    func testClearPayloadByFilterEmptiesMatchingOnly() throws {
+        let shard = try loadWithRankedPoints("clear-payload-by-filter")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.clearPayloadByFilter(filter: labelFilter("a")))
+
+        let p1 = try shard.retrieve(request: RetrieveRequest(pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil))
+        let p1Payload = p1.first?.payload ?? "{}"
+        XCTAssertFalse(p1Payload.contains("\"label\""), "matching point 1 payload should be cleared: \(p1Payload)")
+
+        let p2 = try shard.retrieve(request: RetrieveRequest(pointIds: [.numId(value: 2)], withPayload: .bool(enable: true), withVector: nil))
+        XCTAssertTrue((p2.first?.payload ?? "").contains("\"label\""), "non-matching point 2 keeps its payload: \(p2.first?.payload ?? "")")
+    }
+
+    /// `overwritePayloadByFilter` replaces the whole payload of matching points.
+    func testOverwritePayloadByFilterReplacesMatchingOnly() throws {
+        let shard = try loadWithRankedPoints("overwrite-payload-by-filter")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.overwritePayloadByFilter(filter: labelFilter("b"), payloadJson: "{\"tag\": \"hot\"}"))
+
+        // Point 2 (label b) is fully replaced: gains 'tag', loses 'rank'/'label'.
+        let p2 = try shard.retrieve(request: RetrieveRequest(pointIds: [.numId(value: 2)], withPayload: .bool(enable: true), withVector: nil))
+        let p2Payload = try XCTUnwrap(p2.first?.payload)
+        XCTAssertTrue(p2Payload.contains("\"tag\""), "overwrite should set 'tag': \(p2Payload)")
+        XCTAssertFalse(p2Payload.contains("\"rank\""), "overwrite should drop the old 'rank' key: \(p2Payload)")
+
+        // Point 1 (label a) untouched.
+        let p1 = try shard.retrieve(request: RetrieveRequest(pointIds: [.numId(value: 1)], withPayload: .bool(enable: true), withVector: nil))
+        XCTAssertFalse((p1.first?.payload ?? "").contains("\"tag\""), "non-matching point 1 should be untouched: \(p1.first?.payload ?? "")")
+    }
+
+    /// `deleteVectorsByFilter` drops a named vector only from matching points.
+    func testDeleteVectorsByFilterRemovesNamedVectorOnMatchingOnly() throws {
+        let shard = try loadWithRankedPoints("del-vectors-by-filter") // labels: a, b, a
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createDenseVector(vectorName: "extra", size: 2, distance: .dot))
+        // Give "extra" to point 1 (label a) and point 2 (label b).
+        try shard.update(operation: try UpdateOperation.updateVectors(pointVectors: [
+            PointVectors(id: .numId(value: 1), vector: .named(map: ["extra": .dense(values: [5.0, 6.0])])),
+            PointVectors(id: .numId(value: 2), vector: .named(map: ["extra": .dense(values: [5.0, 6.0])])),
+        ]))
+
+        let before = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .dense(values: [5.0, 6.0]), using: "extra"),
+            limit: 10, offset: nil, filter: nil, params: nil, withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(before.count, 2, "points 1 and 2 both carry the 'extra' vector")
+
+        // Delete "extra" from label=a points (1 and 3); only point 1 actually had it.
+        try shard.update(operation: try UpdateOperation.deleteVectorsByFilter(filter: labelFilter("a"), vectorNames: ["extra"]))
+
+        let after = try shard.search(request: SearchRequest(
+            query: .nearest(vector: .dense(values: [5.0, 6.0]), using: "extra"),
+            limit: 10, offset: nil, filter: nil, params: nil, withVector: nil, withPayload: nil, scoreThreshold: nil
+        ))
+        XCTAssertEqual(after.count, 1, "only point 2 keeps 'extra' after deleting it from label=a")
+        if case let .numId(v) = after.first?.id {
+            XCTAssertEqual(v, 2, "the surviving 'extra' vector belongs to point 2 (label b)")
+        } else {
+            XCTFail("remaining 'extra' vector should belong to id 2")
+        }
+    }
+
+    // MARK: - testDeleteFieldIndexDisablesFacet  (gap 15)
+
+    /// `deleteFieldIndex` removes a payload index: faceting works while it
+    /// exists and errors once it is dropped.
+    func testDeleteFieldIndexDisablesFacet() throws {
+        let shard = try loadWithRankedPoints("delete-field-index")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createFieldIndex(fieldName: "label", schema: .keyword))
+        let response = try shard.facet(request: FacetRequest(key: "label", limit: 10, exact: true, filter: nil))
+        XCTAssertEqual(response.hits.reduce(0) { $0 + $1.count }, 3, "facet works while the index exists")
+
+        try shard.update(operation: try UpdateOperation.deleteFieldIndex(fieldName: "label"))
+        XCTAssertThrowsError(
+            try shard.facet(request: FacetRequest(key: "label", limit: 10, exact: true, filter: nil))
+        ) { error in
+            XCTAssertTrue(error is EdgeError, "faceting a dropped index should throw a catchable EdgeError, got \(type(of: error))")
+        }
+    }
+
+    // MARK: - testDeleteVectorNameRemovesField  (gap 16)
+
+    /// `deleteVectorName` removes a named dense vector field: config() stops
+    /// listing it and searching it fails.
+    func testDeleteVectorNameRemovesField() throws {
+        let shard = try loadWithThreePoints("delete-vector-name")
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.createDenseVector(vectorName: "extra", size: 2, distance: .dot))
+        XCTAssertNotNil(try shard.config().vectorData["extra"], "created named vector should be listed by config()")
+
+        try shard.update(operation: UpdateOperation.deleteVectorName(vectorName: "extra"))
+        XCTAssertNil(try shard.config().vectorData["extra"], "deleted named vector should no longer be listed by config()")
+
+        XCTAssertThrowsError(
+            try shard.search(request: SearchRequest(
+                query: .nearest(vector: .dense(values: [5.0, 6.0]), using: "extra"),
+                limit: 10, offset: nil, filter: nil, params: nil, withVector: nil, withPayload: nil, scoreThreshold: nil
+            ))
+        ) { error in
+            XCTAssertTrue(error is EdgeError, "searching a deleted vector name should throw EdgeError, got \(type(of: error))")
+        }
+    }
+
+    // MARK: - testDatetimeOrderByScroll  (gap 17)
+
+    /// Order-by scroll on a datetime-typed payload field with a datetime
+    /// `StartFrom`. Mirrors the integer order-by test: the inclusive start bound
+    /// filters to points at/after it, ascending.
+    func testDatetimeOrderByScroll() throws {
+        let shardURL = testDir.appendingPathComponent("datetime-orderby")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+        let shard = try EdgeShard.load(path: shardURL.path, config: makeConfig())
+        defer { try? shard.unload() }
+
+        try shard.update(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .single(values: [1.0, 0.0, 0.0, 0.0]), payload: "{\"ts\": \"2021-01-01T00:00:00Z\"}"),
+            Point(id: .numId(value: 2), vector: .single(values: [0.0, 1.0, 0.0, 0.0]), payload: "{\"ts\": \"2022-01-01T00:00:00Z\"}"),
+            Point(id: .numId(value: 3), vector: .single(values: [0.0, 0.0, 1.0, 0.0]), payload: "{\"ts\": \"2023-01-01T00:00:00Z\"}"),
+        ]))
+        try shard.update(operation: try UpdateOperation.createFieldIndex(fieldName: "ts", schema: .datetime))
+
+        // Ascending by datetime, inclusive start at 2022 -> points 2 and 3.
+        let page = try shard.scroll(request: ScrollRequest(
+            offset: nil, limit: 10, filter: nil,
+            withPayload: .bool(enable: true), withVector: .bool(enable: false),
+            orderBy: OrderBy(key: "ts", direction: .asc, startFrom: .datetime(value: "2022-01-01T00:00:00Z"))
+        ))
+        XCTAssertEqual(page.records.count, 2, "datetime StartFrom (inclusive at 2022) should include only 2022 and 2023")
+        let ids = page.records.compactMap { r -> UInt64? in
+            if case let .numId(v) = r.id { return v } else { return nil }
+        }
+        XCTAssertEqual(ids, [2, 3], "ascending datetime order should yield 2022 then 2023")
+        XCTAssertTrue((page.records.first?.payload ?? "").contains("2022"), "first record should be the 2022 point: \(page.records.first?.payload ?? "")")
+        // order_value is populated; datetime sorts as a numeric timestamp under the hood.
+        let orderValue = try XCTUnwrap(page.records.first?.orderValue, "datetime order-by should populate order_value")
+        switch orderValue {
+        case .int, .float:
+            break // accept whichever numeric form the engine surfaces for datetimes
+        }
+    }
 }
