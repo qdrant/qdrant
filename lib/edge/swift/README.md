@@ -51,20 +51,57 @@ See `example/` for a complete demo app.
 
 ### Distribution
 
-This package lives in a subdirectory of the qdrant monorepo, so it is consumed
-via a **local `path:` dependency** (as above) — SwiftPM resolves a `.package(url:)`
-dependency only against a `Package.swift` at a repository's **root**, so
-`.package(url: "…/qdrant")` cannot reach `lib/edge/swift`. Public,
-version-tagged distribution over `binaryTarget(url:checksum:)` follows the
-established Rust-UniFFI pattern (e.g. `mozilla/rust-components-swift`,
-`matrix-org/matrix-rust-components-swift`): a small dedicated release repo whose
-`Package.swift` sits at its root, commits the generated bindings, and points its
-XCFramework `binaryTarget` at a GitHub-release artifact published from this
-monorepo. `release-xcframework.sh` builds and checksums that artifact; wiring up
-the release repo is tracked as follow-up work. The `QDRANT_EDGE_RELEASE`
-url+checksum mode in `Package.swift` exists for that release repo's manifest and
-for CI verification — the manifest here defaults to the local build for
-development.
+This package lives in a subdirectory of the qdrant monorepo, so **this manifest
+is the development/CI manifest** and is consumed via a **local `path:`
+dependency** (as shown above). It is intentionally not the public distribution
+manifest — here's why, and how public distribution is intended to work.
+
+**The constraint.** SwiftPM resolves a `.package(url:)` dependency only against a
+`Package.swift` at a repository **root**. There is no subdirectory selector for
+git URLs — the feature request ([swift-package-manager#5768](https://github.com/swiftlang/swift-package-manager/issues/5768))
+was closed without implementation. So `.package(url: "…/qdrant")` cannot reach
+`lib/edge/swift`, regardless of how the binary target is configured.
+
+**How comparable projects handle it.** Every native-core library in the same
+situation — a Swift package that is a *sub-part* of a larger polyglot repo —
+ships it from a small, dedicated Swift **release repo** (whose `Package.swift`
+is at *its* root), developed from the main monorepo:
+
+| Project | Release repo |
+|---|---|
+| DuckDB (C++) | `duckdb/duckdb-swift` |
+| Turso / libSQL (Rust) | `tursodatabase/libsql-swift` |
+| Mozilla app-services (Rust) | `mozilla/rust-components-swift` |
+| Matrix (Rust) | `matrix-org/matrix-rust-components-swift` |
+| Realm, ObjectBox | dedicated Swift repos |
+
+(Projects that consume from a repo root instead — e.g. `unum-cloud/usearch` —
+can do so only because the whole repo *is* the library; that doesn't apply when
+the repo root is a large server product.)
+
+**The three options, and the tradeoff.**
+
+1. **Dedicated release repo** (recommended, the industry norm above): a thin
+   `qdrant-edge-swift` repo, auto-updated from this monorepo, commits the
+   generated bindings and points its XCFramework `binaryTarget` at a
+   GitHub-release artifact published here. Cost: one extra (generated) repo.
+2. **Orphan branch in `qdrant/qdrant`** (no second repo): a `edge-swift-release`
+   branch whose *root* holds the manifest + bindings, consumed via
+   `.package(url: "…/qdrant", branch:/exact:)`. Cost: consumers clone the large
+   monorepo to resolve, and Swift version tags share the server's tag namespace.
+3. **Swift Package Registry** (no git-root constraint): publish versioned
+   archives to a registry. Cost: registry infrastructure + consumer opt-in;
+   still-nascent ecosystem support.
+
+Option 1 is the plan; standing up the release repo is tracked as follow-up work.
+`release-xcframework.sh` already builds and checksums the distributable
+artifact, and the `QDRANT_EDGE_RELEASE` url+checksum mode in `Package.swift`
+exists for that release repo's manifest and for CI verification.
+
+> **Note for the Kotlin/Android SDK:** this is a Swift-specific constraint.
+> Maven/Gradle coordinates are location-independent, so the Android SDK publishes
+> its AAR to Maven Central directly from `lib/edge/android/` in this monorepo —
+> no separate repo, no root requirement.
 
 ## Project layout
 

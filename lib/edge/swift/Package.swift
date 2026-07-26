@@ -2,14 +2,41 @@
 import PackageDescription
 import Foundation
 
-// The XCFramework binary target has two modes:
+// DISTRIBUTION MODEL (why this manifest defaults to a local path)
+// ----------------------------------------------------------------
+// This manifest is the DEVELOPMENT/CI manifest for the package as it lives in
+// the qdrant monorepo at `lib/edge/swift/`. It is NOT the public distribution
+// manifest, by necessity, not oversight:
+//
+// SwiftPM resolves a `.package(url:)` dependency ONLY against a `Package.swift`
+// at a repository ROOT (swiftlang/swift-package-manager#5768, closed without
+// implementation — there is no `subdir:` for git URLs). A package in a
+// subdirectory of a large polyglot monorepo therefore cannot be consumed over
+// `.package(url: "…/qdrant")` at all.
+//
+// Every comparable native-core project in the same position solves this with a
+// small, dedicated Swift release repo (whose Package.swift is at ITS root),
+// developed from the main monorepo: DuckDB (`duckdb/duckdb-swift`), Turso/libSQL
+// (`tursodatabase/libsql-swift`), Mozilla (`mozilla/rust-components-swift`),
+// Matrix (`matrix-org/matrix-rust-components-swift`), Realm, ObjectBox. The
+// release repo commits the generated bindings and points its XCFramework
+// `binaryTarget` at a GitHub-release artifact published from this monorepo.
+// (Alternatives that avoid a second repo — an orphan branch in qdrant/qdrant,
+// or a Swift Package Registry — carry worse tradeoffs: monorepo-clone bloat +
+// tag-namespace collisions, or registry infrastructure. See README "Distribution".)
+// Standing up that release repo is tracked as follow-up work.
+//
+// The two modes below therefore serve: local `path:` for monorepo dev/CI
+// (default), and `url:`+`checksum:` for the release repo's manifest + CI
+// verification.
 //
 //   - Local (default): consume `out/QdrantEdge.xcframework` via `path:`. This is
 //     what `make build` + `swift test` and the local example use.
 //   - Release: when the env vars `QDRANT_EDGE_XCFRAMEWORK_URL` and
 //     `QDRANT_EDGE_XCFRAMEWORK_CHECKSUM` are set (by `release-xcframework.sh`,
 //     which also patches the committed values below), consume the published zip
-//     via `url:` + `checksum:` so the package is installable from a Git tag.
+//     via `url:` + `checksum:` so the release repo's package is installable from
+//     a Git tag.
 //
 // `release-xcframework.sh` rewrites the two constants below at release time. To
 // activate release mode you must ALSO set `QDRANT_EDGE_RELEASE`; the
