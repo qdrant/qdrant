@@ -88,10 +88,15 @@ let package = Package(
     ],
     products: [
         .library(
-            // Only `QdrantEdge` is exposed to consumers. The binary FFI target
-            // is a private dependency of `QdrantEdge` (linked, not importable),
-            // so `import qdrant_edge_ffiFFI` is not available downstream — the
-            // demoted C plumbing stays internal.
+            // Only the `QdrantEdge` library product is published; the binary FFI
+            // target is a dependency of it, not a product. The intended surface
+            // is `import QdrantEdge`. SwiftPM does not hard-prevent a consumer
+            // from also `import`ing the raw `qdrant_edge_ffiFFI` C module (a
+            // C-modulemap binaryTarget can be reachable transitively) — but that
+            // module exposes only raw C ABI (no Swift API), and the Swift-level
+            // plumbing inside `QdrantEdge.swift` is demoted to `internal`. Treat
+            // the raw C module as reserved, same as mozilla/matrix's UniFFI Swift
+            // SDKs. (See README "Public API" for the residual reserved members.)
             name: "QdrantEdge",
             targets: ["QdrantEdge"]
         ),

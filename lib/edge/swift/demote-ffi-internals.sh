@@ -33,7 +33,12 @@ PUBLIC_BEFORE=$(grep -cE "^public " "$SWIFT_FILE" || true)
 # class members (EdgeShard.load, UpdateOperation.upsertPoints) without
 # indentation.
 perl -i -pe '
-    s/^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)/internal $1 $2/;
+    # FfiConverter*/Uniffi*/uniffi* are genuine prefixes (FfiConverterTypeX,
+    # UniffiInternalError, uniffiCheckCallStatus). RustBuffer/ForeignBytes/
+    # InitializationResult are EXACT identifiers (verified against the generated
+    # output), so word-bound them with \b — otherwise the prefix match would also
+    # demote a coincidentally-named domain type (e.g. `public struct RustBufferX`).
+    s/^public (struct|enum|protocol|func|class|final|typealias|var|let) ((?:FfiConverter|Uniffi|uniffi)[A-Za-z0-9_]*|(?:RustBuffer|ForeignBytes|InitializationResult)\b)/internal $1 $2/;
     s/^public (func) ([A-Za-z_][A-Za-z0-9_]*_(lift|lower))\b/internal $1 $2/;
 ' "$SWIFT_FILE"
 
@@ -70,14 +75,19 @@ if [ "$DEMOTED" -eq 0 ]; then
     exit 1
 fi
 
-# Positive post-condition: assert NO known-plumbing-shaped declaration is still
-# `public`. The count-based guard above only fires on a TOTAL vocabulary change
-# (0 demotions); it misses a PARTIAL leak where uniffi-bindgen adds or renames
-# ONE plumbing family alongside the recognized ones — the known prefixes still
-# demote plenty, so DEMOTED > 0 and the build passes while the new family leaks
-# into the public surface. Re-scan for any surviving public plumbing so that
-# partial case fails closed too.
-PLUMBING_RE='^public (struct|enum|protocol|func|class|final|typealias|var|let) (FfiConverter|Uniffi|uniffi|RustBuffer|ForeignBytes|InitializationResult)|^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b'
+# Positive post-condition: assert NO declaration matching the KNOWN plumbing
+# vocabulary is still `public` after the pass. This catches a partial-demote bug
+# within the recognized families (a substitution that didn't fire), on top of
+# the DEMOTED==0 total-vocabulary-change guard above.
+#
+# Scope limit (honest): this only covers the SAME families the demote regex
+# knows. If a future UniFFI adds a genuinely NEW plumbing family under a new
+# prefix (e.g. a hypothetical `FfiCodec*`), neither the demote regex nor this
+# re-scan would see it, and it would leak `public`. The real mitigation for that
+# is human review — "treat a UniFFI version bump as a semver event for this
+# package" (README). A golden-allowlist of the expected public set would close
+# it fully but is deferred (it must be regenerated on every legitimate API add).
+PLUMBING_RE='^public (struct|enum|protocol|func|class|final|typealias|var|let) ((FfiConverter|Uniffi|uniffi)[A-Za-z0-9_]*|(RustBuffer|ForeignBytes|InitializationResult)\b)|^public func [A-Za-z_][A-Za-z0-9_]*_(lift|lower)\b'
 REMAINING=$(grep -cE "$PLUMBING_RE" "$SWIFT_FILE" || true)
 if [ "$REMAINING" -ne 0 ]; then
     echo "ERROR: $REMAINING FFI-plumbing declaration(s) remain \`public\` after demotion:" >&2
