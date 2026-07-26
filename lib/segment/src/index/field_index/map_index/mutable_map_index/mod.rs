@@ -1,4 +1,4 @@
-use gridstore::{Blob, Gridstore};
+use blobstore::{Blob, Blobstore};
 
 use self::in_memory::InMemoryMapIndex;
 use super::MapIndexKey;
@@ -13,5 +13,5 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     pub(super) in_memory_index: InMemoryMapIndex<N>,
-    pub(super) storage: Gridstore<Vec<<N as MapIndexKey>::Owned>>,
+    pub(super) storage: Blobstore<Vec<<N as MapIndexKey>::Owned>>,
 }

@@ -13,10 +13,10 @@
 
 use std::ops::Bound;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::UniversalRead;
 use ecow::EcoString;
-use gridstore::Blob;
 
 use super::super::MapIndex;
 use super::super::immutable_map_index::ImmutableMapIndex;

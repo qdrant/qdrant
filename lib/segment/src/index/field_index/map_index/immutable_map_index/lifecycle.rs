@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UniversalWrite};
-use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::on_disk_map_index::OnDiskMapIndex;

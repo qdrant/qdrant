@@ -3,11 +3,11 @@
 
 use std::ops::Bound;
 
+use blobstore::Blob;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
-use gridstore::Blob;
 
 use super::super::numeric_index_read::NumericIndexRead;
 use super::super::{Encodable, NumericIndexValue};

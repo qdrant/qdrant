@@ -17,7 +17,7 @@ testing = ["common/testing"]
 [dependencies]
 bitpacking = { workspace = true }
 blink-alloc = { workspace = true }
-gridstore = { path = "../gridstore" }
+blobstore = { path = "../blobstore" }
 bincode = { workspace = true }
 common = { path = "../common/common" }
 fs-err = { workspace = true }

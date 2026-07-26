@@ -5,10 +5,10 @@
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 
+use blobstore::Blob;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use serde_json::Value;
 
 use super::{Encodable, NumericIndex, NumericIndexValue};

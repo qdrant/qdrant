@@ -15,8 +15,8 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// In-memory state shared by [`MutableFullTextIndex`] and
 /// [`ReadOnlyAppendableFullTextIndex`].
 ///
-/// Both wrappers add a different backing storage (`Gridstore` vs
-/// `GridstoreReader`); the in-memory layout that serves every
+/// Both wrappers add a different backing storage (`Blobstore` vs
+/// `BlobstoreReader`); the in-memory layout that serves every
 /// [`FullTextIndexRead`] method is the same, so it lives here once.
 ///
 /// [`MutableFullTextIndex`]: super::MutableFullTextIndex

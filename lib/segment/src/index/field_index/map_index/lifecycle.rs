@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blob;
 
 use super::MapIndex;
 use super::builders::MapIndexMmapBuilder;
