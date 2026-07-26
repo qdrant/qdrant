@@ -30,6 +30,12 @@ setup-rust: ## Install the nightly Rust toolchain (required — the workspace us
 
 .PHONY: setup-targets
 setup-targets: ## Install required Rust cross-compilation targets
+	@# Make runs each target's recipe in its own shell, so the PATH export in
+	@# setup-rust does NOT survive into this target. On a fresh machine (rustup
+	@# just installed by setup-rust, shell not yet restarted) `rustup` is only on
+	@# PATH via ~/.cargo/bin — export it here too, or `make setup` dies with
+	@# "rustup: command not found" at this step.
+	@export PATH="$$HOME/.cargo/bin:$$PATH"; \
 	rustup target add --toolchain nightly \
 		aarch64-apple-ios \
 		aarch64-apple-ios-sim \
