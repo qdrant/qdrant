@@ -227,17 +227,25 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         })
     }
 
-    /// Reopen the tracker file and reload the number of mappings from it, making newly appended
-    /// mappings visible.
+    /// Reopen the tracker file and read the number of mappings it holds, *without* making the
+    /// new mappings visible to reads.
+    ///
+    /// Observing and publishing are separate steps so that the caller can reload the pages in
+    /// between: a writer persists value data before the mappings that reference it, so a count
+    /// observed here is backed by page data that a page reload started afterwards is guaranteed
+    /// to see. Publishing that count only once the page reload succeeded, through
+    /// [`commit_reload`](Self::commit_reload), keeps a failing reload from exposing mappings
+    /// that point into pages which were never loaded.
+    ///
+    /// Reopening without committing is harmless on its own: reads stay bounded by the unchanged
+    /// `persisted_count`, and the bytes below it never change.
     ///
     /// Important assumptions:
     ///
     /// - Should only be called on read-only instances of the tracker.
     /// - Mappings are append-only, existing entries never change.
     /// - Partial writes are possible, but ignored: a trailing partial entry is not counted.
-    ///
-    /// Returns the point offset range of new mappings.
-    pub fn live_reload(&mut self) -> Result<bool> {
+    pub fn reload_count(&mut self) -> Result<PendingReload> {
         debug_assert!(
             self.pending.is_empty(),
             "live reload must only be used on read-only instances",
@@ -254,11 +262,40 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
             )));
         }
 
-        let changed = new_count != self.persisted_count;
+        Ok(PendingReload { count: new_count })
+    }
 
-        self.persisted_count = new_count;
+    /// Make the mappings observed by [`reload_count`](Self::reload_count) visible to reads.
+    ///
+    /// Only call this once the pages holding the value data those mappings reference have been
+    /// reloaded, see [`reload_count`](Self::reload_count).
+    pub fn commit_reload(&mut self, reload: PendingReload) {
+        let PendingReload { count } = reload;
+        debug_assert!(
+            count >= self.persisted_count,
+            "a committed reload must not decrease the mapping count",
+        );
+        self.persisted_count = count;
+    }
+}
 
-        Ok(changed)
+/// A mapping count read from the tracker file that is not visible to reads yet.
+///
+/// Produced by [`AppendOnlyTracker::reload_count`] and published by
+/// [`AppendOnlyTracker::commit_reload`], so that the pages backing the new mappings can be
+/// reloaded in between the two.
+#[must_use = "an observed reload only becomes visible once committed"]
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct PendingReload {
+    /// Number of mappings the file held at the time of the observation
+    count: PointOffset,
+}
+
+#[cfg(test)]
+impl PendingReload {
+    /// Number of mappings the file held at the time of the observation.
+    pub fn count(self) -> PointOffset {
+        self.count
     }
 }
 
@@ -743,7 +780,9 @@ mod tests {
             AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
                 .unwrap();
         assert_eq!(reader.pointer_count(), 3);
-        assert!(!reader.live_reload().unwrap());
+        let reload = reader.reload_count().unwrap();
+        assert_eq!(reload.count(), 3);
+        reader.commit_reload(reload);
 
         // The reader picks up newly appended mappings
         for n in 3..6 {
@@ -751,12 +790,22 @@ mod tests {
         }
         writer.write_pending(writer.pointer_count()).unwrap();
 
-        assert!(reader.live_reload().unwrap());
+        let reload = reader.reload_count().unwrap();
+        assert_eq!(reload.count(), 6);
+
+        // Observing alone does not expose them, only committing does
+        assert_eq!(reader.pointer_count(), 3);
+        assert_eq!(reader.get::<Random>(3).unwrap(), None);
+
+        reader.commit_reload(reload);
         assert_eq!(reader.pointer_count(), 6);
         for n in 0..6 {
             assert_eq!(reader.get::<Random>(n).unwrap(), Some(pointer(n)));
         }
-        assert!(!reader.live_reload().unwrap());
+
+        let reload = reader.reload_count().unwrap();
+        assert_eq!(reload.count(), 6);
+        reader.commit_reload(reload);
     }
 
     /// The batched lookup resolves persisted, pending, skipped and out of range point offsets,

@@ -210,9 +210,6 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
 
     /// Reload the pages from "disk", making newly appended value data visible to reads and the
     /// reported storage size.
-    ///
-    /// Reloads the held pages starting at `reload_from` (at least the last page), and adopts
-    /// page files created since.
     pub(super) fn live_reload(&mut self, fs: &S::Fs, populate: Populate) -> Result<()> {
         let page_list: HashMap<_, _> = fs
             .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?

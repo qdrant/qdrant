@@ -1883,3 +1883,63 @@ fn test_live_reload_refreshes_old_page_behind_unchanged_empty_page() {
         "value 1 lives in page 0's late-flushed tail, behind the unchanged empty page 1",
     );
 }
+
+/// A live reload whose page reload fails must not publish the mappings it already observed:
+/// they would reference value data the reader never loaded. The reader keeps serving its
+/// pre-reload state, and a later reload picks the new mappings up once the pages load again.
+#[test]
+fn test_failed_page_reload_does_not_publish_mappings() {
+    let dir = TempDir::new().unwrap();
+    let mut storage = small_page_storage(&dir, 256);
+    let page_path = dir.path().join("log_page_0.dat");
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    storage
+        .put_value(0, &vec![0u8; 100], hw_counter_ref)
+        .unwrap();
+    storage.flusher()().unwrap();
+
+    // Reader holds page 0 at 100 bytes and a single mapping
+    let mut reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 1);
+
+    // Value 1 lands in page 0's tail, so the new mapping only resolves against the grown page
+    storage
+        .put_value(1, &vec![1u8; 100], hw_counter_ref)
+        .unwrap();
+    storage.flusher()().unwrap();
+
+    // Make the page reload fail: the page appears shorter than what the reader already holds
+    let page_bytes = fs::read(&page_path).unwrap();
+    assert_eq!(page_bytes.len(), 200);
+    fs::write(&page_path, &page_bytes[..50]).unwrap();
+
+    reader
+        .live_reload(&MmapFs)
+        .expect_err("a page shorter than the one held must fail the reload");
+
+    assert_eq!(
+        reader.max_point_offset().unwrap(),
+        1,
+        "the observed mapping must stay unpublished, it references value data \
+         that failed to load",
+    );
+
+    // Undo the sabotage: the same reader recovers on the next reload, nothing was lost
+    fs::write(&page_path, &page_bytes).unwrap();
+    reader.live_reload(&MmapFs).unwrap();
+
+    assert_eq!(reader.max_point_offset().unwrap(), 2);
+    assert_eq!(
+        reader.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(vec![0u8; 100]),
+    );
+    assert_eq!(
+        reader.get_value::<Random>(1, &hw_counter).unwrap(),
+        Some(vec![1u8; 100]),
+    );
+}

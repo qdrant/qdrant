@@ -161,18 +161,28 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     /// This method reloads the storage from "disk", so that it makes newly appended data
     /// readable.
     ///
+    /// Mappings only become visible once the pages holding their value data are loaded, so a
+    /// failure leaves the reader serving its previous, consistent state instead of a half
+    /// reloaded one.
+    ///
     /// Important assumptions:
     ///
     /// - Data is append-only, existing mappings and value data never change.
     /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
     ///   counted.
     pub(crate) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
-        // A writer always updates pages before the tracker, it is not synchronized with readers
-        // Here we read the tracker first, so that we're sure all pages are already updated
-        self.tracker.live_reload()?;
+        // A writer always updates the pages before the tracker, and it is not synchronized with
+        // readers. Observe the tracker first, so that the mappings counted here are backed by
+        // page data that the page reload below is guaranteed to see. Observing the pages first
+        // would let the tracker name value data appended after the pages were read.
+        let reload = self.tracker.reload_count()?;
 
-        // The new mappings name the pages whose flushed data must be visible now.
         self.pages.live_reload(fs, self.populate)?;
+
+        // Publish the mappings last: until this point a failure above is harmless, as pages
+        // running ahead of the tracker is the safe direction — the extra value data is simply
+        // unreferenced.
+        self.tracker.commit_reload(reload);
 
         Ok(())
     }
