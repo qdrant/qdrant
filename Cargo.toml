@@ -364,7 +364,7 @@ members = [
     "lib/edge/ffi",
     "lib/edge/ffi/bindgen",
     "lib/edge/tools/shard_query",
-    "lib/gridstore",
+    "lib/blobstore",
     "lib/macros",
     "lib/posting_list",
     "lib/segment",

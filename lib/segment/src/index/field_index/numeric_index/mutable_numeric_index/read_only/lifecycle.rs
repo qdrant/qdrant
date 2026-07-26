@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use blobstore::{Blob, BlobstoreReader};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
-use gridstore::{Blob, GridstoreReader};
 
 use super::super::InMemoryNumericIndex;
 use super::ReadOnlyAppendableNumericIndex;
@@ -19,9 +19,9 @@ where
     /// will read. Returns whether the on-disk directory exists (`false` = the
     /// index is not in the appendable format).
     pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
-        // Gridstore reader
+        // Blobstore reader
         Ok(
-            GridstoreReader::<Vec<T>, S>::preopen(fs, dir, Populate::PreferBackground)
+            BlobstoreReader::<Vec<T>, S>::preopen(fs, dir, Populate::PreferBackground)
                 .ok_not_found()?
                 .is_some(),
         )
@@ -30,11 +30,11 @@ where
     /// Open the appendable (Gridstore) numeric index read-only, threading every
     /// file open through the filesystem handle `fs`.
     ///
-    /// Opens a [`GridstoreReader`] over the generic filesystem object, then
+    /// Opens a [`BlobstoreReader`] over the generic filesystem object, then
     /// rebuilds the in-memory index by feeding every stored point through
     /// [`InMemoryNumericIndex::add_many_to_list`] — the exact reconstruction the
     /// writable [`MutableNumericIndex::open_gridstore`][1] performs over a
-    /// writable `Gridstore`. No write path; the reader is retained for
+    /// writable `Blobstore`. No write path; the reader is retained for
     /// `files` / `clear_cache`.
     ///
     /// Returns [`Ok(None)`] when the on-disk directory doesn't exist, matching
@@ -47,7 +47,7 @@ where
         path: PathBuf,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
-            GridstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
+            BlobstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
         else {
             // Files don't exist, cannot load
             return Ok(None);

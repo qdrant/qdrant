@@ -1,5 +1,5 @@
+use blobstore::Blob;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 
 pub use self::builders::{MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
 use self::immutable_map_index::ImmutableMapIndex;

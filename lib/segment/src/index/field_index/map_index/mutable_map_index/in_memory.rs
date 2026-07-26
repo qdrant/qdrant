@@ -3,9 +3,9 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::iter;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use roaring::RoaringBitmap;
 
 use super::super::read_ops::MapIndexRead;
@@ -15,8 +15,8 @@ use crate::index::payload_config::StorageType;
 
 /// In-memory state shared by `MutableMapIndex` and `ReadOnlyAppendableMapIndex`.
 ///
-/// Both wrappers add a different backing storage (`Gridstore` vs
-/// `GridstoreReader`); the in-memory layout that serves every
+/// Both wrappers add a different backing storage (`Blobstore` vs
+/// `BlobstoreReader`); the in-memory layout that serves every
 /// [`MapIndexRead`] method is the same, so it lives here once.
 pub(in crate::index::field_index::map_index) struct InMemoryMapIndex<N: MapIndexKey + ?Sized>
 where

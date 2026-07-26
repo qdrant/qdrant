@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::storage::read_only::ReadOnlyNumericIndexInner;
