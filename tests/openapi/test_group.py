@@ -139,11 +139,11 @@ def setup(on_disk_vectors, collection_name, lookup_collection_name):
 
 def test_search_with_multiple_groups(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.0, 0.0, 1.0, 1.0],
+            "query": [0.0, 0.0, 1.0, 1.0],
             "limit": 2,
             "with_payload": True,
             "group_by": "mkey",
@@ -160,11 +160,11 @@ def test_search_with_multiple_groups(collection_name):
 
 def test_search(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
@@ -184,12 +184,16 @@ def test_search(collection_name):
 
 def test_recommend(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [5, 10, 15],
-            "negative": [6, 11, 16],
+            "query": {
+                "recommend": {
+                    "positive": [5, 10, 15],
+                    "negative": [6, 11, 16],
+                }
+            },
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
@@ -209,11 +213,11 @@ def test_recommend(collection_name):
 
 def test_with_vectors(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 5,
             "with_payload": True,
             "with_vector": True,
@@ -235,11 +239,11 @@ def test_with_vectors(collection_name):
 
 def test_inexistent_group_by(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "with_vector": True,
@@ -256,11 +260,11 @@ def test_inexistent_group_by(collection_name):
 
 def search_array_group_by(collection_name: str, group_by: str):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.0, 1.0, 0.0, 0.0],
+            "query": [0.0, 1.0, 0.0, 0.0],
             "limit": 6,
             "with_payload": True,
             "group_by": group_by,
@@ -286,11 +290,11 @@ def test_multi_value_group_by(collection_name):
 
 def test_groups_by_heterogenous_fields(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.0, 0.0, 1.0, 0.0],
+            "query": [0.0, 0.0, 1.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "heterogenousId",
@@ -346,11 +350,11 @@ def assert_group_with_default_lookup(group, group_size=3):
 def test_search_groups_with_lookup(collection_name, with_lookup):
     with_lookup = jsons.load(jsons.dump(with_lookup))
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
@@ -372,12 +376,16 @@ def test_search_groups_with_lookup(collection_name, with_lookup):
 def test_recommend_groups_with_lookup(request, collection_name, with_lookup):
     #with_lookup["collection"] = str(request.getfixturevalue('lookup_collection_name'))
     response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [5, 10, 15],
-            "negative": [6, 11, 16],
+            "query": {
+                "recommend": {
+                    "positive": [5, 10, 15],
+                    "negative": [6, 11, 16],
+                }
+            },
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
@@ -418,11 +426,11 @@ def test_recommend_groups_with_lookup(request, collection_name, with_lookup):
 def test_search_groups_with_lookup_without_payload_nor_vectors(collection_name, with_lookup):
     with_lookup = jsons.load(jsons.dump(with_lookup))
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
@@ -451,11 +459,11 @@ def test_search_groups_with_lookup_without_payload_nor_vectors(collection_name, 
 def test_search_groups_lookup_with_non_existing_collection(collection_name):
     non_existing_collection = "non_existing_collection"
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",
@@ -477,11 +485,11 @@ def test_search_groups_lookup_with_non_existing_collection(collection_name):
 
 def test_search_groups_with_full_lookup(collection_name, lookup_collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search/groups",
+        api="/collections/{collection_name}/points/query/groups",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [1.0, 0.0, 0.0, 0.0],
+            "query": [1.0, 0.0, 0.0, 0.0],
             "limit": 10,
             "with_payload": True,
             "group_by": "docId",

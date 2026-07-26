@@ -37,12 +37,12 @@ def setup(collection_name):
 
 def test_search_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
-            "vector": [random() for _ in range(dims)],
+            "query": [random() for _ in range(dims)],
             "limit": 100000,
             "filter": {
                 "must": [
@@ -64,14 +64,14 @@ def test_search_timeout(collection_name):
 
 def test_search_batch_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/batch',
+        api='/collections/{collection_name}/points/query/batch',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
             "searches": [
                 {
-                    "vector": [0.5] * dims,
+                    "query": [0.5] * dims,
                     "limit": 100000,
                     "filter": {
                         "must": [
@@ -85,7 +85,7 @@ def test_search_batch_timeout(collection_name):
                     },
                 },
                 {
-                    "vector": [0.6] * dims,
+                    "query": [0.6] * dims,
                     "limit": 10000,
                 },
             ]
@@ -99,12 +99,12 @@ def test_search_batch_timeout(collection_name):
     
 def test_search_groups_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search/groups',
+        api='/collections/{collection_name}/points/query/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
-            "vector": [0.5] * dims,
+            "query": [0.5] * dims,
             "limit": 100,
             "group_by": "a",
             "filter": {"must": [{"key": "a", "match": {"value": "keyword_1"}}]},
@@ -119,15 +119,19 @@ def test_search_groups_timeout(collection_name):
 
 def test_recommend_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
-            "positive": [111,222,333,444,555],
-            "negative": [666,777,888,999,1010],
+            "query": {
+                "recommend": {
+                    "positive": [111,222,333,444,555],
+                    "negative": [666,777,888,999,1010],
+                    "strategy": "best_score",
+                }
+            },
             "limit": 10000,
-            "strategy": "best_score",
         }
     )
     
@@ -138,23 +142,31 @@ def test_recommend_timeout(collection_name):
     
 def test_recommend_batch_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend/batch',
+        api='/collections/{collection_name}/points/query/batch',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
             "searches": [
                 {
-                    "positive": [111,222,333,444,555],
-                    "negative": [666,777,888,999,1010],
+                    "query": {
+                        "recommend": {
+                            "positive": [111,222,333,444,555],
+                            "negative": [666,777,888,999,1010],
+                            "strategy": "best_score",
+                        }
+                    },
                     "limit": 10000,
-                    "strategy": "best_score",
                 },
                 {
-                    "positive": [666,777,888,999,1010],
-                    "negative": [111,222,333,444,555],
+                    "query": {
+                        "recommend": {
+                            "positive": [666,777,888,999,1010],
+                            "negative": [111,222,333,444,555],
+                            "strategy": "best_score",
+                        }
+                    },
                     "limit": 10000,
-                    "strategy": "best_score",
                 },
             ]
         }
@@ -167,13 +179,17 @@ def test_recommend_batch_timeout(collection_name):
 
 def test_recommend_groups_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend/groups',
+        api='/collections/{collection_name}/points/query/groups',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
-            "positive": [111,555],
-            "negative": [666,1010],
+            "query": {
+                "recommend": {
+                    "positive": [111,555],
+                    "negative": [666,1010],
+                }
+            },
             "limit": 100,
             "filter": {"must": [{"key": "a", "match": {"value": "keyword_1"}}]},
             "group_by": "a",
@@ -188,13 +204,21 @@ def test_recommend_groups_timeout(collection_name):
     
 def test_discover_timeout(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/discover',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         query_params={'timeout': 1},
         body={
-            "target": 111,
-            "context_pairs": [[666,777],[888,999],[1010, 1111]],
+            "query": {
+                "discover": {
+                    "target": 111,
+                    "context": [
+                        {"positive": 666, "negative": 777},
+                        {"positive": 888, "negative": 999},
+                        {"positive": 1010, "negative": 1111},
+                    ],
+                }
+            },
             "limit": 100,
         }
     )
