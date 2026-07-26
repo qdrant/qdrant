@@ -136,8 +136,8 @@ Every public type and method carries doc comments authored in Rust that
 UniFFI propagates to Swift Quick Help. ⌥-click in Xcode for summaries,
 error notes, and examples.
 
-A handful of UniFFI object-lifecycle internals (`uniffiCloneHandle()`,
-`init(noHandle:)`, `NoHandle`) stay technically `public` — the demote pass only
+A handful of UniFFI object-lifecycle internals (`init(unsafeFromHandle:)`,
+`init(noHandle:)`, `NoHandle`, `uniffiCloneHandle()`) stay technically `public` — the demote pass only
 rewrites top-level declarations, and these are indented members UniFFI requires
 for its `FfiConverter` conformance. UniFFI tags them
 `@_documentation(visibility: private)`, so they don't appear in autocomplete or
