@@ -727,7 +727,10 @@ mod tests {
             mmap.read_bytes(0..LEN, Random, 1).unwrap(),
             mmap.read_bytes(0..LEN, Sequential, 1).unwrap(),
         ] {
-            assert_eq!(bytes.iter().map(|byte| *byte as u64).sum::<u64>(), 7 * LEN);
+            assert_eq!(
+                bytes.iter().map(|byte| u64::from(*byte)).sum::<u64>(),
+                7 * LEN
+            );
         }
 
         let (size, resident) = MmapFile::probe_memory_stats(&path).unwrap();
