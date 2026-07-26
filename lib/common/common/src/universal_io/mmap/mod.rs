@@ -256,10 +256,16 @@ impl UniversalRead for MmapFile {
     }
 
     fn clear_ram_cache(&self) -> UioResult<()> {
-        self.mmap.lock().clear_cache();
+        // `MADV_PAGEOUT` skips pages with more than one page-table reference,
+        // `POSIX_FADV_DONTNEED` skips pages with any: with `need_sequential`'s two
+        // mappings, pages faulted through both survive either call. Zapping the PTEs
+        // first leaves the page cache evictable — the mappings stay valid and refault
+        // on access. Dirty pages are kept, not lost; flushing first evicts them too.
+        self.mmap.lock().drop_page_tables();
         if let Some(mmap_seq) = &self.mmap_seq {
-            mmap_seq.lock().clear_cache();
+            mmap_seq.lock().drop_page_tables();
         }
+        crate::fs::clear_disk_cache(&self.path)?;
         Ok(())
     }
 
@@ -685,5 +691,52 @@ mod tests {
         // pre-created flusher takes the fdatasync path.
         assert!(clone.append_file.get().is_some());
         flusher().unwrap();
+    }
+
+    /// A `need_sequential` file is mapped twice, and `MADV_PAGEOUT` refuses pages
+    /// carrying more than one page-table reference. Without zapping the page tables
+    /// first, every page touched through both mappings stays cached forever.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn clear_ram_cache_evicts_dual_mapped_file() {
+        use std::io::Write as _;
+
+        use crate::generic_consts::{Random, Sequential};
+
+        const LEN: u64 = 8 * 1024 * 1024;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dual.dat");
+
+        // Synced: only clean pages are evictable.
+        let mut file = fs_err::File::create(&path).unwrap();
+        file.write_all(&vec![7u8; LEN as usize]).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mmap = MmapFs.open(&path, options, ()).unwrap();
+
+        // Fault every page through both the random and the sequential mapping.
+        for bytes in [
+            mmap.read_bytes(0..LEN, Random, 1).unwrap(),
+            mmap.read_bytes(0..LEN, Sequential, 1).unwrap(),
+        ] {
+            assert_eq!(bytes.iter().map(|byte| *byte as u64).sum::<u64>(), 7 * LEN);
+        }
+
+        let (size, resident) = MmapFile::probe_memory_stats(&path).unwrap();
+        assert_eq!(size, LEN);
+        assert!(resident > LEN / 2, "not cached: {resident} of {size}");
+
+        mmap.clear_ram_cache().unwrap();
+
+        let (_, resident) = MmapFile::probe_memory_stats(&path).unwrap();
+        assert!(resident < LEN / 10, "not evicted: {resident} of {size}");
     }
 }

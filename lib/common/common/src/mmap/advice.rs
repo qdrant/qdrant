@@ -172,8 +172,45 @@ pub trait Madviseable {
         }
     }
 
+    /// Zap this mapping's page-table entries with `madvise(MADV_DONTNEED)`. Pages stay
+    /// in the page cache, dirty ones included, and refault on the next access.
+    ///
+    /// # Warning
+    ///
+    /// Only safe for `MAP_SHARED` file-backed mappings. On a private or anonymous
+    /// mapping this *discards* the data.
+    fn drop_page_tables(&self) {
+        #[cfg(unix)]
+        self.dontneed_impl();
+    }
+
+    #[cfg(unix)]
+    fn dontneed_impl(&self);
+
     #[cfg(target_os = "linux")]
     fn pageout_impl(&self);
+}
+
+/// Issue `madvise(MADV_DONTNEED)` for the given memory region.
+///
+/// Issued directly because `memmap2` only exposes this advice through its `unsafe`
+/// unchecked API. See [`Madviseable::drop_page_tables`] for when it is safe.
+#[cfg(unix)]
+fn dontneed_slice(slice: &[u8]) {
+    if slice.is_empty() {
+        return;
+    }
+    let res = unsafe {
+        nix::libc::madvise(
+            slice.as_ptr() as *mut _,
+            slice.len(),
+            nix::libc::MADV_DONTNEED,
+        )
+    };
+    if res != 0 {
+        let err = io::Error::last_os_error();
+        log::warn!("Failed to call madvise(MADV_DONTNEED): {err}");
+    }
 }
 
 /// Issue `madvise(MADV_PAGEOUT)` for the given memory region.
@@ -209,6 +246,11 @@ impl Madviseable for memmap2::Mmap {
         populate_simple(self);
     }
 
+    #[cfg(unix)]
+    fn dontneed_impl(&self) {
+        dontneed_slice(self);
+    }
+
     #[cfg(target_os = "linux")]
     fn pageout_impl(&self) {
         pageout_slice(self);
@@ -223,6 +265,11 @@ impl Madviseable for memmap2::MmapMut {
 
     fn populate_simple_impl(&self) {
         populate_simple(self);
+    }
+
+    #[cfg(unix)]
+    fn dontneed_impl(&self) {
+        dontneed_slice(self);
     }
 
     #[cfg(target_os = "linux")]
@@ -240,6 +287,12 @@ impl Madviseable for memmap2::MmapRaw {
     fn populate_simple_impl(&self) {
         let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
         populate_simple(mmap);
+    }
+
+    #[cfg(unix)]
+    fn dontneed_impl(&self) {
+        let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
+        dontneed_slice(mmap);
     }
 
     #[cfg(target_os = "linux")]
