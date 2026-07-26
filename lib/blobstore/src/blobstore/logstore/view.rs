@@ -129,7 +129,10 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
     /// Iterate over a contiguous range of point offsets and execute callback for each existing
     /// value. Missing values are skipped.
     ///
-    /// The mappings for the whole range are fetched with a single batched read.
+    /// The mappings for the whole range are fetched with a single batched read, and the value
+    /// data with batched reads through the backend's read pipeline, so async backends can fetch
+    /// values in parallel. The callback may therefore be invoked in a different order than the
+    /// requested point offsets.
     ///
     /// Return `false` from the callback to stop iteration early. Returns whether iteration should
     /// continue.
@@ -149,24 +152,22 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
             .get_range::<Sequential>(point_offsets)
             .map_err(E::from)?;
 
-        for (index, pointer) in pointers.into_iter().enumerate() {
-            let Some(pointer) = pointer else {
-                continue;
-            };
+        // Skip the gaps, and carry each value's point offset through the batch as user data
+        let pointers = pointers
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, pointer)| {
+                pointer.map(|pointer| (start + index as PointOffset, pointer))
+            });
 
-            let raw = self
-                .read_from_pages::<Sequential>(pointer)
-                .map_err(E::from)?;
-            hw_counter.incr_delta(raw.len());
+        self.pages
+            .read_batch_values::<Sequential, _, _>(pointers, |point_offset, bytes| {
+                hw_counter.incr_delta(bytes.len());
 
-            let decompressed = self.config.compression.decompress(raw);
-            let value = V::from_bytes(&decompressed);
+                let decompressed = self.config.compression.decompress(bytes);
+                let value = V::from_bytes(&decompressed);
 
-            if !callback(start + index as PointOffset, value)? {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+                callback(point_offset, value)
+            })
     }
 }

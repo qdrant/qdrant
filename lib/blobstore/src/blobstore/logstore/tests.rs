@@ -272,7 +272,8 @@ fn test_skipped_point_offsets_read_as_none() {
         );
     }
 
-    // Iteration skips the gaps
+    // Iteration skips the gaps. Values are read in batches, so the callback may be invoked in
+    // any order; sort before comparing.
     let mut collected = Vec::new();
     storage
         .iter(
@@ -283,6 +284,7 @@ fn test_skipped_point_offsets_read_as_none() {
             hw_counter.ref_payload_io_read_counter(),
         )
         .unwrap();
+    collected.sort_by_key(|(point_offset, _)| *point_offset);
     assert_eq!(
         collected,
         vec![
@@ -601,7 +603,8 @@ fn test_reader_on_append_only_storage() {
     writer_files.sort();
     assert_eq!(reader_files, writer_files);
 
-    // Iteration is bounded by the given maximum id and skips gaps
+    // Iteration is bounded by the given maximum id and skips gaps. Values are read in batches,
+    // so the callback may be invoked in any order; sort before comparing.
     let mut collected = Vec::new();
     reader
         .iter(
@@ -613,6 +616,7 @@ fn test_reader_on_append_only_storage() {
             hw_counter.ref_payload_io_read_counter(),
         )
         .unwrap();
+    collected.sort_by_key(|(point_offset, _)| *point_offset);
     assert_eq!(collected, vec![(0, vec![0; 10]), (1, vec![1; 10])]);
 
     // Batched reads through the reader and its view. The callback may be invoked in any order,
@@ -724,20 +728,22 @@ fn test_reader_iter_many_values() {
         BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
 
-    let mut expected = 0;
+    // Values are read in batches, so the callback may be invoked in any order. Each value
+    // encodes its own point offset, so pairing is checked per callback and coverage in bulk.
+    let mut seen = Vec::new();
     reader
         .iter(
             COUNT,
             |point_offset, value: Vec<u8>| {
-                assert_eq!(point_offset, expected);
                 assert_eq!(value, point_offset.to_le_bytes().to_vec());
-                expected += 1;
+                seen.push(point_offset);
                 Ok::<_, BlobstoreError>(true)
             },
             hw_counter.ref_payload_io_read_counter(),
         )
         .unwrap();
-    assert_eq!(expected, COUNT);
+    seen.sort_unstable();
+    assert_eq!(seen, (0..COUNT).collect::<Vec<_>>());
 
     // Early stop works across batches
     let mut count = 0;
