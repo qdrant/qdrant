@@ -1893,6 +1893,13 @@ fn test_live_reload_refreshes_old_page_behind_unchanged_empty_page() {
 /// A live reload whose page reload fails must not publish the mappings it already observed:
 /// they would reference value data the reader never loaded. The reader keeps serving its
 /// pre-reload state, and a later reload picks the new mappings up once the pages load again.
+///
+/// Not run on Windows: the failure is injected by shrinking a page file out of band, which the
+/// OS refuses while the reader holds it mapped ("cannot be performed on a file with a
+/// user-mapped section open"). That is a limitation of the injection, not of the storage — its
+/// own append path grows mapped pages on Windows fine. The logic under test is platform
+/// independent and stays covered on the other targets.
+#[cfg(not(windows))]
 #[test]
 fn test_failed_page_reload_does_not_publish_mappings() {
     let dir = TempDir::new().unwrap();
