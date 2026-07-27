@@ -1130,7 +1130,7 @@ mod tests {
 
     /// Regression test for segment overgrow on `set_payload` by filter (#9158): with every point
     /// in immutable (indexed) segments, a filter matching all of them CoW-moves each one into an
-    /// appendable segment. With the size cap armed this must fail with the recoverable
+    /// appendable segment. With a size cap passed to the apply path this must fail with the recoverable
     /// `OutOfAppendableCapacity` once every appendable segment reaches the cap, instead of
     /// growing one past `max_segment_size`.
     ///

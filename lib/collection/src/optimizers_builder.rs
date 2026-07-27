@@ -329,9 +329,9 @@ pub fn build_optimizers(
         )),
     ]);
 
-    // Returned alongside so shard-level consumers (the appendable-segment size cap armed in
-    // `UpdateHandler::run_workers`) share the exact resolution the optimizers were built with,
-    // instead of re-deriving it or reaching into the optimizer list.
+    // Returned alongside so shard-level consumers (the appendable-segment size cap the
+    // `UpdateHandler` hands to its workers) share the exact resolution the optimizers were built
+    // with, instead of re-deriving it or reaching into the optimizer list.
     (optimizers, threshold_config)
 }
 
