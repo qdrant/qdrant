@@ -36,6 +36,7 @@ pub struct PayloadIndexInfo {
     /// the index was created from a bare type (e.g. via
     /// [`UpdateOperation::create_field_index`](crate::update::UpdateOperation::create_field_index)),
     /// meaning every parameter is at its engine default.
+    #[uniffi(default = None)]
     pub params: Option<PayloadIndexParams>,
     /// Number of points indexed under this field, summed over all segments.
     pub points: u64,
@@ -293,7 +294,9 @@ pub enum Stopwords {
     /// A combination of predefined language lists and custom tokens, merged
     /// together. Duplicates are collapsed.
     Set {
+        #[uniffi(default = None)]
         languages: Option<Vec<Language>>,
+        #[uniffi(default = None)]
         custom: Option<Vec<String>>,
     },
 }
