@@ -1,4 +1,15 @@
 [bindings.kotlin]
-# UniFFI-generated Kotlin lands in the internal `:qdrant-edge-ffi` module.
-# The public `:qdrant-edge` module re-exports it as `tech.qdrant.edge.*`.
-package_name = "tech.qdrant.edge.ffi"
+# UniFFI-generated Kotlin lands directly in the public `tech.qdrant.edge`
+# package — the generated bindings ARE the public API. No hand-written typealias
+# facade: it drifts, can't re-export sealed-class variants, and doesn't actually
+# encapsulate (the ffi package leaked via `api(...)` anyway). Idiomatic helpers
+# (suspend wrappers) live alongside in Coroutines.kt.
+#
+# NOTE: unlike the Swift SDK (which demotes its FFI plumbing to `internal` via
+# demote-ffi-internals.sh), this ships UniFFI's raw output — the `FfiConverter*`,
+# `RustBuffer`, and `uniffi*` helpers stay `public`. That is the deliberate
+# UniFFI-Kotlin design (public is required for cross-module external-type
+# imports; uniffi.toml has no visibility switch) and the unanimous norm of
+# published Kotlin UniFFI artifacts (Matrix sdk-android, Mozilla Glean /
+# app-services, BDK). The plumbing is documented as non-API in the SDK README.
+package_name = "tech.qdrant.edge"

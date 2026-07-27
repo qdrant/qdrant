@@ -1,0 +1,200 @@
+name: Qdrant Edge Kotlin SDK
+
+# Consistency gate for the Kotlin/Android SDK: the Kotlin bindings are
+# regenerated from the `qdrant-edge-ffi` crate on every build, so a change to the
+# FFI can silently change (or break) the SDK. This workflow rebuilds the AAR from
+# the current FFI, enforces the mobile-safety invariants, and compiles the test
+# suite + example against the generated API, so an FFI change that breaks the SDK
+# — or re-leaks the excluded `search_matrix` op onto the mobile surface — turns
+# the build red.
+#
+# Gated to the edge FFI/Kotlin paths so the runner minutes are spent only when
+# relevant. The instrumented test suite runs on a physical device / emulator
+# (verified locally); a CI emulator job is intentionally deferred — the repo has
+# no emulator CI yet, and this workflow already fails closed on a broken build,
+# the matrix leak, a version skew, or a test/example that no longer compiles.
+
+on:
+  push:
+    branches: [ master, dev ]
+    # The AAR is compiled from more than lib/edge/ffi: the `edge` crate
+    # (lib/edge/src), and the workspace dep graph + lockfile pinned by the root
+    # Cargo.toml/Cargo.lock. Include them so an `edge`-crate signature change or
+    # a Cargo.lock dependency downgrade can't merge green while the regenerated
+    # Kotlin surface / --locked build is actually broken. (Deeper libs like
+    # lib/common are already gated by the core build CI.)
+    paths:
+      - 'lib/edge/ffi/**'
+      - 'lib/edge/src/**'
+      - 'lib/edge/kotlin/**'
+      - 'lib/edge/VERSION'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/edge-kotlin.yml'
+  pull_request:
+    branches: [ '**' ]
+    paths:
+      - 'lib/edge/ffi/**'
+      - 'lib/edge/src/**'
+      - 'lib/edge/kotlin/**'
+      - 'lib/edge/VERSION'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/edge-kotlin.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  edge-kotlin:
+    name: Build & verify Kotlin SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      # The build compiles the whole workspace three times (two Android targets
+      # + a host lib for bindgen) under release-mobile (thin LTO, codegen-units=1),
+      # producing three large static target dirs — a real ENOSPC risk on a cold
+      # cache. Reclaim the biggest caches that are UNRELATED to the Android SDK
+      # (tool-cache ~13GB, docker images, apt large-packages). Keep `android:
+      # false` — freeing it would delete the SDK/NDK this job needs.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          android: false
+          dotnet: true
+          haskell: true
+          tool-cache: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Later steps build repository-controlled Rust; never leave the token
+          # in .git/config. This job never pushes.
+          persist-credentials: false
+
+      # A pure text check with no build dependency — run it BEFORE the ~20-minute
+      # build so a version skew fails in seconds. The Maven coordinates, the
+      # crate, and lib/edge/VERSION must all reference one version.
+      - name: Version sync
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < lib/edge/VERSION)"
+          crate="$(grep -m1 '^version = ' lib/edge/ffi/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+          gradle="$(grep -m1 '^VERSION_NAME=' lib/edge/kotlin/gradle.properties | cut -d= -f2 | tr -d '[:space:]' || true)"
+          if [ -z "$crate" ]; then echo '::error::could not parse version from lib/edge/ffi/Cargo.toml'; exit 1; fi
+          if [ -z "$gradle" ]; then echo '::error::could not parse VERSION_NAME from lib/edge/kotlin/gradle.properties'; exit 1; fi
+          if [ "$version" != "$crate" ] || [ "$version" != "$gradle" ]; then
+            echo "::error::version skew — lib/edge/VERSION=$version, qdrant-edge-ffi crate=$crate, gradle.properties VERSION_NAME=$gradle"
+            exit 1
+          fi
+          echo "OK: version $version in sync (VERSION == crate == VERSION_NAME)"
+
+      # The workspace uses unstable features (cfg_select in lib/common,
+      # ptr_as_ref_unchecked), so nightly is required — make it the default
+      # toolchain so build-aar.sh's `cargo +nightly` resolves via the rustup
+      # proxy. The Android targets are installed here for that toolchain.
+      - name: Install Rust nightly + Android targets
+        uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
+        with:
+          targets: >-
+            aarch64-linux-android,
+            x86_64-linux-android
+
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: edge-kotlin
+          # Only save on dev; feature-branch caches just get evicted under the budget.
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+
+      # Pinned to match the version the Makefile's `setup-rust` installs, so CI
+      # and a local `make setup` build with the same cross-compiler shim.
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version =3.5.4 --locked
+
+      # cargo-ndk is pinned exactly, so pin the NDK it drives too — otherwise
+      # build-aar.sh's `tail -1` picks the runner's newest NDK, and a runner-image
+      # bump to an NDK layout cargo-ndk 3.5.4 doesn't understand would break the
+      # build with no change in this repo. Install the same NDK used locally and
+      # pass it explicitly via ANDROID_NDK_HOME (which build-aar.sh honours first).
+      - name: Install pinned Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION=26.3.11579264
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      # Cross-compiles the native .so per ABI and regenerates the Kotlin bindings
+      # from the current FFI (release-mobile profile, --no-default-features),
+      # using the pinned ANDROID_NDK_HOME set above.
+      - name: Build native libs + Kotlin bindings
+        working-directory: lib/edge/kotlin
+        run: make build
+
+      # Fail-closed mobile-safety gate: the mobile build drops the default-on
+      # `matrix` feature, so the O(n^2) `search_matrix` op must be absent from
+      # the shipped surface. A regression (e.g. a dropped --no-default-features
+      # flag) turns this red. Scanned against the generated Kotlin — the real
+      # exported FFI vocabulary, which is feature-gated and not stripped.
+      - name: Enforce search_matrix exclusion
+        working-directory: lib/edge/kotlin
+        run: |
+          set -euo pipefail
+          f=qdrant-edge/src/main/kotlin/tech/qdrant/edge/qdrant_edge_ffi.kt
+          # Fail closed if the file we must scan is missing (an `if grep … "$f"`
+          # on an absent file is a false condition under set -e, i.e. would
+          # silently pass the exclusion check).
+          if [ ! -f "$f" ]; then
+            echo "::error::expected generated file $f is missing — did the build run?"
+            exit 1
+          fi
+          if grep -qiE 'search_?matrix|searchMatrix' "$f"; then
+            echo "::error::search_matrix present in $f (expected --no-default-features to drop it)"
+            exit 1
+          fi
+          # Canary: the gate must be able to SEE a symbol that is definitely
+          # present, so it cannot pass vacuously if the file path/format drifts.
+          if ! grep -q 'edgeshard_search' "$f"; then
+            echo "::error::canary failed — 'edgeshard_search' absent from $f; the gate is scanning the wrong file"
+            exit 1
+          fi
+          echo "OK: search_matrix absent from the mobile surface (canary present)"
+
+      # Compile gates. `assembleRelease` packages the AAR (applies the consumer
+      # ProGuard rules + publication variant); `assembleDebugAndroidTest`
+      # compiles the instrumented suite against the generated API (the real
+      # drift detector — the runtime run is done on-device, not in CI); and the
+      # example must still compile against the SDK's current API.
+      - name: Compile AAR, instrumented tests, and example
+        working-directory: lib/edge/kotlin
+        run: |
+          set -euo pipefail
+          # AGP 8.7.3 / Gradle 8.11.1 need JDK 17+; JDK 24+ is too new. Use the
+          # JDK 21 preinstalled on the runner rather than a separate setup-java
+          # step. JAVA_HOME_21_X64 is a runner OS env var (not the `env` context),
+          # so it must be read here in the shell, not via ${{ env.* }}.
+          if [ -z "${JAVA_HOME_21_X64:-}" ]; then
+            echo "::error::JAVA_HOME_21_X64 not set on the runner — JDK 21 image layout changed"
+            exit 1
+          fi
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          ./gradlew :qdrant-edge:assembleRelease :qdrant-edge:assembleDebugAndroidTest :example:assembleDebug --console=plain
+
+      # Dry-run the publication so the whole `afterEvaluate` block — POM contents,
+      # the `from(components["release"])` wiring, artifactId/coordinate resolution,
+      # and the sources/javadoc-jar variants — is exercised on every PR instead of
+      # failing for the first time at real release. Needs no secrets: the signing
+      # block is gated on SIGNING_KEY, so it no-ops here, and this publishes only
+      # to the local ~/.m2.
+      - name: Validate Maven publication (publishToMavenLocal, no secrets)
+        working-directory: lib/edge/kotlin
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          ./gradlew :qdrant-edge:publishToMavenLocal --console=plain
