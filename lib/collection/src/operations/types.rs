@@ -968,6 +968,33 @@ pub enum ShardUnavailableReason {
     Unspecified,
 }
 
+/// What happens to a failed update operation, derived from the error by
+/// [`CollectionError::failed_update_disposition`].
+///
+/// Queued dispositions put the operation in `failed_operation`, which pins the WAL acknowledge
+/// until recovery re-applies it; a [`Permanent`](Self::Permanent) failure must never queue (and
+/// is dropped if it was queued), or the acknowledge stalls forever on an operation that cannot
+/// succeed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailedUpdateDisposition {
+    /// Expected backpressure: every appendable segment reached the size cap. Queued for
+    /// recovery; the optimizer provisions a fresh segment and the operation is re-applied.
+    Backpressure,
+    /// Any other transient failure. Queued for recovery and retried on later wake-ups.
+    Transient,
+    /// The operation can never succeed (bad input, references deleted points, ...). Not queued;
+    /// recovery skips it, exactly like WAL replay does on shard load.
+    Permanent,
+}
+
+impl FailedUpdateDisposition {
+    /// Whether the failed operation sits in `failed_operation` awaiting recovery (and thus pins
+    /// the WAL acknowledge).
+    pub fn queues_for_recovery(self) -> bool {
+        !matches!(self, Self::Permanent)
+    }
+}
+
 /// gRPC status metadata key carrying the [`ShardUnavailableReason`] across the wire, so a replica
 /// set recognizes a remote capacity condition structurally instead of by message text.
 pub const SHARD_UNAVAILABLE_REASON_METADATA_KEY: &str = "x-qdrant-shard-unavailable-reason";
@@ -1134,6 +1161,20 @@ impl CollectionError {
                 ..
             }
         )
+    }
+
+    /// How the update pipeline handles this error when an operation fails: see
+    /// [`FailedUpdateDisposition`]. The single origin of that policy; the updater queueing the
+    /// failure, recovery deciding to abort or skip, and the update worker nudging the optimizer
+    /// all derive from it.
+    pub fn failed_update_disposition(&self) -> FailedUpdateDisposition {
+        if self.is_out_of_appendable_capacity() {
+            FailedUpdateDisposition::Backpressure
+        } else if self.is_transient() {
+            FailedUpdateDisposition::Transient
+        } else {
+            FailedUpdateDisposition::Permanent
+        }
     }
 
     pub fn is_missing_point(&self) -> bool {
@@ -2013,6 +2054,38 @@ mod tests {
             err.is_transient(),
             "failed-operation recovery must re-apply the operation",
         );
+    }
+
+    /// The disposition is the single policy for what happens to a failed operation: queued
+    /// dispositions pin the WAL acknowledge for recovery, a permanent one must not (or the
+    /// acknowledge stalls forever). Each arm is load-bearing for a different consumer: the
+    /// updater's queue/drop choice, recovery's abort/skip choice, and the worker's optimizer
+    /// nudge.
+    #[test]
+    fn test_failed_update_disposition() {
+        let capacity = CollectionError::from(OperationError::OutOfAppendableCapacity {
+            max_segment_size_bytes: 1024,
+        });
+        assert_eq!(
+            capacity.failed_update_disposition(),
+            FailedUpdateDisposition::Backpressure,
+        );
+
+        let transient = CollectionError::service_error("segment flush failed");
+        assert_eq!(
+            transient.failed_update_disposition(),
+            FailedUpdateDisposition::Transient,
+        );
+
+        let permanent = CollectionError::bad_input("malformed".to_string());
+        assert_eq!(
+            permanent.failed_update_disposition(),
+            FailedUpdateDisposition::Permanent,
+        );
+
+        assert!(FailedUpdateDisposition::Backpressure.queues_for_recovery());
+        assert!(FailedUpdateDisposition::Transient.queues_for_recovery());
+        assert!(!FailedUpdateDisposition::Permanent.queues_for_recovery());
     }
 
     /// A replica reports the condition as an `Unavailable` status tagged with reason metadata (the

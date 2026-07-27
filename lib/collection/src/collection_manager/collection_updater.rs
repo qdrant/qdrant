@@ -6,7 +6,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::*;
 
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, FailedUpdateDisposition};
 use crate::shards::update_tracker::UpdateTracker;
 
 /// Implementation of the update operation
@@ -26,33 +26,35 @@ impl CollectionUpdater {
                     segments.write().failed_operation.remove(&op_num);
                 }
             }
-            Err(collection_error) => {
-                if collection_error.is_transient() {
-                    let mut write_segments = segments.write();
-                    write_segments.failed_operation.insert(op_num);
-                    if collection_error.is_out_of_appendable_capacity() {
-                        // Expected backpressure rather than a failure: the update worker retries
-                        // inline and recovery re-applies the operation once the optimizer
-                        // provisions a fresh appendable segment.
-                        log::debug!(
-                            "Update operation {op_num} ran out of appendable capacity, \
-                             it will be retried: {collection_error}"
+            Err(collection_error) => match collection_error.failed_update_disposition() {
+                FailedUpdateDisposition::Backpressure => {
+                    segments.write().failed_operation.insert(op_num);
+                    // Expected backpressure rather than a failure: the update worker retries
+                    // inline and recovery re-applies the operation once the optimizer provisions
+                    // a fresh appendable segment.
+                    log::debug!(
+                        "Update operation {op_num} ran out of appendable capacity, \
+                         it will be retried: {collection_error}"
+                    )
+                }
+                FailedUpdateDisposition::Transient => {
+                    segments.write().failed_operation.insert(op_num);
+                    log::error!("Update operation failed: {collection_error}")
+                }
+                FailedUpdateDisposition::Permanent => {
+                    if segments.write().failed_operation.remove(&op_num) {
+                        // A previously failed operation declined permanently on re-apply: it can
+                        // never succeed anymore (e.g. later operations deleted the points it
+                        // references). Drop it so it stops pinning the WAL acknowledge forever.
+                        log::warn!(
+                            "Update operation {op_num} declined on re-apply, dropping it: \
+                             {collection_error}"
                         )
                     } else {
-                        log::error!("Update operation failed: {collection_error}")
+                        log::warn!("Update operation declined: {collection_error}")
                     }
-                } else if segments.write().failed_operation.remove(&op_num) {
-                    // A previously failed operation declined non-transiently on re-apply: it can
-                    // never succeed anymore (e.g. later operations deleted the points it
-                    // references). Drop it so it stops pinning the WAL acknowledge forever.
-                    log::warn!(
-                        "Update operation {op_num} declined on re-apply, dropping it: \
-                         {collection_error}"
-                    )
-                } else {
-                    log::warn!("Update operation declined: {collection_error}")
                 }
-            }
+            },
         }
     }
 

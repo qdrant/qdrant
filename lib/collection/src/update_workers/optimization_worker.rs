@@ -548,10 +548,12 @@ impl UpdateWorkers {
                     );
                     match result {
                         Ok(_) => {}
-                        // Abort recovery and retry on a later wake-up.
-                        Err(err) if err.is_transient() => return Err(err),
-                        // A non-transient decline can never succeed; skip it like WAL replay
-                        // does on shard load, instead of aborting recovery forever. A replayed
+                        // Still queued: abort recovery and retry on a later wake-up.
+                        Err(err) if err.failed_update_disposition().queues_for_recovery() => {
+                            return Err(err);
+                        }
+                        // A permanent decline can never succeed; skip it like WAL replay does
+                        // on shard load, instead of aborting recovery forever. A replayed
                         // operation can legitimately decline this way when later (already
                         // applied) operations changed the state it sees, e.g. deleted one of
                         // its points. `CollectionUpdater` already dropped it from

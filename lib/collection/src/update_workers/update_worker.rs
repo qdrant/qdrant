@@ -380,13 +380,13 @@ impl UpdateWorkers {
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
                         Ok(Err(err)) => {
-                            // A transient failure (e.g. all appendable segments reached
-                            // `max_segment_size`) was queued in `failed_operation`. Wake the
+                            // A queued failure (e.g. all appendable segments reached
+                            // `max_segment_size`) sits in `failed_operation`. Wake the
                             // optimizer so its capacity-ensure step can provision a fresh
                             // appendable segment and `try_recover` re-applies the operation.
                             // `Nop` rather than `Operation`: it must run recovery even when
                             // optimization handles are maxed out.
-                            if err.is_transient() {
+                            if err.failed_update_disposition().queues_for_recovery() {
                                 let _ = optimize_sender.send(OptimizerSignal::Nop).await;
                             }
                             Err(err)
