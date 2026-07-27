@@ -48,7 +48,7 @@ setup-ndk: ## Check Android NDK availability
 	@if [ -n "$${ANDROID_NDK_HOME:-}" ]; then \
 		echo "NDK found: $$ANDROID_NDK_HOME"; \
 	elif [ -n "$${ANDROID_HOME:-}" ]; then \
-		NDK_DIR=$$(ls -d "$$ANDROID_HOME/ndk/"* 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true); \
+		NDK_DIR=$$(ls -1d "$$ANDROID_HOME/ndk/"* 2>/dev/null | awk -F/ '{split($$NF,a,"."); printf "%010d.%010d.%010d\t%s\n", a[1], a[2], a[3], $$0}' | sort | tail -1 | cut -f2- || true); \
 		if [ -n "$$NDK_DIR" ]; then \
 			echo "NDK found: $$NDK_DIR"; \
 		else \

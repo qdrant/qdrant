@@ -83,10 +83,13 @@ if [ -z "${ANDROID_NDK_HOME:-}" ]; then
         echo "  export ANDROID_NDK_HOME=/path/to/ndk" >&2
         exit 1
     fi
-    # Portable version sort (numeric by major.minor.patch): macOS/BSD `sort`
-    # has no `-V`, so `sort -V` would error here and break the documented
-    # ANDROID_HOME fallback on a Mac.
-    NDK_DIR=$(ls -d "$ANDROID_HOME/ndk/"* 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)
+    # Portable "newest NDK" selection. macOS/BSD `sort` has no `-V`, and sorting
+    # full paths by dot-separated fields is wrong (dots in $ANDROID_HOME shift the
+    # version fields). Zero-pad each component of the directory BASENAME so a plain
+    # lexical sort orders by major.minor.patch, then map back to the path.
+    NDK_DIR=$(ls -1d "$ANDROID_HOME/ndk/"* 2>/dev/null \
+        | awk -F/ '{split($NF,a,"."); printf "%010d.%010d.%010d\t%s\n", a[1], a[2], a[3], $0}' \
+        | sort | tail -1 | cut -f2- || true)
     if [ -z "$NDK_DIR" ]; then
         echo "ERROR: No NDK found under \$ANDROID_HOME/ndk/. Install one via the SDK Manager." >&2
         exit 1
@@ -163,6 +166,14 @@ case "$(uname -s)" in
     *)                  HOST_LIB_NAME="libqdrant_edge_ffi.so" ;;
 esac
 ( cd "$WORKSPACE_ROOT" && cargo +nightly build --locked $CARGO_FLAGS $FEATURE_FLAGS --lib --package "$PACKAGE_NAME" )
+
+# Delete any stale binding BEFORE regeneration, so the post-generation check
+# below verifies a FRESH write. Otherwise a leftover file from a previous build
+# would let a bindgen run that emits zero files pass the check and package stale
+# Kotlin against newly built native code.
+GENERATED_KT="$KOTLIN_SRC_DIR/tech/qdrant/edge/qdrant_edge_ffi.kt"
+rm -f "$GENERATED_KT"
+
 cargo +nightly run --locked \
     --package "qdrant-edge-ffi-bindgen" \
     --bin uniffi-bindgen \
@@ -174,10 +185,8 @@ cargo +nightly run --locked \
     --out-dir "$KOTLIN_SRC_DIR"
 
 # uniffi-bindgen can exit 0 while emitting ZERO files (documented above for the
-# cross-arch .so case). Assert the binding was actually written, so a
-# silent-empty-output regression fails here rather than surfacing later as a
-# Gradle compile error against a stale/missing file.
-GENERATED_KT="$KOTLIN_SRC_DIR/tech/qdrant/edge/qdrant_edge_ffi.kt"
+# cross-arch .so case); we removed any stale copy above, so this now proves a
+# FRESH binding was written — not that an old one lingered.
 if [ ! -s "$GENERATED_KT" ]; then
     echo "ERROR: uniffi-bindgen produced no bindings at $GENERATED_KT" >&2
     exit 1
