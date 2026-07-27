@@ -216,14 +216,16 @@ class EdgeShardInstrumentedTest {
 
         val shard = EdgeShard.load(path = dir.absolutePath, config = config)
         try {
+            // Three separable points so the query has a well-defined winner: a
+            // bug that silently dropped the Turbo params (loading an unquantized
+            // shard) would still return a result, so assert the exact top id, not
+            // just non-emptiness.
             shard.update(
                 operation = UpdateOperation.upsertPoints(
                     points = listOf(
-                        Point(
-                            id = PointId.NumId(1uL),
-                            vector = Vector.Single(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
-                            payload = null,
-                        ),
+                        Point(PointId.NumId(1uL), Vector.Single(listOf(6.0f, 9.0f, 4.0f, 2.0f)), null),
+                        Point(PointId.NumId(2uL), Vector.Single(listOf(-6.0f, -9.0f, -4.0f, -2.0f)), null),
+                        Point(PointId.NumId(3uL), Vector.Single(listOf(1.0f, 0.0f, 0.0f, 0.0f)), null),
                     ),
                 ),
             )
@@ -241,6 +243,7 @@ class EdgeShardInstrumentedTest {
                 ),
             )
             assertTrue("Turbo-quantized search should return a result", results.isNotEmpty())
+            assertEquals("Turbo-quantized search should rank the exact match (point 1) first", 1uL, numId(results.first().id))
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }
@@ -916,12 +919,19 @@ class EdgeShardInstrumentedTest {
         try {
             val n = 8
             val pool = java.util.concurrent.Executors.newFixedThreadPool(n)
+            // A barrier so all n searches fire simultaneously — real contention on
+            // the shared native handle, not staggered calls. (parties == pool size,
+            // so the barrier can always trip; a stragger is caught by the bounded
+            // await below.)
+            val startBarrier = java.util.concurrent.CyclicBarrier(n)
             val latch = java.util.concurrent.CountDownLatch(n)
             val counts = java.util.Collections.synchronizedList(mutableListOf<Int>())
+            val topIds = java.util.Collections.synchronizedList(mutableListOf<ULong?>())
             val failures = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
             repeat(n) {
                 pool.submit {
                     try {
+                        startBarrier.await(10, java.util.concurrent.TimeUnit.SECONDS)
                         val results = shard.search(
                             request = SearchRequest(
                                 query = Query.Nearest(vector = NamedVector.Dense(listOf(1.0f, 0.0f, 0.0f, 0.0f)), using = null),
@@ -930,6 +940,7 @@ class EdgeShardInstrumentedTest {
                             ),
                         )
                         counts.add(results.size)
+                        topIds.add(numId(results.first().id))
                     } catch (e: Throwable) {
                         failures.add(e)
                     } finally {
@@ -937,12 +948,16 @@ class EdgeShardInstrumentedTest {
                     }
                 }
             }
-            latch.await()
-            pool.shutdown()
+            // Bounded wait: a deadlocked native search must FAIL the test, not hang
+            // the whole instrumentation run forever.
+            val completed = latch.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            if (!completed) pool.shutdownNow() else pool.shutdown()
+            assertTrue("all 8 concurrent searches should finish within 30s (no native deadlock)", completed)
 
             assertTrue("no concurrent search should throw: $failures", failures.isEmpty())
             assertEquals("all 8 concurrent searches should complete", 8, counts.size)
             assertTrue("every concurrent search should return all 3 points, got $counts", counts.all { it == 3 })
+            assertTrue("every concurrent search should rank point 1 first, got $topIds", topIds.all { it == 1uL })
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }
@@ -1048,8 +1063,12 @@ class EdgeShardInstrumentedTest {
                     prefetches = emptyList(), withVector = null, withPayload = null, filter = null, scoreThreshold = null, params = null,
                 ),
             )
-            assertTrue("discover should return results", results.isNotEmpty())
-            assertTrue("discover cannot return more than the 3 upserted points", results.size <= 3)
+            // Discover scores every candidate, so all 3 points come back; the
+            // target [1,0,0,0] is exactly point 1 and the positive context example,
+            // so it must rank first. Asserting the exact count + top id pins the
+            // marshalling (a scrambled target/context would move point 1 off top).
+            assertEquals("discover scores all 3 points", 3, results.size)
+            assertEquals("discover target [1,0,0,0] must rank point 1 first", 1uL, numId(results.first().id))
             for (r in results) {
                 val v = numId(r.id)
                 assertTrue("discover returned an unexpected id: ${r.id}", v != null && v in 1uL..3uL)
@@ -1082,8 +1101,11 @@ class EdgeShardInstrumentedTest {
                     prefetches = emptyList(), withVector = null, withPayload = null, filter = null, scoreThreshold = null, params = null,
                 ),
             )
-            assertTrue("context should return results", results.isNotEmpty())
-            assertTrue("context cannot return more than the 3 upserted points", results.size <= 3)
+            // Context scores every point; point 1 is the positive example and
+            // point 2 the negative, so point 1 must rank first. Exact count + top
+            // id pins the marshalling instead of the constant-true `size <= 3`.
+            assertEquals("context scores all 3 points", 3, results.size)
+            assertEquals("context positive=[1,0,0,0] must rank point 1 first", 1uL, numId(results.first().id))
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }
@@ -1109,8 +1131,18 @@ class EdgeShardInstrumentedTest {
                     prefetches = emptyList(), withVector = null, withPayload = null, filter = null, scoreThreshold = null, params = null,
                 ),
             )
-            assertTrue("feedback query should return results", results.isNotEmpty())
-            assertTrue("feedback cannot return more than the 3 upserted points", results.size <= 3)
+            // Feedback marshals the most complex struct in the suite (target +
+            // FeedbackItem vector/score + FeedbackCoefficients a/b/c). Pin the
+            // cardinality (all 3 scored, each once) and finiteness — a scrambled
+            // coefficient/vector would drop a point or produce NaN/Inf scores,
+            // which the old `size <= 3` (constant-true with 3 points) never caught.
+            assertEquals("feedback scores all 3 points", 3, results.size)
+            val feedbackIds = results.mapNotNull { numId(it.id) }.sorted()
+            assertEquals("feedback should score each point exactly once", listOf(1uL, 2uL, 3uL), feedbackIds)
+            assertTrue(
+                "feedback scores must be finite (catches corrupted coefficients/vector marshalling)",
+                results.all { !it.score.isNaN() && !it.score.isInfinite() },
+            )
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }
@@ -1160,8 +1192,11 @@ class EdgeShardInstrumentedTest {
                     prefetches = emptyList(), withVector = null, withPayload = null, filter = null, scoreThreshold = null, params = null,
                 ),
             )
-            assertTrue("mmr query should return results", results.isNotEmpty())
-            assertTrue("mmr cannot return more than the 3 upserted points", results.size <= 3)
+            // MMR always returns the most-relevant candidate first (before the
+            // diversity term applies to later picks). Query [1,0,0,0] == point 1,
+            // so it must lead. Exact count + top id pins the marshalling.
+            assertEquals("mmr returns all 3 points (candidatesLimit 10 >= 3)", 3, results.size)
+            assertEquals("mmr first pick is the most relevant, point 1", 1uL, numId(results.first().id))
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }
@@ -1324,7 +1359,14 @@ class EdgeShardInstrumentedTest {
         val dir = freshDir("path-check")
         val shard = EdgeShard.load(path = dir.absolutePath, config = defaultConfig())
         try {
-            assertEquals("path() should echo the dir the shard was loaded from", dir.absolutePath, shard.path())
+            // Compare canonical paths: Android cacheDir can sit under a symlink
+            // (/data/user/0 vs /data/data), so an exact-string match would be
+            // brittle if the native layer ever canonicalizes what it echoes.
+            assertEquals(
+                "path() should echo the dir the shard was loaded from",
+                dir.canonicalFile,
+                File(shard.path()).canonicalFile,
+            )
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }
@@ -1534,7 +1576,7 @@ class EdgeShardInstrumentedTest {
             assertTrue("first record should be the 2022 point", (page.records.first().payload ?: "").contains("2022"))
             val orderValue = page.records.first().orderValue
             assertNotNull("datetime order-by should populate order_value", orderValue)
-            assertTrue("datetime order_value should be numeric", orderValue is OrderValue.Int || orderValue is OrderValue.Float)
+            assertTrue("datetime order_value marshals as an Int timestamp", orderValue is OrderValue.Int)
         } finally {
             try { shard.unload() } catch (_: Exception) {}
         }

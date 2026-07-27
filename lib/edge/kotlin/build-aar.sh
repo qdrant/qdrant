@@ -83,7 +83,10 @@ if [ -z "${ANDROID_NDK_HOME:-}" ]; then
         echo "  export ANDROID_NDK_HOME=/path/to/ndk" >&2
         exit 1
     fi
-    NDK_DIR=$(ls -d "$ANDROID_HOME/ndk/"* 2>/dev/null | sort -V | tail -1 || true)
+    # Portable version sort (numeric by major.minor.patch): macOS/BSD `sort`
+    # has no `-V`, so `sort -V` would error here and break the documented
+    # ANDROID_HOME fallback on a Mac.
+    NDK_DIR=$(ls -d "$ANDROID_HOME/ndk/"* 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)
     if [ -z "$NDK_DIR" ]; then
         echo "ERROR: No NDK found under \$ANDROID_HOME/ndk/. Install one via the SDK Manager." >&2
         exit 1
@@ -169,6 +172,16 @@ cargo +nightly run --locked \
     --language kotlin \
     --config "$WORKSPACE_ROOT/lib/edge/ffi/uniffi.toml" \
     --out-dir "$KOTLIN_SRC_DIR"
+
+# uniffi-bindgen can exit 0 while emitting ZERO files (documented above for the
+# cross-arch .so case). Assert the binding was actually written, so a
+# silent-empty-output regression fails here rather than surfacing later as a
+# Gradle compile error against a stale/missing file.
+GENERATED_KT="$KOTLIN_SRC_DIR/tech/qdrant/edge/qdrant_edge_ffi.kt"
+if [ ! -s "$GENERATED_KT" ]; then
+    echo "ERROR: uniffi-bindgen produced no bindings at $GENERATED_KT" >&2
+    exit 1
+fi
 
 # ── Done ────────────────────────────────────────────────────────────────────
 

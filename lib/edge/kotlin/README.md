@@ -47,6 +47,10 @@ val query = Query.Nearest(NamedVector.Dense(listOf(0.1f, 0.2f)), using = null)
 
 ### As a Gradle composite build
 
+Run `make build` in the qdrant checkout first — the generated bindings
+(`qdrant_edge_ffi.kt`) and native `.so`s are git-ignored, so a fresh clone has
+neither until the build script produces them. Then:
+
 ```kotlin
 // settings.gradle.kts
 includeBuild("path/to/qdrant/lib/edge/kotlin") {
@@ -78,7 +82,7 @@ A single published Gradle module, `:qdrant-edge` — the generated bindings, the
 native libraries, and the hand-written suspend helpers all ship together as the
 one artifact `tech.qdrant:qdrant-edge`.
 
-```
+```text
 kotlin/
 ├── build-aar.sh               Cross-compile Rust + generate Kotlin bindings
 ├── Makefile                   setup / build / aar / size / clean
@@ -192,8 +196,9 @@ the error category (the field is `reason`, not `message`):
 
 ```kotlin
 try {
-    val shard = EdgeShard.load(path = dataDir, config = config)
-    shard.update(operation = upsert)
+    EdgeShard.load(path = dataDir, config = config).use { shard ->
+        shard.update(operation = upsert)
+    } // shard disposed here, even if update throws
 } catch (e: EdgeException.ShardClosed) {
     // reopen the shard
 } catch (e: EdgeException.InvalidArgument) {

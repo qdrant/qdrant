@@ -66,6 +66,18 @@ android {
 // component), so it lives at the top level — not inside afterEvaluate — to stay
 // configuration-cache compatible. Creds come from env/Gradle properties at
 // release time; `publishToMavenLocal` ignores this block.
+//
+// RELEASE PREREQUISITES (a `publish` to this repo only STAGES — it is not a
+// push-button Central release; CI's publishToMavenLocal dry-run cannot catch
+// these):
+//   1. The `tech.qdrant` namespace must be verified in the Central Portal
+//      (DNS/GitHub verification) — a hard external gate with lead time.
+//   2. SONATYPE_USERNAME/PASSWORD must be a Central Portal *user token*, not
+//      legacy OSSRH credentials.
+//   3. With raw `maven-publish` (no vanniktech plugin) the upload lands in a
+//      staging repository that still needs an explicit "publish" via the Portal
+//      UI/API — there is no automated close+release here.
+//   4. SIGNING_KEY must be present (see the fail-fast guard below) and unexpired.
 publishing {
     repositories {
         maven {

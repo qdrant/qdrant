@@ -20,7 +20,10 @@ setup-rust: ## Install Rust toolchain + cargo-ndk
 	@if ! command -v rustup >/dev/null 2>&1; then \
 		echo "Installing rustup..."; \
 		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
-		echo 'NOTE: add  source "$$HOME/.cargo/env"  to your shell profile, or restart your shell.'; \
+		echo ''; \
+		echo 'rustup installed, but it is not on PATH in this shell yet.'; \
+		echo 'Restart your shell (or run: source "$$HOME/.cargo/env"), then re-run `make setup`.'; \
+		exit 1; \
 	fi
 	# The workspace needs nightly (unstable std features in lib/common), and
 	# build-aar.sh drives cargo via `+nightly` / `rustup target add --toolchain
@@ -45,7 +48,7 @@ setup-ndk: ## Check Android NDK availability
 	@if [ -n "$${ANDROID_NDK_HOME:-}" ]; then \
 		echo "NDK found: $$ANDROID_NDK_HOME"; \
 	elif [ -n "$${ANDROID_HOME:-}" ]; then \
-		NDK_DIR=$$(ls -d "$$ANDROID_HOME/ndk/"* 2>/dev/null | sort -V | tail -1 || true); \
+		NDK_DIR=$$(ls -d "$$ANDROID_HOME/ndk/"* 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true); \
 		if [ -n "$$NDK_DIR" ]; then \
 			echo "NDK found: $$NDK_DIR"; \
 		else \
