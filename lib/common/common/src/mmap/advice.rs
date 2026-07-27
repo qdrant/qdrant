@@ -3,8 +3,11 @@
 
 use std::hint::black_box;
 use std::num::Wrapping;
+use std::path::Path;
 use std::{io, slice};
 
+#[cfg(unix)]
+use memmap2::UncheckedAdvice;
 use serde::Deserialize;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
@@ -172,45 +175,35 @@ pub trait Madviseable {
         }
     }
 
-    /// Zap this mapping's page-table entries with `madvise(MADV_DONTNEED)`. Pages stay
-    /// in the page cache, dirty ones included, and refault on the next access.
+    /// Zap this mapping's page-table entries with `madvise(MADV_DONTNEED)`.
+    /// Pages stay in the page cache, dirty ones included, and refault on the
+    /// next access.
     ///
-    /// # Warning
+    /// # Safety
     ///
-    /// Only safe for `MAP_SHARED` file-backed mappings. On a private or anonymous
-    /// mapping this *discards* the data.
-    fn drop_page_tables(&self) {
+    /// See [`UncheckedAdvice::DontNeed`]/[`memmap2::Mmap::unchecked_advise`].
+    /// The mapping must be `MAP_SHARED` and file-backed. On a private or
+    /// anonymous mapping this discards the data.
+    unsafe fn drop_page_tables(&self, diag_path: &Path) {
+        #[cfg(not(unix))]
+        let _ = diag_path;
+
         #[cfg(unix)]
-        self.dontneed_impl();
+        if let Err(e) = unsafe { self.unchecked_advise_impl(UncheckedAdvice::DontNeed) } {
+            log::warn!("Failed to call madvise(MADV_DONTNEED) for {diag_path:?}: {e}");
+        }
     }
 
+    /// Like [`Madviseable::advise_impl`], but for [`UncheckedAdvice`] values.
+    ///
+    /// # Safety
+    ///
+    /// See [`UncheckedAdvice`]/[`memmap2::Mmap::unchecked_advise`].
     #[cfg(unix)]
-    fn dontneed_impl(&self);
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()>;
 
     #[cfg(target_os = "linux")]
     fn pageout_impl(&self);
-}
-
-/// Issue `madvise(MADV_DONTNEED)` for the given memory region.
-///
-/// Issued directly because `memmap2` only exposes this advice through its `unsafe`
-/// unchecked API. See [`Madviseable::drop_page_tables`] for when it is safe.
-#[cfg(unix)]
-fn dontneed_slice(slice: &[u8]) {
-    if slice.is_empty() {
-        return;
-    }
-    let res = unsafe {
-        nix::libc::madvise(
-            slice.as_ptr() as *mut _,
-            slice.len(),
-            nix::libc::MADV_DONTNEED,
-        )
-    };
-    if res != 0 {
-        let err = io::Error::last_os_error();
-        log::warn!("Failed to call madvise(MADV_DONTNEED): {err}");
-    }
 }
 
 /// Issue `madvise(MADV_PAGEOUT)` for the given memory region.
@@ -247,8 +240,8 @@ impl Madviseable for memmap2::Mmap {
     }
 
     #[cfg(unix)]
-    fn dontneed_impl(&self) {
-        dontneed_slice(self);
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()> {
+        unsafe { self.unchecked_advise(advice) }
     }
 
     #[cfg(target_os = "linux")]
@@ -268,8 +261,8 @@ impl Madviseable for memmap2::MmapMut {
     }
 
     #[cfg(unix)]
-    fn dontneed_impl(&self) {
-        dontneed_slice(self);
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()> {
+        unsafe { self.unchecked_advise(advice) }
     }
 
     #[cfg(target_os = "linux")]
@@ -290,9 +283,8 @@ impl Madviseable for memmap2::MmapRaw {
     }
 
     #[cfg(unix)]
-    fn dontneed_impl(&self) {
-        let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
-        dontneed_slice(mmap);
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()> {
+        unsafe { self.unchecked_advise(advice) }
     }
 
     #[cfg(target_os = "linux")]

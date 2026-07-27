@@ -261,9 +261,15 @@ impl UniversalRead for MmapFile {
         // mappings, pages faulted through both survive either call. Zapping the PTEs
         // first leaves the page cache evictable — the mappings stay valid and refault
         // on access. Dirty pages are kept, not lost; flushing first evicts them too.
-        self.mmap.lock().drop_page_tables();
-        if let Some(mmap_seq) = &self.mmap_seq {
-            mmap_seq.lock().drop_page_tables();
+        //
+        // SAFETY: `open_mmap` only creates `MAP_SHARED` file-backed mappings
+        // (`map_raw`/`map_raw_read_only`), for which `MADV_DONTNEED` only drops
+        // the page-table entries and never discards data.
+        unsafe {
+            self.mmap.lock().drop_page_tables(&self.path);
+            if let Some(mmap_seq) = &self.mmap_seq {
+                mmap_seq.lock().drop_page_tables(&self.path);
+            }
         }
         crate::fs::clear_disk_cache(&self.path)?;
         Ok(())
