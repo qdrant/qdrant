@@ -1,9 +1,9 @@
 // The single Qdrant Edge Android module: UniFFI-generated Kotlin bindings
-// (package `tech.qdrant.edge`, set in lib/edge/ffi/uniffi.toml) + the native
+// (package `io.qdrant.edge`, set in lib/edge/ffi/uniffi.toml) + the native
 // .so libraries + idiomatic suspend helpers (Coroutines.kt). The generated
 // bindings ARE the public API — no typealias facade (it drifted, couldn't
 // re-export sealed-class variants, and leaked the raw package via `api(...)`).
-// Published as the single artifact `tech.qdrant:qdrant-edge`.
+// Published as the single artifact `io.qdrant:qdrant-edge`.
 //
 // The generated file also carries UniFFI's `public` plumbing (FfiConverter*,
 // RustBuffer, uniffi*). Unlike the Swift SDK (which demotes its equivalents to
@@ -25,7 +25,7 @@ group = providers.gradleProperty("GROUP").get()
 version = providers.gradleProperty("VERSION_NAME").get()
 
 android {
-    namespace = "tech.qdrant.edge"
+    namespace = "io.qdrant.edge"
     compileSdk = 34
 
     defaultConfig {
@@ -70,7 +70,7 @@ android {
 // RELEASE PREREQUISITES (a `publish` to this repo only STAGES — it is not a
 // push-button Central release; CI's publishToMavenLocal dry-run cannot catch
 // these):
-//   1. The `tech.qdrant` namespace must be verified in the Central Portal
+//   1. The `io.qdrant` namespace must be verified in the Central Portal
 //      (DNS/GitHub verification) — a hard external gate with lead time.
 //   2. SONATYPE_USERNAME/PASSWORD must be a Central Portal *user token*, not
 //      legacy OSSRH credentials.

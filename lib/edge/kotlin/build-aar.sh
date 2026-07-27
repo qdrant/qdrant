@@ -30,7 +30,7 @@ unset CARGO_TARGET_DIR CARGO_BUILD_TARGET_DIR
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Single module: generated Kotlin + native .so both land in :qdrant-edge (the
-# published module). uniffi.toml sets the package to `tech.qdrant.edge`, so the
+# published module). uniffi.toml sets the package to `io.qdrant.edge`, so the
 # generated code is the public API directly — no separate bindings module.
 MODULE_DIR="$SCRIPT_DIR/qdrant-edge"
 JNILIBS_DIR="$MODULE_DIR/src/main/jniLibs"
@@ -145,7 +145,7 @@ done
 
 echo "==> Generating Kotlin bindings..."
 # Generate straight into the module's Kotlin source tree — uniffi-bindgen
-# creates the `tech/qdrant/edge/` package subtree as set in uniffi.toml, next to
+# creates the `io/qdrant/edge/` package subtree as set in uniffi.toml, next to
 # the hand-written Coroutines.kt (the generated file is git-ignored).
 mkdir -p "$KOTLIN_SRC_DIR"
 
@@ -171,7 +171,7 @@ esac
 # below verifies a FRESH write. Otherwise a leftover file from a previous build
 # would let a bindgen run that emits zero files pass the check and package stale
 # Kotlin against newly built native code.
-GENERATED_KT="$KOTLIN_SRC_DIR/tech/qdrant/edge/qdrant_edge_ffi.kt"
+GENERATED_KT="$KOTLIN_SRC_DIR/io/qdrant/edge/qdrant_edge_ffi.kt"
 rm -f "$GENERATED_KT"
 
 cargo +nightly run --locked \

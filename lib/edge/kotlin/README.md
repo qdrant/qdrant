@@ -38,7 +38,7 @@ Everything lives in one package — the UniFFI-generated bindings ARE the public
 API, so a single import covers every type and sealed-class variant:
 
 ```kotlin
-import tech.qdrant.edge.*
+import io.qdrant.edge.*
 
 val shard = EdgeShard.load(path = dataDir, config = config)
 val id = PointId.NumId(1u)                 // sealed-class variants work directly —
@@ -55,7 +55,7 @@ neither until the build script produces them. Then:
 // settings.gradle.kts
 includeBuild("path/to/qdrant/lib/edge/kotlin") {
     dependencySubstitution {
-        substitute(module("tech.qdrant:qdrant-edge")).using(project(":qdrant-edge"))
+        substitute(module("io.qdrant:qdrant-edge")).using(project(":qdrant-edge"))
     }
 }
 ```
@@ -64,7 +64,7 @@ includeBuild("path/to/qdrant/lib/edge/kotlin") {
 
 ```kotlin
 dependencies {
-    implementation("tech.qdrant:qdrant-edge:<version>")
+    implementation("io.qdrant:qdrant-edge:<version>")
 }
 ```
 
@@ -80,7 +80,7 @@ dependencies {
 
 A single published Gradle module, `:qdrant-edge` — the generated bindings, the
 native libraries, and the hand-written suspend helpers all ship together as the
-one artifact `tech.qdrant:qdrant-edge`.
+one artifact `io.qdrant:qdrant-edge`.
 
 ```text
 kotlin/
@@ -88,11 +88,11 @@ kotlin/
 ├── Makefile                   setup / build / aar / size / clean
 ├── settings.gradle.kts
 ├── build.gradle.kts
-├── qdrant-edge/               The published module (import tech.qdrant.edge.*)
+├── qdrant-edge/               The published module (import io.qdrant.edge.*)
 │   ├── build.gradle.kts
 │   ├── proguard-rules.pro
 │   └── src/main/
-│       ├── kotlin/tech/qdrant/edge/
+│       ├── kotlin/io/qdrant/edge/
 │       │   ├── Coroutines.kt        Hand-written suspend wrappers (tracked)
 │       │   └── qdrant_edge_ffi.kt   UniFFI-generated bindings (build-aar.sh)
 │       └── jniLibs/                 Native .so per ABI (build-aar.sh)
@@ -153,11 +153,11 @@ main thread** — a large search will trigger an ANR.
 
 The SDK does not impose a dispatcher (you choose where the work runs). For the
 heavy operations there are optional `suspend` wrappers in
-`tech.qdrant.edge.*` that run the call on a background dispatcher within your
+`io.qdrant.edge.*` that run the call on a background dispatcher within your
 coroutine (default `Dispatchers.IO`, overridable):
 
 ```kotlin
-import tech.qdrant.edge.searchAsync   // also: queryAsync, scrollAsync, retrieveAsync, updateAsync, optimizeAsync
+import io.qdrant.edge.searchAsync   // also: queryAsync, scrollAsync, retrieveAsync, updateAsync, optimizeAsync
 
 val hits = shard.searchAsync(request)            // suspends, runs on Dispatchers.IO
 val hits = shard.searchAsync(request, myDispatcher)  // or your own pool

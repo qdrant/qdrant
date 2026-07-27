@@ -1,4 +1,4 @@
-package tech.qdrant.edge.example
+package io.qdrant.edge.example
 
 import android.app.Activity
 import android.os.Bundle
@@ -7,10 +7,10 @@ import java.io.File
 import java.util.UUID
 
 // The UniFFI-generated bindings ARE the public API and live in the single
-// `tech.qdrant.edge` package, so one wildcard import covers every type and
+// `io.qdrant.edge` package, so one wildcard import covers every type and
 // sealed-class variant (`EdgeShard`, `PointId.NumId`, `Vector.Single`,
 // `Query.Nearest`, …). There is no separate facade module.
-import tech.qdrant.edge.*
+import io.qdrant.edge.*
 
 private const val TAG = "QdrantEdge"
 

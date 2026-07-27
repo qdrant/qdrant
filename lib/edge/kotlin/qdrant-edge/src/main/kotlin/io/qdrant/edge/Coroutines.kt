@@ -1,6 +1,6 @@
 @file:Suppress("unused")
 
-package tech.qdrant.edge
+package io.qdrant.edge
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 // KEEP THIS FILE PLATFORM-AGNOSTIC — no Android imports. It is hand-written
 // (only kotlinx.coroutines + the same-package generated types) so it can be
 // reused verbatim if a JVM-desktop artifact is added later. The generated
-// bindings share this `tech.qdrant.edge` package (uniffi.toml), so the domain
+// bindings share this `io.qdrant.edge` package (uniffi.toml), so the domain
 // types below (EdgeShard, SearchRequest, …) need no import.
 // See the qdrant-edge-kotlin-desktop-decision memory / project ADR.
 
