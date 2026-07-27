@@ -58,11 +58,7 @@ let config = EdgeConfig(
     vectorData: [
         "": VectorDataConfig(
             size: 4,
-            distance: .dot,
-            quantizationConfig: nil,
-            multivectorConfig: nil,
-            datatype: nil,
-            hnswConfig: nil
+            distance: .dot
         ),
     ],
     sparseVectorData: [:]
@@ -128,14 +124,9 @@ print("\n---- Query ----")
 
 let queryResults = try shard.query(request: QueryRequest(
     limit: 10,
-    offset: nil,
-    query: .vector(query: .nearest(vector: .dense(values: [6.0, 9.0, 4.0, 2.0]), using: nil)),
-    prefetches: [],
+    query: .vector(query: .nearest(vector: .dense(values: [6.0, 9.0, 4.0, 2.0]))),
     withVector: .bool(enable: true),
-    withPayload: .bool(enable: true),
-    filter: nil,
-    scoreThreshold: nil,
-    params: nil
+    withPayload: .bool(enable: true)
 ))
 
 print("Query returned \(queryResults.count) results:")
@@ -148,14 +139,10 @@ for point in queryResults {
 print("\n---- Search ----")
 
 let searchResults = try shard.search(request: SearchRequest(
-    query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0]), using: nil),
+    query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0])),
     limit: 10,
-    offset: nil,
-    filter: nil,
-    params: nil,
     withVector: .bool(enable: true),
-    withPayload: .bool(enable: true),
-    scoreThreshold: nil
+    withPayload: .bool(enable: true)
 ))
 
 print("Search returned \(searchResults.count) results:")
@@ -171,36 +158,21 @@ let searchFilter = Filter(
     must: [
         .field(condition: FieldCondition(
             key: "hello",
-            match: .text(text: "world"),
-            range: nil,
-            geoBoundingBox: nil,
-            geoRadius: nil,
-            geoPolygon: nil,
-            valuesCount: nil
+            match: .text(text: "world")
         )),
         .field(condition: FieldCondition(
             key: "price",
-            match: nil,
-            range: RangeFloat(gte: 500.0, gt: nil, lte: nil, lt: nil),
-            geoBoundingBox: nil,
-            geoRadius: nil,
-            geoPolygon: nil,
-            valuesCount: nil
+            range: RangeFloat(gte: 500.0)
         )),
-    ],
-    should: nil,
-    mustNot: nil
+    ]
 )
 
 let filteredResults = try shard.search(request: SearchRequest(
-    query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0]), using: nil),
+    query: .nearest(vector: .dense(values: [1.0, 1.0, 1.0, 1.0])),
     limit: 10,
-    offset: nil,
     filter: searchFilter,
-    params: nil,
     withVector: .bool(enable: true),
-    withPayload: .bool(enable: true),
-    scoreThreshold: nil
+    withPayload: .bool(enable: true)
 ))
 
 print("Filtered search returned \(filteredResults.count) results:")
@@ -228,12 +200,7 @@ for record in retrieved {
 print("\n---- Scroll ----")
 
 var scrollResponse = try shard.scroll(request: ScrollRequest(
-    offset: nil,
-    limit: 2,
-    filter: nil,
-    withPayload: nil,
-    withVector: nil,
-    orderBy: nil
+    limit: 2
 ))
 
 print("Scroll page 1 (\(scrollResponse.records.count) records):")
@@ -245,11 +212,7 @@ while let nextOffset = scrollResponse.nextOffset {
     print("--- Next scroll (offset = \(pointIdDescription(nextOffset))) ---")
     scrollResponse = try shard.scroll(request: ScrollRequest(
         offset: nextOffset,
-        limit: 2,
-        filter: nil,
-        withPayload: nil,
-        withVector: nil,
-        orderBy: nil
+        limit: 2
     ))
     for record in scrollResponse.records {
         printRecord(record)
@@ -260,7 +223,7 @@ while let nextOffset = scrollResponse.nextOffset {
 
 print("\n---- Count ----")
 
-let count = try shard.count(request: CountRequest(filter: nil, exact: true))
+let count = try shard.count(request: CountRequest(exact: true))
 print("Total points count: \(count)")
 
 // MARK: - Facet
@@ -273,8 +236,7 @@ do {
     let facetResponse = try shard.facet(request: FacetRequest(
         key: "hello",
         limit: 10,
-        exact: false,
-        filter: nil
+        exact: false
     ))
     print("Facet results (\(facetResponse.hits.count) hits):")
     for hit in facetResponse.hits {
