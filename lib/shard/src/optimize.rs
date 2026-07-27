@@ -242,12 +242,12 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     let segments: Vec<_> = input_segments
         .iter()
         .map(|i| match i {
-            LockedSegment::Original(o) => o.clone(),
-            LockedSegment::Proxy(_) => {
-                panic!("Trying to optimize a segment that is already being optimized!")
-            }
+            LockedSegment::Original(o) => Ok(o.clone()),
+            LockedSegment::Proxy(_) => Err(OperationError::service_error(
+                "Trying to optimize a segment that is already being optimized",
+            )),
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let mut defragmentation_keys = HashSet::new();
     for segment in &segments {
@@ -406,7 +406,9 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     for (point_id, versions) in deleted_points_snapshot {
         optimized_segment
             .delete_point(versions.operation_version, point_id, hw_counter)
-            .unwrap();
+            .map_err(|err| OperationError::service_error(format!(
+                "Failed to delete point {point_id} during optimization: {err}"
+            )))?;
     }
 
     Ok(optimized_segment)
@@ -561,7 +563,9 @@ fn finish_optimization(
     for (&point_id, &versions) in points_diff {
         optimized_segment
             .delete_point(versions.operation_version, point_id, hw_counter)
-            .unwrap();
+            .map_err(|err| OperationError::service_error(format!(
+                "Failed to delete point {point_id} during optimization finalization: {err}"
+            )))?;
     }
 
     // Replace proxy segments with new optimized segment

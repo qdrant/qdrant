@@ -310,6 +310,9 @@ impl From<IoError> for OperationError {
                     free: free_memory,
                 }
             }
+            ErrorKind::StorageFull => {
+                Self::service_error(format!("Out of disk space: {err}"))
+            }
             _ => Self::service_error(format!("IO Error: {err}")),
         }
     }
@@ -505,6 +508,22 @@ mod tests {
         assert!(
             error_msg.contains("60s"),
             "Expected '60s' but got: {error_msg}"
+        );
+    }
+
+    #[test]
+    fn test_storage_full_maps_to_service_error() {
+        // StorageFull (ENOSPC) should map to a ServiceError with a clear description
+        let io_err = IoError::new(ErrorKind::StorageFull, "No space left on device");
+        let err = OperationError::from(io_err);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Out of disk space"),
+            "Expected 'Out of disk space' in error message, got: {msg}"
+        );
+        assert!(
+            msg.contains("No space left on device"),
+            "Expected original IO error message, got: {msg}"
         );
     }
 }
