@@ -257,6 +257,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        max_segment_size_bytes: Option<std::num::NonZeroUsize>,
         optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
@@ -291,6 +292,7 @@ impl LocalShard {
             shared_storage_config.clone(),
             payload_index_schema.clone(),
             optimizers.clone(),
+            max_segment_size_bytes,
             optimizers_log.clone(),
             total_optimized_points.clone(),
             optimizer_resource_budget.clone(),
@@ -492,7 +494,7 @@ impl LocalShard {
         }
 
         clear_temp_segments(shard_path);
-        let optimizers = build_optimizers(
+        let (optimizers, optimizer_thresholds) = build_optimizers(
             shard_path,
             collection_config.clone(),
             &collection_config_read.params,
@@ -536,6 +538,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            optimizer_thresholds.max_segment_size_bytes(),
             optimizer_resource_budget,
             shard_path,
             clocks,
@@ -680,7 +683,7 @@ impl LocalShard {
         let wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(&wal_path, (&config.wal_config).into())?;
 
-        let optimizers = build_optimizers(
+        let (optimizers, optimizer_thresholds) = build_optimizers(
             shard_path,
             collection_config.clone(),
             &config.params,
@@ -703,6 +706,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            optimizer_thresholds.max_segment_size_bytes(),
             optimizer_resource_budget,
             shard_path,
             LocalShardClocks::default(),
