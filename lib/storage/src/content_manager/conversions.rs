@@ -12,11 +12,7 @@ use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
 use collection::operations::conversions::sharding_method_from_proto;
-use collection::operations::types::{
-    MAX_SEGMENT_SIZE_METADATA_KEY, OUT_OF_APPENDABLE_CAPACITY_REASON,
-    SHARD_UNAVAILABLE_REASON_METADATA_KEY, ShardUnavailableReason, SparseVectorsConfig,
-    VectorsConfigDiff,
-};
+use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
 use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
 use tonic::Status;
 use tonic::metadata::MetadataValue;
@@ -61,19 +57,7 @@ impl From<StorageError> for Status {
             StorageError::ShardUnavailable { reason, .. } => {
                 // Carry the reason across the wire so the receiving replica set recognizes a
                 // self-healing capacity condition structurally rather than by message text.
-                if let ShardUnavailableReason::OutOfAppendableCapacity {
-                    max_segment_size_bytes,
-                } = reason
-                {
-                    metadata_headers.insert(
-                        SHARD_UNAVAILABLE_REASON_METADATA_KEY,
-                        OUT_OF_APPENDABLE_CAPACITY_REASON.to_string(),
-                    );
-                    metadata_headers.insert(
-                        MAX_SEGMENT_SIZE_METADATA_KEY,
-                        max_segment_size_bytes.to_string(),
-                    );
-                }
+                metadata_headers.extend(reason.to_metadata_pairs());
                 tonic::Code::Unavailable
             }
             StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
