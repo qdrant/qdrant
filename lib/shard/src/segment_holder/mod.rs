@@ -720,6 +720,33 @@ impl SegmentHolder {
         Ok(eligible)
     }
 
+    /// CoW-move destination candidates for one `apply_points_with_conditional_move` call.
+    ///
+    /// With no size cap armed, every appendable segment qualifies (`all_appendable`, computed
+    /// once by the caller). With a cap, the eligible list is computed lazily on the first point
+    /// that actually needs a move (a batch that applies fully in place must not fail just
+    /// because all appendable segments are full) and cached in `eligible` for the rest of the
+    /// call. Callers batch points (e.g. 32 per call), so capacity is checked once per batch,
+    /// not per point; a destination may overshoot the cap by at most one batch worth of points.
+    fn cow_destination_candidates<'a>(
+        &self,
+        eligible: &'a mut Option<Vec<SegmentId>>,
+        all_appendable: &'a [SegmentId],
+    ) -> OperationResult<&'a [SegmentId]> {
+        if self.max_segment_size_bytes.is_none() {
+            return Ok(all_appendable);
+        }
+        if eligible.is_none() {
+            let candidates = self
+                .appendable_segments_with_capacity()?
+                .into_iter()
+                .map(|(segment_id, _size)| segment_id)
+                .collect();
+            *eligible = Some(candidates);
+        }
+        Ok(eligible.as_ref().unwrap())
+    }
+
     /// Get a random appendable segment
     ///
     /// If you want the smallest segment, use `smallest_appendable_segment` instead.
@@ -1104,11 +1131,8 @@ impl SegmentHolder {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
-        // CoW-move destination candidates below the size cap. Computed lazily on the first point
-        // that actually needs a move — a batch that applies fully in place must not fail just
-        // because all appendable segments are full — and reused for the rest of this call.
-        // Callers batch points (e.g. 32 per call), so capacity is checked once per batch, not
-        // per point; a destination may overshoot the cap by at most one batch worth of points.
+        // Lazily-computed CoW-move destination candidates, shared across this call; see
+        // `cow_destination_candidates`.
         let mut eligible_segments: Option<Vec<SegmentId>> = None;
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
@@ -1127,20 +1151,8 @@ impl SegmentHolder {
             let is_applied = if can_apply_operation {
                 point_operation(point_id, write_segment)?
             } else {
-                let destination_candidates: &[SegmentId] = if self.max_segment_size_bytes.is_some()
-                {
-                    if eligible_segments.is_none() {
-                        let eligible = self
-                            .appendable_segments_with_capacity()?
-                            .into_iter()
-                            .map(|(segment_id, _size)| segment_id)
-                            .collect();
-                        eligible_segments = Some(eligible);
-                    }
-                    eligible_segments.as_ref().unwrap()
-                } else {
-                    &appendable_segments
-                };
+                let destination_candidates =
+                    self.cow_destination_candidates(&mut eligible_segments, &appendable_segments)?;
                 self.aloha_random_write(
                     destination_candidates,
                     |appendable_idx, appendable_write_segment| {
