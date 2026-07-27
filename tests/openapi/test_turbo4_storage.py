@@ -98,16 +98,17 @@ def test_turbo4_search(collection_name, vector_name, descending):
     query_vector = _random_vector(rng)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {"name": vector_name, "vector": query_vector},
+            "query": query_vector,
+            "using": vector_name,
             "limit": 10,
         }
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 10
     scores = [hit['score'] for hit in result]
     assert scores == sorted(scores, reverse=descending)
@@ -218,11 +219,12 @@ def test_quantized_turbo4_search(quant_collection_name, vector_name, rescore):
     query_vector = _random_vector(rng)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': quant_collection_name},
         body={
-            "vector": {"name": vector_name, "vector": query_vector},
+            "query": query_vector,
+            "using": vector_name,
             "params": {
                 "quantization": {
                     "ignore": False,
@@ -234,7 +236,7 @@ def test_quantized_turbo4_search(quant_collection_name, vector_name, rescore):
         }
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 10
     scores = [hit['score'] for hit in result]
     assert scores == sorted(scores, reverse=True)
@@ -408,17 +410,17 @@ def test_turbo4_delete_vectors_and_points(collection_name):
         ("image", [4], [3]),
     ):
         response = request_with_validation(
-            api='/collections/{collection_name}/points/search',
+            api='/collections/{collection_name}/points/query',
             method="POST",
             path_params={'collection_name': collection_name},
             body={
-                "vector": {"name": vector_name,
-                           "vector": original[vector_name]},
+                "query": original[vector_name],
+                "using": vector_name,
                 "limit": NUM_POINTS,
             },
         )
         assert response.ok
-        ids = [hit['id'] for hit in response.json()['result']]
+        ids = [hit['id'] for hit in response.json()['result']['points']]
         for point_id in absent:
             assert point_id not in ids
         for point_id in present:
@@ -564,13 +566,13 @@ def test_turbo4_indexed_search(on_disk_vectors, collection_name):
     _wait_indexed_vectors(name)
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": _random_vector(random.Random(12)), "limit": 10},
+        body={"query": _random_vector(random.Random(12)), "limit": 10},
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 10
     scores = [hit['score'] for hit in result]
     assert scores == sorted(scores, reverse=True)
@@ -578,13 +580,13 @@ def test_turbo4_indexed_search(on_disk_vectors, collection_name):
     # Recall through the graph: a stored point's own (pre-quantization)
     # vector must come back as the top hit, near-perfectly similar.
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": points[16]["vector"], "limit": 1},
+        body={"query": points[16]["vector"], "limit": 1},
     )
     assert response.ok
-    top = response.json()['result'][0]
+    top = response.json()['result']['points'][0]
     assert top['id'] == 17
     assert top['score'] > 0.95
 
@@ -652,13 +654,13 @@ def test_turbo4_optimizer_rebuild_preserves_vectors(on_disk_vectors, collection_
 
     # The rebuilt, indexed segment still finds the right point.
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": points[41]["vector"], "limit": 1},
+        body={"query": points[41]["vector"], "limit": 1},
     )
     assert response.ok
-    assert response.json()['result'][0]['id'] == 42
+    assert response.json()['result']['points'][0]['id'] == 42
 
     drop_collection(collection_name=name)
 
@@ -707,13 +709,13 @@ def test_turbo4_manhattan(on_disk_vectors, collection_name):
     assert 0.8 < _norm(retrieved) / _norm(points[4]["vector"]) < 1.25
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": points[4]["vector"], "limit": 20},
+        body={"query": points[4]["vector"], "limit": 20},
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 20
     scores = [hit['score'] for hit in result]
     assert scores == sorted(scores)
@@ -887,11 +889,12 @@ def test_turbo4_snapshot_roundtrip(http_server, on_disk_vectors, collection_name
 
     # and quantized search over the recovered index still works
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
         body={
-            "vector": {"name": "image", "vector": _random_vector(random.Random(32))},
+            "query": _random_vector(random.Random(32)),
+            "using": "image",
             "params": {
                 "quantization": {
                     "ignore": False,
@@ -903,7 +906,7 @@ def test_turbo4_snapshot_roundtrip(http_server, on_disk_vectors, collection_name
         },
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 10
     scores = [hit['score'] for hit in result]
     assert scores == sorted(scores, reverse=True)
@@ -978,13 +981,13 @@ def test_turbo4_degenerate_vectors(on_disk_vectors, collection_name):
     assert 0.8 < _norm(const_back) / _norm(constant) < 1.25
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": _random_vector(random.Random(51)), "limit": 2},
+        body={"query": _random_vector(random.Random(51)), "limit": 2},
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 2
     for hit in result:
         assert math.isfinite(hit['score'])
@@ -1040,13 +1043,13 @@ def test_turbo4_extreme_magnitudes(on_disk_vectors, collection_name):
         assert 0.8 < _norm(retrieved) / _norm(original) < 1.25
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": _random_vector(random.Random(53)), "limit": 3},
+        body={"query": _random_vector(random.Random(53)), "limit": 3},
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 3
     for hit in result:
         assert math.isfinite(hit['score'])
@@ -1095,13 +1098,13 @@ def test_turbo4_odd_dimension(on_disk_vectors, collection_name):
     assert _cosine_sim(retrieved, points[2]["vector"]) > 0.9
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': name},
-        body={"vector": _random_vector(random.Random(55), size), "limit": 5},
+        body={"query": _random_vector(random.Random(55), size), "limit": 5},
     )
     assert response.ok
-    result = response.json()['result']
+    result = response.json()['result']['points']
     assert len(result) == 5
     scores = [hit['score'] for hit in result]
     assert scores == sorted(scores, reverse=True)

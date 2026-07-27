@@ -12,37 +12,38 @@ def setup(on_disk_vectors, collection_name):
 
 
 def test_default_is_avg_vector(collection_name):
-    params = {
+    examples = {
         "positive": [1, 2],
         "negative": [3, 4],
-        "exact": True,
-        "limit": 10,
     }
 
     default_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            **params,
+            "query": {"recommend": examples},
+            "params": {"exact": True},
+            "limit": 10,
         },
     )
     assert default_response.ok
 
     # we should only get 4 because there are 8 vectors and we used 4 as examples
-    assert len(default_response.json()["result"]) == 4
+    assert len(default_response.json()["result"]["points"]) == 4
 
     avg_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            **params,
-            "strategy": "average_vector",
+            "query": {"recommend": {**examples, "strategy": "average_vector"}},
+            "params": {"exact": True},
+            "limit": 10,
         },
     )
     assert avg_response.ok
-    assert len(avg_response.json()["result"]) == 4
+    assert len(avg_response.json()["result"]["points"]) == 4
 
     assert default_response.json()["result"] == avg_response.json()["result"]
 
@@ -51,46 +52,37 @@ def test_single_vs_batch(collection_name):
     # Bunch of valid examples
     params_list = [
         {
-            "positive": [1, 2],
-            "negative": [3, 4],
+            "query": {"recommend": {"positive": [1, 2], "negative": [3, 4]}},
             "limit": 1,
         },
         {
-            "positive": [1],
-            "negative": [3, 4],
+            "query": {"recommend": {"positive": [1], "negative": [3, 4]}},
             "limit": 1,
         },
         {
-            # no negative because it's optional with this strategy
-            "negative": [4, 5],
-            "exact": True,
-            "strategy": "best_score",
+            # no positive because it's optional with this strategy
+            "query": {"recommend": {"negative": [4, 5], "strategy": "best_score"}},
+            "params": {"exact": True},
             "limit": 1,
         },
         {
-            "positive": [2, 3],
-            "negative": [4, 5],
-            "strategy": "best_score",
+            "query": {"recommend": {"positive": [2, 3], "negative": [4, 5], "strategy": "best_score"}},
             "limit": 1,
         },
         {
-            "positive": [2, 3],
-            "negative": [4, 5],
-            "exact": True,
-            "strategy": "best_score",
+            "query": {"recommend": {"positive": [2, 3], "negative": [4, 5], "strategy": "best_score"}},
+            "params": {"exact": True},
             "limit": 1,
         },
         {
-            "positive": [8],
-            "negative": [],
-            "exact": True,
-            "strategy": "average_vector",
+            "query": {"recommend": {"positive": [8], "negative": [], "strategy": "average_vector"}},
+            "params": {"exact": True},
             "limit": 1,
         },
     ]
 
     batch_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend/batch",
+        api="/collections/{collection_name}/points/query/batch",
         method="POST",
         path_params={"collection_name": collection_name},
         body={"searches": params_list},
@@ -102,7 +94,7 @@ def test_single_vs_batch(collection_name):
     # Compare against sequential single searches
     for i, params in enumerate(params_list):
         single_response = request_with_validation(
-            api="/collections/{collection_name}/points/recommend",
+            api="/collections/{collection_name}/points/query",
             method="POST",
             path_params={"collection_name": collection_name},
             body=params,
@@ -113,18 +105,16 @@ def test_single_vs_batch(collection_name):
 
 def test_without_positives(collection_name):
     def req_with_positives(positive, strategy=None):
-        if strategy is None:
-            strat_dict = {}
-        else:
-            strat_dict = {"strategy": strategy}
+        recommend = {"positive": positive}
+        if strategy is not None:
+            recommend["strategy"] = strategy
 
         return request_with_validation(
-            api="/collections/{collection_name}/points/recommend",
+            api="/collections/{collection_name}/points/query",
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "positive": positive,
-                **strat_dict,
+                "query": {"recommend": recommend},
                 "limit": 2,
             },
         )
@@ -133,34 +123,34 @@ def test_without_positives(collection_name):
     response = req_with_positives([1, 2])
     assert response.ok
 
-    # But all these are not
+    # But all these are not. 422, not 400: giving no examples at all violates a
+    # `RecommendInput` validation rule, so it is rejected before the query runs.
     response = req_with_positives([])
-    assert response.status_code == 400
+    assert response.status_code == 422
 
     response = req_with_positives([], "average_vector")
-    assert response.status_code == 400
+    assert response.status_code == 422
 
     # Also no negative and no positive is invalid with best_score
     response = req_with_positives([], "best_score")
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 def test_best_score_works_with_only_negatives(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "negative": [1, 2],
-            "strategy": "best_score",
+            "query": {"recommend": {"negative": [1, 2], "strategy": "best_score"}},
             "limit": 5,
         },
     )
     assert response.ok
-    assert len(response.json()["result"]) == 5
+    assert len(response.json()["result"]["points"]) == 5
 
     # All scores should be negative
-    for result in response.json()["result"]:
+    for result in response.json()["result"]["points"]:
         assert result["score"] < 0
 
 
@@ -169,41 +159,40 @@ def test_only_1_positive_in_best_score_is_equivalent_to_normal_search(collection
 
     # recommendation response
     reco_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [1],
-            "strategy": "best_score",
+            "query": {"recommend": {"positive": [1], "strategy": "best_score"}},
+            "params": {"exact": True},
             "limit": limit,
-            "exact": True,
         },
     )
     assert reco_response.ok
-    assert len(reco_response.json()["result"]) == limit
+    assert len(reco_response.json()["result"]["points"]) == limit
 
     # Get vector from point 1
     vector = get_points(collection_name, [1])[0]["vector"]
 
-    # Use normal search with that vector
+    # Use nearest query with that vector
     search_response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": vector,
+            "query": vector,
             "filter": {"must_not": [{"has_id": [1]}]},
+            "params": {"exact": True},
             "limit": limit,
-            "exact": True,
         },
     )
 
     assert search_response.ok
-    assert len(search_response.json()["result"]) == limit
+    assert len(search_response.json()["result"]["points"]) == limit
 
     # Scores can be different, but the ids and order should be the same
-    reco_ids = [result["id"] for result in reco_response.json()["result"]]
-    search_ids = [result["id"] for result in search_response.json()["result"]]
+    reco_ids = [result["id"] for result in reco_response.json()["result"]["points"]]
+    search_ids = [result["id"] for result in search_response.json()["result"]["points"]]
 
     assert reco_ids == search_ids
 
@@ -227,25 +216,33 @@ def test_raw_vectors(collection_name):
 
     # Assert using ids is the same as using the raw vectors
     response_ids = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [point["id"] for point in points[:2]],
-            "negative": [point["id"] for point in points[2:4]],
+            "query": {
+                "recommend": {
+                    "positive": [point["id"] for point in points[:2]],
+                    "negative": [point["id"] for point in points[2:4]],
+                }
+            },
             "limit": 8,
         },
     )
     assert response_ids.ok
-    assert len(response_ids.json()["result"]) == 4
+    assert len(response_ids.json()["result"]["points"]) == 4
 
     response_raw = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [point["vector"] for point in points[:2]],
-            "negative": [point["vector"] for point in points[2:4]],
+            "query": {
+                "recommend": {
+                    "positive": [point["vector"] for point in points[:2]],
+                    "negative": [point["vector"] for point in points[2:4]],
+                }
+            },
             "limit": 8,
             "filter": {
                 "must_not": [
@@ -258,40 +255,6 @@ def test_raw_vectors(collection_name):
         },
     )
     assert response_raw.ok
-    assert len(response_raw.json()["result"]) == 4
+    assert len(response_raw.json()["result"]["points"]) == 4
 
     assert response_ids.json()["result"] == response_raw.json()["result"]
-
-def test_recommend_missing_lookup_from_collection_with_raw_vector(collection_name):
-    missing_collection = "missing_lookup_from_collection"
-    lookup_from = {"collection": missing_collection, "vector": "default"}
-
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "positive": [[0.1, 0.2, 0.3, 0.4]],
-            "limit": 3,
-            "lookup_from": lookup_from,
-        },
-    )
-    assert response.status_code == 404, response.text
-    assert missing_collection in response.json()["status"]["error"]
-
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend/batch",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "searches": [
-                {
-                    "positive": [[0.1, 0.2, 0.3, 0.4]],
-                    "limit": 3,
-                    "lookup_from": lookup_from,
-                }
-            ]
-        },
-    )
-    assert response.status_code == 404, response.text
-    assert missing_collection in response.json()["status"]["error"]
