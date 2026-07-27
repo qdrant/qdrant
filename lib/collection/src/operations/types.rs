@@ -969,14 +969,14 @@ pub enum ShardUnavailableReason {
 }
 
 /// What happens to a failed update operation, derived from the error by
-/// [`CollectionError::failed_update_disposition`].
+/// [`CollectionError::update_failure_kind`].
 ///
-/// Queued dispositions put the operation in `failed_operation`, which pins the WAL acknowledge
+/// Queued kinds put the operation in `failed_operation`, which pins the WAL acknowledge
 /// until recovery re-applies it; a [`Permanent`](Self::Permanent) failure must never queue (and
 /// is dropped if it was queued), or the acknowledge stalls forever on an operation that cannot
 /// succeed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailedUpdateDisposition {
+pub enum UpdateFailureKind {
     /// Expected backpressure: every appendable segment reached the size cap. Queued for
     /// recovery; the optimizer provisions a fresh segment and the operation is re-applied.
     Backpressure,
@@ -987,7 +987,7 @@ pub enum FailedUpdateDisposition {
     Permanent,
 }
 
-impl FailedUpdateDisposition {
+impl UpdateFailureKind {
     /// Whether the failed operation sits in `failed_operation` awaiting recovery (and thus pins
     /// the WAL acknowledge).
     pub fn queues_for_recovery(self) -> bool {
@@ -1210,16 +1210,16 @@ impl CollectionError {
     }
 
     /// How the update pipeline handles this error when an operation fails: see
-    /// [`FailedUpdateDisposition`]. The single origin of that policy; the updater queueing the
+    /// [`UpdateFailureKind`]. The single origin of that policy; the updater queueing the
     /// failure, recovery deciding to abort or skip, and the update worker nudging the optimizer
     /// all derive from it.
-    pub fn failed_update_disposition(&self) -> FailedUpdateDisposition {
+    pub fn update_failure_kind(&self) -> UpdateFailureKind {
         if self.is_out_of_appendable_capacity() {
-            FailedUpdateDisposition::Backpressure
+            UpdateFailureKind::Backpressure
         } else if self.is_transient() {
-            FailedUpdateDisposition::Transient
+            UpdateFailureKind::Transient
         } else {
-            FailedUpdateDisposition::Permanent
+            UpdateFailureKind::Permanent
         }
     }
 
@@ -2062,11 +2062,11 @@ mod tests {
     use super::*;
 
     /// The capacity condition carries a typed reason through the `OperationError` conversion (so
-    /// consumers detect it structurally, not by message text), and the failure disposition is the
-    /// single policy for what happens to a failed operation: queued dispositions pin the WAL
+    /// consumers detect it structurally, not by message text), and the failure kind is the
+    /// single policy for what happens to a failed operation: queued kinds pin the WAL
     /// acknowledge for recovery, a permanent one must not (or the acknowledge stalls forever).
     #[test]
-    fn test_capacity_condition_typed_and_dispositions() {
+    fn test_capacity_condition_typed_and_failure_kinds() {
         let capacity = CollectionError::from(OperationError::OutOfAppendableCapacity {
             max_segment_size_bytes: 1024,
         });
@@ -2085,25 +2085,25 @@ mod tests {
         assert!(capacity.is_out_of_appendable_capacity());
         assert!(capacity.is_transient());
         assert_eq!(
-            capacity.failed_update_disposition(),
-            FailedUpdateDisposition::Backpressure,
+            capacity.update_failure_kind(),
+            UpdateFailureKind::Backpressure,
         );
 
         let transient = CollectionError::service_error("segment flush failed");
         assert_eq!(
-            transient.failed_update_disposition(),
-            FailedUpdateDisposition::Transient,
+            transient.update_failure_kind(),
+            UpdateFailureKind::Transient,
         );
 
         let permanent = CollectionError::bad_input("malformed".to_string());
         assert_eq!(
-            permanent.failed_update_disposition(),
-            FailedUpdateDisposition::Permanent,
+            permanent.update_failure_kind(),
+            UpdateFailureKind::Permanent,
         );
 
-        assert!(FailedUpdateDisposition::Backpressure.queues_for_recovery());
-        assert!(FailedUpdateDisposition::Transient.queues_for_recovery());
-        assert!(!FailedUpdateDisposition::Permanent.queues_for_recovery());
+        assert!(UpdateFailureKind::Backpressure.queues_for_recovery());
+        assert!(UpdateFailureKind::Transient.queues_for_recovery());
+        assert!(!UpdateFailureKind::Permanent.queues_for_recovery());
     }
 
     /// A replica reports the condition as an `Unavailable` status tagged with reason metadata (the

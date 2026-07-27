@@ -541,7 +541,7 @@ impl UpdateWorkers {
                     match result {
                         Ok(_) => {}
                         // Still queued: abort recovery and retry on a later wake-up.
-                        Err(err) if err.failed_update_disposition().queues_for_recovery() => {
+                        Err(err) if err.update_failure_kind().queues_for_recovery() => {
                             return Err(err);
                         }
                         // A permanent decline can never succeed; skip it like WAL replay does

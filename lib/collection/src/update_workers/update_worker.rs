@@ -377,7 +377,7 @@ impl UpdateWorkers {
                             // appendable segment and `try_recover` re-applies the operation.
                             // `Nop` rather than `Operation`: it must run recovery even when
                             // optimization handles are maxed out.
-                            if err.failed_update_disposition().queues_for_recovery() {
+                            if err.update_failure_kind().queues_for_recovery() {
                                 let _ = optimize_sender.send(OptimizerSignal::Nop).await;
                             }
                             Err(err)

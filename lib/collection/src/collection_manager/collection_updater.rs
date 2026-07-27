@@ -6,7 +6,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::*;
 
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::{CollectionError, CollectionResult, FailedUpdateDisposition};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateFailureKind};
 use crate::shards::update_tracker::UpdateTracker;
 
 /// Implementation of the update operation
@@ -26,8 +26,8 @@ impl CollectionUpdater {
                     segments.write().failed_operation.remove(&op_num);
                 }
             }
-            Err(collection_error) => match collection_error.failed_update_disposition() {
-                FailedUpdateDisposition::Backpressure => {
+            Err(collection_error) => match collection_error.update_failure_kind() {
+                UpdateFailureKind::Backpressure => {
                     segments.write().failed_operation.insert(op_num);
                     // Expected backpressure rather than a failure: the update worker retries
                     // inline and recovery re-applies the operation once the optimizer provisions
@@ -37,11 +37,11 @@ impl CollectionUpdater {
                          it will be retried: {collection_error}"
                     )
                 }
-                FailedUpdateDisposition::Transient => {
+                UpdateFailureKind::Transient => {
                     segments.write().failed_operation.insert(op_num);
                     log::error!("Update operation failed: {collection_error}")
                 }
-                FailedUpdateDisposition::Permanent => {
+                UpdateFailureKind::Permanent => {
                     if segments.write().failed_operation.remove(&op_num) {
                         // A previously failed operation declined permanently on re-apply: it can
                         // never succeed anymore (e.g. later operations deleted the points it
