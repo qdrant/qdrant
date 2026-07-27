@@ -1301,10 +1301,9 @@ impl From<OperationError> for CollectionError {
             OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(err.to_string()),
             OperationError::VariableTypeError { .. } => Self::bad_input(err.to_string()),
             OperationError::NonFiniteNumber { .. } => Self::bad_input(err.to_string()),
-            // Normally handled by segment provisioning before reaching this conversion; if it
-            // leaks, stay transient so failed-operation recovery re-applies the operation. It is
-            // temporary backpressure rather than an internal failure, so it maps to the
-            // unavailable (503) family instead of a service error (500).
+            // Temporary backpressure rather than an internal failure: transient, so
+            // failed-operation recovery re-applies the operation, and in the unavailable (503)
+            // family instead of a service error (500).
             OperationError::OutOfAppendableCapacity {
                 max_segment_size_bytes,
             } => Self::ShardUnavailable {
