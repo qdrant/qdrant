@@ -4,7 +4,8 @@ use std::sync::Arc;
 use qdrant_edge_ffi::config::{Distance, EdgeConfig, VectorDataConfig};
 use qdrant_edge_ffi::error::EdgeError;
 use qdrant_edge_ffi::filter::{
-    Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, GeoRadius, Match,
+    AnyVariants, Condition, FieldCondition, Filter, GeoLineString, GeoPoint, GeoPolygon, GeoRadius,
+    Match,
 };
 use qdrant_edge_ffi::types::{PointId, WithPayload};
 use qdrant_edge_ffi::{CountRequest, EdgeShard};
@@ -163,7 +164,10 @@ fn filter_must_with_bad_key_returns_error() {
     assert!(r.is_err());
 }
 
-// ── Match::Any / Match::Except fallibility (C1) ───────────────────────────────
+// ── Match::Any / Match::Except conversion ─────────────────────────────────────
+// The strings-XOR-integers constraint is now enforced by the `AnyVariants` sum
+// type, so the old (None,None) / (Some,Some) error cases are unrepresentable —
+// only the valid mappings remain to check.
 
 fn field_with_match(m: Match) -> Condition {
     Condition::Field {
@@ -181,43 +185,32 @@ fn field_with_match(m: Match) -> Condition {
 }
 
 #[test]
-fn match_any_both_none_returns_error() {
+fn match_any_strings_ok() {
     let cond = field_with_match(Match::Any {
-        strings: None,
-        integers: None,
-    });
-    let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_err());
-}
-
-#[test]
-fn match_any_both_set_returns_error() {
-    let cond = field_with_match(Match::Any {
-        strings: Some(vec!["a".to_string()]),
-        integers: Some(vec![1]),
-    });
-    let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_err());
-}
-
-#[test]
-fn match_any_strings_only_ok() {
-    let cond = field_with_match(Match::Any {
-        strings: Some(vec!["hello".to_string()]),
-        integers: None,
+        any: AnyVariants::Strings {
+            values: vec!["hello".to_string()],
+        },
     });
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(r.is_ok());
 }
 
 #[test]
-fn match_except_neither_returns_error() {
-    let cond = field_with_match(Match::Except {
-        strings: None,
-        integers: None,
+fn match_any_integers_ok() {
+    let cond = field_with_match(Match::Any {
+        any: AnyVariants::Integers { values: vec![1, 2] },
     });
     let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_err());
+    assert!(r.is_ok());
+}
+
+#[test]
+fn match_except_integers_ok() {
+    let cond = field_with_match(Match::Except {
+        except: AnyVariants::Integers { values: vec![7] },
+    });
+    let r: Result<SegmentCondition, _> = cond.try_into();
+    assert!(r.is_ok());
 }
 
 // ── WithPayload::Fields bad key (I2) ─────────────────────────────────────────

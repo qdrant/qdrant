@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use segment::types::{
-    AnyVariants, Condition as SegmentCondition, DateTimePayloadType,
+    AnyVariants as SegmentAnyVariants, Condition as SegmentCondition, DateTimePayloadType,
     FieldCondition as SegmentFieldCondition, Filter as SegmentFilter,
     GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
     GeoPoint as SegmentGeoPoint, GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
@@ -294,12 +294,37 @@ impl From<ValueVariants> for SegmentValueVariants {
     }
 }
 
+// ── AnyVariants ─────────────────────────────────────────────────────────────
+
+/// A homogeneous set of match values for [`Match::Any`] / [`Match::Except`]:
+/// either strings or integers. The type enforces "exactly one" — mirroring the
+/// engine's own `AnyVariants`, the gRPC `oneof`, and every official Qdrant
+/// client (none of which allows both or neither). An empty set is valid: `Any`
+/// then matches nothing and `Except` matches everything.
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum AnyVariants {
+    /// Match against a set of string values.
+    Strings { values: Vec<String> },
+    /// Match against a set of integer values.
+    Integers { values: Vec<i64> },
+}
+
+impl From<AnyVariants> for SegmentAnyVariants {
+    fn from(v: AnyVariants) -> Self {
+        match v {
+            AnyVariants::Strings { values } => {
+                SegmentAnyVariants::Strings(values.into_iter().collect())
+            }
+            AnyVariants::Integers { values } => {
+                SegmentAnyVariants::Integers(values.into_iter().collect())
+            }
+        }
+    }
+}
+
 // ── Match ───────────────────────────────────────────────────────────────────
 
 /// How a [`FieldCondition`] compares a payload field.
-///
-/// For each variant, exactly one of its alternative payloads should be set
-/// (e.g. for `Any`, pass either `strings` or `integers`, not both).
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum Match {
     /// Exact scalar match.
@@ -316,20 +341,10 @@ pub enum Match {
     /// Prefix match: some word of the field must start with `prefix`
     /// (requires a full-text index on the payload key).
     Prefix { prefix: String },
-    /// The field value must equal any of the given strings or integers.
-    Any {
-        #[uniffi(default = None)]
-        strings: Option<Vec<String>>,
-        #[uniffi(default = None)]
-        integers: Option<Vec<i64>>,
-    },
-    /// The field value must equal none of the given strings or integers.
-    Except {
-        #[uniffi(default = None)]
-        strings: Option<Vec<String>>,
-        #[uniffi(default = None)]
-        integers: Option<Vec<i64>>,
-    },
+    /// The field value must equal any of the given values (IN).
+    Any { any: AnyVariants },
+    /// The field value must equal none of the given values (NOT IN).
+    Except { except: AnyVariants },
 }
 
 impl TryFrom<Match> for SegmentMatch {
@@ -344,40 +359,10 @@ impl TryFrom<Match> for SegmentMatch {
             Match::TextAny { text_any } => Ok(SegmentMatch::TextAny(MatchTextAny { text_any })),
             Match::Phrase { phrase } => Ok(SegmentMatch::Phrase(MatchPhrase { phrase })),
             Match::Prefix { prefix } => Ok(SegmentMatch::Prefix(MatchPrefix { prefix })),
-            Match::Any { strings, integers } => {
-                let any = match (strings, integers) {
-                    (None, None) => {
-                        return Err(crate::error::EdgeError::invalid_argument(
-                            "Match::Any requires either `strings` or `integers`",
-                        ));
-                    }
-                    (Some(_), Some(_)) => {
-                        return Err(crate::error::EdgeError::invalid_argument(
-                            "Match::Any: set either `strings` or `integers`, not both",
-                        ));
-                    }
-                    (Some(strings), None) => AnyVariants::Strings(strings.into_iter().collect()),
-                    (None, Some(integers)) => AnyVariants::Integers(integers.into_iter().collect()),
-                };
-                Ok(SegmentMatch::Any(MatchAny { any }))
-            }
-            Match::Except { strings, integers } => {
-                let except = match (strings, integers) {
-                    (None, None) => {
-                        return Err(crate::error::EdgeError::invalid_argument(
-                            "Match::Except requires either `strings` or `integers`",
-                        ));
-                    }
-                    (Some(_), Some(_)) => {
-                        return Err(crate::error::EdgeError::invalid_argument(
-                            "Match::Except: set either `strings` or `integers`, not both",
-                        ));
-                    }
-                    (Some(strings), None) => AnyVariants::Strings(strings.into_iter().collect()),
-                    (None, Some(integers)) => AnyVariants::Integers(integers.into_iter().collect()),
-                };
-                Ok(SegmentMatch::Except(MatchExcept { except }))
-            }
+            Match::Any { any } => Ok(SegmentMatch::Any(MatchAny { any: any.into() })),
+            Match::Except { except } => Ok(SegmentMatch::Except(MatchExcept {
+                except: except.into(),
+            })),
         }
     }
 }
@@ -806,9 +791,9 @@ fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
                     // [`Match::Any`]
                     SegmentMatch::Any(MatchAny { any }) => match any {
                         // [`Match::Any`] `strings`
-                        AnyVariants::Strings(_) => {}
+                        SegmentAnyVariants::Strings(_) => {}
                         // [`Match::Any`] `integers`
-                        AnyVariants::Integers(_) => {}
+                        SegmentAnyVariants::Integers(_) => {}
                     },
                     // [`Match::Except`] (same `AnyVariants` split as `Any`)
                     SegmentMatch::Except(MatchExcept { except: _ }) => {}
