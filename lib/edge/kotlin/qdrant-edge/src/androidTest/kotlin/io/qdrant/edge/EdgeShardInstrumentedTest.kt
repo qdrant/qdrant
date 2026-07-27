@@ -64,49 +64,51 @@ class EdgeShardInstrumentedTest {
 
         val shard = EdgeShard.load(path = dir.absolutePath, config = defaultConfig())
 
-        val upsertOp = UpdateOperation.upsertPoints(
-            points = listOf(
-                Point(
-                    id = PointId.NumId(1uL),
-                    vector = Vector.Single(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
-                    payload = """{"tag":"alpha"}""",
+        try {
+            val upsertOp = UpdateOperation.upsertPoints(
+                points = listOf(
+                    Point(
+                        id = PointId.NumId(1uL),
+                        vector = Vector.Single(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
+                        payload = """{"tag":"alpha"}""",
+                    ),
+                    Point(
+                        id = PointId.NumId(2uL),
+                        vector = Vector.Single(listOf(1.0f, 1.0f, 1.0f, 1.0f)),
+                        payload = """{"tag":"beta"}""",
+                    ),
+                    Point(
+                        id = PointId.NumId(3uL),
+                        vector = Vector.Single(listOf(0.5f, 0.1f, 9.0f, 3.0f)),
+                        payload = """{"tag":"gamma"}""",
+                    ),
                 ),
-                Point(
-                    id = PointId.NumId(2uL),
-                    vector = Vector.Single(listOf(1.0f, 1.0f, 1.0f, 1.0f)),
-                    payload = """{"tag":"beta"}""",
-                ),
-                Point(
-                    id = PointId.NumId(3uL),
-                    vector = Vector.Single(listOf(0.5f, 0.1f, 9.0f, 3.0f)),
-                    payload = """{"tag":"gamma"}""",
-                ),
-            ),
-        )
-        shard.update(operation = upsertOp)
+            )
+            shard.update(operation = upsertOp)
 
-        val results = shard.search(
-            request = SearchRequest(
-                query = Query.Nearest(
-                    vector = NamedVector.Dense(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
-                    using = null,
+            val results = shard.search(
+                request = SearchRequest(
+                    query = Query.Nearest(
+                        vector = NamedVector.Dense(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
+                        using = null,
+                    ),
+                    limit = 10uL,
+                    offset = null,
+                    filter = null,
+                    params = null,
+                    withVector = WithVector.Bool(true),
+                    withPayload = WithPayload.Bool(true),
+                    scoreThreshold = null,
                 ),
-                limit = 10uL,
-                offset = null,
-                filter = null,
-                params = null,
-                withVector = WithVector.Bool(true),
-                withPayload = WithPayload.Bool(true),
-                scoreThreshold = null,
-            ),
-        )
+            )
 
-        assertTrue("search should return at least one result", results.isNotEmpty())
-        // The point most similar to the query vector [6,9,4,2] should be id=1 (exact match)
-        val topId = results.first().id
-        assertTrue("top result should be PointId.NumId(1)", topId is PointId.NumId && (topId as PointId.NumId).`value` == 1uL)
-
-        shard.unload()
+            assertTrue("search should return at least one result", results.isNotEmpty())
+            // The point most similar to the query vector [6,9,4,2] should be id=1 (exact match)
+            val topId = results.first().id
+            assertTrue("top result should be PointId.NumId(1)", topId is PointId.NumId && (topId as PointId.NumId).`value` == 1uL)
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
     }
 
     // ── Test 2: persistenceAcrossReload ───────────────────────────────────
@@ -124,31 +126,36 @@ class EdgeShardInstrumentedTest {
 
         val shard = EdgeShard.load(path = dir.absolutePath, config = defaultConfig())
 
-        val upsertOp = UpdateOperation.upsertPoints(
-            points = listOf(
-                Point(
-                    id = PointId.NumId(10uL),
-                    vector = Vector.Single(listOf(1.0f, 2.0f, 3.0f, 4.0f)),
-                    payload = null,
+        try {
+            val upsertOp = UpdateOperation.upsertPoints(
+                points = listOf(
+                    Point(
+                        id = PointId.NumId(10uL),
+                        vector = Vector.Single(listOf(1.0f, 2.0f, 3.0f, 4.0f)),
+                        payload = null,
+                    ),
+                    Point(
+                        id = PointId.NumId(20uL),
+                        vector = Vector.Single(listOf(4.0f, 3.0f, 2.0f, 1.0f)),
+                        payload = null,
+                    ),
                 ),
-                Point(
-                    id = PointId.NumId(20uL),
-                    vector = Vector.Single(listOf(4.0f, 3.0f, 2.0f, 1.0f)),
-                    payload = null,
-                ),
-            ),
-        )
-        shard.update(operation = upsertOp)
-        shard.flush()
-        shard.unload()
+            )
+            shard.update(operation = upsertOp)
+            shard.flush()
+        } finally {
+            try { shard.unload() } catch (_: Exception) {}
+        }
 
         // Reopen without supplying a config (existing shard, reads its own metadata)
         val reopened = EdgeShard.load(path = dir.absolutePath, config = null)
-        val info = reopened.info()
+        try {
+            val info = reopened.info()
 
-        assertEquals("pointsCount should be 2 after reload", 2uL, info.pointsCount)
-
-        reopened.unload()
+            assertEquals("pointsCount should be 2 after reload", 2uL, info.pointsCount)
+        } finally {
+            try { reopened.unload() } catch (_: Exception) {}
+        }
     }
 
     // ── Test 3: invalidUuidThrows ──────────────────────────────────────────
