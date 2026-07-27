@@ -44,7 +44,10 @@ const CAPACITY_RETRY_BUDGET: Duration = Duration::from_secs(30);
 /// Poll slice while waiting for the optimizer to provision capacity; also the backoff between
 /// consecutive immediate re-applies.
 const CAPACITY_WAIT_SLICE: Duration = Duration::from_millis(100);
-/// Cap on one wake-and-wait round, so a single round cannot consume the whole retry budget.
+/// How long one wake-and-wait round may wait for capacity to appear. If it expires, the retry
+/// gives up and hands the operation to asynchronous recovery: an optimizer that produced nothing
+/// for this long is unlikely to within the budget, which only backstops repeated rounds where
+/// capacity keeps appearing and the re-apply still fails (an operation spanning many segments).
 const CAPACITY_WAIT_PER_ROUND: Duration = Duration::from_secs(5);
 
 /// Outcome of [`CapacityRetry::wait_for_optimizer`].
