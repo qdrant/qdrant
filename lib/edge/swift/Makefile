@@ -58,6 +58,10 @@ build-all: ## Build the XCFramework (all platforms incl. tvOS/visionOS)
 build-debug: ## Build the XCFramework (debug, iOS + macOS)
 	@bash $(SCRIPT_DIR)build-xcframework.sh --debug
 
+.PHONY: build-ci
+build-ci: ## Build the XCFramework (fast PR-gate profile, iOS + macOS)
+	@bash $(SCRIPT_DIR)build-xcframework.sh --ci
+
 .PHONY: run-example
 run-example: build ## Build the XCFramework, then run the Swift example
 	# The example's Package.swift references the local out/ XCFramework via

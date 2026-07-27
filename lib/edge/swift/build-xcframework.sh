@@ -8,9 +8,13 @@
 #   - For tvOS/visionOS: nightly toolchain + rust-src (see `make setup`)
 #
 # Usage:
-#   ./build-xcframework.sh [--debug] [--all-platforms]
+#   ./build-xcframework.sh [--debug | --ci] [--all-platforms]
 #
 #   --debug          Build in debug mode (faster compile, larger binary)
+#   --ci             Fast PR-gate build: release profile with LTO off and
+#                    codegen-units=16 — drops the slow knobs but keeps opt-level
+#                    (a Swift static lib balloons at opt-level=0). Builds fast,
+#                    still runs the tests; NOT the shipped artifact.
 #   --all-platforms  Include tvOS and visionOS (tier-3, requires nightly)
 #
 # Output:
@@ -61,6 +65,22 @@ ALL_PLATFORMS=false
 for arg in "$@"; do
     case "$arg" in
         --debug) PROFILE="debug"; CARGO_FLAGS="" ;;
+        --ci)
+            # Fast PR-gate build. The gate compiles the XCFramework and RUNS the
+            # test suite (macOS + iOS Simulator) but never ships the artifact, so
+            # it drops release-mobile's two most expensive knobs — thin-LTO and
+            # codegen-units=1 (single-threaded codegen) — while KEEPING opt-level.
+            # opt-level matters here because Swift links a STATIC .a: at opt-level=0
+            # nothing is inlined or dropped, so a staticlib of the whole workspace
+            # balloons (~414 MB/slice vs ~297 MB optimized) — dead code isn't
+            # removed until the consumer links. Overridden on the built-in
+            # `release` profile via env, NOT a named Cargo.toml profile, so this
+            # stays self-contained and can't conflict with the Kotlin PR.
+            PROFILE="release"; CARGO_FLAGS="--release"
+            export CARGO_PROFILE_RELEASE_LTO=false
+            export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+            export CARGO_PROFILE_RELEASE_STRIP=symbols
+            ;;
         --all-platforms) ALL_PLATFORMS=true ;;
         -h|--help)
             awk '/^#!/{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
@@ -142,8 +162,9 @@ for target in ${TIER3_TARGETS[@]+"${TIER3_TARGETS[@]}"}; do
         -Z build-std
 done
 
-# The `release-mobile` profile already strips symbols; `--debug` keeps them
-# for backtraces. Any other profile would need an explicit `strip -S` pass
+# The `release-mobile` and `--ci` builds strip symbols (release-mobile via its
+# profile, `--ci` via CARGO_PROFILE_DEV_STRIP=symbols); plain `--debug` keeps
+# them for backtraces. Any other profile would need an explicit `strip -S` pass
 # here, which we don't support at the moment.
 
 # ── Universal (fat) libraries ────────────────────────────────────────────────
