@@ -110,21 +110,17 @@ impl UpdateWorkers {
 
             // Ensure we have at least one appendable segment with enough capacity
             // Source required parameters from first optimizer
-            let created_appendable_segment = match Self::ensure_appendable_segment_with_capacity(
+            let created_appendable_segment = Self::ensure_appendable_segment_with_capacity(
                 &segments,
                 some_optimizer.segments_path(),
                 some_optimizer.segment_optimizer_config(),
                 some_optimizer.threshold_config(),
                 payload_index_schema.clone(),
-            ) {
-                Ok(created) => created,
-                Err(err) => {
-                    log::error!(
-                        "Failed to ensure there are appendable segments with capacity: {err}"
-                    );
-                    panic!("Failed to ensure there are appendable segments with capacity: {err}");
-                }
-            };
+            )
+            .unwrap_or_else(|err| {
+                log::error!("Failed to ensure there are appendable segments with capacity: {err}");
+                panic!("Failed to ensure there are appendable segments with capacity: {err}");
+            });
 
             // Backstop: reconcile the segment manifest with the live segment set. Registration
             // normally happens at each publication site via the `NewSegmentToken`; this wake-up is

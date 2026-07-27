@@ -2125,13 +2125,10 @@ mod tests {
             err.is_out_of_appendable_capacity(),
             "the replica set would deactivate the reporting replica: {err}",
         );
-    }
 
-    /// An untagged `Unavailable` status is any other transient unavailability, not the capacity
-    /// condition; the guard must keep it out of the recovery path.
-    #[test]
-    fn test_untagged_unavailable_is_not_capacity() {
-        let err = CollectionError::from(tonic::Status::unavailable("peer down"));
-        assert!(!err.is_out_of_appendable_capacity());
+        // An untagged `Unavailable` is any other transient unavailability, not the capacity
+        // condition; it must keep its generic handling.
+        let untagged = CollectionError::from(tonic::Status::unavailable("peer down"));
+        assert!(!untagged.is_out_of_appendable_capacity());
     }
 }

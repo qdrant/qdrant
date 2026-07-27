@@ -161,10 +161,8 @@ impl CapacityRetry<'_> {
                             .and_then(|record| record.deserialize().ok())
                             .map(|deserialized| deserialized.operation),
                         // A panicked or cancelled blocking task is not a missing record: surface
-                        // the real failure instead of masking it as one. Returning an
-                        // applied-operation error rather than the join error keeps the transient
-                        // handling at the call site, which nudges the optimizer to recover the
-                        // queued operation.
+                        // the real failure as a transient error, so the call site still nudges
+                        // the optimizer to recover the queued operation.
                         Err(join_error) => return Ok(Err(CollectionError::from(join_error))),
                     };
                     match reread {
