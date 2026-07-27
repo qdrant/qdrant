@@ -722,29 +722,28 @@ impl SegmentHolder {
 
     /// CoW-move destination candidates for one `apply_points_with_conditional_move` call.
     ///
-    /// With no size cap armed, every appendable segment qualifies (`all_appendable`, computed
-    /// once by the caller). With a cap, the eligible list is computed lazily on the first point
-    /// that actually needs a move (a batch that applies fully in place must not fail just
-    /// because all appendable segments are full) and cached in `eligible` for the rest of the
-    /// call. Callers batch points (e.g. 32 per call), so capacity is checked once per batch,
-    /// not per point; a destination may overshoot the cap by at most one batch worth of points.
+    /// Computed lazily on the first point that actually needs a move (a batch that applies
+    /// fully in place must not fail just because all appendable segments are full, nor pay for
+    /// the lookup) and cached in `candidates` for the rest of the call. With no size cap armed,
+    /// every appendable segment qualifies; with a cap, only segments below it do. Callers batch
+    /// points (e.g. 32 per call), so capacity is checked once per batch, not per point; a
+    /// destination may overshoot the cap by at most one batch worth of points.
     fn cow_destination_candidates<'a>(
         &self,
-        eligible: &'a mut Option<Vec<SegmentId>>,
-        all_appendable: &'a [SegmentId],
+        candidates: &'a mut Option<Vec<SegmentId>>,
     ) -> OperationResult<&'a [SegmentId]> {
-        if self.max_segment_size_bytes.is_none() {
-            return Ok(all_appendable);
+        if candidates.is_none() {
+            let computed = if self.max_segment_size_bytes.is_some() {
+                self.appendable_segments_with_capacity()?
+                    .into_iter()
+                    .map(|(segment_id, _size)| segment_id)
+                    .collect()
+            } else {
+                self.appendable_segments_ids()
+            };
+            *candidates = Some(computed);
         }
-        if eligible.is_none() {
-            let candidates = self
-                .appendable_segments_with_capacity()?
-                .into_iter()
-                .map(|(segment_id, _size)| segment_id)
-                .collect();
-            *eligible = Some(candidates);
-        }
-        Ok(eligible.as_ref().unwrap())
+        Ok(candidates.as_ref().unwrap())
     }
 
     /// Get a random appendable segment
@@ -1128,12 +1127,9 @@ impl SegmentHolder {
             &mut Payload,
         ),
     {
-        // Choose random appendable segment from this
-        let appendable_segments = self.appendable_segments_ids();
-
         // Lazily-computed CoW-move destination candidates, shared across this call; see
         // `cow_destination_candidates`.
-        let mut eligible_segments: Option<Vec<SegmentId>> = None;
+        let mut destination_cache: Option<Vec<SegmentId>> = None;
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
         let stopped = AtomicBool::new(false);
@@ -1152,7 +1148,7 @@ impl SegmentHolder {
                 point_operation(point_id, write_segment)?
             } else {
                 let destination_candidates =
-                    self.cow_destination_candidates(&mut eligible_segments, &appendable_segments)?;
+                    self.cow_destination_candidates(&mut destination_cache)?;
                 self.aloha_random_write(
                     destination_candidates,
                     |appendable_idx, appendable_write_segment| {
