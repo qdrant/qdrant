@@ -123,11 +123,17 @@ jobs:
       # bump to an NDK layout cargo-ndk 3.5.4 doesn't understand would break the
       # build with no change in this repo. Install the same NDK used locally and
       # pass it explicitly via ANDROID_NDK_HOME (which build-aar.sh honours first).
-      - name: Install pinned Android NDK
+      - name: Install pinned Android NDK + SDK platform
         run: |
           set -euo pipefail
           NDK_VERSION=26.3.11579264
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION"
+          SDK="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          # Pin the NDK cargo-ndk drives AND the SDK platform/build-tools that
+          # assembleRelease/publishToMavenLocal need (compileSdk=34). Pinning only
+          # the NDK left the SDK-platform to "whatever the image ships"; a runner
+          # bump that drops android-34 would then turn the build red with no repo
+          # change — the same image-drift the NDK pin was added to prevent.
+          "$SDK" --install "ndk;$NDK_VERSION" "platforms;android-34" "build-tools;34.0.0"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       # Cross-compiles the native .so per ABI and regenerates the Kotlin bindings
@@ -178,9 +184,11 @@ jobs:
           # AGP 8.7.3 / Gradle 8.11.1 need JDK 17+; JDK 24+ is too new. Use the
           # JDK 21 preinstalled on the runner rather than a separate setup-java
           # step. JAVA_HOME_21_X64 is a runner OS env var (not the `env` context),
-          # so it must be read here in the shell, not via ${{ env.* }}.
-          if [ -z "${JAVA_HOME_21_X64:-}" ]; then
-            echo "::error::JAVA_HOME_21_X64 not set on the runner — JDK 21 image layout changed"
+          # so it must be read here in the shell, not via ${{ env.* }}. Check the
+          # directory EXISTS (not just non-empty): the tool-cache reclaim above
+          # could, on a future image, delete a JDK that migrated into it.
+          if [ ! -d "${JAVA_HOME_21_X64:-}" ]; then
+            echo "::error::JDK 21 not found at JAVA_HOME_21_X64='${JAVA_HOME_21_X64:-<unset>}' — runner JDK layout changed"
             exit 1
           fi
           export JAVA_HOME="$JAVA_HOME_21_X64"
@@ -196,5 +204,9 @@ jobs:
         working-directory: lib/edge/kotlin
         run: |
           set -euo pipefail
+          if [ ! -d "${JAVA_HOME_21_X64:-}" ]; then
+            echo "::error::JDK 21 not found at JAVA_HOME_21_X64='${JAVA_HOME_21_X64:-<unset>}' — runner JDK layout changed"
+            exit 1
+          fi
           export JAVA_HOME="$JAVA_HOME_21_X64"
           ./gradlew :qdrant-edge:publishToMavenLocal --console=plain

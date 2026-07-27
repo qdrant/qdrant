@@ -27,7 +27,7 @@ class MainActivity : Activity() {
     }
 
     private fun runDemo() {
-        val dataDir = File(cacheDir, "qdrant-edge-android-example")
+        val dataDir = File(cacheDir, "qdrant-edge-kotlin-example")
         if (dataDir.exists()) dataDir.deleteRecursively()
         dataDir.mkdirs()
 
@@ -50,6 +50,8 @@ class MainActivity : Activity() {
 
         val shard = EdgeShard.load(path = dataDir.absolutePath, config = config)
         Log.i(TAG, "Shard loaded at: ${dataDir.absolutePath}")
+
+        try {
 
         // ── Upsert ──────────────────────────────────────────────────────
         Log.i(TAG, "---- Upsert ----")
@@ -244,8 +246,12 @@ class MainActivity : Activity() {
             facetResponse.hits.forEach { hit ->
                 Log.i(TAG, "  ${hit.value}: ${hit.count}")
             }
-        } catch (e: Exception) {
-            Log.i(TAG, "Facet error (expected without payload index): $e")
+        } catch (e: EdgeException) {
+            // Faceting needs a payload index on the key, which this demo never
+            // creates, so a *domain* error here is expected. Catch only
+            // EdgeException — a non-domain failure (e.g. a JNA crash) must
+            // surface, not be silently mislabeled "expected".
+            Log.w(TAG, "Facet skipped — likely no payload index on 'hello': $e")
         }
 
         // ── Info ────────────────────────────────────────────────────────
@@ -254,17 +260,24 @@ class MainActivity : Activity() {
         val info = shard.info()
         Log.i(TAG, "Segments: ${info.segmentsCount}, Points: ${info.pointsCount}, Indexed vectors: ${info.indexedVectorsCount}")
 
-        // ── Close and reopen ────────────────────────────────────────────
-        Log.i(TAG, "---- Close and reopen shard ----")
+        } finally {
+            // Release native resources on EVERY path — even if an operation above
+            // threw — so the shard is never leaked. unload() is distinct from
+            // close()/destroy() (which dispose the object); it also persists, so
+            // the reopen below sees the data. Swallow only unload()'s own error.
+            try { shard.unload() } catch (_: Exception) {}
+        }
+        Log.i(TAG, "Shard unloaded (native resources released).")
 
-        shard.unload()
-        Log.i(TAG, "Shard closed.")
+        // ── Reopen ──────────────────────────────────────────────────────
+        Log.i(TAG, "---- Reopen shard ----")
 
-        val reopenedShard = EdgeShard.load(path = dataDir.absolutePath, config = null)
-        val reopenedInfo = reopenedShard.info()
-        Log.i(TAG, "Reopened shard - Segments: ${reopenedInfo.segmentsCount}, Points: ${reopenedInfo.pointsCount}, Indexed vectors: ${reopenedInfo.indexedVectorsCount}")
-
-        reopenedShard.unload()
+        // Idiomatic lifecycle: EdgeShard is AutoCloseable, so `use { }` disposes
+        // it when the block exits — even on an exception.
+        EdgeShard.load(path = dataDir.absolutePath, config = null).use { reopenedShard ->
+            val reopenedInfo = reopenedShard.info()
+            Log.i(TAG, "Reopened shard - Segments: ${reopenedInfo.segmentsCount}, Points: ${reopenedInfo.pointsCount}, Indexed vectors: ${reopenedInfo.indexedVectorsCount}")
+        }
         Log.i(TAG, "Done!")
     }
 
