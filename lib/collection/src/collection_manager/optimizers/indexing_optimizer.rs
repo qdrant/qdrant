@@ -1126,21 +1126,14 @@ mod tests {
         );
     }
 
-    /// Regression test for segment overgrow on `set_payload_by_filter` (#9158).
+    /// Regression test for segment overgrow on `set_payload` by filter (#9158): with every point
+    /// in immutable (indexed) segments, a filter matching all of them CoW-moves each one into an
+    /// appendable segment. With the size cap armed this must fail with the recoverable
+    /// `OutOfAppendableCapacity` once every appendable segment reaches the cap, instead of
+    /// growing one past `max_segment_size`.
     ///
-    /// When all points of a collection live in immutable (indexed) segments and
-    /// `set_payload` is executed via a filter that matches all points, the
-    /// `apply_points_with_conditional_move` mechanism CoW-moves every matched
-    /// point into an appendable segment. With the appendable segment size cap
-    /// armed, the operation fails with the recoverable `OutOfAppendableCapacity`
-    /// error once every appendable segment reaches the cap, instead of growing
-    /// one past `max_segment_size`.
-    ///
-    /// In production the failed operation wakes the optimizer, whose wake-up
-    /// provisions a fresh appendable segment and re-applies the operation from
-    /// `failed_operation` recovery. This test drives that loop synchronously:
-    /// fail, ensure capacity, retry with the same op number (already-applied
-    /// points are skipped by their point version).
+    /// Drives the production recovery loop synchronously: fail, ensure capacity (the optimizer
+    /// wake-up step), retry under the same op number (already-applied points skip by version).
     #[test]
     fn test_set_payload_by_filter_does_not_overgrow_segment() {
         init();

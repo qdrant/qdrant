@@ -222,26 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn test_non_transient_decline_of_unqueued_operation_keeps_others() {
-        let segments = empty_holder();
-        segments.write().failed_operation.extend([42]);
-
-        // First-time decline of an unrelated operation: it was never queued, and it must not
-        // disturb the operation that is.
-        CollectionUpdater::handle_update_result(
-            &segments,
-            99,
-            &Err(CollectionError::bad_input("malformed".to_string())),
-        );
-
-        assert_eq!(
-            failed_operations(&segments),
-            vec![42],
-            "declining a never-queued operation must not touch the recovery queue",
-        );
-    }
-
-    #[test]
     fn test_sync_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 

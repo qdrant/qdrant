@@ -123,13 +123,12 @@ struct CapacityRetry<'a> {
 }
 
 impl CapacityRetry<'_> {
-    /// Apply `operation`, retrying inline when it fails because every appendable segment reached
-    /// the size cap. Each retry wakes the optimizer (its wake-up provisions a fresh appendable
-    /// segment) and re-applies once capacity is back; already-applied points are skipped by their
-    /// version, exactly as in WAL replay, so the caller sees added latency instead of a transient
-    /// failure. If capacity does not reappear within [`CAPACITY_RETRY_BUDGET`], or the worker is
-    /// cancelled, the capacity error is returned: the operation is queued in `failed_operation`
-    /// and asynchronous recovery re-applies it later.
+    /// Apply `operation`, retrying inline on capacity failures: wake the optimizer (its wake-up
+    /// provisions a fresh appendable segment) and re-apply once capacity is back, with
+    /// already-applied points skipped by version as in WAL replay, so the caller sees latency
+    /// instead of a transient failure. On cancellation or a spent [`CAPACITY_RETRY_BUDGET`] the
+    /// capacity error is returned; the operation stays queued in `failed_operation` for
+    /// asynchronous recovery.
     async fn run(
         &self,
         operation: CollectionUpdateOperations,
@@ -618,33 +617,39 @@ mod tests {
     use common::types::DeferredBehavior;
     use segment::data_types::vectors::only_default_vector;
     use segment::entry::entry_point::SegmentEntry as _;
-    use segment::payload_json;
     use segment::types::{PayloadContainer, WithPayload};
     use shard::operations::OperationWithClockTag;
     use shard::retrieve::retrieve_blocking::retrieve_blocking;
     use shard::segment_holder::SegmentHolder;
-    use shard::wal::{SerdeWal, WalRawRecord};
+    use shard::wal::SerdeWal;
     use tempfile::Builder;
     use tokio::sync::{Mutex as TokioMutex, mpsc};
     use tokio::task::JoinHandle;
     use wal::WalOptions;
 
     use super::*;
-    use crate::collection_manager::fixtures::{TEST_TIMEOUT, empty_segment};
-    use crate::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use crate::collection_manager::fixtures::{
+        TEST_TIMEOUT, empty_segment, set_payload_op, write_op,
+    };
 
     /// Fixture segments hold dim-4 f32 vectors: 16 bytes per point.
     const TEST_POINT_SIZE_BYTES: usize = 16;
 
-    /// An operation that has to CoW-move `points` out of their non-appendable segment, which is
-    /// what needs insert capacity.
-    fn set_payload_op(points: &[u64], color: &str) -> CollectionUpdateOperations {
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
-            payload: payload_json! {"color": color},
-            points: Some(points.iter().map(|id| (*id).into()).collect()),
-            filter: None,
-            key: None,
-        }))
+    /// A WAL holding a filler operation (so the operation under test outranks the seeded point
+    /// version of 0) followed by the `set_payload` on points 1 and 2 that needs CoW capacity.
+    fn wal_with_move_op(
+        wal_dir: &Path,
+    ) -> (
+        SerdeWal<OperationWithClockTag>,
+        CollectionUpdateOperations,
+        SeqNumberType,
+    ) {
+        let mut wal = SerdeWal::new(wal_dir, WalOptions::default()).unwrap();
+        write_op(&mut wal, &set_payload_op(&[], "filler"));
+        let operation = set_payload_op(&[1, 2], "blue");
+        let op_num = write_op(&mut wal, &operation);
+        assert!(op_num > 0, "the operation must outrank the seeded points");
+        (wal, operation, op_num)
     }
 
     /// Points 1 and 2 in a non-appendable segment, plus the only appendable segment already at the
@@ -769,25 +774,7 @@ mod tests {
         let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
 
         let segments = segments_at_capacity(segments_dir.path());
-
-        let mut wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
-        // Filler so the operation under test lands above the seeded point version of 0.
-        wal.write(
-            &WalRawRecord::new(&OperationWithClockTag::new(
-                set_payload_op(&[], "filler"),
-                None,
-            ))
-            .unwrap(),
-        )
-        .unwrap();
-        let operation = set_payload_op(&[1, 2], "blue");
-        let op_num = wal
-            .write(
-                &WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap(),
-            )
-            .unwrap();
-        assert!(op_num > 0, "the operation must outrank the seeded points");
+        let (wal, operation, op_num) = wal_with_move_op(wal_dir.path());
 
         let (update_sender, worker, optimizer, _cancel) = spawn_worker(
             segments.clone(),
@@ -853,23 +840,7 @@ mod tests {
         let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
 
         let segments = segments_at_capacity(segments_dir.path());
-
-        let mut wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
-        wal.write(
-            &WalRawRecord::new(&OperationWithClockTag::new(
-                set_payload_op(&[], "filler"),
-                None,
-            ))
-            .unwrap(),
-        )
-        .unwrap();
-        let operation = set_payload_op(&[1, 2], "blue");
-        let op_num = wal
-            .write(
-                &WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap(),
-            )
-            .unwrap();
+        let (wal, operation, op_num) = wal_with_move_op(wal_dir.path());
 
         // The stand-in optimizer never provisions, so capacity never returns.
         let (update_sender, worker, optimizer, _cancel) = spawn_worker(
@@ -915,23 +886,7 @@ mod tests {
         let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
 
         let segments = segments_at_capacity(segments_dir.path());
-
-        let mut wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
-        wal.write(
-            &WalRawRecord::new(&OperationWithClockTag::new(
-                set_payload_op(&[], "filler"),
-                None,
-            ))
-            .unwrap(),
-        )
-        .unwrap();
-        let operation = set_payload_op(&[1, 2], "blue");
-        let op_num = wal
-            .write(
-                &WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap(),
-            )
-            .unwrap();
+        let (wal, operation, op_num) = wal_with_move_op(wal_dir.path());
 
         // The stand-in optimizer never provisions, so the worker settles into the retry wait.
         let (update_sender, worker, optimizer, cancel) = spawn_worker(
@@ -1000,14 +955,7 @@ mod tests {
 
         let mut wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
-        wal.write(
-            &WalRawRecord::new(&OperationWithClockTag::new(
-                set_payload_op(&[], "filler"),
-                None,
-            ))
-            .unwrap(),
-        )
-        .unwrap();
+        write_op(&mut wal, &set_payload_op(&[], "filler"));
         // Past the end of the WAL: the first attempt uses the operation passed with the signal, and
         // only the retry goes looking for it on disk.
         let op_num = wal.first_index() + wal.len(false) + 5;

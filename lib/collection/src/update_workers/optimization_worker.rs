@@ -148,16 +148,12 @@ impl UpdateWorkers {
             .await
             .is_err()
             {
-                // Failed-operation recovery could not complete. When this wake-up just
-                // provisioned a fresh appendable segment, the failure is likely
-                // `OutOfAppendableCapacity` part-way through an operation that moves more data
-                // than one segment holds: it filled the new segment and needs another. Wake
-                // ourselves again so the next capacity-ensure provisions the next segment and
-                // recovery resumes where it stopped (applied points are skipped by version).
-                // Progress-guarded: if the provisioned segment stayed empty, the next wake-up
-                // creates nothing and this re-signal chain stops.
-                // `try_send` rather than an awaited send: this is our own signal channel, so
-                // awaiting a full one would deadlock the loop that drains it.
+                // Recovery could not complete. If this wake-up just provisioned a fresh segment,
+                // an operation moving more data than one segment holds likely filled it and
+                // needs another: re-signal so the next wake-up provisions it and recovery
+                // resumes (applied points skip by version). Progress-guarded: an empty
+                // provisioned segment stops the chain. `try_send` because awaiting our own full
+                // signal channel would deadlock the loop that drains it.
                 if created_appendable_segment
                     && let Err(err) = sender.try_send(OptimizerSignal::Nop)
                 {
@@ -580,29 +576,19 @@ mod tests {
     use common::types::DeferredBehavior;
     use segment::data_types::vectors::only_default_vector;
     use segment::entry::entry_point::SegmentEntry as _;
-    use segment::payload_json;
     use segment::types::{PayloadContainer, WithPayload};
     use shard::operations::OperationWithClockTag;
     use shard::retrieve::retrieve_blocking::retrieve_blocking;
     use shard::segment_holder::SegmentHolder;
-    use shard::wal::{SerdeWal, WalRawRecord};
+    use shard::wal::SerdeWal;
     use tempfile::Builder;
     use wal::WalOptions;
 
     use super::*;
-    use crate::collection_manager::fixtures::{TEST_TIMEOUT, empty_segment};
-    use crate::operations::CollectionUpdateOperations;
-    use crate::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use crate::collection_manager::fixtures::{
+        TEST_TIMEOUT, empty_segment, set_payload_op, write_op,
+    };
     use crate::shards::update_tracker::UpdateTracker;
-
-    fn set_payload_op(point_id: u64, color: &str) -> CollectionUpdateOperations {
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
-            payload: payload_json! {"color": color},
-            points: Some(vec![point_id.into()]),
-            filter: None,
-            key: None,
-        }))
-    }
 
     /// A queued operation can start declining non-transiently once later operations changed the
     /// state it sees. Recovery used to propagate that error, which aborted the whole pass and left
@@ -634,21 +620,9 @@ mod tests {
             SerdeWal::new(wal_dir.path(), WalOptions::default()).unwrap();
 
         // Declines with `PointNotFound`, which is not transient: point 999 does not exist.
-        let declining_op_num = wal
-            .write(
-                &WalRawRecord::new(&OperationWithClockTag::new(
-                    set_payload_op(999, "red"),
-                    None,
-                ))
-                .unwrap(),
-            )
-            .unwrap();
+        let declining_op_num = write_op(&mut wal, &set_payload_op(&[999], "red"));
         // Queued behind it, and must still be applied once the declined one is skipped.
-        wal.write(
-            &WalRawRecord::new(&OperationWithClockTag::new(set_payload_op(1, "blue"), None))
-                .unwrap(),
-        )
-        .unwrap();
+        write_op(&mut wal, &set_payload_op(&[1], "blue"));
 
         segments.write().failed_operation.insert(declining_op_num);
 

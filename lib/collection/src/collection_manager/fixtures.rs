@@ -14,18 +14,42 @@ use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use segment::types::{Distance, HnswGlobalConfig, Payload, PointIdType, SeqNumberType};
+use shard::operations::OperationWithClockTag;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::wal::{SerdeWal, WalRawRecord};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::config::CollectionParams;
+use crate::operations::CollectionUpdateOperations;
+use crate::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::optimizers_builder::build_segment_optimizer_config;
 
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A `set_payload` on explicit points. On points living in a non-appendable segment this forces a
+/// CoW move, which is what needs insert capacity.
+pub fn set_payload_op(points: &[u64], color: &str) -> CollectionUpdateOperations {
+    CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+        payload: payload_json! {"color": color},
+        points: Some(points.iter().map(|id| (*id).into()).collect()),
+        filter: None,
+        key: None,
+    }))
+}
+
+/// Append `operation` to the WAL, returning its op number.
+pub fn write_op(
+    wal: &mut SerdeWal<OperationWithClockTag>,
+    operation: &CollectionUpdateOperations,
+) -> SeqNumberType {
+    wal.write(&WalRawRecord::new(&OperationWithClockTag::new(operation.clone(), None)).unwrap())
+        .unwrap()
+}
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
