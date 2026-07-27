@@ -20,7 +20,7 @@ use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
 
-use super::shared::{self, DELETED_PATH, VECTORS_PATH};
+use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
@@ -80,14 +80,18 @@ impl AppendableMmapTurboVectorStorage {
         let quantizer = shared::build_quantizer(dim, distance);
         let storage = QuantizedChunkedStorage::new(
             MmapFs,
-            &path.join(VECTORS_PATH),
+            &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
             in_ram,
         )?;
 
         let deleted = BitvecFlags::new(
             MmapFs,
-            DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), Populate::from(in_ram))?,
+            DynamicStoredFlags::open(
+                &MmapFs,
+                &path.join(DELETED_DIR_PATH),
+                Populate::from(in_ram),
+            )?,
         )?;
         let deleted_count = deleted.count_trues();
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
