@@ -36,14 +36,9 @@ class MainActivity : Activity() {
 
         val config = EdgeConfig(
             vectorData = mapOf(
-                "" to VectorDataConfig(
-                    size = 4uL,
-                    distance = Distance.DOT,
-                    quantizationConfig = null,
-                    multivectorConfig = null,
-                    datatype = null,
-                    hnswConfig = null,
-                )
+                // Optional fields (quantization, HNSW, datatype, …) default to
+                // null — pass only what you need.
+                "" to VectorDataConfig(size = 4uL, distance = Distance.DOT)
             ),
             sparseVectorData = emptyMap(),
         )
@@ -87,17 +82,9 @@ class MainActivity : Activity() {
         val queryResults = shard.query(
             request = QueryRequest(
                 limit = 10uL,
-                offset = null,
-                query = ScoringQuery.Vector(Query.Nearest(
-                    vector = NamedVector.Dense(listOf(6.0f, 9.0f, 4.0f, 2.0f)),
-                    using = null,
-                )),
-                prefetches = emptyList(),
+                query = ScoringQuery.Vector(Query.Nearest(NamedVector.Dense(listOf(6.0f, 9.0f, 4.0f, 2.0f)))),
                 withVector = WithVector.Bool(true),
                 withPayload = WithPayload.Bool(true),
-                filter = null,
-                scoreThreshold = null,
-                params = null,
             ),
         )
 
@@ -109,17 +96,10 @@ class MainActivity : Activity() {
 
         val searchResults = shard.search(
             request = SearchRequest(
-                query = Query.Nearest(
-                    vector = NamedVector.Dense(listOf(1.0f, 1.0f, 1.0f, 1.0f)),
-                    using = null,
-                ),
+                query = Query.Nearest(NamedVector.Dense(listOf(1.0f, 1.0f, 1.0f, 1.0f))),
                 limit = 10uL,
-                offset = null,
-                filter = null,
-                params = null,
                 withVector = WithVector.Bool(true),
                 withPayload = WithPayload.Bool(true),
-                scoreThreshold = null,
             ),
         )
 
@@ -131,46 +111,18 @@ class MainActivity : Activity() {
 
         val searchFilter = Filter(
             must = listOf(
-                Condition.Field(
-                    FieldCondition(
-                        key = "hello",
-                        `match` = Match.Text("world"),
-                        range = null,
-                        geoBoundingBox = null,
-                        geoRadius = null,
-                        geoPolygon = null,
-                        valuesCount = null,
-                    )
-                ),
-                Condition.Field(
-                    FieldCondition(
-                        key = "price",
-                        `match` = null,
-                        range = RangeFloat(gte = 500.0, gt = null, lte = null, lt = null),
-                        geoBoundingBox = null,
-                        geoRadius = null,
-                        geoPolygon = null,
-                        valuesCount = null,
-                    )
-                ),
+                Condition.Field(FieldCondition(key = "hello", `match` = Match.Text("world"))),
+                Condition.Field(FieldCondition(key = "price", range = RangeFloat(gte = 500.0))),
             ),
-            should = null,
-            mustNot = null,
         )
 
         val filteredResults = shard.search(
             request = SearchRequest(
-                query = Query.Nearest(
-                    vector = NamedVector.Dense(listOf(1.0f, 1.0f, 1.0f, 1.0f)),
-                    using = null,
-                ),
+                query = Query.Nearest(NamedVector.Dense(listOf(1.0f, 1.0f, 1.0f, 1.0f))),
                 limit = 10uL,
-                offset = null,
                 filter = searchFilter,
-                params = null,
                 withVector = WithVector.Bool(true),
                 withPayload = WithPayload.Bool(true),
-                scoreThreshold = null,
             ),
         )
 
@@ -195,14 +147,7 @@ class MainActivity : Activity() {
         Log.i(TAG, "---- Scroll ----")
 
         var scrollResponse = shard.scroll(
-            request = ScrollRequest(
-                offset = null,
-                limit = 2uL,
-                filter = null,
-                withPayload = null,
-                withVector = null,
-                orderBy = null,
-            ),
+            request = ScrollRequest(limit = 2uL),
         )
 
         Log.i(TAG, "Scroll page 1 (${scrollResponse.records.size} records):")
@@ -212,14 +157,7 @@ class MainActivity : Activity() {
             val nextOffset = scrollResponse.nextOffset!!
             Log.i(TAG, "--- Next scroll (offset = ${pointIdStr(nextOffset)}) ---")
             scrollResponse = shard.scroll(
-                request = ScrollRequest(
-                    offset = nextOffset,
-                    limit = 2uL,
-                    filter = null,
-                    withPayload = null,
-                    withVector = null,
-                    orderBy = null,
-                ),
+                request = ScrollRequest(offset = nextOffset, limit = 2uL),
             )
             scrollResponse.records.forEach { printRecord(it) }
         }
@@ -227,7 +165,7 @@ class MainActivity : Activity() {
         // ── Count ───────────────────────────────────────────────────────
         Log.i(TAG, "---- Count ----")
 
-        val count = shard.count(request = CountRequest(filter = null, exact = true))
+        val count = shard.count(request = CountRequest(exact = true))
         Log.i(TAG, "Total points count: $count")
 
         // ── Facet ───────────────────────────────────────────────────────
@@ -235,12 +173,7 @@ class MainActivity : Activity() {
 
         try {
             val facetResponse = shard.facet(
-                request = FacetRequest(
-                    key = "hello",
-                    limit = 10uL,
-                    exact = false,
-                    filter = null,
-                ),
+                request = FacetRequest(key = "hello", limit = 10uL, exact = false),
             )
             Log.i(TAG, "Facet results (${facetResponse.hits.size} hits):")
             facetResponse.hits.forEach { hit ->
