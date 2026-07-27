@@ -8,9 +8,12 @@
 #   - cargo-ndk (`cargo install cargo-ndk`)
 #
 # Usage:
-#   ./build-aar.sh [--debug]
+#   ./build-aar.sh [--debug | --ci]
 #
 #   --debug   Build in debug mode (faster compile, larger binary)
+#   --ci      Fast PR-gate build: dev profile (opt-level=0, no LTO) with
+#             debuginfo off + stripped, single ABI (arm64). For the compile-only
+#             CI gate — NOT a shippable artifact. See the CI_MODE notes below.
 #
 # Release builds use the `release-mobile` Cargo profile (thin LTO, symbol
 # stripping, panic=unwind) defined in the workspace Cargo.toml.
@@ -48,9 +51,28 @@ CARGO_FLAGS="--profile release-mobile"
 # feature, so --no-default-features removes exactly that.
 FEATURE_FLAGS="--no-default-features"
 
+# CI PR-gate mode. This workflow only COMPILES (bindings + AAR + test/example
+# sources) and runs nothing on a device — the instrumented suite runs on real
+# hardware and the emulator CI job is deliberately deferred. So the gate has no
+# use for `release-mobile`'s thin-LTO + codegen-units=1 optimization (that's for
+# the shipped artifact) and just pays ~17 extra minutes for it. `--ci` builds the
+# built-in `dev` profile instead — opt-level=0, no LTO, parallel codegen — which
+# is what makes it fast.
+CI_MODE=false
+
 for arg in "$@"; do
     case "$arg" in
         --debug) PROFILE="debug"; CARGO_FLAGS="" ;;
+        --ci)
+            PROFILE="debug"; CARGO_FLAGS=""; CI_MODE=true
+            # Override the built-in dev profile via env (no Cargo.toml change, so
+            # each SDK PR stays self-contained and two PRs can't conflict on a
+            # shared profile block): drop debuginfo (the bulk of a debug .so's
+            # ~267MB) and strip, so opt-level=0 speed comes without the runner
+            # ENOSPC risk. Exports propagate to the cargo subshells below.
+            export CARGO_PROFILE_DEV_DEBUG=false
+            export CARGO_PROFILE_DEV_STRIP=symbols
+            ;;
         -h|--help)
             awk '/^#!/{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
             exit 0 ;;
@@ -69,6 +91,16 @@ ABIS=(
     "arm64-v8a"
     "x86_64"
 )
+
+# The PR gate compiles only — one ABI is enough to validate the Android
+# cross-compile and package a (throwaway) AAR, so drop x86_64. That turns the
+# gate's three full workspace compiles (two ABIs + the host bindgen lib) into
+# two. x86_64 only matters for an x86 emulator run, which this gate doesn't do;
+# the release build still ships every ABI.
+if [ "$CI_MODE" = true ]; then
+    TARGETS=( "aarch64-linux-android" )
+    ABIS=( "arm64-v8a" )
+fi
 
 # ── Preflight ───────────────────────────────────────────────────────────────
 
