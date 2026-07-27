@@ -1224,12 +1224,11 @@ mod tests {
             .sum();
         let max_segment_size_bytes = max_segment_size_kb * 1024;
 
-        // Guarantee the recovery path is actually exercised. Each appendable segment can absorb
-        // data only until it reaches `max_segment_size`, so if the data to move exceeds the
-        // combined capacity of every currently-appendable segment, the first apply must run out
-        // of eligible destinations and hit `OutOfAppendableCapacity` at least once (asserted via
-        // `capacity_failures > 0` below). Without this, extra empty appendable segments could
-        // silently absorb the whole move and turn this into a no-op regression test.
+        // Guarantee the recovery path is exercised: with the data to move exceeding the combined
+        // capacity of every appendable segment, the first apply must hit
+        // `OutOfAppendableCapacity` at least once (asserted via `capacity_failures > 0` below).
+        // Without this, spare appendable segments could silently absorb the whole move and turn
+        // this into a no-op regression test.
         let appendable_count = locked_holder
             .read()
             .iter()

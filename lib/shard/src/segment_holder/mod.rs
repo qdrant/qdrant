@@ -716,14 +716,12 @@ impl SegmentHolder {
         Ok(eligible)
     }
 
-    /// CoW-move destination candidates for one `apply_points_with_conditional_move` call.
-    ///
-    /// Computed lazily on the first point that actually needs a move (a batch that applies
-    /// fully in place must not fail just because all appendable segments are full, nor pay for
-    /// the lookup) and cached in `candidates` for the rest of the call. With no size cap armed,
-    /// every appendable segment qualifies; with a cap, only segments below it do. Callers batch
-    /// points (e.g. 32 per call), so capacity is checked once per batch, not per point; a
-    /// destination may overshoot the cap by at most one batch worth of points.
+    /// CoW-move destination candidates for one `apply_points_with_conditional_move` call,
+    /// computed lazily on the first point that actually needs a move (a batch applying fully in
+    /// place must not fail on capacity, nor pay for the lookup) and cached for the rest of the
+    /// call. Without a size cap every appendable segment qualifies; with one, only segments
+    /// below it. Callers batch points (e.g. 32 per call), so capacity is checked per batch and
+    /// a destination may overshoot the cap by at most one batch worth of points.
     fn cow_destination_candidates<'a>(
         &self,
         candidates: &'a mut Option<Vec<SegmentId>>,

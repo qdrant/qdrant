@@ -52,11 +52,8 @@ const CAPACITY_WAIT_PER_ROUND: Duration = Duration::from_secs(5);
 
 /// Outcome of [`CapacityRetry::wait_for_optimizer`].
 enum OptimizerWait {
-    /// The wanted segment state appeared.
     Satisfied,
-    /// The worker was cancelled while waiting.
     Cancelled,
-    /// The deadline passed before the state appeared.
     TimedOut,
 }
 
@@ -73,12 +70,10 @@ enum OptimizerRound {
     Stopped,
 }
 
-/// Re-signal the optimizer and wait for it to make progress. This is the one place both the
-/// capacity retry and the deferred-points wait poke the optimizer (`Nop`, in case the previous
-/// signal was consumed without launching an optimization) and wait on `optimization_finished`.
-/// Returns when the optimizer reports progress, the optional `slice` elapses (a fallback re-check
-/// for callers whose condition can change without a signal), cancellation fires, or the notifier
-/// closes. Callers own the surrounding loop, their readiness predicate, and any extra abort.
+/// Re-signal the optimizer (`Nop`, in case the previous signal was consumed without launching an
+/// optimization) and wait on `optimization_finished`: the one wake-and-wait shared by the
+/// capacity retry and the deferred-points wait. Returns on progress, an elapsed `slice` (a
+/// fallback re-check), cancellation, or a closed notifier; callers own the loop and predicate.
 async fn wait_optimizer_round(
     optimize_sender: &Sender<OptimizerSignal>,
     optimization_finished: &mut watch::Receiver<()>,
@@ -109,8 +104,7 @@ async fn wait_optimizer_round(
 }
 
 /// The shared collaborators the update worker threads into applying one operation with capacity
-/// retry. Grouping them keeps [`CapacityRetry::run`] and [`CapacityRetry::wait_for_optimizer`]
-/// from re-taking the same eight values as arguments.
+/// retry.
 struct CapacityRetry<'a> {
     collection_name: &'a CollectionId,
     wal: &'a LockedWal,
@@ -650,11 +644,9 @@ mod tests {
         (wal, operation, op_num)
     }
 
-    /// Points 1 and 2 in a non-appendable segment, plus the only appendable segment already at the
-    /// cap: any CoW move out of the first has nowhere to land.
-    ///
-    /// The points are seeded at version 0 so a replayed operation, whose op number is a WAL index,
-    /// is not skipped as already applied.
+    /// Points 1 and 2 in a non-appendable segment, plus the only appendable segment already at
+    /// the cap: a CoW move has nowhere to land. Points are seeded at version 0 so replayed
+    /// operations (op number = WAL index) are not skipped as already applied.
     fn segments_at_capacity(segments_dir: &Path) -> LockedSegmentHolder {
         let hw_counter = HardwareCounterCell::new();
         let vector = only_default_vector(&[1.0, 0.0, 1.0, 1.0]);
@@ -681,11 +673,10 @@ mod tests {
         LockedSegmentHolder::new(holder)
     }
 
-    /// Start an update worker with a stand-in optimization worker.
-    ///
-    /// The stand-in provisions one fresh appendable segment on its first `Nop` when
-    /// `provision_capacity` is set, mimicking the capacity-ensure step of a real wake-up. It
-    /// reports how many it provisioned, which doubles as an assertion that the worker asked.
+    /// Start an update worker with a stand-in optimization worker, which provisions one fresh
+    /// appendable segment on its first `Nop` when `provision_capacity` is set (mimicking the
+    /// capacity-ensure step) and reports how many it provisioned, doubling as an assertion that
+    /// the worker asked.
     fn spawn_worker(
         segments: LockedSegmentHolder,
         wal: SerdeWal<OperationWithClockTag>,
