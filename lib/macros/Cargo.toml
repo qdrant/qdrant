@@ -18,4 +18,4 @@ quote = "1.0"
 syn = "2.0"
 
 [dev-dependencies]
-prettyplease = "0.2"
+prettyplease = "0.3"
