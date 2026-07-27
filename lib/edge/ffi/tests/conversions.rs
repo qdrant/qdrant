@@ -10,7 +10,8 @@ use qdrant_edge_ffi::filter::{
 use qdrant_edge_ffi::types::{PointId, WithPayload};
 use qdrant_edge_ffi::{CountRequest, EdgeShard};
 use segment::types::{
-    Condition as SegmentCondition, Filter as SegmentFilter, PointIdType, WithPayloadInterface,
+    AnyVariants as SegmentAnyVariants, Condition as SegmentCondition, Filter as SegmentFilter,
+    Match as SegmentMatch, MatchAny, MatchExcept, PointIdType, WithPayloadInterface,
 };
 
 // ── PointId / UUID ────────────────────────────────────────────────────────────
@@ -166,8 +167,11 @@ fn filter_must_with_bad_key_returns_error() {
 
 // ── Match::Any / Match::Except conversion ─────────────────────────────────────
 // The strings-XOR-integers constraint is now enforced by the `AnyVariants` sum
-// type, so the old (None,None) / (Some,Some) error cases are unrepresentable —
-// only the valid mappings remain to check.
+// type, so the old (None,None) / (Some,Some) error cases are unrepresentable.
+// These tests pin the surviving contract: each FFI variant lands in the matching
+// engine `AnyVariants` arm, insertion order and dedup are preserved, and an empty
+// set is accepted (empty `Any` matches nothing, empty `Except` matches everything
+// — mirroring the engine's condition_checker).
 
 fn field_with_match(m: Match) -> Condition {
     Condition::Field {
@@ -184,33 +188,134 @@ fn field_with_match(m: Match) -> Condition {
     }
 }
 
+/// Convert an FFI `Match` all the way to the engine's `SegmentMatch`, so each
+/// test can inspect the landed variant and values, not just that it succeeded.
+/// (`let`-else instead of a wildcard match arm keeps `wildcard_enum_match_arm`
+/// happy — the crate denies wildcard matches on engine enums.)
+fn converted_match(m: Match) -> SegmentMatch {
+    let seg: SegmentCondition = field_with_match(m)
+        .try_into()
+        .expect("field condition should convert");
+    let SegmentCondition::Field(fc) = seg else {
+        panic!("expected a Field condition");
+    };
+    fc.r#match.expect("match should be preserved")
+}
+
 #[test]
-fn match_any_strings_ok() {
-    let cond = field_with_match(Match::Any {
+fn match_any_strings_maps_to_string_set() {
+    let m = converted_match(Match::Any {
         any: AnyVariants::Strings {
-            values: vec!["hello".to_string()],
+            values: vec!["black".to_string(), "yellow".to_string()],
         },
     });
-    let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_ok());
+    let SegmentMatch::Any(MatchAny {
+        any: SegmentAnyVariants::Strings(set),
+    }) = &m
+    else {
+        panic!("expected Any(Strings), got {m:?}");
+    };
+    assert_eq!(
+        set.iter().cloned().collect::<Vec<_>>(),
+        vec!["black".to_string(), "yellow".to_string()]
+    );
 }
 
 #[test]
-fn match_any_integers_ok() {
-    let cond = field_with_match(Match::Any {
+fn match_any_integers_maps_to_integer_set() {
+    let m = converted_match(Match::Any {
         any: AnyVariants::Integers { values: vec![1, 2] },
     });
-    let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_ok());
+    let SegmentMatch::Any(MatchAny {
+        any: SegmentAnyVariants::Integers(set),
+    }) = &m
+    else {
+        panic!("expected Any(Integers), got {m:?}");
+    };
+    assert_eq!(set.iter().copied().collect::<Vec<_>>(), vec![1, 2]);
 }
 
 #[test]
-fn match_except_integers_ok() {
-    let cond = field_with_match(Match::Except {
+fn match_except_strings_maps_to_string_set() {
+    let m = converted_match(Match::Except {
+        except: AnyVariants::Strings {
+            values: vec!["red".to_string()],
+        },
+    });
+    let SegmentMatch::Except(MatchExcept {
+        except: SegmentAnyVariants::Strings(set),
+    }) = &m
+    else {
+        panic!("expected Except(Strings), got {m:?}");
+    };
+    assert_eq!(
+        set.iter().cloned().collect::<Vec<_>>(),
+        vec!["red".to_string()]
+    );
+}
+
+#[test]
+fn match_except_integers_maps_to_integer_set() {
+    let m = converted_match(Match::Except {
         except: AnyVariants::Integers { values: vec![7] },
     });
-    let r: Result<SegmentCondition, _> = cond.try_into();
-    assert!(r.is_ok());
+    let SegmentMatch::Except(MatchExcept {
+        except: SegmentAnyVariants::Integers(set),
+    }) = &m
+    else {
+        panic!("expected Except(Integers), got {m:?}");
+    };
+    assert_eq!(set.iter().copied().collect::<Vec<_>>(), vec![7]);
+}
+
+/// The `AnyVariants` sum type makes duplicate values representable at the FFI
+/// boundary; collecting into the engine's `IndexSet` must dedup (keeping
+/// first-seen order), matching the engine's own construction.
+#[test]
+fn match_any_dedups_repeated_values() {
+    let m = converted_match(Match::Any {
+        any: AnyVariants::Integers {
+            values: vec![3, 3, 1, 1, 3],
+        },
+    });
+    let SegmentMatch::Any(MatchAny {
+        any: SegmentAnyVariants::Integers(set),
+    }) = &m
+    else {
+        panic!("expected Any(Integers), got {m:?}");
+    };
+    assert_eq!(set.iter().copied().collect::<Vec<_>>(), vec![3, 1]);
+}
+
+/// Empty `Any` is valid (it matches nothing) — the docstring promises it and the
+/// old XOR guard used to reject the "neither" case, so pin it explicitly.
+#[test]
+fn match_any_empty_set_is_valid() {
+    let m = converted_match(Match::Any {
+        any: AnyVariants::Strings { values: vec![] },
+    });
+    let SegmentMatch::Any(MatchAny {
+        any: SegmentAnyVariants::Strings(set),
+    }) = &m
+    else {
+        panic!("expected Any(Strings), got {m:?}");
+    };
+    assert!(set.is_empty());
+}
+
+/// Empty `Except` is valid (it matches everything) — same contract, other arm.
+#[test]
+fn match_except_empty_set_is_valid() {
+    let m = converted_match(Match::Except {
+        except: AnyVariants::Integers { values: vec![] },
+    });
+    let SegmentMatch::Except(MatchExcept {
+        except: SegmentAnyVariants::Integers(set),
+    }) = &m
+    else {
+        panic!("expected Except(Integers), got {m:?}");
+    };
+    assert!(set.is_empty());
 }
 
 // ── WithPayload::Fields bad key (I2) ─────────────────────────────────────────
