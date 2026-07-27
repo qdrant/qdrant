@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "tech.qdrant.edge.example"
+    namespace = "io.qdrant.edge.example"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "tech.qdrant.edge.example"
+        applicationId = "io.qdrant.edge.example"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

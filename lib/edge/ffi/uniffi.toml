@@ -1,5 +1,5 @@
 [bindings.kotlin]
-# UniFFI-generated Kotlin lands directly in the public `tech.qdrant.edge`
+# UniFFI-generated Kotlin lands directly in the public `io.qdrant.edge`
 # package — the generated bindings ARE the public API. No hand-written typealias
 # facade: it drifts, can't re-export sealed-class variants, and doesn't actually
 # encapsulate (the ffi package leaked via `api(...)` anyway). Idiomatic helpers
@@ -12,4 +12,4 @@
 # imports; uniffi.toml has no visibility switch) and the unanimous norm of
 # published Kotlin UniFFI artifacts (Matrix sdk-android, Mozilla Glean /
 # app-services, BDK). The plumbing is documented as non-API in the SDK README.
-package_name = "tech.qdrant.edge"
+package_name = "io.qdrant.edge"

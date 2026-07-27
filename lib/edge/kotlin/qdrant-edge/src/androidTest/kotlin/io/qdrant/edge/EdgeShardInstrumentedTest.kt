@@ -1,4 +1,4 @@
-package tech.qdrant.edge
+package io.qdrant.edge
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,7 +17,7 @@ import java.io.File
  * These tests exercise the real native .so via JNI, verifying the full chain:
  * UniFFI Kotlin bindings → JNA → libqdrant_edge_ffi.so.
  *
- * The generated bindings live in `tech.qdrant.edge` (this test's own package),
+ * The generated bindings live in `io.qdrant.edge` (this test's own package),
  * so the domain types need no import.
  */
 @RunWith(AndroidJUnit4::class)
