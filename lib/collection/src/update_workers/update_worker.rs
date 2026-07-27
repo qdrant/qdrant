@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -111,6 +112,7 @@ struct CapacityRetry<'a> {
     segments: &'a LockedSegmentHolder,
     update_operation_lock: &'a Arc<tokio::sync::RwLock<()>>,
     update_tracker: &'a UpdateTracker,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     optimize_sender: &'a Sender<OptimizerSignal>,
     optimization_finished: &'a watch::Receiver<()>,
     cancel: &'a CancellationToken,
@@ -131,9 +133,9 @@ impl CapacityRetry<'_> {
         hw_measurements: HwMeasurementAcc,
     ) -> Result<CollectionResult<usize>, tokio::task::JoinError> {
         let has_capacity = |segments: &LockedSegmentHolder| {
-            let segments_read = segments.read();
-            let cap = segments_read.max_segment_size_bytes();
-            segments_read.has_appendable_segment_with_capacity(cap)
+            segments
+                .read()
+                .has_appendable_segment_with_capacity(self.max_segment_size_bytes)
         };
 
         let mut operation = Some(operation);
@@ -177,6 +179,7 @@ impl CapacityRetry<'_> {
                 let segments = self.segments.clone();
                 let update_operation_lock = self.update_operation_lock.clone();
                 let update_tracker = self.update_tracker.clone();
+                let max_segment_size_bytes = self.max_segment_size_bytes;
                 let hw_measurements = hw_measurements.clone();
                 move || {
                     UpdateWorkers::update_worker_internal(
@@ -188,6 +191,7 @@ impl CapacityRetry<'_> {
                         segments,
                         update_operation_lock,
                         update_tracker,
+                        max_segment_size_bytes,
                         hw_measurements,
                     )
                 }
@@ -283,6 +287,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized: bool,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
@@ -357,6 +362,7 @@ impl UpdateWorkers {
                         segments: &segments,
                         update_operation_lock: &update_operation_lock,
                         update_tracker: &update_tracker,
+                        max_segment_size_bytes,
                         optimize_sender: &optimize_sender,
                         optimization_finished: &optimization_finished_receiver,
                         cancel: &cancel,
@@ -552,6 +558,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         hw_measurements: HwMeasurementAcc,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
@@ -578,6 +585,7 @@ impl UpdateWorkers {
                 operation,
                 update_operation_lock.clone(),
                 update_tracker.clone(),
+                max_segment_size_bytes,
                 &hw_measurements.get_counter_cell(),
             )
         });
@@ -669,8 +677,12 @@ mod tests {
         let mut holder = SegmentHolder::default();
         holder.add_new(non_appendable);
         holder.add_new(appendable);
-        holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
         LockedSegmentHolder::new(holder)
+    }
+
+    /// The cap under which the [`segments_at_capacity`] appendable segment is already full.
+    fn test_cap() -> Option<NonZeroUsize> {
+        NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES)
     }
 
     /// Start an update worker with a stand-in optimization worker, which provisions one fresh
@@ -720,6 +732,7 @@ mod tests {
             Arc::new(tokio::sync::RwLock::new(())),
             UpdateTracker::default(),
             false,
+            test_cap(),
             optimization_finished_receiver,
             Arc::new(AppliedSeqHandler::load_or_init(shard_dir, last_wal_index)),
             cancel.clone(),

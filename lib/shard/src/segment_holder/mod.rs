@@ -136,13 +136,6 @@ pub struct SegmentHolder {
     /// funnels through [`add_existing_locked`](Self::add_existing_locked) and
     /// [`remove`](Self::remove), which reconcile it.
     segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
-
-    /// Soft cap on appendable segment size for the update path, mirroring the resolved optimizer
-    /// `max_segment_size_kb` threshold (set by the shard on load and on optimizer config
-    /// updates). When set, the update path avoids inserting or CoW-moving points into appendable
-    /// segments at the cap and reports [`OperationError::OutOfAppendableCapacity`] when none is
-    /// below it; `None` disables capacity checks (any appendable segment is a valid destination).
-    max_segment_size_bytes: Option<NonZeroUsize>,
 }
 
 impl Drop for SegmentHolder {
@@ -628,18 +621,6 @@ impl SegmentHolder {
             .collect()
     }
 
-    /// Set the soft cap on appendable segment size used by the update path.
-    ///
-    /// Mirrors the resolved optimizer `max_segment_size_kb` threshold; `None` disables capacity
-    /// checks. See [`SegmentHolder::max_segment_size_bytes`].
-    pub fn set_max_segment_size_bytes(&mut self, max_segment_size_bytes: Option<NonZeroUsize>) {
-        self.max_segment_size_bytes = max_segment_size_bytes;
-    }
-
-    pub fn max_segment_size_bytes(&self) -> Option<NonZeroUsize> {
-        self.max_segment_size_bytes
-    }
-
     /// Whether at least one appendable segment is below the given size cap.
     ///
     /// `false` when there are no appendable segments at all. Eligibility follows
@@ -693,8 +674,8 @@ impl SegmentHolder {
         eligible
     }
 
-    /// Appendable segments eligible as write destinations under the configured size cap, with
-    /// their measured sizes.
+    /// Appendable segments eligible as write destinations under the given size cap, with their
+    /// measured sizes.
     ///
     /// This is the single origin of [`OperationError::OutOfAppendableCapacity`], returned when
     /// appendable segments exist but every measurable one reached the cap. The updater recovers
@@ -702,12 +683,13 @@ impl SegmentHolder {
     /// re-applying the operation; already-applied points are then skipped by their point version.
     fn appendable_segments_with_capacity(
         &self,
+        max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> OperationResult<Vec<(SegmentId, Option<usize>)>> {
-        let eligible = self.eligible_appendable_segments(self.max_segment_size_bytes);
+        let eligible = self.eligible_appendable_segments(max_segment_size_bytes);
 
         if eligible.is_empty()
             && !self.appendable_segments.is_empty()
-            && let Some(max_segment_size_bytes) = self.max_segment_size_bytes
+            && let Some(max_segment_size_bytes) = max_segment_size_bytes
         {
             return Err(OperationError::OutOfAppendableCapacity {
                 max_segment_size_bytes: max_segment_size_bytes.get(),
@@ -725,10 +707,11 @@ impl SegmentHolder {
     fn cow_destination_candidates<'a>(
         &self,
         candidates: &'a mut Option<Vec<SegmentId>>,
+        max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> OperationResult<&'a [SegmentId]> {
         if candidates.is_none() {
-            let computed = if self.max_segment_size_bytes.is_some() {
-                self.appendable_segments_with_capacity()?
+            let computed = if max_segment_size_bytes.is_some() {
+                self.appendable_segments_with_capacity(max_segment_size_bytes)?
                     .into_iter()
                     .map(|(segment_id, _size)| segment_id)
                     .collect()
@@ -767,8 +750,11 @@ impl SegmentHolder {
     /// - Service error when there are no appendable segments at all.
     ///
     /// If capacity is not important use `random_appendable_segment` instead because it is cheaper.
-    pub fn smallest_appendable_segment(&self) -> OperationResult<LockedSegment> {
-        let candidates = self.appendable_segments_with_capacity()?;
+    pub fn smallest_appendable_segment(
+        &self,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> OperationResult<LockedSegment> {
+        let candidates = self.appendable_segments_with_capacity(max_segment_size_bytes)?;
 
         // Prefer the smallest measurable candidate; fall back to a random one when none could
         // be measured.
@@ -1110,6 +1096,7 @@ impl SegmentHolder {
         ids: &[PointIdType],
         mut point_operation: F,
         mut point_cow_operation: G,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
@@ -1141,8 +1128,8 @@ impl SegmentHolder {
             let is_applied = if can_apply_operation {
                 point_operation(point_id, write_segment)?
             } else {
-                let destination_candidates =
-                    self.cow_destination_candidates(&mut destination_cache)?;
+                let destination_candidates = self
+                    .cow_destination_candidates(&mut destination_cache, max_segment_size_bytes)?;
                 self.aloha_random_write(
                     destination_candidates,
                     |appendable_idx, appendable_write_segment| {

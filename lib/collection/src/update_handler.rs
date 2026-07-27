@@ -80,7 +80,8 @@ pub struct UpdateHandler {
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Appendable-segment size cap, from the same threshold resolution the optimizers were built
-    /// with (`build_optimizers` returns both). `run_workers` arms the segment holder with it.
+    /// with (`build_optimizers` returns both). Handed to the update and optimization workers,
+    /// which pass it down the apply path; synchronous WAL replay passes `None` instead.
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_segment_size_bytes: Option<NonZeroUsize>,
     /// Log of optimizer statuses
@@ -196,16 +197,6 @@ impl UpdateHandler {
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
-        // Arm the appendable-segment size cap, on shard creation and on optimizer config updates
-        // (which restart the workers). With the cap set, the update path reports
-        // `OutOfAppendableCapacity` instead of growing an appendable segment past
-        // `max_segment_size`; the optimizer wake-up then provisions a fresh segment and recovery
-        // re-applies the operation. Synchronous WAL replay disarms the cap for its own window
-        // (see `load_from_wal`).
-        self.segments
-            .write()
-            .set_max_segment_size_bytes(self.max_segment_size_bytes);
-
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
 
         // Optimization notifier is triggered when a new optimization is finished
@@ -225,6 +216,7 @@ impl UpdateHandler {
                 self.max_optimization_threads,
                 self.has_triggered_optimizers.clone(),
                 self.payload_index_schema.clone(),
+                self.max_segment_size_bytes,
                 self.scroll_read_lock.clone(),
                 self.update_tracker.clone(),
                 optimization_finished_sender,
@@ -252,6 +244,7 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             self.prevent_unoptimized,
+            self.max_segment_size_bytes,
             optimization_finished_receiver,
             applied_seq_handler,
             cancel,

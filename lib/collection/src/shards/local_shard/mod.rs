@@ -739,15 +739,6 @@ impl LocalShard {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
         let wal = self.wal.wal.lock().await;
 
-        // Disarm the appendable-segment size cap for the synchronous replay below: it applies
-        // operations exactly as originally accepted, and a capacity error here could not recover
-        // (optimizer wake-ups only process signals once the shard serves updates) and would fail
-        // the whole shard load. Re-armed below from the update handler, the cap's authority, once
-        // the replay succeeds. Every error return in between fails the whole shard load, after
-        // which this shard object is discarded (panic or dummy-shard replacement), so a disarmed
-        // cap cannot leak into a serving shard.
-        self.segments.write().set_max_segment_size_bytes(None);
-
         let from = wal.first_index();
         let last_wal_index = from + wal.len(false);
 
@@ -889,6 +880,11 @@ impl LocalShard {
                 update.operation,
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
+                // Synchronous replay applies operations exactly as originally accepted, without
+                // the appendable-segment size cap: a capacity error here could not recover
+                // (optimizer wake-ups only process signals once the shard serves updates) and
+                // would fail the whole shard load.
+                None,
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
@@ -946,14 +942,6 @@ impl LocalShard {
             // version.
             segments.flush_all(FlushMode::Sync, true)?;
         }
-
-        // Synchronous replay is done; re-arm the appendable-segment size cap here rather than at
-        // the end of the function, so the cap is back before the queued WAL tail reaches the
-        // update worker.
-        let max_segment_size_bytes = self.update_handler.lock().await.max_segment_size_bytes;
-        self.segments
-            .write()
-            .set_max_segment_size_bytes(max_segment_size_bytes);
 
         bar.finish();
         if !show_progress_bar {

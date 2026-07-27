@@ -127,7 +127,7 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
         },
     ];
 
-    let updated = upsert_points_raw(&holder, 100, points.iter(), &hw_counter).unwrap();
+    let updated = upsert_points_raw(&holder, 100, points.iter(), None, &hw_counter).unwrap();
     assert_eq!(updated, 1);
 
     {
@@ -189,6 +189,7 @@ fn test_sync_points_raw() {
         None,
         None,
         &[point_2, point_3, point_100],
+        None,
         &hw_counter,
     )
     .unwrap();
@@ -383,7 +384,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
     let filter = city_filter("Amsterdam");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
     let updated =
-        set_payload_by_filter(&holder, 10, &payload, &filter, &None, &hw_counter).unwrap();
+        set_payload_by_filter(&holder, 10, &payload, &filter, &None, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -409,7 +410,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
     let filter = city_filter("Berlin");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
     let updated =
-        set_payload_by_filter(&holder, 10, &payload, &filter, &None, &hw_counter).unwrap();
+        set_payload_by_filter(&holder, 10, &payload, &filter, &None, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -453,7 +454,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
-    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, &hw_counter).unwrap();
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -478,7 +479,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
-    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, &hw_counter).unwrap();
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -521,7 +522,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
     holder.add_new(appendable);
 
     let filter = city_filter("Amsterdam");
-    let updated = clear_payload_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -545,7 +546,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
     let sid_app = holder.add_new(appendable);
 
     let filter = city_filter("Berlin");
-    let updated = clear_payload_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -589,7 +590,8 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, &hw_counter).unwrap();
+    let updated =
+        overwrite_payload_by_filter(&holder, 10, &payload, &filter, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -614,7 +616,8 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, &hw_counter).unwrap();
+    let updated =
+        overwrite_payload_by_filter(&holder, 10, &payload, &filter, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -659,7 +662,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
     let filter = city_filter("Amsterdam");
     let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
     let deleted =
-        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, &hw_counter).unwrap();
+        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None, &hw_counter).unwrap();
 
     assert!(deleted > 0, "Should have deleted at least one vector");
 }
@@ -685,7 +688,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
     let filter = city_filter("Berlin");
     let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
     let deleted =
-        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, &hw_counter).unwrap();
+        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None, &hw_counter).unwrap();
 
     assert_eq!(
         deleted, 0,
@@ -796,7 +799,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     seed(&mut in_place);
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(in_place);
-    upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
+    upsert_points(&holder, 101, [&incoming], None, &hw_counter).unwrap();
     let segment = holder.get(sid).unwrap().get();
     check(&*segment.read(), "in-place");
 
@@ -811,7 +814,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     let mut holder = SegmentHolder::default();
     holder.add_new(source);
     let sid = holder.add_new(destination);
-    upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
+    upsert_points(&holder, 101, [&incoming], None, &hw_counter).unwrap();
     let segment = holder.get(sid).unwrap().get();
     check(&*segment.read(), "CoW move");
 }
@@ -930,7 +933,7 @@ fn test_capacity_error_when_all_appendable_at_cap() {
     let mut holder = SegmentHolder::default();
     holder.add_new(non_appendable);
     holder.add_new(appendable);
-    holder.set_max_segment_size_bytes(NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES));
+    let max_segment_size_bytes = NonZeroUsize::new(2 * TEST_POINT_SIZE_BYTES);
 
     // Setting payload on the points of the non-appendable segment needs to CoW-move them,
     // but no appendable segment is below the cap: the operation must fail with the
@@ -942,6 +945,7 @@ fn test_capacity_error_when_all_appendable_at_cap() {
         &payload_json! {"town": "Amsterdam"},
         &points,
         &None,
+        max_segment_size_bytes,
         &hw_counter,
     )
     .expect_err("no appendable segment below the cap can accept the moved points");
@@ -952,7 +956,7 @@ fn test_capacity_error_when_all_appendable_at_cap() {
 
     // The insert path reports the same error instead of writing past the cap.
     let err = holder
-        .smallest_appendable_segment()
+        .smallest_appendable_segment(max_segment_size_bytes)
         .expect_err("even the smallest appendable segment is at the cap");
     assert!(
         err.is_out_of_appendable_capacity(),

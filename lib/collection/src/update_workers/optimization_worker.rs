@@ -55,6 +55,7 @@ impl UpdateWorkers {
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        max_segment_size_bytes: Option<std::num::NonZeroUsize>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         optimization_finished_sender: watch::Sender<()>,
@@ -140,6 +141,7 @@ impl UpdateWorkers {
                 wal.clone(),
                 update_operation_lock.clone(),
                 update_tracker.clone(),
+                max_segment_size_bytes,
             )
             .await
             .is_err()
@@ -517,6 +519,7 @@ impl UpdateWorkers {
         wal: LockedWal,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<std::num::NonZeroUsize>,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
@@ -536,6 +539,7 @@ impl UpdateWorkers {
                         operation.operation,
                         update_operation_lock.clone(),
                         update_tracker.clone(),
+                        max_segment_size_bytes,
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
                     );
                     match result {
@@ -627,6 +631,7 @@ mod tests {
             Arc::new(TokioMutex::new(wal)),
             Arc::new(tokio::sync::RwLock::new(())),
             UpdateTracker::default(),
+            None,
         )
         .await
         .expect("a declined operation must not abort recovery");

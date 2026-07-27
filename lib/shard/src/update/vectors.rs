@@ -1,5 +1,7 @@
 //! Named-vector operations: update and delete vectors of existing points.
 
+use std::num::NonZeroUsize;
+
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
@@ -17,6 +19,7 @@ pub fn update_vectors_conditional(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: UpdateVectorsOp,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let UpdateVectorsOp {
@@ -25,7 +28,7 @@ pub fn update_vectors_conditional(
     } = points;
 
     let Some(filter_condition) = update_filter else {
-        return update_vectors(segments, op_num, points, hw_counter);
+        return update_vectors(segments, op_num, points, max_segment_size_bytes, hw_counter);
     };
 
     let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
@@ -34,7 +37,7 @@ pub fn update_vectors_conditional(
         select_excluded_by_filter_ids(segments, point_ids, filter_condition, hw_counter)?;
 
     points.retain(|p| !points_to_exclude.contains(&p.id));
-    update_vectors(segments, op_num, points, hw_counter)
+    update_vectors(segments, op_num, points, max_segment_size_bytes, hw_counter)
 }
 
 /// Update the specified named vectors of a point, keeping unspecified vectors intact.
@@ -42,6 +45,7 @@ fn update_vectors(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: Vec<PointVectorsPersisted>,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
@@ -70,6 +74,7 @@ fn update_vectors(
                     updated_vectors.insert_ref(vector_name, vector_ref);
                 }
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -91,6 +96,7 @@ pub fn delete_vectors(
     op_num: SeqNumberType,
     points: &[PointIdType],
     vector_names: &[VectorNameBuf],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
@@ -109,6 +115,7 @@ pub fn delete_vectors(
             |_, raw_vectors, _, _| {
                 raw_vectors.retain(|(name, _)| !vector_names.contains(name));
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &modified_points)?;
@@ -130,11 +137,18 @@ pub fn delete_vectors_by_filter(
     op_num: SeqNumberType,
     filter: &Filter,
     vector_names: &[VectorNameBuf],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    let vectors_deleted =
-        delete_vectors(segments, op_num, &affected_points, vector_names, hw_counter)?;
+    let vectors_deleted = delete_vectors(
+        segments,
+        op_num,
+        &affected_points,
+        vector_names,
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if vectors_deleted == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.

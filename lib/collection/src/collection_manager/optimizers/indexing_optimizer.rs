@@ -634,6 +634,7 @@ mod tests {
             &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -699,6 +700,7 @@ mod tests {
             &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -1241,11 +1243,9 @@ mod tests {
              failure is forced",
         );
 
-        // Arm the appendable segment size cap, as `UpdateHandler::run_workers` does on a real
+        // The size cap the apply path is driven with, as the update worker passes it on a real
         // shard.
-        locked_holder
-            .write()
-            .set_max_segment_size_bytes(std::num::NonZeroUsize::new(max_segment_size_bytes));
+        let cap = std::num::NonZeroUsize::new(max_segment_size_bytes);
 
         let payload_schema_file = segments_dir.path().join("payload.schema");
         let payload_index_schema: std::sync::Arc<
@@ -1280,6 +1280,7 @@ mod tests {
                 &locked_holder.read(),
                 payload_op_num,
                 payload_op.clone(),
+                cap,
                 &hw_counter,
             );
             match result {

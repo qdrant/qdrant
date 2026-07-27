@@ -1,5 +1,7 @@
 //! Payload operations: set, delete, clear and overwrite payloads.
 
+use std::num::NonZeroUsize;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
 use segment::json_path::JsonPath;
@@ -20,6 +22,7 @@ pub fn set_payload(
     payload: &Payload,
     points: &[PointIdType],
     key: &Option<JsonPath>,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
@@ -33,6 +36,7 @@ pub fn set_payload(
                 Some(key) => old_payload.merge_by_key(payload, key),
                 None => old_payload.merge(payload),
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
 
@@ -55,10 +59,19 @@ pub fn set_payload_by_filter(
     payload: &Payload,
     filter: &Filter,
     key: &Option<JsonPath>,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    let points_updated = set_payload(segments, op_num, payload, &affected_points, key, hw_counter)?;
+    let points_updated = set_payload(
+        segments,
+        op_num,
+        payload,
+        &affected_points,
+        key,
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if points_updated == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -74,6 +87,7 @@ pub fn delete_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
     keys: &[PayloadKeyType],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
@@ -94,6 +108,7 @@ pub fn delete_payload(
                     payload.remove(key);
                 }
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
 
@@ -115,10 +130,18 @@ pub fn delete_payload_by_filter(
     op_num: SeqNumberType,
     filter: &Filter,
     keys: &[PayloadKeyType],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    let points_updated = delete_payload(segments, op_num, &affected_points, keys, hw_counter)?;
+    let points_updated = delete_payload(
+        segments,
+        op_num,
+        &affected_points,
+        keys,
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if points_updated == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -133,6 +156,7 @@ pub fn clear_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: &[PointIdType],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
@@ -143,6 +167,7 @@ pub fn clear_payload(
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
             |_, _, _, payload| payload.0.clear(),
+            max_segment_size_bytes,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -163,10 +188,17 @@ pub fn clear_payload_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     filter: &Filter,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
-    let points_cleared = clear_payload(segments, op_num, &points_to_clear, hw_counter)?;
+    let points_cleared = clear_payload(
+        segments,
+        op_num,
+        &points_to_clear,
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if points_cleared == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -182,6 +214,7 @@ pub fn overwrite_payload(
     op_num: SeqNumberType,
     payload: &Payload,
     points: &[PointIdType],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
@@ -194,6 +227,7 @@ pub fn overwrite_payload(
             |_, _, _, old_payload| {
                 *old_payload = payload.clone();
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
 
@@ -215,11 +249,18 @@ pub fn overwrite_payload_by_filter(
     op_num: SeqNumberType,
     payload: &Payload,
     filter: &Filter,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    let points_updated =
-        overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)?;
+    let points_updated = overwrite_payload(
+        segments,
+        op_num,
+        payload,
+        &affected_points,
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if points_updated == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
