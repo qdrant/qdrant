@@ -199,17 +199,18 @@ where
         )?;
 
         res += updated_points.len();
-        // Insert new points, which was not updated or existed
-        let new_point_ids: Vec<PointIdType> = ids_chunk
+        // Insert new points, which were not updated or existed. Peekable rather than collected:
+        // only their existence is needed before iterating them below.
+        let mut new_point_ids = ids_chunk
             .iter()
             .copied()
             .filter(|x| !updated_points.contains(x))
-            .collect();
+            .peekable();
 
         // Only look up an insert destination when there is something to insert: the lookup
         // fails with `OutOfAppendableCapacity` when all appendable segments are at the size
         // cap, and a chunk that updated every point in place needs no capacity at all.
-        if !new_point_ids.is_empty() {
+        if new_point_ids.peek().is_some() {
             let default_write_segment =
                 segments.smallest_appendable_segment(max_segment_size_bytes)?;
 
