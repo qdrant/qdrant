@@ -991,7 +991,10 @@ impl UpdateFailureKind {
     /// Whether the failed operation sits in `failed_operation` awaiting recovery (and thus pins
     /// the WAL acknowledge).
     pub fn queues_for_recovery(self) -> bool {
-        !matches!(self, Self::Permanent)
+        match self {
+            Self::Backpressure | Self::Transient => true,
+            Self::Permanent => false,
+        }
     }
 }
 
