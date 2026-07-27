@@ -342,7 +342,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     }
 
     pub fn layout(&self) -> Layout {
-        Layout::from_size_align(self.quantized_vector_size(), align_of::<f32>()).unwrap()
+        Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
     pub fn get_metadata(&self) -> &Metadata {
