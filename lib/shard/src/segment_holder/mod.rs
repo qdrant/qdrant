@@ -138,13 +138,10 @@ pub struct SegmentHolder {
     segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
 
     /// Soft cap on appendable segment size for the update path, mirroring the resolved optimizer
-    /// `max_segment_size_kb` threshold (set by the shard on load and on optimizer config updates).
-    ///
-    /// When set, the update path avoids inserting or CoW-moving points into appendable segments
-    /// whose vector size already reached the cap, and reports
-    /// [`OperationError::OutOfAppendableCapacity`] when no appendable segment is below it. `None`
-    /// disables capacity checks (the pre-existing behavior: any appendable segment is a valid
-    /// destination, regardless of size).
+    /// `max_segment_size_kb` threshold (set by the shard on load and on optimizer config
+    /// updates). When set, the update path avoids inserting or CoW-moving points into appendable
+    /// segments at the cap and reports [`OperationError::OutOfAppendableCapacity`] when none is
+    /// below it; `None` disables capacity checks (any appendable segment is a valid destination).
     max_segment_size_bytes: Option<NonZeroUsize>,
 }
 
@@ -656,15 +653,14 @@ impl SegmentHolder {
             .is_empty()
     }
 
-    /// Appendable segments below the given size cap, with their measured sizes.
+    /// Appendable segments below the given size cap, with their measured sizes. Segments that
+    /// cannot be measured right now (read-lock contention, size errors) stay eligible and report
+    /// `None`: the cap is soft and liveness wins over precision. With no cap, every appendable
+    /// segment is eligible.
     ///
-    /// Segments that cannot be measured right now (read-lock contention, size errors) stay
-    /// eligible and report `None`: the cap is a soft limit and liveness wins over precision.
-    /// With no cap, every appendable segment is eligible.
-    ///
-    /// Single origin of the eligibility semantics: every capacity decision (the destination
-    /// filter, the capacity error, the updater's wait predicate, the optimizer's ensure step)
-    /// derives from this list so they can never disagree.
+    /// Single origin of the eligibility semantics: every capacity decision (destination filter,
+    /// capacity error, the updater's wait predicate, the optimizer's ensure step) derives from
+    /// this list so they can never disagree.
     fn eligible_appendable_segments(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,

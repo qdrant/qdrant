@@ -189,13 +189,12 @@ impl UpdateHandler {
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
-        // Mirror the resolved optimizer size threshold into the segment holder, both on shard
-        // creation and on optimizer config updates (which restart the workers). With the cap set,
-        // the update path reports `OutOfAppendableCapacity` instead of growing an appendable
-        // segment past `max_segment_size`; the failed operation then wakes the optimizer, whose
-        // capacity-ensure step provisions a fresh appendable segment, and failed-operation
+        // Mirror the resolved optimizer size threshold into the segment holder, on shard creation
+        // and on optimizer config updates (which restart the workers). With the cap set, the
+        // update path reports `OutOfAppendableCapacity` instead of growing an appendable segment
+        // past `max_segment_size`; the optimizer wake-up then provisions a fresh segment and
         // recovery re-applies the operation. Synchronous WAL replay disarms the cap for its own
-        // window (see `load_from_wal`), since no recovery loop is processing signals there.
+        // window (see `load_from_wal`).
         if let Some(optimizer) = self.optimizers.first() {
             self.segments
                 .write()

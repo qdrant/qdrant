@@ -736,15 +736,11 @@ impl LocalShard {
         let wal = self.wal.wal.lock().await;
 
         // Disarm the appendable-segment size cap for the synchronous replay below: it applies
-        // operations exactly as they were originally accepted. A capacity error here could not
-        // recover (recovery runs on optimizer wake-ups, which only process signals once the
-        // shard serves updates) and would fail the whole shard load. The cap re-arms after the
-        // replay, before the remaining WAL tail is queued to the update worker, where recovery
-        // is live.
-        //
-        // Restored by a guard rather than inline: the replay below returns early on several
-        // error paths, and leaving the cap disarmed there would let the shard run uncapped for
-        // its whole lifetime.
+        // operations exactly as originally accepted, and a capacity error here could not recover
+        // (optimizer wake-ups only process signals once the shard serves updates) and would fail
+        // the whole shard load. Restored by a drop guard because the replay returns early on
+        // several error paths; left disarmed there, the shard would run uncapped for its whole
+        // lifetime.
         struct RearmCapOnDrop<'a> {
             segments: &'a LockedSegmentHolder,
             cap: Option<std::num::NonZeroUsize>,

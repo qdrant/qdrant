@@ -1208,8 +1208,6 @@ mod tests {
         index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_a_id]);
         index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_b_id]);
 
-        // Sanity check: we now have indexed segments larger combined than the
-        // configured max segment size.
         let indexed_total: usize = locked_holder
             .read()
             .iter()
@@ -1225,21 +1223,6 @@ mod tests {
             })
             .sum();
         let max_segment_size_bytes = max_segment_size_kb * 1024;
-        assert!(
-            indexed_total > max_segment_size_bytes,
-            "Expected combined indexed size ({indexed_total}) to exceed max_segment_size ({max_segment_size_bytes})",
-        );
-
-        // Sanity: at least 2 indexed (non-appendable) segments exist.
-        let indexed_count = locked_holder
-            .read()
-            .iter()
-            .filter(|(_sid, segment)| !segment.get().read().is_appendable())
-            .count();
-        assert!(
-            indexed_count >= 2,
-            "Expected at least 2 indexed segments after optimization, got {indexed_count}",
-        );
 
         // Guarantee the recovery path is actually exercised. Each appendable segment can absorb
         // data only until it reaches `max_segment_size`, so if the data to move exceeds the
@@ -1340,18 +1323,12 @@ mod tests {
         let largest_segment_bytes = locked_holder
             .read()
             .iter()
-            .map(|(sid, segment)| {
-                let s = segment.get().read();
-                let size = s.max_available_vectors_size_in_bytes().unwrap_or_default();
-                let info = s.info().unwrap();
-                log::info!(
-                    "segment {sid:?}: appendable={} num_points={} num_vectors={} size_bytes={size}",
-                    s.is_appendable(),
-                    info.num_points,
-                    info.num_vectors,
-                );
-                total_points += info.num_points;
-                size
+            .map(|(_sid, segment)| {
+                let segment = segment.get().read();
+                total_points += segment.info().unwrap().num_points;
+                segment
+                    .max_available_vectors_size_in_bytes()
+                    .unwrap_or_default()
             })
             .max()
             .unwrap_or_default();

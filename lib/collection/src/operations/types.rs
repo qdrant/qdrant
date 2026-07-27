@@ -2060,17 +2060,18 @@ impl PeerMetadata {
 mod tests {
     use super::*;
 
-    /// The capacity condition carries a typed reason through the `OperationError` conversion, so
-    /// the update worker and replica set detect it structurally rather than by message text.
+    /// The capacity condition carries a typed reason through the `OperationError` conversion (so
+    /// consumers detect it structurally, not by message text), and the failure disposition is the
+    /// single policy for what happens to a failed operation: queued dispositions pin the WAL
+    /// acknowledge for recovery, a permanent one must not (or the acknowledge stalls forever).
     #[test]
-    fn test_out_of_appendable_capacity_is_typed() {
-        let err = CollectionError::from(OperationError::OutOfAppendableCapacity {
+    fn test_capacity_condition_typed_and_dispositions() {
+        let capacity = CollectionError::from(OperationError::OutOfAppendableCapacity {
             max_segment_size_bytes: 1024,
         });
-
         assert!(
             matches!(
-                err,
+                capacity,
                 CollectionError::ShardUnavailable {
                     reason: ShardUnavailableReason::OutOfAppendableCapacity {
                         max_segment_size_bytes: 1024,
@@ -2078,28 +2079,10 @@ mod tests {
                     ..
                 }
             ),
-            "capacity failures must carry the typed reason with its payload: {err}",
+            "capacity failures must carry the typed reason with its payload: {capacity}",
         );
-        assert!(
-            err.is_out_of_appendable_capacity(),
-            "the update worker would stop retrying capacity failures: {err}",
-        );
-        assert!(
-            err.is_transient(),
-            "failed-operation recovery must re-apply the operation",
-        );
-    }
-
-    /// The disposition is the single policy for what happens to a failed operation: queued
-    /// dispositions pin the WAL acknowledge for recovery, a permanent one must not (or the
-    /// acknowledge stalls forever). Each arm is load-bearing for a different consumer: the
-    /// updater's queue/drop choice, recovery's abort/skip choice, and the worker's optimizer
-    /// nudge.
-    #[test]
-    fn test_failed_update_disposition() {
-        let capacity = CollectionError::from(OperationError::OutOfAppendableCapacity {
-            max_segment_size_bytes: 1024,
-        });
+        assert!(capacity.is_out_of_appendable_capacity());
+        assert!(capacity.is_transient());
         assert_eq!(
             capacity.failed_update_disposition(),
             FailedUpdateDisposition::Backpressure,
