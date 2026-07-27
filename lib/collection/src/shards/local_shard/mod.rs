@@ -738,28 +738,14 @@ impl LocalShard {
         // Disarm the appendable-segment size cap for the synchronous replay below: it applies
         // operations exactly as originally accepted, and a capacity error here could not recover
         // (optimizer wake-ups only process signals once the shard serves updates) and would fail
-        // the whole shard load. Restored by a drop guard because the replay returns early on
-        // several error paths; left disarmed there, the shard would run uncapped for its whole
-        // lifetime.
-        struct RearmCapOnDrop<'a> {
-            segments: &'a LockedSegmentHolder,
-            cap: Option<std::num::NonZeroUsize>,
-        }
-
-        impl Drop for RearmCapOnDrop<'_> {
-            fn drop(&mut self) {
-                self.segments.write().set_max_segment_size_bytes(self.cap);
-            }
-        }
-
-        let rearm_cap = {
+        // the whole shard load. Re-armed below once the replay succeeds. Every error return in
+        // between fails the whole shard load, after which this shard object is discarded (panic
+        // or dummy-shard replacement), so a disarmed cap cannot leak into a serving shard.
+        let armed_cap = {
             let mut segments = self.segments.write();
             let cap = segments.max_segment_size_bytes();
             segments.set_max_segment_size_bytes(None);
-            RearmCapOnDrop {
-                segments: &self.segments,
-                cap,
-            }
+            cap
         };
 
         let from = wal.first_index();
@@ -961,10 +947,10 @@ impl LocalShard {
             segments.flush_all(FlushMode::Sync, true)?;
         }
 
-        // Synchronous replay is done; re-arm the appendable-segment size cap for the queued WAL
-        // tail and everything after. Explicit rather than left to the end of the function, so the
-        // cap is back before the tail reaches the update worker.
-        drop(rearm_cap);
+        // Synchronous replay is done; re-arm the appendable-segment size cap here rather than at
+        // the end of the function, so the cap is back before the queued WAL tail reaches the
+        // update worker.
+        self.segments.write().set_max_segment_size_bytes(armed_cap);
 
         bar.finish();
         if !show_progress_bar {
