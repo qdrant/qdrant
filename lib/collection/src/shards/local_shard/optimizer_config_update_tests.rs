@@ -148,6 +148,69 @@ mod tests {
         shard.stop_gracefully().await;
     }
 
+    /// The appendable-segment size cap must reach the segment holder through the real wiring
+    /// (resolved optimizer thresholds -> `UpdateHandler` field -> `run_workers` arming), both at
+    /// shard creation and on optimizer config updates. The capacity tests arm the holder directly
+    /// to isolate the mechanism, so without this test the arming in `run_workers` could be
+    /// deleted, silently disabling the whole capacity recovery, and the suite would stay green.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn optimizer_config_update_arms_segment_size_cap() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+        let mut config = create_collection_config();
+        config.optimizer_config.max_segment_size = Some(100);
+
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+        let shard = LocalShard::build(
+            0,
+            "test".to_string(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            payload_index_schema,
+            update_runtime.clone(),
+            search_runtime.clone(),
+            ResourceBudget::default(),
+            config.optimizer_config.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            shard
+                .segments
+                .read()
+                .max_segment_size_bytes()
+                .map(|c| c.get()),
+            Some(100 * 1024),
+            "shard creation must arm the holder with the configured cap",
+        );
+
+        {
+            let mut shard_config = shard.collection_config.write().await;
+            shard_config.optimizer_config.max_segment_size = Some(200);
+        }
+
+        shard.on_optimizer_config_update().await.unwrap();
+
+        assert_eq!(
+            shard
+                .segments
+                .read()
+                .max_segment_size_bytes()
+                .map(|c| c.get()),
+            Some(200 * 1024),
+            "an optimizer config update must re-arm the holder with the new cap",
+        );
+
+        shard.stop_gracefully().await;
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn optimizer_config_update_clears_optimizer_errors() {
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
