@@ -506,13 +506,16 @@ pub struct ScoredPoint {
     pub score: f32,
     /// Payload as a JSON object string, or `None`/`null` if the request
     /// did not ask for payload.
+    #[uniffi(default = None)]
     pub payload: Option<String>,
     /// Vectors as a JSON string, or `None`/`null` if the request did not
     /// ask for vectors.
+    #[uniffi(default = None)]
     pub vector: Option<String>,
     /// The `order_by` key value this hit was sorted on, for an order-by query;
     /// `None` otherwise. Feed into [`StartFrom`](crate::ops::query::StartFrom)
     /// to resume ordered pagination.
+    #[uniffi(default = None)]
     pub order_value: Option<OrderValue>,
 }
 
@@ -552,12 +555,15 @@ pub struct Record {
     /// The point's identifier.
     pub id: PointId,
     /// Payload as a JSON object string, or `None`/`null` if not requested.
+    #[uniffi(default = None)]
     pub payload: Option<String>,
     /// Vectors as a JSON string, or `None`/`null` if not requested.
+    #[uniffi(default = None)]
     pub vector: Option<String>,
     /// The `order_by` key value this record was sorted on, for an order-by
     /// scroll; `None` otherwise. Feed into
     /// [`StartFrom`](crate::ops::query::StartFrom) to resume ordered pagination.
+    #[uniffi(default = None)]
     pub order_value: Option<OrderValue>,
 }
 
