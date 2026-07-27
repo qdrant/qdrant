@@ -147,8 +147,11 @@ pub trait Madviseable {
 
     /// Hint to the OS that pages backing this memory map can be reclaimed.
     ///
-    /// Uses `madvise(MADV_PAGEOUT)` on Linux 5.4+, which writes back any dirty
-    /// pages and frees the resident memory while keeping the mapping valid.
+    /// Uses `madvise(MADV_PAGEOUT)` on Linux 5.4+, which reclaims resident
+    /// memory while keeping the mapping valid. Not all pages are reclaimed:
+    /// dirty file-backed pages are kept (only kswapd may write them back, not
+    /// this direct-reclaim context), as are pages mapped by more than one page
+    /// table — see [`Madviseable::drop_page_tables`] for that case.
     /// On older kernels or non-Linux platforms this is a no-op, since there is
     /// no portable userspace equivalent.
     fn clear_cache(&self) {
@@ -209,8 +212,8 @@ pub trait Madviseable {
 /// Issue `madvise(MADV_PAGEOUT)` for the given memory region.
 ///
 /// Mmap base addresses are always page-aligned, so callers do not need to
-/// adjust the slice. The kernel will write back any dirty pages and reclaim
-/// the resident memory while keeping the mapping valid.
+/// adjust the slice. The kernel reclaims resident memory while keeping the
+/// mapping valid; dirty file-backed pages are skipped, not written back.
 #[cfg(target_os = "linux")]
 fn pageout_slice(slice: &[u8]) {
     if slice.is_empty() {
