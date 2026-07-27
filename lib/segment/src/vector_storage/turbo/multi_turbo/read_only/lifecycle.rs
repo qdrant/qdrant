@@ -10,8 +10,8 @@ use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
-use crate::vector_storage::turbo::multi_turbo::OFFSETS_PATH;
-use crate::vector_storage::turbo::shared::{self, DELETED_PATH, VECTORS_PATH};
+use crate::vector_storage::turbo::multi_turbo::OFFSETS_DIR_PATH;
+use crate::vector_storage::turbo::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 
 impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
@@ -24,14 +24,14 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         advice: AdviceSetting,
         populate: Populate,
     ) -> OperationResult<()> {
-        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
+        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_DIR_PATH), populate)?;
         ChunkedVectorsRead::<MultivectorMmapOffset, S>::preopen(
             fs,
-            &path.join(OFFSETS_PATH),
+            &path.join(OFFSETS_DIR_PATH),
             advice,
             populate,
         )?;
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_PATH))?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
         Ok(())
     }
 
@@ -51,7 +51,7 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
 
         let storage = QuantizedChunkedStorageRead::open(
             fs,
-            &path.join(VECTORS_PATH),
+            &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
         )?;
         // The chunked read backend maps lazily; warm it when the profile asks.
@@ -59,9 +59,10 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
             storage.populate()?;
         }
 
-        let offsets = ChunkedVectorsRead::open(fs, &path.join(OFFSETS_PATH), 1, advice, populate)?;
+        let offsets =
+            ChunkedVectorsRead::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 
         Ok(Self {
             storage,

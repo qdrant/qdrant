@@ -25,7 +25,7 @@ use crate::data_types::vectors::DenseVector;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::prefill_deleted::fill_turbo;
 use crate::vector_storage::turbo::shared::{
-    DELETED_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_PATH,
+    DELETED_DIR_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
 };
 use crate::vector_storage::turbo::{
     AppendableMmapTurboVectorStorage, TurboVectorStorageImpl, open_appendable_turbo_vector_storage,
@@ -525,8 +525,8 @@ fn files_and_immutable_files_match_expected_layout() {
         open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
     insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
 
-    let vectors_dir = dir.path().join(VECTORS_PATH);
-    let deleted_dir = dir.path().join(DELETED_PATH);
+    let vectors_dir = dir.path().join(VECTORS_DIR_PATH);
+    let deleted_dir = dir.path().join(DELETED_DIR_PATH);
 
     // Hardcoded, not derived from the backend's own constants (the ones
     // `files()` itself uses) — sharing them would make this check circular

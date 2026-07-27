@@ -24,8 +24,11 @@ pub(crate) const TQDT_BITS: TQBits = TQBits::Bits4;
 pub(crate) const TQDT_MODE: TQMode = TQMode::Normal;
 pub(crate) const TQDT_ROTATION: TQRotation = TQRotation::Unpadded;
 
+/// Encoded vectors file of the single-file (non-appendable) layout.
 pub(crate) const VECTORS_PATH: &str = "tq_vectors.dat";
-pub(crate) const DELETED_PATH: &str = "deleted.dat";
+/// Encoded vectors directory (chunked) of the appendable layout.
+pub(crate) const VECTORS_DIR_PATH: &str = "tq_vectors";
+pub(crate) const DELETED_DIR_PATH: &str = "deleted";
 
 /// Build the quantizer for a dense `Turbo4` storage; fully determined by
 /// `(dim, distance)` and the fixed TQDT constants.

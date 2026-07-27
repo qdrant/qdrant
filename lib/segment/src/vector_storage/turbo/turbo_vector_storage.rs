@@ -25,7 +25,7 @@ use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
 
-use super::shared::{self, DELETED_PATH, VECTORS_PATH};
+use super::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
@@ -168,7 +168,11 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
         fs_err::create_dir_all(path)?;
         let deleted = BitvecFlags::new(
             MmapFs,
-            DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), Populate::from(populate))?,
+            DynamicStoredFlags::open(
+                &MmapFs,
+                &path.join(DELETED_DIR_PATH),
+                Populate::from(populate),
+            )?,
         )?;
         let deleted_count = deleted.count_trues();
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];

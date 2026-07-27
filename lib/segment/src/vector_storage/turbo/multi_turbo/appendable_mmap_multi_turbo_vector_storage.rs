@@ -25,7 +25,9 @@ use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
 use smallvec::{SmallVec, smallvec};
 
-use super::super::shared::{DELETED_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_PATH};
+use super::super::shared::{
+    DELETED_DIR_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
+};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
@@ -46,7 +48,7 @@ use crate::vector_storage::{
     VectorStorage, VectorStorageRead,
 };
 
-pub(crate) const OFFSETS_PATH: &str = "tq_offsets.dat";
+pub(crate) const OFFSETS_DIR_PATH: &str = "tq_offsets";
 
 /// Multivector storage for TurboQuant encoded inner vectors.
 pub struct AppendableMmapMultiTurboVectorStorage {
@@ -120,14 +122,14 @@ pub fn open_appendable_turbo_multi_vector_storage(
 
     let storage = QuantizedChunkedStorage::new(
         MmapFs,
-        &path.join(VECTORS_PATH),
+        &path.join(VECTORS_DIR_PATH),
         quantizer.quantized_size(),
         in_ram,
     )?;
 
     let offsets = ChunkedVectors::open(
         MmapFs,
-        &path.join(OFFSETS_PATH),
+        &path.join(OFFSETS_DIR_PATH),
         1,
         AdviceSetting::Global,
         populate,
@@ -135,7 +137,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
 
     let deleted = BitvecFlags::new(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_PATH), populate)?,
+        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_DIR_PATH), populate)?,
     )?;
     let deleted_count = deleted.count_trues();
 
@@ -1889,9 +1891,9 @@ mod tests {
             &hw_counter,
         );
 
-        let vectors_dir = dir.path().join("tq_vectors.dat");
-        let offsets_dir = dir.path().join("tq_offsets.dat");
-        let deleted_dir = dir.path().join("deleted.dat");
+        let vectors_dir = dir.path().join("tq_vectors");
+        let offsets_dir = dir.path().join("tq_offsets");
+        let deleted_dir = dir.path().join("deleted");
 
         // Hardcoded, not derived from the constants `files()` itself uses.
         let mut expected_files = vec![
