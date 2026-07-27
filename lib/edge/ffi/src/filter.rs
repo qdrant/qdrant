@@ -318,12 +318,16 @@ pub enum Match {
     Prefix { prefix: String },
     /// The field value must equal any of the given strings or integers.
     Any {
+        #[uniffi(default = None)]
         strings: Option<Vec<String>>,
+        #[uniffi(default = None)]
         integers: Option<Vec<i64>>,
     },
     /// The field value must equal none of the given strings or integers.
     Except {
+        #[uniffi(default = None)]
         strings: Option<Vec<String>>,
+        #[uniffi(default = None)]
         integers: Option<Vec<i64>>,
     },
 }

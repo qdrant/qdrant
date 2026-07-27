@@ -170,6 +170,7 @@ pub enum Query {
         vector: NamedVector,
         /// Name of the vector field to search. Pass `None`/`null` to
         /// target the default (unnamed) field.
+        #[uniffi(default = None)]
         using: Option<String>,
     },
     /// Recommendation by example: score points against positive and negative
@@ -180,8 +181,10 @@ pub enum Query {
         /// Vectors the results should be dissimilar to.
         negatives: Vec<NamedVector>,
         /// Scoring strategy; defaults to `BestScore` when unset.
+        #[uniffi(default = None)]
         strategy: Option<RecommendStrategy>,
         /// Vector field to search; `None`/`null` for the default field.
+        #[uniffi(default = None)]
         using: Option<String>,
     },
     /// Discovery search: guided by a target vector, constrained by context
@@ -192,6 +195,7 @@ pub enum Query {
         /// Positive/negative pairs steering the search.
         context: Vec<ContextPair>,
         /// Vector field to search; `None`/`null` for the default field.
+        #[uniffi(default = None)]
         using: Option<String>,
     },
     /// Context search: rank by how well points fit the context pairs alone,
@@ -200,6 +204,7 @@ pub enum Query {
         /// Positive/negative pairs defining the context.
         context: Vec<ContextPair>,
         /// Vector field to search; `None`/`null` for the default field.
+        #[uniffi(default = None)]
         using: Option<String>,
     },
     /// Feedback search: re-rank around a target using graded relevance
@@ -212,6 +217,7 @@ pub enum Query {
         /// Scoring coefficients.
         coefficients: FeedbackCoefficients,
         /// Vector field to search; `None`/`null` for the default field.
+        #[uniffi(default = None)]
         using: Option<String>,
     },
 }
@@ -360,6 +366,7 @@ pub enum ScoringQuery {
         /// The query vector relevance is measured against.
         vector: NamedVector,
         /// Vector field to search; `None`/`null` for the default field.
+        #[uniffi(default = None)]
         using: Option<String>,
         /// Diversity/relevance trade-off in `[0, 1]`: `0` = full diversity,
         /// `1` = full relevance.
@@ -450,6 +457,7 @@ pub enum Fusion {
         /// Per-prefetch weights, aligned with `QueryRequest.prefetches`.
         /// Higher weight = more influence on the fused ranking; `None`/`null`
         /// weighs all branches equally.
+        #[uniffi(default = None)]
         weights: Option<Vec<f32>>,
     },
     /// Distribution-based Score Fusion.

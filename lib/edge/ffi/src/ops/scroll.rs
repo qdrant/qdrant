@@ -109,5 +109,6 @@ pub struct ScrollResponse {
     pub records: Vec<Record>,
     /// Opaque cursor to pass as the `offset` on the next scroll call, or
     /// `None`/`null` if the scroll is complete.
+    #[uniffi(default = None)]
     pub next_offset: Option<PointId>,
 }
