@@ -1203,13 +1203,17 @@ impl CollectionError {
     /// [`ShardUnavailableReason::to_metadata_pairs`] / [`ShardUnavailableReason::from_metadata`]
     /// codec pair).
     pub fn is_out_of_appendable_capacity(&self) -> bool {
-        matches!(
-            self,
-            Self::ShardUnavailable {
-                reason: ShardUnavailableReason::OutOfAppendableCapacity { .. },
-                ..
-            }
-        )
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "only the typed reason matters"
+        )]
+        match self {
+            Self::ShardUnavailable { reason, .. } => match reason {
+                ShardUnavailableReason::OutOfAppendableCapacity { .. } => true,
+                ShardUnavailableReason::Unspecified => false,
+            },
+            _ => false,
+        }
     }
 
     /// How the update pipeline handles this error when an operation fails: see
