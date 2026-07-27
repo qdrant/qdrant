@@ -7,7 +7,7 @@ use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::types::Distance;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
-use crate::vector_storage::turbo::shared::{self, DELETED_PATH, VECTORS_PATH};
+use crate::vector_storage::turbo::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 
 impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
@@ -20,7 +20,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
         populate: Populate,
     ) -> OperationResult<()> {
         QuantizedStorage::<S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_PATH))?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
         Ok(())
     }
 
@@ -43,7 +43,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
             storage.populate();
         }
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 
         Ok(Self {
             storage,

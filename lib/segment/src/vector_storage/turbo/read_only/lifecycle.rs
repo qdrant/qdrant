@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
-use super::super::shared::{self, DELETED_PATH, VECTORS_PATH};
+use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use super::ReadOnlyChunkedTurboVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
@@ -19,8 +19,8 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_PATH))?;
+        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_DIR_PATH), populate)?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
         Ok(())
     }
 
@@ -37,7 +37,7 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
         let quantizer = shared::build_quantizer(dim, distance);
         let storage = QuantizedChunkedStorageRead::open(
             fs,
-            &path.join(VECTORS_PATH),
+            &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
         )?;
 
@@ -46,7 +46,7 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
             storage.populate()?;
         }
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 
         Ok(Self {
             storage,
