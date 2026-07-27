@@ -68,10 +68,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       # Regenerates the bindings from the current FFI and builds the iOS+macOS
-      # XCFramework (tvOS/visionOS are tier-3, excluded here).
+      # XCFramework (tvOS/visionOS are tier-3, excluded here). `build-ci` drops
+      # release-mobile's two slow knobs — thin-LTO and codegen-units=1 — but keeps
+      # opt-level (a Swift static lib balloons at opt-level=0), so it compiles far
+      # faster yet still runs the tests and stays small. Not the shipped artifact.
       - name: Build XCFramework (iOS + macOS)
         working-directory: lib/edge/swift
-        run: make build
+        run: make build-ci
 
       # Fail-closed mobile-safety gate: the mobile build drops the default-on
       # `matrix` feature, so the O(n^2) `search_matrix` op must be absent from
