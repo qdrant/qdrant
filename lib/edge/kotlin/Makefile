@@ -71,6 +71,10 @@ build: ## Build native libs + Kotlin bindings (release-mobile profile)
 build-debug: ## Build native libs + Kotlin bindings (debug)
 	@bash $(SCRIPT_DIR)build-aar.sh --debug
 
+.PHONY: build-ci
+build-ci: ## Build native libs + Kotlin bindings (fast PR-gate profile, arm64 only)
+	@bash $(SCRIPT_DIR)build-aar.sh --ci
+
 .PHONY: aar
 aar: build ## Build the AAR (release-mobile, requires Gradle / Android SDK)
 	cd $(SCRIPT_DIR) && ./gradlew :qdrant-edge:assembleRelease
