@@ -32,6 +32,7 @@ pub mod mmap;
 pub mod num_traits;
 pub mod panic;
 pub mod persisted_hashmap;
+pub mod prefetch;
 pub mod process_counter;
 pub mod process_cpu_usage;
 pub mod progress_tracker;

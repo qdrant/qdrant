@@ -6,8 +6,7 @@ use fs_err as fs;
 use rand::SeedableRng as _;
 use rand::rngs::SmallRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
-use segment::data_types::vectors::VectorElementType;
-use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
+use segment::fixtures::index_fixtures::{TestRawScorerProducer, preprocessed_random_vectors};
 use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -119,13 +118,11 @@ where
         .unwrap();
     let mut storage = open_dense_vector_storage(tmp.path(), dim, distance, false).unwrap();
 
-    // Regenerate the exact vectors from `make_cached_graph` (same seed + preprocess).
+    // Regenerate the exact vectors from `make_cached_graph` (same seed and
+    // generation sequence, via the shared `preprocessed_random_vectors`).
     let mut rng = SmallRng::seed_from_u64(42);
-    let mut vectors = (0..num_vectors).map(|_| {
-        let v = random_vector(&mut rng, dim);
-        let v = distance.preprocess_vector::<VectorElementType>(v);
-        (std::borrow::Cow::Owned(v), false)
-    });
+    let mut vectors = preprocessed_random_vectors(&mut rng, dim, distance, num_vectors)
+        .map(|v| (std::borrow::Cow::Owned(v), false));
     let VectorStorageEnum::DenseMemmap(mmap_storage) = &mut storage else {
         panic!("expected DenseMemmap storage");
     };

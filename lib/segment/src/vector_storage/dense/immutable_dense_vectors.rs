@@ -114,10 +114,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         Some(offset)
     }
 
-    /// Whether the backing storage reads via io_uring, which copies into an
-    /// owned buffer rather than borrowing from an mmap.
-    pub fn is_io_uring(&self) -> bool {
-        TypedStorage::<ReadOnly<S>, T>::kind() == common::universal_io::UniversalKind::IoUring
+    /// Whether the backing storage kind makes cache-prefetch hints worthwhile,
+    /// i.e. reads are zero-I/O borrows of already-mapped memory.
+    /// See [`common::universal_io::UniversalKind::prefetch_is_cheap`].
+    pub fn prefetch_is_cheap(&self) -> bool {
+        TypedStorage::<ReadOnly<S>, T>::kind().prefetch_is_cheap()
     }
 
     /// Read one vector from storage at the given byte offset.
@@ -305,8 +306,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         self.data.for_each_in_batch(keys, f)
     }
 
-    pub fn is_io_uring(&self) -> bool {
-        self.data.is_io_uring()
+    pub fn prefetch_is_cheap(&self) -> bool {
+        self.data.prefetch_is_cheap()
     }
 
     /// Marks the key as deleted.

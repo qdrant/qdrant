@@ -39,6 +39,24 @@ impl UniversalKind {
         }
     }
 
+    /// Whether issuing a CPU cache-prefetch hint for data of this kind is
+    /// worthwhile. True only when reads are zero-I/O borrows of already-mapped
+    /// memory. Kinds that copy on read (io_uring) or may fetch on demand to
+    /// serve a borrow (disk caches, remote object stores) return false, since
+    /// "prefetching" there degenerates into a full synchronous read.
+    pub fn prefetch_is_cheap(self) -> bool {
+        match self {
+            UniversalKind::Mmap => true,
+            UniversalKind::IoUring
+            | UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::UioGrpc => false,
+        }
+    }
+
     pub fn can_be_async(self) -> bool {
         match self {
             UniversalKind::Mmap => false,

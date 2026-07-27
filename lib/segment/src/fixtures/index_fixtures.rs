@@ -23,6 +23,24 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVect
     (0..size).map(|_| rnd_gen.random_range(-1.0..1.0)).collect()
 }
 
+/// Deterministic sequence of preprocessed random vectors.
+///
+/// The single source of the `rng -> random_vector -> preprocess_vector`
+/// sequence: every storage populated from the same seed through this helper
+/// holds identical vectors, so an HNSW graph built against one storage stays
+/// valid against another (relied upon by the `fixture` bench module).
+pub fn preprocessed_random_vectors<'a, R: Rng + ?Sized>(
+    rng: &'a mut R,
+    dim: usize,
+    distance: Distance,
+    count: usize,
+) -> impl Iterator<Item = DenseVector> + 'a {
+    (0..count).map(move |_| {
+        let vector = random_vector(rng, dim);
+        distance.preprocess_vector::<VectorElementType>(vector)
+    })
+}
+
 pub struct TestRawScorerProducer {
     storage: VectorStorageEnum,
     deleted_points: BitVec,
@@ -39,11 +57,15 @@ impl TestRawScorerProducer {
     ) -> Self {
         let mut storage = new_volatile_dense_vector_storage(dim, distance);
         let hw_counter = HardwareCounterCell::new();
-        for offset in 0..num_vectors as PointOffsetType {
-            let rnd_vec = random_vector(rng, dim);
-            let rnd_vec = distance.preprocess_vector::<VectorElementType>(rnd_vec);
+        for (offset, rnd_vec) in
+            preprocessed_random_vectors(rng, dim, distance, num_vectors).enumerate()
+        {
             storage
-                .insert_vector(offset, VectorRef::from(&rnd_vec), &hw_counter)
+                .insert_vector(
+                    offset as PointOffsetType,
+                    VectorRef::from(&rnd_vec),
+                    &hw_counter,
+                )
                 .unwrap();
         }
 

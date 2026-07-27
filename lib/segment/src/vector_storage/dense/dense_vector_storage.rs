@@ -237,10 +237,8 @@ where
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
-    fn get_dense_is_borrowed(&self) -> bool {
-        // io_uring reads copy into an owned buffer; prefetching would trigger a
-        // redundant read, so gate it off there. mmap reads borrow.
-        !self.vectors.as_ref().unwrap().is_io_uring()
+    fn prefetch_is_cheap(&self) -> bool {
+        self.vectors.as_ref().unwrap().prefetch_is_cheap()
     }
 
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
