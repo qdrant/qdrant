@@ -1406,7 +1406,9 @@ impl From<tonic::Status> for CollectionError {
             // A replica reporting a shard-unavailable condition tags the status with its reason
             // metadata; rebuild the typed reason so the replica set recognizes a self-healing
             // capacity failure structurally instead of matching the message text. An untagged
-            // `Unavailable` is any other transient unavailability and keeps the generic handling.
+            // `Unavailable` is any other transient unavailability and keeps the pre-existing
+            // generic mapping to a transient service error, deliberately unchanged by this
+            // conversion's restructuring.
             tonic::Code::Unavailable => {
                 match ShardUnavailableReason::from_metadata(err.metadata()) {
                     Some(reason) => Self::ShardUnavailable {
