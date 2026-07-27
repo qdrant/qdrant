@@ -17,7 +17,7 @@ dependencyResolutionManagement {
 rootProject.name = "qdrant-edge-kotlin"
 
 // Single published module: the UniFFI-generated bindings (package
-// `tech.qdrant.edge`, set in lib/edge/ffi/uniffi.toml) ARE the public API, so
+// `io.qdrant.edge`, set in lib/edge/ffi/uniffi.toml) ARE the public API, so
 // there is no separate low-level bindings module and no typealias facade — the
 // generated Kotlin + native .so + suspend helpers all live in `:qdrant-edge`.
 include(":qdrant-edge")

@@ -104,7 +104,7 @@ size: ## Show per-ABI .so size breakdown
 clean: ## Remove build outputs
 	rm -rf $(SCRIPT_DIR)qdrant-edge/src/main/jniLibs/*/libqdrant_edge_ffi.so
 	# Only the generated binding — Coroutines.kt shares this dir and is hand-written.
-	rm -f $(SCRIPT_DIR)qdrant-edge/src/main/kotlin/tech/qdrant/edge/qdrant_edge_ffi.kt
+	rm -f $(SCRIPT_DIR)qdrant-edge/src/main/kotlin/io/qdrant/edge/qdrant_edge_ffi.kt
 	rm -rf $(SCRIPT_DIR)qdrant-edge/build
 	rm -rf $(SCRIPT_DIR)example/build
 	rm -rf $(SCRIPT_DIR).gradle $(SCRIPT_DIR)build

@@ -152,7 +152,7 @@ jobs:
         working-directory: lib/edge/kotlin
         run: |
           set -euo pipefail
-          f=qdrant-edge/src/main/kotlin/tech/qdrant/edge/qdrant_edge_ffi.kt
+          f=qdrant-edge/src/main/kotlin/io/qdrant/edge/qdrant_edge_ffi.kt
           # Fail closed if the file we must scan is missing (an `if grep … "$f"`
           # on an absent file is a false condition under set -e, i.e. would
           # silently pass the exclusion check).

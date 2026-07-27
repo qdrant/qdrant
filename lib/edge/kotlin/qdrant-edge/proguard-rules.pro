@@ -6,4 +6,4 @@
 -dontwarn java.awt.*
 -keep class com.sun.jna.** { *; }
 -keep class * implements com.sun.jna.** { *; }
--keep class tech.qdrant.edge.** { *; }
+-keep class io.qdrant.edge.** { *; }
