@@ -78,37 +78,38 @@ def multivector_collection_setup(
     assert response.ok
 
 def test_multi_default_is_avg_vector(collection_name):
-    params = {
+    examples = {
         "positive": [[1, 2]],
         "negative": [[3, 4]],
-        "exact": True,
-        "limit": 10,
     }
 
     default_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            **params,
+            "query": {"recommend": examples},
+            "params": {"exact": True},
+            "limit": 10,
         },
     )
     assert default_response.ok
 
     # we should only get 3 because we don't have more
-    assert len(default_response.json()["result"]) == 3
+    assert len(default_response.json()["result"]["points"]) == 3
 
     avg_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            **params,
-            "strategy": "average_vector",
+            "query": {"recommend": {**examples, "strategy": "average_vector"}},
+            "params": {"exact": True},
+            "limit": 10,
         },
     )
     assert avg_response.ok
-    assert len(avg_response.json()["result"]) == 3
+    assert len(avg_response.json()["result"]["points"]) == 3
 
     assert default_response.json()["result"] == avg_response.json()["result"]
 
@@ -117,28 +118,24 @@ def test_multi_single_vs_batch(collection_name):
     # Bunch of valid examples
     params_list = [
         {
-            "positive": [1],
-            "negative": [3],
+            "query": {"recommend": {"positive": [1], "negative": [3]}},
             "limit": 1,
         },
         {
-            # no negative because it's optional with this strategy
-            "negative": [1, 2],
-            "exact": True,
-            "strategy": "best_score",
+            # no positive because it's optional with this strategy
+            "query": {"recommend": {"negative": [1, 2], "strategy": "best_score"}},
+            "params": {"exact": True},
             "limit": 1,
         },
         {
-            "positive": [1],
-            "negative": [],
-            "exact": True,
-            "strategy": "average_vector",
+            "query": {"recommend": {"positive": [1], "negative": [], "strategy": "average_vector"}},
+            "params": {"exact": True},
             "limit": 1,
         },
     ]
 
     batch_response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend/batch",
+        api="/collections/{collection_name}/points/query/batch",
         method="POST",
         path_params={"collection_name": collection_name},
         body={"searches": params_list},
@@ -150,7 +147,7 @@ def test_multi_single_vs_batch(collection_name):
     # Compare against sequential single searches
     for i, params in enumerate(params_list):
         single_response = request_with_validation(
-            api="/collections/{collection_name}/points/recommend",
+            api="/collections/{collection_name}/points/query",
             method="POST",
             path_params={"collection_name": collection_name},
             body=params,
@@ -161,18 +158,16 @@ def test_multi_single_vs_batch(collection_name):
 
 def test_multi_without_positives(collection_name):
     def req_with_positives(positive, strategy=None):
-        if strategy is None:
-            strat_dict = {}
-        else:
-            strat_dict = {"strategy": strategy}
+        recommend = {"positive": positive}
+        if strategy is not None:
+            recommend["strategy"] = strategy
 
         return request_with_validation(
-            api="/collections/{collection_name}/points/recommend",
+            api="/collections/{collection_name}/points/query",
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "positive": positive,
-                **strat_dict,
+                "query": {"recommend": recommend},
                 "limit": 2,
             },
         )
@@ -181,32 +176,33 @@ def test_multi_without_positives(collection_name):
     response = req_with_positives([[1, 2]])
     assert response.ok
 
-    # But all these are not
+    # But all these are not. An empty vector is a malformed example, rejected
+    # once the query runs...
     response = req_with_positives([[]])
     assert response.status_code == 400
 
     response = req_with_positives([[]], "average_vector")
     assert response.status_code == 400
 
-    # Also no negative and no positive is invalid with best_score
+    # ...whereas no examples at all violates a `RecommendInput` validation rule
+    # and is rejected before that, hence 422.
     response = req_with_positives([], "best_score")
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 def test_multi_best_score_works_with_only_negatives(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "negative": [[1, 2]],
-            "strategy": "best_score",
+            "query": {"recommend": {"negative": [[1, 2]], "strategy": "best_score"}},
             "limit": 5,
         },
     )
     assert response.ok
-    assert len(response.json()["result"]) == 3
+    assert len(response.json()["result"]["points"]) == 3
 
     # All scores should be negative
-    for result in response.json()["result"]:
+    for result in response.json()["result"]["points"]:
         assert result["score"] < 0

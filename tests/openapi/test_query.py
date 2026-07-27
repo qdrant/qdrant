@@ -121,41 +121,16 @@ def root_and_rescored_query(collection_name, query, limit=None, with_payload=Non
 
 
 def test_basic_search(collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "vector": [0.1, 0.2, 0.3, 0.4],
-            "limit": 10,
-        },
-    )
-    assert response.ok
-    search_result = response.json()["result"]
-
     default_query_result = root_and_rescored_query(collection_name, [0.1, 0.2, 0.3, 0.4])
 
     nearest_query_result = root_and_rescored_query(collection_name, {"nearest": [0.1, 0.2, 0.3, 0.4]})
 
-    assert search_result == default_query_result
-    assert search_result == nearest_query_result
+    assert default_query_result == nearest_query_result
 
 
 # Test basic search with huge limit, it must not panic with allocation failure
 # See: <https://github.com/qdrant/qdrant/issues/5483>
 def test_basic_search_high_limit(collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "vector": [0.1, 0.2, 0.3, 0.4],
-            "limit": 18446744073709551615, # u64::MAX
-        },
-    )
-    assert response.ok
-    search_result = response.json()["result"]
-
     default_query_result = root_and_rescored_query(
         collection_name,
         [0.1, 0.2, 0.3, 0.4],
@@ -168,8 +143,7 @@ def test_basic_search_high_limit(collection_name):
         limit=18446744073709551615, # u64::MAX
     )
 
-    assert search_result == default_query_result
-    assert search_result == nearest_query_result
+    assert default_query_result == nearest_query_result
 
 
 def test_basic_scroll(collection_name):
@@ -226,43 +200,16 @@ def test_basic_scroll_offset(collection_name):
         assert record.get("payload") == scored_point.get("payload")
 
 def test_basic_recommend_avg(collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "positive": [1, 2, 3, 4],  # ids
-            "negative": [3],  # ids
-            "limit": 10,
-        },
-    )
-    assert response.ok
-    recommend_result = response.json()["result"]
-
     query_result = root_and_rescored_query(collection_name,
         {
             "recommend": {"positive": [1, 2, 3, 4], "negative": [3]},  # ids
         }
     )
 
-    assert recommend_result == query_result
+    assert len(query_result) > 0
 
 
 def test_basic_recommend_best_score(collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "positive": [1, 2, 3, 4],  # ids
-            "negative": [3],  # ids
-            "limit": 10,
-            "strategy": "best_score",
-        },
-    )
-    assert response.ok
-    recommend_result = response.json()["result"]
-
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -280,23 +227,10 @@ def test_basic_recommend_best_score(collection_name):
     assert response.ok
     query_result = response.json()["result"]["points"]
 
-    assert recommend_result == query_result
+    assert len(query_result) > 0
 
 
 def test_basic_discover(collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "target": 2,  # ids
-            "context": [{"positive": 3, "negative": 4}],  # ids
-            "limit": 10,
-        },
-    )
-    assert response.ok
-    discover_result = response.json()["result"]
-
     query_result = root_and_rescored_query(collection_name,
         {
             "discover": {
@@ -306,22 +240,10 @@ def test_basic_discover(collection_name):
         },
     )
 
-    assert discover_result == query_result
+    assert len(query_result) > 0
 
 
 def test_basic_context(collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "context": [{"positive": 2, "negative": 4}],
-            "limit": 100,
-        },
-    )
-    assert response.ok
-    context_result = response.json()["result"]
-
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -336,7 +258,7 @@ def test_basic_context(collection_name):
     assert response.ok
     query_result = response.json()["result"]["points"]
 
-    assert set([p["id"] for p in context_result]) == set([p["id"] for p in query_result])
+    assert len(query_result) > 0
 
 
 def test_basic_order_by(collection_name):
@@ -384,28 +306,28 @@ def test_basic_random_query(collection_name):
 
 def test_basic_rrf(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.1, 0.2, 0.3, 0.4],
+            "query": [0.1, 0.2, 0.3, 0.4],
             "limit": 10,
         },
     )
     assert response.ok
-    search_result_1 = response.json()["result"]
+    search_result_1 = response.json()["result"]["points"]
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.5, 0.6, 0.7, 0.8],
+            "query": [0.5, 0.6, 0.7, 0.8],
             "limit": 10,
         },
     )
     assert response.ok
-    search_result_2 = response.json()["result"]
+    search_result_2 = response.json()["result"]["points"]
 
     rrf_expected = reciprocal_rank_fusion([search_result_1, search_result_2], limit=10)
 
@@ -437,28 +359,28 @@ def test_basic_rrf(collection_name):
 def test_weighted_rrf(collection_name):
     """Test RRF with weights parameter."""
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.1, 0.2, 0.3, 0.4],
+            "query": [0.1, 0.2, 0.3, 0.4],
             "limit": 10,
         },
     )
     assert response.ok
-    search_result_1 = response.json()["result"]
+    search_result_1 = response.json()["result"]["points"]
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.5, 0.6, 0.7, 0.8],
+            "query": [0.5, 0.6, 0.7, 0.8],
             "limit": 10,
         },
     )
     assert response.ok
-    search_result_2 = response.json()["result"]
+    search_result_2 = response.json()["result"]["points"]
 
     # Test with weights [3.0, 1.0] - first source has 3x weight
     weights = [3.0, 1.0]
@@ -517,28 +439,28 @@ def test_weighted_rrf(collection_name):
 
 def test_basic_dbsf(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.1, 0.2, 0.3, 0.4],
+            "query": [0.1, 0.2, 0.3, 0.4],
             "limit": 10,
         },
     )
     assert response.ok
-    search_result_1 = response.json()["result"]
+    search_result_1 = response.json()["result"]["points"]
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.5, 0.6, 0.7, 0.8],
+            "query": [0.5, 0.6, 0.7, 0.8],
             "limit": 10,
         },
     )
     assert response.ok
-    search_result_2 = response.json()["result"]
+    search_result_2 = response.json()["result"]["points"]
 
     dbsf_expected = distribution_based_score_fusion([search_result_1, search_result_2], limit=10)
 

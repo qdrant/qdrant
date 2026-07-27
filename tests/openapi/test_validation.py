@@ -58,11 +58,11 @@ def test_validation_body_param(collection_name):
 def test_validation_search_hnsw_ef_zero(collection_name):
     # HNSW search ef must be a positive beam size.
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "params": {"hnsw_ef": 0},
         }

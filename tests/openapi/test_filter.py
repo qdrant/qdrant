@@ -13,11 +13,11 @@ def setup(on_disk_vectors, collection_name):
 
 def test_match_any(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -34,9 +34,9 @@ def test_match_any(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json['result']) == 3
+    assert len(json['result']['points']) == 3
 
-    ids = [x['id'] for x in json['result']]
+    ids = [x['id'] for x in json['result']['points']]
     assert 2 in ids
     assert 3 in ids
     assert 4 in ids
@@ -45,11 +45,11 @@ def test_match_any(collection_name):
 def test_just_key(collection_name):
     # the filter will be ignored as the condition is not well-formed
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
