@@ -2,6 +2,7 @@ use std::hint::black_box;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use common::bench_cache::{build_once, cache_path};
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
@@ -185,35 +186,21 @@ fn ranges_full_file<T>() -> impl Iterator<Item = ((), ReadRange)> {
 }
 
 fn make_random_file() -> PathBuf {
-    let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(env!("CARGO_PKG_NAME"))
-        .join(env!("CARGO_CRATE_NAME"))
-        .join(format!("random-{FILE_SIZE_BYTES}.bin"));
+    build_once(cache_path!("random-{FILE_SIZE_BYTES}"), |path| {
+        let mut file = fs::File::create(path).unwrap();
+        let mut rng = SmallRng::seed_from_u64(42);
+        let mut buffer = vec![0; 1024 * 1024];
+        let mut bytes_left = FILE_SIZE_BYTES as usize;
 
-    if let Ok(metadata) = fs::metadata(&path)
-        && metadata.len() == FILE_SIZE_BYTES
-    {
-        return path;
-    }
+        while bytes_left > 0 {
+            let len = bytes_left.min(buffer.len());
+            rng.fill_bytes(&mut buffer[..len]);
+            file.write_all(&buffer[..len]).unwrap();
+            bytes_left -= len;
+        }
 
-    eprintln!("Building random benchmark file at {path:?}...");
-    fs_err::create_dir_all(path.parent().unwrap()).unwrap();
-
-    let mut file = fs::File::create(&path).unwrap();
-    let mut rng = SmallRng::seed_from_u64(42);
-    let mut buffer = vec![0; 1024 * 1024];
-    let mut bytes_left = FILE_SIZE_BYTES as usize;
-
-    while bytes_left > 0 {
-        let len = bytes_left.min(buffer.len());
-        rng.fill_bytes(&mut buffer[..len]);
-        file.write_all(&buffer[..len]).unwrap();
-        bytes_left -= len;
-    }
-
-    file.flush().unwrap();
-    eprintln!("Random benchmark file cached at {path:?}.");
-    path
+        file.flush().unwrap();
+    })
 }
 
 criterion_group! {

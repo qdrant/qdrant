@@ -1,11 +1,11 @@
 #![cfg_attr(not(target_os = "linux"), expect(clippy::unit_arg))]
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+use common::bench_cache::{build_once, cache_path};
 use common::persisted_hashmap::{MmapHashMap, UniversalHashMap, serialize_hashmap};
 use common::universal_io::{OpenOptions, UniversalIoError, UniversalReadFileOps};
 use criterion::{Criterion, criterion_group, criterion_main};
-use fs_err as fs;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
@@ -147,28 +147,13 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
 }
 
 fn make_serialized_hashmap(count: usize) -> PathBuf {
-    let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(env!("CARGO_PKG_NAME"))
-        .join(env!("CARGO_CRATE_NAME"))
-        .join(format!("hashmap-{count}.bin"));
-
-    if !path.exists() {
-        eprintln!("Building serialized hashmap at {path:?}...");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-
+    build_once(cache_path!("hashmap-{count}"), |path| {
         let mut rng = SmallRng::seed_from_u64(42);
         let map = gen_map(&mut rng, count);
 
-        serialize_hashmap::<str, u32>(
-            &path,
-            map.iter().map(|(k, v)| (k.as_str(), v.iter().copied())),
-        )
-        .unwrap();
-    }
-
-    let size = fs::metadata(&path).unwrap().len();
-    eprintln!("Serialized hashmap at {path:?} ({size} bytes)");
-    path
+        let it = map.iter().map(|(k, v)| (k.as_str(), v.iter().copied()));
+        serialize_hashmap::<str, u32>(path, it).unwrap();
+    })
 }
 
 fn gen_map(rng: &mut SmallRng, count: usize) -> BTreeMap<String, Vec<u32>> {

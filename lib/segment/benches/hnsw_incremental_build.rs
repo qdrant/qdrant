@@ -11,10 +11,10 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use clap::Parser;
+use common::bench_cache::{cache_path, cached_json};
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::{FeatureFlags, feature_flags, init_feature_flags};
-use common::fs::{atomic_save_json, read_json};
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
 use fs_err as fs;
@@ -157,11 +157,6 @@ fn main() {
         .tempdir()
         .unwrap();
 
-    let cache_path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(env!("CARGO_PKG_NAME"))
-        .join(env!("CARGO_CRATE_NAME"));
-    fs::create_dir_all(&cache_path).unwrap();
-
     // Load the dataset or generate random vectors.
     let (dataset_mmap, dataset);
     let vectors_mem;
@@ -238,13 +233,13 @@ fn main() {
         args.distance,
     );
     let initial_index_path = if args.cache {
-        cache_path.join(format!(
+        cache_path!(
             "initial-{dataset_hash}-{m}-{ef_construct}-{distance:?}",
             dataset_hash = dataset_hash(vectors[sliding_window.clone()].iter().copied()),
             m = args.m,
             ef_construct = args.ef_construct,
             distance = args.distance,
-        ))
+        )
     } else {
         last_segment.data_path().join("hnsw_bench")
     };
@@ -281,10 +276,10 @@ fn main() {
             && (iteration % args.accuracy_check_period == 0 || iteration == args.iterations - 1)
         {
             let top = 10;
-            let exact_cache_path = cache_path.join(format!(
+            let exact_cache_path = cache_path!(
                 "exact-{queries_hash}-{}-{top}",
                 dataset_hash(sliding_window.clone().map(|i| vectors[i % vectors.len()])),
-            ));
+            );
             let accuracy = measure_accuracy(
                 &exact_cache_path,
                 &segment,
@@ -434,12 +429,8 @@ fn measure_accuracy(
     let id_tracker = segment.id_tracker.borrow();
 
     // Exact search (aka full scan) is slow, so we cache the results.
-    let exact_search_results;
-    if exact_cache_path.exists() {
-        exact_search_results = read_json(exact_cache_path).unwrap()
-    } else {
-        let start = std::time::Instant::now();
-        exact_search_results = query_vectors
+    let exact_search_results: Vec<_> = cached_json(exact_cache_path, || {
+        query_vectors
             .par_iter()
             .map(|query| {
                 segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -448,10 +439,8 @@ fn measure_accuracy(
                     .search(&[query], None, top, None, &Default::default())
                     .pipe(|results| process_search_results(&id_tracker, results))
             })
-            .collect::<Vec<_>>();
-        log::debug!("Exact search time = {:?}", start.elapsed());
-        atomic_save_json(exact_cache_path, &exact_search_results).unwrap();
-    }
+            .collect::<Vec<_>>()
+    });
 
     let sames: usize = query_vectors
         .par_iter()
