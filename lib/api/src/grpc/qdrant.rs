@@ -1339,8 +1339,8 @@ pub struct CollectionParams {
     /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
     #[deprecated]
-    #[prost(bool, tag = "4")]
-    pub on_disk_payload: bool,
+    #[prost(bool, optional, tag = "4")]
+    pub on_disk_payload: ::core::option::Option<bool>,
     /// Configuration for vectors
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]

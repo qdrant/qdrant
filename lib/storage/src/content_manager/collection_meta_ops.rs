@@ -544,7 +544,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             sharding_method,
             replication_factor: Some(replication_factor.get()),
             write_consistency_factor: Some(write_consistency_factor.get()),
-            on_disk_payload: Some(on_disk_payload),
+            on_disk_payload,
             payload,
             hnsw_config: Some(hnsw_config.into()),
             wal_config: Some(wal_config.into()),

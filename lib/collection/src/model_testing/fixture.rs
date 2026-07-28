@@ -174,7 +174,7 @@ pub(super) async fn fixture(
         sharding_method: None,
         read_fan_out_factor: None,
         read_fan_out_delay_ms: None,
-        on_disk_payload: false,
+        on_disk_payload: Some(false),
         payload: None,
     };
 

@@ -623,7 +623,7 @@ message CollectionParams {
   uint32 shard_number = 3;
   // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  bool on_disk_payload = 4 [deprecated = true];
+  optional bool on_disk_payload = 4 [deprecated = true];
   // Configuration for vectors
   optional VectorsConfig vectors_config = 5;
   // Number of replicas of each shard that network tries to maintain

@@ -136,9 +136,9 @@ pub struct CollectionParams {
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
     ///
     /// Default: true
-    #[serde(default = "default_on_disk_payload")]
+    #[serde(default = "default_on_disk_payload_opt")]
     #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
-    pub on_disk_payload: bool,
+    pub on_disk_payload: Option<bool>,
     /// Configuration of the payload storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
@@ -208,11 +208,11 @@ impl CollectionParams {
     /// Effective memory placement of the payload storage, resolving the new `payload.memory`
     /// parameter against the deprecated `on_disk_payload` flag.
     ///
-    /// No conflict warning is logged here: `on_disk_payload` is a plain bool with a default, so
-    /// an explicitly configured `payload.memory` would always "conflict" with it.
+    /// No conflict warning is logged here: `on_disk_payload` is always populated with its default,
+    /// so an explicitly configured `payload.memory` would always "conflict" with it.
     pub fn payload_memory_placement(&self) -> Memory {
         let memory = self.payload.and_then(|payload| payload.memory);
-        Memory::resolve(memory, Some(Memory::from_on_disk(self.on_disk_payload)))
+        Memory::resolve(memory, self.on_disk_payload.map(Memory::from_on_disk))
             .unwrap_or(Memory::Cold)
     }
 
@@ -319,6 +319,14 @@ pub fn default_write_consistency_factor() -> NonZeroU32 {
 
 pub const fn default_on_disk_payload() -> bool {
     true
+}
+
+/// Default for the deprecated [`CollectionParams::on_disk_payload`] field.
+///
+/// The field is optional purely so that schema-generated clients keep working once it is removed
+/// from the API. Qdrant itself always fills it in, so it never reaches a client as `null`.
+pub const fn default_on_disk_payload_opt() -> Option<bool> {
+    Some(default_on_disk_payload())
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate, Clone, PartialEq)]
@@ -454,7 +462,7 @@ impl CollectionParams {
             read_fan_out_factor: None,
             read_fan_out_delay_ms: None,
             payload: None,
-            on_disk_payload: default_on_disk_payload(),
+            on_disk_payload: default_on_disk_payload_opt(),
             sparse_vectors: None,
         }
     }
