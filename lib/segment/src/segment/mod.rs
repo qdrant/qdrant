@@ -3,6 +3,7 @@ pub mod memory;
 mod search;
 mod segment_ops;
 pub mod vector_data_read;
+pub mod vector_data_storage;
 mod vector_name_ops;
 mod version_tracker;
 
@@ -14,6 +15,11 @@ mod read_view;
 mod tests;
 
 pub mod read_only;
+
+#[allow(dead_code)]
+pub mod update_only;
+#[allow(dead_code)]
+pub mod update_view;
 
 use std::collections::HashMap;
 use std::fmt;
