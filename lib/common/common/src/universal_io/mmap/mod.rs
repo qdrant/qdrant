@@ -714,6 +714,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("dual.dat");
 
+        // On tmpfs the page cache is the backing store, so
+        // `POSIX_FADV_DONTNEED` cannot evict anything and the assertion below
+        // is unobservable (e.g. `/tmp` on Ubuntu 24.10+). Skip there.
+        let fs_type = nix::sys::statfs::statfs(dir.path())
+            .unwrap()
+            .filesystem_type();
+        if fs_type == nix::sys::statfs::TMPFS_MAGIC {
+            eprintln!("skipping: tempdir is on tmpfs, fadvise cannot evict its pages");
+            return;
+        }
+
         // Synced: only clean pages are evictable.
         let mut file = fs_err::File::create(&path).unwrap();
         file.write_all(&vec![7u8; LEN as usize]).unwrap();
