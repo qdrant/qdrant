@@ -517,8 +517,8 @@ pub struct VectorDataInfo {
     pub num_vectors: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
-    /// Backend this vector's storage reads through, absent when its storage type can only be
-    /// opened on one.
+    /// Universal I/O backend that this vector storage reads files with. Absent if vector storage
+    /// does not support configurable backends or only supports a single backend type.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub io_backend: Option<IoBackend>,
