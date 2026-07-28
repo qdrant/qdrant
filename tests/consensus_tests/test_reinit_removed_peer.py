@@ -154,17 +154,27 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     raft_state["peer_address_by_id"][str(first_peer_id)] = bootstrap_uri
     raft_state_path.write_text(json.dumps(raft_state))
 
-    # Push the old cluster's commit index well ahead of anything the
-    # single-voter peer has in its WAL. Each collection creation commits
-    # several consensus entries on the (now single-node) old cluster.
-    for i in range(3):
+    # `--reinit` keeps the existing Raft log, so this peer's persisted commit
+    # can already be ahead of (or close to) the old single-node cluster's.
+    # Advance the old cluster past that baseline with enough headroom for any
+    # entries the restarted peer may still commit on its own (e.g. election).
+    peer_commit = raft_state["state"]["hard_state"]["commit"]
+    commit_margin = 20
+    i = 0
+    while True:
         res = requests.put(
             f"{peer_api_uris[0]}/collections/ahead_{i}?timeout=60",
             json={"vectors": {"size": 4, "distance": "Dot"}},
         )
         assert_http_ok(res)
-
-    old_commit = get_cluster_info(peer_api_uris[0])["raft_info"]["commit"]
+        i += 1
+        old_commit = get_cluster_info(peer_api_uris[0])["raft_info"]["commit"]
+        if old_commit > peer_commit + commit_margin:
+            break
+        assert i < 100, (
+            f"old cluster commit {old_commit} did not advance past "
+            f"peer commit {peer_commit} + {commit_margin}"
+        )
 
     # Restart the single-voter peer (no `--reinit`), with the old first peer
     # still alive and reachable at the injected address. This peer's own
@@ -179,4 +189,7 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     # The readiness race is only exercised while this peer's own commit index
     # stays behind the old cluster's.
     restart_commit = get_cluster_info(restart_api_uri)["raft_info"]["commit"]
-    assert restart_commit < old_commit
+    assert restart_commit < old_commit, (
+        f"restarted peer commit {restart_commit} is not behind old cluster "
+        f"commit {old_commit} (persisted peer commit was {peer_commit})"
+    )

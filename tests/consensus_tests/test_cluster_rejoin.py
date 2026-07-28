@@ -44,8 +44,8 @@ def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
         # fast; under CI load the consensus apply can exceed it even though the operation
         # eventually commits, so we tolerate an HTTP timeout here.
         create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3, fail_on_error=False)
-        # Collection might not be ready yet, we don't care
-        upsert_random_points(peer_api_uris[0], 100)
+        # Collection might not be ready yet (create can time out under CI load), we don't care
+        upsert_random_points(peer_api_uris[0], 100, fail_on_error=False)
         print(f"before recovery end {i}")
         res = requests.get(f"{peer_api_uris[1]}/collections")
         print(res.json())
