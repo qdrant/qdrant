@@ -476,16 +476,16 @@ impl PayloadIndexInfo {
     }
 }
 
-/// Universal-IO backend a component's files are read through.
+/// Universal I/O backend that is used to read files.
 ///
-/// Decided when the component is opened, from `storage.performance.io_uring`, its memory
-/// placement and the kernel's io_uring support at once, so it is not derivable from the config.
+/// Decided when the component is opened based on `storage.performance.io_uring` option,
+/// component memory placement and kernel io_uring support.
 ///
 /// Options:
 ///
 /// * `Mmap` - Reads are served by the page cache through a memory mapping.
 ///
-/// * `IoUring` - Reads are submitted to the kernel as io_uring operations.
+/// * `IoUring` - Reads are submitted to the kernel with io_uring.
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IoBackend {
