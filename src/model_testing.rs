@@ -118,9 +118,9 @@ struct Args {
     #[clap(long, default_value_t = false)]
     on_disk: bool,
 
-    /// Enable the io_uring async scorer for mmap dense vector storage (Linux only). Falls back to
-    /// plain mmap with a logged `failed to open io_uring based vector storage` error if io_uring is
-    /// unavailable — check the log to confirm it actually engaged. Pair with `--on-disk` (otherwise
+    /// Enable the io_uring async scorer for mmap dense vector storage (Linux only). Stays on
+    /// plain mmap without a word if the kernel does not support io_uring, so read the storage's
+    /// `io_backend` telemetry to confirm it actually engaged. Pair with `--on-disk` (otherwise
     /// reads come from the RAM-resident copy); has no effect on sparse or multivector storage.
     #[clap(long, default_value_t = false)]
     async_scorer: bool,

@@ -34,6 +34,10 @@ pub enum IoUringMode {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum IoUringFallback {
     /// Follow `storage.performance.async_scorer`, as the vector storages always have.
+    ///
+    /// Unlike the historical behaviour, kernel support is still required: an enabled async
+    /// scorer on a kernel without io_uring keeps the component on mmap instead of opening
+    /// io_uring and failing back to mmap.
     AsyncScorer,
     /// Stay on mmap: reachable only through the `io_uring` setting.
     Mmap,
@@ -81,7 +85,8 @@ pub fn io_uring_mode() -> Option<IoUringMode> {
 /// Whether a component should be opened on io_uring rather than mmap.
 ///
 /// `memory` is the placement its configured storage type provides, and `feature_flag` is the
-/// component's own gate (`true` for components that have none). Always `false` off Linux.
+/// component's own gate (`true` for components that have none). Never `true` without kernel
+/// io_uring support, and so always `false` off Linux.
 pub fn use_io_uring(fallback: IoUringFallback, memory: Memory, feature_flag: bool) -> bool {
     if !feature_flag {
         return false;
@@ -89,7 +94,7 @@ pub fn use_io_uring(fallback: IoUringFallback, memory: Memory, feature_flag: boo
 
     match io_uring_mode() {
         None => match fallback {
-            IoUringFallback::AsyncScorer => get_async_scorer(),
+            IoUringFallback::AsyncScorer => get_async_scorer() && is_io_uring_supported(),
             IoUringFallback::Mmap => false,
         },
         Some(IoUringMode::Disabled) => false,
@@ -120,10 +125,11 @@ mod tests {
         let supported = is_io_uring_supported();
 
         // Unset: the vector storages follow the async scorer, the payload storage does not.
+        // Placement is not consulted, kernel support still is.
         set_io_uring_mode(None);
         set_async_scorer(true);
-        assert!(use_io_uring(AsyncScorer, Memory::Cold, true));
-        assert!(use_io_uring(AsyncScorer, Memory::Cached, true));
+        assert_eq!(use_io_uring(AsyncScorer, Memory::Cold, true), supported);
+        assert_eq!(use_io_uring(AsyncScorer, Memory::Cached, true), supported);
         assert!(!use_io_uring(Mmap, Memory::Cold, true));
 
         set_async_scorer(false);
