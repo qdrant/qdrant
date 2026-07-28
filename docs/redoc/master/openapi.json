@@ -12318,7 +12318,7 @@
             }
           },
           "payload_storage_io_backend": {
-            "description": "Backend the payload storage reads through, absent when its storage type can only be opened on one.",
+            "description": "Universal I/O backend that payload storage reads files with. Absent if payload storage does not support configurable backends or only supports a single backend type.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/IoBackend"
@@ -12370,7 +12370,7 @@
             "minimum": 0
           },
           "io_backend": {
-            "description": "Backend this vector's storage reads through, absent when its storage type can only be opened on one.",
+            "description": "Universal I/O backend that this vector storage reads files with. Absent if vector storage does not support configurable backends or only supports a single backend type.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/IoBackend"
@@ -12383,7 +12383,7 @@
         }
       },
       "IoBackend": {
-        "description": "Universal-IO backend a component's files are read through.\n\nDecided when the component is opened, from `storage.performance.io_uring`, its memory placement and the kernel's io_uring support at once, so it is not derivable from the config.\n\nOptions:\n\n* `Mmap` - Reads are served by the page cache through a memory mapping.\n\n* `IoUring` - Reads are submitted to the kernel as io_uring operations.",
+        "description": "Universal I/O backend that is used to read files.\n\nDecided when the component is opened based on `storage.performance.io_uring` option, component memory placement and kernel io_uring support.\n\nOptions:\n\n* `Mmap` - Reads are served by the page cache through a memory mapping.\n\n* `IoUring` - Reads are submitted to the kernel with io_uring.",
         "type": "string",
         "enum": [
           "mmap",
