@@ -36,7 +36,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
     /// Open the read-only counterpart of the appendable dense storage at `path`,
     /// threading every file open through `fs`; reads the existing layout but
     /// creates and writes nothing. `populate` warms the vector chunks.
-    #[allow(dead_code)] // pending: read-only vector storage enum will use this
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,

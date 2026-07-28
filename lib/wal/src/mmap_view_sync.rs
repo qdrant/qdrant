@@ -41,7 +41,7 @@ impl MmapViewSync {
         Ok(mmap.into())
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn anonymous(capacity: usize) -> Result<MmapViewSync> {
         let mmap = MmapOptions::new().len(capacity).map_anon()?;
 
@@ -51,7 +51,7 @@ impl MmapViewSync {
     /// Split the view into disjoint pieces at the specified offset.
     ///
     /// The provided offset must be less than the view's length.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn split_at(self, offset: usize) -> Result<(MmapViewSync, MmapViewSync)> {
         if self.len < offset {
             return Err(Error::new(

@@ -45,7 +45,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
     /// `path`, threading every file open through `fs`; reads the existing layout
     /// but creates and writes nothing. `populate` warms the vector and offset
     /// chunks.
-    #[allow(dead_code)] // pending: read-only vector storage enum will use this
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,

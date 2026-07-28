@@ -121,16 +121,9 @@ pub enum FacetIndexEnum<'a, S: UniversalReadExt = MmapFile> {
     Int(&'a MapIndex<IntPayloadType>),
     Uuid(&'a MapIndex<UuidIntType>),
     Bool(&'a BoolIndex),
-    // Constructed only by `ReadOnlyFieldIndex::as_facet_index`, which is
-    // itself dead-code-allowed (`ReadOnlyFieldIndex` isn't wired into the
-    // read path yet).
-    #[allow(dead_code)]
     KeywordReadOnly(&'a ReadOnlyMapIndex<str, S>),
-    #[allow(dead_code)]
     IntReadOnly(&'a ReadOnlyMapIndex<IntPayloadType, S>),
-    #[allow(dead_code)]
     UuidReadOnly(&'a ReadOnlyMapIndex<UuidIntType, S>),
-    #[allow(dead_code)]
     BoolReadOnly(&'a ReadOnlyBoolIndex<S>),
 }
 

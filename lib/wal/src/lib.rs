@@ -83,7 +83,7 @@ pub struct Wal {
 
     /// The directory which contains the write ahead log. Used to hold an open
     /// file lock for the lifetime of the log.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     dir: File,
 
     /// The directory path.

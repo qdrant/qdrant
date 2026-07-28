@@ -20,7 +20,6 @@ mod build;
 #[cfg(feature = "gpu")]
 mod gpu_build;
 mod old_index;
-#[allow(dead_code)]
 pub mod read_only;
 mod read_view;
 mod telemetry;

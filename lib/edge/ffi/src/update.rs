@@ -741,7 +741,7 @@ impl From<SegmentPayloadSchemaType> for PayloadSchemaType {
 /// here why it stays unexposed.
 ///
 /// Never called; it exists only for the exhaustiveness check.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn assert_every_update_operation_is_mapped(op: CollectionUpdateOperations) {
     match op {
         CollectionUpdateOperations::PointOperation(op) => match op {

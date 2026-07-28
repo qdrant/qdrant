@@ -14,7 +14,10 @@ struct StackTraceFrame {
 }
 
 impl StackTraceFrame {
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(all(target_os = "linux", feature = "stacktrace")),
+        expect(dead_code)
+    )]
     pub fn render(&self) -> String {
         let mut result = String::new();
         for symbol in &self.symbols {
