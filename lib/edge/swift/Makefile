@@ -8,7 +8,7 @@ XCFRAMEWORK := $(SCRIPT_DIR)out/QdrantEdge.xcframework
 # ── Setup ────────────────────────────────────────────────────────────────────
 
 .PHONY: setup
-setup: setup-homebrew setup-rust setup-targets ## Install all prerequisites
+setup: setup-homebrew setup-targets ## Install all prerequisites
 
 .PHONY: setup-homebrew
 setup-homebrew: ## Install Homebrew dependencies (protobuf)
@@ -29,7 +29,7 @@ setup-rust: ## Install the nightly Rust toolchain (required — the workspace us
 	echo "Rust toolchain OK: $$(rustc --version 2>/dev/null || echo 'restart shell to activate')"
 
 .PHONY: setup-targets
-setup-targets: ## Install required Rust cross-compilation targets
+setup-targets: setup-rust ## Install required Rust cross-compilation targets
 	@# Make runs each target's recipe in its own shell, so the PATH export in
 	@# setup-rust does NOT survive into this target. On a fresh machine (rustup
 	@# just installed by setup-rust, shell not yet restarted) `rustup` is only on
