@@ -491,7 +491,7 @@ impl PayloadIndexInfo {
 pub enum IoBackend {
     // Reads are served by the page cache through a memory mapping.
     Mmap,
-    // Reads are submitted to the kernel as io_uring operations.
+    // Reads are submitted to the kernel with io_uring.
     IoUring,
 }
 
