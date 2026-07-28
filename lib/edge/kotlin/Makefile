@@ -8,7 +8,7 @@ AAR := $(SCRIPT_DIR)qdrant-edge/build/outputs/aar/qdrant-edge-release.aar
 # ── Setup ────────────────────────────────────────────────────────────────────
 
 .PHONY: setup
-setup: setup-homebrew setup-rust setup-targets setup-ndk ## Install all prerequisites
+setup: setup-homebrew setup-targets setup-ndk ## Install all prerequisites
 
 .PHONY: setup-homebrew
 setup-homebrew: ## Install Homebrew dependencies (protobuf)
@@ -35,7 +35,7 @@ setup-rust: ## Install Rust toolchain + cargo-ndk
 	@echo "Rust toolchain OK: $$(rustc --version 2>/dev/null || echo 'restart shell to activate')"
 
 .PHONY: setup-targets
-setup-targets: ## Install required Rust cross-compilation targets for Android
+setup-targets: setup-rust ## Install required Rust cross-compilation targets for Android
 	# Add to the nightly toolchain — build-aar.sh cross-compiles with
 	# `cargo +nightly`, so targets on the stable toolchain would not be found.
 	rustup target add --toolchain nightly \
