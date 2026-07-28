@@ -257,6 +257,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        effective_optimizers_config: OptimizersConfig,
         optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
@@ -297,10 +298,9 @@ impl LocalShard {
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
-            config.optimizer_config.flush_interval_sec,
-            config.optimizer_config.max_optimization_threads,
-            config
-                .optimizer_config
+            effective_optimizers_config.flush_interval_sec,
+            effective_optimizers_config.max_optimization_threads,
+            effective_optimizers_config
                 .prevent_unoptimized
                 .unwrap_or_default(),
             clocks.clone(),
@@ -536,6 +536,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            effective_optimizers_config,
             optimizer_resource_budget,
             shard_path,
             clocks,
@@ -703,6 +704,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            effective_optimizers_config,
             optimizer_resource_budget,
             shard_path,
             LocalShardClocks::default(),
