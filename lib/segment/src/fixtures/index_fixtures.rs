@@ -99,6 +99,29 @@ impl TestRawScorerProducer {
         }
     }
 
+    /// Build a volatile in-RAM storage holding the given (already
+    /// preprocessed) vectors. For tests and benchmarks on non-random data,
+    /// e.g. real datasets.
+    pub fn from_dense_vectors(dim: usize, distance: Distance, vectors: &[DenseVector]) -> Self {
+        let mut storage = new_volatile_dense_vector_storage(dim, distance);
+        let hw_counter = HardwareCounterCell::new();
+        for (offset, vector) in vectors.iter().enumerate() {
+            storage
+                .insert_vector(
+                    offset as PointOffsetType,
+                    VectorRef::from(vector),
+                    &hw_counter,
+                )
+                .unwrap();
+        }
+
+        TestRawScorerProducer {
+            storage,
+            deleted_points: BitVec::repeat(false, vectors.len()),
+            quantized_vectors: None,
+        }
+    }
+
     /// Wrap a pre-constructed storage (e.g. an mmap-backed one) with
     /// `num_vectors` live points and no quantization. For tests and benchmarks.
     pub fn from_storage(storage: VectorStorageEnum, num_vectors: usize) -> Self {

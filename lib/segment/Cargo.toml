@@ -150,6 +150,10 @@ name = "hnsw_search_graph"
 harness = false
 
 [[bench]]
+name = "hnsw_search_graph_dataset"
+harness = false
+
+[[bench]]
 name = "conditional_search"
 harness = false
 
