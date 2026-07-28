@@ -546,8 +546,8 @@ pub struct SegmentInfo {
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     pub vector_data: HashMap<String, VectorDataInfo>,
-    /// Backend the payload storage reads through, absent when its storage type can only be
-    /// opened on one.
+    /// Universal I/O backend that payload storage reads files with. Absent if payload storage
+    /// does not support configurable backends or only supports a single backend type.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub payload_storage_io_backend: Option<IoBackend>,
