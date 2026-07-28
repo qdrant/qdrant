@@ -10,6 +10,7 @@ use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
+use crate::data_types::payload_budget::PayloadBudget;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::types::{ScoredPoint, VectorName, VectorNameBuf};
 
@@ -45,6 +46,9 @@ pub struct QueryContext {
     /// Structure to accumulate and report hardware usage.
     /// Holds reference to the shared drain, which is used to accumulate the values.
     hardware_usage_accumulator: HwMeasurementAcc,
+
+    /// Optional per-query payload memory budget.
+    payload_budget: Option<Arc<PayloadBudget>>,
 }
 
 impl QueryContext {
@@ -58,6 +62,7 @@ impl QueryContext {
             is_stopped: Arc::new(AtomicBool::new(false)),
             idf_stats: QueryIdfStats::default(),
             hardware_usage_accumulator,
+            payload_budget: None,
         }
     }
 
@@ -68,6 +73,16 @@ impl QueryContext {
     pub fn with_is_stopped(mut self, flag: Arc<AtomicBool>) -> Self {
         self.is_stopped = flag;
         self
+    }
+
+    /// Attach a payload budget to this query context.
+    pub fn with_payload_budget(mut self, budget: Arc<PayloadBudget>) -> Self {
+        self.payload_budget = Some(budget);
+        self
+    }
+
+    pub fn payload_budget(&self) -> Option<&PayloadBudget> {
+        self.payload_budget.as_deref()
     }
 
     /// Returns the amount of available (and visible) points.
