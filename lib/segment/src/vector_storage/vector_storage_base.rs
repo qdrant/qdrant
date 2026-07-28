@@ -36,7 +36,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorInternal, VectorRef,
 };
-use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
+use crate::types::{Distance, IoBackend, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 
 /// In case of simple vector storage, vector offset is the same as [`PointOffsetType`].
@@ -74,6 +74,12 @@ pub trait VectorStorageRead {
     fn datatype(&self) -> VectorStorageDatatype;
 
     fn is_on_disk(&self) -> bool;
+
+    /// Backend this storage reads through, `None` when it can only be opened on one. Surfaced
+    /// as `vector_data[name].io_backend` in [`SegmentInfo`](crate::types::SegmentInfo).
+    fn io_backend(&self) -> Option<IoBackend> {
+        None
+    }
 
     /// Number of vectors
     ///
@@ -1061,6 +1067,49 @@ fn insert_sparse_bytes<S: VectorStorage>(
 }
 
 impl VectorStorageRead for VectorStorageEnum {
+    fn io_backend(&self) -> Option<IoBackend> {
+        match self {
+            VectorStorageEnum::DenseVolatile(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(_) => None,
+
+            // The single-file immutable storages are the ones opened on either backend
+            VectorStorageEnum::DenseMemmap(_) => Some(IoBackend::Mmap),
+            VectorStorageEnum::DenseMemmapByte(_) => Some(IoBackend::Mmap),
+            VectorStorageEnum::DenseMemmapHalf(_) => Some(IoBackend::Mmap),
+
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_) => Some(IoBackend::IoUring),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(_) => Some(IoBackend::IoUring),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(_) => Some(IoBackend::IoUring),
+
+            VectorStorageEnum::DenseAppendableMemmap(_) => None,
+            VectorStorageEnum::DenseAppendableMemmapByte(_) => None,
+            VectorStorageEnum::DenseAppendableMemmapHalf(_) => None,
+            VectorStorageEnum::DenseTurboMemmap(_) => Some(IoBackend::Mmap),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(_) => Some(IoBackend::IoUring),
+            VectorStorageEnum::DenseTurboAppendableMemmap(_) => None,
+            VectorStorageEnum::SparseVolatile(_) => None,
+            VectorStorageEnum::SparseMmap(_) => None,
+            VectorStorageEnum::MultiDenseVolatile(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => None,
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => None,
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => None,
+            VectorStorageEnum::MultiDenseTurbo(_) => None,
+            VectorStorageEnum::EmptyDense(_) => None,
+            VectorStorageEnum::EmptySparse(_) => None,
+        }
+    }
+
     fn with_vector_bytes_opt<P: AccessPattern, R>(
         &self,
         key: PointOffsetType,

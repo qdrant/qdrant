@@ -421,6 +421,9 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_default(),
     );
 
+    // Must be in place before the first segment is loaded.
+    segment::common::io_uring::set_io_uring_mode(settings.storage.performance.io_uring);
+
     welcome(&settings);
 
     //

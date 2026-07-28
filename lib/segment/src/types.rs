@@ -476,12 +476,52 @@ impl PayloadIndexInfo {
     }
 }
 
+/// Universal I/O backend that is used to read files.
+///
+/// Decided when the component is opened based on `storage.performance.io_uring` option,
+/// component memory placement and kernel io_uring support.
+///
+/// Options:
+///
+/// * `Mmap` - Reads are served by the page cache through a memory mapping.
+///
+/// * `IoUring` - Reads are submitted to the kernel with io_uring.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IoBackend {
+    // Reads are served by the page cache through a memory mapping.
+    Mmap,
+    // Reads are submitted to the kernel with io_uring.
+    IoUring,
+}
+
+impl IoBackend {
+    /// `None` for a kind that is neither of the two a component can be opened on.
+    pub fn from_universal_kind(kind: common::universal_io::UniversalKind) -> Option<Self> {
+        match kind {
+            common::universal_io::UniversalKind::Mmap => Some(Self::Mmap),
+            common::universal_io::UniversalKind::IoUring => Some(Self::IoUring),
+            common::universal_io::UniversalKind::DiskCache
+            | common::universal_io::UniversalKind::SimpleDiskCache
+            | common::universal_io::UniversalKind::S3
+            | common::universal_io::UniversalKind::Gcs
+            | common::universal_io::UniversalKind::Azure
+            | common::universal_io::UniversalKind::UioGrpc => None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataInfo {
     pub num_vectors: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
+    /// Universal I/O backend that this vector storage reads files with. Absent if vector storage
+    /// does not support configurable backends or only supports a single backend type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub io_backend: Option<IoBackend>,
 }
 
 /// Aggregated information about segment
@@ -506,6 +546,11 @@ pub struct SegmentInfo {
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     pub vector_data: HashMap<String, VectorDataInfo>,
+    /// Universal I/O backend that payload storage reads files with. Absent if payload storage
+    /// does not support configurable backends or only supports a single backend type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub payload_storage_io_backend: Option<IoBackend>,
     /// Internal ID from which points are deferred (hidden from reads).
     /// Only set for appendable segments.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1850,6 +1895,15 @@ impl Memory {
 
     /// Whether this placement corresponds to `on_disk = true` in the legacy options.
     pub fn is_on_disk(self) -> bool {
+        match self {
+            Self::Cold => true,
+            Self::Cached | Self::Pinned => false,
+        }
+    }
+
+    /// Whether data is left on disk and paged in on demand, rather than held in RAM. Reads of
+    /// a cold component hit the disk, which is what makes an async IO backend worth using.
+    pub fn is_cold(self) -> bool {
         match self {
             Self::Cold => true,
             Self::Cached | Self::Pinned => false,

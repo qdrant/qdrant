@@ -29,6 +29,12 @@ use crate::generic_consts::AccessPattern;
 /// Required alignment for `O_DIRECT` reads (both file offset and buffer).
 pub const KERNEL_PAGE_SIZE: usize = 4096; // 4 KB
 
+/// Whether this kernel supports the io_uring operations [`IoUringFile`] issues, so callers can
+/// pick a backend without opening a file first. Cached per thread after the first probe.
+pub fn is_io_uring_supported() -> bool {
+    pool::check_io_uring_support().is_ok()
+}
+
 #[derive(Debug, Clone)]
 pub struct IoUringFile {
     file: Arc<fs::File>,

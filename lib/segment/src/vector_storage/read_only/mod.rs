@@ -112,7 +112,7 @@ mod tests {
     };
     use crate::segment_constructor::batched_reader::merge_from_single_source;
     use crate::types::{
-        Distance, Indexes, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype,
+        Distance, Indexes, Memory, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype,
         VectorStorageType,
     };
     use crate::vector_storage::dense::appendable_dense_vector_storage::{
@@ -219,7 +219,7 @@ mod tests {
         {
             // The immutable mmap storage is built by copying from another storage.
             let mut storage =
-                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
@@ -385,7 +385,7 @@ mod tests {
         {
             // The immutable mmap storage is built by copying from another storage.
             let mut storage =
-                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging

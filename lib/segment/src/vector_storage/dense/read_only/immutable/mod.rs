@@ -39,6 +39,7 @@ mod tests {
     use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
     use crate::segment_constructor::batched_reader::merge_from_single_source;
+    use crate::types::Memory;
     use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{VectorStorage, VectorStorageRead};
@@ -68,7 +69,7 @@ mod tests {
         let mut deleted_ids = Vec::new();
         {
             let mut storage =
-                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
@@ -124,7 +125,8 @@ mod tests {
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 
-        let mut writer = open_dense_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+        let mut writer =
+            open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
         {
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
