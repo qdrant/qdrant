@@ -71,8 +71,8 @@ pub struct TurboVectorStorageImpl<S: UniversalRead = MmapFile> {
 
 /// Open (create-or-load) a single-file TurboQuant vector storage (non-appendable),
 /// wrapped into the right [`VectorStorageEnum`] variant. Counterpart to
-/// `open_dense_vector_storage`: reads go through io_uring when the node-wide io_uring
-/// setting picks it for `memory` (Linux only), plain mmap otherwise.
+/// `open_dense_vector_storage`: reads go through io_uring when enabled and supported,
+/// plain mmap otherwise.
 pub fn open_turbo_vector_storage(
     path: &Path,
     dim: usize,
