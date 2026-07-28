@@ -15491,14 +15491,9 @@
       },
       "IdfScope": {
         "description": "Named IDF scope without a corpus filter.",
-        "oneOf": [
-          {
-            "description": "Collection-wide statistics. This is the default behavior.",
-            "type": "string",
-            "enum": [
-              "global"
-            ]
-          }
+        "type": "string",
+        "enum": [
+          "global"
         ]
       },
       "IdfCorpusParams": {
