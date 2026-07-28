@@ -1,6 +1,3 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 use collection::hash_ring::HashRing;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::RngExt;

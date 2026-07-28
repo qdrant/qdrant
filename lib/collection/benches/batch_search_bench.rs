@@ -26,9 +26,6 @@ use tempfile::Builder;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 fn create_rnd_batch() -> CollectionUpdateOperations {
     let mut rng = rand::make_rng::<SmallRng>();
     let num_points = 2000;
