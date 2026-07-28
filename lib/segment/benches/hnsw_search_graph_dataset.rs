@@ -1,6 +1,6 @@
 //! HNSW graph-search benchmark on a real dataset (TEXMEX `.fvecs` files).
 //!
-//! Graphs built from random vectors have untypically low degree (the pruning
+//! Graphs built from random vectors have atypically low degree (the pruning
 //! heuristic removes most edges), so results measured on them may not
 //! transfer to real data. This bench builds the graph from dataset vectors
 //! and searches with dataset queries instead.
