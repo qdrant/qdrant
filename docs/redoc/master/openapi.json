@@ -11677,7 +11677,7 @@
             "type": "boolean"
           },
           "async_payload_storage": {
-            "description": "Allow the io_uring-based payload storage implementation to be selected.\n\nOnly lifts the ban: whether a segment actually gets it is decided by the `storage.performance.io_uring` setting and the payload storage's memory placement.",
+            "description": "Allow the io_uring-based payload storage implementation. Only lifts the ban: whether a segment gets it is decided by `storage.performance.io_uring` and the memory placement.",
             "default": true,
             "type": "boolean"
           },
@@ -12318,7 +12318,7 @@
             }
           },
           "payload_storage_io_backend": {
-            "description": "Backend the payload storage reads through, absent when its storage type is not one that can be opened on either backend.",
+            "description": "Backend the payload storage reads through, absent when its storage type can only be opened on one.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/IoBackend"
@@ -12370,7 +12370,7 @@
             "minimum": 0
           },
           "io_backend": {
-            "description": "Backend this vector's storage reads through, absent when its storage type is not one that can be opened on either backend.",
+            "description": "Backend this vector's storage reads through, absent when its storage type can only be opened on one.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/IoBackend"
@@ -12383,7 +12383,7 @@
         }
       },
       "IoBackend": {
-        "description": "Universal-IO backend a component's files are actually read through.\n\nOnly reported for components that can be opened on either backend over the very same files. Which one a component ends up on is decided when it is opened, from `storage.performance.io_uring`, the component's memory placement and the kernel's io_uring support at once, so it cannot be derived from the segment config.",
+        "description": "Universal-IO backend a component's files are read through.\n\nDecided when the component is opened, from `storage.performance.io_uring`, its memory placement and the kernel's io_uring support at once, so it is not derivable from the config.",
         "oneOf": [
           {
             "description": "Reads are served by the page cache through a memory mapping.",

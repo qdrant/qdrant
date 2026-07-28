@@ -35,8 +35,8 @@ fn open_mmap_vector_storage(
             memory.populate_on_open(),
         )
     } else {
-        // The single-file storages pick their IO backend from the placement, so they take it
-        // whole rather than the populate flag derived from it.
+        // These pick their IO backend from the placement, so they take it whole rather than
+        // the populate flag derived from it.
         match storage_element_type {
             VectorStorageDatatype::Float32 => open_dense_vector_storage(
                 vector_storage_path,

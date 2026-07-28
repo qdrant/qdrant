@@ -476,12 +476,10 @@ impl PayloadIndexInfo {
     }
 }
 
-/// Universal-IO backend a component's files are actually read through.
+/// Universal-IO backend a component's files are read through.
 ///
-/// Only reported for components that can be opened on either backend over the very same
-/// files. Which one a component ends up on is decided when it is opened, from
-/// `storage.performance.io_uring`, the component's memory placement and the kernel's io_uring
-/// support at once, so it cannot be derived from the segment config.
+/// Decided when the component is opened, from `storage.performance.io_uring`, its memory
+/// placement and the kernel's io_uring support at once, so it is not derivable from the config.
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IoBackend {
@@ -492,8 +490,7 @@ pub enum IoBackend {
 }
 
 impl IoBackend {
-    /// The backend a component read through `S` uses, or `None` for a backend that is neither
-    /// of the two a component can be opened on.
+    /// `None` for a kind that is neither of the two a component can be opened on.
     pub fn from_universal_kind(kind: common::universal_io::UniversalKind) -> Option<Self> {
         match kind {
             common::universal_io::UniversalKind::Mmap => Some(Self::Mmap),
@@ -514,8 +511,8 @@ pub struct VectorDataInfo {
     pub num_vectors: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
-    /// Backend this vector's storage reads through, absent when its storage type is not one
-    /// that can be opened on either backend.
+    /// Backend this vector's storage reads through, absent when its storage type can only be
+    /// opened on one.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub io_backend: Option<IoBackend>,
@@ -543,8 +540,8 @@ pub struct SegmentInfo {
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     pub vector_data: HashMap<String, VectorDataInfo>,
-    /// Backend the payload storage reads through, absent when its storage type is not one that
-    /// can be opened on either backend.
+    /// Backend the payload storage reads through, absent when its storage type can only be
+    /// opened on one.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub payload_storage_io_backend: Option<IoBackend>,
@@ -1898,9 +1895,8 @@ impl Memory {
         }
     }
 
-    /// Whether data is left on disk and paged in on demand, rather than deliberately held in
-    /// RAM. Reads of a cold component are expected to hit the disk, which is what makes an
-    /// asynchronous IO backend worth using for it.
+    /// Whether data is left on disk and paged in on demand, rather than held in RAM. Reads of
+    /// a cold component hit the disk, which is what makes an async IO backend worth using.
     pub fn is_cold(self) -> bool {
         match self {
             Self::Cold => true,

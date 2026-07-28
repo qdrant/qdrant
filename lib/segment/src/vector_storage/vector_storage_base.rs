@@ -75,10 +75,8 @@ pub trait VectorStorageRead {
 
     fn is_on_disk(&self) -> bool;
 
-    /// Universal-IO backend this storage reads through, or `None` when it is not one of the
-    /// storages that can be opened on either backend.
-    ///
-    /// Surfaced as `vector_data[name].io_backend` in [`SegmentInfo`](crate::types::SegmentInfo).
+    /// Backend this storage reads through, `None` when it can only be opened on one. Surfaced
+    /// as `vector_data[name].io_backend` in [`SegmentInfo`](crate::types::SegmentInfo).
     fn io_backend(&self) -> Option<IoBackend> {
         None
     }

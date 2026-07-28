@@ -81,11 +81,9 @@ where
     }
 }
 
-/// Whether the immutable single-file dense vector storages open on the io_uring backend for a
-/// component placed at `memory`.
-///
-/// They have no feature flag of their own, and their io_uring variants predate the `io_uring`
-/// setting: with no setting configured they keep following the async scorer.
+/// Whether the immutable single-file dense vector storages open on io_uring at `memory`. They
+/// have no feature flag of their own, and predate the setting, so they fall back to the async
+/// scorer.
 fn dense_with_uring(memory: Memory) -> bool {
     use_io_uring(IoUringFallback::AsyncScorer, memory, true)
 }

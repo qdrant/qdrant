@@ -13,8 +13,7 @@ use crate::vector_storage::{
 };
 
 impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
-    /// Every variant reads through the segment-wide `S`, so the backend is the same for all of
-    /// them — unlike a writable segment, a read-only one does not choose per component.
+    /// A read-only segment does not choose per component: every variant reads through `S`.
     fn io_backend(&self) -> Option<IoBackend> {
         IoBackend::from_universal_kind(S::kind())
     }

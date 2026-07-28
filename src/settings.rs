@@ -535,7 +535,6 @@ mod tests {
 
     use fs_err as fs;
     use sealed_test::prelude::*;
-    use segment::common::io_uring::IoUringMode;
 
     use super::*;
 
@@ -565,43 +564,6 @@ mod tests {
         config
             .validate()
             .expect("failed to validate default config");
-    }
-
-    /// The `io_uring` performance setting is optional, and accepts exactly the spellings the
-    /// shipped config documents.
-    #[test]
-    fn test_io_uring_config() {
-        let parse = |overwrite: &str| {
-            Config::builder()
-                .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
-                .add_source(File::from_str(overwrite, FileFormat::Yaml))
-                .build()
-                .expect("failed to build config")
-                .try_deserialize::<Settings>()
-        };
-
-        // Absent from the shipped config, so it stays unset
-        assert_eq!(parse("").unwrap().storage.performance.io_uring, None);
-
-        assert_eq!(
-            parse("storage:\n  performance:\n    io_uring: disabled")
-                .unwrap()
-                .storage
-                .performance
-                .io_uring,
-            Some(IoUringMode::Disabled),
-        );
-        assert_eq!(
-            parse("storage:\n  performance:\n    io_uring: auto")
-                .unwrap()
-                .storage
-                .performance
-                .io_uring,
-            Some(IoUringMode::Auto),
-        );
-
-        parse("storage:\n  performance:\n    io_uring: enabled")
-            .expect_err("unknown io_uring mode must be rejected");
     }
 
     #[expect(

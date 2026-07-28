@@ -61,9 +61,8 @@ pub struct PerformanceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
     /// Whether components that can be opened on either mmap or io_uring should use io_uring.
-    ///
-    /// Unset keeps the pre-existing behaviour, where the vector storages follow
-    /// [`Self::async_scorer`] and nothing else uses io_uring.
+    /// Unset keeps the old behaviour: the vector storages follow [`Self::async_scorer`], and
+    /// nothing else uses io_uring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub io_uring: Option<IoUringMode>,
     #[serde(default, flatten)]

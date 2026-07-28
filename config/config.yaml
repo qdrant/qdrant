@@ -114,16 +114,14 @@ storage:
     # See: <https://qdrant.tech/articles/io_uring/#and-what-about-qdrant>
     #async_scorer: false
 
-    # Whether components that can be read either through a memory mapping or through io_uring
-    # should use io_uring. Only has an effect on Linux.
+    # Whether components readable through either a memory mapping or io_uring should use
+    # io_uring. Only has an effect on Linux.
     #
-    # - unset (default): the immutable vector storages follow `async_scorer`, and no other
-    #   component uses io_uring.
+    # - unset (default): the immutable vector storages follow `async_scorer`, nothing else
+    #   uses io_uring.
     # - "disabled": no component uses io_uring.
-    # - "auto": a component uses io_uring when its `memory` placement is `cold` (data is left
-    #   on disk, so reads hit the disk and there is something to gain), its feature flag allows
-    #   it, and the kernel supports io_uring. Components that are meant to sit in RAM keep
-    #   using mmap, which is faster once the data is in the page cache.
+    # - "auto": use io_uring for components with a `cold` memory placement, where reads hit
+    #   the disk. Components meant to sit in RAM keep using mmap, which is faster there.
     #io_uring: disabled
 
     # Maximum number of collections to load concurrently.

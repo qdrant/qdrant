@@ -79,8 +79,7 @@ pub fn open_turbo_vector_storage(
     distance: Distance,
     memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
-    // Like the immutable dense storages: no feature flag of its own, and it predates the
-    // `io_uring` setting, so with no setting configured it keeps following the async scorer.
+    // Like the immutable dense storages: no feature flag of its own, and predates the setting.
     let with_uring = use_io_uring(IoUringFallback::AsyncScorer, memory, true);
 
     open_turbo_vector_storage_with_uring(path, dim, distance, memory.populate_on_open(), with_uring)

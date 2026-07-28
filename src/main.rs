@@ -421,8 +421,7 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_default(),
     );
 
-    // Read back by every component that can be opened on either mmap or io_uring, so it must
-    // be in place before the first segment is loaded.
+    // Must be in place before the first segment is loaded.
     segment::common::io_uring::set_io_uring_mode(settings.storage.performance.io_uring);
 
     welcome(&settings);
