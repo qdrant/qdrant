@@ -925,11 +925,11 @@ pub async fn run(
 /// flushed state), refresh + scroll the followers, and compare against the model. Callers
 /// must be between ops with any background snapshot drained.
 ///
-/// Skipped (with a warning) while an optimization is in flight: deletes against a proxied
-/// segment are buffered in the proxy's in-memory map and cannot reach segment files until
-/// the optimization finishes, so a follower comparison at such a boundary would report
-/// deleted points as live. The trace record is only written for checkpoints that actually
-/// run.
+/// With the optimizer enabled this skips *most checkpoints*, often including the final one,
+/// so a run can end having compared nothing. The skip becomes unnecessary *once proxy point
+/// deletions are persisted*.
+///
+/// TODO(model tester): Remove this check once proxy deletions are persisted.
 async fn edge_checkpoint(
     collection: &Collection,
     verifier: &edge_verify::EdgeVerifier,
