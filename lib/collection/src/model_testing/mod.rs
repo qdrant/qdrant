@@ -510,8 +510,12 @@ pub(super) enum VectorValue {
 /// With `edge_verify`, every shard directory is also opened through an Edge read-only
 /// follower ([`edge_verify::EdgeVerifier`]) and compared against the model at quiesced
 /// checkpoints: end of run and each mid-run restart. Requires the `edge-verify` cargo
-/// feature and the `write_segment_manifest` feature flag. The flag draws no rng and does
-/// not change the candidate universe, so op streams are seed-comparable with non-edge runs.
+/// feature and the `serverless_compatible` feature-flag bundle (manifest discovery plus
+/// append-only mutations; see [`edge_verify::EdgeVerifier::open`]). The flag draws no rng
+/// and does not change the candidate universe, so op streams are seed-comparable with
+/// non-edge runs; note however that each checkpoint force-flushes every shard, so with
+/// `edge_verify` the mid-run close+reopen no longer exercises the cold, unflushed
+/// WAL-replay recovery path (see the no-flush comment in the restart block).
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     seed: u64,
@@ -724,7 +728,10 @@ pub async fn run(
             }
             // Close + reopen + full model verification. Does NOT force a flush — mirrors
             // what a real user gets from `stop_gracefully`, which is the path that exposes
-            // the WAL-replay bug class.
+            // the WAL-replay bug class. Caveat: with `edge_verify` the checkpoint below
+            // force-flushes every shard right before this close, so edge runs reload from
+            // flushed state and largely lose that coverage; run without --edge-verify when
+            // hunting WAL-replay bugs.
             //
             // `Collection::load` (inside `reopen_collection`) draws its own
             // "Recovering collection" progress bar to stderr. Two independent indicatif bars on
@@ -921,15 +928,22 @@ pub async fn run(
     verify::assert_clocks_match(&pre_clocks, &post_clocks, "reloaded");
 }
 
-/// Quiesced edge-follower checkpoint: force-flush every shard (a follower only sees
-/// flushed state), refresh + scroll the followers, and compare against the model. Callers
-/// must be between ops with any background snapshot drained.
+/// Quiesced edge-follower checkpoint: wait (bounded) for in-flight optimizations to
+/// settle, force-flush every shard (a follower only sees flushed state), refresh + scroll
+/// the followers, and compare against the model. Callers must be between ops with any
+/// background snapshot drained.
 ///
-/// With the optimizer enabled this skips *most checkpoints*, often including the final one,
-/// so a run can end having compared nothing. The skip becomes unnecessary *once proxy point
-/// deletions are persisted*.
+/// The wait exists because deletes against a proxied segment live only in the proxy's
+/// in-memory map until the optimization finishes: no flush can make a follower see them,
+/// so comparing while proxies exist reports false divergences. Skipping outright instead
+/// of waiting made optimizer-on runs silently compare nothing (every restart landed on a
+/// busy optimizer); waiting converges quickly here because the op loop is idle. If
+/// proxies persist past the deadline the checkpoint degrades to a skip, recorded in the
+/// trace as `EdgeVerifySkipped`. An optimization *starting* after the wait is benign:
+/// with the op loop idle a fresh proxy has no buffered deletes, and the follower's
+/// refresh absorbs segment churn, so the race with the flush + observe below is safe.
 ///
-/// TODO(model tester): Remove this check once proxy deletions are persisted.
+/// TODO(model tester): drop the wait/skip once proxy deletions are persisted.
 async fn edge_checkpoint(
     collection: &Collection,
     verifier: &edge_verify::EdgeVerifier,
@@ -938,8 +952,12 @@ async fn edge_checkpoint(
     tick: usize,
     ctx: &str,
 ) {
-    if verify::has_proxy_segments(collection).await {
-        log::warn!("{ctx}: optimizer busy (proxy segments present), skipping edge checkpoint");
+    if !verify::wait_for_no_proxy_segments(collection).await {
+        log::warn!(
+            "{ctx}: optimizer still busy at deadline (proxy segments present), \
+             skipping edge checkpoint"
+        );
+        trace.edge_verify_skipped(tick);
         return;
     }
     trace.edge_verify(tick, model.len());
@@ -1210,15 +1228,27 @@ mod tests {
     ///
     /// Not run by default CI (needs the feature):
     /// `cargo nextest run -p collection --features edge-verify -E 'test(harness_edge_verify)'`
+    ///
+    /// KNOWN BLOCKER, unrelated to the edge code: the serverless bundle's append-only
+    /// mode trips a pre-existing `debug_assert` in `segment::index::query_estimator`
+    /// (`available_vectors` exceeds `available_points` once clone-and-tombstone copies
+    /// accumulate), so this test currently flakes on that panic. It reproduces with
+    /// `edge_verify = false` under the same flags (e.g. seed 362077359617665433), so the
+    /// gate must not be wired into CI until that engine bug is fixed.
     #[cfg(feature = "edge-verify")]
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_edge_verify() {
-        // Followers discover segments through the manifest, which the leader only writes
-        // when this flag is on; set it before the fixture builds the collection. A second
-        // init in the same process (plain `cargo test`) only logs a warning, and manifests
-        // turning on for sibling tests is harmless.
+        // The follower assumes the serverless leader contract, same as the binary's
+        // --edge-verify path: manifest-driven segment discovery plus append-only
+        // mutations. Manifests alone are NOT enough: an in-place point rewrite produces
+        // no live-reload delta, the follower serves stale data, and the checkpoint
+        // reports a false divergence (repro: seed 362077359617665433 with manifest-only
+        // flags diverges at op 564). Set before the fixture builds the collection. A
+        // second init in the same process (plain `cargo test`) only logs a warning;
+        // sibling harness tests picking up the bundle mid-run is acceptable there, and
+        // nextest runs one test per process anyway.
         let mut flags = common::flags::FeatureFlags::default();
-        flags.write_segment_manifest = true;
+        flags.enable_serverless_compatible();
         common::flags::init_feature_flags(flags);
         smoke(
             "harness_edge_verify",

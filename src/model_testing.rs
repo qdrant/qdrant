@@ -162,10 +162,14 @@ struct Args {
     /// each mid-run restart) by force-flushing every shard, refreshing the followers, and
     /// comparing a full follower scroll against the model.
     ///
-    /// Requires building with `--features edge-verify` (panics otherwise). Enables the
-    /// `write_segment_manifest` feature flag so followers discover segments through the
-    /// manifest. Draws no rng and does not change the candidate universe, so op streams
-    /// are seed-comparable with non-edge runs.
+    /// Requires building with `--features edge-verify` (panics otherwise). Forces the
+    /// whole `serverless_compatible` feature-flag bundle (manifest discovery, append-only
+    /// mutations, compact bitmask): the follower's live-reload only observes appended
+    /// offsets, so in-place mutations would be invisible to it. Draws no rng and does not
+    /// change the candidate universe, so op streams are seed-comparable with non-edge
+    /// runs. Two coverage caveats: append-only mode changes leader mutation semantics vs
+    /// a default run, and each checkpoint force-flushes every shard, so mid-run restarts
+    /// no longer exercise cold unflushed WAL-replay recovery.
     #[clap(long, default_value_t = false)]
     edge_verify: bool,
 }
