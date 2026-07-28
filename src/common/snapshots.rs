@@ -190,11 +190,23 @@ pub async fn recover_shard_snapshot(
 
         // Guard tracks recovery progress and removes it on drop, on every exit path
         // (success, error, or cancellation), so stale timings are never reported.
+        //
+        // It also makes recovery exclusive per shard. The next step clears the shard
+        // before downloading, so a second recovery starting while the first is still
+        // running would wipe the shard the first one is writing. That is reachable
+        // whenever the caller retries, because restoring a snapshot is not cancel
+        // safe and keeps running after the caller has walked away.
         let recovery_guard = collection
             .shards_holder()
             .read()
             .await
-            .start_shard_recovery(shard_id);
+            .try_start_shard_recovery(shard_id)
+            .ok_or_else(|| StorageError::ShardUnavailable {
+                description: format!(
+                    "Shard {shard_id} of collection {collection_name} is already \
+                     being recovered from a snapshot"
+                ),
+            })?;
 
         // For shard transfers, drop the existing shard and clear its on-disk data
         // before downloading the new snapshot so we don't need space for both copies.

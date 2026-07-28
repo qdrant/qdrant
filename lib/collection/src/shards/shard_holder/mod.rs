@@ -493,8 +493,11 @@ impl ShardHolder {
     /// Returns a [`ShardRecoveryGuard`] that must be held for the duration of the
     /// recovery. Dropping the guard - on success, error, or cancellation - stops
     /// tracking and removes the progress entry.
-    pub fn start_shard_recovery(&self, shard_id: ShardId) -> ShardRecoveryGuard {
-        self.active_recoveries.start(shard_id)
+    ///
+    /// Returns `None` if this shard is already being recovered, in which case the
+    /// caller must not start a second recovery. See [`ActiveRecoveries::try_start`].
+    pub fn try_start_shard_recovery(&self, shard_id: ShardId) -> Option<ShardRecoveryGuard> {
+        self.active_recoveries.try_start(shard_id)
     }
 
     pub fn get_shard_transfer_info(

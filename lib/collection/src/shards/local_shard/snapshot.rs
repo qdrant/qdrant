@@ -42,6 +42,26 @@ impl LocalShard {
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
         log::info!("Restoring shard snapshot {}", snapshot_path.display());
+
+        // Staging delay: widen the restore window. Restoring a shard snapshot is not
+        // cancel safe, so a caller that walked away cannot stop it, and a retried
+        // recovery can arrive while this one is still writing the shard. This delay
+        // makes that overlap reproducible. Exercised by
+        // `test_concurrent_shard_recovery.py`.
+        #[cfg(feature = "staging")]
+        {
+            let delay_secs: f64 = std::env::var("QDRANT__STAGING__SHARD_SNAPSHOT_RESTORE_DELAY")
+                .ok()
+                .and_then(|str| str.parse().ok())
+                .unwrap_or(0.0);
+
+            if delay_secs > 0.0 {
+                log::debug!("Staging: Delaying shard snapshot restore for {delay_secs}s");
+                std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs));
+                log::debug!("Staging: Delay complete, restoring shard snapshot");
+            }
+        }
+
         SnapshotUtils::restore_unpacked_snapshot(snapshot_path)?;
         Ok(())
     }

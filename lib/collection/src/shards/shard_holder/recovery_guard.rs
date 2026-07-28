@@ -29,16 +29,27 @@ pub struct ActiveRecoveries {
 impl ActiveRecoveries {
     /// Start tracking a recovery for `shard_id`, returning a guard that stops
     /// tracking on drop.
-    pub fn start(&self, shard_id: ShardId) -> ShardRecoveryGuard {
+    ///
+    /// Returns `None` if a recovery for this shard is already in progress.
+    /// Recovering clears the shard and rewrites it from the snapshot, so two
+    /// recoveries running at once would each clobber the other's work. This is
+    /// reachable whenever a caller retries: the previous attempt keeps running
+    /// because restoring a shard snapshot is not cancel safe.
+    pub fn try_start(&self, shard_id: ShardId) -> Option<ShardRecoveryGuard> {
+        let mut recoveries = self.recoveries.lock();
+
+        if recoveries.contains_key(&shard_id) {
+            return None;
+        }
+
         let progress = Arc::new(Mutex::new(RecoveryProgress::new()));
-        self.recoveries
-            .lock()
-            .insert(shard_id, Arc::clone(&progress));
-        ShardRecoveryGuard {
+        recoveries.insert(shard_id, Arc::clone(&progress));
+
+        Some(ShardRecoveryGuard {
             active_recoveries: self.clone(),
             shard_id,
             progress,
-        }
+        })
     }
 
     /// Format the recovery progress comment for `shard_id`, if a recovery is active.
