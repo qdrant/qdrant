@@ -146,6 +146,10 @@ pub struct LocalShard {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+
+    /// Effective optimizer config, with any node-local `optimizers_overwrite` applied.
+    /// Used everywhere the override must win over the persisted collection config.
+    effective_optimizers_config: OptimizersConfig,
 }
 
 /// Shard holds information about segments and WAL.
@@ -351,6 +355,7 @@ impl LocalShard {
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
+            effective_optimizers_config,
         }
     }
 
@@ -757,10 +762,7 @@ impl LocalShard {
         // (the pre-`applied_seq` behavior) keeps the shard unavailable until every acknowledged
         // operation is applied, which is what every read path assumes.
         let prevent_unoptimized = self
-            .collection_config
-            .read()
-            .await
-            .optimizer_config
+            .effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or_default();
         let op_num_upper_bound = if prevent_unoptimized {
@@ -1134,10 +1136,7 @@ impl LocalShard {
 
     pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
         let prevent_unoptimized = self
-            .collection_config
-            .read()
-            .await
-            .optimizer_config
+            .effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or(false);
 
