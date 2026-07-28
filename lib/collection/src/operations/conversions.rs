@@ -41,7 +41,7 @@ use super::types::{
     VectorsConfigDiff,
 };
 use crate::config::{
-    CollectionParams, PayloadStorageParams, ShardingMethod, WalConfig, default_on_disk_payload_opt,
+    CollectionParams, PayloadStorageParams, ShardingMethod, WalConfig, default_on_disk_payload,
     default_replication_factor, default_write_consistency_factor,
 };
 use crate::lookup::WithLookup;
@@ -520,9 +520,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     },
                     shard_number: shard_number.get(),
                     replication_factor: Some(replication_factor.get()),
-                    // Deprecated but always sent: clients generated before the field gained
-                    // presence read an absent value as `false`, which is not its default
-                    on_disk_payload: on_disk_payload.or(default_on_disk_payload_opt()),
+                    // gRPC keeps this as a plain bool, which cannot express "unset"; the
+                    // config always carries a value, so the fallback is never reached
+                    on_disk_payload: on_disk_payload.unwrap_or(default_on_disk_payload()),
                     write_consistency_factor: Some(write_consistency_factor.get()),
                     read_fan_out_factor,
                     sharding_method: sharding_method.map(sharding_method_to_proto),
@@ -1961,9 +1961,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         shard_number: NonZeroU32::new(shard_number).ok_or_else(|| {
                             Status::invalid_argument("`shard_number` cannot be zero")
                         })?,
-                        // Absent means `false`, not "unset": peers older than the field gaining
-                        // presence encode a plain bool, which is omitted from the wire when false
-                        on_disk_payload: Some(on_disk_payload.unwrap_or(false)),
+                        on_disk_payload: Some(on_disk_payload),
                         replication_factor: NonZeroU32::new(
                             replication_factor
                                 .unwrap_or_else(|| default_replication_factor().get()),
