@@ -55,6 +55,18 @@ impl LockedSegmentHolder {
         self.holder.try_read_for(timeout)
     }
 
+    /// Like [`Self::upgradable_read`], but gives up after `timeout`.
+    ///
+    /// Only one upgradable reader is allowed at a time, so callers that hold this
+    /// guard for a long time (snapshots) block each other. Use this where waiting
+    /// forever is worse than failing.
+    pub fn try_upgradable_read_for(
+        &self,
+        timeout: Duration,
+    ) -> Option<RwLockUpgradableReadGuard<'_, SegmentHolder>> {
+        self.holder.try_upgradable_read_for(timeout)
+    }
+
     pub fn try_read(&self) -> Option<RwLockReadGuard<'_, SegmentHolder>> {
         self.holder.try_read()
     }
