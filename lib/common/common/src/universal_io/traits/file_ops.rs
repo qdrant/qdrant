@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
-use crate::universal_io::{ListedFile, OpenOptions, UioResult};
+use crate::universal_io::{ListedFile, OpenOptions, UioResult, UniversalIoError};
 
 /// Filesystem-level handle for read-only operations.
 ///
@@ -143,4 +143,25 @@ pub trait CachedReadFs: UniversalReadFs {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
     ) -> UioResult<()>;
+
+    /// Length of `path` in the listing snapshot; `None` when the path is
+    /// absent, or before the snapshot was taken.
+    fn snapshot_len(&self, path: &Path) -> Option<u64>;
+
+    /// Stage the reopen of an *already-held* handle against the snapshot's
+    /// length — the counterpart of [`Self::schedule_prefetch`], which only
+    /// covers files reloaded through fresh handles.
+    ///
+    /// Fails with `NotFound` for a path absent from the snapshot, as
+    /// [`UniversalReadFs::open`] does; best-effort callers swallow it and let
+    /// the error resurface on the later read.
+    fn pre_reopen(&self, path: &Path, file: &mut Self::File) -> UioResult<()> {
+        let Some(known_len) = self.snapshot_len(path) else {
+            return Err(UniversalIoError::NotFound {
+                path: path.to_path_buf(),
+            });
+        };
+
+        file.reopen_schedule(Some(known_len))
+    }
 }

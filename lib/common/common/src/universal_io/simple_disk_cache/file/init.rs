@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::sync::atomic::Ordering;
 
-use super::{DiskCache, State};
+use super::{DiskCache, PendingReopen, State};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
 use crate::universal_io::{OwnedPipeline, UioResult};
@@ -30,7 +30,12 @@ where
         }
 
         // SAFETY: self.ready tracks whether `state` is `State::Ready`, to make reads "lock-free".
-        let State::Ready { remote, local } = (unsafe { &*self.state.data_ptr() }) else {
+        let State::Ready {
+            remote,
+            local,
+            pending_reopen: _, // only ever touched under `&mut self`
+        } = (unsafe { &*self.state.data_ptr() })
+        else {
             unreachable!("the `ready` flag guarantees the `Ready` variant")
         };
         Ok(ReadyRef { remote, local })
@@ -67,7 +72,11 @@ where
             }
         };
 
-        *state = State::Ready { remote, local };
+        *state = State::Ready {
+            remote,
+            local,
+            pending_reopen: PendingReopen::Stale,
+        };
         self.is_ready.store(true, Ordering::Release);
 
         Ok(())

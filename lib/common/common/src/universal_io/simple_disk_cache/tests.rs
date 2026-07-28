@@ -452,6 +452,146 @@ mod tests_mod {
         assert_eq!(&*bytes, &new_data[BLOCK_SIZE..BLOCK_SIZE * 2]);
     }
 
+    /// Staging must be invisible to readers: the mirror keeps its old length
+    /// (so components keep `len()` as their growth signal) until `reopen`
+    /// applies the staged work.
+    #[test]
+    fn reopen_schedule_is_invisible_until_reopen() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let original_len = scn.data.len() as u64;
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        cache.reopen_schedule(Some(new_data.len() as u64)).unwrap();
+
+        // Nothing changed yet: same length, and the appended region is still
+        // out of bounds.
+        assert_eq!(cache.len::<u8>().unwrap(), original_len);
+        let err = cache
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .unwrap_err();
+        assert_matches!(err, UniversalIoError::OutOfBounds { .. });
+
+        cache.reopen().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        // A populated cache staged the tail fetch, so the appended block is
+        // already local; a lazy one only learned the new length.
+        let new_block = (original_len / BLOCK_SIZE as u64) as u32;
+        assert_eq!(
+            cache
+                .state()
+                .unwrap()
+                .local
+                .contains(new_block..new_block + 1),
+            PREFILL,
+        );
+
+        let bytes = cache
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .unwrap();
+        assert_eq!(&*bytes, &new_data[original_len as usize..]);
+    }
+
+    /// Without a known length there is nothing to stage, so `reopen` falls
+    /// back to asking the remote itself.
+    #[test]
+    fn reopen_schedule_without_length_keeps_blocking_path() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let original_len = scn.data.len() as u64;
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        cache.reopen_schedule(None).unwrap();
+        assert_eq!(cache.len::<u8>().unwrap(), original_len);
+
+        cache.reopen().unwrap();
+
+        let bytes = cache
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .unwrap();
+        assert_eq!(&*bytes, &new_data[original_len as usize..]);
+    }
+
+    /// Staging against a cold cache materializes the mirror at the known
+    /// length, IO-free — the first read then needs no `len` round-trip.
+    #[test]
+    fn reopen_schedule_materializes_cold_mirror() {
+        let scn = Scenario::new(BLOCK_SIZE * 2 + 100);
+        let mut cache = scn.open::<R>(PREFILL);
+        assert!(!cache.is_ready());
+
+        cache.reopen_schedule(Some(scn.data.len() as u64)).unwrap();
+
+        assert!(cache.is_ready());
+        assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
+
+        // Applying the (no-growth) marker must stay off the blocking path and
+        // leave the mirror alone.
+        cache.reopen().unwrap();
+        assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
+
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &scn.data[..]);
+    }
+
+    /// Staging an unchanged length is a no-op marker: it must neither resize
+    /// nor invalidate, and must keep `reopen` off the blocking path.
+    #[test]
+    fn reopen_schedule_no_growth_does_not_repopulate() {
+        let scn = Scenario::new(BLOCK_SIZE * 3);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let (len_before, fetched_before) = {
+            let local = cache.state().unwrap().local;
+            (
+                local.mmap().len::<u8>().unwrap(),
+                local.fetched.lock().clone(),
+            )
+        };
+
+        cache.reopen_schedule(Some(scn.data.len() as u64)).unwrap();
+        cache.reopen().unwrap();
+
+        let local = cache.state().unwrap().local;
+        assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
+        assert_eq!(local.fetched.lock().clone(), fetched_before);
+    }
+
+    /// Two schedules without an apply in between. A pending resize is
+    /// superseded by the larger length; a pending tail is not (its in-flight
+    /// fetch borrows a clone of the remote), so its growth lands one refresh
+    /// later.
+    #[test]
+    fn reopen_schedule_twice_without_apply() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        let first_len = scn.grow_remote(BLOCK_SIZE).len() as u64;
+        cache.reopen_schedule(Some(first_len)).unwrap();
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        cache.reopen_schedule(Some(new_data.len() as u64)).unwrap();
+
+        cache.reopen().unwrap();
+
+        if PREFILL {
+            assert_eq!(cache.len::<u8>().unwrap(), first_len);
+            cache.reopen_schedule(Some(new_data.len() as u64)).unwrap();
+            cache.reopen().unwrap();
+        }
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &new_data[..]);
+    }
+
     /// `Populate::Partial` prefetches only the requested (block-aligned) range;
     /// blocks outside it stay unfetched until read, then fault in lazily.
     #[test]

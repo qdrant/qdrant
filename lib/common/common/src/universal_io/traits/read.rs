@@ -58,6 +58,23 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// This may be a no-op in some implementations.
     fn reopen(&mut self) -> UioResult<()>;
 
+    /// Stage the work that the next [`reopen`](Self::reopen) must do, given
+    /// the file's length as observed externally (e.g. a listing snapshot).
+    ///
+    /// Lets a caller submit the fetches of many reopens up front and only pay
+    /// the (already in-flight) tail of the wait when applying them. Contract:
+    /// must not wait on IO, and must have no reader-observable effect — no
+    /// length change, no cache invalidation.
+    ///
+    /// Defaults to a no-op: local backends' `reopen` is a stat plus a remap,
+    /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.
+    ///
+    /// [`DiskCache`]: crate::universal_io::DiskCache
+    fn reopen_schedule(&mut self, known_len: Option<u64>) -> UioResult<()> {
+        let _ = known_len;
+        Ok(())
+    }
+
     /// Prefer [`read_batch`] if you need high performance.
     #[inline]
     fn read<P: AccessPattern, T: Item>(

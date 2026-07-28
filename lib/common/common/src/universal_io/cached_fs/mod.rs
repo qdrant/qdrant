@@ -192,6 +192,10 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
 
         Ok(())
     }
+
+    fn snapshot_len(&self, path: &Path) -> Option<u64> {
+        Some(self.file_info(path)?.size)
+    }
 }
 
 /// Construction context for [`CachedReadFs`]: the inner filesystem's own

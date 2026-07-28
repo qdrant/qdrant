@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::config::DiskCacheConfig;
-use super::file::{DiskCache, State};
+use super::file::{DiskCache, PendingReopen, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
@@ -213,7 +213,11 @@ where
 
                 let local = LocalState::new(&local_path, len, options)?;
 
-                State::Ready { remote, local }
+                State::Ready {
+                    remote,
+                    local,
+                    pending_reopen: PendingReopen::Stale,
+                }
             }
             // Even if we know length, we don't need it to do `schedule_whole`.
             (None | Some(_), Populate::Blocking | Populate::PreferBackground) => {
@@ -261,7 +265,11 @@ where
                 } else {
                     // empty byte range, just initialize with length.
                     let local = LocalState::new(&local_path, file_len, options)?;
-                    State::Ready { remote, local }
+                    State::Ready {
+                        remote,
+                        local,
+                        pending_reopen: PendingReopen::Stale,
+                    }
                 }
             }
         };

@@ -116,6 +116,11 @@ where
     }
 
     #[inline]
+    fn reopen_schedule(&mut self, known_len: Option<u64>) -> UioResult<()> {
+        self.0.reopen_schedule(known_len)
+    }
+
+    #[inline]
     fn read<P: AccessPattern, T: Item>(
         &self,
         range: ReadRange,

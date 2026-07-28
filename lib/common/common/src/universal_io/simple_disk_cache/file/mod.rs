@@ -65,7 +65,18 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     /// Uninitialized start. Chosen for `Populate::No` / `Auto`.
     Uninit,
     /// The live mirror: the opened `remote` handle paired with its local mmap.
-    Ready { remote: R, local: LocalState },
+    Ready {
+        remote: R,
+        local: LocalState,
+        /// What the next [`reopen`] must do. Staged by [`reopen_schedule`],
+        /// consumed (reset to [`PendingReopen::Stale`]) by [`reopen`]. Only
+        /// touched under `&mut self`, and `ReadyRef` borrows just
+        /// `remote`/`local`, so staging never disturbs the served state.
+        ///
+        /// [`reopen`]: UniversalRead::reopen
+        /// [`reopen_schedule`]: UniversalRead::reopen_schedule
+        pending_reopen: PendingReopen<R>,
+    },
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
     /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
     /// `PreferBackground`.
@@ -81,6 +92,37 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     PartialPrefill {
         pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
+    },
+}
+
+/// The obligation of the next [`reopen`](UniversalRead::reopen), staged ahead
+/// of time by [`reopen_schedule`](UniversalRead::reopen_schedule).
+///
+/// Staging deliberately leaves the mirror alone: its length keeps matching its
+/// persisted content until the apply, so readers observe nothing in between
+/// and components keep `len()` as their growth signal. Nothing else remembers
+/// the staged targets, hence the `target_len` on every variant.
+#[derive(Debug)]
+pub(crate) enum PendingReopen<R: UniversalRead + 'static> {
+    /// Nothing staged — the default at every [`State::Ready`] construction
+    /// site. `reopen` takes the legacy path, blocking `remote.len()` included.
+    Stale,
+    /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
+    /// `target_len` and lets the new blocks fault in on demand. Doubles as the
+    /// "already up to date" marker — a resize to the current length is a no-op
+    /// — which is what keeps apply off the legacy path.
+    Resize { target_len: u64 },
+    /// Populated (`Blocking` / `PreferBackground`): the appended tail is
+    /// already in flight on a clone of the remote; apply drains it, resizes
+    /// and writes it. User data is the read's `from` offset, as in
+    /// [`State::ReopenPrefill`].
+    ///
+    /// Holds exactly one read and is never superseded while staged — the
+    /// clone pins the remote's mapping on local backends. See
+    /// `reopen_schedule`.
+    Tail {
+        pipeline: OwnedPipeline<R, u64>,
+        target_len: u64,
     },
 }
 
