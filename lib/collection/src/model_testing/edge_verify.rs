@@ -49,16 +49,23 @@ pub(super) struct EdgeVerifier {
 }
 
 impl EdgeVerifier {
-    /// Open a follower over every shard directory. Requires the leader to write segment
-    /// manifests (`write_segment_manifest` feature flag, set before the collection is
-    /// built): the follower discovers segments through the manifest, which is what keeps
-    /// discovery safe under optimizer churn — in-construction segments are not listed.
+    /// Open a follower over every shard directory. Requires the leader to run under the
+    /// full serverless-compatible contract (`serverless_compatible` feature flag, set
+    /// before the collection is built), not just segment manifests:
+    /// `write_segment_manifest` gives the follower safe segment discovery under optimizer
+    /// churn (in-construction segments are not listed), and `append_only_mutations` is
+    /// what makes leader writes observable at all: the follower's live-reload delta is
+    /// keyed on newly appended offsets, so an in-place rewrite of an existing point is
+    /// invisible to it and produces false model divergences (repro: manifest-only run of
+    /// `harness_edge_verify` with seed 362077359617665433 diverges at op 564).
     #[cfg(feature = "edge-verify")]
     pub(super) fn open(collection_dir: &Path, shard_count: u32) -> Self {
         assert!(
-            common::flags::feature_flags().write_segment_manifest,
-            "edge-verify requires the write_segment_manifest feature flag; \
-             set it in init_feature_flags before building the collection",
+            common::flags::feature_flags().serverless_compatible(),
+            "edge-verify requires the serverless_compatible feature-flag bundle \
+             (manifest discovery + append-only mutations); call \
+             enable_serverless_compatible() before init_feature_flags, before the \
+             collection is built",
         );
         let shards = (0..shard_count)
             .map(|shard_id| {
