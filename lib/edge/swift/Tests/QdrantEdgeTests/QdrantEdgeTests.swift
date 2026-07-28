@@ -723,6 +723,7 @@ final class QdrantEdgeTests: XCTestCase {
         let searchVectorJson = try XCTUnwrap(results.first?.vector, "withVector:true should populate ScoredPoint.vector")
         let searchDecoded = try Self.extractVectorFloats(searchVectorJson)
         XCTAssertEqual(searchDecoded.count, 4, "decoded vector should have 4 components: \(searchVectorJson)")
+        guard searchDecoded.count == 4 else { return } // fail (above) without trapping on the index below
         for (i, expected) in upserted.enumerated() {
             XCTAssertEqual(searchDecoded[i], expected, accuracy: 1e-5, "search component \(i) should round-trip")
         }
@@ -733,6 +734,7 @@ final class QdrantEdgeTests: XCTestCase {
         let recordVectorJson = try XCTUnwrap(records.first?.vector, "withVector:true should populate Record.vector")
         let recordDecoded = try Self.extractVectorFloats(recordVectorJson)
         XCTAssertEqual(recordDecoded.count, 4, "decoded record vector should have 4 components: \(recordVectorJson)")
+        guard recordDecoded.count == 4 else { return } // fail (above) without trapping on the index below
         for (i, expected) in upserted.enumerated() {
             XCTAssertEqual(recordDecoded[i], expected, accuracy: 1e-5, "retrieve component \(i) should round-trip")
         }
@@ -1418,9 +1420,13 @@ final class QdrantEdgeTests: XCTestCase {
         XCTAssertTrue((page.records.first?.payload ?? "").contains("2022"), "first record should be the 2022 point: \(page.records.first?.payload ?? "")")
         // order_value is populated; datetime sorts as a numeric timestamp under the hood.
         let orderValue = try XCTUnwrap(page.records.first?.orderValue, "datetime order-by should populate order_value")
+        // Accept whichever numeric form the engine surfaces for datetimes, and
+        // assert it is a positive timestamp rather than asserting nothing.
         switch orderValue {
-        case .int, .float:
-            break // accept whichever numeric form the engine surfaces for datetimes
+        case let .int(v):
+            XCTAssertGreaterThan(v, 0, "datetime order_value should be a positive timestamp")
+        case let .float(v):
+            XCTAssertGreaterThan(v, 0, "datetime order_value should be a positive timestamp")
         }
     }
 
