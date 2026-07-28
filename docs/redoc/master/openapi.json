@@ -11677,7 +11677,7 @@
             "type": "boolean"
           },
           "async_payload_storage": {
-            "description": "Allow the io_uring-based payload storage implementation. Only lifts the ban: whether a segment gets it is decided by `storage.performance.io_uring` and the memory placement.",
+            "description": "Allow the io_uring-based payload storage implementation. When disabled, io_uring payload storage is *never* used. When enabled, payload storage backend is decided based on `storage.performance.io_uring` option and payload storage type.",
             "default": true,
             "type": "boolean"
           },
