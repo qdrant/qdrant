@@ -65,6 +65,7 @@ where
                     num_vectors,
                     num_indexed_vectors,
                     num_deleted_vectors: vector_storage.deleted_vector_count(),
+                    io_backend: vector_storage.io_backend(),
                 };
                 (key.clone(), info)
             })
@@ -93,6 +94,7 @@ where
             is_appendable,
             index_schema: HashMap::new(),
             vector_data: vector_data_info,
+            payload_storage_io_backend: self.payload_storage.io_backend(),
             deferred_internal_id: self.deferred_internal_id(),
         }
     }

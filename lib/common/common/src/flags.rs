@@ -29,7 +29,10 @@ pub struct FeatureFlags {
     /// Enabled by default in Qdrant 1.18.3+
     pub single_file_mmap_vector_storage: bool,
 
-    /// Use io_uring-based payload storage implementation.
+    /// Allow the io_uring-based payload storage implementation to be selected.
+    ///
+    /// Only lifts the ban: whether a segment actually gets it is decided by the
+    /// `storage.performance.io_uring` setting and the payload storage's memory placement.
     pub async_payload_storage: bool,
 
     /// Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory)
@@ -59,7 +62,7 @@ impl Default for FeatureFlags {
             incremental_hnsw_building: true,
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
-            async_payload_storage: false,
+            async_payload_storage: true,
             write_segment_manifest: false,
             append_only_mutations: false,
             compact_bitmask: false,

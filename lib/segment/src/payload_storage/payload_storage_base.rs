@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
-use crate::types::{OwnedPayloadRef, Payload};
+use crate::types::{IoBackend, OwnedPayloadRef, Payload};
 
 /// Read-only trait for payload data storage.
 ///
@@ -62,6 +62,14 @@ pub trait PayloadStorageRead {
 
     /// Whether this storage is on-disk or in-memory.
     fn is_on_disk(&self) -> bool;
+
+    /// Universal-IO backend this storage reads through, or `None` when it is not one of the
+    /// storages that can be opened on either backend.
+    ///
+    /// Surfaced as `payload_storage_io_backend` in [`SegmentInfo`](crate::types::SegmentInfo).
+    fn io_backend(&self) -> Option<IoBackend> {
+        None
+    }
 }
 
 /// Trait for payload data storage with mutating operations. Should allow filter checks

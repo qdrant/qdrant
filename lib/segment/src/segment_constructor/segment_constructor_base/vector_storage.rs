@@ -4,7 +4,7 @@ use common::mmap::{Advice, AdviceSetting};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{
-    SparseVectorStorageType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    Memory, SparseVectorStorageType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::{
@@ -20,7 +20,7 @@ fn open_mmap_vector_storage(
     vector_storage_path: &Path,
     vector_config: &VectorDataConfig,
     madvise: AdviceSetting,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
     let storage_element_type = vector_config.datatype.unwrap_or_default();
     if let Some(multi_vec_config) = &vector_config.multivector_config {
@@ -32,33 +32,35 @@ fn open_mmap_vector_storage(
             vector_config.distance,
             *multi_vec_config,
             madvise,
-            populate,
+            memory.populate_on_open(),
         )
     } else {
+        // The single-file storages pick their IO backend from the placement, so they take it
+        // whole rather than the populate flag derived from it.
         match storage_element_type {
             VectorStorageDatatype::Float32 => open_dense_vector_storage(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                populate,
+                memory,
             ),
             VectorStorageDatatype::Uint8 => open_dense_vector_storage_byte(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                populate,
+                memory,
             ),
             VectorStorageDatatype::Float16 => open_dense_vector_storage_half(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                populate,
+                memory,
             ),
             VectorStorageDatatype::Turbo4 => open_turbo_vector_storage(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                populate,
+                memory,
             ),
         }
     }
@@ -107,13 +109,13 @@ pub(crate) fn open_vector_storage(
             vector_storage_path,
             vector_config,
             AdviceSetting::Global,
-            false,
+            Memory::Cold,
         ),
         VectorStorageType::InRamMmap => open_mmap_vector_storage(
             vector_storage_path,
             vector_config,
             AdviceSetting::from(Advice::Normal),
-            true,
+            Memory::Cached,
         ),
 
         // Chunked mmap on disk, appendable

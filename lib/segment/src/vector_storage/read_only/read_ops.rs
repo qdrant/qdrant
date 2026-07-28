@@ -6,13 +6,19 @@ use common::universal_io::{UniversalRead, UserData};
 use super::VectorStorageReadEnum;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
-use crate::types::{Distance, VectorStorageDatatype};
+use crate::types::{Distance, IoBackend, VectorStorageDatatype};
 use crate::vector_storage::{
     DenseTQVectorStorageRead, DenseVectorStorageRead, MultiTQVectorStorageRead,
     MultiVectorStorageRead, SparseVectorStorageRead, VectorStorageRead,
 };
 
 impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
+    /// Every variant reads through the segment-wide `S`, so the backend is the same for all of
+    /// them — unlike a writable segment, a read-only one does not choose per component.
+    fn io_backend(&self) -> Option<IoBackend> {
+        IoBackend::from_universal_kind(S::kind())
+    }
+
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         match self {
             VectorStorageReadEnum::Dense(s) => s.size_of_available_vectors_in_bytes(),

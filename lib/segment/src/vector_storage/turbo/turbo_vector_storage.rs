@@ -29,10 +29,11 @@ use super::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
-use crate::types::{Distance, VectorStorageDatatype};
+use crate::types::{Distance, Memory, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, TurboScoring, VectorStorage, VectorStorageEnum,
@@ -70,25 +71,23 @@ pub struct TurboVectorStorageImpl<S: UniversalRead = MmapFile> {
 
 /// Open (create-or-load) a single-file TurboQuant vector storage (non-appendable),
 /// wrapped into the right [`VectorStorageEnum`] variant. Counterpart to
-/// `open_dense_vector_storage`: reads go through io_uring when the async scorer is
-/// enabled (Linux), plain mmap otherwise.
+/// `open_dense_vector_storage`: reads go through io_uring when the node-wide io_uring
+/// setting picks it for `memory` (Linux only), plain mmap otherwise.
 pub fn open_turbo_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
-    #[cfg(target_os = "linux")]
-    let with_uring = crate::vector_storage::common::get_async_scorer();
+    // Like the immutable dense storages: no feature flag of its own, and it predates the
+    // `io_uring` setting, so with no setting configured it keeps following the async scorer.
+    let with_uring = use_io_uring(IoUringFallback::AsyncScorer, memory, true);
 
-    #[cfg(not(target_os = "linux"))]
-    let with_uring = false;
-
-    open_turbo_vector_storage_with_uring(path, dim, distance, populate, with_uring)
+    open_turbo_vector_storage_with_uring(path, dim, distance, memory.populate_on_open(), with_uring)
 }
 
 /// [`open_turbo_vector_storage`] with an explicit backend choice instead of the
-/// global async-scorer flag. Falls back to mmap (with an error log) if the
+/// node-wide io_uring setting. Falls back to mmap (with an error log) if the
 /// io_uring backend cannot be opened.
 pub fn open_turbo_vector_storage_with_uring(
     path: &Path,
