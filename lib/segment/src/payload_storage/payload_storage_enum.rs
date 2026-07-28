@@ -14,7 +14,7 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::{OwnedPayloadRef, Payload};
+use crate::types::{IoBackend, OwnedPayloadRef, Payload};
 
 #[derive(Debug)]
 pub enum PayloadStorageEnum {
@@ -140,6 +140,17 @@ impl PayloadStorageRead for PayloadStorageEnum {
             PayloadStorageEnum::Mmap(s) => s.is_on_disk(),
             #[cfg(target_os = "linux")]
             PayloadStorageEnum::IoUring(s) => s.is_on_disk(),
+        }
+    }
+
+    fn io_backend(&self) -> Option<IoBackend> {
+        match self {
+            // Heap-only, never reads through a universal-IO backend
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(_) => None,
+            PayloadStorageEnum::Mmap(_) => Some(IoBackend::Mmap),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(_) => Some(IoBackend::IoUring),
         }
     }
 }

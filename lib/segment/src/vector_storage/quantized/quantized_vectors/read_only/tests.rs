@@ -18,7 +18,7 @@ use crate::common::live_reload::LiveReload;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
-    BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
+    BinaryQuantizationConfig, Distance, Memory, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig, TurboQuantQuantizationConfig, VectorDataConfig,
 };
 use crate::vector_storage::VectorStorageEnum;
@@ -45,7 +45,7 @@ fn build_on_disk_storage(dir: &std::path::Path, rng: &mut StdRng) -> VectorStora
             .unwrap();
     }
 
-    let mut storage = open_dense_vector_storage(dir, DIMS, DISTANCE, false).unwrap();
+    let mut storage = open_dense_vector_storage(dir, DIMS, DISTANCE, Memory::Cold).unwrap();
     merge_from_single_source(&mut storage, &raw, NUM_POINTS as PointOffsetType).unwrap();
     storage
 }

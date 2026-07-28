@@ -22,7 +22,7 @@ mod tests;
 pub use self::cached_fs::{CachedFs, CachedReadFsContext};
 pub use self::error::{IsNotFound, OkNotFound, UniversalIoError};
 #[cfg(target_os = "linux")]
-pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra};
+pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra, is_io_uring_supported};
 pub use self::mmap::{MmapFile, MmapFs};
 pub use self::oneshot::OneshotFile;
 pub use self::simple_disk_cache::{

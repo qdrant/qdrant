@@ -11677,8 +11677,8 @@
             "type": "boolean"
           },
           "async_payload_storage": {
-            "description": "Use io_uring-based payload storage implementation.",
-            "default": false,
+            "description": "Allow the io_uring-based payload storage implementation. When disabled, io_uring payload storage is *never* used. When enabled, payload storage backend is decided based on `storage.performance.io_uring` option and payload storage type.",
+            "default": true,
             "type": "boolean"
           },
           "write_segment_manifest": {
@@ -12317,6 +12317,17 @@
               "$ref": "#/components/schemas/VectorDataInfo"
             }
           },
+          "payload_storage_io_backend": {
+            "description": "Universal I/O backend that payload storage reads files with. Absent if payload storage does not support configurable backends or only supports a single backend type.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IoBackend"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "deferred_internal_id": {
             "description": "Internal ID from which points are deferred (hidden from reads). Only set for appendable segments.",
             "type": "integer",
@@ -12357,8 +12368,27 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "io_backend": {
+            "description": "Universal I/O backend that this vector storage reads files with. Absent if vector storage does not support configurable backends or only supports a single backend type.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IoBackend"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "IoBackend": {
+        "description": "Universal I/O backend that is used to read files.\n\nDecided when the component is opened based on `storage.performance.io_uring` option, component memory placement and kernel io_uring support.\n\nOptions:\n\n* `Mmap` - Reads are served by the page cache through a memory mapping.\n\n* `IoUring` - Reads are submitted to the kernel with io_uring.",
+        "type": "string",
+        "enum": [
+          "mmap",
+          "io_uring"
+        ]
       },
       "SegmentConfig": {
         "type": "object",

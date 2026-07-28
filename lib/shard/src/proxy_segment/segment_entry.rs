@@ -119,6 +119,7 @@ impl ProxySegment {
             is_appendable: false,
             index_schema: wrapped_info.index_schema,
             vector_data,
+            payload_storage_io_backend: wrapped_info.payload_storage_io_backend,
             deferred_internal_id: wrapped_info.deferred_internal_id,
         }
     }

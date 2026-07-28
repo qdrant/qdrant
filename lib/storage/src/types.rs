@@ -23,6 +23,7 @@ use common::low_memory::LowMemoryMode;
 use common::mmap;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
+use segment::common::io_uring::IoUringMode;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::{HnswConfig, HnswGlobalConfig};
 use serde::{Deserialize, Serialize};
@@ -59,6 +60,11 @@ pub struct PerformanceConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
+    /// Whether components that can be opened on either mmap or io_uring should use io_uring.
+    /// Unset leaves the vector storages following [`Self::async_scorer`] and nothing else on
+    /// io_uring. Kernel io_uring support is required whatever this is set to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub io_uring: Option<IoUringMode>,
     #[serde(default, flatten)]
     pub load_concurrency: LoadConcurrencyConfig,
 }

@@ -10,7 +10,7 @@ use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
-use segment::types::Distance;
+use segment::types::{Distance, Memory};
 use segment::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
 use segment::vector_storage::{DEFAULT_STOPPED, DenseVectorStorage, VectorStorageEnum};
 use tempfile::Builder;
@@ -43,7 +43,7 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
     #[cfg(not(target_os = "linux"))]
     assert!(!IO_URING, "async scorer is only supported on Linux");
 
-    let mut storage = open_dense_vector_storage(tmp.path(), DIM, Distance::Dot, false)
+    let mut storage = open_dense_vector_storage(tmp.path(), DIM, Distance::Dot, Memory::Cold)
         .expect("vector storage created");
 
     let mut vectors = (0..VECTORS).map(|_| {

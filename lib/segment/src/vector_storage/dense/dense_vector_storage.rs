@@ -17,13 +17,12 @@ use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
 use fs_err::{File, OpenOptions};
 
 use crate::common::Flusher;
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::VectorRef;
-use crate::types::{Distance, VectorStorageDatatype};
-#[cfg(target_os = "linux")]
-use crate::vector_storage::common::get_async_scorer;
+use crate::types::{Distance, Memory, VectorStorageDatatype};
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
@@ -82,21 +81,31 @@ where
     }
 }
 
+/// Whether the immutable single-file dense vector storages open on io_uring at `memory`. They
+/// have no feature flag of their own, and predate the setting, so they fall back to the async
+/// scorer.
+fn dense_with_uring(memory: Memory) -> bool {
+    use_io_uring(IoUringFallback::AsyncScorer, memory, true)
+}
+
 pub fn open_dense_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
-    #[cfg(target_os = "linux")]
-    let with_uring = get_async_scorer(); // `get_async_scorer` only available on Linux
-
-    #[cfg(not(target_os = "linux"))]
-    let with_uring = false;
-
-    open_dense_vector_storage_with_uring(path, dim, distance, populate, with_uring)
+    open_dense_vector_storage_with_uring(
+        path,
+        dim,
+        distance,
+        memory.populate_on_open(),
+        dense_with_uring(memory),
+    )
 }
 
+/// [`open_dense_vector_storage`] with an explicit backend choice instead of the node-wide
+/// io_uring setting. Falls back to mmap (with an error log) if the io_uring backend cannot be
+/// opened.
 pub fn open_dense_vector_storage_with_uring(
     path: &Path,
     dim: usize,
@@ -133,10 +142,15 @@ pub fn open_dense_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
+    let populate = memory.populate_on_open();
+    let with_uring = dense_with_uring(memory);
+    // prevent "unused variable" warning
+    let _ = with_uring;
+
     #[cfg(target_os = "linux")]
-    if get_async_scorer() {
+    if with_uring {
         match open_dense_vector_storage_impl(
             common::universal_io::IoUringFs,
             path,
@@ -161,10 +175,15 @@ pub fn open_dense_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
+    let populate = memory.populate_on_open();
+    let with_uring = dense_with_uring(memory);
+    // prevent "unused variable" warning
+    let _ = with_uring;
+
     #[cfg(target_os = "linux")]
-    if get_async_scorer() {
+    if with_uring {
         match open_dense_vector_storage_impl(
             common::universal_io::IoUringFs,
             path,
@@ -496,7 +515,8 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let mut id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
@@ -602,7 +622,8 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = create_id_tracker_fixture(points.len());
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -723,7 +744,8 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -792,7 +814,8 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -860,7 +883,8 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 

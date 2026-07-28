@@ -6,9 +6,13 @@ use common::universal_io::UniversalRead;
 use crate::common::operation_error::OperationResult;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::types::{OwnedPayloadRef, Payload};
+use crate::types::{IoBackend, OwnedPayloadRef, Payload};
 
 impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
+    fn io_backend(&self) -> Option<IoBackend> {
+        IoBackend::from_universal_kind(S::kind())
+    }
+
     fn get(
         &self,
         point_offset: PointOffsetType,
