@@ -46,7 +46,7 @@ segment = { path = "../../segment", default-features = false }
 shard = { path = "../../shard", default-features = false }
 sparse = { path = "../../sparse" }
 
-uniffi = "0.31"
+uniffi = "0.32"
 thiserror = "2"
 uuid = "1"
 ahash = { workspace = true }
@@ -56,4 +56,4 @@ ordered-float = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
-uniffi = { version = "0.31", features = ["build"] }
+uniffi = { version = "0.32", features = ["build"] }

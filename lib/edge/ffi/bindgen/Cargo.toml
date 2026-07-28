@@ -9,7 +9,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-uniffi = { version = "0.31", features = ["cli"] }
+uniffi = { version = "0.32", features = ["cli"] }
 
 [[bin]]
 name = "uniffi-bindgen"
