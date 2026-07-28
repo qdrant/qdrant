@@ -480,12 +480,18 @@ impl PayloadIndexInfo {
 ///
 /// Decided when the component is opened, from `storage.performance.io_uring`, its memory
 /// placement and the kernel's io_uring support at once, so it is not derivable from the config.
+///
+/// Options:
+///
+/// * `Mmap` - Reads are served by the page cache through a memory mapping.
+///
+/// * `IoUring` - Reads are submitted to the kernel as io_uring operations.
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IoBackend {
-    /// Reads are served by the page cache through a memory mapping.
+    // Reads are served by the page cache through a memory mapping.
     Mmap,
-    /// Reads are submitted to the kernel as io_uring operations.
+    // Reads are submitted to the kernel as io_uring operations.
     IoUring,
 }
 

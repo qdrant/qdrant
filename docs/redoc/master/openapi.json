@@ -12383,22 +12383,11 @@
         }
       },
       "IoBackend": {
-        "description": "Universal-IO backend a component's files are read through.\n\nDecided when the component is opened, from `storage.performance.io_uring`, its memory placement and the kernel's io_uring support at once, so it is not derivable from the config.",
-        "oneOf": [
-          {
-            "description": "Reads are served by the page cache through a memory mapping.",
-            "type": "string",
-            "enum": [
-              "mmap"
-            ]
-          },
-          {
-            "description": "Reads are submitted to the kernel as io_uring operations.",
-            "type": "string",
-            "enum": [
-              "io_uring"
-            ]
-          }
+        "description": "Universal-IO backend a component's files are read through.\n\nDecided when the component is opened, from `storage.performance.io_uring`, its memory placement and the kernel's io_uring support at once, so it is not derivable from the config.\n\nOptions:\n\n* `Mmap` - Reads are served by the page cache through a memory mapping.\n\n* `IoUring` - Reads are submitted to the kernel as io_uring operations.",
+        "type": "string",
+        "enum": [
+          "mmap",
+          "io_uring"
         ]
       },
       "SegmentConfig": {

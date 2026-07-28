@@ -5,20 +5,27 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::types::Memory;
 use crate::vector_storage::common::get_async_scorer;
 
 /// How this node picks between the mmap and io_uring backends of a component that has both.
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
+///
+/// Options:
+///
+/// * `Disabled` - Never open a component on io_uring.
+///
+/// * `Auto` - Open a component on io_uring when it can pay off and is possible: cold data,
+///   feature flag allows it, kernel supports it. Data meant to sit in the page cache stays on
+///   mmap, which is faster there.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IoUringMode {
-    /// Never open a component on io_uring.
+    // Never open a component on io_uring.
     Disabled,
-    /// Open a component on io_uring when it can pay off and is possible: cold data, feature
-    /// flag allows it, kernel supports it. Data meant to sit in the page cache stays on mmap,
-    /// which is faster there.
+    // Open a component on io_uring when it can pay off and is possible.
     Auto,
 }
 
