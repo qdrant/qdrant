@@ -186,7 +186,9 @@ jobs:
           # AGP 8.7.3 / Gradle 8.11.1 need JDK 17+; JDK 24+ is too new. Use the
           # JDK 21 preinstalled on the runner rather than a separate setup-java
           # step. JAVA_HOME_21_X64 is a runner OS env var (not the `env` context),
-          # so it must be read here in the shell, not via ${{ env.* }}. Check the
+          # so it must be read here in the shell, not via the workflow env
+          # context (GitHub interpolates expressions anywhere in `run`, so the
+          # literal must not appear even in a comment). Check the
           # directory EXISTS (not just non-empty): the tool-cache reclaim above
           # could, on a future image, delete a JDK that migrated into it.
           if [ ! -d "${JAVA_HOME_21_X64:-}" ]; then
