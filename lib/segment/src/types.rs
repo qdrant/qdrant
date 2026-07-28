@@ -662,7 +662,7 @@ pub enum IdfParams {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum IdfScope {
-    /// Collection-wide statistics. This is the default behavior.
+    // Collection-wide statistics. This is the default behavior.
     Global,
 }
 
