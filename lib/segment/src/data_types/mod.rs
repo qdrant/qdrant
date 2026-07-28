@@ -8,6 +8,7 @@ pub mod modifier;
 pub mod named_vectors;
 pub mod order_by;
 pub mod primitive;
+pub mod payload_budget;
 pub mod query_context;
 pub mod segment_record;
 pub mod tiny_map;
