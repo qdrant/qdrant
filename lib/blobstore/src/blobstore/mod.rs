@@ -145,6 +145,32 @@ where
         }
     }
 
+    /// Put an already serialized value in the storage.
+    ///
+    /// `value_bytes` must be the value in its [`Blob`] encoding, uncompressed — the same bytes
+    /// `V::to_bytes` would produce. Compression is applied here with the local storage config,
+    /// so callers can exchange these bytes between storages with different compression settings.
+    ///
+    /// Returns true if the value existed previously and was updated, false if it was newly inserted.
+    ///
+    /// In append-only mode values must be put at monotonically increasing point offsets, and
+    /// cannot be overwritten.
+    pub fn put_value_bytes(
+        &mut self,
+        point_offset: PointOffset,
+        value_bytes: Vec<u8>,
+        hw_counter: HwMetricRefCounter,
+    ) -> Result<bool> {
+        match self {
+            Blobstore::Gridstore(storage) => {
+                storage.put_value_bytes(point_offset, value_bytes, hw_counter)
+            }
+            Blobstore::Logstore(storage) => {
+                storage.put_value_bytes(point_offset, value_bytes, hw_counter)
+            }
+        }
+    }
+
     /// Delete a value from the storage.
     ///
     /// Returns None if the point_offset, page, or value was not found.
@@ -195,6 +221,22 @@ where
         match self {
             Blobstore::Gridstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
             Blobstore::Logstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
+        }
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed — the same
+    /// bytes `V::to_bytes` would produce, valid as [`put_value_bytes`](Self::put_value_bytes)
+    /// input regardless of either storage's compression setting.
+    pub fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Vec<u8>>> {
+        match self {
+            Blobstore::Gridstore(storage) => storage.get_value_bytes::<P>(point_offset, hw_counter),
+            Blobstore::Logstore(storage) => storage.get_value_bytes::<P>(point_offset, hw_counter),
         }
     }
 
