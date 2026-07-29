@@ -74,16 +74,48 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 /// callers pass `config.search_thread_count()` so a configured `0` is expanded to the CPU-derived
 /// default that matches the core search runtime.
 ///
+/// `pin_core` pins every pool thread to the given CPU core
+/// ([`EdgeConfig::search_pool_core`]): the pool keeps its IO overlap but its compute is bounded
+/// to one core. Pinning is best-effort — an unsupported platform or an out-of-range core id logs
+/// a warning and the thread runs unpinned (macOS in particular only honours affinity as a hint).
+///
 /// Returns an error (rather than panicking) when the underlying thread spawn fails — this runs
 /// during shard open/load and follower open, so a transient resource failure must not abort the
 /// process.
-pub(crate) fn build_search_pool(num_threads: usize) -> OperationResult<Arc<ThreadPool>> {
-    let pool = ThreadPoolBuilder::new()
+pub(crate) fn build_search_pool(
+    num_threads: usize,
+    pin_core: Option<usize>,
+) -> OperationResult<Arc<ThreadPool>> {
+    let mut builder = ThreadPoolBuilder::new()
         .num_threads(num_threads)
-        .thread_name(|idx| format!("edge-search-{idx}"))
-        .build()
-        .map_err(|err| {
-            OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
-        })?;
+        .thread_name(|idx| format!("edge-search-{idx}"));
+    if let Some(core) = pin_core {
+        builder = builder.start_handler(move |idx| {
+            if !core_affinity::set_for_current(core_affinity::CoreId { id: core }) {
+                log::warn!("failed to pin edge search thread {idx} to core {core}");
+            }
+        });
+    }
+    let pool = builder.build().map_err(|err| {
+        OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
+    })?;
     Ok(Arc::new(pool))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pinning is best-effort: the pool must build and run work both with a
+    /// valid core id and with an out-of-range one (the start handler only
+    /// warns on a failed pin — it must never break the pool).
+    #[test]
+    fn pinned_pool_builds_and_runs() {
+        let pool = build_search_pool(2, Some(0)).unwrap();
+        let sum: i32 = pool.install(|| (0..4).sum());
+        assert_eq!(sum, 6);
+
+        let pool = build_search_pool(1, Some(usize::MAX)).unwrap();
+        assert_eq!(pool.install(|| 1 + 1), 2);
+    }
 }

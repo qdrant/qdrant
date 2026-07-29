@@ -885,6 +885,7 @@ mod tests {
             optimizers: None,
             wal_options: None,
             max_search_threads: None,
+            search_pool_core: None,
         }
     }
 
