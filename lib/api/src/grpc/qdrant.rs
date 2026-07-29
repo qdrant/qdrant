@@ -10620,12 +10620,19 @@ pub struct PointStructRaw {
     >,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    /// serde_json encoding of the whole payload object, uncompressed,
-    /// exactly as stored in gridstore. None = point has no payload.
-    #[prost(bytes = "vec", optional, tag = "4")]
-    pub raw_payload: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    #[prost(enumeration = "RawPayloadEncoding", tag = "5")]
-    pub raw_payload_encoding: i32,
+    /// Byte-encoded payload blob.
+    #[prost(message, optional, tag = "4")]
+    pub raw_payload: ::core::option::Option<RawPayload>,
+}
+/// The whole payload object of a point as a single encoded blob.
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RawPayload {
+    /// The encoded payload object, see `encoding` for the format.
+    #[prost(bytes = "vec", tag = "1")]
+    pub payload_bytes: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "RawPayloadEncoding", tag = "2")]
+    pub encoding: i32,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -11443,7 +11450,7 @@ pub struct FacetResponseInternal {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
 }
-/// Encoding of `PointStructRaw.raw_payload`.
+/// Encoding of `RawPayload.payload_bytes`.
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

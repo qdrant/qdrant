@@ -499,7 +499,6 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
                 .map(api::conversions::json::payload_to_proto)
                 .unwrap_or_default(),
             raw_payload: None,
-            raw_payload_encoding: api::grpc::qdrant::RawPayloadEncoding::JsonBytes as i32,
         }
     }
 }
@@ -514,7 +513,6 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             vectors,
             payload,
             raw_payload,
-            raw_payload_encoding: _,
         } = value;
 
         let id = id
