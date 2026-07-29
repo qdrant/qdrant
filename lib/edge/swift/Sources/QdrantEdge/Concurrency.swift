@@ -1,7 +1,7 @@
 import Foundation
 
 // Hand-written async layer for the Qdrant Edge Swift SDK.
-//
+// ── Async wrapper policy — READ BEFORE ADDING OR CHANGING AN OPERATION ────────
 // UniFFI generates BLOCKING functions (the Rust FFI is synchronous). These
 // `…Async` wrappers run the blocking call on a dedicated, BOUNDED background
 // queue — not the Swift cooperative thread pool, where a long synchronous DB
@@ -9,17 +9,30 @@ import Foundation
 // concurrency — then bridge the result back with a checked continuation. They
 // are opt-in: the plain blocking method stays available.
 //
-// RULE: wrap every operation that can touch disk, compute, or block. Skip only
-// guaranteed-instant in-memory getters. This mirrors the Kotlin `Coroutines.kt`
-// policy 1:1 — keep the two in sync when the FFI surface changes.
+// HOW TO CLASSIFY A METHOD (look at its Rust impl under lib/edge/ffi/src/…):
+//   • reads/writes segments, fsyncs, persists config, reads a file (ANY disk
+//     I/O), or runs CPU-bound work (search/optimize)  → WRAP it (add an `…Async`).
+//   • returns an already-in-memory value only          → SKIP it, and add it to
+//     the "NOT wrapped" list below with a one-line reason.
+//   No middle ground: if it EVER touches disk — even a "small" fsync,
+//   config-persist, or manifest read — it is wrapped.
 //
-// WHEN YOU ADD A NEW FFI OPERATION: add its `…Async` wrapper here. Only skip it
-// if it is a pure in-memory getter, and record it under "NOT wrapped".
-//
-// NOT wrapped (guaranteed instant — pure in-memory reads, no disk I/O):
-//   • info()   — aggregates in-memory segment counters
-//   • config() — returns the in-memory config
-//   • path()   — returns the stored path string
+// CURRENT CLASSIFICATION (keep the Kotlin `Coroutines.kt` twin in sync):
+//   WRAPPED
+//     reads          — search, query, queryGroups, scroll, retrieve, facet, count
+//     writes         — update, updateFromSnapshot
+//     maintenance    — optimize (CPU-bound), flush (fsync)
+//     config setters — setHnswConfig, setVectorHnswConfig, setOptimizersConfig
+//                      (each persists to disk)
+//     lifecycle      — unload (fsync), snapshotManifest (reads persisted-file
+//                      metadata)
+//     constructors   — load, create (open & read segments)
+//     free function  — unpackSnapshot (unpacks an archive)
+//   NOT wrapped (guaranteed instant — pure in-memory reads, no disk I/O)
+//     info()   — aggregates in-memory segment counters
+//     config() — returns the in-memory config
+//     path()   — returns the stored path string
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Bounded executor for blocking EdgeShard work. Concurrency is capped at the
 /// core count so a burst of `…Async` calls can't explode GCD's thread pool (a
