@@ -11,9 +11,10 @@
 #   ./build-aar.sh [--debug | --ci]
 #
 #   --debug   Build in debug mode (faster compile, larger binary)
-#   --ci      Fast PR-gate build: dev profile (opt-level=0, no LTO) with
-#             debuginfo off + stripped, single ABI (arm64). For the compile-only
-#             CI gate — NOT a shippable artifact. See the CI_MODE notes below.
+#   --ci      Fast PR-gate build: the workspace `[profile.ci]` (opt-level=0, no
+#             LTO, no strip — bindgen needs the symbols), single ABI (arm64). For
+#             the compile-only CI gate — NOT a shippable artifact. See the
+#             CI_MODE notes below.
 #
 # Release builds use the `release-mobile` Cargo profile (thin LTO, symbol
 # stripping, panic=unwind) defined in the workspace Cargo.toml.
@@ -56,22 +57,24 @@ FEATURE_FLAGS="--no-default-features"
 # hardware and the emulator CI job is deliberately deferred. So the gate has no
 # use for `release-mobile`'s thin-LTO + codegen-units=1 optimization (that's for
 # the shipped artifact) and just pays ~17 extra minutes for it. `--ci` builds the
-# built-in `dev` profile instead — opt-level=0, no LTO, parallel codegen — which
-# is what makes it fast.
+# workspace `[profile.ci]` (opt-level=0, no LTO) — the fastest option and all the
+# gate needs. See the `--ci` case below for why it must not strip.
 CI_MODE=false
 
 for arg in "$@"; do
     case "$arg" in
         --debug) PROFILE="debug"; CARGO_FLAGS="" ;;
         --ci)
-            PROFILE="debug"; CARGO_FLAGS=""; CI_MODE=true
-            # Override the built-in dev profile via env (no Cargo.toml change, so
-            # each SDK PR stays self-contained and two PRs can't conflict on a
-            # shared profile block): drop debuginfo (the bulk of a debug .so's
-            # ~267MB) and strip, so opt-level=0 speed comes without the runner
-            # ENOSPC risk. Exports propagate to the cargo subshells below.
-            export CARGO_PROFILE_DEV_DEBUG=false
-            export CARGO_PROFILE_DEV_STRIP=symbols
+            # Use the workspace `[profile.ci]` (root Cargo.toml): it inherits
+            # release (so no debuginfo → small .so) but sets opt-level=0 + lto=false
+            # for a fast compile, and — crucially — it does NOT strip. uniffi-bindgen
+            # reads the UniFFI symbols (uniffi_*_fn_* + UNIFFI_META_*) out of the
+            # host lib's symbol table to generate the bindings; stripping removes
+            # them and the gate fails on the Linux runner with "produced no bindings"
+            # (macOS strip keeps enough, so the breakage hides locally). A named
+            # workspace profile needs no Cargo.toml edit here either, so the two SDK
+            # PRs stay self-contained.
+            PROFILE="ci"; CARGO_FLAGS="--profile ci"; CI_MODE=true
             ;;
         -h|--help)
             awk '/^#!/{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
