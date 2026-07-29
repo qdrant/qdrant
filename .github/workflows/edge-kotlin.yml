@@ -52,7 +52,7 @@ jobs:
 
     steps:
       # `make build-ci` compiles the workspace twice (one Android ABI + a host
-      # lib for bindgen) under a fast dev profile (opt-level=0, no LTO). The
+      # lib for bindgen) under the fast `[profile.ci]` (opt-level=0, no LTO). The
       # target dirs are still large, so reclaim the biggest caches UNRELATED to
       # the Android SDK (tool-cache ~13GB, docker images, apt large-packages).
       # Keep `android: false` — freeing it would delete the SDK/NDK this job needs.
@@ -136,11 +136,13 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       # Cross-compiles the native .so (arm64 only for the gate) and regenerates
-      # the Kotlin bindings from the current FFI. `build-ci` uses the fast dev
-      # profile (opt-level=0, no LTO, --no-default-features): this gate only
+      # the Kotlin bindings from the current FFI. `build-ci` uses the fast
+      # `[profile.ci]` (opt-level=0, no LTO, --no-default-features): this gate only
       # COMPILES — the instrumented suite runs on real hardware, not here — so it
       # skips release-mobile's ~17-minute thin-LTO/codegen-units=1 optimization
-      # that only the shipped artifact needs. Uses the pinned ANDROID_NDK_HOME.
+      # that only the shipped artifact needs. (profile.ci does not strip, so
+      # uniffi-bindgen can read the lib's symbols on Linux.) Uses the pinned
+      # ANDROID_NDK_HOME.
       - name: Build native libs + Kotlin bindings
         working-directory: lib/edge/kotlin
         run: make build-ci
