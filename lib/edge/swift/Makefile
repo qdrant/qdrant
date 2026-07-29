@@ -99,6 +99,7 @@ size: ## Show XCFramework size breakdown
 .PHONY: clean
 clean: ## Remove build outputs
 	rm -rf $(SCRIPT_DIR)out
+	rm -f $(SCRIPT_DIR)Sources/QdrantEdge/QdrantEdge.swift
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 
