@@ -111,10 +111,13 @@ swift/
 ├── demote-ffi-internals.sh    Post-process QdrantEdge.swift (see below)
 ├── Makefile                   setup / build / build-all / size / clean
 ├── Package.swift              SPM manifest
+├── Sources/QdrantEdge/        Swift module sources
+│   ├── Concurrency.swift      Hand-written async wrappers (committed)
+│   └── QdrantEdge.swift       Generated UniFFI binding (gitignored; moved here by build)
 ├── example/                   Swift example app
 └── out/                       Build output (gitignored)
     ├── QdrantEdge.xcframework
-    └── swift-bindings/        QdrantEdge.swift + QdrantEdgeFFI.h
+    └── swift-bindings/        QdrantEdgeFFI.h + QdrantEdgeFFI.modulemap
 ```
 
 The Rust crate and `uniffi-bindgen` CLI live under `lib/edge/ffi/`.

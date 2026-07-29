@@ -2008,4 +2008,32 @@ final class QdrantEdgeTests: XCTestCase {
             // expected
         }
     }
+
+    /// Concurrent fan-out through the async layer: many `searchAsync` calls
+    /// issued in parallel via a task group must all complete correctly —
+    /// exercises the bounded queue and the "independent reads run in parallel"
+    /// path the wrappers advertise.
+    func testAsyncConcurrentFanOut() async throws {
+        let shard = try loadWithThreePoints("async-fanout")
+        defer { try? shard.unload() }
+
+        let counts = try await withThrowingTaskGroup(of: Int.self) { group -> [Int] in
+            for _ in 0..<32 {
+                group.addTask {
+                    let hits = try await shard.searchAsync(request: SearchRequest(
+                        query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil),
+                        limit: 10, offset: nil, filter: nil, params: nil,
+                        withVector: nil, withPayload: nil, scoreThreshold: nil
+                    ))
+                    return hits.count
+                }
+            }
+            var acc: [Int] = []
+            for try await c in group { acc.append(c) }
+            return acc
+        }
+
+        XCTAssertEqual(counts.count, 32, "all 32 concurrent searchAsync calls should complete")
+        XCTAssertTrue(counts.allSatisfy { $0 == 3 }, "each concurrent search should see all 3 points")
+    }
 }
