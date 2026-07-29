@@ -2,3 +2,7 @@
 /target/
 .build/
 .swiftpm/
+
+# Generated UniFFI binding — build-xcframework.sh regenerates and moves it here
+# next to the committed hand-written Concurrency.swift.
+/Sources/QdrantEdge/QdrantEdge.swift

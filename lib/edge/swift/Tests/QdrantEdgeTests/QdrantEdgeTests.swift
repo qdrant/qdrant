@@ -1888,4 +1888,124 @@ final class QdrantEdgeTests: XCTestCase {
 
         XCTAssertEqual(try shard.count(request: CountRequest(filter: nil, exact: true)), 0, "an empty shard counts zero points")
     }
+
+    // MARK: - Async wrappers (Concurrency.swift)
+
+    /// Exercises the async layer end-to-end through the shared `runBlocking`
+    /// bridge: `loadAsync` → `updateAsync`/`flushAsync` → the async read wrappers
+    /// → `optimizeAsync`/`snapshotManifestAsync` → `unloadAsync`.
+    func testAsyncWrappersEndToEnd() async throws {
+        let shardURL = testDir.appendingPathComponent("async-e2e")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+
+        let shard = try await EdgeShard.loadAsync(path: shardURL.path, config: makeConfig())
+
+        try await shard.updateAsync(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 1), vector: .single(values: [1.0, 0.0, 0.0, 0.0]), payload: nil),
+            Point(id: .numId(value: 2), vector: .single(values: [0.0, 1.0, 0.0, 0.0]), payload: nil),
+        ]))
+        try await shard.flushAsync()
+
+        let count = try await shard.countAsync(request: CountRequest(filter: nil, exact: true))
+        XCTAssertEqual(count, 2, "countAsync should see both upserted points")
+
+        let hits = try await shard.searchAsync(request: SearchRequest(
+            query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil),
+            limit: 10, offset: nil, filter: nil, params: nil,
+            withVector: .bool(enable: false), withPayload: .bool(enable: false), scoreThreshold: nil
+        ))
+        XCTAssertEqual(hits.first?.id, .numId(value: 1), "searchAsync nearest to [1,0,0,0] should be id=1")
+
+        let ranked = try await shard.queryAsync(request: QueryRequest(
+            limit: 10, offset: nil,
+            query: .vector(query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil)),
+            prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+        ))
+        XCTAssertEqual(ranked.count, 2, "queryAsync should rank both points")
+
+        let page = try await shard.scrollAsync(request: ScrollRequest(
+            offset: nil, limit: 10, filter: nil, withPayload: nil, withVector: nil, orderBy: nil
+        ))
+        XCTAssertEqual(page.records.count, 2, "scrollAsync should page both points")
+
+        let recs = try await shard.retrieveAsync(request: RetrieveRequest(
+            pointIds: [.numId(value: 1)], withPayload: nil, withVector: nil
+        ))
+        XCTAssertEqual(recs.count, 1, "retrieveAsync should return the requested point")
+
+        _ = try await shard.optimizeAsync()
+        let manifest = try await shard.snapshotManifestAsync()
+        XCTAssertFalse(manifest.isEmpty, "snapshotManifestAsync should return a non-empty manifest")
+
+        try await shard.unloadAsync()
+    }
+
+    /// Covers the `createAsync` factory and the top-level `unpackSnapshotAsync`
+    /// free function (its throwing path — no real archive needed).
+    func testAsyncCreateAndUnpackSnapshotErrorPath() async throws {
+        let shardURL = testDir.appendingPathComponent("async-create")
+        try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+
+        let shard = try await EdgeShard.createAsync(path: shardURL.path, config: makeConfig())
+        try await shard.updateAsync(operation: try UpdateOperation.upsertPoints(points: [
+            Point(id: .numId(value: 10), vector: .single(values: [1.0, 2.0, 3.0, 4.0]), payload: nil),
+        ]))
+        let created = try await shard.countAsync(request: CountRequest(filter: nil, exact: true))
+        XCTAssertEqual(created, 1)
+        try await shard.unloadAsync()
+
+        // unpackSnapshotAsync on a missing archive must surface the error through
+        // the async bridge rather than hang or crash.
+        let bogus = testDir.appendingPathComponent("nope.snapshot").path
+        let target = testDir.appendingPathComponent("unpacked").path
+        do {
+            try await unpackSnapshotAsync(snapshotPath: bogus, targetPath: target)
+            XCTFail("unpackSnapshotAsync should throw on a missing archive")
+        } catch {
+            // expected — the blocking error propagates through the continuation
+        }
+    }
+
+    /// Covers the remaining async wrappers — facet, queryGroups, the three config
+    /// setters, and updateFromSnapshot's error path — each a thin pass-through
+    /// over the same runBlocking bridge.
+    func testAsyncRemainingWrappers() async throws {
+        let shard = try loadWithRankedPoints("async-remaining") // labels: a, b, a
+        defer { try? shard.unload() }
+
+        try await shard.updateAsync(operation: try UpdateOperation.createFieldIndex(fieldName: "label", schema: .keyword))
+
+        let facets = try await shard.facetAsync(request: FacetRequest(key: "label", limit: 10, exact: true, filter: nil))
+        XCTAssertEqual(facets.hits.count, 2, "two distinct labels -> two facet hits")
+
+        let groups = try await shard.queryGroupsAsync(request: GroupRequest(
+            query: QueryRequest(
+                limit: 10, offset: nil,
+                query: .vector(query: .nearest(vector: .dense(values: [1.0, 0.0, 0.0, 0.0]), using: nil)),
+                prefetches: [], withVector: nil, withPayload: nil, filter: nil, scoreThreshold: nil, params: nil
+            ),
+            groupBy: "label", groups: 10, groupSize: 10
+        ))
+        XCTAssertEqual(groups.count, 2, "two distinct labels -> two groups")
+
+        // Config setters (each persists to disk) — assert they don't throw.
+        try await shard.setHnswConfigAsync(hnswConfig: HnswIndexConfig(
+            m: 16, efConstruct: 100, fullScanThreshold: 10000, maxIndexingThreads: 1, memory: .cached, payloadM: nil
+        ))
+        try await shard.setVectorHnswConfigAsync(vectorName: "", hnswConfig: HnswIndexConfig(
+            m: 8, efConstruct: 64, fullScanThreshold: 10000, maxIndexingThreads: 1, memory: nil, payloadM: nil
+        ))
+        try await shard.setOptimizersConfigAsync(optimizers: OptimizersConfig(
+            deletedThreshold: 0.5, vacuumMinVectorNumber: 100, defaultSegmentNumber: 1,
+            maxSegmentSizeKb: nil, indexingThresholdKb: 1000, preventUnoptimized: nil
+        ))
+
+        // updateFromSnapshotAsync error path — a missing archive must throw.
+        do {
+            try await shard.updateFromSnapshotAsync(snapshotPath: testDir.appendingPathComponent("nope.snapshot").path)
+            XCTFail("updateFromSnapshotAsync should throw on a missing snapshot")
+        } catch {
+            // expected
+        }
+    }
 }

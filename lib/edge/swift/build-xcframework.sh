@@ -213,6 +213,16 @@ mv "$BINDINGS_DIR/${CRATE_NAME}FFI.modulemap" "$BINDINGS_DIR/QdrantEdgeFFI.modul
 echo "==> Demoting FFI plumbing to internal..."
 "$SCRIPT_DIR/demote-ffi-internals.sh" "$BINDINGS_DIR/QdrantEdge.swift"
 
+# ── Move the generated Swift into the committed source dir ────────────────────
+# The `QdrantEdge` SwiftPM target compiles from `Sources/QdrantEdge/`, which also
+# holds the hand-written `Concurrency.swift` (the async layer). Move the freshly
+# generated (and demoted) binding there; it is git-ignored, Concurrency.swift is
+# committed. The .h/.modulemap stay in $BINDINGS_DIR for the XCFramework headers.
+echo "==> Placing generated Swift next to the hand-written async layer..."
+SWIFT_SRC_DIR="$SCRIPT_DIR/Sources/QdrantEdge"
+mkdir -p "$SWIFT_SRC_DIR"
+mv "$BINDINGS_DIR/QdrantEdge.swift" "$SWIFT_SRC_DIR/QdrantEdge.swift"
+
 # ── Headers & modulemap ─────────────────────────────────────────────────────
 
 echo "==> Preparing headers..."
