@@ -13,29 +13,35 @@ import kotlinx.coroutines.withContext
 // types below (EdgeShard, SearchRequest, …) need no import.
 // See the qdrant-edge-kotlin-desktop-decision memory / project ADR.
 
-// ── Coroutine wrapper policy — READ BEFORE ADDING AN OPERATION ────────────────
+// ── Coroutine wrapper policy — READ BEFORE ADDING OR CHANGING AN OPERATION ────
 // UniFFI generates BLOCKING bindings (the Rust FFI is synchronous). These
 // hand-written `…Async` wrappers run a blocking EdgeShard call on a background
 // dispatcher (default Dispatchers.IO) so it doesn't stall the caller's thread.
-// They are opt-in: the plain blocking method stays available for callers that
-// manage their own thread pool.
+// They are opt-in: the plain blocking method stays available.
 //
-// RULE: wrap every operation that can touch disk, compute, or otherwise block.
-// The ONLY exceptions are guaranteed-instant in-memory getters, where hopping to
-// a dispatcher is pure overhead — those are listed under "NOT wrapped" below.
-// There is no middle ground: if an op EVER does I/O (even a "small" fsync,
-// config-persist, or manifest read), it is wrapped.
+// HOW TO CLASSIFY A METHOD (look at its Rust impl under lib/edge/ffi/src/…):
+//   • reads/writes segments, fsyncs, persists config, reads a file (ANY disk
+//     I/O), or runs CPU-bound work (search/optimize)  → WRAP it (add an `…Async`).
+//   • returns an already-in-memory value only          → SKIP it, and add it to
+//     the "NOT wrapped" list below with a one-line reason.
+//   No middle ground: if it EVER touches disk — even a "small" fsync,
+//   config-persist, or manifest read — it is wrapped.
 //
-// WHEN YOU ADD A NEW FFI OPERATION: wrap it here. Only skip the wrapper if the
-// op is a pure in-memory getter, and then add it to "NOT wrapped" with a reason —
-// so the wrap/skip line stays legible for the next reader.
-//
-// NOT wrapped (guaranteed instant — pure in-memory reads, no disk I/O):
-//   • info()      — aggregates in-memory segment counters
-//   • config()    — returns the in-memory config
-//   • path()      — returns the stored path string
-// (Everything else touches disk and IS wrapped: unload()/flush() fsync, the
-//  set*Config() setters persist to disk, snapshotManifest() reads file metadata.)
+// CURRENT CLASSIFICATION (keep the Swift `Concurrency.swift` twin in sync):
+//   WRAPPED
+//     reads         — search, query, queryGroups, scroll, retrieve, facet, count
+//     writes        — update, updateFromSnapshot
+//     maintenance   — optimize (CPU-bound), flush (fsync)
+//     config setters— setHnswConfig, setVectorHnswConfig, setOptimizersConfig
+//                     (each persists to disk)
+//     lifecycle     — unload (fsync), snapshotManifest (reads persisted-file
+//                     metadata)
+//     constructors  — load, create (open & read segments)
+//     free function — unpackSnapshot (unpacks an archive)
+//   NOT wrapped (guaranteed instant — pure in-memory reads, no disk I/O)
+//     info()   — aggregates in-memory segment counters
+//     config() — returns the in-memory config
+//     path()   — returns the stored path string
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Reads ─────────────────────────────────────────────────────────────────────
