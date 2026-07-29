@@ -57,6 +57,9 @@ impl PyEdgeConfig {
             optimizers: optimizers.map(|o| o.0),
             wal_options: None,
             max_search_threads,
+            // Server-side (multi-tenant worker) knob; not exposed to the
+            // embedded Python bindings.
+            search_pool_core: None,
         }))
     }
 
@@ -111,6 +114,7 @@ impl PyEdgeConfig {
             optimizers: _,
             wal_options: _,
             max_search_threads: _,
+            search_pool_core: _,
         } = self.0;
     }
 }
