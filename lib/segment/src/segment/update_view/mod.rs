@@ -21,7 +21,7 @@ use crate::types::{SegmentConfig, VectorNameBuf};
 /// an implementation on both segment kinds. Storing the resolved point is the
 /// half that has no shared implementation yet (an update-only segment appends
 /// through components that do not exist), so it lives on the segment for now
-/// and joins the view once there is a second implementor to share it with.
+/// and joins the view once there is a second implementer to share it with.
 ///
 /// [`SegmentReadView`]: crate::segment::read_view::SegmentReadView
 /// [`Segment`]: crate::segment::Segment
