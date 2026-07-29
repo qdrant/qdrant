@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalIoError,
-    UniversalKind, UniversalRead, UniversalReadFs, UserData,
+    CachedReadFs, Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult,
+    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -116,8 +116,8 @@ where
     }
 
     #[inline]
-    fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        self.0.schedule_reopen(known_len)
+    fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
+        self.0.schedule_reopen(cached_fs)
     }
 
     #[inline]

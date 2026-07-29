@@ -5,7 +5,9 @@ use std::ops::Range;
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError, UniversalKind};
+use crate::universal_io::{
+    CachedReadFs, ReadBytesItem, ReadRange, UioResult, UniversalIoError, UniversalKind,
+};
 
 /// Per-file handle for universal read access.
 ///
@@ -58,22 +60,23 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// This may be a no-op in some implementations.
     fn reopen(&mut self) -> UioResult<()>;
 
-    /// Stage the work that the next [`reopen`](Self::reopen) must do, given
-    /// the file's length as observed externally (e.g. a listing snapshot).
+    /// Stage the work that the next [`reopen`](Self::reopen) must do, reading
+    /// the file's current length from `cached_fs`'s listing snapshot (the
+    /// implementation resolves its own path, so there is nothing to mispair).
     ///
     /// Lets a caller submit the fetches of many reopens up front and only pay
     /// the (already in-flight) tail of the wait when applying them. Contract:
-    /// must not wait on the data fetch (with `Some`, resolving a pending
-    /// open-time prefill is the one bounded exception), and staging must be
-    /// invisible to readers of an already-live mirror — no length change, no
-    /// cache invalidation.
+    /// must not wait on the data fetch (resolving a pending open-time prefill
+    /// is the one bounded exception), and staging must be invisible to
+    /// readers of an already-live mirror — no length change, no cache
+    /// invalidation.
     ///
     /// Defaults to a no-op: local backends' `reopen` is a stat plus a remap,
     /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.
     ///
     /// [`DiskCache`]: crate::universal_io::DiskCache
-    fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        let _ = known_len;
+    fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
+        let _ = cached_fs;
         Ok(())
     }
 

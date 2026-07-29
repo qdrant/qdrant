@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
-use crate::universal_io::{ListedFile, OpenOptions, UioResult, UniversalIoError};
+use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 
 /// Filesystem-level handle for read-only operations.
 ///
@@ -147,17 +147,4 @@ pub trait CachedReadFs: UniversalReadFs {
 
     /// Return the file info from the current snapshot.
     fn file_info(&self, path: &Path) -> Option<FileInfo>;
-
-    /// Provided helper to schedule a reopen of a file.
-    ///
-    /// `path` should be the same as the file's path.
-    fn schedule_reopen(&self, path: &Path, file: &mut Self::File) -> UioResult<()> {
-        let Some(file_info) = self.file_info(path) else {
-            return Err(UniversalIoError::NotFound {
-                path: path.to_path_buf(),
-            });
-        };
-
-        file.schedule_reopen(Some(file_info.size))
-    }
 }

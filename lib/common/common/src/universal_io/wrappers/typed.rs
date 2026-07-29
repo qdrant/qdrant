@@ -7,9 +7,9 @@ use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult, UniversalAppend,
-    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs,
-    UniversalWrite, UserData,
+    ByteOffset, CachedReadFs, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult,
+    UniversalAppend, UniversalFlush, UniversalIoError, UniversalKind, UniversalRead,
+    UniversalReadFs, UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -71,10 +71,8 @@ where
         self.inner.reopen()
     }
 
-    /// Forwards [`UniversalRead::schedule_reopen`]: a missing forwarder would
-    /// silently no-op and send the wrapped file down the blocking path.
-    pub fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        self.inner.schedule_reopen(known_len)
+    pub fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
+        self.inner.schedule_reopen(cached_fs)
     }
 
     #[inline]

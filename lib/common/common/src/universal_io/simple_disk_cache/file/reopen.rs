@@ -11,7 +11,9 @@ use super::{DiskCache, ScheduledReopen, State};
 use crate::generic_consts::Sequential;
 use crate::universal_io::simple_disk_cache::pipeline::REMOTE_READ_ALIGNMENT;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, block_aligned_fetch};
-use crate::universal_io::{OwnedPipeline, Populate, UioResult, UniversalIoError, UniversalRead};
+use crate::universal_io::{
+    CachedReadFs, OwnedPipeline, Populate, UioResult, UniversalIoError, UniversalRead,
+};
 
 impl<R> DiskCache<R>
 where
@@ -24,7 +26,7 @@ where
         }
 
         // If not previously done, schedule and wait blockingly
-        self.schedule_reopen_impl(None)?;
+        self.schedule_reopen_with_len(None)?;
         self.resolve_pending_reopen()?;
 
         Ok(())
@@ -72,6 +74,16 @@ where
         }
     }
 
+    pub(super) fn schedule_reopen_impl<Fs: CachedReadFs>(&mut self, fs: &Fs) -> UioResult<()> {
+        let Some(file_info) = fs.file_info(&self.remote_path) else {
+            return Err(UniversalIoError::NotFound {
+                path: self.remote_path.clone(),
+            });
+        };
+
+        self.schedule_reopen_with_len(Some(file_info.size))
+    }
+
     /// Body of [`UniversalRead::schedule_reopen`].
     ///
     /// Records what the next [`reopen_impl`](Self::reopen_impl) must do and,
@@ -80,7 +92,7 @@ where
     /// apply.
     ///
     /// [`UniversalRead::schedule_reopen`]: crate::universal_io::UniversalRead::schedule_reopen
-    pub(super) fn schedule_reopen_impl(&mut self, known_len: Option<u64>) -> UioResult<()> {
+    pub(super) fn schedule_reopen_with_len(&mut self, known_len: Option<u64>) -> UioResult<()> {
         // Wait for scheduled prefill, if any.
         //
         // warn: this will do a length request if uninit, but when using a

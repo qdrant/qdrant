@@ -13,8 +13,9 @@ use super::{
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend, UniversalFlush,
-    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
+    CachedFs, CachedReadFs, MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange,
+    UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs, UniversalWrite,
 };
 
 // The disk cache is strictly read-only: mutating it must stay a
@@ -128,6 +129,19 @@ impl Scenario {
     /// Slice of the remote data corresponding to `range`.
     fn slice(&self, range: &std::ops::Range<u64>) -> &[u8] {
         &self.data[range.start as usize..range.end as usize]
+    }
+
+    /// A `CachedFs` over this scenario's fs with the listing snapshot taken —
+    /// the schedule-phase view of the remote. Take a fresh one after growing
+    /// the remote, as a refresh pass would.
+    fn snapshot_fs<R>(&self) -> CachedFs<DiskCacheFs<R>>
+    where
+        R: DiskCacheRemote,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    {
+        let mut cached_fs = CachedFs::new(self.fs(), &self.remote_path).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        cached_fs
     }
 
     /// Append `additional_bytes` bytes to the remote file in-place.
@@ -442,7 +456,7 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache.schedule_reopen(Some(new_data.len() as u64)).unwrap();
+        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
 
         // Nothing changed yet: same length, and the appended region is still
         // out of bounds.
@@ -481,7 +495,7 @@ mod tests_mod {
         let mut cache = scn.open::<R>(PREFILL);
         assert!(!cache.is_ready());
 
-        cache.schedule_reopen(Some(scn.data.len() as u64)).unwrap();
+        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
 
         assert!(cache.is_ready());
         assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
@@ -511,7 +525,7 @@ mod tests_mod {
             )
         };
 
-        cache.schedule_reopen(Some(scn.data.len() as u64)).unwrap();
+        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
         cache.reopen().unwrap();
 
         let local = cache.state().unwrap().local;
@@ -528,10 +542,10 @@ mod tests_mod {
 
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
-        let first_len = scn.grow_remote(BLOCK_SIZE).len() as u64;
-        cache.schedule_reopen(Some(first_len)).unwrap();
+        scn.grow_remote(BLOCK_SIZE);
+        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache.schedule_reopen(Some(new_data.len() as u64)).unwrap();
+        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
 
         cache.reopen().unwrap();
 
@@ -550,14 +564,32 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache.schedule_reopen(Some(new_data.len() as u64)).unwrap();
-        cache.schedule_reopen(Some(new_data.len() as u64)).unwrap();
+        let snapshot_fs = scn.snapshot_fs::<R>();
+        cache.schedule_reopen(&snapshot_fs).unwrap();
+        cache.schedule_reopen(&snapshot_fs).unwrap();
 
         cache.reopen().unwrap();
 
         assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
         let bytes = cache.read_whole::<u8>().unwrap();
         assert_eq!(&*bytes, &new_data[..]);
+    }
+
+    /// Scheduling against a snapshot that does not cover the file fails with
+    /// `NotFound` — the file resolves its own remote path, so there is no
+    /// path argument to mispair.
+    #[test]
+    fn reopen_schedule_missing_from_snapshot_errors() {
+        let scn = Scenario::new(BLOCK_SIZE);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        // Snapshot over a prefix that matches nothing.
+        let missing_prefix = scn.remote_path.with_file_name("other");
+        let mut snapshot_fs = CachedFs::new(scn.fs::<R>(), &missing_prefix).unwrap();
+        snapshot_fs.cache_file_info().unwrap();
+
+        let err = cache.schedule_reopen(&snapshot_fs).unwrap_err();
+        assert_matches!(err, UniversalIoError::NotFound { .. });
     }
 
     /// `Populate::Partial` prefetches only the requested (block-aligned) range;

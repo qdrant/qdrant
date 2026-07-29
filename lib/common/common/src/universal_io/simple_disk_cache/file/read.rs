@@ -11,7 +11,7 @@ use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
 use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
 use crate::universal_io::{
-    Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
+    CachedReadFs, Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
 };
 
 impl<R> DiskCache<R>
@@ -60,8 +60,8 @@ where
         self.reopen_impl()
     }
 
-    fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        self.schedule_reopen_impl(known_len)
+    fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
+        self.schedule_reopen_impl(cached_fs)
     }
 
     fn read_bytes<P: AccessPattern>(
