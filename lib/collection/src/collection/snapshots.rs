@@ -25,7 +25,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
-use crate::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
+use crate::shards::shard_holder::recovery_guard::{RecoveryProgressHandle, ShardRecoveryGuard};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardHolder, shard_not_found_error};
 use crate::shards::shard_path;
@@ -375,6 +375,34 @@ impl Collection {
             .read()
             .await
             .assert_shard_exists(shard_id)
+    }
+
+    /// Start a snapshot recovery of `shard_id`, waiting for one already in progress to
+    /// finish.
+    ///
+    /// The returned guard holds the shard's recovery lock and must be held for the whole
+    /// recovery - clear, download and restore. See [`ShardRecoveryGuard`].
+    pub async fn start_shard_recovery(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<ShardRecoveryGuard> {
+        // Release the shard holder before awaiting: the lock is held for the length of a
+        // snapshot download, which would stall the whole collection.
+        let replica_set = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        let recovery_lock = replica_set.take_snapshot_recovery_lock().await;
+
+        Ok(self
+            .shards_holder
+            .read()
+            .await
+            .start_shard_recovery(shard_id, recovery_lock))
     }
 
     /// Drop the local shard and clear its on-disk data, before a shard snapshot

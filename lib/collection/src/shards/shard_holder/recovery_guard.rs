@@ -29,7 +29,16 @@ pub struct ActiveRecoveries {
 impl ActiveRecoveries {
     /// Start tracking a recovery for `shard_id`, returning a guard that stops
     /// tracking on drop.
-    pub fn start(&self, shard_id: ShardId) -> ShardRecoveryGuard {
+    ///
+    /// Takes ownership of the shard's recovery lock, so a recovery cannot be started
+    /// without holding it. See [`ShardReplicaSet::take_snapshot_recovery_lock`].
+    ///
+    /// [`ShardReplicaSet::take_snapshot_recovery_lock`]: crate::shards::replica_set::ShardReplicaSet::take_snapshot_recovery_lock
+    pub fn start(
+        &self,
+        shard_id: ShardId,
+        recovery_lock: tokio::sync::OwnedMutexGuard<()>,
+    ) -> ShardRecoveryGuard {
         let progress = Arc::new(Mutex::new(RecoveryProgress::new()));
         self.recoveries
             .lock()
@@ -38,6 +47,7 @@ impl ActiveRecoveries {
             active_recoveries: self.clone(),
             shard_id,
             progress,
+            recovery_lock,
         }
     }
 
@@ -61,16 +71,23 @@ impl ActiveRecoveries {
     }
 }
 
-/// RAII guard for tracking an active snapshot recovery on the destination side.
+/// RAII guard for an active snapshot recovery on the destination side.
 ///
-/// While held, the recovery progress is registered in [`ActiveRecoveries`] so it can
-/// be reported in the transfer status. On drop - including early returns, errors, and
-/// cancellation - the entry is removed again, ensuring that stale recovery comments
-/// are never reported for subsequent transfers.
+/// While held, this is the only recovery of the shard that can make progress, and its
+/// progress is registered in [`ActiveRecoveries`] so it can be reported in the transfer
+/// status. On drop - including early returns, errors, and cancellation - the lock is
+/// released and the entry removed, so stale recovery comments are never reported for
+/// subsequent transfers.
+///
+/// Must be held for the whole recovery: it is what keeps a recovery that is still in
+/// flight from restoring on top of one that already reported success.
 pub struct ShardRecoveryGuard {
     active_recoveries: ActiveRecoveries,
     shard_id: ShardId,
     progress: RecoveryProgressHandle,
+    /// Released on drop, letting the next queued recovery of this shard start.
+    #[expect(dead_code, reason = "held for its `Drop`")]
+    recovery_lock: tokio::sync::OwnedMutexGuard<()>,
 }
 
 impl ShardRecoveryGuard {
