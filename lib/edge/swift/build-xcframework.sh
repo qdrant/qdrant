@@ -18,8 +18,9 @@
 #   --all-platforms  Include tvOS and visionOS (tier-3, requires nightly)
 #
 # Output:
-#   out/QdrantEdge.xcframework   - The XCFramework
-#   out/swift-bindings/          - Generated Swift source and headers
+#   out/QdrantEdge.xcframework           - The XCFramework
+#   out/swift-bindings/                  - Generated FFI headers (.h + .modulemap)
+#   Sources/QdrantEdge/QdrantEdge.swift  - Generated Swift binding (moved here, git-ignored)
 
 set -euo pipefail
 
@@ -289,7 +290,8 @@ fi
 echo ""
 echo "Done! Output:"
 echo "  XCFramework:    $XCFRAMEWORK_DIR"
-echo "  Swift bindings: $BINDINGS_DIR"
+echo "  Swift binding:  $SWIFT_SRC_DIR/QdrantEdge.swift"
+echo "  FFI headers:    $BINDINGS_DIR"
 if ! $ALL_PLATFORMS; then
     echo ""
     echo "Note: tvOS/visionOS not included. Use --all-platforms to add them."
