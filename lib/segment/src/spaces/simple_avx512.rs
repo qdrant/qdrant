@@ -9,48 +9,40 @@ pub(crate) unsafe fn dot_similarity_avx512(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
 ) -> ScoreType {
+    const STEP: usize = 16;
     unsafe {
-        let n = v1.len();
-        let m = n - (n % 64);
+        let mut n = v1.len();
         let mut ptr1: *const f32 = v1.as_ptr();
         let mut ptr2: *const f32 = v2.as_ptr();
-        let mut sum512_1: __m512 = _mm512_setzero_ps();
-        let mut sum512_2: __m512 = _mm512_setzero_ps();
-        let mut sum512_3: __m512 = _mm512_setzero_ps();
-        let mut sum512_4: __m512 = _mm512_setzero_ps();
-        let mut i: usize = 0;
-        while i < m {
-            sum512_1 = _mm512_fmadd_ps(_mm512_loadu_ps(ptr1), _mm512_loadu_ps(ptr2), sum512_1);
-            sum512_2 = _mm512_fmadd_ps(
-                _mm512_loadu_ps(ptr1.add(16)),
-                _mm512_loadu_ps(ptr2.add(16)),
-                sum512_2,
-            );
-            sum512_3 = _mm512_fmadd_ps(
-                _mm512_loadu_ps(ptr1.add(32)),
-                _mm512_loadu_ps(ptr2.add(32)),
-                sum512_3,
-            );
-            sum512_4 = _mm512_fmadd_ps(
-                _mm512_loadu_ps(ptr1.add(48)),
-                _mm512_loadu_ps(ptr2.add(48)),
-                sum512_4,
-            );
+        let mut sum: __m512 = _mm512_setzero_ps();
+        while n >= STEP {
+            let a1 = _mm512_loadu_ps(ptr1);
+            let a2 = _mm512_loadu_ps(ptr2);
+            ptr1 = ptr1.add(STEP);
+            ptr2 = ptr2.add(STEP);
+            n -= STEP;
 
-            ptr1 = ptr1.add(64);
-            ptr2 = ptr2.add(64);
-            i += 64;
+            sum = _mm512_fmadd_ps(a1, a2, sum);
         }
+        let sum = _mm512_reduce_add_ps(sum);
+        dot_similarity_tail(sum, ptr1, ptr2, n)
+    }
+}
 
-        let mut result = _mm512_reduce_add_ps(_mm512_add_ps(
-            _mm512_add_ps(sum512_1, sum512_2),
-            _mm512_add_ps(sum512_3, sum512_4),
-        ));
-
-        for j in 0..n - m {
-            result += (*ptr1.add(j)) * (*ptr2.add(j));
+// Handle the tail of the dot product.  This is a separate function, because otherwise the compiler
+// generates general-case code with AVX512 and AVX, ignoring the fact that the length is below 16
+// (even explicit `assert!(len < 16)` doesn't change it).
+//
+// Actually, inline(never) is only marginally faster than no attribute macro, but also makes it more
+// future-proof.
+#[inline(never)]
+unsafe fn dot_similarity_tail(acc: f32, ptr1: *const f32, ptr2: *const f32, len: usize) -> f32 {
+    unsafe {
+        let mut sum = acc;
+        for i in 0..len {
+            sum += ptr1.add(i).read() * ptr2.add(i).read()
         }
-        result
+        sum
     }
 }
 
