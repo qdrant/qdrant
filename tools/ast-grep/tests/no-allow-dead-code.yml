@@ -1,0 +1,42 @@
+id: no-allow-dead-code
+valid:
+  # The replacement this rule pushes towards.
+  - |
+    #[expect(dead_code)]
+    fn f() {}
+  # Narrowed to the configuration in which the item is actually dead.
+  - |
+    #[cfg_attr(not(test), expect(dead_code))]
+    fn f() {}
+  # Other lints may still be silenced with `allow`.
+  - |
+    #[allow(clippy::enum_variant_names)]
+    fn f() {}
+  # `dead_code` appearing outside an `allow` list is not a suppression.
+  - |
+    fn dead_code() {}
+invalid:
+  - |
+    #[allow(dead_code)]
+    fn f() {}
+  # Inner attribute, silencing a whole module.
+  - |
+    #![allow(dead_code)]
+    fn f() {}
+  # Alongside other lints, in either position.
+  - |
+    #[allow(dead_code, clippy::enum_variant_names)]
+    enum E {
+        AFoo,
+        BFoo,
+    }
+  - |
+    #[allow(unused_imports, dead_code)]
+    fn f() {}
+  # Nested in `cfg_attr`, where it is not an `attribute` node.
+  - |
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn f() {}
+  - |
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    fn f() {}
