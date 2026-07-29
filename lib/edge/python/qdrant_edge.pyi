@@ -259,6 +259,7 @@ class EdgeConfig:
         quantization_config: Optional[QuantizationConfigType] = None,
         optimizers: Optional["EdgeOptimizersConfig"] = None,
         max_search_threads: Optional[int] = None,
+        search_pool_core: Optional[int] = None,
     ) -> None:
         """
         Create an EdgeConfig.
@@ -283,6 +284,10 @@ class EdgeConfig:
                                 runs per-segment reads in parallel and loads segments in
                                 parallel. None (the default) derives the count from the number
                                 of CPUs, matching the core search runtime.
+            search_pool_core: Pin every thread of the shard's search pool to this CPU core,
+                              bounding the shard's search compute to one core while keeping
+                              the pool's IO parallelism. Best-effort; None (the default)
+                              leaves thread placement to the OS scheduler.
         """
         ...
 
@@ -319,6 +324,11 @@ class EdgeConfig:
     @property
     def max_search_threads(self) -> Optional[int]:
         """Number of threads in the search thread pool, or None for the CPU-derived default."""
+        ...
+
+    @property
+    def search_pool_core(self) -> Optional[int]:
+        """CPU core the search pool is pinned to, or None for OS scheduling."""
         ...
 
 class EdgeVectorParams:

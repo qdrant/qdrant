@@ -25,7 +25,9 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None))]
+    // Python-facing keyword arguments mirror EdgeConfig's fields one-to-one.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         #[pyo3(from_py_with = option_edge_vectors_helper)] vectors: Option<
             HashMap<String, PyEdgeVectorParams>,
@@ -36,6 +38,7 @@ impl PyEdgeConfig {
         quantization_config: Option<PyQuantizationConfig>,
         optimizers: Option<PyEdgeOptimizersConfig>,
         max_search_threads: Option<usize>,
+        search_pool_core: Option<usize>,
     ) -> PyResult<Self> {
         let vectors = vectors.unwrap_or_default();
         let sparse_vectors = sparse_vectors.unwrap_or_default();
@@ -57,9 +60,7 @@ impl PyEdgeConfig {
             optimizers: optimizers.map(|o| o.0),
             wal_options: None,
             max_search_threads,
-            // Server-side (multi-tenant worker) knob; not exposed to the
-            // embedded Python bindings.
-            search_pool_core: None,
+            search_pool_core,
         }))
     }
 
@@ -96,6 +97,11 @@ impl PyEdgeConfig {
     #[getter]
     pub fn max_search_threads(&self) -> Option<usize> {
         self.0.max_search_threads
+    }
+
+    #[getter]
+    pub fn search_pool_core(&self) -> Option<usize> {
+        self.0.search_pool_core
     }
 
     pub fn __repr__(&self) -> String {
