@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::data_types::vectors::VectorInternal;
-use crate::types::{Payload, PointIdType, VectorNameBuf};
+use crate::types::{Payload, PointIdType, RawPayload, VectorNameBuf};
 
 /// A point almost always has a single (default) named vector, so keep it inline
 /// to avoid a heap allocation on the common retrieve path.
@@ -22,4 +23,18 @@ pub struct SegmentRecordRaw {
     pub id: PointIdType,
     pub vectors: Option<NamedVectorBytesOwned>,
     pub payload: Option<Payload>,
+    pub payload_raw: Option<RawPayload>,
+}
+
+/// Encoding of a raw payload blob transferred alongside raw vectors,
+/// as it is persisted in WAL.
+///
+/// Internal counterpart of `api::grpc::qdrant::RawPayloadEncoding`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    #[default]
+    JsonBytes,
 }

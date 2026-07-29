@@ -117,11 +117,13 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
             id: 1.into(),
             vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
             payload: Some(payload.clone()),
+            payload_raw: None,
         },
         PointStructRawPersisted {
             id: 100.into(),
             vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
             payload: None,
+            payload_raw: None,
         },
     ];
 
@@ -179,6 +181,7 @@ fn test_sync_points_raw() {
         id: 100.into(),
         vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into(),
         payload: None,
+        payload_raw: None,
     };
 
     let (deleted, new, updated) = sync_points_raw(

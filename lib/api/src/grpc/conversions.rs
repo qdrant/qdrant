@@ -19,13 +19,15 @@ use segment::data_types::index::{
     KeywordIndexType, SnowballLanguage, TextIndexType, UuidIndexType,
 };
 use segment::data_types::modifier::Modifier;
+use segment::data_types::segment_record::RawPayloadEncoding;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedMultiDenseVector, VectorInternal};
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{
-    DateTimePayloadType, FloatPayloadType, VectorStorageDatatype, default_quantization_ignore_value,
+    DateTimePayloadType, FloatPayloadType, RawPayload, VectorStorageDatatype,
+    default_quantization_ignore_value,
 };
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
@@ -3707,6 +3709,55 @@ impl From<Modifier> for grpc::Modifier {
             Modifier::None => grpc::Modifier::None,
             Modifier::Idf => grpc::Modifier::Idf,
         }
+    }
+}
+
+impl From<grpc::RawPayloadEncoding> for RawPayloadEncoding {
+    fn from(value: grpc::RawPayloadEncoding) -> Self {
+        match value {
+            grpc::RawPayloadEncoding::JsonBytes => RawPayloadEncoding::JsonBytes,
+        }
+    }
+}
+
+impl From<RawPayloadEncoding> for grpc::RawPayloadEncoding {
+    fn from(value: RawPayloadEncoding) -> Self {
+        match value {
+            RawPayloadEncoding::JsonBytes => grpc::RawPayloadEncoding::JsonBytes,
+        }
+    }
+}
+
+impl From<RawPayload> for grpc::RawPayload {
+    fn from(value: RawPayload) -> Self {
+        let RawPayload {
+            payload_bytes,
+            encoding,
+        } = value;
+
+        Self {
+            payload_bytes,
+            encoding: grpc::RawPayloadEncoding::from(encoding) as i32,
+        }
+    }
+}
+
+impl TryFrom<grpc::RawPayload> for RawPayload {
+    type Error = Status;
+
+    fn try_from(value: grpc::RawPayload) -> Result<Self, Self::Error> {
+        let grpc::RawPayload {
+            payload_bytes,
+            encoding,
+        } = value;
+
+        let encoding = grpc::RawPayloadEncoding::try_from(encoding)
+            .map_err(|_| Status::invalid_argument("Unknown raw payload encoding"))?;
+
+        Ok(Self {
+            payload_bytes,
+            encoding: RawPayloadEncoding::from(encoding),
+        })
     }
 }
 

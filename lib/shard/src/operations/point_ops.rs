@@ -15,7 +15,7 @@ use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
     MultiDenseVectorInternal, VectorInternal, VectorRef, VectorStructInternal,
 };
-use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
+use segment::types::{Filter, Payload, PointIdType, RawPayload, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use sparse::common::types::{DimId, DimWeight};
@@ -336,6 +336,8 @@ pub struct PointStructRawPersisted {
     pub vectors: RawVectorsPersisted,
     /// Payload values (optional)
     pub payload: Option<Payload>,
+    /// Byte encoded payload values.
+    pub payload_raw: Option<RawPayload>,
 }
 
 /// Serde helper for [`PointStructRawPersisted::vectors`].
@@ -439,22 +441,31 @@ impl From<SegmentRecordRaw> for PointStructRawPersisted {
             id,
             vectors,
             payload,
+            payload_raw,
         } = record;
 
         Self {
             id,
             vectors: vectors.unwrap_or_default(),
             payload,
+            payload_raw,
         }
     }
 }
 
 impl PointStructRawPersisted {
+    /// Whether this point carries byte-for-byte the data stored in `segment_record`.
+    ///
+    /// May return false negatives: vectors and raw payloads are compared as bytes,
+    /// so logically equal data in a different encoding (e.g. another JSON key order,
+    /// or a payload carried raw on one side but parsed on the other) counts as
+    /// unequal, which only costs a redundant upsert on sync.
     pub fn is_equal_to(&self, segment_record: &SegmentRecordRaw) -> bool {
         let SegmentRecordRaw {
             id,
             vectors,
             payload,
+            payload_raw,
         } = segment_record;
 
         if &self.id != id {
@@ -479,7 +490,12 @@ impl PointStructRawPersisted {
         // Check if payloads are equal, empty and non-existent payloads are considered equal
         let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
         let segment_payload = payload.as_ref().filter(|p| !p.is_empty());
-        self_payload == segment_payload
+        if self_payload != segment_payload {
+            return false;
+        }
+
+        // Raw payload blobs must match exactly, bytes and encoding
+        self.payload_raw == *payload_raw
     }
 }
 
@@ -490,6 +506,7 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
             id,
             vectors,
             payload,
+            payload_raw,
         } = value;
 
         Self {
@@ -498,7 +515,7 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
             payload: payload
                 .map(api::conversions::json::payload_to_proto)
                 .unwrap_or_default(),
-            raw_payload: None,
+            raw_payload: payload_raw.map(api::grpc::qdrant::RawPayload::from),
         }
     }
 }
@@ -525,17 +542,13 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             Some(api::conversions::json::proto_to_payloads(payload)?)
         };
 
-        // TODO(payload bytes): Implement.
-        if raw_payload.is_some() {
-            return Err(tonic::Status::invalid_argument(
-                "Payload as bytes not yet implemented",
-            ));
-        }
+        let payload_raw = raw_payload.map(RawPayload::try_from).transpose()?;
 
         Ok(Self {
             id,
             vectors: vectors.into_iter().collect(),
             payload,
+            payload_raw,
         })
     }
 }
@@ -1113,6 +1126,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use segment::data_types::segment_record::RawPayloadEncoding;
+
     use super::*;
 
     #[test]
@@ -1123,6 +1138,7 @@ mod tests {
             id: 1.into(),
             vectors: vec![("dense".to_string(), blob.clone())].into(),
             payload: None,
+            payload_raw: None,
         };
 
         let encoded = serde_cbor::to_vec(&point).unwrap();
@@ -1138,6 +1154,40 @@ mod tests {
         // Round-trips losslessly.
         let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
         assert!(decoded == point, "round-trip mismatch");
+    }
+
+    #[test]
+    fn raw_point_is_equal_to_compares_raw_payload() {
+        let raw_payload = RawPayload {
+            payload_bytes: br#"{"a":1}"#.to_vec(),
+            encoding: RawPayloadEncoding::JsonBytes,
+        };
+        let record = SegmentRecordRaw {
+            id: 1.into(),
+            vectors: None,
+            payload: None,
+            payload_raw: Some(raw_payload.clone()),
+        };
+
+        let mut point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(raw_payload),
+        };
+        assert!(point.is_equal_to(&record));
+
+        // Different blob bytes are unequal.
+        point.payload_raw = Some(RawPayload {
+            payload_bytes: br#"{"a":2}"#.to_vec(),
+            encoding: RawPayloadEncoding::JsonBytes,
+        });
+        assert!(!point.is_equal_to(&record));
+
+        // A blob absent on one side is unequal, even though both parsed payloads
+        // are absent.
+        point.payload_raw = None;
+        assert!(!point.is_equal_to(&record));
     }
 
     fn dense(v: f32) -> VectorPersisted {

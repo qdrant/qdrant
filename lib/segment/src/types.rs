@@ -43,6 +43,7 @@ use crate::data_types::index::{
 use crate::data_types::modifier::Modifier;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::segment_record::RawPayloadEncoding;
 use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
@@ -2948,6 +2949,14 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
             )),
         }
     }
+}
+
+/// Byte-blob analogue of [`Payload`]: the whole payload object as a single
+/// encoded blob, tagged with its encoding.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
+pub struct RawPayload {
+    pub payload_bytes: Vec<u8>,
+    pub encoding: RawPayloadEncoding,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]

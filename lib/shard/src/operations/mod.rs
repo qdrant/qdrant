@@ -390,6 +390,7 @@ mod tests {
                 id: 1.into(),
                 vectors: vec![("dense".to_string(), vec![0, 1, 2, 3, 255])].into(),
                 payload: None,
+                payload_raw: None,
             };
 
             let upsert_raw = Self::UpsertPointsRaw(vec![raw_point.clone()]);

@@ -130,6 +130,7 @@ where
                     id,
                     vectors: with_vector.is_enabled().then(SmallVec::new),
                     payload: None,
+                    payload_raw: None,
                 };
                 (id, record)
             })
