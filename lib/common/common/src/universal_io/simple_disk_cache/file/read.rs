@@ -60,8 +60,8 @@ where
         self.reopen_impl()
     }
 
-    fn reopen_schedule(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        self.reopen_schedule_impl(known_len)
+    fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
+        self.schedule_reopen_impl(known_len)
     }
 
     fn read_bytes<P: AccessPattern>(

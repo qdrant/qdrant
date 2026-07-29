@@ -70,7 +70,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.
     ///
     /// [`DiskCache`]: crate::universal_io::DiskCache
-    fn reopen_schedule(&mut self, known_len: Option<u64>) -> UioResult<()> {
+    fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
         let _ = known_len;
         Ok(())
     }

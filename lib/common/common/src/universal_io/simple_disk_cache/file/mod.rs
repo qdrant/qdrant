@@ -68,26 +68,19 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     Ready {
         remote: R,
         local: LocalState,
-        /// What the next [`reopen`] must do. Staged by [`reopen_schedule`],
-        /// consumed (reset to [`PendingReopen::Stale`]) by [`reopen`]. Only
+        /// What the next [`reopen`] must do. Staged by [`schedule_reopen`],
+        /// consumed (reset to [`ScheduledReopen::No`]) by [`reopen`]. Only
         /// touched under `&mut self`, and `ReadyRef` borrows just
         /// `remote`/`local`, so staging never disturbs the served state.
         ///
         /// [`reopen`]: UniversalRead::reopen
-        /// [`reopen_schedule`]: UniversalRead::reopen_schedule
-        pending_reopen: PendingReopen<R>,
+        /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+        scheduled_reopen: ScheduledReopen<R>,
     },
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
     /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
     /// `PreferBackground`.
     OpenPrefill { pipeline: OwnedPipeline<R, ()> },
-    /// The reopen-time counterpart of [`OpenPrefill`](Self::OpenPrefill): an
-    /// in-flight read of just the appended tail (block-aligned old length → new
-    /// EOF). Init resizes the mirror and writes only that suffix. See [`reopen`].
-    ReopenPrefill {
-        pipeline: OwnedPipeline<R, u64>,
-        local: LocalState,
-    },
     /// Open-time partial prefill
     PartialPrefill {
         pipeline: OwnedPipeline<R, Range<u32>>,
@@ -96,34 +89,46 @@ pub(crate) enum State<R: UniversalRead + 'static> {
 }
 
 /// The obligation of the next [`reopen`](UniversalRead::reopen), staged ahead
-/// of time by [`reopen_schedule`](UniversalRead::reopen_schedule).
+/// of time by [`schedule_reopen`](UniversalRead::schedule_reopen).
 ///
 /// Staging deliberately leaves the mirror alone: its length keeps matching its
 /// persisted content until the apply, so readers observe nothing in between
 /// and components keep `len()` as their growth signal. Nothing else remembers
 /// the staged targets, hence the `target_len` on every variant.
 #[derive(Debug)]
-pub(crate) enum PendingReopen<R: UniversalRead + 'static> {
+pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     /// Nothing staged — the default at every [`State::Ready`] construction
-    /// site. `reopen` takes the legacy path, blocking `remote.len()` included.
-    Stale,
+    /// site. `reopen` then schedules and waits inline.
+    No,
     /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
     /// `target_len` and lets the new blocks fault in on demand. Doubles as the
-    /// "already up to date" marker — a resize to the current length is a no-op
-    /// — which is what keeps apply off the legacy path.
+    /// "already up to date" marker — a resize to the current length is a
+    /// no-op — which saves `reopen` the round-trip of asking for the length
+    /// again.
     Resize { target_len: u64 },
     /// Populated (`Blocking` / `PreferBackground`): the appended tail is
-    /// already in flight on a clone of the remote; apply drains it, resizes
-    /// and writes it. User data is the read's `from` offset, as in
-    /// [`State::ReopenPrefill`].
-    ///
-    /// Holds exactly one read and is never superseded while staged — the
-    /// clone pins the remote's mapping on local backends. See
-    /// `reopen_schedule`.
+    /// already in flight on a clone of the remote; apply resizes, drains it
+    /// and writes it. Holds exactly one read, whose user data is its `from`
+    /// offset.
     Tail {
         pipeline: OwnedPipeline<R, u64>,
         target_len: u64,
     },
+}
+
+impl<R: UniversalRead + 'static> ScheduledReopen<R> {
+    /// Length the scheduled reopen would bring the mirror to, if anything is
+    /// staged.
+    pub(super) fn target_len(&self) -> Option<u64> {
+        match self {
+            ScheduledReopen::No => None,
+            ScheduledReopen::Resize { target_len }
+            | ScheduledReopen::Tail {
+                target_len,
+                pipeline: _,
+            } => Some(*target_len),
+        }
+    }
 }
 
 impl<R: UniversalRead + 'static> State<R> {
@@ -131,10 +136,7 @@ impl<R: UniversalRead + 'static> State<R> {
     pub fn is_ready(&self) -> bool {
         match self {
             State::Ready { .. } => true,
-            State::Uninit
-            | State::OpenPrefill { .. }
-            | State::ReopenPrefill { .. }
-            | State::PartialPrefill { .. } => false,
+            State::Uninit | State::OpenPrefill { .. } | State::PartialPrefill { .. } => false,
         }
     }
 
@@ -142,10 +144,7 @@ impl<R: UniversalRead + 'static> State<R> {
     pub fn is_uninit(&self) -> bool {
         match self {
             State::Uninit => true,
-            State::Ready { .. }
-            | State::OpenPrefill { .. }
-            | State::ReopenPrefill { .. }
-            | State::PartialPrefill { .. } => false,
+            State::Ready { .. } | State::OpenPrefill { .. } | State::PartialPrefill { .. } => false,
         }
     }
 }

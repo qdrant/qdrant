@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::path::Path;
 
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{ListedFile, OpenOptions, UioResult, UniversalIoError};
@@ -144,24 +145,19 @@ pub trait CachedReadFs: UniversalReadFs {
         open_extra: Option<Self::OpenExtra>,
     ) -> UioResult<()>;
 
-    /// Length of `path` in the listing snapshot; `None` when the path is
-    /// absent, or before the snapshot was taken.
-    fn snapshot_len(&self, path: &Path) -> Option<u64>;
+    /// Return the file info from the current snapshot.
+    fn file_info(&self, path: &Path) -> Option<FileInfo>;
 
-    /// Stage the reopen of an *already-held* handle against the snapshot's
-    /// length — the counterpart of [`Self::schedule_prefetch`], which only
-    /// covers files reloaded through fresh handles.
+    /// Provided helper to schedule a reopen of a file.
     ///
-    /// Fails with `NotFound` for a path absent from the snapshot, as
-    /// [`UniversalReadFs::open`] does; best-effort callers swallow it and let
-    /// the error resurface on the later read.
-    fn pre_reopen(&self, path: &Path, file: &mut Self::File) -> UioResult<()> {
-        let Some(known_len) = self.snapshot_len(path) else {
+    /// `path` should be the same as the file's path.
+    fn schedule_reopen(&self, path: &Path, file: &mut Self::File) -> UioResult<()> {
+        let Some(file_info) = self.file_info(path) else {
             return Err(UniversalIoError::NotFound {
                 path: path.to_path_buf(),
             });
         };
 
-        file.reopen_schedule(Some(known_len))
+        file.schedule_reopen(Some(file_info.size))
     }
 }

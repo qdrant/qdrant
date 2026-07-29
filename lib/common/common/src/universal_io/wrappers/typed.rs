@@ -71,10 +71,10 @@ where
         self.inner.reopen()
     }
 
-    /// Forwards [`UniversalRead::reopen_schedule`]: a missing forwarder would
+    /// Forwards [`UniversalRead::schedule_reopen`]: a missing forwarder would
     /// silently no-op and send the wrapped file down the blocking path.
-    pub fn reopen_schedule(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        self.inner.reopen_schedule(known_len)
+    pub fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
+        self.inner.schedule_reopen(known_len)
     }
 
     #[inline]

@@ -116,8 +116,8 @@ where
     }
 
     #[inline]
-    fn reopen_schedule(&mut self, known_len: Option<u64>) -> UioResult<()> {
-        self.0.reopen_schedule(known_len)
+    fn schedule_reopen(&mut self, known_len: Option<u64>) -> UioResult<()> {
+        self.0.schedule_reopen(known_len)
     }
 
     #[inline]

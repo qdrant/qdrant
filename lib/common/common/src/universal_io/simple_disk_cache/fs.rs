@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::config::DiskCacheConfig;
-use super::file::{DiskCache, PendingReopen, State};
+use super::file::{DiskCache, ScheduledReopen, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
@@ -216,7 +216,7 @@ where
                 State::Ready {
                     remote,
                     local,
-                    pending_reopen: PendingReopen::Stale,
+                    scheduled_reopen: ScheduledReopen::No,
                 }
             }
             // Even if we know length, we don't need it to do `schedule_whole`.
@@ -268,7 +268,7 @@ where
                     State::Ready {
                         remote,
                         local,
-                        pending_reopen: PendingReopen::Stale,
+                        scheduled_reopen: ScheduledReopen::No,
                     }
                 }
             }
