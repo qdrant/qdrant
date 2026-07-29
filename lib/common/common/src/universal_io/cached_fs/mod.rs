@@ -194,7 +194,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
     }
 
     fn file_info(&self, path: &Path) -> Option<FileInfo> {
-        self.file_info(path).cloned()
+        self.files_info.as_ref()?.get(path).cloned()
     }
 }
 

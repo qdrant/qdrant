@@ -63,8 +63,10 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     ///
     /// Lets a caller submit the fetches of many reopens up front and only pay
     /// the (already in-flight) tail of the wait when applying them. Contract:
-    /// must not wait on IO, and must have no reader-observable effect — no
-    /// length change, no cache invalidation.
+    /// must not wait on the data fetch (with `Some`, resolving a pending
+    /// open-time prefill is the one bounded exception), and staging must be
+    /// invisible to readers of an already-live mirror — no length change, no
+    /// cache invalidation.
     ///
     /// Defaults to a no-op: local backends' `reopen` is a stat plus a remap,
     /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.

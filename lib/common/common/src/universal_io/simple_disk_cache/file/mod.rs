@@ -98,20 +98,18 @@ pub(crate) enum State<R: UniversalRead + 'static> {
 #[derive(Debug)]
 pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     /// Nothing staged — the default at every [`State::Ready`] construction
-    /// site. `reopen` then schedules and waits inline.
+    /// site, and what a no-growth schedule leaves behind. `reopen` then
+    /// schedules and waits inline.
     No,
     /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
-    /// `target_len` and lets the new blocks fault in on demand. Doubles as the
-    /// "already up to date" marker — a resize to the current length is a
-    /// no-op — which saves `reopen` the round-trip of asking for the length
-    /// again.
+    /// `target_len` and lets the new blocks fault in on demand.
     Resize { target_len: u64 },
     /// Populated (`Blocking` / `PreferBackground`): the appended tail is
     /// already in flight on a clone of the remote; apply resizes, drains it
-    /// and writes it. Holds exactly one read, whose user data is its `from`
-    /// offset.
+    /// and writes it. Holds exactly one read, whose user data is the block
+    /// range it covers, as in [`State::PartialPrefill`].
     Tail {
-        pipeline: OwnedPipeline<R, u64>,
+        pipeline: OwnedPipeline<R, Range<u32>>,
         target_len: u64,
     },
 }
@@ -132,6 +130,16 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
 }
 
 impl<R: UniversalRead + 'static> State<R> {
+    /// A live mirror with nothing staged — the default at every construction
+    /// site.
+    pub fn ready(remote: R, local: LocalState) -> Self {
+        State::Ready {
+            remote,
+            local,
+            scheduled_reopen: ScheduledReopen::No,
+        }
+    }
+
     #[inline]
     pub fn is_ready(&self) -> bool {
         match self {

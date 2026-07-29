@@ -486,7 +486,7 @@ mod tests_mod {
         assert!(cache.is_ready());
         assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
 
-        // Applying the (no-growth) marker must stay off the blocking path and
+        // A later reopen (nothing staged — the length didn't grow) must
         // leave the mirror alone.
         cache.reopen().unwrap();
         assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
@@ -495,8 +495,8 @@ mod tests_mod {
         assert_eq!(&*bytes, &scn.data[..]);
     }
 
-    /// Staging an unchanged length is a no-op marker: it must neither resize
-    /// nor invalidate, and must keep `reopen` off the blocking path.
+    /// Scheduling an unchanged length stages nothing; the schedule/apply pair
+    /// must neither resize nor invalidate.
     #[test]
     fn reopen_schedule_no_growth_does_not_repopulate() {
         let scn = Scenario::new(BLOCK_SIZE * 3);
@@ -516,7 +516,7 @@ mod tests_mod {
 
         let local = cache.state().unwrap().local;
         assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
-        assert_eq!(local.fetched.lock().clone(), fetched_before);
+        assert_eq!(*local.fetched.lock(), fetched_before);
     }
 
     /// Two schedules without an apply in between: the second supersedes the

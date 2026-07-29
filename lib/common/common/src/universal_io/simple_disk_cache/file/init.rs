@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::sync::atomic::Ordering;
 
-use super::{DiskCache, ScheduledReopen, State};
+use super::{DiskCache, State};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
 use crate::universal_io::{OwnedPipeline, UioResult};
@@ -69,11 +69,7 @@ where
             }
         };
 
-        *state = State::Ready {
-            remote,
-            local,
-            scheduled_reopen: ScheduledReopen::No,
-        };
+        *state = State::ready(remote, local);
         self.is_ready.store(true, Ordering::Release);
 
         Ok(())
