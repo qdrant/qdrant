@@ -8,6 +8,7 @@ mod tests;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
@@ -428,6 +429,80 @@ impl SegmentHolder {
     /// Return appendable segment IDs sorted by IDs
     pub fn appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.appendable_segments.keys().copied().collect()
+    }
+
+    /// Appendable segment IDs measuring below `max_segment_size_bytes`, sorted by ID.
+    ///
+    /// Segments that cannot be measured right now (read-lock contention, size error) stay eligible:
+    /// the cap is soft, and liveness wins over precision. Every appendable segment is eligible
+    /// without a cap.
+    ///
+    /// Single origin of the eligibility rule: the copy-on-write move destinations and the
+    /// optimizer's capacity-ensure step both derive from it, so the segment the optimizer
+    /// provisions when it finds no capacity is exactly the one those moves then target.
+    fn eligible_appendable_segments_ids(
+        &self,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> Vec<SegmentId> {
+        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
+            return self.appendable_segments_ids();
+        };
+
+        self.appendable_segments
+            .iter()
+            .filter(|(_, locked_segment)| {
+                let segment_arc = locked_segment.get();
+                let Some(segment) = segment_arc.try_read() else {
+                    return true;
+                };
+                match segment.max_available_vectors_size_in_bytes() {
+                    Ok(size) => size < max_segment_size_bytes.get(),
+                    Err(err) => {
+                        log::error!("Failed to get segment size, ignoring: {err}");
+                        true
+                    }
+                }
+            })
+            .map(|(segment_id, _)| *segment_id)
+            .collect()
+    }
+
+    /// Whether at least one appendable segment is below `max_segment_size_bytes`. `false` when
+    /// there are no appendable segments at all, so a caller provisioning capacity creates the
+    /// first one. Eligibility follows
+    /// [`eligible_appendable_segments_ids`](Self::eligible_appendable_segments_ids).
+    pub fn has_appendable_segment_with_capacity(
+        &self,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> bool {
+        !self
+            .eligible_appendable_segments_ids(max_segment_size_bytes)
+            .is_empty()
+    }
+
+    /// Copy-on-write move destinations for one [`apply_points_with_conditional_move`] call,
+    /// computed on the first point that actually needs a move (a batch applying fully in place must
+    /// not pay for the size measurements) and cached for the rest of the call.
+    ///
+    /// Prefers appendable segments below the size cap, and falls back to every appendable segment
+    /// when none is: the cap is soft and a write must never fail for lack of capacity. Callers
+    /// batch points, so the cap is re-evaluated per batch and a destination can overshoot it by at
+    /// most one batch worth of points.
+    ///
+    /// [`apply_points_with_conditional_move`]: Self::apply_points_with_conditional_move
+    fn cow_destination_candidates<'a>(
+        &self,
+        cache: &'a mut Option<Vec<SegmentId>>,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> &'a [SegmentId] {
+        cache.get_or_insert_with(|| {
+            let eligible = self.eligible_appendable_segments_ids(max_segment_size_bytes);
+            if eligible.is_empty() {
+                self.appendable_segments_ids()
+            } else {
+                eligible
+            }
+        })
     }
 
     /// Return non-appendable segment IDs sorted by IDs
@@ -990,6 +1065,7 @@ impl SegmentHolder {
         ids: &[PointIdType],
         mut point_operation: F,
         mut point_cow_operation: G,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
@@ -1001,8 +1077,9 @@ impl SegmentHolder {
             &mut Payload,
         ),
     {
-        // Choose random appendable segment from this
-        let appendable_segments = self.appendable_segments_ids();
+        // Lazily-computed move destinations, shared across this call; see
+        // `cow_destination_candidates`.
+        let mut destination_cache: Option<Vec<SegmentId>> = None;
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
         let stopped = AtomicBool::new(false);
@@ -1021,7 +1098,10 @@ impl SegmentHolder {
                 point_operation(point_id, write_segment)?
             } else {
                 self.aloha_random_write(
-                    &appendable_segments,
+                    self.cow_destination_candidates(
+                        &mut destination_cache,
+                        max_segment_size_bytes,
+                    ),
                     |appendable_idx, appendable_write_segment| {
                         // If we are moving point from one segment to another,
                         // we must guarantee, that data in new segment will be persisted before

@@ -631,6 +631,7 @@ mod tests {
             &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -696,6 +697,7 @@ mod tests {
             &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
+            None,
             &hw_counter,
         )
         .unwrap();

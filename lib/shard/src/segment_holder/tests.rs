@@ -64,6 +64,7 @@ fn test_apply_to_appendable() {
             |point_id, _, _, _| {
                 moved_to_appendable.push(point_id);
             },
+            None,
             &HardwareCounterCell::new(),
         )
         .unwrap();
@@ -188,6 +189,7 @@ fn test_apply_and_move_old_versions(
                 Ok(true)
             },
             |point_id, _, _, _| processed_points2.push(point_id),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -279,6 +281,7 @@ fn test_cow_operation() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -343,6 +346,7 @@ fn test_cow_move_append_only_single_slot() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -461,7 +465,8 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
                 101 + round,
                 &[point_id],
                 |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
-                |_, _, _, _| {}, // no-op: a pure move
+                |_, _, _, _| {},
+                None, // no-op: a pure move
                 &hw_counter,
             )
             .unwrap();
@@ -593,6 +598,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
                     VectorInternal::Dense(fresh_replace.clone()),
                 );
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -691,6 +697,7 @@ fn test_cow_move_delete_name_preserves_survivor() {
             |_, raw_vectors, _, _| {
                 raw_vectors.retain(|(name, _)| name != DROP);
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -787,7 +794,8 @@ fn test_cow_move_allows_role_config_differences() {
             101,
             &[point_id],
             |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
-            |_, _, _, _| {}, // no-op: a pure move
+            |_, _, _, _| {},
+            None, // no-op: a pure move
             &hw_counter,
         )
         .unwrap();
@@ -2008,6 +2016,7 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
             |_, _, _, _| {},
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2175,6 +2184,7 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
             |_, _, _, _| {},
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2194,5 +2204,129 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
     assert!(
         non_app.point_version(100.into()).is_none(),
         "Point 100 should be deleted from the source"
+    );
+}
+
+/// Measured size of an appendable segment, as the size cap sees it.
+fn segment_size(holder: &SegmentHolder, segment_id: SegmentId) -> usize {
+    holder
+        .get(segment_id)
+        .unwrap()
+        .get()
+        .read()
+        .max_available_vectors_size_in_bytes()
+        .unwrap()
+}
+
+#[test]
+fn test_has_appendable_segment_with_capacity() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    assert!(
+        !holder.has_appendable_segment_with_capacity(None),
+        "a holder without appendable segments has no capacity, so a caller provisions the first one",
+    );
+
+    let segment_id = holder.add_new(build_segment_1(dir.path()));
+    let size = segment_size(&holder, segment_id);
+    assert!(size > 0, "the fixture must measure non-empty");
+
+    assert!(
+        holder.has_appendable_segment_with_capacity(None),
+        "without a cap every appendable segment has capacity",
+    );
+    assert!(
+        !holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size)),
+        "a segment that reached the cap has no capacity left",
+    );
+    assert!(
+        holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size + 1)),
+        "a segment below the cap has capacity",
+    );
+}
+
+/// Copy-on-write moves must land in an appendable segment below the size cap, or a filtered
+/// payload operation keeps growing a segment that is already too big (the segment overgrow bug).
+/// The over-cap segment is added first on purpose: `aloha_random_write` takes the first
+/// destination it can lock, so it would be the one chosen without the cap steering.
+#[test]
+fn test_cow_move_prefers_appendable_segment_below_size_cap() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut source = build_segment_2(dir.path());
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let full_id = holder.add_new(build_segment_1(dir.path()));
+    let free_id = holder.add_new(empty_segment(dir.path()));
+    holder.add_new(source);
+
+    // Cap right at the full segment's size: eligibility is `size < cap`, so it drops out while the
+    // empty one stays.
+    let full_size = segment_size(&holder, full_id);
+    assert!(full_size > 0, "the fixture must measure non-empty");
+
+    let hw_counter = HardwareCounterCell::new();
+    holder
+        .apply_points_with_conditional_move(
+            100,
+            &[11.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            NonZeroUsize::new(full_size),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let free_segment = holder.get(free_id).unwrap().get();
+    assert!(
+        free_segment
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        "the moved point must land in the segment below the cap",
+    );
+
+    let full_segment = holder.get(full_id).unwrap().get();
+    assert!(
+        !full_segment
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        "the segment that reached the cap must not grow further",
+    );
+}
+
+/// The cap is soft: when every appendable segment reached it, the move falls back to them all
+/// rather than failing. Running out of capacity must never fail a write, it may only overshoot.
+#[test]
+fn test_cow_move_falls_back_when_every_segment_reached_the_size_cap() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut source = build_segment_2(dir.path());
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let destination_id = holder.add_new(build_segment_1(dir.path()));
+    holder.add_new(source);
+
+    let hw_counter = HardwareCounterCell::new();
+    holder
+        .apply_points_with_conditional_move(
+            100,
+            &[11.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            // One byte: no appendable segment can ever be below it.
+            NonZeroUsize::new(1),
+            &hw_counter,
+        )
+        .expect("running out of capacity must not fail the write");
+
+    let destination = holder.get(destination_id).unwrap().get();
+    assert!(
+        destination
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        "the move must still land, overshooting the cap",
     );
 }

@@ -1,10 +1,13 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
 
 use cancel::CancellationToken;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
+use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, watch};
@@ -16,7 +19,7 @@ use crate::operations::types::{CollectionError, CollectionResult, UpdateStatus};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
 use crate::shards::update_tracker::UpdateTracker;
-use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
+use crate::update_handler::{OperationData, Optimizer, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::update_workers::internal_update_result::InternalUpdateResult;
@@ -36,6 +39,53 @@ fn send_feedback(
     }
 }
 
+/// The soft appendable segment size cap, sourced live from the first optimizer like the
+/// optimization worker does, so the steering below and the provisioning above cannot disagree on
+/// what "full" means. `None` (uncapped) when no optimizers are configured.
+fn max_segment_size_bytes(optimizers: &[Arc<Optimizer>]) -> Option<NonZeroUsize> {
+    optimizers
+        .first()
+        .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes())
+}
+
+/// Provision a fresh appendable segment when every existing one reached `max_segment_size`, so the
+/// operation about to be applied has a destination below the cap to move points into.
+///
+/// Without this, a filtered payload or vector operation copy-on-write moves points into whichever
+/// appendable segment locks first, growing an already full segment without bound: the optimizer
+/// provisions capacity only on its own wake-up, which is too late for the operation being applied
+/// now.
+///
+/// Best effort by design: a provisioning failure is logged and the operation is applied anyway,
+/// falling back to the pre-existing behaviour of writing into a full segment. Running out of
+/// capacity must never fail a write.
+///
+/// Blocking: builds a segment on disk, so this must be called from a blocking context.
+fn ensure_capacity_for_update(
+    segments: &LockedSegmentHolder,
+    optimizers: &[Arc<Optimizer>],
+    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+) {
+    // Source the required parameters from the first optimizer, like the optimization worker does.
+    let Some(some_optimizer) = optimizers.first() else {
+        return;
+    };
+
+    let result = UpdateWorkers::ensure_appendable_segment_with_capacity(
+        segments,
+        some_optimizer.segments_path(),
+        some_optimizer.segment_optimizer_config(),
+        some_optimizer.threshold_config(),
+        payload_index_schema,
+    );
+
+    if let Err(err) = result {
+        log::error!(
+            "Failed to provision an appendable segment with capacity, applying anyway: {err}"
+        );
+    }
+}
+
 impl UpdateWorkers {
     /// Main loop of the update worker.
     ///
@@ -50,6 +100,8 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized: bool,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
@@ -120,7 +172,17 @@ impl UpdateWorkers {
 
                     let wait = sender.is_some();
                     let segments_clone = segments.clone();
+                    let optimizers_clone = optimizers.clone();
+                    let payload_index_schema_clone = payload_index_schema.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
+                        // Give the operation a destination below the size cap before applying it,
+                        // rather than letting it grow an already full segment.
+                        ensure_capacity_for_update(
+                            &segments_clone,
+                            &optimizers_clone,
+                            payload_index_schema_clone,
+                        );
+
                         Self::update_worker_internal(
                             collection_name_clone,
                             operation,
@@ -130,6 +192,7 @@ impl UpdateWorkers {
                             segments_clone,
                             update_operation_lock_clone,
                             update_tracker_clone,
+                            max_segment_size_bytes(&optimizers_clone),
                             hw_measurements,
                         )
                     })
@@ -311,6 +374,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         hw_measurements: HwMeasurementAcc,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
@@ -337,6 +401,7 @@ impl UpdateWorkers {
                 operation,
                 update_operation_lock.clone(),
                 update_tracker.clone(),
+                max_segment_size_bytes,
                 &hw_measurements.get_counter_cell(),
             )
         });

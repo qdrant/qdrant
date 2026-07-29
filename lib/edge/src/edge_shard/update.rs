@@ -36,13 +36,22 @@ impl EdgeShard {
 
         let result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(&segments_guard, operation_id, point_operation, &hw_counter)
+                process_point_operation(
+                    &segments_guard,
+                    operation_id,
+                    point_operation,
+                    // Edge shards keep a single appendable segment, so there is no destination to
+                    // steer between and no size cap to apply.
+                    None,
+                    &hw_counter,
+                )
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
                 process_vector_operation(
                     &segments_guard,
                     operation_id,
                     vector_operation,
+                    None,
                     &hw_counter,
                 )
             }
@@ -51,6 +60,7 @@ impl EdgeShard {
                     &segments_guard,
                     operation_id,
                     payload_operation,
+                    None,
                     &hw_counter,
                 )
             }
