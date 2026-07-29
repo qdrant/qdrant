@@ -147,22 +147,28 @@ events for this package.
 
 ## Threading
 
-All `EdgeShard` calls are **synchronous and blocking** — `search`, `query`,
-`scroll`, `upsert`, etc. run on the calling thread. **Never call them on the
-main thread**; a large search will freeze the UI.
+The generated `EdgeShard` calls are **synchronous and blocking** — `search`,
+`query`, `scroll`, `upsert`, etc. run on the calling thread. **Never call the
+blocking form on the main thread**; a large search will freeze the UI.
 
-The SDK does not impose a thread for you (you choose where the work runs). The
-idiomatic way to run a call off the main thread with Swift concurrency:
+Prefer the `…Async` wrappers: each runs its blocking call on a dedicated
+background queue — not the Swift cooperative thread pool, so a long DB call can't
+starve structured concurrency — and suspends until it finishes:
 
 ```swift
-let hits = try await Task.detached(priority: .userInitiated) {
-    try shard.search(request: request)
-}.value
+let shard = try await EdgeShard.loadAsync(path: path, config: config)
+try await shard.updateAsync(operation: op)
+let hits = try await shard.searchAsync(request: request)
 ```
 
-If you wrap the shard in an `actor` (a natural pattern for a database), the
-generated value types (`Point`, `Filter`, `SearchRequest`, …) are `Sendable`,
-so they cross the actor boundary cleanly under Swift 6 strict concurrency.
+Every blocking operation has an `…Async` counterpart (`searchAsync`, `queryAsync`,
+`updateAsync`, `optimizeAsync`, `loadAsync`, `unloadAsync`, …); only the instant
+in-memory getters — `info()`, `config()`, `path()` — do not.
+
+The blocking methods stay available if you manage your own executor — e.g. an
+`actor` wrapping the shard. The generated value types (`Point`, `Filter`,
+`SearchRequest`, …) are `Sendable`, so they cross the actor boundary cleanly
+under Swift 6 strict concurrency.
 
 ## Error handling
 

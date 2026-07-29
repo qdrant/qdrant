@@ -105,8 +105,12 @@ let package = Package(
         .target(
             name: "QdrantEdge",
             dependencies: ["qdrant_edge_ffiFFI"],
-            path: "out/swift-bindings",
-            sources: ["QdrantEdge.swift"]
+            // `QdrantEdge.swift` is the generated UniFFI binding — build-xcframework.sh
+            // moves it here (git-ignored) after regenerating it. `Concurrency.swift`
+            // is the hand-written async layer, committed alongside it (mirrors how
+            // the Kotlin SDK keeps Coroutines.kt next to its generated bindings).
+            path: "Sources/QdrantEdge",
+            sources: ["QdrantEdge.swift", "Concurrency.swift"]
         ),
         xcframeworkTarget,
         .testTarget(
