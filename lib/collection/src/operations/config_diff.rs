@@ -331,7 +331,7 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
                 .unwrap_or(self.write_consistency_factor),
             read_fan_out_factor: read_fan_out_factor.or(self.read_fan_out_factor),
             read_fan_out_delay_ms: read_fan_out_delay_ms.or(self.read_fan_out_delay_ms),
-            on_disk_payload: on_disk_payload.unwrap_or(self.on_disk_payload),
+            on_disk_payload: on_disk_payload.or(self.on_disk_payload),
             payload: match (self.payload.as_ref(), payload) {
                 (Some(base), Some(diff)) => Some(base.update(diff)),
                 (base, diff) => diff.or(base.copied()),
@@ -471,7 +471,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             write_consistency_factor: Some(write_consistency_factor),
             read_fan_out_factor,
             read_fan_out_delay_ms,
-            on_disk_payload: Some(on_disk_payload),
+            on_disk_payload,
             payload,
         }
     }
@@ -572,7 +572,7 @@ mod tests {
 
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
-        assert!(new_params.on_disk_payload);
+        assert_eq!(new_params.on_disk_payload, Some(true));
     }
 
     #[test]

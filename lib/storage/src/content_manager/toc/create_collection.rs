@@ -173,7 +173,7 @@ impl TableOfContent {
             shard_number: NonZeroU32::new(shard_number)
                 .ok_or_else(|| StorageError::bad_input("`shard_number` cannot be 0"))?,
             sharding_method,
-            on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
+            on_disk_payload: Some(on_disk_payload.unwrap_or(self.storage_config.on_disk_payload)),
             payload,
             replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {
                 StorageError::bad_input("`replication_factor` cannot be 0".to_string())
