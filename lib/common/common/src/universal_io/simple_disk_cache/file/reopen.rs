@@ -49,10 +49,10 @@ where
             // Nothing staged
             ScheduledReopen::No => Ok(false),
             ScheduledReopen::Resize { target_len } => {
-                local.resize(&self.local_path, target_len)?;
-
                 // reopen remote, so we can read up to the new length.
                 remote.reopen()?;
+
+                local.resize(&self.local_path, target_len)?;
 
                 Ok(true)
             }
@@ -60,9 +60,12 @@ where
                 mut pipeline,
                 target_len,
             } => {
+                let fetched = pipeline.wait()?;
+
+                // resize only after pipeline.wait() returns Ok
                 local.resize(&self.local_path, target_len)?;
 
-                match pipeline.wait()? {
+                match fetched {
                     Some((blocks_range, bytes)) if !bytes.is_empty() => {
                         // SAFETY: `bytes` covers `blocks_range` exactly
                         // (clamped to EOF)
