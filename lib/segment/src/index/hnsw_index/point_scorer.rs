@@ -131,8 +131,8 @@ impl ConditionChecker for ScorerFilters<'_> {
 }
 
 pub struct FilteredBytesScorer<'a> {
-    scorer_bytes: &'a dyn QueryScorerBytes,
-    filters: &'a ScorerFilters<'a>,
+    pub(super) scorer_bytes: &'a dyn QueryScorerBytes,
+    pub(super) filters: &'a ScorerFilters<'a>,
 }
 
 impl<'a> FilteredBytesScorer<'a> {
