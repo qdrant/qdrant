@@ -2330,3 +2330,149 @@ fn test_cow_move_falls_back_when_every_segment_reached_the_size_cap() {
         "the move must still land, overshooting the cap",
     );
 }
+
+/// A deferred staging segment that reached the size cap must still take the move when it is the
+/// only appendable segment. The cap only ever narrows the choice of destination, so it must not
+/// starve a `prevent_unoptimized` staging area: the write lands, and the point stays visible
+/// through the retained source exactly as it does uncapped.
+#[test]
+fn test_cow_move_into_capped_deferred_staging_segment_keeps_point_visible() {
+    use crate::fixtures::build_segment_with_deferred_1;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Staging area: appendable, holds deferred points, and has reached the cap.
+    let staging = build_segment_with_deferred_1(dir.path());
+
+    let mut source = empty_segment(dir.path());
+    source
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let source_id = holder.add_new(source);
+    let staging_id = holder.add_new(staging);
+
+    assert!(
+        holder
+            .get(staging_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_deferred_points(),
+        "the fixture must hold deferred points, or this tests nothing",
+    );
+
+    // Cap at the staging segment's own size: it is the only appendable segment and it is not
+    // below the cap, so the fallback has to pick it anyway.
+    let staging_size = segment_size(&holder, staging_id);
+    assert!(staging_size > 0, "the fixture must measure non-empty");
+
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            NonZeroUsize::new(staging_size),
+            &hw_counter,
+        )
+        .expect("a staging segment at the cap must still accept the move");
+
+    let staging_segment = holder.get(staging_id).unwrap().get();
+    let staging_segment = staging_segment.read();
+    let source_segment = holder.get(source_id).unwrap().get();
+    let source_segment = source_segment.read();
+
+    assert!(
+        staging_segment.point_version(100.into()).is_some(),
+        "the moved point must exist in the staging segment",
+    );
+    assert!(
+        staging_segment.point_is_deferred(100.into()),
+        "past the deferred offset the moved point lands deferred, as it does uncapped",
+    );
+    assert!(
+        source_segment.point_version(100.into()).is_some(),
+        "a deferred destination copy must keep the visible source, or the point disappears",
+    );
+}
+
+/// With a segment below the cap available next to a full deferred staging segment, the move goes
+/// to the one below the cap. The point becomes visible immediately (no deferred copy, source
+/// dropped) and the staging area keeps its own backlog untouched for the optimizer to promote.
+#[test]
+fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
+    use crate::fixtures::build_segment_with_deferred_1;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Staging segment first, so it is the lower segment id: `aloha_random_write` takes the first
+    // destination it can lock, so without the cap filter it would be the one chosen.
+    let mut holder = SegmentHolder::default();
+    let staging_id = holder.add_new(build_segment_with_deferred_1(dir.path()));
+    let fresh_id = holder.add_new(empty_segment(dir.path()));
+
+    let mut source = empty_segment(dir.path());
+    source
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    source.appendable_flag = false;
+    let source_id = holder.add_new(source);
+
+    let staging_size = segment_size(&holder, staging_id);
+    assert!(staging_size > 0, "the fixture must measure non-empty");
+
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            NonZeroUsize::new(staging_size),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let fresh_segment = holder.get(fresh_id).unwrap().get();
+    let fresh_segment = fresh_segment.read();
+    assert!(
+        fresh_segment.point_version(100.into()).is_some(),
+        "the moved point must land in the segment below the cap",
+    );
+    assert!(
+        !fresh_segment.point_is_deferred(100.into()),
+        "a segment below the cap has no deferred offset here, so the point is visible at once",
+    );
+
+    let staging_segment = holder.get(staging_id).unwrap().get();
+    let staging_segment = staging_segment.read();
+    assert!(
+        staging_segment.point_version(100.into()).is_none(),
+        "the full staging segment must not receive the move",
+    );
+    assert!(
+        staging_segment.has_deferred_points(),
+        "the staging backlog must be left intact for the optimizer to promote",
+    );
+
+    let source_segment = holder.get(source_id).unwrap().get();
+    let source_segment = source_segment.read();
+    assert!(
+        source_segment.point_version(100.into()).is_none(),
+        "a visible destination copy lets the source be dropped, as it does uncapped",
+    );
+}
