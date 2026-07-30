@@ -36,11 +36,14 @@ pub struct VerificationPass {
 /// Trait to verify strict mode for requests.
 /// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
-    /// Whether executing this request can grow process memory usage (e.g. upsert, set payload).
+    /// Whether executing this request can grow process memory or disk usage
+    /// (e.g. upsert, set payload).
     ///
-    /// Used by the process-level resident memory check. Delete-style operations
-    /// should return `false` so they can still run when memory is high — blocking
-    /// them would deadlock the path that frees memory.
+    /// Gates both resource quota checks — resident memory and disk usage — so an
+    /// operation that writes new bytes must return `true` even if it does not grow
+    /// RSS. Delete-style operations should return `false` so they can still run
+    /// when a resource is exhausted; blocking them would deadlock the path that
+    /// frees it.
     fn consumes_memory(&self) -> bool {
         false
     }

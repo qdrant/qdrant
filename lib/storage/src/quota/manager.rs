@@ -1,10 +1,9 @@
-use std::io::{BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 
-use atomicwrites::{AllowOverwrite, AtomicFile};
-use fs_err as fs;
-use parking_lot::RwLock;
+use ::common::save_on_disk::SaveOnDisk;
+use collection::operations::validation;
 use segment::types::StrictModeConfig;
+use validator::Validate as _;
 
 use super::check::{EffectiveLimit, check_disk_usage, check_resident_memory};
 use super::config::{QuotaConfig, QuotaLimits};
@@ -20,34 +19,31 @@ pub const QUOTA_CONFIG_FILE: &str = "quota.json";
 /// from there at startup if the file exists, and every update rewrites the file
 /// before it takes effect.
 pub struct QuotaManager {
-    /// Where the quota config is persisted.
-    config_path: PathBuf,
+    /// Quota enforced on incoming updates, persisted to [`QUOTA_CONFIG_FILE`].
+    config: SaveOnDisk<QuotaConfig>,
     /// Root of the storage directory, whose filesystem the disk limit applies to.
     storage_path: PathBuf,
-    /// Quota currently enforced on incoming updates.
-    config: RwLock<QuotaConfig>,
 }
 
 impl QuotaManager {
     /// Load the persisted quota config, falling back to `from_settings` when the
     /// storage directory holds no quota file yet.
     ///
-    /// Fails if a quota file exists but cannot be read: quotas protect the node
-    /// against resource exhaustion, so an unreadable config must not be silently
-    /// downgraded to "no limits".
+    /// Fails if the config that ends up in effect cannot be read or does not
+    /// validate: quotas protect the node against resource exhaustion, so one we
+    /// cannot honour must not be silently downgraded to "no limits".
     pub fn load_or_init(storage_path: &Path, from_settings: QuotaConfig) -> StorageResult<Self> {
-        let config_path = storage_path.join(QUOTA_CONFIG_FILE);
+        let config =
+            SaveOnDisk::load_or_init(storage_path.join(QUOTA_CONFIG_FILE), || from_settings)
+                .map_err(|err| {
+                    StorageError::service_error(format!("Failed to read quota config: {err}"))
+                })?;
 
-        let config = if config_path.exists() {
-            read_config(&config_path)?
-        } else {
-            from_settings
-        };
+        validate(&config.read())?;
 
         Ok(QuotaManager {
-            config_path,
+            config,
             storage_path: storage_path.to_path_buf(),
-            config: RwLock::new(config),
         })
     }
 
@@ -55,13 +51,18 @@ impl QuotaManager {
         *self.config.read()
     }
 
-    /// Persist `config` and start enforcing it. The file is written first, so a
-    /// crash can only lose the update, never apply an unpersisted one.
+    /// Persist `config` and start enforcing it.
+    ///
+    /// The file is written before the in-memory value is swapped, so a crash can
+    /// only lose the update, never apply an unpersisted one.
     pub fn set_config(&self, config: QuotaConfig) -> StorageResult<()> {
-        let mut current = self.config.write();
-        write_config(&self.config_path, &config)?;
-        *current = config;
-        Ok(())
+        validate(&config)?;
+
+        self.config
+            .write(|current| *current = config)
+            .map_err(|err| {
+                StorageError::service_error(format!("Failed to persist quota config: {err}"))
+            })
     }
 
     /// Current quota config together with the utilization it is measured against.
@@ -115,23 +116,14 @@ impl QuotaManager {
     }
 }
 
-fn read_config(path: &Path) -> StorageResult<QuotaConfig> {
-    let file = fs::File::open(path)?;
-    serde_json::from_reader(BufReader::new(file)).map_err(|err| {
-        StorageError::service_error(format!(
-            "Failed to read quota config from {}: {err}",
-            path.display(),
-        ))
+/// Guard both persistence boundaries: the REST handler validates its own body,
+/// but a hand-edited quota file and a config arriving through consensus do not
+/// pass through it. A `0%` limit would reject every update forever, and one above
+/// `100%` would cap nothing.
+fn validate(config: &QuotaConfig) -> StorageResult<()> {
+    config.validate().map_err(|errs| {
+        StorageError::bad_request(validation::label_errors("Invalid quota config", &errs))
     })
-}
-
-fn write_config(path: &Path, config: &QuotaConfig) -> StorageResult<()> {
-    AtomicFile::new(path, AllowOverwrite).write(|file| {
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer(&mut writer, config)?;
-        writer.flush()
-    })?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -183,5 +175,28 @@ mod tests {
             ..Default::default()
         };
         assert!(manager.check_update(Some(&strict_mode)).is_err());
+    }
+
+    #[test]
+    fn out_of_range_limits_are_rejected() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).unwrap();
+
+        // A 0% limit can never be satisfied, so it must not be installable —
+        // neither through consensus, nor by hand-editing the quota file.
+        let impossible = QuotaConfig {
+            enabled: true,
+            max_disk_usage_percent: Some(0),
+            ..Default::default()
+        };
+        assert!(manager.set_config(impossible).is_err());
+        assert_eq!(manager.config(), QuotaConfig::default());
+
+        fs_err::write(
+            dir.path().join(QUOTA_CONFIG_FILE),
+            serde_json::to_vec(&impossible).unwrap(),
+        )
+        .unwrap();
+        assert!(QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).is_err());
     }
 }
