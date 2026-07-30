@@ -9,14 +9,13 @@ use super::GraphWithVectorsScorers;
 use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_layers::{GraphLayers, SearchAlgorithm};
 use super::graph_layers_batched::GraphLayersBatched;
-use super::graph_links::{GraphLinks, GraphLinksResidency};
+use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLinksResidency};
 use super::point_scorer::{FilteredScorer, ScorerFilters};
 use crate::common::operation_error::OperationResult;
 
 #[derive(Debug)]
 pub enum HnswGraph<S: UniversalRead> {
     Direct(GraphLayers),
-    #[expect(dead_code)]
     Batched(Box<GraphLayersBatched<S>>),
 }
 
@@ -45,6 +44,28 @@ pub enum SearchScorers<'a> {
 }
 
 impl<S: UniversalRead> HnswGraph<S> {
+    /// Whether [`Self::open_universal`] will open a batched-IO graph.
+    pub(super) fn is_batched(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        residency: GraphLinksResidency,
+    ) -> OperationResult<bool> {
+        let format = GraphLayers::probe_links_format(fs, dir)?;
+        Ok(format.is_some_and(|format| Self::format_is_batched(format, residency)))
+    }
+
+    fn format_is_batched(format: GraphLinksFormat, residency: GraphLinksResidency) -> bool {
+        if residency == GraphLinksResidency::Pinned {
+            return false;
+        }
+        match format {
+            GraphLinksFormat::CompressedWithVectors | GraphLinksFormat::Compressed => {
+                S::kind().can_be_async()
+            }
+            GraphLinksFormat::Plain => false,
+        }
+    }
+
     pub fn open_universal(
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
@@ -53,11 +74,15 @@ impl<S: UniversalRead> HnswGraph<S> {
     where
         S: 'static,
     {
-        // Note that on non-borrowable backends this materializes the links
-        // into heap RAM whatever the residency.
-        Ok(HnswGraph::Direct(GraphLayers::load_universal(
-            fs, dir, residency,
-        )?))
+        Ok(if Self::is_batched(fs, dir, residency)? {
+            HnswGraph::Batched(Box::new(GraphLayersBatched::open(fs, dir, residency)?))
+        } else {
+            // Note that on non-borrowable backends this materializes the
+            // links into heap RAM whatever the residency: `Plain` is not
+            // supported by the batched view, and `Pinned` asks for
+            // materialization explicitly.
+            HnswGraph::Direct(GraphLayers::load_universal(fs, dir, residency)?)
+        })
     }
 
     /// Schedule background prefetch of the files [`Self::open_universal`]
@@ -72,9 +97,14 @@ impl<S: UniversalRead> HnswGraph<S> {
         let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
             return Ok(());
         };
+        let options = if Self::format_is_batched(format, residency) {
+            GraphLinksFile::<S>::preopen_options(format, residency)
+        } else {
+            GraphLinks::preopen_options(residency)
+        };
         fs.schedule_prefetch(
             &GraphLayers::get_links_path(dir, format),
-            Some(GraphLinks::preopen_options(residency)),
+            Some(options),
             None,
         )?;
         Ok(())
