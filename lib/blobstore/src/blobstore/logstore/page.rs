@@ -265,6 +265,37 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         }
         Ok(())
     }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        populate: Populate,
+    ) -> Result<()> {
+        let page_list: HashMap<_, _> = fs
+            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
+            .into_iter()
+            .map(|listed| (listed.path, listed.size))
+            .collect();
+
+        // Reload pages
+        for page in &mut self.pages {
+            page.live_preload(fs)?;
+        }
+
+        // Load new pages
+        for page_id in self.pages.len() as PageId.. {
+            let path = page_file_name(&self.dir, page_id);
+            if !page_list.contains_key(&path) {
+                break;
+            }
+            fs.schedule_prefetch(
+                &path,
+                Some(AppendOnlyPage::<S>::open_options(populate, false)),
+                None,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl<S: UniversalAppend> AppendOnlyPages<S> {
@@ -461,6 +492,12 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
                     pointer.length,
                 ))
             })
+    }
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+        self.file
+            .schedule_reopen(|path| fs.cached_file_info(path))?;
+        Ok(())
     }
 
     /// Reopen the page file handle and reload its length, making newly appended value data

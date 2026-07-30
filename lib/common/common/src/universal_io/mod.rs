@@ -19,7 +19,7 @@ pub mod conformance;
 #[cfg(test)]
 mod tests;
 
-pub use self::cached_fs::{CachedFs, CachedReadFsContext};
+pub use self::cached_fs::{CachedFs, CachedReadFsContext, FileInfo};
 pub use self::error::{IsNotFound, OkNotFound, OkUnchanged, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra, is_io_uring_supported};
