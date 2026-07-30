@@ -52,6 +52,7 @@ use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::utils::unordered_hash_unique;
 use crate::utils::maybe_arc::MaybeArc;
+use crate::utils::raw_bytes_serde;
 
 pub type PayloadKeyType = JsonPath;
 pub type PayloadKeyTypeRef<'a> = &'a JsonPath;
@@ -2956,7 +2957,11 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
 pub struct RawPayload {
     /// Serialized as a compact byte string rather than the serde default of a
     /// sequence of integers, which costs ~2x in CBOR (used for the WAL).
-    #[serde(with = "crate::utils::raw_bytes_serde")]
+    ///
+    /// The module is referenced through a `use` import rather than a full
+    /// `crate::` path in the attribute string: Qdrant Edge's amalgamation
+    /// rewrites `crate::` paths in code but cannot see into strings.
+    #[serde(with = "raw_bytes_serde")]
     pub payload_bytes: Vec<u8>,
     pub encoding: RawPayloadEncoding,
 }
