@@ -47,6 +47,20 @@ pub struct FeatureFlags {
     /// bitslices. Only gates writing: both formats are always readable.
     pub compact_bitmask: bool,
 
+    /// Transfer points as storage-native bytes (raw points), for every collection rather than
+    /// only those whose vector storage would lose precision in a decode-encode round-trip
+    /// (TurboQuant).
+    ///
+    /// Only affects the sending side: nodes accept raw points regardless.
+    pub transfer_raw_points: bool,
+
+    /// Send the payload of a raw point as the byte blob it is stored as, instead of the
+    /// protobuf value tree, so neither node has to parse it. Only has an effect on points
+    /// that are transferred raw, see [`Self::transfer_raw_points`].
+    ///
+    /// Only affects the sending side: nodes accept raw payloads regardless.
+    pub transfer_raw_payloads: bool,
+
     /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`] and [`Self::compact_bitmask`].
     ///
@@ -65,6 +79,8 @@ impl Default for FeatureFlags {
             write_segment_manifest: false,
             append_only_mutations: false,
             compact_bitmask: false,
+            transfer_raw_points: false,
+            transfer_raw_payloads: false,
             serverless_compatible: false,
         }
     }
@@ -94,6 +110,11 @@ impl FeatureFlags {
             // mutation semantics, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
             compact_bitmask: true,
+            // Deliberately not enabled by `all`: a node only accepts these once it runs a
+            // version that understands them, so they can only be switched on a release after
+            // the receiving side has shipped.
+            transfer_raw_points: false,
+            transfer_raw_payloads: false,
             serverless_compatible: false,
         }
     }

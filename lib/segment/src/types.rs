@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
@@ -2947,8 +2948,15 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
 ///
 /// Read from storage by `retrieve_raw` and shipped to another node as-is, so
 /// neither side has to parse the payload on the way.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
 pub struct RawPayload {
+    /// Serialized as a compact byte string rather than the serde default of a
+    /// sequence of integers, which costs ~2x in CBOR (used for the WAL).
+    ///
+    /// The module is referenced through a `use` import rather than a full path in
+    /// the attribute string: Qdrant Edge's amalgamation rewrites paths in code but
+    /// cannot see into strings.
+    #[serde(with = "raw_bytes_serde")]
     pub payload_bytes: Vec<u8>,
 }
 

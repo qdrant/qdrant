@@ -104,11 +104,15 @@ impl UpdateBatchPlan {
                 }
             }
             PointOperations::UpsertPointsRaw(points) => {
-                for point in points {
+                for mut point in points {
+                    // A raw payload blob is a transport form; decode it so this path
+                    // cannot drop the payload of a locally applied operation.
+                    point.decode_payload_raw()?;
                     let PointStructRawPersisted {
                         id,
                         vectors,
                         payload,
+                        payload_raw: _,
                     } = point;
                     self.push(
                         id,

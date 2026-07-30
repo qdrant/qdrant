@@ -25,7 +25,7 @@ pub use self::points::{
 };
 pub use self::vectors::{delete_vectors, delete_vectors_by_filter, update_vectors_conditional};
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::PointOperations;
+use crate::operations::point_ops::{PointOperations, PointStructRawPersisted};
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{
     CreateVectorName, DeleteVectorName, FieldIndexOperations, VectorNameOperations,
@@ -67,7 +67,8 @@ pub fn process_point_operation(
             )?;
             Ok(deleted + new + updated)
         }
-        PointOperations::UpsertPointsRaw(points) => {
+        PointOperations::UpsertPointsRaw(mut points) => {
+            decode_raw_payloads(&mut points)?;
             if points.is_empty() {
                 // An empty upsert touches no segment; bump so WAL can acknowledge it.
                 segments.bump_max_segment_version_overwrite(op_num);
@@ -75,7 +76,8 @@ pub fn process_point_operation(
             let res = upsert_points_raw(segments, op_num, points.iter(), hw_counter)?;
             Ok(res)
         }
-        PointOperations::SyncPointsRaw(operation) => {
+        PointOperations::SyncPointsRaw(mut operation) => {
+            decode_raw_payloads(&mut operation.points)?;
             let (deleted, new, updated) = sync_points_raw(
                 segments,
                 op_num,
@@ -87,6 +89,16 @@ pub fn process_point_operation(
             Ok(deleted + new + updated)
         }
     }
+}
+
+/// Decode the raw payload blobs of an incoming batch into parsed payloads.
+///
+/// Points received over gRPC already carry a parsed payload; this only matters
+/// for a raw operation that reaches a segment without crossing that boundary.
+fn decode_raw_payloads(points: &mut [PointStructRawPersisted]) -> OperationResult<()> {
+    points
+        .iter_mut()
+        .try_for_each(PointStructRawPersisted::decode_payload_raw)
 }
 
 #[cfg(feature = "staging")]
