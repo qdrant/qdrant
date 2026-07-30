@@ -1,21 +1,21 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
 impl<S: UniversalRead> LiveReload for ReadOnlyChunkedMultiTurboVectorStorage<S> {
-    type Fs = S::Fs;
+    type File = S;
 
     /// Reload the vectors and offsets, apply `deleted_points`, and fold in the
     /// persisted deletion of each appended offset — a live point may have a
     /// deleted vector slot recorded only on disk.
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,

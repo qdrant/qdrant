@@ -1,19 +1,19 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use super::{ReadOnlyQuantizedVectorStorage, ReadOnlyQuantizedVectors};
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
 impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
-    type Fs = S::Fs;
+    type File = S;
 
     /// Reload appended quantized vectors from disk (chunked layouts only).
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
@@ -24,14 +24,14 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
 }
 
 impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
-    type Fs = S::Fs;
+    type File = S;
 
     /// Pick up quantized vectors a writer appended. Only the chunked (appendable)
     /// layouts grow; Ram/Mmap are immutable, so they no-op. Deletions aren't
     /// tracked here — they live in the raw vector storage.
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,

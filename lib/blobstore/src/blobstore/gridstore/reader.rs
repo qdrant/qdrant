@@ -230,7 +230,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// tracker file is mutated in place and carries no reliable
     /// cheaply-readable change signal, so there is no "nothing changed"
     /// fast path. Both refreshes are cheap for non-populated readers.
-    pub(crate) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
         self.tracker.live_reload(fs)?;
         self.pages.live_reload(fs, self.populate)?;
 
