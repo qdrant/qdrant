@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
+use api::grpc::RawPayload;
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -519,24 +520,30 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             .ok_or_else(|| tonic::Status::invalid_argument("Empty id is not allowed"))?
             .try_into()?;
 
-        let payload = if payload.is_empty() {
-            None
-        } else {
-            Some(api::conversions::json::proto_to_payloads(payload)?)
-        };
-
-        // TODO(payload bytes): Implement.
-        if raw_payload.is_some() {
-            return Err(tonic::Status::invalid_argument(
-                "Payload as bytes not yet implemented",
-            ));
-        }
+        // Attempt to read raw payload first and fall back to the serialized payload instead (if not empty).
+        let payload = raw_payload
+            .map(decode_payload)
+            .or_else(|| {
+                (!payload.is_empty()).then(|| api::conversions::json::proto_to_payloads(payload))
+            })
+            .transpose()?;
 
         Ok(Self {
             id,
             vectors: vectors.into_iter().collect(),
             payload,
         })
+    }
+}
+
+/// Decodes the RawPayload according to its encoding.
+fn decode_payload(raw_payload: RawPayload) -> Result<Payload, tonic::Status> {
+    match raw_payload.encoding() {
+        api::grpc::RawPayloadEncoding::JsonBytes => {
+            serde_json::from_slice(&raw_payload.payload_bytes).map_err(|err| {
+                tonic::Status::invalid_argument(format!("Malformed raw payload blob: {err}"))
+            })
+        }
     }
 }
 
