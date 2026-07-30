@@ -51,6 +51,11 @@ impl<S: UniversalRead + 'static> UpdateOnlySegmentHolder<S> {
         self.by_uuid.get(uuid)
     }
 
+    /// UUID of the single segment that accepts appends, if one exists.
+    pub(crate) fn write_target_uuid(&self) -> Option<Uuid> {
+        self.write_target
+    }
+
     /// The single segment that accepts appends; an error when none exists.
     pub(crate) fn write_target(&self) -> OperationResult<&Arc<RwLock<UpdateOnlySegment<S>>>> {
         self.write_target

@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::UpdateOnlySegmentHolder;
+use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
 /// named by ten operations counts once.
@@ -36,10 +37,10 @@ pub struct UpdateBatchOutcome {
 
 /// One copy of a point: where it lives, and at what version.
 #[derive(Debug, Clone, Copy)]
-struct PointLocation {
-    segment: Uuid,
-    internal_id: PointOffsetType,
-    version: SeqNumberType,
+pub(super) struct PointLocation {
+    pub(super) segment: Uuid,
+    pub(super) internal_id: PointOffsetType,
+    pub(super) version: SeqNumberType,
     /// Whether the holding segment accepts appends; breaks a version tie.
     appendable: bool,
 }
@@ -54,15 +55,15 @@ impl PointLocation {
 }
 
 /// Every copy of one point across the shard's segments.
-struct PointLocations {
+pub(super) struct PointLocations {
     /// The live copy: its version decides whether the batch is already
     /// applied, and its slot is the one a resolve reads from.
-    newest: PointLocation,
+    pub(super) newest: PointLocation,
     /// Every slot the point occupies, `newest`'s included. A rewrite or a
     /// delete retires them all — tombstoning only the newest slot would let
     /// an older duplicate (left by an interrupted move) outlive the point
     /// and, on a delete, resurrect it.
-    slots: Vec<(Uuid, PointOffsetType)>,
+    pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
 impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
@@ -86,47 +87,44 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
         let hw_counter = HardwareCounterCell::disposable();
         let segments = self.segments.read();
 
-        // 1. Find which segment holds each touched point, and at what version.
-        let locations = locate_points(&segments, &plan, &self.pool)?;
+        // 1-3. Locate, read, materialize — the decision stage shared with
+        // `preview_batch`, so a preview cannot drift from the real apply.
+        let resolved = resolve_batch(&segments, plan, &self.pool)?;
 
-        // 2. Read the points that cannot be resolved from the batch alone.
-        let mut stored = read_stored_points(&segments, &plan, &locations, &self.pool)?;
-
-        // 3. Fold each point's mutations onto what is stored.
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
         let mut to_tombstone: AHashMap<Uuid, Vec<PointOffsetType>> = AHashMap::new();
 
-        for (id, updates) in plan.into_point_updates() {
-            let location = locations.get(&id);
+        for point in resolved {
+            let PointPreview {
+                id: _,
+                current: _,
+                slots,
+                action,
+            } = point;
 
-            // Already applied: the stored point is at or beyond this batch's
-            // version, so re-applying would move it backwards.
-            if location.is_some_and(|location| location.newest.version >= updates.version()) {
-                outcome.skipped += 1;
-                continue;
-            }
-
-            match updates.materialize(id, stored.remove(&id))? {
-                Some(point) => {
-                    to_store.push(point);
-                    outcome.stored += 1;
+            match action {
+                PointAction::Skip => {
+                    outcome.skipped += 1;
+                    continue;
                 }
-                None if location.is_some() => outcome.deleted += 1,
-                None => {
+                PointAction::Missing => {
                     outcome.missing += 1;
                     continue;
                 }
+                PointAction::Store(point) => {
+                    to_store.push(point);
+                    outcome.stored += 1;
+                }
+                PointAction::Delete => outcome.deleted += 1,
             }
 
             // Whatever happened to the point, every slot it occupied — in any
             // segment — is retired: a rewrite left its replacement elsewhere,
             // a delete left nothing, and an older duplicate must not outlive
             // either.
-            if let Some(location) = location {
-                for &(segment, internal_id) in &location.slots {
-                    to_tombstone.entry(segment).or_default().push(internal_id);
-                }
+            for (segment, internal_id) in slots {
+                to_tombstone.entry(segment).or_default().push(internal_id);
             }
         }
 
@@ -156,7 +154,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
 /// Locate every point the batch touches: every slot it occupies, with the
 /// newest copy marked, when more than one segment holds the point. Segments
 /// are visited in parallel on `pool`.
-fn locate_points<S: UniversalRead + 'static>(
+pub(super) fn locate_points<S: UniversalRead + 'static>(
     segments: &UpdateOnlySegmentHolder<S>,
     plan: &UpdateBatchPlan,
     pool: &ThreadPool,
@@ -222,7 +220,7 @@ fn locate_points<S: UniversalRead + 'static>(
 
 /// Read the stored form of the points whose mutations need it, one batched
 /// pass per segment; segments are read in parallel on `pool`.
-fn read_stored_points<S: UniversalRead + 'static>(
+pub(super) fn read_stored_points<S: UniversalRead + 'static>(
     segments: &UpdateOnlySegmentHolder<S>,
     plan: &UpdateBatchPlan,
     locations: &AHashMap<PointIdType, PointLocations>,

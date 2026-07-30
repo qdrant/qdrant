@@ -32,4 +32,7 @@ pub use requests::{
     ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
-pub use update_only::{PointUpdates, UpdateBatchOutcome, UpdateBatchPlan, UpdateOnlyEdgeShard};
+pub use update_only::{
+    PointAction, PointCopy, PointPreview, PointUpdates, SegmentConfigInfo, UpdateBatchOutcome,
+    UpdateBatchPlan, UpdateBatchPreview, UpdateOnlyEdgeShard,
+};
