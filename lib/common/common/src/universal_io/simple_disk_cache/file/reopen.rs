@@ -6,14 +6,14 @@
 //! [`schedule_reopen`]: crate::universal_io::UniversalRead::schedule_reopen
 
 use std::io::{self, ErrorKind};
+use std::path::Path;
 
 use super::{DiskCache, ScheduledReopen, State};
 use crate::generic_consts::Sequential;
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::simple_disk_cache::pipeline::REMOTE_READ_ALIGNMENT;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, block_aligned_fetch};
-use crate::universal_io::{
-    CachedReadFs, OwnedPipeline, Populate, UioResult, UniversalIoError, UniversalRead,
-};
+use crate::universal_io::{OwnedPipeline, Populate, UioResult, UniversalIoError, UniversalRead};
 
 impl<R> DiskCache<R>
 where
@@ -74,8 +74,11 @@ where
         }
     }
 
-    pub(super) fn schedule_reopen_impl<Fs: CachedReadFs>(&mut self, fs: &Fs) -> UioResult<()> {
-        let Some(file_info) = fs.file_info(&self.remote_path) else {
+    pub(super) fn schedule_reopen_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &mut self,
+        get_file_info: F,
+    ) -> UioResult<()> {
+        let Some(file_info) = get_file_info(&self.remote_path) else {
             return Err(UniversalIoError::NotFound {
                 path: self.remote_path.clone(),
             });

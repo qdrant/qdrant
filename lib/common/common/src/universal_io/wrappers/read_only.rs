@@ -8,10 +8,11 @@ use bytemuck::TransparentWrapper;
 use super::WrappedReadPipeline;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    CachedReadFs, Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult,
-    UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs, UserData,
+    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -116,8 +117,11 @@ where
     }
 
     #[inline]
-    fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
-        self.0.schedule_reopen(cached_fs)
+    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &mut self,
+        get_file_info: F,
+    ) -> UioResult<()> {
+        self.0.schedule_reopen(get_file_info)
     }
 
     #[inline]

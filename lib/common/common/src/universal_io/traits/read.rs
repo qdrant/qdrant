@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops::Range;
+use std::path::Path;
 
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{
-    CachedReadFs, ReadBytesItem, ReadRange, UioResult, UniversalIoError, UniversalKind,
-};
+use crate::universal_io::cached_fs::FileInfo;
+use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError, UniversalKind};
 
 /// Per-file handle for universal read access.
 ///
@@ -61,8 +61,9 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn reopen(&mut self) -> UioResult<()>;
 
     /// Stage the work that the next [`reopen`](Self::reopen) must do, reading
-    /// the file's current length from `cached_fs`'s listing snapshot (the
-    /// implementation resolves its own path, so there is nothing to mispair).
+    /// the file's current length via `get_file_info` — typically backed by a
+    /// [`CachedReadFs`] listing snapshot. The implementation resolves its own
+    /// path, so there is nothing to mispair.
     ///
     /// Lets a caller submit the fetches of many reopens up front and only pay
     /// the (already in-flight) tail of the wait when applying them. Contract:
@@ -74,9 +75,13 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// Defaults to a no-op: local backends' `reopen` is a stat plus a remap,
     /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.
     ///
+    /// [`CachedReadFs`]: crate::universal_io::CachedReadFs
     /// [`DiskCache`]: crate::universal_io::DiskCache
-    fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
-        let _ = cached_fs;
+    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &mut self,
+        get_file_info: F,
+    ) -> UioResult<()> {
+        let _ = get_file_info;
         Ok(())
     }
 

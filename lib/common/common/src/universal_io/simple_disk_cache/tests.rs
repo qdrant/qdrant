@@ -1,7 +1,7 @@
 use std::assert_matches;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fs_err as fs;
@@ -12,6 +12,7 @@ use super::{
 };
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
     CachedFs, CachedReadFs, MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange,
     UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFileOps,
@@ -131,17 +132,17 @@ impl Scenario {
         &self.data[range.start as usize..range.end as usize]
     }
 
-    /// A `CachedFs` over this scenario's fs with the listing snapshot taken —
-    /// the schedule-phase view of the remote. Take a fresh one after growing
-    /// the remote, as a refresh pass would.
-    fn snapshot_fs<R>(&self) -> CachedFs<DiskCacheFs<R>>
+    /// A `get_file_info` for `schedule_reopen`, backed by a `CachedFs`
+    /// listing snapshot taken now — the schedule-phase view of the remote.
+    /// Take a fresh one after growing the remote, as a refresh pass would.
+    fn snapshot_file_info<R>(&self) -> impl Fn(&Path) -> Option<FileInfo>
     where
         R: DiskCacheRemote,
         <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
     {
-        let mut cached_fs = CachedFs::new(self.fs(), &self.remote_path).unwrap();
+        let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
         cached_fs.cache_file_info().unwrap();
-        cached_fs
+        move |path| cached_fs.file_info(path).cloned()
     }
 
     /// Append `additional_bytes` bytes to the remote file in-place.
@@ -456,7 +457,9 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
 
         // Nothing changed yet: same length, and the appended region is still
         // out of bounds.
@@ -495,7 +498,9 @@ mod tests_mod {
         let mut cache = scn.open::<R>(PREFILL);
         assert!(!cache.is_ready());
 
-        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
 
         assert!(cache.is_ready());
         assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
@@ -525,7 +530,9 @@ mod tests_mod {
             )
         };
 
-        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
         cache.reopen().unwrap();
 
         let local = cache.state().unwrap().local;
@@ -543,9 +550,13 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         scn.grow_remote(BLOCK_SIZE);
-        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache.schedule_reopen(&scn.snapshot_fs::<R>()).unwrap();
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
 
         cache.reopen().unwrap();
 
@@ -564,9 +575,9 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        let snapshot_fs = scn.snapshot_fs::<R>();
-        cache.schedule_reopen(&snapshot_fs).unwrap();
-        cache.schedule_reopen(&snapshot_fs).unwrap();
+        let get_file_info = scn.snapshot_file_info::<R>();
+        cache.schedule_reopen(&get_file_info).unwrap();
+        cache.schedule_reopen(&get_file_info).unwrap();
 
         cache.reopen().unwrap();
 
@@ -583,12 +594,7 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE);
         let mut cache = scn.open::<R>(PREFILL);
 
-        // Snapshot over a prefix that matches nothing.
-        let missing_prefix = scn.remote_path.with_file_name("other");
-        let mut snapshot_fs = CachedFs::new(scn.fs::<R>(), &missing_prefix).unwrap();
-        snapshot_fs.cache_file_info().unwrap();
-
-        let err = cache.schedule_reopen(&snapshot_fs).unwrap_err();
+        let err = cache.schedule_reopen(|_| None).unwrap_err();
         assert_matches!(err, UniversalIoError::NotFound { .. });
     }
 

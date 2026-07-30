@@ -6,10 +6,11 @@ use std::path::Path;
 use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
-    ByteOffset, CachedReadFs, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult,
-    UniversalAppend, UniversalFlush, UniversalIoError, UniversalKind, UniversalRead,
-    UniversalReadFs, UniversalWrite, UserData,
+    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult, UniversalAppend,
+    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs,
+    UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -71,8 +72,11 @@ where
         self.inner.reopen()
     }
 
-    pub fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
-        self.inner.schedule_reopen(cached_fs)
+    pub fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &mut self,
+        get_file_info: F,
+    ) -> UioResult<()> {
+        self.inner.schedule_reopen(get_file_info)
     }
 
     #[inline]

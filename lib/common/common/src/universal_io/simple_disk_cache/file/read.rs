@@ -3,15 +3,17 @@
 //! growth handling in [`super::reopen`].
 use std::borrow::Cow;
 use std::ops::Range;
+use std::path::Path;
 
 use super::DiskCache;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
 use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
 use crate::universal_io::{
-    CachedReadFs, Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
+    Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
 };
 
 impl<R> DiskCache<R>
@@ -60,8 +62,11 @@ where
         self.reopen_impl()
     }
 
-    fn schedule_reopen<Fs: CachedReadFs>(&mut self, cached_fs: &Fs) -> UioResult<()> {
-        self.schedule_reopen_impl(cached_fs)
+    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &mut self,
+        get_file_info: F,
+    ) -> UioResult<()> {
+        self.schedule_reopen_impl(get_file_info)
     }
 
     fn read_bytes<P: AccessPattern>(
