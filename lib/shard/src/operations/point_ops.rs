@@ -520,13 +520,13 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             .ok_or_else(|| tonic::Status::invalid_argument("Empty id is not allowed"))?
             .try_into()?;
 
-        // Attempt to read raw payload first and fall back to the serialized payload instead (if not empty).
-        let payload = raw_payload
-            .map(decode_payload)
-            .or_else(|| {
-                (!payload.is_empty()).then(|| api::conversions::json::proto_to_payloads(payload))
-            })
-            .transpose()?;
+        // Prefer the raw payload blob and fall back to the serialized payload otherwise.
+        // An empty payload is normalized to `None`.
+        let payload = match raw_payload {
+            Some(raw_payload) => decode_payload(raw_payload)?,
+            None => api::conversions::json::proto_to_payloads(payload)?,
+        };
+        let payload = (!payload.is_empty()).then_some(payload);
 
         Ok(Self {
             id,
