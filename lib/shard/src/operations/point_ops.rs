@@ -337,41 +337,25 @@ pub struct PointStructRawPersisted {
     /// Payload values (optional)
     pub payload: Option<Payload>,
     /// Byte encoded payload values.
+    ///
+    /// Skipped when `None` so that WAL entries without a raw payload stay
+    /// byte-identical to those written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_raw: Option<RawPayload>,
 }
 
-/// Serde helper for [`PointStructRawPersisted::vectors`].
-///
-/// By default serde serializes `Vec<u8>` as a sequence of integers, which in
-/// CBOR (used for the WAL) costs ~2x for high-entropy data such as raw vector
-/// bytes. This module forces each blob through `serialize_bytes` so it is
-/// encoded as a compact byte string (~1x overhead) instead.
+/// Serde helper for [`PointStructRawPersisted::vectors`]: each vector blob in
+/// the `(name, bytes)` pair list goes through
+/// [`segment::utils::raw_bytes_serde`] so it is encoded as a compact byte
+/// string instead of the serde default of a sequence of integers, which costs
+/// ~2x in CBOR (used for the WAL).
 mod raw_vectors_serde {
-    use std::fmt;
-
     use segment::types::VectorNameBuf;
-    use serde::de::{self, Deserializer, SeqAccess, Visitor};
+    use segment::utils::raw_bytes_serde::{ByteVec, BytesRef};
+    use serde::de::Deserializer;
     use serde::ser::{SerializeSeq, Serializer};
 
     use super::RawVectorsPersisted;
-
-    /// Upper bound for the capacity we pre-allocate from an untrusted `size_hint`
-    /// when deserializing a single vector's raw bytes.
-    ///
-    /// Realistic sizes are far below this: a maximum-size dense vector is
-    /// 65536 dims x 4 bytes (f32) = 256 KiB. The 128 MiB headroom comfortably
-    /// covers large multivectors and sparse vectors while staying orders of
-    /// magnitude away from OOM territory.
-    const MAX_RAW_VECTOR_PREALLOC: usize = 128 * 1024 * 1024;
-
-    /// Reference wrapper that serializes a byte slice as a byte string.
-    struct BytesRef<'a>(&'a [u8]);
-
-    impl serde::Serialize for BytesRef<'_> {
-        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            serializer.serialize_bytes(self.0)
-        }
-    }
 
     pub fn serialize<S: Serializer>(
         vectors: &[(VectorNameBuf, Vec<u8>)],
@@ -382,46 +366,6 @@ mod raw_vectors_serde {
             seq.serialize_element(&(name, BytesRef(bytes)))?;
         }
         seq.end()
-    }
-
-    /// Owned wrapper that deserializes a byte string into a `Vec<u8>`.
-    struct ByteVec(Vec<u8>);
-
-    impl<'de> serde::Deserialize<'de> for ByteVec {
-        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            struct ByteVecVisitor;
-
-            impl<'de> Visitor<'de> for ByteVecVisitor {
-                type Value = Vec<u8>;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a byte string")
-                }
-
-                fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
-                    Ok(value.to_vec())
-                }
-
-                fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
-                    Ok(value)
-                }
-
-                /// Formats that lack a native byte-string type (e.g. JSON) fall
-                /// back to a sequence of integers; accept those too.
-                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                    let capacity = seq.size_hint().unwrap_or(0).min(MAX_RAW_VECTOR_PREALLOC);
-                    let mut bytes = Vec::with_capacity(capacity);
-                    while let Some(byte) = seq.next_element()? {
-                        bytes.push(byte);
-                    }
-                    Ok(bytes)
-                }
-            }
-
-            deserializer
-                .deserialize_byte_buf(ByteVecVisitor)
-                .map(ByteVec)
-        }
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
@@ -1126,7 +1070,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::segment_record::RawPayloadEncoding;
+    use segment::types::RawPayloadEncoding;
 
     use super::*;
 
@@ -1154,6 +1098,57 @@ mod tests {
         // Round-trips losslessly.
         let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
         assert!(decoded == point, "round-trip mismatch");
+    }
+
+    #[test]
+    fn raw_persisted_payload_uses_compact_byte_string() {
+        // High-entropy blob: byte value == (index % 256), most bytes >= 24.
+        let blob: Vec<u8> = (0..4096u32).map(|i| i as u8).collect();
+        let point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload {
+                payload_bytes: blob.clone(),
+                encoding: RawPayloadEncoding::JsonBytes,
+            }),
+        };
+
+        let encoded = serde_cbor::to_vec(&point).unwrap();
+        // A byte string is ~1x; an integer array would be ~1.9x for this data.
+        assert!(
+            encoded.len() < blob.len() + 128,
+            "expected compact byte-string encoding, got {} bytes for a {}-byte blob",
+            encoded.len(),
+            blob.len(),
+        );
+
+        // Round-trips losslessly.
+        let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
+        assert!(decoded == point, "round-trip mismatch");
+    }
+
+    #[test]
+    fn raw_payload_decodes_legacy_integer_seq_encoding() {
+        /// Mirror of [`RawPayload`] with the default derive, which encodes
+        /// `payload_bytes` as a CBOR integer array. WAL entries written before
+        /// the switch to byte-string encoding look like this.
+        #[derive(Serialize)]
+        struct LegacyRawPayload {
+            payload_bytes: Vec<u8>,
+            encoding: RawPayloadEncoding,
+        }
+
+        let blob: Vec<u8> = (0..4096u32).map(|i| i as u8).collect();
+        let legacy = LegacyRawPayload {
+            payload_bytes: blob.clone(),
+            encoding: RawPayloadEncoding::JsonBytes,
+        };
+
+        let encoded = serde_cbor::to_vec(&legacy).unwrap();
+        let decoded: RawPayload = serde_cbor::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.payload_bytes, blob);
+        assert_eq!(decoded.encoding, RawPayloadEncoding::JsonBytes);
     }
 
     #[test]

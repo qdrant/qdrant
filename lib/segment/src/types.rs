@@ -43,7 +43,6 @@ use crate::data_types::index::{
 use crate::data_types::modifier::Modifier;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::segment_record::RawPayloadEncoding;
 use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
@@ -2955,8 +2954,24 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
 /// encoded blob, tagged with its encoding.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
 pub struct RawPayload {
+    /// Serialized as a compact byte string rather than the serde default of a
+    /// sequence of integers, which costs ~2x in CBOR (used for the WAL).
+    #[serde(with = "crate::utils::raw_bytes_serde")]
     pub payload_bytes: Vec<u8>,
     pub encoding: RawPayloadEncoding,
+}
+
+/// Encoding of a raw payload blob transferred alongside raw vectors,
+/// as it is persisted in WAL.
+///
+/// Internal counterpart of `api::grpc::qdrant::RawPayloadEncoding`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    #[default]
+    JsonBytes,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]

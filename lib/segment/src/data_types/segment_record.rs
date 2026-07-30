@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::data_types::vectors::VectorInternal;
@@ -24,17 +23,4 @@ pub struct SegmentRecordRaw {
     pub vectors: Option<NamedVectorBytesOwned>,
     pub payload: Option<Payload>,
     pub payload_raw: Option<RawPayload>,
-}
-
-/// Encoding of a raw payload blob transferred alongside raw vectors,
-/// as it is persisted in WAL.
-///
-/// Internal counterpart of `api::grpc::qdrant::RawPayloadEncoding`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum RawPayloadEncoding {
-    /// serde_json encoding of the whole payload object, uncompressed,
-    /// exactly as stored in gridstore.
-    #[default]
-    JsonBytes,
 }

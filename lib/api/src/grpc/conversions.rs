@@ -19,14 +19,13 @@ use segment::data_types::index::{
     KeywordIndexType, SnowballLanguage, TextIndexType, UuidIndexType,
 };
 use segment::data_types::modifier::Modifier;
-use segment::data_types::segment_record::RawPayloadEncoding;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedMultiDenseVector, VectorInternal};
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{
-    DateTimePayloadType, FloatPayloadType, RawPayload, VectorStorageDatatype,
+    DateTimePayloadType, FloatPayloadType, RawPayload, RawPayloadEncoding, VectorStorageDatatype,
     default_quantization_ignore_value,
 };
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
