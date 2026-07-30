@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
+#[cfg(feature = "api")]
 use api::grpc::RawPayload;
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
@@ -537,6 +538,7 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
 }
 
 /// Decodes the RawPayload according to its encoding.
+#[cfg(feature = "api")]
 fn decode_payload(raw_payload: RawPayload) -> Result<Payload, tonic::Status> {
     match raw_payload.encoding() {
         api::grpc::RawPayloadEncoding::JsonBytes => {
