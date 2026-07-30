@@ -110,6 +110,108 @@ fn test_put_single_payload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode
     }
 }
 
+fn empty_storage_compression(
+    mode: Mode,
+    compression: Compression,
+) -> (tempfile::TempDir, Blobstore<Payload>) {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let config = match mode {
+        Mode::Mutable => StorageConfig::Mutable(GridstoreConfig {
+            compression,
+            ..GridstoreConfig::DEFAULT
+        }),
+        Mode::AppendOnly => StorageConfig::AppendOnly(LogstoreConfig {
+            compression,
+            ..LogstoreConfig::DEFAULT
+        }),
+    };
+    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    (dir, storage)
+}
+
+#[rstest]
+fn test_put_get_value_bytes(
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
+    #[values(Compression::None, Compression::LZ4)] compression: Compression,
+) {
+    let (_dir, mut storage) = empty_storage_compression(mode, compression);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let payload_0 = random_payload(rng, 2);
+    let payload_1 = random_payload(rng, 2);
+
+    // Serialized bytes put with `put_value_bytes` read back as the parsed value
+    storage
+        .put_value_bytes(0, payload_0.to_bytes(), hw_counter_ref)
+        .unwrap();
+    assert_eq!(
+        storage.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(payload_0.clone()),
+    );
+
+    // Value put with `put_value` reads back with `get_value_bytes` as its `Blob` encoding
+    storage.put_value(1, &payload_1, hw_counter_ref).unwrap();
+    assert_eq!(
+        storage.get_value_bytes::<Random>(1, &hw_counter).unwrap(),
+        Some(payload_1.to_bytes()),
+    );
+    assert_eq!(
+        storage.get_value_bytes::<Random>(0, &hw_counter).unwrap(),
+        Some(payload_0.to_bytes()),
+    );
+
+    // Missing point offset reads as None
+    assert_eq!(
+        storage.get_value_bytes::<Random>(2, &hw_counter).unwrap(),
+        None,
+    );
+}
+
+#[rstest]
+fn test_value_bytes_cross_compression(
+    #[values(Mode::Mutable, Mode::AppendOnly)] source_mode: Mode,
+    #[values(Mode::Mutable, Mode::AppendOnly)] target_mode: Mode,
+) {
+    let (_source_dir, mut source) = empty_storage_compression(source_mode, Compression::LZ4);
+    let (_target_dir, mut target) = empty_storage_compression(target_mode, Compression::None);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let payloads = (0..10).map(|_| random_payload(rng, 2)).collect::<Vec<_>>();
+
+    for (point_offset, payload) in payloads.iter().enumerate() {
+        source
+            .put_value(point_offset as PointOffset, payload, hw_counter_ref)
+            .unwrap();
+    }
+
+    // Transfer stored bytes as-is, without parsing
+    for point_offset in 0..payloads.len() as PointOffset {
+        let bytes = source
+            .get_value_bytes::<Random>(point_offset, &hw_counter)
+            .unwrap()
+            .unwrap();
+        target
+            .put_value_bytes(point_offset, bytes, hw_counter_ref)
+            .unwrap();
+    }
+
+    for (point_offset, payload) in payloads.iter().enumerate() {
+        assert_eq!(
+            target
+                .get_value::<Random>(point_offset as PointOffset, &hw_counter)
+                .unwrap()
+                .as_ref(),
+            Some(payload),
+        );
+    }
+}
+
 #[rstest]
 fn test_storage_files(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (dir, mut storage) = empty_storage_mode(mode);

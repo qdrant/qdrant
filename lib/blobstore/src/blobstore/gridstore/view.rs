@@ -77,6 +77,18 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
+        let bytes = self.get_value_bytes::<P>(point_offset, hw_counter)?;
+        Ok(bytes.map(|bytes| V::from_bytes(&bytes)))
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(pointer) = self.get_pointer(point_offset)? else {
             return Ok(None);
         };
@@ -84,10 +96,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         let raw = self.read_from_pages::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
-        let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed);
-
-        Ok(Some(value))
+        Ok(Some(self.decompress(raw)))
     }
 
     pub fn read_values<P, U, E>(

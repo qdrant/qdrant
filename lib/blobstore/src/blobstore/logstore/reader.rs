@@ -96,6 +96,19 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         self.view().get_value::<P>(point_offset, hw_counter)
     }
 
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub(crate) fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Vec<u8>>> {
+        let view = self.view();
+        let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+        Ok(bytes.map(std::borrow::Cow::into_owned))
+    }
+
     /// Iterate over all values with point offsets below `max_id` and execute callback for each
     /// one. Missing values are skipped.
     ///

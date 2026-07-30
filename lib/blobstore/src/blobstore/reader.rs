@@ -128,6 +128,21 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed — the same
+    /// bytes `V::to_bytes` would produce.
+    pub fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Vec<u8>>> {
+        match self {
+            Self::Gridstore(reader) => reader.get_value_bytes::<P>(point_offset, hw_counter),
+            Self::Logstore(reader) => reader.get_value_bytes::<P>(point_offset, hw_counter),
+        }
+    }
+
     /// Iterate over all values with point offsets below `max_id` and execute callback for each one.
     /// Missing values are skipped.
     ///

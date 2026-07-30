@@ -4,6 +4,7 @@ mod reader;
 mod tests;
 mod view;
 
+use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -181,12 +182,27 @@ where
     /// rejected, the storage is append-only.
     ///
     /// Always returns false on success, as values can never be updated.
-    // Takes &mut self for signature parity with the mutable variant
-    #[allow(clippy::needless_pass_by_ref_mut)]
     pub(super) fn put_value(
         &mut self,
         point_offset: PointOffset,
         value: &V,
+        hw_counter: HwMetricRefCounter,
+    ) -> Result<bool> {
+        self.put_value_bytes(point_offset, value.to_bytes(), hw_counter)
+    }
+
+    /// Put an already serialized value in the storage.
+    ///
+    /// `value_bytes` must be the value in its [`Blob`] encoding, uncompressed. Compression is
+    /// applied here with the local storage config.
+    ///
+    /// See [`put_value`](Self::put_value) for buffering and append-only semantics.
+    // Takes &mut self for signature parity with the mutable variant
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    pub(super) fn put_value_bytes(
+        &mut self,
+        point_offset: PointOffset,
+        value_bytes: Vec<u8>,
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
         // Validate before buffering anything, a rejected put must not leave data behind
@@ -199,7 +215,6 @@ where
             )));
         }
 
-        let value_bytes = value.to_bytes();
         let comp_value = self.config.compression.compress(value_bytes);
         let value_size = comp_value.len();
 
@@ -279,6 +294,20 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub(super) fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Vec<u8>>> {
+        self.with_view(|view| {
+            let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+            Ok(bytes.map(Cow::into_owned))
+        })
     }
 
     /// Iterate over all given values and execute callback for each one.
