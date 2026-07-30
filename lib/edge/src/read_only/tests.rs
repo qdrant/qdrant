@@ -49,6 +49,7 @@ fn test_config() -> EdgeConfig {
         optimizers: None,
         wal_options: None,
         max_search_threads: None,
+        search_pool_core: None,
     }
 }
 
@@ -365,6 +366,7 @@ fn provided_config_overrides_tunables_at_open() {
         optimizers: None,
         wal_options: None,
         max_search_threads: Some(2),
+        search_pool_core: None,
     };
 
     let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(

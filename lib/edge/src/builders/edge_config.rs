@@ -29,6 +29,7 @@ pub struct EdgeConfigBuilder {
     optimizers: Option<EdgeOptimizersConfig>,
     wal_options: Option<WalOptions>,
     max_search_threads: Option<usize>,
+    search_pool_core: Option<usize>,
 }
 
 impl EdgeConfigBuilder {
@@ -101,6 +102,13 @@ impl EdgeConfigBuilder {
         self
     }
 
+    /// Pin every thread of the shard's search pool to the given CPU core (best-effort). See
+    /// [`EdgeConfig::search_pool_core`].
+    pub fn search_pool_core(mut self, core: usize) -> Self {
+        self.search_pool_core = Some(core);
+        self
+    }
+
     pub fn build(self) -> EdgeConfig {
         // Exhaustively destructure Self and construct EdgeConfig: adding a
         // field to either type forces a compile error here.
@@ -113,6 +121,7 @@ impl EdgeConfigBuilder {
             optimizers,
             wal_options,
             max_search_threads,
+            search_pool_core,
         } = self;
         EdgeConfig {
             on_disk_payload,
@@ -123,6 +132,7 @@ impl EdgeConfigBuilder {
             optimizers,
             wal_options,
             max_search_threads,
+            search_pool_core,
         }
     }
 }

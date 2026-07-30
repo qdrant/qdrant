@@ -66,7 +66,7 @@ impl EdgeShard {
         let mut segments = SegmentHolder::default();
         ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
 
-        let search_pool = build_search_pool(config.search_thread_count())?;
+        let search_pool = build_search_pool(config.search_thread_count(), config.search_pool_core)?;
 
         let config_path = path.join(EDGE_CONFIG_FILE);
         let config = Arc::new(
@@ -139,7 +139,7 @@ impl EdgeShard {
 
         ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
 
-        let search_pool = build_search_pool(config.search_thread_count())?;
+        let search_pool = build_search_pool(config.search_thread_count(), config.search_pool_core)?;
 
         let config_path = path.join(EDGE_CONFIG_FILE);
         let config = Arc::new(
