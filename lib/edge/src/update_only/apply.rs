@@ -183,12 +183,13 @@ fn locate_points<S: UniversalRead + 'static>(
                 let located = found_ids
                     .into_iter()
                     .zip(internal_ids)
-                    .zip(versions)
-                    .map(|((id, internal_id), version)| {
+                    .map(|(id, internal_id)| {
                         let location = PointLocation {
                             segment: uuid,
                             internal_id,
-                            version,
+                            // A slot without a stored version is unwritten,
+                            // which compares as version 0.
+                            version: versions.get(&internal_id).copied().unwrap_or(0),
                             appendable,
                         };
                         (id, location)

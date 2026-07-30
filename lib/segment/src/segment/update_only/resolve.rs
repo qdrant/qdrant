@@ -35,25 +35,21 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
         )
     }
 
-    /// Versions of the points occupying `internal_ids`, in the same order.
+    /// Versions of the points occupying `internal_ids`, keyed by internal id —
+    /// the same key the id tracker's batch read yields.
     ///
-    /// A slot the tracker has no version for reads back as `0`, the version an
-    /// unwritten point compares as.
+    /// A slot the tracker has no version for is absent from the map; it counts
+    /// as `0`, the version an unwritten point compares as.
     pub fn point_versions(
         &self,
         internal_ids: &[PointOffsetType],
-    ) -> OperationResult<Vec<SeqNumberType>> {
-        let mut versions = vec![0; internal_ids.len()];
+    ) -> OperationResult<AHashMap<PointOffsetType, SeqNumberType>> {
+        let mut versions = AHashMap::with_capacity(internal_ids.len());
 
-        // The callback is keyed by internal id rather than by input position,
-        // so pair the results back through a position lookup.
-        let position_of = positions_of(internal_ids);
         self.id_tracker.borrow().internal_versions_batch(
             internal_ids.iter().copied(),
             |internal_id, version| {
-                if let Some(&position) = position_of.get(&internal_id) {
-                    versions[position] = version;
-                }
+                versions.insert(internal_id, version);
             },
         )?;
 
@@ -112,21 +108,4 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
 
         Ok(stored)
     }
-}
-
-/// Reverse lookup from internal id back to its position in the input, for
-/// pairing results of the id-tracker's batch reads (which are keyed by internal
-/// id) with the caller's ordering.
-fn positions_of(internal_ids: &[PointOffsetType]) -> AHashMap<PointOffsetType, usize> {
-    let positions: AHashMap<PointOffsetType, usize> = internal_ids
-        .iter()
-        .enumerate()
-        .map(|(position, &internal_id)| (internal_id, position))
-        .collect();
-    debug_assert_eq!(
-        positions.len(),
-        internal_ids.len(),
-        "distinct points occupy distinct slots",
-    );
-    positions
 }
