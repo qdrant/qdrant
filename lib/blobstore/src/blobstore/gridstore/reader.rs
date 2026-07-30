@@ -71,7 +71,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         populate: Populate,
     ) -> Result<()> {
         // schedule tracker
-        Tracker::<S>::preopen(fs, base_path, populate)?;
+        let tracker_path = Tracker::<S>::tracker_file_name(base_path);
+        Tracker::<S>::preopen(fs, &tracker_path, populate)?;
 
         // schedule pages
         Pages::preopen(fs, base_path, populate)
