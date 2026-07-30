@@ -121,11 +121,11 @@ mod tests {
     /// Best-effort pinning: valid and out-of-range core ids must both yield a working pool.
     #[test]
     fn pinned_pool_builds_and_runs() {
-        let pool = build_search_pool(2, Some(0)).unwrap();
+        let pool = build_segment_pool("edge-search", 2, Some(0)).unwrap();
         let sum: i32 = pool.install(|| (0..4).sum());
         assert_eq!(sum, 6);
 
-        let pool = build_search_pool(1, Some(usize::MAX)).unwrap();
+        let pool = build_segment_pool("edge-search", 1, Some(usize::MAX)).unwrap();
         assert_eq!(pool.install(|| 1 + 1), 2);
     }
 }

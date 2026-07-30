@@ -1,9 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::universal_io::{MmapFile, MmapFs, UniversalRead, UniversalReadFs};
 use parking_lot::RwLock;
+use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
 use segment::segment::update_only::UpdateOnlySegment;
+use uuid::Uuid;
 
 use crate::read_only::{LocalSegmentEnumerator, SegmentEnumerator};
 use crate::read_view::build_segment_pool;
@@ -23,11 +25,13 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     /// Open a writer over the shard directory at `path`, using `fs` as the
     /// read backend and `enumerator` to discover the segments.
     ///
-    /// Every discovered segment is opened, narrowly (see
-    /// [`UpdateOnlySegment::open`]) and entirely cold: no data is fetched
-    /// until a batch reads a point. A segment that fails to load is an error,
-    /// not a skip — a writer that misses a segment would resolve a point
-    /// against a stale copy of itself, or duplicate it.
+    /// Segments are opened in parallel on the shard's thread pool, each over
+    /// its own prefetching [`CachedFs`](common::universal_io::CachedFs) (see
+    /// [`UpdateOnlySegment::open`]) — the same shape as the read-only
+    /// follower's load — and entirely cold: no point data is fetched until a
+    /// batch reads a point. A segment that fails to load is an error, not a
+    /// skip — a writer that misses a segment would resolve a point against a
+    /// stale copy of itself, or duplicate it.
     pub fn open(
         fs: S::Fs,
         path: &Path,
@@ -36,11 +40,30 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFs<File = S>,
     {
+        // Sized like the search pools: over-provisioned relative to the CPU
+        // count, since on a remote backend the threads mostly wait on IO.
+        let pool = build_segment_pool(
+            "edge-update",
+            common::defaults::search_thread_count(0),
+            None,
+        )?;
+
+        let segments: Vec<(Uuid, PathBuf)> = enumerator.list_segments()?.into_iter().collect();
+        let opened: Vec<(Uuid, UpdateOnlySegment<S>)> = pool.install(|| {
+            segments
+                .into_par_iter()
+                .map(|(uuid, segment_path)| {
+                    // No deferred threshold yet: it belongs to the coordination
+                    // with an external rebuilder, which does not exist in this
+                    // iteration.
+                    let segment = UpdateOnlySegment::<S>::open(&fs, &segment_path, uuid, None)?;
+                    Ok((uuid, segment))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })?;
+
         let mut holder = UpdateOnlySegmentHolder::default();
-        for (uuid, segment_path) in enumerator.list_segments()? {
-            // No deferred threshold yet: it belongs to the coordination with
-            // an external rebuilder, which does not exist in this iteration.
-            let segment = UpdateOnlySegment::<S>::open(&fs, &fs, &segment_path, uuid, None)?;
+        for (uuid, segment) in opened {
             holder.insert(uuid, segment);
         }
 
@@ -50,14 +73,6 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
             // not something this iteration can bootstrap.
             todo!("creating the initial appendable segment needs the append-only components");
         }
-
-        // Sized like the search pools: over-provisioned relative to the CPU
-        // count, since on a remote backend the threads mostly wait on IO.
-        let pool = build_segment_pool(
-            "edge-update",
-            common::defaults::search_thread_count(0),
-            None,
-        )?;
 
         Ok(Self {
             path: path.to_path_buf(),
