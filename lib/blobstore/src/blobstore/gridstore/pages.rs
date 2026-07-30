@@ -3,12 +3,12 @@ use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
-use ahash::{AHashMap, HashSet};
+use ahash::{AHashMap, HashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
+    CachedReadFs, FileIndex, FileInfo, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
     UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
@@ -449,6 +449,39 @@ impl<S: UniversalRead> Pages<S> {
         for page in pages {
             page.clear_ram_cache()?;
         }
+        Ok(())
+    }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+        populate: Populate,
+    ) -> Result<()> {
+        let page_files: HashSet<_> = fs
+            .list_files(&&self.base_path.join("page_"))?
+            .into_iter()
+            .map(|listed| listed.path)
+            .collect();
+
+        let num_pages = self.pages.len();
+        let next_page_id = num_pages as PageId;
+
+        if num_pages > 0 {
+            let page_id = (num_pages - 1) as PageId;
+            let page_path = self.page_path(page_id);
+
+            // Re-schedule so that unchanged files don't re-fetch.
+            fs.reschedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+
+        for page_id in next_page_id.. {
+            let page_path = self.page_path(page_id);
+            if !page_files.contains(&page_path) {
+                break;
+            }
+            fs.schedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+
         Ok(())
     }
 
