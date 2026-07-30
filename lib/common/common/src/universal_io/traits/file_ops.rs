@@ -146,5 +146,5 @@ pub trait CachedReadFs: UniversalReadFs {
     ) -> UioResult<()>;
 
     /// Return the file info from the current snapshot.
-    fn file_info(&self, path: &Path) -> Option<FileInfo>;
+    fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;
 }
