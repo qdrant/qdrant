@@ -199,4 +199,21 @@ mod tests {
         .unwrap();
         assert!(QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).is_err());
     }
+
+    #[test]
+    fn invalid_settings_leave_no_quota_file_behind() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let config_path = dir.path().join(QUOTA_CONFIG_FILE);
+
+        let impossible = QuotaConfig {
+            enabled: true,
+            max_resident_memory_percent: Some(0),
+            ..Default::default()
+        };
+        assert!(QuotaManager::load_or_init(dir.path(), impossible).is_err());
+
+        // Seeding must not persist before it validates, or the node would be stuck
+        // failing to start until the file is deleted by hand.
+        assert!(!config_path.exists());
+    }
 }
