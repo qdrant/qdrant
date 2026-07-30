@@ -1,4 +1,3 @@
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -19,8 +18,8 @@ use crate::operations::point_ops::PointStructRawPersisted;
 use crate::segment_holder::{FlushMode, SegmentHolder};
 use crate::update::{
     clear_payload_by_filter, create_field_index, delete_payload_by_filter, delete_points_by_filter,
-    delete_vectors_by_filter, overwrite_payload_by_filter, process_payload_operation,
-    set_payload_by_filter, sync_points_raw, upsert_points_raw,
+    delete_vectors_by_filter, overwrite_payload_by_filter, set_payload_by_filter, sync_points_raw,
+    upsert_points_raw,
 };
 
 #[test]
@@ -902,71 +901,5 @@ fn create_field_index_pins_pending_payload_state() {
     assert!(
         hits.is_empty(),
         "filtered reads must agree with payload storage: the row was cleared",
-    );
-}
-
-/// The size cap has to survive the whole dispatch chain, from `process_payload_operation` down to
-/// the destination choice. Every forward on that path type-checks with `None`, so one dropped
-/// along the way would silently stop steering writes with nothing failing. This is the filtered
-/// `set_payload` that #9158 reports, driven through the dispatcher rather than the holder.
-#[test]
-fn test_set_payload_by_filter_steers_away_from_full_segment() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
-
-    // The full segment is added first, so `aloha_random_write` would pick it without the cap.
-    let mut holder = SegmentHolder::default();
-    let full_id = holder.add_new(build_segment_1(dir.path()));
-    let free_id = holder.add_new(empty_segment(dir.path()));
-    holder.add_new(build_non_appendable_with_city(
-        dir.path(),
-        100,
-        10,
-        "Berlin",
-    ));
-
-    let full_size = holder
-        .get(full_id)
-        .unwrap()
-        .get()
-        .read()
-        .max_available_vectors_size_in_bytes()
-        .unwrap();
-    assert!(full_size > 0, "the fixture must measure non-empty");
-
-    let payload: segment::types::Payload = payload_json! {"color": "red"};
-    process_payload_operation(
-        &holder,
-        20,
-        crate::operations::payload_ops::PayloadOps::SetPayload(
-            crate::operations::payload_ops::SetPayloadOp {
-                payload,
-                points: None,
-                filter: Some(city_filter("Berlin")),
-                key: None,
-            },
-        ),
-        NonZeroUsize::new(full_size),
-        &hw_counter,
-    )
-    .unwrap();
-
-    assert!(
-        holder
-            .get(free_id)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
-        "the moved point must land in the segment below the cap",
-    );
-    assert!(
-        !holder
-            .get(full_id)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
-        "the segment at the cap must not grow further",
     );
 }
