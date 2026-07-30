@@ -1,4 +1,5 @@
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -6,7 +7,11 @@ use cancel::CancellationToken;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
-use shard::operations::CollectionUpdateOperations;
+use shard::operations::optimization::OptimizerThresholds;
+use shard::operations::point_ops::PointOperations;
+use shard::operations::vector_ops::VectorOperations;
+use shard::operations::{CollectionUpdateOperations, payload_ops};
+use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -39,13 +44,46 @@ fn send_feedback(
     }
 }
 
-/// The soft appendable segment size cap, sourced live from the first optimizer like the
-/// optimization worker does, so the steering below and the provisioning above cannot disagree on
-/// what "full" means. `None` (uncapped) when no optimizers are configured.
-fn max_segment_size_bytes(optimizers: &[Arc<Optimizer>]) -> Option<NonZeroUsize> {
-    optimizers
-        .first()
-        .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes())
+/// Whether applying `operation` can need somewhere to put a point, and so is worth checking
+/// capacity for beforehand.
+///
+/// Only operations reaching `apply_points_with_conditional_move` (or inserting outright) can be
+/// given a destination, so deletes and schema-only operations skip the check entirely rather than
+/// measuring every appendable segment for nothing. Deliberately matched exhaustively: a new
+/// operation must be classified by whoever adds it, not silently default either way.
+fn may_need_write_capacity(operation: &CollectionUpdateOperations) -> bool {
+    match operation {
+        CollectionUpdateOperations::PointOperation(operation) => match operation {
+            PointOperations::UpsertPoints(_)
+            | PointOperations::UpsertPointsConditional(_)
+            | PointOperations::UpsertPointsRaw(_)
+            | PointOperations::SyncPoints(_)
+            | PointOperations::SyncPointsRaw(_) => true,
+            // Deletes never move a point, they only mark it.
+            PointOperations::DeletePoints { .. } | PointOperations::DeletePointsByFilter(_) => {
+                false
+            }
+        },
+        // Deleting a named vector from a point in an immutable segment moves the point too.
+        CollectionUpdateOperations::VectorOperation(operation) => match operation {
+            VectorOperations::UpdateVectors(_)
+            | VectorOperations::DeleteVectors(..)
+            | VectorOperations::DeleteVectorsByFilter(..) => true,
+        },
+        // Every payload operation copy-on-write moves the points it touches.
+        CollectionUpdateOperations::PayloadOperation(operation) => match operation {
+            payload_ops::PayloadOps::SetPayload(_)
+            | payload_ops::PayloadOps::DeletePayload(_)
+            | payload_ops::PayloadOps::ClearPayload { .. }
+            | payload_ops::PayloadOps::ClearPayloadByFilter(_)
+            | payload_ops::PayloadOps::OverwritePayload(_) => true,
+        },
+        // Schema-only, applied to every segment in place.
+        CollectionUpdateOperations::FieldIndexOperation(_)
+        | CollectionUpdateOperations::VectorNameOperation(_) => false,
+        #[cfg(feature = "staging")]
+        CollectionUpdateOperations::StagingOperation(_) => false,
+    }
 }
 
 /// Provision a fresh appendable segment when every existing one reached `max_segment_size`, so the
@@ -65,22 +103,16 @@ fn max_segment_size_bytes(optimizers: &[Arc<Optimizer>]) -> Option<NonZeroUsize>
 /// Blocking: builds a segment on disk, so this must be called from a blocking context.
 fn ensure_capacity_for_update(
     segments: &LockedSegmentHolder,
-    optimizers: &[Arc<Optimizer>],
+    segments_path: &Path,
+    segment_config: &SegmentOptimizerConfig,
+    thresholds_config: &OptimizerThresholds,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
 ) {
-    // Source the required parameters from the first optimizer, like the optimization worker does.
-    // That worker already logs and refuses to run without optimizers, so do not repeat the error
-    // for every operation passing through here.
-    let Some(some_optimizer) = optimizers.first() else {
-        debug_assert!(false, "No optimizers configured");
-        return;
-    };
-
     let result = UpdateWorkers::ensure_appendable_segment_with_capacity(
         segments,
-        some_optimizer.segments_path(),
-        some_optimizer.segment_optimizer_config(),
-        some_optimizer.threshold_config(),
+        segments_path,
+        segment_config,
+        thresholds_config,
         payload_index_schema,
     );
 
@@ -111,6 +143,20 @@ impl UpdateWorkers {
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
+        // Capacity provisioning and the size cap both come from the first optimizer, like the
+        // optimization worker does, so the two cannot disagree on what "full" means. Resolved once:
+        // the optimizer set is fixed for this worker's lifetime, since a config update restarts the
+        // workers. The optimization worker already logs and refuses to run without optimizers, so
+        // do not repeat that error for every operation here.
+        let capacity_optimizer = optimizers.first().cloned();
+        debug_assert!(
+            capacity_optimizer.is_some(),
+            "No optimizers configured, appendable segment capacity will not be provisioned",
+        );
+        let max_segment_size_bytes = capacity_optimizer
+            .as_ref()
+            .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
+
         let receiver = loop {
             let signal = tokio::select! {
                 biased; // biased to check cancellation first
@@ -177,16 +223,27 @@ impl UpdateWorkers {
 
                     let wait = sender.is_some();
                     let segments_clone = segments.clone();
-                    let optimizers_clone = optimizers.clone();
+                    // Classified before the operation is moved into the blocking task. Deletes and
+                    // schema-only operations never need a destination, so they skip measuring
+                    // every appendable segment.
+                    let operation_capacity_optimizer = if may_need_write_capacity(&operation) {
+                        capacity_optimizer.clone()
+                    } else {
+                        None
+                    };
                     let payload_index_schema_clone = payload_index_schema.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         // Give the operation a destination below the size cap before applying it,
                         // rather than letting it grow an already full segment.
-                        ensure_capacity_for_update(
-                            &segments_clone,
-                            &optimizers_clone,
-                            payload_index_schema_clone,
-                        );
+                        if let Some(optimizer) = operation_capacity_optimizer {
+                            ensure_capacity_for_update(
+                                &segments_clone,
+                                optimizer.segments_path(),
+                                optimizer.segment_optimizer_config(),
+                                optimizer.threshold_config(),
+                                payload_index_schema_clone,
+                            );
+                        }
 
                         Self::update_worker_internal(
                             collection_name_clone,
@@ -197,7 +254,7 @@ impl UpdateWorkers {
                             segments_clone,
                             update_operation_lock_clone,
                             update_tracker_clone,
-                            max_segment_size_bytes(&optimizers_clone),
+                            max_segment_size_bytes,
                             hw_measurements,
                         )
                     })
@@ -424,5 +481,158 @@ impl UpdateWorkers {
         });
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::save_on_disk::SaveOnDisk;
+    use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+    use shard::fixtures::random_segment;
+    use shard::operations::payload_ops::PayloadOps;
+    use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
+    use shard::operations::vector_ops::VectorOperations;
+    use shard::optimizers::config::SegmentOptimizerConfig;
+    use shard::segment_holder::SegmentHolder;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::operations::{CreateIndex, FieldIndexOperations};
+    use crate::optimizers_builder::build_segment_optimizer_config;
+
+    /// Only operations that can be given a destination are worth measuring capacity for. Getting
+    /// this wrong is silent either way: too narrow skips provisioning for an operation that needs
+    /// it, too broad puts segment measurements back on every delete.
+    #[test]
+    fn test_may_need_write_capacity_classification() {
+        let point_ids = vec![1.into()];
+
+        // Moves or inserts points.
+        assert!(may_need_write_capacity(
+            &CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(vec![]),
+            )),
+        ));
+        assert!(may_need_write_capacity(
+            &CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
+                points: point_ids.clone(),
+            }),
+        ));
+        // Deleting a named vector moves the point out of an immutable segment too.
+        assert!(may_need_write_capacity(
+            &CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectors(
+                point_ids.clone().into(),
+                vec!["dense".into()],
+            )),
+        ));
+
+        // Marks points, never moves them.
+        assert!(!may_need_write_capacity(
+            &CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+                ids: point_ids,
+            }),
+        ));
+        // Schema-only, applied to every segment in place.
+        assert!(!may_need_write_capacity(
+            &CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
+                CreateIndex {
+                    field_name: "city".parse().unwrap(),
+                    field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                },
+            )),
+        ));
+    }
+
+    fn capacity_fixture(
+        dir: &std::path::Path,
+        max_segment_size_kb: usize,
+    ) -> (
+        SegmentOptimizerConfig,
+        OptimizerThresholds,
+        Arc<SaveOnDisk<PayloadIndexSchema>>,
+    ) {
+        let collection_params = crate::config::CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(256, Distance::Dot).build()),
+            ..crate::config::CollectionParams::empty()
+        };
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &Default::default(),
+            &Default::default(),
+        );
+        let thresholds = OptimizerThresholds {
+            max_segment_size_kb,
+            memmap_threshold_kb: 1_000_000,
+            indexing_threshold_kb: 1_000_000,
+            deferred_internal_id: None,
+        };
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(dir.join("payload.schema")).unwrap());
+        (segment_config, thresholds, payload_index_schema)
+    }
+
+    /// The pre-flight is what gives the destination filter something below the cap to pick. Without
+    /// it the filter has nothing to prefer until the optimizer wakes up, which is too late for the
+    /// operation being applied now.
+    #[test]
+    fn test_ensure_capacity_for_update_provisions_when_all_segments_are_full() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        // 1 KB is one vector of size 256, so the seeded segments are all over the cap.
+        let (segment_config, thresholds, payload_index_schema) = capacity_fixture(dir.path(), 1);
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(random_segment(dir.path(), 100, 3, 256));
+        holder.add_new(random_segment(dir.path(), 100, 3, 256));
+        let segments = LockedSegmentHolder::new(holder);
+
+        ensure_capacity_for_update(
+            &segments,
+            dir.path(),
+            &segment_config,
+            &thresholds,
+            payload_index_schema.clone(),
+        );
+        assert_eq!(
+            segments.read().len(),
+            3,
+            "a fresh appendable segment must be provisioned when every segment is at the cap",
+        );
+
+        // The fresh segment is empty, so the next operation finds capacity and provisions nothing.
+        ensure_capacity_for_update(
+            &segments,
+            dir.path(),
+            &segment_config,
+            &thresholds,
+            payload_index_schema,
+        );
+        assert_eq!(
+            segments.read().len(),
+            3,
+            "a segment below the cap must not trigger another one",
+        );
+    }
+
+    /// Uncapped means uncapped: no provisioning, whatever the segments measure.
+    #[test]
+    fn test_ensure_capacity_for_update_is_a_no_op_without_a_cap() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let (segment_config, thresholds, payload_index_schema) = capacity_fixture(dir.path(), 0);
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(random_segment(dir.path(), 100, 3, 256));
+        let segments = LockedSegmentHolder::new(holder);
+
+        ensure_capacity_for_update(
+            &segments,
+            dir.path(),
+            &segment_config,
+            &thresholds,
+            payload_index_schema,
+        );
+
+        assert_eq!(segments.read().len(), 1, "no cap, nothing to provision");
     }
 }
