@@ -48,7 +48,7 @@ pub struct UpdateOnlyEdgeShard<S: UniversalRead + 'static> {
     /// Backend the segments were opened on, and the one their appends go
     /// through. Unread until the writer can create the appendable segment a
     /// fresh directory needs.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fs: S::Fs,
     segments: RwLock<UpdateOnlySegmentHolder<S>>,
     /// Thread pool the per-segment work of a batch runs on: on a remote

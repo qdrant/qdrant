@@ -15,7 +15,6 @@ mod tests;
 
 pub mod read_only;
 
-#[allow(dead_code)]
 pub mod update_only;
 
 use std::collections::HashMap;
