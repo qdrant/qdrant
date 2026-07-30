@@ -7,6 +7,7 @@ pub mod build_condition_checker;
 mod config;
 mod entry_points;
 pub mod graph_layers;
+mod graph_layers_batched;
 pub mod graph_layers_builder;
 mod graph_layers_healer;
 pub mod graph_links;
