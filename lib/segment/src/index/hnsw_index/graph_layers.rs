@@ -650,6 +650,24 @@ impl GraphLayers {
         Self::load_universal(&MmapFs, dir, residency)
     }
 
+    /// Format of the links file present in `dir`, probed in the same order as
+    /// [`Self::load_universal`] reads it.
+    pub(super) fn probe_links_format(
+        fs: &impl UniversalReadFs,
+        dir: &Path,
+    ) -> OperationResult<Option<GraphLinksFormat>> {
+        for format in [
+            GraphLinksFormat::CompressedWithVectors,
+            GraphLinksFormat::Compressed,
+            GraphLinksFormat::Plain,
+        ] {
+            if fs.exists(&Self::get_links_path(dir, format))? {
+                return Ok(Some(format));
+            }
+        }
+        Ok(None)
+    }
+
     /// Schedule background prefetch of the files [`Self::load_universal`] will
     /// read: the graph data plus whichever links format is present, probed in
     /// the same order as the load.
@@ -675,16 +693,8 @@ impl GraphLayers {
         };
 
         // Links
-        for format in [
-            GraphLinksFormat::CompressedWithVectors,
-            GraphLinksFormat::Compressed,
-            GraphLinksFormat::Plain,
-        ] {
-            let path = Self::get_links_path(dir, format);
-            if fs.exists(&path)? {
-                fs.schedule_prefetch(&path, Some(options), None)?;
-                break;
-            }
+        if let Some(format) = Self::probe_links_format(fs, dir)? {
+            fs.schedule_prefetch(&Self::get_links_path(dir, format), Some(options), None)?;
         }
         Ok(())
     }
@@ -722,17 +732,9 @@ impl GraphLayers {
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        for format in [
-            GraphLinksFormat::CompressedWithVectors,
-            GraphLinksFormat::Compressed,
-            GraphLinksFormat::Plain,
-        ] {
-            let path = GraphLayers::get_links_path(dir, format);
-            if fs.exists(&path)? {
-                return GraphLinks::load_universal(fs, &path, format, residency);
-            }
-        }
-        Err(OperationError::service_error("No links file found"))
+        let format = Self::probe_links_format(fs, dir)?
+            .ok_or_else(|| OperationError::service_error("No links file found"))?;
+        GraphLinks::load_universal(fs, &Self::get_links_path(dir, format), format, residency)
     }
 
     /// Convert the "plain" format into the "compressed" format.
