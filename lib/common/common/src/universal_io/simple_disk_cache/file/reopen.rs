@@ -37,7 +37,7 @@ where
     // Returns `true` if a pending reopen was resolved, `false` otherwise.
     fn resolve_pending_reopen(&mut self) -> UioResult<bool> {
         let State::Ready {
-            remote: _,
+            remote,
             local,
             scheduled_reopen,
         } = self.state.get_mut()
@@ -50,6 +50,10 @@ where
             ScheduledReopen::No => Ok(false),
             ScheduledReopen::Resize { target_len } => {
                 local.resize(&self.local_path, target_len)?;
+
+                // reopen remote, so we can read up to the new length.
+                remote.reopen()?;
+
                 Ok(true)
             }
             ScheduledReopen::Tail {
@@ -68,6 +72,9 @@ where
                     // and the new blocks fault in on demand.
                     Some(_) | None => {}
                 }
+
+                // replace remote with the one from the owned pipeline
+                *remote = pipeline.into_inner();
 
                 Ok(true)
             }
@@ -113,11 +120,7 @@ where
 
         let local_len = local.mmap().len::<u8>()?;
 
-        // With a known length, decide before touching the remote: the common
-        // no-growth sweep then costs no round-trip, and a kept staged tail
-        // never has its remote reopened out from under its pipeline clone
-        // (`MmapFile` clones share the mapping). Without one, ask the remote
-        // — the blocking `reopen()` fallback.
+        // If we don't have a known length, reopen the remote to tell the new length.
         let remote_len = match known_len {
             Some(known_len) => known_len,
             None => {
@@ -141,20 +144,17 @@ where
             return Ok(());
         }
 
-        // Make the held remote reflect the current length. If length wasn't
-        // provided, this is already done above.
-        if known_len.is_some() {
-            remote.reopen()?;
-        }
-
-        *scheduled_reopen = match self.open_options.populate {
+        let new_scheduled_reopen = match self.open_options.populate {
             Populate::Blocking | Populate::PreferBackground => {
                 // Schedule the read of the new tail blocks.
                 let (blocks_range, byte_range) =
                     block_aligned_fetch(local_len..remote_len, remote_len)
                         .expect("the byte range is non-empty");
 
-                let mut pipeline = OwnedPipeline::new(remote.clone())?;
+                // Fresh handle: the staged fetch must not share a mapping with
+                // the held remote, which later reopens would remap.
+                let new_remote = self.open_remote()?;
+                let mut pipeline = OwnedPipeline::new(new_remote)?;
                 // FIXME: check can_schedule in a loop?
                 pipeline.schedule::<Sequential>(blocks_range, byte_range, REMOTE_READ_ALIGNMENT)?;
 
@@ -168,6 +168,17 @@ where
                 target_len: remote_len,
             },
         };
+
+        // Re-borrow the state: `open_remote` above needs `&self`.
+        let State::Ready {
+            remote: _,
+            local: _,
+            scheduled_reopen,
+        } = self.state.get_mut()
+        else {
+            unreachable!("state was Ready above");
+        };
+        *scheduled_reopen = new_scheduled_reopen;
 
         Ok(())
     }
