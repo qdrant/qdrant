@@ -49,17 +49,12 @@ impl CollectionUpdateOperations {
         )
     }
 
-    /// Whether applying this operation can need somewhere to put a point, either by inserting a
-    /// new one or by copy-on-write moving an existing one out of an immutable segment.
+    /// Whether applying this operation can need somewhere to put a point, by inserting one or by
+    /// copy-on-write moving one out of an immutable segment.
     ///
-    /// This mirrors which operations reach
-    /// [`apply_points_with_conditional_move`](crate::segment_holder::SegmentHolder::apply_points_with_conditional_move)
-    /// or insert outright, and lives beside them on purpose: an operation that starts moving points
-    /// must be reclassified here, or capacity stops being provisioned for it and appendable
-    /// segments grow past `max_segment_size` again.
-    ///
-    /// Matched exhaustively so a new operation has to be classified rather than silently
-    /// defaulting either way.
+    /// Mirrors which operations reach `apply_points_with_conditional_move`. An operation that
+    /// starts moving points must be reclassified here, or capacity silently stops being
+    /// provisioned for it. Exhaustive so a new operation has to be classified.
     pub fn may_need_appendable_destination(&self) -> bool {
         match self {
             Self::PointOperation(op) => match op {

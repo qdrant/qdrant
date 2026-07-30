@@ -433,13 +433,9 @@ impl SegmentHolder {
 
     /// Appendable segment IDs measuring below `max_segment_size_bytes`, sorted by ID.
     ///
-    /// Segments that cannot be measured right now (read-lock contention, size error) stay eligible:
-    /// the cap is soft, and liveness wins over precision. Every appendable segment is eligible
-    /// without a cap.
-    ///
-    /// Single origin of the eligibility rule: the copy-on-write move destinations and the
-    /// optimizer's capacity-ensure step both derive from it, so the segment the optimizer
-    /// provisions when it finds no capacity is exactly the one those moves then target.
+    /// Segments that cannot be measured right now stay eligible: the cap is soft and liveness wins
+    /// over precision. Shared with the optimizer's capacity-ensure step, so the segment it
+    /// provisions is exactly the one copy-on-write moves then target.
     fn eligible_appendable_segments_ids(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
@@ -467,10 +463,8 @@ impl SegmentHolder {
             .collect()
     }
 
-    /// Whether at least one appendable segment is below `max_segment_size_bytes`. `false` when
-    /// there are no appendable segments at all, so a caller provisioning capacity creates the
-    /// first one. Eligibility follows
-    /// [`eligible_appendable_segments_ids`](Self::eligible_appendable_segments_ids).
+    /// Whether at least one appendable segment is below `max_segment_size_bytes`. `false` without
+    /// any appendable segment, so a caller provisioning capacity creates the first one.
     pub fn has_appendable_segment_with_capacity(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
@@ -480,16 +474,11 @@ impl SegmentHolder {
             .is_empty()
     }
 
-    /// Copy-on-write move destinations for one [`apply_points_with_conditional_move`] call,
-    /// computed on the first point that actually needs a move (a batch applying fully in place must
-    /// not pay for the size measurements) and cached for the rest of the call.
+    /// Copy-on-write move destinations, computed on the first point that needs a move (a batch
+    /// applying fully in place pays for no measurements) and cached for the rest of the call.
     ///
-    /// Prefers appendable segments below the size cap, and falls back to every appendable segment
-    /// when none is: the cap is soft and a write must never fail for lack of capacity. Callers
-    /// batch points, so the cap is re-evaluated per batch and a destination can overshoot it by at
-    /// most one batch worth of points.
-    ///
-    /// [`apply_points_with_conditional_move`]: Self::apply_points_with_conditional_move
+    /// Falls back to every appendable segment when none is below the cap: a write must never fail
+    /// for lack of capacity. Callers batch points, so a destination can overshoot by one batch.
     fn cow_destination_candidates<'a>(
         &self,
         cache: &'a mut Option<Vec<SegmentId>>,

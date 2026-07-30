@@ -2246,10 +2246,9 @@ fn test_has_appendable_segment_with_capacity() {
     );
 }
 
-/// A segment that cannot be measured right now counts as having capacity. The cap is soft, so a
-/// segment busy under a write lock must not be treated as full: that would exclude it as a move
-/// destination and make the optimizer provision a replacement it does not need. Note this also
-/// relaxes the optimizer's own capacity check, which used to block on the read lock instead.
+/// A segment busy under a write lock counts as having capacity. Treating it as full would exclude
+/// it as a destination and make the optimizer provision a replacement it does not need. This also
+/// relaxes the optimizer's own check, which used to block on the read lock.
 #[test]
 fn test_unmeasurable_appendable_segment_stays_eligible() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -2274,10 +2273,9 @@ fn test_unmeasurable_appendable_segment_stays_eligible() {
     );
 }
 
-/// Copy-on-write moves must land in an appendable segment below the size cap, or a filtered
-/// payload operation keeps growing a segment that is already too big (the segment overgrow bug).
-/// The over-cap segment is added first on purpose: `aloha_random_write` takes the first
-/// destination it can lock, so it would be the one chosen without the cap steering.
+/// Moves must land in a segment below the cap, or a filtered payload operation keeps growing one
+/// that is already too big. The over-cap segment is added first on purpose: `aloha_random_write`
+/// takes the first destination it can lock, so it is what gets chosen without the steering.
 #[test]
 fn test_cow_move_prefers_appendable_segment_below_size_cap() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -2324,45 +2322,9 @@ fn test_cow_move_prefers_appendable_segment_below_size_cap() {
     );
 }
 
-/// The cap is soft: when every appendable segment reached it, the move falls back to them all
-/// rather than failing. Running out of capacity must never fail a write, it may only overshoot.
-#[test]
-fn test_cow_move_falls_back_when_every_segment_reached_the_size_cap() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-    let mut source = build_segment_2(dir.path());
-    source.appendable_flag = false;
-
-    let mut holder = SegmentHolder::default();
-    let destination_id = holder.add_new(build_segment_1(dir.path()));
-    holder.add_new(source);
-
-    let hw_counter = HardwareCounterCell::new();
-    holder
-        .apply_points_with_conditional_move(
-            100,
-            &[11.into()],
-            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
-            |_, _, _, _| {},
-            // One byte: no appendable segment can ever be below it.
-            NonZeroUsize::new(1),
-            &hw_counter,
-        )
-        .expect("running out of capacity must not fail the write");
-
-    let destination = holder.get(destination_id).unwrap().get();
-    assert!(
-        destination
-            .read()
-            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
-        "the move must still land, overshooting the cap",
-    );
-}
-
-/// A deferred staging segment that reached the size cap must still take the move when it is the
-/// only appendable segment. The cap only ever narrows the choice of destination, so it must not
-/// starve a `prevent_unoptimized` staging area: the write lands, and the point stays visible
-/// through the retained source exactly as it does uncapped.
+/// A deferred staging segment at the cap must still take the move when it is the only appendable
+/// one: the cap narrows the choice of destination, it must never starve a `prevent_unoptimized`
+/// staging area. The point stays visible through the retained source, as it does uncapped.
 #[test]
 fn test_cow_move_into_capped_deferred_staging_segment_keeps_point_visible() {
     use crate::fixtures::build_segment_with_deferred_1;
@@ -2433,9 +2395,9 @@ fn test_cow_move_into_capped_deferred_staging_segment_keeps_point_visible() {
     );
 }
 
-/// With a segment below the cap available next to a full deferred staging segment, the move goes
-/// to the one below the cap. The point becomes visible immediately (no deferred copy, source
-/// dropped) and the staging area keeps its own backlog untouched for the optimizer to promote.
+/// With a segment below the cap available, the move goes there rather than to the full deferred
+/// staging segment: visible at once, source dropped, and the staging backlog left for the
+/// optimizer to promote.
 #[test]
 fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
     use crate::fixtures::build_segment_with_deferred_1;

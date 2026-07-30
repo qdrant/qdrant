@@ -272,21 +272,14 @@ pub fn get_max_segment_size_kb(
 
 /// Build deferred points threshold in bytes when `prevent_unoptimized` is true.
 ///
-/// Clamped to an explicitly configured `max_segment_size`: points start deferring once a segment
-/// passes this threshold, and the segment then keeps growing as a staging area until an
-/// optimization promotes them, so a threshold above the segment size cap would size the staging
-/// area beyond what a segment is ever allowed to reach. Nothing validates `indexing_threshold`
-/// against `max_segment_size`, so that inverted configuration is reachable.
+/// Clamped to an explicitly configured `max_segment_size`: a segment defers points once past this
+/// threshold and grows as a staging area until optimized, so a threshold above the size cap would
+/// size that staging area beyond what a segment may reach. Nothing validates the two against each
+/// other, so the inverted configuration is reachable.
 ///
-/// Two deliberate non-clamps:
-///
-/// - An auto-derived cap (`max_segment_size` unset) is left alone. It is already
-///   [`DEFAULT_MAX_SEGMENT_PER_CPU_KB`] per indexing thread, well above the default indexing
-///   threshold, and resolving it here would need the indexing thread count at every call site.
-/// - Disabled indexing (`indexing_threshold_kb` is [`usize::MAX`]) is left alone, so the clamp can
-///   only ever lower an already-reachable threshold, never make deferral reachable where it was
-///   not. Deferred points are promoted by building an HNSW index, which is exactly what disabling
-///   indexing opts out of.
+/// An auto-derived cap is left alone (it is already [`DEFAULT_MAX_SEGMENT_PER_CPU_KB`] per indexing
+/// thread), as is disabled indexing ([`usize::MAX`]), so the clamp only lowers an already-reachable
+/// threshold and never makes deferral reachable where it was not.
 pub fn get_deferred_points_threshold_bytes(
     prevent_unoptimized: Option<bool>,
     indexing_threshold_kb: usize,
@@ -309,15 +302,14 @@ mod tests {
 
     use super::*;
 
-    /// The deferred threshold decides how large a staging segment grows before its points start
-    /// deferring, so it must not exceed the size a segment is allowed to reach. Nothing validates
-    /// `indexing_threshold` against `max_segment_size`, so the inverted configuration is reachable
-    /// and the clamp is what keeps the two from disagreeing.
+    /// The staging area a deferred segment forms must not be sized beyond what a segment may
+    /// reach. Nothing validates the two settings against each other, so the clamp is what keeps
+    /// them from disagreeing.
     #[test]
     fn deferred_threshold_is_clamped_to_max_segment_size() {
         let bytes = |kb: usize| NonZeroUsize::new(kb * BYTES_IN_KB);
 
-        // Off unless `prevent_unoptimized` is enabled.
+        // Off unless enabled.
         assert_eq!(
             get_deferred_points_threshold_bytes(None, 10_000, Some(1_000)),
             None,
@@ -333,20 +325,19 @@ mod tests {
             bytes(10_000),
         );
 
-        // A cap below the indexing threshold wins: the staging area cannot outgrow a segment.
+        // A cap below the threshold wins.
         assert_eq!(
             get_deferred_points_threshold_bytes(Some(true), 100_000, Some(1_000)),
             bytes(1_000),
         );
 
-        // An auto-derived cap is resolved elsewhere and left alone here.
+        // Auto-derived caps are resolved elsewhere.
         assert_eq!(
             get_deferred_points_threshold_bytes(Some(true), 100_000, None),
             bytes(100_000),
         );
 
-        // Disabled indexing keeps its unreachable threshold: the clamp may only lower an
-        // already-reachable one, never make deferral reachable where it was not.
+        // Disabled indexing keeps its unreachable threshold.
         assert_eq!(
             get_deferred_points_threshold_bytes(Some(true), usize::MAX, Some(1_000)),
             NonZeroUsize::new(usize::MAX.saturating_mul(BYTES_IN_KB)),

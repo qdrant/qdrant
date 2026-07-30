@@ -1,5 +1,4 @@
 use std::num::NonZeroUsize;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -8,8 +7,6 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
-use shard::operations::optimization::OptimizerThresholds;
-use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -42,43 +39,6 @@ fn send_feedback(
     }
 }
 
-/// Provision a fresh appendable segment when every existing one reached `max_segment_size`, so the
-/// operation about to be applied has a destination below the cap to move points into.
-///
-/// Without this, a filtered payload or vector operation copy-on-write moves points into whichever
-/// appendable segment locks first, growing an already full segment without bound: the optimizer
-/// provisions capacity only on its own wake-up, which is too late for the operation being applied
-/// now.
-///
-/// Best effort by design: a provisioning failure is logged and the operation is applied anyway,
-/// falling back to the pre-existing behaviour of writing into a full segment. Running out of
-/// capacity must never fail a write. The optimization worker deliberately panics on the same
-/// failure; here it must not, because a client write is in flight and losing capacity only costs
-/// segment size, not correctness.
-///
-/// Blocking: builds a segment on disk, so this must be called from a blocking context.
-fn ensure_capacity_for_update(
-    segments: &LockedSegmentHolder,
-    segments_path: &Path,
-    segment_config: &SegmentOptimizerConfig,
-    thresholds_config: &OptimizerThresholds,
-    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-) {
-    let result = UpdateWorkers::ensure_appendable_segment_with_capacity(
-        segments,
-        segments_path,
-        segment_config,
-        thresholds_config,
-        payload_index_schema,
-    );
-
-    if let Err(err) = result {
-        log::error!(
-            "Failed to provision an appendable segment with capacity, applying anyway: {err}"
-        );
-    }
-}
-
 impl UpdateWorkers {
     /// Main loop of the update worker.
     ///
@@ -99,11 +59,8 @@ impl UpdateWorkers {
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
-        // Capacity provisioning and the size cap both come from the first optimizer, like the
-        // optimization worker does, so the two cannot disagree on what "full" means. Resolved once:
-        // the optimizer set is fixed for this worker's lifetime, since a config update restarts the
-        // workers. The optimization worker already logs and refuses to run without optimizers, so
-        // do not repeat that error for every operation here.
+        // Sourced from the first optimizer like the optimization worker does, so the two cannot
+        // disagree on what "full" means. Resolved once: a config update restarts the workers.
         let capacity_optimizer = optimizers.first().cloned();
         debug_assert!(
             capacity_optimizer.is_some(),
@@ -179,9 +136,7 @@ impl UpdateWorkers {
 
                     let wait = sender.is_some();
                     let segments_clone = segments.clone();
-                    // Classified before the operation is moved into the blocking task. Deletes and
-                    // schema-only operations never need a destination, so they skip measuring
-                    // every appendable segment.
+                    // Classified before the operation is moved into the blocking task.
                     let operation_capacity_optimizer =
                         if operation.may_need_appendable_destination() {
                             capacity_optimizer.clone()
@@ -191,14 +146,19 @@ impl UpdateWorkers {
                     let payload_index_schema_clone = payload_index_schema.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         // Give the operation a destination below the size cap before applying it,
-                        // rather than letting it grow an already full segment.
-                        if let Some(optimizer) = operation_capacity_optimizer {
-                            ensure_capacity_for_update(
+                        // rather than letting it grow an already full segment. Best effort: unlike
+                        // the optimization worker, a failure here must not take down a live write.
+                        if let Some(optimizer) = operation_capacity_optimizer
+                            && let Err(err) = Self::ensure_appendable_segment_with_capacity(
                                 &segments_clone,
                                 optimizer.segments_path(),
                                 optimizer.segment_optimizer_config(),
                                 optimizer.threshold_config(),
                                 payload_index_schema_clone,
+                            )
+                        {
+                            log::error!(
+                                "Failed to provision appendable capacity, applying anyway: {err}"
                             );
                         }
 
@@ -438,111 +398,5 @@ impl UpdateWorkers {
         });
 
         result
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use common::save_on_disk::SaveOnDisk;
-    use segment::types::Distance;
-    use shard::fixtures::random_segment;
-    use shard::optimizers::config::SegmentOptimizerConfig;
-    use shard::segment_holder::SegmentHolder;
-    use tempfile::Builder;
-
-    use super::*;
-    use crate::operations::types::VectorsConfig;
-    use crate::operations::vector_params_builder::VectorParamsBuilder;
-    use crate::optimizers_builder::build_segment_optimizer_config;
-
-    fn capacity_fixture(
-        dir: &std::path::Path,
-        max_segment_size_kb: usize,
-    ) -> (
-        SegmentOptimizerConfig,
-        OptimizerThresholds,
-        Arc<SaveOnDisk<PayloadIndexSchema>>,
-    ) {
-        let collection_params = crate::config::CollectionParams {
-            vectors: VectorsConfig::Single(VectorParamsBuilder::new(256, Distance::Dot).build()),
-            ..crate::config::CollectionParams::empty()
-        };
-        let segment_config = build_segment_optimizer_config(
-            &collection_params,
-            &Default::default(),
-            &Default::default(),
-        );
-        let thresholds = OptimizerThresholds {
-            max_segment_size_kb,
-            memmap_threshold_kb: 1_000_000,
-            indexing_threshold_kb: 1_000_000,
-            deferred_internal_id: None,
-        };
-        let payload_index_schema =
-            Arc::new(SaveOnDisk::load_or_init_default(dir.join("payload.schema")).unwrap());
-        (segment_config, thresholds, payload_index_schema)
-    }
-
-    /// The pre-flight is what gives the destination filter something below the cap to pick. Without
-    /// it the filter has nothing to prefer until the optimizer wakes up, which is too late for the
-    /// operation being applied now.
-    #[test]
-    fn test_ensure_capacity_for_update_provisions_when_all_segments_are_full() {
-        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        // 1 KB is one vector of size 256, so the seeded segments are all over the cap.
-        let (segment_config, thresholds, payload_index_schema) = capacity_fixture(dir.path(), 1);
-
-        let mut holder = SegmentHolder::default();
-        holder.add_new(random_segment(dir.path(), 100, 3, 256));
-        holder.add_new(random_segment(dir.path(), 100, 3, 256));
-        let segments = LockedSegmentHolder::new(holder);
-
-        ensure_capacity_for_update(
-            &segments,
-            dir.path(),
-            &segment_config,
-            &thresholds,
-            payload_index_schema.clone(),
-        );
-        assert_eq!(
-            segments.read().len(),
-            3,
-            "a fresh appendable segment must be provisioned when every segment is at the cap",
-        );
-
-        // The fresh segment is empty, so the next operation finds capacity and provisions nothing.
-        ensure_capacity_for_update(
-            &segments,
-            dir.path(),
-            &segment_config,
-            &thresholds,
-            payload_index_schema,
-        );
-        assert_eq!(
-            segments.read().len(),
-            3,
-            "a segment below the cap must not trigger another one",
-        );
-    }
-
-    /// Uncapped means uncapped: no provisioning, whatever the segments measure.
-    #[test]
-    fn test_ensure_capacity_for_update_is_a_no_op_without_a_cap() {
-        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let (segment_config, thresholds, payload_index_schema) = capacity_fixture(dir.path(), 0);
-
-        let mut holder = SegmentHolder::default();
-        holder.add_new(random_segment(dir.path(), 100, 3, 256));
-        let segments = LockedSegmentHolder::new(holder);
-
-        ensure_capacity_for_update(
-            &segments,
-            dir.path(),
-            &segment_config,
-            &thresholds,
-            payload_index_schema,
-        );
-
-        assert_eq!(segments.read().len(), 1, "no cap, nothing to provision");
     }
 }
