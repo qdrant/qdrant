@@ -49,7 +49,8 @@ pub struct PointCopy {
 pub enum PointAction {
     /// The point is appended to the write target in this fully qualified
     /// form, and every slot in [`PointPreview::slots`] is tombstoned.
-    Store(FullyQualifiedPoint),
+    /// Boxed: a resolved point is hundreds of bytes, the other variants none.
+    Store(Box<FullyQualifiedPoint>),
     /// The point is removed: every slot is tombstoned, nothing is stored.
     Delete,
     /// Left untouched: the stored copy is already at or beyond the batch's
@@ -95,7 +96,7 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
             PointAction::Skip
         } else {
             match updates.materialize(id, stored.remove(&id))? {
-                Some(point) => PointAction::Store(point),
+                Some(point) => PointAction::Store(Box::new(point)),
                 None if current.is_some() => PointAction::Delete,
                 None => PointAction::Missing,
             }

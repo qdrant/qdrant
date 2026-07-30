@@ -402,7 +402,7 @@ fn log_preview_point(point: &edge::PointPreview) {
                 stored_vectors,
                 updated_vectors,
                 payload,
-            } = resolved;
+            } = resolved.as_ref();
             log::info!(
                 "point {id}: would be stored at version {version}: \
                  {} vector(s) carried over as raw bytes {:?}, \

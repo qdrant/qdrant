@@ -113,7 +113,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
                     continue;
                 }
                 PointAction::Store(point) => {
-                    to_store.push(point);
+                    to_store.push(*point);
                     outcome.stored += 1;
                 }
                 PointAction::Delete => outcome.deleted += 1,
