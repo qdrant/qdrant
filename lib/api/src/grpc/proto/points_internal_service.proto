@@ -50,6 +50,22 @@ message PointStructRaw {
   PointId id = 1;
   map<string, bytes> vectors = 2;
   map<string, Value> payload = 3;
+  // Byte-encoded payload blob.
+  optional RawPayload raw_payload = 4;
+}
+
+// Encoding of `RawPayload.payload_bytes`.
+enum RawPayloadEncoding {
+  // serde_json encoding of the whole payload object, uncompressed,
+  // exactly as stored in gridstore.
+  JsonBytes = 0;
+}
+
+// The whole payload object of a point as a single encoded blob.
+message RawPayload {
+  // The encoded payload object, see `encoding` for the format.
+  bytes payload_bytes = 1;
+  RawPayloadEncoding encoding = 2;
 }
 
 message SyncPoints {

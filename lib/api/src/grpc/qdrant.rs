@@ -10620,6 +10620,19 @@ pub struct PointStructRaw {
     >,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Byte-encoded payload blob.
+    #[prost(message, optional, tag = "4")]
+    pub raw_payload: ::core::option::Option<RawPayload>,
+}
+/// The whole payload object of a point as a single encoded blob.
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RawPayload {
+    /// The encoded payload object, see `encoding` for the format.
+    #[prost(bytes = "vec", tag = "1")]
+    pub payload_bytes: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "RawPayloadEncoding", tag = "2")]
+    pub encoding: i32,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -11436,6 +11449,33 @@ pub struct FacetResponseInternal {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
+}
+/// Encoding of `RawPayload.payload_bytes`.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    JsonBytes = 0,
+}
+impl RawPayloadEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::JsonBytes => "JsonBytes",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "JsonBytes" => Some(Self::JsonBytes),
+            _ => None,
+        }
+    }
 }
 /// Controls how an update operation waits for completion.
 /// When present, fully overrides the `wait` boolean from the wrapped public message.
