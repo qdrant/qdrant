@@ -2242,6 +2242,7 @@ dependencies = [
  "ahash",
  "bm25",
  "common",
+ "core_affinity",
  "fs-err",
  "itertools 0.15.0",
  "log",

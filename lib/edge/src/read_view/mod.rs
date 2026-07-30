@@ -74,16 +74,56 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 /// callers pass `config.search_thread_count()` so a configured `0` is expanded to the CPU-derived
 /// default that matches the core search runtime.
 ///
+/// `pin_core` pins every pool thread to the given CPU core ([`EdgeConfig::search_pool_core`]):
+/// the pool keeps its IO overlap but its compute is bounded to one core. Best-effort — an
+/// unavailable core id or a failed pin only warns (macOS honours affinity as a hint).
+///
 /// Returns an error (rather than panicking) when the underlying thread spawn fails — this runs
 /// during shard open/load and follower open, so a transient resource failure must not abort the
 /// process.
-pub(crate) fn build_search_pool(num_threads: usize) -> OperationResult<Arc<ThreadPool>> {
-    let pool = ThreadPoolBuilder::new()
+pub(crate) fn build_search_pool(
+    num_threads: usize,
+    pin_core: Option<usize>,
+) -> OperationResult<Arc<ThreadPool>> {
+    // Out-of-range ids must never reach the platform affinity calls: libc's
+    // `CPU_SET` has no bounds check.
+    let pin_core = pin_core.filter(|core| {
+        let available =
+            core_affinity::get_core_ids().is_some_and(|ids| ids.iter().any(|c| c.id == *core));
+        if !available {
+            log::warn!("search pool core {core} is not available; leaving threads unpinned");
+        }
+        available
+    });
+
+    let mut builder = ThreadPoolBuilder::new()
         .num_threads(num_threads)
-        .thread_name(|idx| format!("edge-search-{idx}"))
-        .build()
-        .map_err(|err| {
-            OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
-        })?;
+        .thread_name(|idx| format!("edge-search-{idx}"));
+    if let Some(core) = pin_core {
+        builder = builder.start_handler(move |idx| {
+            if !core_affinity::set_for_current(core_affinity::CoreId { id: core }) {
+                log::warn!("failed to pin edge search thread {idx} to core {core}");
+            }
+        });
+    }
+    let pool = builder.build().map_err(|err| {
+        OperationError::service_error(format!("failed to build edge search thread pool: {err}"))
+    })?;
     Ok(Arc::new(pool))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Best-effort pinning: valid and out-of-range core ids must both yield a working pool.
+    #[test]
+    fn pinned_pool_builds_and_runs() {
+        let pool = build_search_pool(2, Some(0)).unwrap();
+        let sum: i32 = pool.install(|| (0..4).sum());
+        assert_eq!(sum, 6);
+
+        let pool = build_search_pool(1, Some(usize::MAX)).unwrap();
+        assert_eq!(pool.install(|| 1 + 1), 2);
+    }
 }
