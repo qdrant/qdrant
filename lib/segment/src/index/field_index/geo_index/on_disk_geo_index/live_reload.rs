@@ -1,18 +1,18 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use super::OnDiskGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
 
 impl<S: UniversalRead> LiveReload for OnDiskGeoIndex<S> {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        _fs: &S::Fs,
+        _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
