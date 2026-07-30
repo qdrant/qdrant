@@ -7,16 +7,11 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::segment::update_only::UpdateOnlySegment;
 use uuid::Uuid;
 
-/// In-memory inventory of the segments a writer updates, keyed by segment UUID.
-///
-/// Mirrors [`ReadOnlySegmentHolder`](crate::read_only) one capability across:
-/// the segments are held behind locks not because reads race each other, but
-/// because a single batch reads from the segments that hold the points while
-/// appending to the one segment that accepts writes.
+/// In-memory inventory of the segments a writer updates, keyed by segment
+/// UUID, with at most one — the appendable one — as the write target.
 pub(crate) struct UpdateOnlySegmentHolder<S: UniversalRead + 'static> {
     by_uuid: HashMap<Uuid, Arc<RwLock<UpdateOnlySegment<S>>>>,
-    /// UUID of the single segment that accepts appends — the target of every
-    /// write in a batch, whichever segment the point came from.
+    /// UUID of the single segment that accepts appends.
     write_target: Option<Uuid>,
 }
 
@@ -45,8 +40,7 @@ impl<S: UniversalRead + 'static> UpdateOnlySegmentHolder<S> {
         self.by_uuid.is_empty()
     }
 
-    /// Every segment, paired with its UUID. Order is unspecified — a point is
-    /// attributed to a segment by version, not by position.
+    /// Every segment, paired with its UUID. Order is unspecified.
     pub(crate) fn iter(
         &self,
     ) -> impl Iterator<Item = (Uuid, &Arc<RwLock<UpdateOnlySegment<S>>>)> + '_ {
@@ -57,7 +51,7 @@ impl<S: UniversalRead + 'static> UpdateOnlySegmentHolder<S> {
         self.by_uuid.get(uuid)
     }
 
-    /// The segment every write in a batch is appended to.
+    /// The single segment that accepts appends; an error when none exists.
     pub(crate) fn write_target(&self) -> OperationResult<&Arc<RwLock<UpdateOnlySegment<S>>>> {
         self.write_target
             .as_ref()

@@ -8,14 +8,8 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 /// Access to a single named vector's *storage*, without its index.
 ///
-/// Narrower counterpart of [`VectorDataRead`], which also hands out the vector
-/// index. The update path never touches a vector index — an appendable segment
-/// does not persist one, so the writer neither reads nor maintains it — and the
-/// update-only segment therefore never opens one. Requiring only this trait is
-/// what lets [`SegmentUpdateView`] be built over a segment that carries
-/// storages alone.
-///
-/// [`SegmentUpdateView`]: crate::segment::update_view::SegmentUpdateView
+/// Narrower counterpart of [`VectorDataRead`]: an implementer only has to
+/// carry the vector storage — no vector index, no quantized vectors.
 pub trait VectorDataStorageRead {
     type StorageRef<'a>: Deref<Target: VectorStorageRead>
     where

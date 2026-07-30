@@ -7,26 +7,16 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::segment::vector_data_storage::VectorDataStorageRead;
 use crate::types::{SegmentConfig, VectorNameBuf};
 
-/// Generic representation of the segment data the batch update path needs.
+/// Generic view of the segment data the batch update path reads: the id
+/// tracker to locate points, the payload storage and vector storages to supply
+/// the base mutations are folded onto.
 ///
-/// Counterpart of [`SegmentReadView`] for writes, and the same motivation: the
-/// logic that turns update operations into stored points is written once,
-/// against traits, so a regular [`Segment`] and an [`UpdateOnlySegment`] cannot
-/// drift apart.
-///
-/// The view currently borrows the *read* half only. That is not an oversight:
-/// resolving an operation into a [`FullyQualifiedPoint`] is a read — the id
-/// tracker locates the point, the payload storage and vector storages supply
-/// the base it is folded onto — and every one of those components already has
-/// an implementation on both segment kinds. Storing the resolved point is the
-/// half that has no shared implementation yet (an update-only segment appends
-/// through components that do not exist), so it lives on the segment for now
-/// and joins the view once there is a second implementer to share it with.
+/// Counterpart of [`SegmentReadView`] for updates: resolution logic is written
+/// once, against traits, so segment kinds cannot drift apart. Covers the read
+/// half of an update only — storing the resolved points has no shared
+/// implementation yet and stays on the segment.
 ///
 /// [`SegmentReadView`]: crate::segment::read_view::SegmentReadView
-/// [`Segment`]: crate::segment::Segment
-/// [`UpdateOnlySegment`]: crate::segment::update_only::UpdateOnlySegment
-/// [`FullyQualifiedPoint`]: crate::data_types::fully_qualified_point::FullyQualifiedPoint
 pub struct SegmentUpdateView<'s, TIdTracker, TPayloadStorage, TVectorData>
 where
     TIdTracker: IdTrackerRead,

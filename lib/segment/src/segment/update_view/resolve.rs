@@ -1,9 +1,7 @@
 //! Resolving stored points: the read half of applying a batch of updates.
 //!
-//! Everything here is batched. The writer's cost model is "many tiny updates",
-//! so a point is never located, versioned or read one round-trip at a time:
-//! each component is handed the whole set of ids at once and streams its
-//! results back, keeping disk-resident backends pipelined.
+//! Everything here is batched: each component is handed the whole set of ids
+//! at once, one pass per component rather than one round-trip per point.
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -28,11 +26,8 @@ where
 {
     /// Locate `point_ids` in this segment, streaming each `(point_id,
     /// internal_id)` pair that resolves; ids the segment does not hold are
-    /// skipped.
-    ///
-    /// Deferred heads are included: a point shadowed by an optimization in
-    /// progress still has to be updated at its latest version, exactly as the
-    /// per-point write path does.
+    /// skipped. Deferred heads are included, so a point shadowed by an
+    /// optimization in progress resolves to its latest slot.
     pub fn locate_points(
         &self,
         point_ids: impl IntoIterator<Item = PointIdType>,
@@ -46,10 +41,6 @@ where
     ///
     /// A slot the tracker has no version for reads back as `0`, the version an
     /// unwritten point compares as.
-    ///
-    /// Cheaper than [`read_stored_points`](Self::read_stored_points) when the
-    /// point's data is not (yet) wanted — deciding which segment holds the
-    /// newest copy of a point only needs the version.
     pub fn point_versions(
         &self,
         internal_ids: &[PointOffsetType],
@@ -71,21 +62,15 @@ where
         Ok(versions)
     }
 
-    /// Read the stored form of the points occupying `internal_ids`, returned in
-    /// the same order.
+    /// Read the stored form of the points occupying `internal_ids`, returned
+    /// in the same order — one batched pass per component, vectors as
+    /// storage-native bytes.
     ///
-    /// One batched pass per component — the payload storage, then each named
-    /// vector's storage — rather than one pass per point. Vectors come back as
-    /// storage-native bytes so the names a batch does not touch can be carried
-    /// to the new slot without a decode/re-encode round-trip.
+    /// A slot with no value in a given component contributes nothing: a point
+    /// without payload gets an empty [`Payload`], and a vector name the point
+    /// does not have (or has deleted) is absent from [`StoredPoint::vectors`].
     ///
-    /// A slot with no value in a given component simply contributes nothing: a
-    /// point without payload gets an empty [`Payload`], and a vector name the
-    /// point does not have (or has deleted) is absent from
-    /// [`StoredPoint::vectors`].
-    ///
-    /// `internal_ids` must be free of duplicates — they are the distinct slots
-    /// of distinct points.
+    /// `internal_ids` must be free of duplicates.
     pub fn read_stored_points(
         &self,
         internal_ids: &[PointOffsetType],

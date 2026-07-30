@@ -1,8 +1,6 @@
-//! Applying a folded batch: locate, resolve, materialize, append.
-//!
-//! The four stages are separate on purpose — each is one batched pass over the
-//! whole point set, so the cost of a batch scales with the number of *points*
-//! it touches, not with the number of operations in it.
+//! Applying a folded batch: locate, resolve, materialize, append — each one
+//! batched pass over the whole point set, so a batch's cost scales with the
+//! points it touches, not the operations in it.
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -18,17 +16,16 @@ use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::UpdateOnlySegmentHolder;
 
-/// What a batch did, counted per point rather than per operation — a point
-/// named by ten operations in one batch is one write, and counts once.
+/// What a batch did, counted per point rather than per operation: a point
+/// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
     /// Points removed.
     pub deleted: usize,
-    /// Points already at or beyond the batch's version, left untouched. Makes
-    /// a replayed batch a no-op, which is what lets the caller retry one after
-    /// an ambiguous failure.
+    /// Points already at or beyond the batch's version, left untouched — what
+    /// makes a replayed batch a no-op.
     pub skipped: usize,
     /// Points an operation named that no segment holds and the batch did not
     /// create — a payload update to a point that is not there.
@@ -41,18 +38,14 @@ struct PointLocation {
     segment: Uuid,
     internal_id: PointOffsetType,
     version: SeqNumberType,
-    /// Whether the holding segment accepts appends. Only used to break a
-    /// version tie — see [`locate_points`].
+    /// Whether the holding segment accepts appends; breaks a version tie.
     appendable: bool,
 }
 
 impl PointLocation {
-    /// Whether this copy of the point supersedes `other`.
-    ///
-    /// Version decides. On a tie the appendable segment wins, matching the
-    /// read path's retrieval order (non-appendable first, appendable last, last
-    /// max wins): a point being moved out of an immutable segment exists in
-    /// both at the same version, and the appendable copy is the live one.
+    /// Whether this copy of the point supersedes `other`: the higher version
+    /// wins, and on a tie the appendable copy is the live one (a point being
+    /// moved between segments exists in both at the same version).
     fn supersedes(&self, other: &Self) -> bool {
         (self.version, self.appendable) > (other.version, other.appendable)
     }
@@ -60,15 +53,13 @@ impl PointLocation {
 
 impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     /// Apply a batch of update operations, each paired with the operation
-    /// number to record as its version.
+    /// number to record as its version. Operations are expected in ascending
+    /// operation-number order; see [`UpdateBatchPlan::build`] for what is
+    /// rejected.
     ///
-    /// Operations are expected in ascending operation-number order — the order
-    /// they were submitted in. Only operations that name their points are
-    /// accepted; see [`UpdateBatchPlan::build`] for what is rejected and why.
-    ///
-    /// The batch is atomic in the sense that matters without a WAL: it is
-    /// applied in full or the error is returned, and re-applying a batch that
-    /// partially landed skips the points that already carry its version.
+    /// Atomic in the sense that matters without a WAL: applied in full or the
+    /// error is returned, and re-applying a batch that partially landed skips
+    /// the points that already carry its version.
     pub fn apply_batch(
         &self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
@@ -148,9 +139,8 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     }
 }
 
-/// Locate every point the batch touches, keeping the newest copy when more than
-/// one segment holds the point — which happens while an optimization is moving
-/// points between segments.
+/// Locate every point the batch touches, keeping the newest copy when more
+/// than one segment holds the point.
 fn locate_points<S: UniversalRead + 'static>(
     segments: &UpdateOnlySegmentHolder<S>,
     plan: &UpdateBatchPlan,

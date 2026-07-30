@@ -11,29 +11,22 @@ use crate::update_only::holder::UpdateOnlySegmentHolder;
 
 impl UpdateOnlyEdgeShard<MmapFile> {
     /// Open a writer over local memory-mapped files, discovering segments by
-    /// scanning the `segments/` directory.
-    ///
-    /// A directory scan rather than the manifest the read-only follower uses:
-    /// the writer owns the directory it writes to, so it sees the segment set
-    /// first-hand and has no leader to agree with.
+    /// scanning the `segments/` directory — the writer owns the directory it
+    /// writes to, so there is no manifest to agree with.
     pub fn open_mmap(path: &Path) -> OperationResult<Self> {
         Self::open(MmapFs, path, LocalSegmentEnumerator::new(path))
     }
 }
 
 impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
-    /// Open a writer over the shard directory at `path`, using `fs` as the read
-    /// backend and `enumerator` to discover the segments.
+    /// Open a writer over the shard directory at `path`, using `fs` as the
+    /// read backend and `enumerator` to discover the segments.
     ///
-    /// Every discovered segment is opened, because any of them may hold a point
-    /// the batch names — but each is opened narrowly (see
-    /// [`UpdateOnlySegment::open`]) and entirely cold: none of their data is
-    /// fetched until a batch actually reads a point out of it.
-    ///
-    /// Unlike the follower's open, a segment that fails to load is an error
-    /// rather than a skip. A follower that misses a segment serves slightly
-    /// stale results; a writer that misses one would resolve a point against
-    /// the wrong version of itself, or duplicate it.
+    /// Every discovered segment is opened, narrowly (see
+    /// [`UpdateOnlySegment::open`]) and entirely cold: no data is fetched
+    /// until a batch reads a point. A segment that fails to load is an error,
+    /// not a skip — a writer that misses a segment would resolve a point
+    /// against a stale copy of itself, or duplicate it.
     pub fn open(
         fs: S::Fs,
         path: &Path,

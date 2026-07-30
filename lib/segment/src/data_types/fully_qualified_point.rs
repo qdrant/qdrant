@@ -1,10 +1,6 @@
-//! Point representations used by the batch update path.
-//!
-//! The update-only writer never mutates a stored point in place: it resolves
-//! what the point must become, then appends it whole. That resolution has two
-//! ends — [`StoredPoint`], read out of the segment that currently owns the
-//! point, and [`FullyQualifiedPoint`], the finished point handed to a segment
-//! for storing.
+//! Point representations of the batch update path: [`StoredPoint`] is a point
+//! as read out of the segment that owns it, [`FullyQualifiedPoint`] is a point
+//! resolved in full, ready to be appended.
 
 use common::types::PointOffsetType;
 
@@ -12,24 +8,19 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::segment_record::NamedVectorBytesOwned;
 use crate::types::{Payload, PointIdType, SeqNumberType};
 
-/// The stored form of a point, as read out of the segment that currently owns
-/// it: the base a batch of mutations is folded onto.
+/// The stored form of a point: the base a batch of mutations is folded onto.
 ///
-/// Vectors are storage-native bytes rather than decoded vectors, so names the
-/// batch does not touch travel to the new slot verbatim — the same reason the
-/// copy-on-write move path reads them raw (see
-/// [`SegmentEntry::upsert_moved_point`]). Only the vectors the batch actually
-/// replaces are ever decoded.
+/// Vectors are storage-native bytes, never decoded, so they can move to a new
+/// slot without the lossy decode/re-encode round-trip — the same contract as
+/// [`SegmentEntry::upsert_moved_point`].
+///
+/// Carries no version: versions are resolved separately, before the point is
+/// read (see `SegmentUpdateView::point_versions`).
 ///
 /// [`SegmentEntry::upsert_moved_point`]: crate::entry::entry_point::SegmentEntry::upsert_moved_point
-/// Carries no version: deciding which segment holds the newest copy of a point
-/// happens before this is read, so the version is already in the caller's hand
-/// (see `SegmentUpdateView::point_versions`) and reading it again would cost a
-/// second id-tracker pass on a disk-resident tracker.
 #[derive(Debug, Clone)]
 pub struct StoredPoint {
-    /// Slot the point occupies in the segment it was read from. The writer
-    /// tombstones it once the rewritten point is durable.
+    /// Slot the point occupies in the segment it was read from.
     pub internal_id: PointOffsetType,
     /// Every named vector the point has, in storage-native bytes.
     pub vectors: NamedVectorBytesOwned,
@@ -37,22 +28,12 @@ pub struct StoredPoint {
     pub payload: Payload,
 }
 
-/// A point resolved to everything a segment needs in order to store it — its
-/// external id, the version to record, every named vector, and the complete
-/// payload.
+/// A point resolved to everything a segment needs in order to store it:
+/// storing a fully qualified point reads nothing back.
 ///
-/// "Fully qualified" is the writer's central invariant. An update-only segment
-/// only ever appends whole points, so every operation is resolved against the
-/// currently stored point *before* any write happens; from there on, storing a
-/// point reads nothing back.
-///
-/// Vectors come in two halves, mirroring [`SegmentEntry::upsert_moved_point`]:
-/// `stored_vectors` are carried over verbatim from the previous slot, while
-/// `updated_vectors` are the ones the batch supplied and therefore had to
-/// decode. On conflict `updated_vectors` wins — a name present in both was
-/// replaced by the batch.
-///
-/// [`SegmentEntry::upsert_moved_point`]: crate::entry::entry_point::SegmentEntry::upsert_moved_point
+/// Vectors come in two halves: `stored_vectors` carried over verbatim as
+/// storage-native bytes, `updated_vectors` supplied by the batch and therefore
+/// decoded. A name present in both is taken from `updated_vectors`.
 #[derive(Debug, Clone)]
 pub struct FullyQualifiedPoint {
     pub id: PointIdType,

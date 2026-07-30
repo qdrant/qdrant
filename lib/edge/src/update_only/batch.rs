@@ -1,15 +1,11 @@
 //! Folding a batch of update operations into per-point work.
 //!
-//! The writer is built for the worst case of many tiny operations, so the first
-//! thing it does with a batch is collapse it: all operations touching the same
-//! point become one [`PointUpdates`], and a point is written at most once no
-//! matter how many operations named it. The collapse also decides what has to
-//! be *read* — an operation that replaces the whole point (an upsert) or
-//! removes it makes everything before it irrelevant, including the stored point
-//! itself, so a batch that upserts a point never reads it.
+//! All operations touching the same point collapse into one [`PointUpdates`]:
+//! a point is written at most once, however many operations named it, and read
+//! only if some surviving mutation needs the stored point — a batch that
+//! upserts a point never reads it.
 //!
-//! Nothing here touches storage: this stage is pure, works off the operations
-//! alone, and produces the read plan the next stage executes.
+//! This stage is pure: nothing here touches storage.
 
 use ahash::AHashMap;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -25,22 +21,17 @@ use shard::operations::point_ops::{
 };
 use shard::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
 
-/// The vectors an operation carries, in the form the operation carried them.
-///
-/// A raw upsert replays storage-native bytes, which travel to the new slot
-/// untouched; a plain upsert carries decoded vectors, which the storage
-/// encodes. Keeping the two apart avoids a decode/re-encode round-trip that a
-/// quantized storage would not survive losslessly.
+/// The vectors an operation carries, in the form the operation carried them:
+/// storage-native bytes travel to the new slot untouched, decoded vectors are
+/// encoded by the storage. Keeping the two apart avoids a decode/re-encode
+/// round-trip a quantized storage would not survive losslessly.
 pub enum OperationVectors {
     Decoded(NamedVectors<'static>),
     Raw(NamedVectorBytesOwned),
 }
 
-/// What a single operation does to a single point.
-///
-/// One variant per accepted operation, deliberately: the writer folds
-/// operations before it applies them, so it needs each operation's effect as a
-/// value rather than as a call.
+/// What a single operation does to a single point; one variant per accepted
+/// operation.
 pub enum PointMutation {
     /// Whole-point replacement (an upsert): both vectors and payload come from
     /// the operation, and nothing of a previously stored point survives.
@@ -115,11 +106,8 @@ impl PointUpdates {
     }
 
     /// Whether applying these mutations requires reading the point as it is
-    /// stored today.
-    ///
-    /// False exactly when the first surviving mutation replaces or removes the
-    /// point — the case the writer optimizes for, since it turns an update into
-    /// a pure append with no read at all.
+    /// stored today. False exactly when the first surviving mutation replaces
+    /// or removes the point.
     pub fn needs_stored_point(&self) -> bool {
         self.mutations
             .first()
@@ -232,17 +220,12 @@ pub struct UpdateBatchPlan {
 
 impl UpdateBatchPlan {
     /// Fold `operations` — each paired with the operation number to record —
-    /// into one entry per point.
+    /// into one entry per point. Operations are expected in ascending
+    /// operation-number order; the fold is order-sensitive.
     ///
-    /// Operations are expected in ascending operation-number order, the order
-    /// they were submitted in; the fold is order-sensitive because the
-    /// operations are.
-    ///
-    /// Rejects everything outside the writer's contract: an operation that
-    /// selects points by filter (resolving it would mean reading and querying
-    /// payload indexes the writer deliberately never fetches), and the
-    /// schema-level operations — creating a payload index or a vector name —
-    /// which are a later iteration.
+    /// Rejects everything outside the writer's contract: operations that
+    /// select points by filter, point sync, conditional upserts, and the
+    /// schema-level operations.
     pub fn build(
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<Self> {
@@ -449,7 +432,7 @@ impl UpdateBatchPlan {
     }
 
     /// The points whose stored form has to be read before they can be
-    /// rewritten — the only ones the resolve stage pays for.
+    /// rewritten.
     pub fn point_ids_needing_stored_point(&self) -> impl Iterator<Item = PointIdType> + '_ {
         self.order
             .iter()

@@ -17,23 +17,18 @@ use crate::types::{SegmentConfig, SegmentState};
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
-/// Every component of an update-only segment is opened cold.
-///
-/// A writer touches a handful of points scattered across a batch, so warming a
-/// storage would fetch far more than it reads — the opposite of the search
-/// path, where a warm storage pays for itself over many scored points.
+/// Every component of an update-only segment is opened cold: a writer touches
+/// a handful of scattered points, so warming a storage would fetch far more
+/// than it reads.
 const WRITER_POPULATE: Populate = Populate::No;
 
 impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
     /// Open the segment's components: the id tracker, the payload storage and
-    /// one storage per named vector. Nothing else — see the module docs for why
-    /// the indexes and quantized vectors stay on the remote.
+    /// one storage per named vector — nothing else.
     ///
-    /// `fs` opens the component files (in production a
-    /// [`CachedFs`](common::universal_io::CachedFs) primed by
-    /// [`preopen`](Self::preopen)); `raw_fs` is the canonical backend, kept by
-    /// components that re-open files after this call and by the segment itself
-    /// for its appends.
+    /// `fs` opens the component files; `raw_fs` is the canonical backend, kept
+    /// by components that re-open files after this call and by the segment
+    /// itself for its appends.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         raw_fs: &S::Fs,
