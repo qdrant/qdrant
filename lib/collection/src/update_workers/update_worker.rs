@@ -58,7 +58,9 @@ fn max_segment_size_bytes(optimizers: &[Arc<Optimizer>]) -> Option<NonZeroUsize>
 ///
 /// Best effort by design: a provisioning failure is logged and the operation is applied anyway,
 /// falling back to the pre-existing behaviour of writing into a full segment. Running out of
-/// capacity must never fail a write.
+/// capacity must never fail a write. The optimization worker deliberately panics on the same
+/// failure; here it must not, because a client write is in flight and losing capacity only costs
+/// segment size, not correctness.
 ///
 /// Blocking: builds a segment on disk, so this must be called from a blocking context.
 fn ensure_capacity_for_update(
@@ -67,7 +69,10 @@ fn ensure_capacity_for_update(
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
 ) {
     // Source the required parameters from the first optimizer, like the optimization worker does.
+    // That worker already logs and refuses to run without optimizers, so do not repeat the error
+    // for every operation passing through here.
     let Some(some_optimizer) = optimizers.first() else {
+        debug_assert!(false, "No optimizers configured");
         return;
     };
 

@@ -2246,6 +2246,34 @@ fn test_has_appendable_segment_with_capacity() {
     );
 }
 
+/// A segment that cannot be measured right now counts as having capacity. The cap is soft, so a
+/// segment busy under a write lock must not be treated as full: that would exclude it as a move
+/// destination and make the optimizer provision a replacement it does not need. Note this also
+/// relaxes the optimizer's own capacity check, which used to block on the read lock instead.
+#[test]
+fn test_unmeasurable_appendable_segment_stays_eligible() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let segment_id = holder.add_new(build_segment_1(dir.path()));
+
+    // A cap no segment holding data can be below.
+    let cap = NonZeroUsize::new(1);
+    assert!(
+        !holder.has_appendable_segment_with_capacity(cap),
+        "a measurable segment over the cap has no capacity left",
+    );
+
+    let locked_segment = holder.get(segment_id).unwrap().get();
+    let _write_guard = locked_segment.write();
+
+    assert!(
+        holder.has_appendable_segment_with_capacity(cap),
+        "a segment that cannot be measured must stay eligible, or lock contention alone makes \
+         the holder look full",
+    );
+}
+
 /// Copy-on-write moves must land in an appendable segment below the size cap, or a filtered
 /// payload operation keeps growing a segment that is already too big (the segment overgrow bug).
 /// The over-cap segment is added first on purpose: `aloha_random_write` takes the first
