@@ -10,19 +10,18 @@
 
 mod append;
 mod lifecycle;
+mod resolve;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use atomic_refcell::{AtomicRef, AtomicRefCell};
+use atomic_refcell::AtomicRefCell;
 use common::universal_io::UniversalRead;
 use uuid::Uuid;
 
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::segment::update_view::SegmentUpdateView;
-use crate::segment::vector_data_storage::VectorDataStorageRead;
 use crate::types::{SegmentConfig, VectorNameBuf};
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -54,45 +53,10 @@ pub struct UpdateOnlyVectorData<S: UniversalRead + 'static> {
     pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
 }
 
-impl<S: UniversalRead + 'static> VectorDataStorageRead for UpdateOnlyVectorData<S> {
-    type StorageRef<'a>
-        = AtomicRef<'a, VectorStorageReadEnum<S>>
-    where
-        Self: 'a;
-
-    fn vector_storage(&self) -> Self::StorageRef<'_> {
-        self.vector_storage.borrow()
-    }
-}
-
-/// Concrete [`SegmentUpdateView`] instantiation over an [`UpdateOnlySegment`].
-pub type UpdateOnlySegmentUpdateViewFor<'s, S> = SegmentUpdateView<
-    's,
-    ReadOnlyIdTrackerEnum<S>,
-    ReadOnlyPayloadStorage<S>,
-    UpdateOnlyVectorData<S>,
->;
-
 impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
     /// Whether this segment accepts appends, and can therefore be the target of
     /// a write.
     pub fn is_appendable(&self) -> bool {
         self.appendable
-    }
-
-    /// Run `f` against the segment's data as a [`SegmentUpdateView`].
-    pub fn with_update_view<T>(
-        &self,
-        f: impl FnOnce(UpdateOnlySegmentUpdateViewFor<'_, S>) -> T,
-    ) -> T {
-        let id_tracker = self.id_tracker.borrow();
-        let payload_storage = self.payload_storage.borrow();
-
-        f(SegmentUpdateView::new(
-            &id_tracker,
-            &payload_storage,
-            &self.vector_data,
-            &self.segment_config,
-        ))
     }
 }

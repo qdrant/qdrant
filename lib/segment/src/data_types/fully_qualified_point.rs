@@ -15,7 +15,7 @@ use crate::types::{Payload, PointIdType, SeqNumberType};
 /// [`SegmentEntry::upsert_moved_point`].
 ///
 /// Carries no version: versions are resolved separately, before the point is
-/// read (see `SegmentUpdateView::point_versions`).
+/// read (see `UpdateOnlySegment::point_versions`).
 ///
 /// [`SegmentEntry::upsert_moved_point`]: crate::entry::entry_point::SegmentEntry::upsert_moved_point
 #[derive(Debug, Clone)]

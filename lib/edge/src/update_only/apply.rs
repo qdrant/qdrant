@@ -151,19 +151,15 @@ fn locate_points<S: UniversalRead + 'static>(
     for (uuid, segment) in segments.iter() {
         let segment = segment.read();
         let appendable = segment.is_appendable();
-        let found = segment.with_update_view(|view| {
-            let mut found_ids = Vec::new();
-            let mut internal_ids = Vec::new();
-            view.locate_points(ids.iter().copied(), |id, internal_id| {
-                found_ids.push(id);
-                internal_ids.push(internal_id);
-            })?;
 
-            let versions = view.point_versions(&internal_ids)?;
-            OperationResult::Ok((found_ids, internal_ids, versions))
+        let mut found_ids = Vec::new();
+        let mut internal_ids = Vec::new();
+        segment.locate_points(ids.iter().copied(), |id, internal_id| {
+            found_ids.push(id);
+            internal_ids.push(internal_id);
         })?;
+        let versions = segment.point_versions(&internal_ids)?;
 
-        let (found_ids, internal_ids, versions) = found;
         for ((id, internal_id), version) in found_ids.into_iter().zip(internal_ids).zip(versions) {
             let location = PointLocation {
                 segment: uuid,
@@ -216,8 +212,7 @@ fn read_stored_points<S: UniversalRead + 'static>(
             .iter()
             .map(|(_, internal_id)| *internal_id)
             .collect();
-        let points =
-            segment.with_update_view(|view| view.read_stored_points(&internal_ids, hw_counter))?;
+        let points = segment.read_stored_points(&internal_ids, hw_counter)?;
 
         for ((id, _), point) in entries.into_iter().zip(points) {
             stored.insert(id, point);
