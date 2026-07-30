@@ -20,7 +20,6 @@ cc = { workspace = true }
 [dependencies]
 fs-err = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 permutation_iterator = "0.1.2"
 rand = { workspace = true }
 rayon = { workspace = true }
@@ -39,6 +38,7 @@ criterion = { workspace = true }
 num_threads = "0.1.7"
 rand_distr = { workspace = true }
 rstest = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
 
 [[bench]]

@@ -1,6 +1,3 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
 use rand::rngs::SmallRng;

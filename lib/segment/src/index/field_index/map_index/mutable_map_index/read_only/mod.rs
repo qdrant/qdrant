@@ -28,6 +28,5 @@ where
     /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
     /// reads it lands with the parent dispatcher (it isn't part of the
     /// [`MapIndexRead`](super::super::read_ops::MapIndexRead) surface).
-    #[allow(dead_code)]
     pub(super) storage: BlobstoreReader<Vec<<N as MapIndexKey>::Owned>, S>,
 }

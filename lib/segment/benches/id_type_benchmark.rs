@@ -1,6 +1,3 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 use std::collections::{BTreeMap, HashMap};
 
 use criterion::{Criterion, criterion_group, criterion_main};

@@ -30,9 +30,6 @@ foyer = "0.22"
 # For memory measurement
 cap = "0.1"
 
-# For async runtime (needed by foyer)
-tokio = { workspace = true }
-
 [[bench]]
 name = "cache_comparison"
 harness = false

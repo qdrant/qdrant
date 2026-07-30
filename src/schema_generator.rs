@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use api::rest::models::{CollectionsResponse, ShardKeysResponse, Usage, VersionInfo};
 use api::rest::schema::PointInsertOperations;

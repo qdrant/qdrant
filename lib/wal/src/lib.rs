@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -84,7 +83,7 @@ pub struct Wal {
 
     /// The directory which contains the write ahead log. Used to hold an open
     /// file lock for the lifetime of the log.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     dir: File,
 
     /// The directory path.
@@ -500,51 +499,6 @@ impl Wal {
     /// Remove all entries
     pub fn clear(&mut self) -> Result<()> {
         self.truncate(self.first_index())
-    }
-
-    /// Copy all files to the given path directory. directory should exist and be empty
-    pub fn copy_to_path<P>(&self, path: P) -> Result<()>
-    where
-        P: AsRef<Path>,
-    {
-        if fs::read_dir(path.as_ref())?.next().is_some() {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                format!("path {:?} not empty", path.as_ref()),
-            ));
-        };
-
-        let open_segment_file = self.open_segment.segment.path().file_name().unwrap();
-        let close_segment_files: HashMap<_, _> = self
-            .closed_segments
-            .iter()
-            .map(|segment| {
-                (
-                    segment.segment.path().file_name().unwrap(),
-                    &segment.segment,
-                )
-            })
-            .collect();
-
-        for entry in fs::read_dir(self.path())? {
-            let entry = entry?;
-            if !entry.metadata()?.is_file() {
-                continue;
-            }
-
-            // if file is locked by any Segment, call copy_to_path on it
-            let entry_file_name = entry.file_name();
-            let dst_path = path.as_ref().to_owned().join(entry_file_name.clone());
-            if entry_file_name == open_segment_file {
-                self.open_segment.segment.copy_to_path(&dst_path)?;
-            } else if let Some(segment) = close_segment_files.get(entry_file_name.as_os_str()) {
-                segment.copy_to_path(&dst_path)?;
-            } else {
-                // if file is not locked by any Segment, just copy it
-                fs::copy(entry.path(), &dst_path)?;
-            }
-        }
-        Ok(())
     }
 
     /// Set how many segments closed segments to retain on prefix truncation.

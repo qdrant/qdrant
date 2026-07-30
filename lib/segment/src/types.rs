@@ -3996,7 +3996,7 @@ pub enum Condition {
 #[serde(
     expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
 )]
-#[allow(clippy::large_enum_variant, dead_code)]
+#[expect(clippy::large_enum_variant, dead_code)]
 enum ConditionUntagged {
     Field(FieldCondition),
     IsEmpty(IsEmptyCondition),

@@ -1,0 +1,21 @@
+id: no-allow-dead-code
+language: rust
+severity: error
+message: "`allow(dead_code)` instead of `expect(dead_code)`"
+ignores:
+  - lib/api/src/grpc/**
+  - lib/edge/publish/**
+  - lib/uio-grpc-client/src/generated/**
+rule:
+  any:
+    - kind: attribute_item
+    - kind: inner_attribute_item
+  has:
+    stopBy: end
+    kind: token_tree
+    has:
+      kind: identifier
+      regex: ^dead_code$
+    follows:
+      kind: identifier
+      regex: ^allow$

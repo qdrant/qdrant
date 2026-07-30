@@ -282,7 +282,7 @@ mod tests {
         );
     }
 
-    #[allow(dead_code)] // body is compile-time `assert_impl_all!` checks, function is never called
+    #[expect(dead_code)] // body is compile-time `assert_impl_all!` checks, function is never called
     fn assert_correct_send_sync() {
         use std::rc::Rc;
         use std::sync::Mutex;
