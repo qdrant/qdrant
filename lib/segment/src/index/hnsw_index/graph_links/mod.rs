@@ -79,6 +79,7 @@ mod links;
 mod serializer;
 mod vectors;
 mod view;
+mod view_utils;
 
 #[cfg(test)]
 mod tests;
