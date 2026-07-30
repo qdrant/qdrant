@@ -8,7 +8,7 @@ use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
-use crate::mmap::AdviceSetting;
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
@@ -95,16 +95,8 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         path: impl AsRef<Path>,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
     ) -> UioResult<R> {
-        self.remote_fs.open(
-            path.as_ref(),
-            OpenOptions {
-                writeable: false,
-                need_sequential: true,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
-            extra,
-        )
+        self.remote_fs
+            .open(path.as_ref(), REMOTE_OPEN_OPTIONS, extra)
     }
 }
 

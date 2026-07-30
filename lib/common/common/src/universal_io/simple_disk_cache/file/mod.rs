@@ -9,10 +9,8 @@ use parking_lot::Mutex;
 
 use super::DiskCacheRemote;
 use super::local_state::LocalState;
-use crate::mmap::AdviceSetting;
-use crate::universal_io::{
-    OpenOptions, OwnedPipeline, Populate, UioResult, UniversalRead, UniversalReadFs,
-};
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
+use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
 
 mod init;
 mod read;
@@ -182,15 +180,11 @@ where
     }
 
     pub(super) fn open_remote(&self) -> UioResult<R> {
-        let remote_options = OpenOptions {
-            writeable: false,
-            populate: Populate::No,
-            need_sequential: false,
-            advice: AdviceSetting::Global,
-        };
-
-        self.remote_fs
-            .open(&self.remote_path, remote_options, self.remote_extra.clone())
+        self.remote_fs.open(
+            &self.remote_path,
+            REMOTE_OPEN_OPTIONS,
+            self.remote_extra.clone(),
+        )
     }
 }
 
