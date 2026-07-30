@@ -1,0 +1,34 @@
+#@ load("openapi.lib.yml", "response", "reference", "type")
+
+paths:
+  /quotas:
+    get:
+      tags:
+        - Quotas
+      summary: Get global quotas
+      description: Get the cluster-wide resource quota configuration, together with the current utilization it is measured against
+      operationId: get_quotas
+      responses: #@ response(reference("QuotaStatus"))
+
+    put:
+      tags:
+        - Quotas
+      summary: Set global quotas
+      description: Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts
+      operationId: update_quotas
+      requestBody:
+        description: Quota configuration to apply
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuotaConfig"
+      parameters:
+        - name: wait
+          in: query
+          description: |
+            If true, wait until the new configuration is confirmed by consensus on this peer.
+            If false - the request returns as soon as the change is proposed.
+          schema:
+            type: boolean
+            default: false
+      responses: #@ response(type("boolean"))

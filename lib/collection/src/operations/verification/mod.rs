@@ -228,94 +228,6 @@ pub fn check_search_batch_size(
     )
 }
 
-/// Reject a memory-consuming update if the process resident memory exceeds
-/// the configured percentage of total system memory.
-///
-/// `resident_reader` returns the current process resident memory in bytes,
-/// or `None` when the platform does not expose the stat. In production this
-/// is [`::common::memory_usage::resident_bytes`]; tests pass a closure.
-///
-/// Returns `Ok(())` when no threshold is configured, when the reader returns
-/// `None`, or when current usage is below the threshold. Total memory is
-/// cached once — cgroup limits are read at first call, so container memory
-/// limits are respected if present at startup.
-pub fn check_resident_memory(
-    strict_mode_config: &StrictModeConfig,
-    resident_reader: impl FnOnce() -> Option<usize>,
-) -> CollectionResult<()> {
-    let Some(percent) = strict_mode_config.max_resident_memory_percent else {
-        return Ok(());
-    };
-
-    let Some(resident) = resident_reader() else {
-        return Ok(());
-    };
-
-    let total = total_memory_bytes();
-    if total == 0 {
-        return Ok(());
-    }
-
-    let threshold = total.saturating_mul(u64::from(percent)) / 100;
-    if (resident as u64) >= threshold {
-        let used_percent = (resident as u64).saturating_mul(100) / total;
-        return Err(CollectionError::strict_mode(
-            format!(
-                "Resident memory usage is at {used_percent}% of total memory, exceeding the configured limit of {percent}%",
-            ),
-            "Reduce memory usage (e.g. delete points or free segments) or raise `max_resident_memory_percent` in strict mode.",
-        ));
-    }
-
-    Ok(())
-}
-
-/// Total system memory (or cgroup limit) in bytes.
-/// Memory allowance can change in a cgroup-limited node, so need to refresh the cache periodically.
-fn total_memory_bytes() -> u64 {
-    segment::utils::mem::total_memory_bytes()
-}
-
-/// Reject a disk-consuming update if the filesystem hosting Qdrant storage is
-/// filled above the configured percentage of its total capacity.
-///
-/// `usage_reader` returns the current disk usage snapshot, or `None` when the
-/// stat call failed (e.g. path missing, permission denied). In production this
-/// is [`::common::disk_usage::disk_usage`] which is internally TTL-cached so
-/// hot request paths do not call `statvfs` on every operation.
-///
-/// Returns `Ok(())` when no threshold is configured, when the reader returns
-/// `None`, when `total` is reported as zero, or when current usage is below
-/// the threshold.
-pub fn check_disk_usage(
-    strict_mode_config: &StrictModeConfig,
-    usage_reader: impl FnOnce() -> Option<::common::disk_usage::DiskUsage>,
-) -> CollectionResult<()> {
-    let Some(percent) = strict_mode_config.max_disk_usage_percent else {
-        return Ok(());
-    };
-
-    let Some(usage) = usage_reader() else {
-        return Ok(());
-    };
-
-    if usage.total == 0 {
-        return Ok(());
-    }
-
-    let used_percent = usage.used().saturating_mul(100) / usage.total;
-    if used_percent >= u64::from(percent) {
-        return Err(CollectionError::strict_mode(
-            format!(
-                "Disk usage is at {used_percent}% of total capacity, exceeding the configured limit of {percent}%",
-            ),
-            "Reduce disk usage (e.g. delete points or drop collections) or raise `max_disk_usage_percent` in strict mode.",
-        ));
-    }
-
-    Ok(())
-}
-
 pub(crate) fn check_bool_opt(
     value: Option<bool>,
     allowed: Option<bool>,
@@ -437,7 +349,6 @@ pub fn check_grouping_field(
 
 #[cfg(test)]
 mod test {
-    use std::assert_matches;
     use std::sync::Arc;
 
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
@@ -449,7 +360,7 @@ mod test {
     };
     use tempfile::Builder;
 
-    use super::{StrictModeVerification, check_disk_usage, check_resident_memory};
+    use super::StrictModeVerification;
     use crate::collection::{Collection, RequestShardTransfer};
     use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
     use crate::operations::point_ops::{FilterSelector, PointsSelector};
@@ -576,133 +487,6 @@ mod test {
             ],
         };
         assert_strict_mode_success(request, collection).await;
-    }
-
-    #[test]
-    fn test_resident_memory_check_disabled_passes() {
-        let cfg = StrictModeConfig::default();
-        // Reader should never be called when no threshold is configured.
-        assert!(check_resident_memory(&cfg, || unreachable!()).is_ok());
-    }
-
-    #[test]
-    fn test_resident_memory_check_no_reader_passes() {
-        // Platforms that don't expose resident memory (reader returns None)
-        // must silently skip the check rather than reject updates.
-        let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(check_resident_memory(&cfg, || None).is_ok());
-    }
-
-    #[test]
-    fn test_resident_memory_check_over_threshold_rejects() {
-        // Force resident usage to effectively all of RAM — any non-zero
-        // threshold must reject.
-        let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_resident_memory(&cfg, || Some(usize::MAX));
-        assert_matches!(res, Err(CollectionError::StrictMode { .. }));
-    }
-
-    #[test]
-    fn test_resident_memory_check_under_threshold_passes() {
-        // Zero resident bytes is always under any threshold.
-        let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(check_resident_memory(&cfg, || Some(0)).is_ok());
-    }
-
-    #[test]
-    fn test_disk_usage_check_disabled_passes() {
-        let cfg = StrictModeConfig::default();
-        // Reader should never be called when no threshold is configured.
-        assert!(check_disk_usage(&cfg, || unreachable!()).is_ok());
-    }
-
-    #[test]
-    fn test_disk_usage_check_no_reader_passes() {
-        // When the underlying stat fails (returns None), the check must
-        // silently skip rather than reject updates.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(check_disk_usage(&cfg, || None).is_ok());
-    }
-
-    #[test]
-    fn test_disk_usage_check_zero_total_passes() {
-        // A filesystem reporting total=0 (e.g. some pseudo-filesystems) must
-        // not cause a divide-by-zero or a spurious rejection.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(
-            check_disk_usage(&cfg, || Some(::common::disk_usage::DiskUsage {
-                total: 0,
-                available: 0,
-            }))
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn test_disk_usage_check_over_threshold_rejects() {
-        // 90% full vs. a 50% threshold must reject.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_disk_usage(&cfg, || {
-            Some(::common::disk_usage::DiskUsage {
-                total: 1_000,
-                available: 100,
-            })
-        });
-        assert!(
-            matches!(res, Err(CollectionError::StrictMode { .. })),
-            "expected StrictMode error but got {res:?}",
-        );
-    }
-
-    #[test]
-    fn test_disk_usage_check_under_threshold_passes() {
-        // 10% full vs. a 50% threshold must pass.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_disk_usage(&cfg, || {
-            Some(::common::disk_usage::DiskUsage {
-                total: 1_000,
-                available: 900,
-            })
-        });
-        assert!(res.is_ok(), "expected Ok but got {res:?}");
-    }
-
-    #[test]
-    fn test_disk_usage_check_available_above_total_passes() {
-        // Some quota-backed filesystems report `available > total`. The check
-        // must treat used as saturating-zero and pass.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_disk_usage(&cfg, || {
-            Some(::common::disk_usage::DiskUsage {
-                total: 1_000,
-                available: 2_000,
-            })
-        });
-        assert!(res.is_ok(), "expected Ok but got {res:?}");
     }
 
     #[test]

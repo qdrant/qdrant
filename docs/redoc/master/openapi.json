@@ -963,6 +963,161 @@
         }
       }
     },
+    "/quotas": {
+      "get": {
+        "tags": [
+          "Quotas"
+        ],
+        "summary": "Get global quotas",
+        "description": "Get the cluster-wide resource quota configuration, together with the current utilization it is measured against",
+        "operationId": "get_quotas",
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/QuotaStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Quotas"
+        ],
+        "summary": "Set global quotas",
+        "description": "Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts",
+        "operationId": "update_quotas",
+        "requestBody": {
+          "description": "Quota configuration to apply",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaConfig"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait until the new configuration is confirmed by consensus on this peer.\nIf false - the request returns as soon as the change is proposed.\n",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections": {
       "get": {
         "tags": [
@@ -6241,6 +6396,10 @@
     {
       "name": "Service",
       "description": "Qdrant service utilities."
+    },
+    {
+      "name": "Quotas",
+      "description": "Cluster-wide resource quotas."
     },
     {
       "name": "Beta",
@@ -16682,6 +16841,69 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "QuotaStatus": {
+        "description": "Quota configuration in effect, and how close the node is to it.",
+        "type": "object",
+        "required": [
+          "config",
+          "usage"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/QuotaUsage"
+          }
+        }
+      },
+      "QuotaConfig": {
+        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true.",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether the limits below are enforced.",
+            "default": false,
+            "type": "boolean"
+          },
+          "max_resident_memory_percent": {
+            "description": "Reject memory-consuming updates once process resident memory reaches this percentage of total system memory (or of the cgroup limit, if one applies).",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming updates once the filesystem hosting the storage directory is filled to this percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "QuotaUsage": {
+        "description": "Current utilization of the quota-managed resources. A field is `null` when the platform does not expose the underlying stat.",
+        "type": "object",
+        "properties": {
+          "resident_memory_percent": {
+            "description": "Process resident memory as a percentage of total system memory.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_usage_percent": {
+            "description": "Used space of the storage filesystem as a percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
           }
         }
       }

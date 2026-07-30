@@ -2,8 +2,8 @@ use std::iter;
 use std::sync::Arc;
 
 use collection::operations::verification::{
-    StrictModeVerification, VerificationPass, check_disk_usage, check_resident_memory,
-    check_search_batch_size, check_timeout, new_unchecked_verification_pass,
+    StrictModeVerification, VerificationPass, check_search_batch_size, check_timeout,
+    new_unchecked_verification_pass,
 };
 
 use super::errors::StorageError;
@@ -36,43 +36,47 @@ where
         .unlogged_access() // expected for strict mode check
         .check_collection_access(collection_name, AccessRequirements::new())?;
     let collection = toc.get_collection(&collection_pass).await?;
-    if let Some(strict_mode_config) = &collection.strict_mode_config().await
-        && strict_mode_config.enabled.unwrap_or_default()
-    {
-        if let Some(batch_size) = batch_size {
-            check_search_batch_size(batch_size, strict_mode_config)?;
-        }
 
-        // The memory check applies uniformly to external and internal traffic.
-        // Like `max_collection_vector_size_bytes`, the rejection is deterministic
-        // — a replicated op that overruns memory fails the same way on every
-        // peer on retry — so it does not flap the replica set or produce dead
-        // shards.
-        let mut any_consumes_memory = false;
+    // Strict mode config only if the collection actually has strict mode turned
+    // on. Global quotas are enforced either way, so this stays `None` for the
+    // quota check on a collection with strict mode disabled.
+    let strict_mode_config = collection
+        .strict_mode_config()
+        .await
+        .filter(|config| config.enabled.unwrap_or_default());
 
-        for request in requests {
-            any_consumes_memory |= request.consumes_memory();
+    if let (Some(strict_mode_config), Some(batch_size)) = (&strict_mode_config, batch_size) {
+        check_search_batch_size(batch_size, strict_mode_config)?;
+    }
+
+    // Memory and disk quotas apply uniformly to external and internal traffic.
+    // Like `max_collection_vector_size_bytes`, the rejection is deterministic
+    // — a replicated op that overruns a quota fails the same way on every
+    // peer on retry — so it does not flap the replica set or produce dead
+    // shards.
+    let mut any_consumes_memory = false;
+
+    for request in requests {
+        any_consumes_memory |= request.consumes_memory();
+        if let Some(strict_mode_config) = &strict_mode_config {
             request
                 .check_strict_mode(&collection, strict_mode_config)
                 .await?;
         }
+    }
 
-        if any_consumes_memory {
-            check_resident_memory(strict_mode_config, ::common::memory_usage::resident_bytes)?;
-            // Disk usage shares the same op set as memory: anything that
-            // writes new bytes (upsert, set/overwrite payload, update vectors)
-            // can also fill the disk, while deletes free it. The reader is
-            // TTL-cached (5s) so high-RPS request paths don't hammer
-            // `statvfs` — both checks run cheaply on the hot path.
-            let storage_path = toc.storage_path().to_path_buf();
-            check_disk_usage(strict_mode_config, || {
-                ::common::disk_usage::disk_usage(&storage_path)
-            })?;
-        }
+    // Disk usage shares the same op set as memory: anything that writes new
+    // bytes (upsert, set/overwrite payload, update vectors) can also fill the
+    // disk, while deletes free it. Both readers are TTL-cached (5s) so high-RPS
+    // request paths don't hammer `statvfs` — the checks run cheaply on the hot
+    // path.
+    if any_consumes_memory {
+        toc.quota_manager()
+            .check_update(strict_mode_config.as_ref())?;
+    }
 
-        if let Some(timeout) = timeout {
-            check_timeout(timeout, strict_mode_config)?;
-        }
+    if let (Some(strict_mode_config), Some(timeout)) = (&strict_mode_config, timeout) {
+        check_timeout(timeout, strict_mode_config)?;
     }
 
     // It's checked now
