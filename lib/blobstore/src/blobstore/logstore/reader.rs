@@ -195,6 +195,14 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         self.view().get_storage_size_bytes()
     }
 
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+        self.tracker.live_preload(fs)?;
+
+        self.pages.live_preload(fs, self.populate)?;
+
+        Ok(())
+    }
+
     /// This method reloads the storage from "disk", so that it makes newly appended data
     /// readable.
     ///

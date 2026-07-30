@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use ahash::AHashMap;
-use common::universal_io::{Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use super::iter::Iter;
 use super::{PointOffset, PointerUpdates, Tracker, TrackerRead, ValuePointer, read_slot};
@@ -56,6 +56,11 @@ impl<S: UniversalRead> ReadOnlyTracker<S> {
             storage,
             populate,
         })
+    }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+        Tracker::preopen(fs, &self.path, self.populate)?;
+        Ok(())
     }
 
     /// Refresh to the current on-disk state by opening a fresh storage handle
