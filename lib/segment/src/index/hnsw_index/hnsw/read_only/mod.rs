@@ -82,8 +82,11 @@ type ReadView<'a, S> = HNSWIndexReadView<
 /// other components, a cold in-RAM [`HnswGraph`] load still reads the
 /// whole links file on a remote backend (see [`ReadOnlyHNSWIndex::graph`]),
 /// so the demotion the override asks for is only achievable by not loading.
-/// A config-derived cold placement (no override) keeps the eager load.
-/// Mirrors the cold-override match of `VectorIndexReadEnum::open_sparse`.
+/// A batched [`HnswGraph`] load costs a header-sized read, so it is
+/// never deferred — hence the extra [`HnswGraph::is_batched`] check at
+/// the call sites. A config-derived cold placement (no override) keeps the
+/// eager load. Mirrors the cold-override match of
+/// `VectorIndexReadEnum::open_sparse`.
 fn graph_deferred(populate_override: Option<Populate>) -> bool {
     match populate_override {
         Some(Populate::No | Populate::Auto | Populate::Partial(_)) => true,
@@ -107,8 +110,8 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             .ok_not_found()?;
 
         // Graph data and links
-        if !graph_deferred(populate_override) {
-            let (_memory, residency) = graph_residency(hnsw_config, populate_override);
+        let (_memory, residency) = graph_residency(hnsw_config, populate_override);
+        if !graph_deferred(populate_override) || HnswGraph::<S>::is_batched(fs, path, residency)? {
             HnswGraph::preopen_universal(fs, path, residency)?;
         }
 
@@ -147,7 +150,10 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
         let (memory, residency) = graph_residency(&hnsw_config, populate_override);
         let is_on_disk = memory.is_on_disk();
-        let graph = if graph_deferred(populate_override) {
+        // A batched graph load is header-sized, so deferring it saves nothing.
+        let deferred =
+            graph_deferred(populate_override) && !HnswGraph::<S>::is_batched(fs, path, residency)?;
+        let graph = if deferred {
             OnceCell::new()
         } else {
             OnceCell::with_value(HnswGraph::load_universal(fs, path, residency)?)
@@ -238,5 +244,92 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             };
             f(read_view)
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::universal_io::{MmapFs, UniversalRead, UniversalReadFs};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::index::hnsw_index::graph_links::GraphLinksFormat;
+    use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
+    use crate::types::Distance;
+
+    /// Pins which graph representation each (backend, format, residency) cell
+    /// loads — and its links residency. The decision lives in
+    /// [`HnswGraph::load_universal`], with the materialization fallback still
+    /// in `GraphLinksEnum::from_storage`. Search through the loaded graphs is
+    /// covered by the `graph_layers_batched` parity tests.
+    #[test]
+    fn test_load_matrix() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        for format in [
+            GraphLinksFormat::Plain,
+            GraphLinksFormat::Compressed,
+            GraphLinksFormat::CompressedWithVectors,
+        ] {
+            let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
+            let (vector_holder, graph_layers_builder) = create_graph_layer_builder_fixture(
+                100,
+                8,
+                8,
+                false,
+                format.is_with_vectors(),
+                Distance::Cosine,
+                &mut rng,
+            );
+            let graph_links_vectors = vector_holder.graph_links_vectors();
+            graph_layers_builder
+                .into_graph_layers(
+                    dir.path(),
+                    format.with_param_for_tests(graph_links_vectors.as_ref()),
+                    true,
+                )
+                .unwrap();
+
+            check_backend(&MmapFs, dir.path(), format);
+            #[cfg(target_os = "linux")]
+            check_backend(&common::universal_io::IoUringFs, dir.path(), format);
+        }
+    }
+
+    fn check_backend<Fs>(fs: &Fs, dir: &Path, format: GraphLinksFormat)
+    where
+        Fs: UniversalReadFs,
+        Fs::File: 'static,
+    {
+        let borrowable = <Fs::File as UniversalRead>::kind().is_in_ram_or_mmap();
+
+        for residency in [
+            GraphLinksResidency::Cold,
+            GraphLinksResidency::Cached,
+            GraphLinksResidency::Pinned,
+        ] {
+            let context = format!("{format:?}, {residency:?}, borrowable={borrowable}");
+
+            let graph = HnswGraph::load_universal(fs, dir, residency).unwrap();
+            let expect_batched = residency != GraphLinksResidency::Pinned
+                && match format {
+                    GraphLinksFormat::CompressedWithVectors | GraphLinksFormat::Compressed => {
+                        !borrowable
+                    }
+                    GraphLinksFormat::Plain => false,
+                };
+            match &graph {
+                HnswGraph::Direct(direct) => {
+                    assert!(!expect_batched, "{context}");
+                    // Links are materialized into heap when pinned explicitly,
+                    // or as the fallback for non-borrowable backends.
+                    let expect_heap = !borrowable || residency == GraphLinksResidency::Pinned;
+                    assert_eq!(direct.links_heap_size_bytes() > 0, expect_heap, "{context}");
+                }
+                HnswGraph::Batched(_) => assert!(expect_batched, "{context}"),
+            }
+        }
     }
 }

@@ -36,7 +36,6 @@ impl<S: UniversalRead> std::fmt::Debug for GraphLayersBatched<S> {
 }
 
 impl<S: UniversalRead> GraphLayersBatched<S> {
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn load(
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
