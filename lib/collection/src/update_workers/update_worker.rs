@@ -7,10 +7,8 @@ use cancel::CancellationToken;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
+use shard::operations::CollectionUpdateOperations;
 use shard::operations::optimization::OptimizerThresholds;
-use shard::operations::point_ops::PointOperations;
-use shard::operations::vector_ops::VectorOperations;
-use shard::operations::{CollectionUpdateOperations, payload_ops};
 use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -41,48 +39,6 @@ fn send_feedback(
         feedback.send(result).unwrap_or_else(|_| {
             log::debug!("Can't report operation {op_num} result. Assume already not required");
         });
-    }
-}
-
-/// Whether applying `operation` can need somewhere to put a point, and so is worth checking
-/// capacity for beforehand.
-///
-/// Only operations reaching `apply_points_with_conditional_move` (or inserting outright) can be
-/// given a destination, so deletes and schema-only operations skip the check entirely rather than
-/// measuring every appendable segment for nothing. Deliberately matched exhaustively: a new
-/// operation must be classified by whoever adds it, not silently default either way.
-fn may_need_write_capacity(operation: &CollectionUpdateOperations) -> bool {
-    match operation {
-        CollectionUpdateOperations::PointOperation(operation) => match operation {
-            PointOperations::UpsertPoints(_)
-            | PointOperations::UpsertPointsConditional(_)
-            | PointOperations::UpsertPointsRaw(_)
-            | PointOperations::SyncPoints(_)
-            | PointOperations::SyncPointsRaw(_) => true,
-            // Deletes never move a point, they only mark it.
-            PointOperations::DeletePoints { .. } | PointOperations::DeletePointsByFilter(_) => {
-                false
-            }
-        },
-        // Deleting a named vector from a point in an immutable segment moves the point too.
-        CollectionUpdateOperations::VectorOperation(operation) => match operation {
-            VectorOperations::UpdateVectors(_)
-            | VectorOperations::DeleteVectors(..)
-            | VectorOperations::DeleteVectorsByFilter(..) => true,
-        },
-        // Every payload operation copy-on-write moves the points it touches.
-        CollectionUpdateOperations::PayloadOperation(operation) => match operation {
-            payload_ops::PayloadOps::SetPayload(_)
-            | payload_ops::PayloadOps::DeletePayload(_)
-            | payload_ops::PayloadOps::ClearPayload { .. }
-            | payload_ops::PayloadOps::ClearPayloadByFilter(_)
-            | payload_ops::PayloadOps::OverwritePayload(_) => true,
-        },
-        // Schema-only, applied to every segment in place.
-        CollectionUpdateOperations::FieldIndexOperation(_)
-        | CollectionUpdateOperations::VectorNameOperation(_) => false,
-        #[cfg(feature = "staging")]
-        CollectionUpdateOperations::StagingOperation(_) => false,
     }
 }
 
@@ -226,11 +182,12 @@ impl UpdateWorkers {
                     // Classified before the operation is moved into the blocking task. Deletes and
                     // schema-only operations never need a destination, so they skip measuring
                     // every appendable segment.
-                    let operation_capacity_optimizer = if may_need_write_capacity(&operation) {
-                        capacity_optimizer.clone()
-                    } else {
-                        None
-                    };
+                    let operation_capacity_optimizer =
+                        if operation.may_need_appendable_destination() {
+                            capacity_optimizer.clone()
+                        } else {
+                            None
+                        };
                     let payload_index_schema_clone = payload_index_schema.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         // Give the operation a destination below the size cap before applying it,
@@ -487,11 +444,8 @@ impl UpdateWorkers {
 #[cfg(test)]
 mod tests {
     use common::save_on_disk::SaveOnDisk;
-    use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+    use segment::types::Distance;
     use shard::fixtures::random_segment;
-    use shard::operations::payload_ops::PayloadOps;
-    use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
-    use shard::operations::vector_ops::VectorOperations;
     use shard::optimizers::config::SegmentOptimizerConfig;
     use shard::segment_holder::SegmentHolder;
     use tempfile::Builder;
@@ -499,51 +453,7 @@ mod tests {
     use super::*;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
-    use crate::operations::{CreateIndex, FieldIndexOperations};
     use crate::optimizers_builder::build_segment_optimizer_config;
-
-    /// Only operations that can be given a destination are worth measuring capacity for. Getting
-    /// this wrong is silent either way: too narrow skips provisioning for an operation that needs
-    /// it, too broad puts segment measurements back on every delete.
-    #[test]
-    fn test_may_need_write_capacity_classification() {
-        let point_ids = vec![1.into()];
-
-        // Moves or inserts points.
-        assert!(may_need_write_capacity(
-            &CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-                PointInsertOperationsInternal::PointsList(vec![]),
-            )),
-        ));
-        assert!(may_need_write_capacity(
-            &CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
-                points: point_ids.clone(),
-            }),
-        ));
-        // Deleting a named vector moves the point out of an immutable segment too.
-        assert!(may_need_write_capacity(
-            &CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectors(
-                point_ids.clone().into(),
-                vec!["dense".into()],
-            )),
-        ));
-
-        // Marks points, never moves them.
-        assert!(!may_need_write_capacity(
-            &CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
-                ids: point_ids,
-            }),
-        ));
-        // Schema-only, applied to every segment in place.
-        assert!(!may_need_write_capacity(
-            &CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
-                CreateIndex {
-                    field_name: "city".parse().unwrap(),
-                    field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-                },
-            )),
-        ));
-    }
 
     fn capacity_fixture(
         dir: &std::path::Path,

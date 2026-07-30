@@ -49,6 +49,51 @@ impl CollectionUpdateOperations {
         )
     }
 
+    /// Whether applying this operation can need somewhere to put a point, either by inserting a
+    /// new one or by copy-on-write moving an existing one out of an immutable segment.
+    ///
+    /// This mirrors which operations reach
+    /// [`apply_points_with_conditional_move`](crate::segment_holder::SegmentHolder::apply_points_with_conditional_move)
+    /// or insert outright, and lives beside them on purpose: an operation that starts moving points
+    /// must be reclassified here, or capacity stops being provisioned for it and appendable
+    /// segments grow past `max_segment_size` again.
+    ///
+    /// Matched exhaustively so a new operation has to be classified rather than silently
+    /// defaulting either way.
+    pub fn may_need_appendable_destination(&self) -> bool {
+        match self {
+            Self::PointOperation(op) => match op {
+                PointOperations::UpsertPoints(_)
+                | PointOperations::UpsertPointsConditional(_)
+                | PointOperations::UpsertPointsRaw(_)
+                | PointOperations::SyncPoints(_)
+                | PointOperations::SyncPointsRaw(_) => true,
+                // Deletes never move a point, they only mark it.
+                PointOperations::DeletePoints { .. } | PointOperations::DeletePointsByFilter(_) => {
+                    false
+                }
+            },
+            // Deleting a named vector from a point in an immutable segment moves the point too.
+            Self::VectorOperation(op) => match op {
+                vector_ops::VectorOperations::UpdateVectors(_)
+                | vector_ops::VectorOperations::DeleteVectors(..)
+                | vector_ops::VectorOperations::DeleteVectorsByFilter(..) => true,
+            },
+            // Every payload operation copy-on-write moves the points it touches.
+            Self::PayloadOperation(op) => match op {
+                payload_ops::PayloadOps::SetPayload(_)
+                | payload_ops::PayloadOps::DeletePayload(_)
+                | payload_ops::PayloadOps::ClearPayload { .. }
+                | payload_ops::PayloadOps::ClearPayloadByFilter(_)
+                | payload_ops::PayloadOps::OverwritePayload(_) => true,
+            },
+            // Schema-only, applied to every segment in place.
+            Self::FieldIndexOperation(_) | Self::VectorNameOperation(_) => false,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => false,
+        }
+    }
+
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
             Self::PointOperation(op) => op.point_ids(),
@@ -288,6 +333,53 @@ mod tests {
     use super::point_ops::*;
     use super::vector_ops::*;
     use super::*;
+
+    /// Only operations that can be given a destination are worth provisioning capacity for.
+    /// Getting this wrong is silent either way: too narrow stops provisioning for an operation
+    /// that moves points, and appendable segments grow past `max_segment_size` again; too broad
+    /// puts a measurement of every appendable segment back on operations that never move one.
+    #[test]
+    fn test_may_need_appendable_destination() {
+        let point_ids = vec![PointIdType::from(1)];
+
+        // Inserts points.
+        assert!(
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(vec![]),
+            ))
+            .may_need_appendable_destination(),
+        );
+        // Copy-on-write moves the points it touches.
+        assert!(
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
+                points: point_ids.clone(),
+            })
+            .may_need_appendable_destination(),
+        );
+        // Deleting a named vector moves the point out of an immutable segment too.
+        assert!(
+            CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectors(
+                point_ids.clone().into(),
+                vec!["dense".into()],
+            ))
+            .may_need_appendable_destination(),
+        );
+
+        // Marks points, never moves them.
+        assert!(
+            !CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+                ids: point_ids,
+            })
+            .may_need_appendable_destination(),
+        );
+        // Schema-only, applied to every segment in place.
+        assert!(
+            !CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::DeleteIndex(
+                "city".parse().unwrap(),
+            ))
+            .may_need_appendable_destination(),
+        );
+    }
 
     proptest::proptest! {
         #[test]
