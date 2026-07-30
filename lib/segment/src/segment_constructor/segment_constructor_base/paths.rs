@@ -25,6 +25,6 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
-pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
+pub fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
 }

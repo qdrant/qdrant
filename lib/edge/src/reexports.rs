@@ -1,6 +1,7 @@
 mod reexports_from_qdrant_crates {
     pub use segment::common::operation_error::{OperationError, OperationResult};
     pub use segment::data_types::facets::{FacetHit, FacetResponse, FacetValue, FacetValueHit};
+    pub use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
     pub use segment::data_types::index::{
         BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
         KeywordIndexParams, Language, SnowballLanguage, SnowballParams, StopwordsSet,
@@ -14,8 +15,11 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::vectors::{
         DEFAULT_VECTOR_NAME, NamedQuery, TypedMultiDenseVector,
     };
+    pub use segment::index::payload_config::{PAYLOAD_INDEX_CONFIG_FILE, PayloadConfig};
     pub use segment::index::query_optimization::rescore_formula::parsed_formula::DecayKind;
     pub use segment::json_path::JsonPath;
+    pub use segment::segment::SEGMENT_STATE_FILE;
+    pub use segment::segment_constructor::get_payload_index_path;
     pub use segment::types::{
         AcornSearchParams, AnyVariants, BinaryQuantizationConfig, BinaryQuantizationEncoding,
         BinaryQuantizationQueryEncoding, CompressionRatio, Condition, DateTimeWrapper, Distance,
@@ -27,9 +31,9 @@ mod reexports_from_qdrant_crates {
         NestedCondition, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadSchemaParams,
         PayloadSchemaType, PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude,
         ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams, Range,
-        RangeInterface, ScalarQuantizationConfig, ScalarType, ScoredPoint, SearchParams, Slice,
-        SliceCondition, ValueVariants, ValuesCount, VectorStorageDatatype, WithPayloadInterface,
-        WithVector,
+        RangeInterface, ScalarQuantizationConfig, ScalarType, ScoredPoint, SearchParams,
+        SegmentConfig, SegmentState, Slice, SliceCondition, SparseVectorDataConfig, ValueVariants,
+        ValuesCount, VectorDataConfig, VectorStorageDatatype, WithPayloadInterface, WithVector,
     };
     pub use segment::vector_storage::query::{
         ContextPair, ContextQuery, DiscoverQuery, FeedbackItem,
