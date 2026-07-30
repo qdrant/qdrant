@@ -6,6 +6,8 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
+use rayon::ThreadPool;
+use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
 use segment::types::{PointIdType, SeqNumberType};
@@ -32,7 +34,7 @@ pub struct UpdateBatchOutcome {
     pub missing: usize,
 }
 
-/// Where a point currently lives, and at what version.
+/// One copy of a point: where it lives, and at what version.
 #[derive(Debug, Clone, Copy)]
 struct PointLocation {
     segment: Uuid,
@@ -49,6 +51,18 @@ impl PointLocation {
     fn supersedes(&self, other: &Self) -> bool {
         (self.version, self.appendable) > (other.version, other.appendable)
     }
+}
+
+/// Every copy of one point across the shard's segments.
+struct PointLocations {
+    /// The live copy: its version decides whether the batch is already
+    /// applied, and its slot is the one a resolve reads from.
+    newest: PointLocation,
+    /// Every slot the point occupies, `newest`'s included. A rewrite or a
+    /// delete retires them all — tombstoning only the newest slot would let
+    /// an older duplicate (left by an interrupted move) outlive the point
+    /// and, on a delete, resurrect it.
+    slots: Vec<(Uuid, PointOffsetType)>,
 }
 
 impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
@@ -73,10 +87,10 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
         let segments = self.segments.read();
 
         // 1. Find which segment holds each touched point, and at what version.
-        let locations = locate_points(&segments, &plan)?;
+        let locations = locate_points(&segments, &plan, &self.pool)?;
 
         // 2. Read the points that cannot be resolved from the batch alone.
-        let mut stored = read_stored_points(&segments, &plan, &locations, &hw_counter)?;
+        let mut stored = read_stored_points(&segments, &plan, &locations, &self.pool)?;
 
         // 3. Fold each point's mutations onto what is stored.
         let mut outcome = UpdateBatchOutcome::default();
@@ -84,11 +98,11 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
         let mut to_tombstone: AHashMap<Uuid, Vec<PointOffsetType>> = AHashMap::new();
 
         for (id, updates) in plan.into_point_updates() {
-            let location = locations.get(&id).copied();
+            let location = locations.get(&id);
 
             // Already applied: the stored point is at or beyond this batch's
             // version, so re-applying would move it backwards.
-            if location.is_some_and(|location| location.version >= updates.version()) {
+            if location.is_some_and(|location| location.newest.version >= updates.version()) {
                 outcome.skipped += 1;
                 continue;
             }
@@ -105,14 +119,14 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
                 }
             }
 
-            // Whatever happened to the point, the slot it used to occupy is
-            // retired: a rewrite left its replacement elsewhere, a delete left
-            // nothing.
+            // Whatever happened to the point, every slot it occupied — in any
+            // segment — is retired: a rewrite left its replacement elsewhere,
+            // a delete left nothing, and an older duplicate must not outlive
+            // either.
             if let Some(location) = location {
-                to_tombstone
-                    .entry(location.segment)
-                    .or_default()
-                    .push(location.internal_id);
+                for &(segment, internal_id) in &location.slots {
+                    to_tombstone.entry(segment).or_default().push(internal_id);
+                }
             }
         }
 
@@ -139,84 +153,121 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     }
 }
 
-/// Locate every point the batch touches, keeping the newest copy when more
-/// than one segment holds the point.
+/// Locate every point the batch touches: every slot it occupies, with the
+/// newest copy marked, when more than one segment holds the point. Segments
+/// are visited in parallel on `pool`.
 fn locate_points<S: UniversalRead + 'static>(
     segments: &UpdateOnlySegmentHolder<S>,
     plan: &UpdateBatchPlan,
-) -> OperationResult<AHashMap<PointIdType, PointLocation>> {
+    pool: &ThreadPool,
+) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
     let ids: Vec<PointIdType> = plan.point_ids().collect();
-    let mut locations: AHashMap<PointIdType, PointLocation> = AHashMap::new();
 
-    for (uuid, segment) in segments.iter() {
-        let segment = segment.read();
-        let appendable = segment.is_appendable();
+    let per_segment: Vec<Vec<(PointIdType, PointLocation)>> = pool.install(|| {
+        segments
+            .iter()
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|(uuid, segment)| {
+                let segment = segment.read();
+                let appendable = segment.is_appendable();
 
-        let mut found_ids = Vec::new();
-        let mut internal_ids = Vec::new();
-        segment.locate_points(ids.iter().copied(), |id, internal_id| {
-            found_ids.push(id);
-            internal_ids.push(internal_id);
-        })?;
-        let versions = segment.point_versions(&internal_ids)?;
+                let mut found_ids = Vec::new();
+                let mut internal_ids = Vec::new();
+                segment.locate_points(ids.iter().copied(), |id, internal_id| {
+                    found_ids.push(id);
+                    internal_ids.push(internal_id);
+                })?;
+                let versions = segment.point_versions(&internal_ids)?;
 
-        for ((id, internal_id), version) in found_ids.into_iter().zip(internal_ids).zip(versions) {
-            let location = PointLocation {
-                segment: uuid,
-                internal_id,
-                version,
-                appendable,
-            };
-            locations
-                .entry(id)
-                .and_modify(|current| {
-                    if location.supersedes(current) {
-                        *current = location;
-                    }
-                })
-                .or_insert(location);
-        }
+                let located = found_ids
+                    .into_iter()
+                    .zip(internal_ids)
+                    .zip(versions)
+                    .map(|((id, internal_id), version)| {
+                        let location = PointLocation {
+                            segment: uuid,
+                            internal_id,
+                            version,
+                            appendable,
+                        };
+                        (id, location)
+                    })
+                    .collect();
+                Ok(located)
+            })
+            .collect::<OperationResult<Vec<_>>>()
+    })?;
+
+    let mut locations: AHashMap<PointIdType, PointLocations> = AHashMap::new();
+    for (id, location) in per_segment.into_iter().flatten() {
+        let slot = (location.segment, location.internal_id);
+        locations
+            .entry(id)
+            .and_modify(|current| {
+                current.slots.push(slot);
+                if location.supersedes(&current.newest) {
+                    current.newest = location;
+                }
+            })
+            .or_insert_with(|| PointLocations {
+                newest: location,
+                slots: vec![slot],
+            });
     }
 
     Ok(locations)
 }
 
-/// Read the stored form of the points whose mutations need it, one batched pass
-/// per segment.
+/// Read the stored form of the points whose mutations need it, one batched
+/// pass per segment; segments are read in parallel on `pool`.
 fn read_stored_points<S: UniversalRead + 'static>(
     segments: &UpdateOnlySegmentHolder<S>,
     plan: &UpdateBatchPlan,
-    locations: &AHashMap<PointIdType, PointLocation>,
-    hw_counter: &HardwareCounterCell,
+    locations: &AHashMap<PointIdType, PointLocations>,
+    pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, StoredPoint>> {
     let mut by_segment: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
     for id in plan.point_ids_needing_stored_point() {
         // A point no segment holds has nothing to read; its mutations either
-        // create it outright or resolve to nothing.
+        // create it outright or resolve to nothing. Only the newest copy is
+        // read — older duplicates are stale.
         if let Some(location) = locations.get(&id) {
             by_segment
-                .entry(location.segment)
+                .entry(location.newest.segment)
                 .or_default()
-                .push((id, location.internal_id));
+                .push((id, location.newest.internal_id));
         }
     }
 
+    let per_segment: Vec<Vec<(PointIdType, StoredPoint)>> = pool.install(|| {
+        by_segment
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|(uuid, entries)| {
+                let segment = segments.get(&uuid).ok_or_else(|| {
+                    OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
+                })?;
+                let segment = segment.read();
+
+                let internal_ids: Vec<PointOffsetType> = entries
+                    .iter()
+                    .map(|(_, internal_id)| *internal_id)
+                    .collect();
+                // Not shared with the caller's counter: `HardwareCounterCell`
+                // is not `Sync`, and the writer's accounting is disposable.
+                let hw_counter = HardwareCounterCell::disposable();
+                let points = segment.read_stored_points(&internal_ids, &hw_counter)?;
+
+                Ok(entries.into_iter().map(|(id, _)| id).zip(points).collect())
+            })
+            .collect::<OperationResult<Vec<_>>>()
+    })?;
+
     let mut stored = AHashMap::new();
-    for (uuid, entries) in by_segment {
-        let segment = segments.get(&uuid).ok_or_else(|| {
-            OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
-        })?;
-        let segment = segment.read();
-
-        let internal_ids: Vec<PointOffsetType> = entries
-            .iter()
-            .map(|(_, internal_id)| *internal_id)
-            .collect();
-        let points = segment.read_stored_points(&internal_ids, hw_counter)?;
-
-        for ((id, _), point) in entries.into_iter().zip(points) {
-            stored.insert(id, point);
-        }
+    for (id, point) in per_segment.into_iter().flatten() {
+        stored.insert(id, point);
     }
 
     Ok(stored)

@@ -23,9 +23,11 @@ mod holder;
 mod lifecycle;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use common::universal_io::UniversalRead;
 use parking_lot::RwLock;
+use rayon::ThreadPool;
 
 pub use self::apply::UpdateBatchOutcome;
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
@@ -45,6 +47,10 @@ pub struct UpdateOnlyEdgeShard<S: UniversalRead + 'static> {
     #[allow(dead_code)]
     fs: S::Fs,
     segments: RwLock<UpdateOnlySegmentHolder<S>>,
+    /// Thread pool the per-segment work of a batch runs on: on a remote
+    /// backend each segment's reads block on the network, so segments are
+    /// visited in parallel.
+    pool: Arc<ThreadPool>,
 }
 
 impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {

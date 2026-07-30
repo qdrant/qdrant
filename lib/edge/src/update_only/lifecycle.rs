@@ -6,6 +6,7 @@ use segment::common::operation_error::OperationResult;
 use segment::segment::update_only::UpdateOnlySegment;
 
 use crate::read_only::{LocalSegmentEnumerator, SegmentEnumerator};
+use crate::read_view::build_segment_pool;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::holder::UpdateOnlySegmentHolder;
 
@@ -48,10 +49,19 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
             todo!("creating the initial appendable segment needs the append-only components");
         }
 
+        // Sized like the search pools: over-provisioned relative to the CPU
+        // count, since on a remote backend the threads mostly wait on IO.
+        let pool = build_segment_pool(
+            "edge-update",
+            common::defaults::search_thread_count(0),
+            None,
+        )?;
+
         Ok(Self {
             path: path.to_path_buf(),
             fs,
             segments: RwLock::new(holder),
+            pool,
         })
     }
 }
