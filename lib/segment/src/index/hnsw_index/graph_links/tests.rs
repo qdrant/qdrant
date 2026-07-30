@@ -3,7 +3,9 @@ use std::borrow::Cow;
 
 use common::fs::atomic_save;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFs;
+use common::universal_io::{MmapFs, UniversalReadFs};
 use rand::RngExt;
 use rstest::rstest;
 use tempfile::Builder;
@@ -162,6 +164,96 @@ fn test_save_load(
         GraphLinks::load_universal(&MmapFs, &links_file, format, GraphLinksResidency::Cold)
             .unwrap();
     check_links(links, &cmp_links, &vectors);
+}
+
+/// Test that [`GraphLinksFile`] returns the same links as the ones passed to
+/// [`serialize_graph_links`].
+#[rstest]
+#[case::mmap(MmapFs)]
+#[cfg_attr(target_os = "linux", case::io_uring(IoUringFs))]
+fn test_links_file_links<F: UniversalReadFs>(
+    #[case] fs: F,
+    #[values(
+        // GraphLinksFormat::Compressed
+        None,
+        // GraphLinksFormat::CompressedWithVectors
+        Some((4, 16)), // f32, binary q
+        Some((4, 1)), // f32, scalar q u8
+        Some((1, 1)), // u8, scalar q u8
+        // Fantasy layouts to catch alignment issues. (glibc min alignment is 16)
+        Some((1, 64)), Some((64, 1)), Some((64, 64)))
+    ]
+    aligns: Option<(usize, usize)>,
+) {
+    let format = match aligns {
+        None => GraphLinksFormat::Compressed,
+        Some(_) => GraphLinksFormat::CompressedWithVectors,
+    };
+    let hnsw_m = HnswM::new2(8);
+    let links = random_links(1000, 10, &hnsw_m);
+    let vectors = aligns
+        .map(|(base_align, link_align)| TestGraphLinksVectors::new(1000, base_align, link_align));
+
+    let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
+    let links_file = path.path().join("links.bin");
+    atomic_save(&links_file, |writer| {
+        serialize_graph_links(
+            links.clone(),
+            format.with_param_for_tests(vectors.as_ref()),
+            hnsw_m,
+            writer,
+        )
+    })
+    .unwrap();
+
+    let file = fs
+        .open(
+            &links_file,
+            GraphLinks::open_options(GraphLinksResidency::Cold),
+            Default::default(),
+        )
+        .unwrap();
+    let view = GraphLinksFile::<F::File>::load(file, format).unwrap();
+    let mut arena = stumpalo::Arena::new();
+    let max_levels = links.iter().map(|levels| levels.len()).max().unwrap_or(0);
+    for level in 0..max_levels {
+        let level_m = hnsw_m.level_m(level);
+        let point_ids = (0..links.len() as PointOffsetType)
+            .filter(|&id| links[id as usize].len() > level)
+            .collect::<Vec<_>>();
+        for chunk in point_ids.chunks(17) {
+            let check = |position: usize, links_iter: Vec<PointOffsetType>| {
+                assert_eq!(
+                    normalize_links(level_m, links_iter),
+                    normalize_links(level_m, links[chunk[position] as usize][level].clone()),
+                );
+            };
+            view.links(&mut arena, chunk, level, |position, iter| {
+                check(position, iter.collect())
+            })
+            .unwrap();
+            if let Some(vectors) = &vectors {
+                view.links_with_vectors(
+                    &mut arena,
+                    chunk,
+                    level,
+                    |position, base_vector, iter, link_vectors| {
+                        vectors.assert_base_vector(chunk[position], level, base_vector);
+                        let links_iter = iter
+                            .zip(link_vectors)
+                            .map(|(link, bytes)| {
+                                vectors.assert_link_vector(link, bytes);
+                                link
+                            })
+                            .collect();
+                        check(position, links_iter);
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            }
+        }
+    }
 }
 
 #[rstest]
