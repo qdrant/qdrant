@@ -1,7 +1,6 @@
 use std::hint::black_box;
 use std::io::Write;
 use std::path::Path;
-use std::range::Range;
 
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::{iterate_packed_links, pack_links};
@@ -148,7 +147,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     });
 
     let mut rng = SmallRng::seed_from_u64(42);
-    let mut out = [Range::from(0..0); MAX_BATCH_SIZE];
+    let mut out = [(0, 0); MAX_BATCH_SIZE];
     group.bench_function("batch/slice_reader", |b| {
         b.iter_batched(
             || random_batch(&mut rng, values.len()),
@@ -202,15 +201,15 @@ fn bench_uio_batch<Fs: UniversalReadFs>(
 
     let len = reader.decompressed_len();
     let mut rng = SmallRng::seed_from_u64(42);
-    let mut out = [Range::from(0..0); MAX_BATCH_SIZE];
+    let mut out = [(0, 0); MAX_BATCH_SIZE];
     group.bench_function(name, |b| {
         b.iter_batched(
             || random_batch(&mut rng, len),
             |indices| {
                 let out = &mut out[..indices.len()];
                 for result in reader.read_pairs_iter(&storage, 0, &indices).unwrap() {
-                    let (position, range) = result.unwrap();
-                    out[position] = range;
+                    let (position, pair) = result.unwrap();
+                    out[position] = pair;
                 }
                 black_box(out);
             },

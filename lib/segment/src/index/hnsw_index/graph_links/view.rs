@@ -225,7 +225,8 @@ impl GraphLinksView<'_> {
                 offsets[idx].get() == offsets[idx + 1].get()
             }
             CompressionInfo::Compressed { ref offsets, .. } => {
-                offsets.read_pair(idx).unwrap().is_empty()
+                let (start, end) = offsets.read_pair(idx).unwrap();
+                start == end
             }
             CompressionInfo::CompressedWithVectors { .. } => {
                 // Not intended to be used outside of tests.
@@ -247,9 +248,9 @@ impl GraphLinksView<'_> {
                 ref hnsw_m,
                 bits_per_unsorted,
             } => {
-                let range = offsets.read_pair(idx).unwrap();
+                let (start, end) = offsets.read_pair(idx).unwrap();
                 Either::Right(iterate_packed_links(
-                    &neighbors[range.start as usize..range.end as usize],
+                    &neighbors[start as usize..end as usize],
                     bits_per_unsorted,
                     hnsw_m.level_m(level),
                 ))
@@ -294,8 +295,8 @@ impl GraphLinksView<'_> {
                 link_vector_size,
                 link_vector_alignment,
             } => {
-                let range = offsets.read_pair(idx).unwrap();
-                let (start, end) = (range.start as usize, range.end as usize);
+                let (start, end) = offsets.read_pair(idx).unwrap();
+                let (start, end) = (start as usize, end as usize);
 
                 common::mmap::advice::will_need_multiple_pages(&neighbors[start..end]);
 

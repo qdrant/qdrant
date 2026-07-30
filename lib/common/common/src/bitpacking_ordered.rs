@@ -39,7 +39,6 @@
 //! - `bitpad` is a bit padding (0..7 bits) so the chunk is byte-aligned.
 
 use std::ops::RangeInclusive;
-use std::range::Range;
 
 use thiserror::Error;
 use zerocopy::little_endian::U64;
@@ -115,10 +114,10 @@ pub struct SliceReader<'a> {
 }
 
 impl<'a> SliceReader<'a> {
-    /// Read `value[index]..value[index + 1]`. `index + 1` should be less than
-    /// [`Reader::decompressed_len()`].
+    /// Read `value[index]` and `value[index + 1]`. `index + 1` should be less
+    /// than [`Reader::decompressed_len()`].
     #[inline]
-    pub fn read_pair(&self, index: usize) -> Option<Range<u64>> {
+    pub fn read_pair(&self, index: usize) -> Option<(u64, u64)> {
         // Each pair needs `index + 1`, so the last value is not a valid index.
         if index >= self.reader.decompressed_len().saturating_sub(1) {
             return None;
@@ -132,7 +131,7 @@ impl<'a> SliceReader<'a> {
             let chunk = &self.data[self.reader.chunk_offset(end_index)..];
             self.reader.decode_chunk(end_index, chunk)
         };
-        Some(Range { start, end })
+        Some((start, end))
     }
 }
 
@@ -257,8 +256,8 @@ impl Reader {
         storage: &'a S,
         file_offset: u64,
         indices: &'a [usize],
-    ) -> UioResult<impl Iterator<Item = UioResult<(usize, Range<u64>)>> + 'a> {
-        // Each range needs `index + 1`, so the last value is not a valid index.
+    ) -> UioResult<impl Iterator<Item = UioResult<(usize, (u64, u64))>> + 'a> {
+        // Each pair needs `index + 1`, so the last value is not a valid index.
         let max_index = self.decompressed_len().saturating_sub(1);
         if let Some(&index) = indices.iter().find(|&&index| index >= max_index) {
             return Err(UniversalIoError::OutOfBounds {
@@ -268,7 +267,7 @@ impl Reader {
             });
         }
 
-        // One read per range, from `index`'s chunk through the end of what
+        // One read per pair, from `index`'s chunk through the end of what
         // `index + 1` needs. Both values share a chunk unless `index` ends one.
         let chunk_read_len = (self.chunk_size_bytes + TAIL_SIZE) as u64;
         let items = indices.iter().enumerate().map(move |(position, &index)| {
@@ -284,11 +283,9 @@ impl Reader {
             let ((position, index), chunk) = result?;
             // `chunk` starts at `index`'s chunk, so locate `index + 1` in it.
             let second = self.chunk_offset(index + 1) - self.chunk_offset(index);
-            let range = Range {
-                start: self.decode_chunk(index, &chunk),
-                end: self.decode_chunk(index + 1, &chunk[second..]),
-            };
-            Ok((position, range))
+            let start = self.decode_chunk(index, &chunk);
+            let end = self.decode_chunk(index + 1, &chunk[second..]);
+            Ok((position, (start, end)))
         }))
     }
 
@@ -335,6 +332,7 @@ pub fn gen_test_sequence(rng: &mut impl rand::Rng, max_delta: u64, len: usize) -
 mod tests {
     use std::iter::{once, once_with};
 
+    use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
@@ -353,10 +351,7 @@ mod tests {
                 assert_eq!(reader.decompressed_len(), values.len());
                 assert_eq!(params.compressed_size_bytes(), Some(compressed.len()));
 
-                let expected = values
-                    .windows(2)
-                    .map(|pair| Range::from(pair[0]..pair[1]))
-                    .collect::<Vec<_>>();
+                let expected = values.iter().copied().tuple_windows().collect::<Vec<_>>();
                 let oob = values.len().saturating_sub(1); // the last value starts no pair
 
                 // SliceReader::read_pair
@@ -372,10 +367,10 @@ mod tests {
                 let storage = MmapFs.open(file, OpenOptions::new_for_test(), ()).unwrap();
                 let offset = unrelated_data.len() as u64;
                 let indices = (0..expected.len()).collect::<Vec<_>>();
-                let mut out = vec![Range::from(1234..12345); expected.len()];
+                let mut out = vec![(1234, 12345); expected.len()];
                 for result in reader.read_pairs_iter(&storage, offset, &indices).unwrap() {
-                    let (position, range) = result.unwrap();
-                    out[position] = range;
+                    let (position, pair) = result.unwrap();
+                    out[position] = pair;
                 }
                 assert_eq!(out, expected);
                 assert!(reader.read_pairs_iter(&storage, offset, &[oob]).is_err());
