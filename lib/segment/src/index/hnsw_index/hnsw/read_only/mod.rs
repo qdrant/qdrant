@@ -19,7 +19,7 @@ use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph::HnswGraph;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
@@ -28,14 +28,7 @@ use crate::types::HnswConfig;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
-/// Read-only, generic-over-storage counterpart of [`HNSWIndex`].
-///
-/// The graph itself stays a plain [`GraphLayers`] (it materializes into RAM on
-/// load via [`GraphLayers::load_universal`] over a [`UniversalRead`](common::universal_io::UniversalRead) filesystem),
-/// so only the id tracker, vector storage and quantized vectors are
-/// parameterized by the backing storage `S`.
-///
-/// [`HNSWIndex`]: super::super::HNSWIndex
+/// Read-only, generic-over-storage counterpart of [`super::HNSWIndex`].
 pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
@@ -53,7 +46,7 @@ pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     /// the next caller retries.
     ///
     /// [`LoadProfile`]: crate::data_types::load_profile::LoadProfile
-    graph: OnceCell<GraphLayers>,
+    graph: OnceCell<HnswGraph<S>>,
     /// The segment's raw backend, retained for the deferred graph load: the
     /// caching `fs` the eager open reads through only lives for that open.
     fs: S::Fs,
@@ -80,16 +73,17 @@ type ReadView<'a, S> = HNSWIndexReadView<
         VectorStorageReadEnum<S>,
         ReadOnlyFieldIndex<S>,
     >,
+    S,
 >;
 
 /// Whether a `populate_override` defers the graph load to first use.
 ///
 /// A cold override parks the graph *unloaded*, not merely cold: unlike the
-/// other components, a cold graph load still reads the whole links file on a
-/// remote backend (see [`ReadOnlyHNSWIndex::graph`]), so the demotion the
-/// override asks for is only achievable by not loading. A config-derived cold
-/// placement (no override) keeps the eager load. Mirrors the cold-override
-/// match of `VectorIndexReadEnum::open_sparse`.
+/// other components, a cold in-RAM [`HnswGraph`] load still reads the
+/// whole links file on a remote backend (see [`ReadOnlyHNSWIndex::graph`]),
+/// so the demotion the override asks for is only achievable by not loading.
+/// A config-derived cold placement (no override) keeps the eager load.
+/// Mirrors the cold-override match of `VectorIndexReadEnum::open_sparse`.
 fn graph_deferred(populate_override: Option<Populate>) -> bool {
     match populate_override {
         Some(Populate::No | Populate::Auto | Populate::Partial(_)) => true,
@@ -115,7 +109,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         // Graph data and links
         if !graph_deferred(populate_override) {
             let (_memory, residency) = graph_residency(hnsw_config, populate_override);
-            GraphLayers::preopen_universal(fs, path, residency)?;
+            HnswGraph::preopen_universal(fs, path, residency)?;
         }
 
         Ok(())
@@ -151,14 +145,12 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     {
         let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage)?;
 
-        // Note that non-borrowable backends materialize the links into heap
-        // RAM whatever the residency.
         let (memory, residency) = graph_residency(&hnsw_config, populate_override);
         let is_on_disk = memory.is_on_disk();
         let graph = if graph_deferred(populate_override) {
             OnceCell::new()
         } else {
-            OnceCell::with_value(GraphLayers::load_universal(fs, path, residency)?)
+            OnceCell::with_value(HnswGraph::load_universal(fs, path, residency)?)
         };
 
         Ok(Self {
@@ -178,23 +170,24 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
     /// The graph, loading it on the first call when the open deferred it.
     ///
-    /// The deferral exists because a cold placement is not enough on a remote
-    /// backend: even a cold graph load must mirror the whole links file
-    /// (`GraphLinksView` requires one contiguous slice), so the only way not
-    /// to fetch it is not to load it. The profile predicted this vector would
-    /// never be scored; when a request scores it anyway, it pays the load
-    /// here — through the raw backend, without the open's prefetch pool.
+    /// The deferral exists because a cold placement is not enough for an
+    /// in-RAM [`HnswGraph`] on a remote backend: its load must
+    /// mirror the whole links file (`GraphLinksView` requires one contiguous
+    /// slice), so the only way not to fetch it is not to load it. The profile
+    /// predicted this vector would never be scored; when a request scores it
+    /// anyway, it pays the load here — through the raw backend, without the
+    /// open's prefetch pool.
     ///
     /// The load runs inside the cell's lock: a search burst on a deferred
     /// vector performs one load while the other callers block on it, rather
     /// than each fetching the whole graph. A failed load is not cached —
     /// the next caller retries.
-    fn graph(&self) -> OperationResult<&GraphLayers>
+    fn graph(&self) -> OperationResult<&HnswGraph<S>>
     where
         S: 'static,
     {
         self.graph
-            .get_or_try_init(|| GraphLayers::load_universal(&self.fs, &self.path, self.residency))
+            .get_or_try_init(|| HnswGraph::load_universal(&self.fs, &self.path, self.residency))
     }
 
     pub fn is_on_disk(&self) -> bool {

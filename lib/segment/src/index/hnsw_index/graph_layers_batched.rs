@@ -22,7 +22,6 @@ use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::RawScorer;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 
-#[cfg_attr(not(test), expect(dead_code))]
 pub struct GraphLayersBatched<S: UniversalRead> {
     hnsw_m: HnswM,
     pub(super) links: GraphLinksFile<S>,
@@ -36,8 +35,8 @@ impl<S: UniversalRead> std::fmt::Debug for GraphLayersBatched<S> {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code))]
 impl<S: UniversalRead> GraphLayersBatched<S> {
+    #[cfg_attr(not(test), expect(dead_code))]
     pub fn load(
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
