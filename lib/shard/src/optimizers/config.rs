@@ -285,15 +285,21 @@ pub fn get_deferred_points_threshold_bytes(
     indexing_threshold_kb: usize,
     max_segment_size_kb: Option<usize>,
 ) -> Option<NonZeroUsize> {
-    (prevent_unoptimized == Some(true))
-        .then(|| match max_segment_size_kb {
-            Some(max_segment_size_kb) if indexing_threshold_kb != usize::MAX => {
-                indexing_threshold_kb.min(max_segment_size_kb)
-            }
-            _ => indexing_threshold_kb,
-        })
-        .map(|threshold_kb| threshold_kb.saturating_mul(BYTES_IN_KB))
-        .and_then(NonZeroUsize::new)
+    if prevent_unoptimized != Some(true) {
+        return None;
+    }
+
+    // A zero cap means uncapped, as everywhere else the cap is read, so it must not clamp the
+    // threshold to zero and switch deferring off altogether.
+    let mut threshold_kb = indexing_threshold_kb;
+    if let Some(max_segment_size_kb) = max_segment_size_kb
+        && max_segment_size_kb > 0
+        && indexing_threshold_kb != usize::MAX
+    {
+        threshold_kb = threshold_kb.min(max_segment_size_kb);
+    }
+
+    NonZeroUsize::new(threshold_kb.saturating_mul(BYTES_IN_KB))
 }
 
 #[cfg(test)]
@@ -317,8 +323,10 @@ mod tests {
             // A cap above the threshold does not bind, one below it wins.
             (Some(true), 10_000, Some(256_000), kb(10_000)),
             (Some(true), 100_000, Some(1_000), kb(1_000)),
-            // Auto-derived caps are resolved elsewhere, disabled indexing stays unreachable.
+            // Auto-derived caps are resolved elsewhere, and a zero cap means uncapped rather
+            // than a cap of zero, which would switch deferring off.
             (Some(true), 100_000, None, kb(100_000)),
+            (Some(true), 100_000, Some(0), kb(100_000)),
             (Some(true), usize::MAX, Some(1_000), disabled_indexing),
         ];
 
