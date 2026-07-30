@@ -754,7 +754,7 @@ impl TryFrom<QueryRequest> for edge::QueryRequest {
 /// decision about the FFI surface.
 ///
 /// Never called; it exists only for the exhaustiveness check.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn assert_every_scoring_query_is_mapped(q: shard::query::ScoringQuery) {
     match q {
         shard::query::ScoringQuery::Vector(q) => match q {

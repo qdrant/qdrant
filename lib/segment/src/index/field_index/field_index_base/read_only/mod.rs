@@ -26,10 +26,6 @@ use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, UuidIntType, UuidPayloadType,
 };
 
-// `lifecycle::open_gridstore` / `open_mmap` construct every variant, but they
-// have no in-lib caller yet, so the variants would trip `dead_code`. Allow at
-// the enum level until a read-only segment wires the opens in.
-#[allow(dead_code, clippy::enum_variant_names)]
 pub enum ReadOnlyFieldIndex<S: UniversalReadExt> {
     IntIndex(ReadOnlyNumericIndex<IntPayloadType, IntPayloadType, S>),
     DatetimeIndex(ReadOnlyNumericIndex<IntPayloadType, DateTimePayloadType, S>),
@@ -88,7 +84,6 @@ impl<S: UniversalReadExt> Debug for ReadOnlyFieldIndex<S> {
 /// than degrading silently.
 ///
 /// [1]: crate::index::field_index::FieldIndex
-#[allow(dead_code)] // skeleton: no caller in the lib yet; surface is here for follow-ups
 impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     pub fn files(&self) -> Vec<PathBuf> {
         match self {

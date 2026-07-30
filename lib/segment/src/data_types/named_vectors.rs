@@ -263,10 +263,6 @@ impl<'a> NamedVectors<'a> {
             .insert(Cow::Borrowed(name), CowVector::from(vector));
     }
 
-    pub fn remove_ref(&mut self, key: &VectorName) {
-        self.map.remove(key);
-    }
-
     pub fn contains_key(&self, key: &VectorName) -> bool {
         self.map.contains_key(key)
     }

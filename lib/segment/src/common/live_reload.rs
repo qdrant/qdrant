@@ -27,7 +27,6 @@ use crate::common::operation_error::OperationResult;
 /// segment's id-tracker diff accumulated since the previous reload).
 ///
 /// [`UniversalRead`]: common::universal_io::UniversalRead
-#[allow(dead_code)]
 pub(crate) trait LiveReload {
     /// Filesystem context (`S::Fs` of the backing [`UniversalRead`]) used to
     /// re-read on-disk state during a reload.

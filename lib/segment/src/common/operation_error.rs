@@ -146,33 +146,6 @@ impl OperationError {
         }
     }
 
-    /// Whether this error signals that all appendable segments are at `max_segment_size` capacity,
-    /// so the operation can be re-applied after provisioning a fresh appendable segment.
-    pub fn is_out_of_appendable_capacity(&self) -> bool {
-        match self {
-            Self::OutOfAppendableCapacity { .. } => true,
-            Self::WrongVectorDimension { .. }
-            | Self::MalformedVectorBlob { .. }
-            | Self::VectorNameNotExists { .. }
-            | Self::PointIdError { .. }
-            | Self::TypeError { .. }
-            | Self::TypeInferenceError { .. }
-            | Self::ServiceError { .. }
-            | Self::InconsistentStorage { .. }
-            | Self::FileNotFound { .. }
-            | Self::OutOfMemory { .. }
-            | Self::Cancelled { .. }
-            | Self::Timeout { .. }
-            | Self::ValidationError { .. }
-            | Self::WrongSparse
-            | Self::WrongMulti
-            | Self::MissingRangeIndexForOrderBy { .. }
-            | Self::MissingMapIndexForFacet { .. }
-            | Self::VariableTypeError { .. }
-            | Self::NonFiniteNumber { .. } => false,
-        }
-    }
-
     pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(

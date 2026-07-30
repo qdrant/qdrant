@@ -25,6 +25,5 @@ pub struct ReadOnlyAppendableFullTextIndex<S: UniversalRead> {
     /// reads it lands with the parent dispatcher (it isn't part of the
     /// [`FullTextIndexRead`](super::super::full_text_index_read::FullTextIndexRead)
     /// surface).
-    #[allow(dead_code)]
     pub(super) storage: BlobstoreReader<Vec<u8>, S>,
 }

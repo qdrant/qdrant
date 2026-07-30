@@ -745,7 +745,7 @@ fn filter_to_segment(f: Filter, depth: u32) -> Result<SegmentFilter, crate::erro
 /// compiling, forcing an explicit decision about the FFI surface.
 ///
 /// Never called; it exists only for the exhaustiveness check.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
     match c {
         SegmentCondition::Field(field) => {

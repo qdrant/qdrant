@@ -2943,17 +2943,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "generic-tests"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9ff6d6584f4f6fa911d5e07856abf1a48dc5599b3734f2eaea130f2c3baa989"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
 name = "geo"
 version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7093,7 +7082,6 @@ dependencies = [
  "indexmap 2.14.0",
  "indicatif",
  "integer-encoding",
- "io-uring",
  "io_bridge_object_store",
  "itertools 0.15.0",
  "log",
@@ -7651,7 +7639,6 @@ dependencies = [
  "dataset",
  "duplicate",
  "fs-err",
- "generic-tests",
  "half 2.7.1",
  "indicatif",
  "itertools 0.15.0",
@@ -8572,7 +8559,6 @@ dependencies = [
  "schnellru",
  "static_assertions",
  "strum",
- "tokio",
 ]
 
 [[package]]
