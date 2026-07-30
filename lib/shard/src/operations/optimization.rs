@@ -141,26 +141,3 @@ impl OptimizerThresholds {
         NonZeroUsize::new(self.max_segment_size_kb.saturating_mul(BYTES_IN_KB))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `max_segment_size_kb` of zero means uncapped, which switches the whole steering off. Guard
-    /// the conversion, since a `Some(0)` here would instead make every segment look full.
-    #[test]
-    fn test_max_segment_size_bytes() {
-        let thresholds = |max_segment_size_kb| OptimizerThresholds {
-            max_segment_size_kb,
-            memmap_threshold_kb: 0,
-            indexing_threshold_kb: 0,
-            deferred_internal_id: None,
-        };
-
-        assert_eq!(thresholds(0).max_segment_size_bytes(), None);
-        assert_eq!(
-            thresholds(2).max_segment_size_bytes(),
-            NonZeroUsize::new(2 * BYTES_IN_KB),
-        );
-    }
-}

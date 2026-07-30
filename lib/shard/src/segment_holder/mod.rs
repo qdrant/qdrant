@@ -1066,8 +1066,6 @@ impl SegmentHolder {
             &mut Payload,
         ),
     {
-        // Lazily-computed move destinations, shared across this call; see
-        // `cow_destination_candidates`.
         let mut destination_cache: Option<Vec<SegmentId>> = None;
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();

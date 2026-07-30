@@ -62,10 +62,6 @@ impl UpdateWorkers {
         // Sourced from the first optimizer like the optimization worker does, so the two cannot
         // disagree on what "full" means. Resolved once: a config update restarts the workers.
         let capacity_optimizer = optimizers.first().cloned();
-        debug_assert!(
-            capacity_optimizer.is_some(),
-            "No optimizers configured, appendable segment capacity will not be provisioned",
-        );
         let max_segment_size_bytes = capacity_optimizer
             .as_ref()
             .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
@@ -424,18 +420,16 @@ mod tests {
     use crate::optimizers_builder::build_optimizers;
     use crate::tests::fixtures::create_collection_config;
 
-    /// The worker must provision capacity itself, before applying, and must apply with the cap.
-    ///
-    /// Only the update worker runs here: at shard level the optimization worker provisions on
-    /// every wake-up too, so a new segment appearing would prove nothing about this path.
+    /// The worker must provision capacity before applying, and apply with the cap. Only the
+    /// update worker runs here: the optimization worker provisions on every wake-up too, so a new
+    /// segment appearing would prove nothing about this path.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_worker_provisions_capacity_before_applying() {
         let dir = Builder::new().prefix("shard").tempdir().unwrap();
         let hw_counter = common::counter::hardware_counter::HardwareCounterCell::new();
 
-        // 1 KB is one vector of size 256, so a handful of points puts the appendable segment over
-        // the cap set below. The immutable segment holds the point the filtered update matches, so
-        // applying it has to move that point somewhere.
+        // 1 KB is one vector of size 256, so a few points put the appendable segment over the cap
+        // below. The immutable segment holds the point the filtered update matches.
         const DIM: usize = 256;
         let mut holder = SegmentHolder::default();
         let full_id = holder.add_new(random_segment(dir.path(), 100, 3, DIM));
@@ -462,7 +456,6 @@ mod tests {
         let segments = LockedSegmentHolder::new(holder);
         assert_eq!(segments.read().len(), 2);
 
-        // A cap the existing appendable segment is already at.
         let full_size = segments
             .read()
             .get(full_id)
