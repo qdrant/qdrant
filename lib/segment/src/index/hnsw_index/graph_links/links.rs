@@ -63,12 +63,6 @@ impl GraphLinks {
         }
     }
 
-    /// Load the links through universal IO with the requested [`GraphLinksResidency`].
-    ///
-    /// `Cold`/`Cached` require a borrowable (mmap-backed) backend to keep the
-    /// handle alive; non-borrowable backends (io_uring, remote object stores, …)
-    /// fall back to `Pinned`-like materialization into RAM; see
-    /// [`GraphLinksEnum::from_storage`].
     pub fn load_universal<Fs>(
         fs: &Fs,
         path: &Path,
@@ -80,12 +74,22 @@ impl GraphLinks {
         Fs::File: 'static,
     {
         let storage = fs.open(path, Self::open_options(residency), Default::default())?;
-        let owner = match residency {
-            GraphLinksResidency::Cold | GraphLinksResidency::Cached => {
-                GraphLinksEnum::from_storage(storage)?
-            }
-            GraphLinksResidency::Pinned => GraphLinksEnum::pinned_from_storage(storage)?,
+
+        let is_in_ram_or_mmap = Fs::File::kind().is_in_ram_or_mmap();
+        let read_into_ram = match residency {
+            GraphLinksResidency::Cold | GraphLinksResidency::Cached if is_in_ram_or_mmap => false,
+            GraphLinksResidency::Cold | GraphLinksResidency::Cached => true,
+            GraphLinksResidency::Pinned => true,
         };
+
+        let owner = if read_into_ram {
+            let bytes = storage.read_whole::<u8>()?.into_owned();
+            storage.clear_ram_cache()?;
+            GraphLinksEnum::Ram(bytes)
+        } else {
+            GraphLinksEnum::Universal(Box::new(storage))
+        };
+
         Self::try_new(owner, |x| GraphLinksView::load(x.as_bytes()?, format))
     }
 
@@ -112,10 +116,11 @@ impl GraphLinks {
     }
 
     /// Heap RAM held by the serialized links, in bytes.
-    /// Zero when the links are backed by a live (mmap-backed) file handle;
-    /// see [`GraphLinksEnum::heap_size_bytes`].
     pub fn heap_size_bytes(&self) -> usize {
-        self.borrow_owner().heap_size_bytes()
+        match self.borrow_owner() {
+            GraphLinksEnum::Ram(data) => data.len(),
+            GraphLinksEnum::Universal(_) => 0,
+        }
     }
 
     pub fn format(&self) -> GraphLinksFormat {
@@ -189,12 +194,18 @@ impl GraphLinks {
     /// Populate the disk cache with data, if applicable.
     /// This is a blocking operation.
     pub fn populate(&self) -> OperationResult<()> {
-        self.borrow_owner().populate()
+        match self.borrow_owner() {
+            GraphLinksEnum::Universal(storage) => storage.populate(),
+            GraphLinksEnum::Ram(_) => Ok(()),
+        }
     }
 
     /// Hint to the OS that pages backing this storage can be reclaimed.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.borrow_owner().clear_cache()
+        match self.borrow_owner() {
+            GraphLinksEnum::Universal(storage) => storage.clear_cache(),
+            GraphLinksEnum::Ram(_) => Ok(()),
+        }
     }
 }
 
@@ -251,67 +262,10 @@ pub(super) enum GraphLinksEnum {
 }
 
 impl GraphLinksEnum {
-    /// Build the backing for serialized links from a universal-IO file handle.
-    ///
-    /// Backends whose data is resident in RAM or mapped into the address space
-    /// (`UniversalKind::is_in_ram_or_mmap`) yield borrowable reads, so their
-    /// handle is kept live as [`GraphLinksEnum::Universal`]. Any other backend
-    /// (io_uring, remote object stores, …) is not borrowable, so its contents
-    /// are materialized into RAM as [`GraphLinksEnum::Ram`]. This is what
-    /// upholds the borrowability invariant relied on by [`GraphLinksStorage::bytes`],
-    /// so that error path is unreachable in practice.
-    pub(super) fn from_storage<S: UniversalRead + 'static>(storage: S) -> OperationResult<Self> {
-        if S::kind().is_in_ram_or_mmap() {
-            Ok(GraphLinksEnum::Universal(Box::new(storage)))
-        } else {
-            Self::pinned_from_storage(storage)
-        }
-    }
-
-    /// Materialize the whole links blob into an anonymous heap allocation
-    /// ([`GraphLinksEnum::Ram`]), regardless of the backend.
-    pub(super) fn pinned_from_storage<S: UniversalRead>(storage: S) -> OperationResult<Self> {
-        let bytes = storage.read_whole::<u8>()?.into_owned();
-        // The heap copy is authoritative from here on: evict whatever the read
-        // left in the OS page cache or backend caches, so the links are not
-        // resident twice.
-        storage.clear_ram_cache()?;
-        Ok(GraphLinksEnum::Ram(bytes))
-    }
-
     pub(super) fn as_bytes(&self) -> OperationResult<&[u8]> {
         match self {
             GraphLinksEnum::Ram(data) => Ok(data.as_slice()),
             GraphLinksEnum::Universal(storage) => storage.bytes(),
-        }
-    }
-
-    /// Heap RAM held by the links themselves, in bytes.
-    ///
-    /// Non-zero only for [`GraphLinksEnum::Ram`], i.e. freshly built links or
-    /// links materialized from a non-borrowable universal-IO backend. Storage
-    /// kept behind a live handle ([`GraphLinksEnum::Universal`]) is backed by
-    /// the OS page cache and reported via file residency instead.
-    pub(super) fn heap_size_bytes(&self) -> usize {
-        match self {
-            GraphLinksEnum::Ram(data) => data.len(),
-            GraphLinksEnum::Universal(_) => 0,
-        }
-    }
-
-    /// Populate the OS page cache for the backing storage, if applicable.
-    pub(super) fn populate(&self) -> OperationResult<()> {
-        match self {
-            GraphLinksEnum::Universal(storage) => storage.populate(),
-            GraphLinksEnum::Ram(_) => Ok(()),
-        }
-    }
-
-    /// Hint to the OS that the backing pages can be reclaimed, if applicable.
-    pub(super) fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            GraphLinksEnum::Universal(storage) => storage.clear_cache(),
-            GraphLinksEnum::Ram(_) => Ok(()),
         }
     }
 }
