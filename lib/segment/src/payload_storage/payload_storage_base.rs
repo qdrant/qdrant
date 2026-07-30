@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
-use crate::types::{IoBackend, OwnedPayloadRef, Payload};
+use crate::types::{IoBackend, MaybeRawPayloadRef, OwnedPayloadRef, Payload};
 
 /// Read-only trait for payload data storage.
 ///
@@ -46,6 +46,16 @@ pub trait PayloadStorageRead {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
+    /// Raw analogue of [`Self::read_payloads`]: hands the callback each payload
+    /// as stored, skipping the parse — or parsed, if this storage keeps no
+    /// encoded form. `None` for points that have no payload stored.
+    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 

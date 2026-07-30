@@ -6,6 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
+use segment::data_types::segment_record::RawPayloadFormat;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -627,7 +628,7 @@ impl LocalShard {
     pub async fn retrieve_raw(
         &self,
         ids: &[ExtendedPointId],
-        with_payload: &WithPayload,
+        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
@@ -640,7 +641,7 @@ impl LocalShard {
             SegmentsSearcher::retrieve_raw(
                 self.segments.clone(),
                 ids,
-                with_payload,
+                payload_format,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -655,8 +656,8 @@ impl LocalShard {
             .iter()
             // Use remove to avoid cloning, we take each point ID only once
             .filter_map(|id| records_map.remove(id))
-            .map(PointStructRawPersisted::from)
-            .collect();
+            .map(PointStructRawPersisted::try_from)
+            .collect::<Result<_, _>>()?;
 
         Ok(ordered_records)
     }
@@ -668,7 +669,7 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
+        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -680,7 +681,7 @@ impl LocalShard {
         self.internal_scroll_by_id_raw(
             offset,
             limit,
-            with_payload_interface,
+            payload_format,
             with_vector,
             filter,
             search_runtime_handle,

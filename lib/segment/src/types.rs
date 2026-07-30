@@ -2942,6 +2942,102 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     }
 }
 
+/// Byte-blob analogue of [`Payload`]: the whole payload object as a single
+/// encoded blob, tagged with its encoding.
+///
+/// Read from storage by `retrieve_raw` and shipped to another node as-is, so
+/// neither side has to parse the payload on the way.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RawPayload {
+    pub payload_bytes: Vec<u8>,
+    pub encoding: RawPayloadEncoding,
+}
+
+/// Encoding of a raw payload blob.
+///
+/// Internal counterpart of `api::grpc::qdrant::RawPayloadEncoding`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    #[default]
+    JsonBytes,
+}
+
+impl RawPayload {
+    /// Wrap payload bytes read from storage, which are plain uncompressed
+    /// serde_json.
+    pub fn from_storage_bytes(payload_bytes: Vec<u8>) -> Self {
+        Self {
+            payload_bytes,
+            encoding: RawPayloadEncoding::JsonBytes,
+        }
+    }
+
+    /// Parse the blob into a [`Payload`].
+    pub fn decode(&self) -> OperationResult<Payload> {
+        match self.encoding {
+            RawPayloadEncoding::JsonBytes => {
+                serde_json::from_slice(&self.payload_bytes).map_err(|err| {
+                    OperationError::service_error(format!("Malformed raw payload blob: {err}"))
+                })
+            }
+        }
+    }
+}
+
+/// A payload as a raw read hands it out: as stored, or parsed where no stored
+/// form can be handed out.
+///
+/// A raw read prefers [`Self::Raw`], to spare both a parse here and an encode
+/// wherever the payload is going. It falls back to [`Self::Parsed`] when a
+/// blob cannot answer the request: a payload storage that keeps payloads
+/// parsed has no blob to hand out, and a payload selector cannot be applied to
+/// an opaque blob.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum MaybeRawPayload {
+    Raw(RawPayload),
+    Parsed(Payload),
+}
+
+impl MaybeRawPayload {
+    /// The payload in parsed form, decoding the blob if that is what it carries.
+    pub fn to_parsed(&self) -> OperationResult<Cow<'_, Payload>> {
+        match self {
+            Self::Raw(raw) => Ok(Cow::Owned(raw.decode()?)),
+            Self::Parsed(payload) => Ok(Cow::Borrowed(payload)),
+        }
+    }
+
+    /// Owned counterpart of [`Self::to_parsed`].
+    pub fn into_parsed(self) -> OperationResult<Payload> {
+        match self {
+            Self::Raw(raw) => raw.decode(),
+            Self::Parsed(payload) => Ok(payload),
+        }
+    }
+}
+
+/// Borrowed counterpart of [`MaybeRawPayload`], as a payload storage hands a
+/// payload to its reader.
+#[derive(Clone, Copy, Debug)]
+pub enum MaybeRawPayloadRef<'a> {
+    /// The payload in its stored encoding, uncompressed.
+    Raw(&'a [u8]),
+    Parsed(&'a Payload),
+}
+
+impl MaybeRawPayloadRef<'_> {
+    pub fn to_owned(self) -> MaybeRawPayload {
+        match self {
+            Self::Raw(bytes) => {
+                MaybeRawPayload::Raw(RawPayload::from_storage_bytes(bytes.to_vec()))
+            }
+            Self::Parsed(payload) => MaybeRawPayload::Parsed(payload.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ValueVariants {

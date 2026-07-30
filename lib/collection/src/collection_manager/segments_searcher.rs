@@ -12,7 +12,7 @@ use ordered_float::Float;
 use segment::common::operation_error::OperationError;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use segment::data_types::segment_record::SegmentRecordRaw;
+use segment::data_types::segment_record::{RawPayloadFormat, SegmentRecordRaw};
 use segment::data_types::vectors::QueryVector;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, VectorName,
@@ -425,7 +425,7 @@ impl SegmentsSearcher {
     pub async fn retrieve_raw(
         segments: LockedSegmentHolder,
         points: &[PointIdType],
-        with_payload: &WithPayload,
+        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
@@ -436,14 +436,13 @@ impl SegmentsSearcher {
         let points = runtime_handle.spawn_blocking({
             let segments = segments.clone();
             let points = points.to_vec();
-            let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
             move || {
                 retrieve_raw_blocking(
                     segments,
                     &points,
-                    &with_payload,
+                    payload_format,
                     &with_vector,
                     timeout,
                     &is_stopped,

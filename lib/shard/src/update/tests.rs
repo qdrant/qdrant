@@ -85,7 +85,7 @@ fn retrieve_raw_record(
     segment
         .retrieve_raw(
             &[point_id.into()],
-            &segment::types::WithPayload::from(true),
+            segment::data_types::segment_record::RawPayloadFormat::Parsed,
             &segment::types::WithVector::Bool(true),
             &hw_counter,
             &is_stopped,
@@ -93,6 +93,15 @@ fn retrieve_raw_record(
         )
         .unwrap()
         .remove(&point_id.into())
+}
+
+/// The payload a raw record carries, parsed; `None` when the point has none
+/// stored or stores an empty one.
+fn stored_payload(
+    record: &segment::data_types::segment_record::SegmentRecordRaw,
+) -> Option<segment::types::Payload> {
+    let payload = record.payload.as_ref()?.to_parsed().unwrap().into_owned();
+    (!payload.is_empty()).then_some(payload)
 }
 
 #[test]
@@ -146,9 +155,9 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
     }
 
     let record = retrieve_raw_record(&holder, sid_app, 1).unwrap();
-    assert_eq!(record.payload, Some(payload));
+    assert_eq!(stored_payload(&record), Some(payload));
     let record = retrieve_raw_record(&holder, sid_app, 100).unwrap();
-    assert_eq!(record.payload.filter(|p| !p.is_empty()), None);
+    assert_eq!(stored_payload(&record), None);
 }
 
 #[test]
@@ -160,7 +169,8 @@ fn test_sync_points_raw() {
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(segment);
 
-    let point_2 = PointStructRawPersisted::from(retrieve_raw_record(&holder, sid, 2).unwrap());
+    let point_2 =
+        PointStructRawPersisted::try_from(retrieve_raw_record(&holder, sid, 2).unwrap()).unwrap();
     let point_2_version_before = holder
         .get(sid)
         .unwrap()
@@ -168,7 +178,8 @@ fn test_sync_points_raw() {
         .read()
         .point_version(2.into());
 
-    let mut point_3 = PointStructRawPersisted::from(retrieve_raw_record(&holder, sid, 3).unwrap());
+    let mut point_3 =
+        PointStructRawPersisted::try_from(retrieve_raw_record(&holder, sid, 3).unwrap()).unwrap();
     let changed_bytes: Vec<u8> = [9.0f32, 8.0, 7.0, 6.0]
         .iter()
         .flat_map(|v| v.to_le_bytes())

@@ -15,7 +15,7 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
+use crate::data_types::segment_record::{RawPayloadFormat, SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
@@ -102,15 +102,19 @@ pub trait ReadSegmentEntry {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
-    /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors as
-    /// storage-native bytes ([`SegmentRecordRaw`]) to avoid a lossy round-trip
-    /// when relocating points (copy-on-write moves, shard transfer).
+    /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors and
+    /// payload as stored ([`SegmentRecordRaw`]), to avoid a lossy round-trip and
+    /// a needless parse when relocating points (copy-on-write moves, shard
+    /// transfer). The payload comes back in the form `payload_format` asks for,
+    /// and always whole: selecting keys needs the parsed form, which is
+    /// `retrieve`'s business.
     ///
     /// Like `retrieve`, may return fewer records than requested and in any order.
+    #[allow(clippy::too_many_arguments)]
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
-        with_payload: &WithPayload,
+        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,

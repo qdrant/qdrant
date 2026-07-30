@@ -14,7 +14,7 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::{IoBackend, OwnedPayloadRef, Payload};
+use crate::types::{IoBackend, MaybeRawPayloadRef, OwnedPayloadRef, Payload};
 
 #[derive(Debug)]
 pub enum PayloadStorageEnum {
@@ -106,6 +106,28 @@ impl PayloadStorageRead for PayloadStorageEnum {
             #[cfg(target_os = "linux")]
             PayloadStorageEnum::IoUring(s) => {
                 s.read_payloads::<P, _>(point_offsets, callback, hw_counter)
+            }
+        }
+    }
+
+    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(s) => {
+                s.read_payloads_maybe_raw::<P, _>(point_offsets, callback, hw_counter)
+            }
+
+            PayloadStorageEnum::Mmap(s) => {
+                s.read_payloads_maybe_raw::<P, _>(point_offsets, callback, hw_counter)
+            }
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => {
+                s.read_payloads_maybe_raw::<P, _>(point_offsets, callback, hw_counter)
             }
         }
     }

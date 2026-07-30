@@ -11,7 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::{OwnedPayloadRef, Payload};
+use crate::types::{MaybeRawPayloadRef, OwnedPayloadRef, Payload};
 
 impl PayloadStorageRead for InMemoryPayloadStorage {
     fn get(
@@ -67,6 +67,22 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         for (user_data, point_offset) in point_offsets {
             let payload = self.get(point_offset, hw_counter)?;
             callback(user_data, payload)?;
+        }
+
+        Ok(())
+    }
+
+    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
+    ) -> OperationResult<()> {
+        for (user_data, point_offset) in point_offsets {
+            // Payloads are kept parsed here, so hand them out as they are rather
+            // than encoding them for a reader that would only parse them back.
+            let payload = self.payload.get(&point_offset);
+            callback(user_data, payload.map(MaybeRawPayloadRef::Parsed))?;
         }
 
         Ok(())
@@ -183,7 +199,7 @@ mod tests {
     use crate::common::utils::IndexesMap;
     use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
     use crate::payload_storage::query_checker::check_payload;
-    use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
+    use crate::types::{Condition, FieldCondition, Filter, MaybeRawPayload, OwnedPayloadRef};
 
     #[test]
     fn test_condition_checking() {
@@ -235,6 +251,35 @@ mod tests {
             0,
             &IndexesMap::new(),
             &HardwareCounterCell::new(),
+        );
+    }
+
+    /// This storage keeps payloads parsed, so a raw read gets them as they are
+    /// instead of an encoding produced only to be parsed straight back.
+    #[test]
+    fn test_read_payloads_maybe_raw_hands_out_parsed() {
+        let mut storage = InMemoryPayloadStorage::default();
+        let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        storage.set(1, &payload, &hw_counter).unwrap();
+
+        let mut read = Vec::new();
+        storage
+            .read_payloads_maybe_raw::<common::generic_consts::Random, _>(
+                [((), 1), ((), 2)].into_iter(),
+                |(), payload| {
+                    read.push(payload.map(MaybeRawPayloadRef::to_owned));
+                    Ok(())
+                },
+                &hw_counter,
+            )
+            .unwrap();
+
+        assert_eq!(
+            read,
+            // Point 2 has no payload at all
+            [Some(MaybeRawPayload::Parsed(payload)), None],
         );
     }
 

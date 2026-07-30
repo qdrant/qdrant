@@ -13,7 +13,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::{OwnedPayloadRef, Payload, PayloadKeyTypeRef};
+use crate::types::{MaybeRawPayloadRef, OwnedPayloadRef, Payload, PayloadKeyTypeRef};
 
 const STORAGE_PATH: &str = "payload_storage";
 
@@ -140,6 +140,19 @@ where
                 let payload = payload.unwrap_or_default();
                 callback(user_data, payload)
             },
+            hw_counter.payload_io_read_counter(),
+        )
+    }
+
+    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, _, bytes| callback(user_data, bytes.map(MaybeRawPayloadRef::Raw)),
             hw_counter.payload_io_read_counter(),
         )
     }

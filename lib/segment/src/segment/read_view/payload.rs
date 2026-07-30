@@ -10,7 +10,7 @@ use crate::index::query_estimator::adjust_for_deferred_points;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::types::{Filter, Payload, PointIdType};
+use crate::types::{Filter, MaybeRawPayloadRef, Payload, PointIdType};
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
 where
@@ -27,6 +27,18 @@ where
     ) -> OperationResult<()> {
         self.payload_index
             .read_payloads::<P, _>(point_offsets, callback, hw_counter)
+    }
+
+    /// Raw analogue of [`Self::read_payloads`], see
+    /// [`PayloadStorageRead::read_payloads_maybe_raw`](crate::payload_storage::PayloadStorageRead::read_payloads_maybe_raw).
+    pub fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.payload_index
+            .read_payloads_maybe_raw::<P, _>(point_offsets, callback, hw_counter)
     }
 
     /// Retrieve payload by internal ID.

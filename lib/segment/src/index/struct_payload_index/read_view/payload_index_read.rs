@@ -27,7 +27,8 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    Condition, Filter, MaybeRawPayloadRef, Payload, PayloadFieldSchema, PayloadKeyType,
+    PayloadKeyTypeRef,
 };
 use crate::vector_storage::VectorStorageRead;
 
@@ -300,5 +301,16 @@ where
         self.payload
             .borrow()
             .read_payloads::<AP, _>(point_ids, callback, hw_counter)
+    }
+
+    fn read_payloads_maybe_raw<AP: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.payload
+            .borrow()
+            .read_payloads_maybe_raw::<AP, _>(point_ids, callback, hw_counter)
     }
 }

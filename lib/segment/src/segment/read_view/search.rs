@@ -12,7 +12,7 @@ use crate::common::{check_query_vectors, check_stopped};
 use crate::data_types::query_context::{
     IdfScopeStats, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
-use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
+use crate::data_types::segment_record::{RawPayloadFormat, SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
@@ -20,8 +20,8 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PointIdType, ScoredPoint, SearchParams, VectorName,
-    VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, MaybeRawPayload, Payload, PointIdType, ScoredPoint, SearchParams,
+    VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -98,12 +98,16 @@ where
     }
 
     /// Byte-blob analogue of [`Self::retrieve`]: vectors are read as
-    /// storage-native bytes (`Vec<u8>`) to avoid a lossy round-trip.
+    /// storage-native bytes (`Vec<u8>`) to avoid a lossy round-trip, and the
+    /// payload in the form `payload_format` asks for.
+    ///
+    /// The payload is always taken whole — selecting keys needs the parsed form,
+    /// so that is [`Self::retrieve`]'s business.
     /// The body mirrors [`Self::retrieve`] — keep the two in sync.
     pub fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
-        with_payload: &WithPayload,
+        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
@@ -148,13 +152,26 @@ where
             })?;
         }
 
-        let payloads = self.requested_payloads(
-            resolved_ids,
-            resolved_offsets,
-            with_payload,
-            is_stopped,
-            hw_counter,
-        )?;
+        let payloads = match payload_format {
+            RawPayloadFormat::NoPayload => Vec::new(),
+            RawPayloadFormat::Parsed => self
+                .requested_payloads(
+                    resolved_ids,
+                    resolved_offsets,
+                    &WithPayload::from(true),
+                    is_stopped,
+                    hw_counter,
+                )?
+                .into_iter()
+                .map(|(id, payload)| (id, MaybeRawPayload::Parsed(payload)))
+                .collect(),
+            RawPayloadFormat::Raw => self.requested_payloads_maybe_raw(
+                resolved_ids,
+                resolved_offsets,
+                is_stopped,
+                hw_counter,
+            )?,
+        };
         for (id, payload) in payloads {
             if let Some(record) = records.get_mut(&id) {
                 record.payload = Some(payload);
@@ -208,6 +225,37 @@ where
                 };
 
                 payloads.push((point_id, payload));
+
+                Ok(())
+            },
+            hw_counter,
+        )?;
+
+        Ok(payloads)
+    }
+
+    /// Raw analogue of [`Self::requested_payloads`]: reads each resolved point's
+    /// payload as stored, without parsing it. Points with no stored payload are
+    /// skipped, so a missing entry means "no payload" rather than "empty
+    /// payload".
+    fn requested_payloads_maybe_raw(
+        &self,
+        resolved_ids: Vec<ExtendedPointId>,
+        resolved_offsets: Vec<PointOffsetType>,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<(ExtendedPointId, MaybeRawPayload)>> {
+        let mut payloads = Vec::with_capacity(resolved_ids.len());
+        let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+
+        self.read_payloads_maybe_raw::<Random, _>(
+            point_offsets,
+            |point_id, payload| {
+                check_stopped(is_stopped)?;
+
+                if let Some(payload) = payload {
+                    payloads.push((point_id, payload.to_owned()));
+                }
 
                 Ok(())
             },
@@ -426,14 +474,15 @@ mod tests {
 
     use crate::common::operation_error::OperationError;
     use crate::data_types::named_vectors::NamedVectors;
+    use crate::data_types::segment_record::{RawPayloadFormat, SegmentRecordRaw};
     use crate::data_types::vectors::VectorInternal;
     use crate::entry::entry_point::{ReadSegmentEntry as _, SegmentEntry as _};
     use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
     use crate::segment::Segment;
     use crate::segment_constructor::build_segment;
     use crate::types::{
-        Distance, Indexes, Payload, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-        VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+        Distance, Indexes, MaybeRawPayload, Payload, SegmentConfig, SparseVectorDataConfig,
+        SparseVectorStorageType, VectorDataConfig, VectorStorageType, WithPayload, WithVector,
     };
     use crate::vector_storage::sparse::StoredSparseVector;
 
@@ -500,6 +549,20 @@ mod tests {
         (segment, payload)
     }
 
+    /// The payload of a raw record in parsed form, whichever representation it
+    /// carries. Empty and absent payloads both read as `None`: a point without
+    /// payload has nothing stored at all, while the parsed form reports it as
+    /// empty.
+    fn raw_record_payload(record: &SegmentRecordRaw) -> Option<Payload> {
+        let payload = record
+            .payload
+            .as_ref()?
+            .to_parsed()
+            .expect("stored blob must be valid json")
+            .into_owned();
+        (!payload.is_empty()).then_some(payload)
+    }
+
     /// [`SegmentReadView::retrieve`] and [`SegmentReadView::retrieve_raw`]
     /// have hand-duplicated bodies — this guards them against drifting apart:
     /// both must return the same records (ids, payloads, vector names), and
@@ -524,6 +587,7 @@ mod tests {
         #[case] with_vector: WithVector,
         #[case] expected_point1_vectors: usize,
         #[values(true, false)] payload_enabled: bool,
+        #[values(RawPayloadFormat::Parsed, RawPayloadFormat::Raw)] payload_format: RawPayloadFormat,
     ) {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (segment, payload) = build_two_point_segment(dir.path());
@@ -534,6 +598,11 @@ mod tests {
         let with_payload = WithPayload {
             enable: payload_enabled,
             payload_selector: None,
+        };
+        let payload_format = if payload_enabled {
+            payload_format
+        } else {
+            RawPayloadFormat::NoPayload
         };
         // Expectation derived independently of the `needs_vectors` helper the
         // functions under test share.
@@ -556,7 +625,7 @@ mod tests {
         let raw_records = segment
             .retrieve_raw(
                 &point_ids,
-                &with_payload,
+                payload_format,
                 &with_vector,
                 &hw_counter,
                 &is_stopped,
@@ -576,14 +645,27 @@ mod tests {
         }
         if payload_enabled {
             assert_eq!(point1.payload.as_ref(), Some(&payload));
+            let raw_point1 = raw_records
+                .get(&1.into())
+                .expect("raw point 1 must be retrieved");
+            assert_eq!(raw_record_payload(raw_point1).as_ref(), Some(&payload));
+            assert_eq!(
+                matches!(raw_point1.payload, Some(MaybeRawPayload::Raw(_))),
+                payload_format == RawPayloadFormat::Raw,
+                "the requested format decides the representation",
+            );
         }
 
         for (id, record) in &records {
             let raw_record = raw_records.get(id).expect("raw record for the same id");
             assert_eq!(record.id, raw_record.id);
-            assert_eq!(record.payload, raw_record.payload);
+            assert_eq!(
+                record.payload.clone().filter(|payload| !payload.is_empty()),
+                raw_record_payload(raw_record),
+            );
             if !payload_enabled {
                 assert!(record.payload.is_none(), "payload was not requested");
+                assert!(raw_record.payload.is_none(), "payload was not requested");
             }
 
             if !vectors_requested {
@@ -652,7 +734,7 @@ mod tests {
         let raw_err = segment
             .retrieve_raw(
                 &point_ids,
-                &with_payload,
+                RawPayloadFormat::NoPayload,
                 &with_vector,
                 &hw_counter,
                 &is_stopped,
@@ -698,7 +780,7 @@ mod tests {
         let raw_records = segment
             .retrieve_raw(
                 &point_ids,
-                &with_payload,
+                RawPayloadFormat::NoPayload,
                 &with_vector,
                 &hw_counter,
                 &is_stopped,

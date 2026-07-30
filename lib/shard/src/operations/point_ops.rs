@@ -17,7 +17,7 @@ use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
     MultiDenseVectorInternal, VectorInternal, VectorRef, VectorStructInternal,
 };
-use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
+use segment::types::{Filter, MaybeRawPayload, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use sparse::common::types::{DimId, DimWeight};
@@ -435,23 +435,33 @@ mod raw_vectors_serde {
     }
 }
 
-impl From<SegmentRecordRaw> for PointStructRawPersisted {
-    fn from(record: SegmentRecordRaw) -> Self {
+impl TryFrom<SegmentRecordRaw> for PointStructRawPersisted {
+    type Error = OperationError;
+
+    /// A raw record carries the payload as stored, so it is decoded here — this
+    /// struct goes into the WAL, which holds parsed payloads.
+    fn try_from(record: SegmentRecordRaw) -> Result<Self, Self::Error> {
         let SegmentRecordRaw {
             id,
             vectors,
             payload,
         } = record;
 
-        Self {
+        Ok(Self {
             id,
             vectors: vectors.unwrap_or_default(),
-            payload,
-        }
+            payload: payload.map(MaybeRawPayload::into_parsed).transpose()?,
+        })
     }
 }
 
 impl PointStructRawPersisted {
+    /// Whether this point carries the data stored in `segment_record`.
+    ///
+    /// Vectors are compared as bytes, so logically equal vectors in a different
+    /// encoding count as unequal, which only costs a redundant upsert on sync.
+    /// Payloads are compared parsed, decoding the stored blob; a blob that does
+    /// not parse counts as unequal.
     pub fn is_equal_to(&self, segment_record: &SegmentRecordRaw) -> bool {
         let SegmentRecordRaw {
             id,
@@ -480,8 +490,13 @@ impl PointStructRawPersisted {
 
         // Check if payloads are equal, empty and non-existent payloads are considered equal
         let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
-        let segment_payload = payload.as_ref().filter(|p| !p.is_empty());
-        self_payload == segment_payload
+        let Ok(segment_payload) = payload.as_ref().map(MaybeRawPayload::to_parsed).transpose()
+        else {
+            // A blob that cannot be parsed is not the data this point carries
+            return false;
+        };
+        let segment_payload = segment_payload.filter(|payload| !payload.is_empty());
+        self_payload == segment_payload.as_deref()
     }
 }
 

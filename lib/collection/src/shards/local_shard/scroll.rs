@@ -12,6 +12,7 @@ use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::segment_record::RawPayloadFormat;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -241,7 +242,7 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
+        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -302,7 +303,6 @@ impl LocalShard {
             .into_iter()
             .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
-        let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
         let mut records_map = tokio::time::timeout(
@@ -310,7 +310,7 @@ impl LocalShard {
             SegmentsSearcher::retrieve_raw(
                 segments,
                 &point_ids,
-                &with_payload,
+                payload_format,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -327,8 +327,8 @@ impl LocalShard {
             .iter()
             // Use remove to avoid cloning, we take each point ID only once
             .filter_map(|point_id| records_map.remove(point_id))
-            .map(PointStructRawPersisted::from)
-            .collect();
+            .map(PointStructRawPersisted::try_from)
+            .collect::<Result<_, _>>()?;
 
         Ok(ordered_records)
     }

@@ -9,6 +9,7 @@ use common::tar_ext;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::segment_record::RawPayloadFormat;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig,
@@ -454,7 +455,7 @@ impl ForwardProxyShard {
             .local_scroll_by_id_raw(
                 offset,
                 limit,
-                &WithPayloadInterface::Bool(true),
+                RawPayloadFormat::Parsed,
                 &WithVector::Bool(true),
                 filter,
                 runtime_handle,
@@ -520,7 +521,7 @@ impl ForwardProxyShard {
             .wrapped_shard
             .retrieve_raw(
                 &ids,
-                &WithPayload::from(true),
+                RawPayloadFormat::Parsed,
                 &WithVector::Bool(true),
                 runtime_handle,
                 None,                           // No timeout

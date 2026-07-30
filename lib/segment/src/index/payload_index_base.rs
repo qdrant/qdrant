@@ -18,7 +18,9 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
+use crate::types::{
+    Filter, MaybeRawPayloadRef, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+};
 
 pub enum BuildIndexResult {
     /// Index was built
@@ -148,6 +150,15 @@ pub trait PayloadIndexRead {
         &self,
         point_ids: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
+    /// Raw analogue of [`Self::read_payloads`], see
+    /// [`PayloadStorageRead::read_payloads_maybe_raw`](crate::payload_storage::PayloadStorageRead::read_payloads_maybe_raw).
+    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 }
