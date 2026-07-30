@@ -307,41 +307,32 @@ mod tests {
     /// them from disagreeing.
     #[test]
     fn deferred_threshold_is_clamped_to_max_segment_size() {
-        let bytes = |kb: usize| NonZeroUsize::new(kb * BYTES_IN_KB);
+        let kb = |kb: usize| NonZeroUsize::new(kb * BYTES_IN_KB);
+        let disabled_indexing = NonZeroUsize::new(usize::MAX.saturating_mul(BYTES_IN_KB));
 
-        // Off unless enabled.
-        assert_eq!(
-            get_deferred_points_threshold_bytes(None, 10_000, Some(1_000)),
-            None,
-        );
-        assert_eq!(
-            get_deferred_points_threshold_bytes(Some(false), 10_000, Some(1_000)),
-            None,
-        );
+        // (prevent_unoptimized, indexing_threshold_kb, max_segment_size_kb, expected)
+        let cases = [
+            (None, 10_000, Some(1_000), None),
+            (Some(false), 10_000, Some(1_000), None),
+            // A cap above the threshold does not bind, one below it wins.
+            (Some(true), 10_000, Some(256_000), kb(10_000)),
+            (Some(true), 100_000, Some(1_000), kb(1_000)),
+            // Auto-derived caps are resolved elsewhere, disabled indexing stays unreachable.
+            (Some(true), 100_000, None, kb(100_000)),
+            (Some(true), usize::MAX, Some(1_000), disabled_indexing),
+        ];
 
-        // A cap above the indexing threshold does not bind.
-        assert_eq!(
-            get_deferred_points_threshold_bytes(Some(true), 10_000, Some(256_000)),
-            bytes(10_000),
-        );
-
-        // A cap below the threshold wins.
-        assert_eq!(
-            get_deferred_points_threshold_bytes(Some(true), 100_000, Some(1_000)),
-            bytes(1_000),
-        );
-
-        // Auto-derived caps are resolved elsewhere.
-        assert_eq!(
-            get_deferred_points_threshold_bytes(Some(true), 100_000, None),
-            bytes(100_000),
-        );
-
-        // Disabled indexing keeps its unreachable threshold.
-        assert_eq!(
-            get_deferred_points_threshold_bytes(Some(true), usize::MAX, Some(1_000)),
-            NonZeroUsize::new(usize::MAX.saturating_mul(BYTES_IN_KB)),
-        );
+        for (prevent_unoptimized, indexing_threshold_kb, max_segment_size_kb, expected) in cases {
+            assert_eq!(
+                get_deferred_points_threshold_bytes(
+                    prevent_unoptimized,
+                    indexing_threshold_kb,
+                    max_segment_size_kb,
+                ),
+                expected,
+                "{prevent_unoptimized:?} / {indexing_threshold_kb} / {max_segment_size_kb:?}",
+            );
+        }
     }
 
     #[test]

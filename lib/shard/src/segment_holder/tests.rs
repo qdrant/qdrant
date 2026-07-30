@@ -2225,52 +2225,23 @@ fn test_has_appendable_segment_with_capacity() {
     let mut holder = SegmentHolder::default();
     assert!(
         !holder.has_appendable_segment_with_capacity(None),
-        "a holder without appendable segments has no capacity, so a caller provisions the first one",
+        "no appendable segment means no capacity, so a caller provisions the first one",
     );
 
     let segment_id = holder.add_new(build_segment_1(dir.path()));
     let size = segment_size(&holder, segment_id);
     assert!(size > 0, "the fixture must measure non-empty");
 
-    assert!(
-        holder.has_appendable_segment_with_capacity(None),
-        "without a cap every appendable segment has capacity",
-    );
-    assert!(
-        !holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size)),
-        "a segment that reached the cap has no capacity left",
-    );
-    assert!(
-        holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size + 1)),
-        "a segment below the cap has capacity",
-    );
-}
+    assert!(holder.has_appendable_segment_with_capacity(None));
+    assert!(!holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size)));
+    assert!(holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size + 1)));
 
-/// A segment busy under a write lock counts as having capacity. Treating it as full would exclude
-/// it as a destination and make the optimizer provision a replacement it does not need. This also
-/// relaxes the optimizer's own check, which used to block on the read lock.
-#[test]
-fn test_unmeasurable_appendable_segment_stays_eligible() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-    let mut holder = SegmentHolder::default();
-    let segment_id = holder.add_new(build_segment_1(dir.path()));
-
-    // A cap no segment holding data can be below.
-    let cap = NonZeroUsize::new(1);
-    assert!(
-        !holder.has_appendable_segment_with_capacity(cap),
-        "a measurable segment over the cap has no capacity left",
-    );
-
+    // A segment busy under a write lock cannot be measured and stays eligible. Treating it as
+    // full would make the optimizer provision a replacement it does not need. This also relaxes
+    // the optimizer's own check, which used to block on the read lock.
     let locked_segment = holder.get(segment_id).unwrap().get();
     let _write_guard = locked_segment.write();
-
-    assert!(
-        holder.has_appendable_segment_with_capacity(cap),
-        "a segment that cannot be measured must stay eligible, or lock contention alone makes \
-         the holder look full",
-    );
+    assert!(holder.has_appendable_segment_with_capacity(NonZeroUsize::new(1)));
 }
 
 /// Moves must land in a segment below the cap, or a filtered payload operation keeps growing one

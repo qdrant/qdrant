@@ -136,19 +136,13 @@ impl UpdateWorkers {
 
                     let wait = sender.is_some();
                     let segments_clone = segments.clone();
-                    // Classified before the operation is moved into the blocking task.
-                    let operation_capacity_optimizer =
-                        if operation.may_need_appendable_destination() {
-                            capacity_optimizer.clone()
-                        } else {
-                            None
-                        };
+                    let capacity_optimizer_clone = capacity_optimizer.clone();
                     let payload_index_schema_clone = payload_index_schema.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         // Give the operation a destination below the size cap before applying it,
                         // rather than letting it grow an already full segment. Best effort: unlike
                         // the optimization worker, a failure here must not take down a live write.
-                        if let Some(optimizer) = operation_capacity_optimizer
+                        if let Some(optimizer) = capacity_optimizer_clone
                             && let Err(err) = Self::ensure_appendable_segment_with_capacity(
                                 &segments_clone,
                                 optimizer.segments_path(),
