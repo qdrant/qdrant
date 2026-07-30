@@ -74,13 +74,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 /// callers pass `config.search_thread_count()` so a configured `0` is expanded to the CPU-derived
 /// default that matches the core search runtime.
 ///
-/// `pin_core` pins every pool thread to the given CPU core
-/// ([`EdgeConfig::search_pool_core`]): the pool keeps its IO overlap but its compute is bounded
-/// to one core. Pinning is best-effort — a core id that is not among the available cores is
-/// rejected up front with a warning and the threads run unpinned (the platform affinity calls
-/// must never see an out-of-range id: libc's `CPU_SET` does no bounds check and would panic),
-/// and a pin that still fails at thread start only logs (macOS in particular honours affinity
-/// as a hint).
+/// `pin_core` pins every pool thread to the given CPU core ([`EdgeConfig::search_pool_core`]):
+/// the pool keeps its IO overlap but its compute is bounded to one core. Best-effort — an
+/// unavailable core id or a failed pin only warns (macOS honours affinity as a hint).
 ///
 /// Returns an error (rather than panicking) when the underlying thread spawn fails — this runs
 /// during shard open/load and follower open, so a transient resource failure must not abort the
@@ -89,8 +85,8 @@ pub(crate) fn build_search_pool(
     num_threads: usize,
     pin_core: Option<usize>,
 ) -> OperationResult<Arc<ThreadPool>> {
-    // Validate against the actually-available cores BEFORE installing the
-    // handler: out-of-range ids must never reach the platform affinity APIs.
+    // Out-of-range ids must never reach the platform affinity calls: libc's
+    // `CPU_SET` has no bounds check.
     let pin_core = pin_core.filter(|core| {
         let available =
             core_affinity::get_core_ids().is_some_and(|ids| ids.iter().any(|c| c.id == *core));
@@ -120,10 +116,7 @@ pub(crate) fn build_search_pool(
 mod tests {
     use super::*;
 
-    /// Pinning is best-effort: the pool must build and run work both with a
-    /// valid core id and with an out-of-range one. The invalid id is rejected
-    /// by the up-front availability check — it must never reach the platform
-    /// affinity calls (libc's `CPU_SET` would panic on it) or break the pool.
+    /// Best-effort pinning: valid and out-of-range core ids must both yield a working pool.
     #[test]
     fn pinned_pool_builds_and_runs() {
         let pool = build_search_pool(2, Some(0)).unwrap();

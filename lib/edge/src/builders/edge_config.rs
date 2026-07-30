@@ -102,8 +102,7 @@ impl EdgeConfigBuilder {
         self
     }
 
-    /// Pin every thread of the shard's search pool to the given CPU core, bounding the shard's
-    /// search compute to one core while keeping the pool's IO overlap. See
+    /// Pin every thread of the shard's search pool to the given CPU core (best-effort). See
     /// [`EdgeConfig::search_pool_core`].
     pub fn search_pool_core(mut self, core: usize) -> Self {
         self.search_pool_core = Some(core);

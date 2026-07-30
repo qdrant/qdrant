@@ -65,11 +65,9 @@ pub struct EdgeConfig {
     /// [`EdgeConfig::search_thread_count`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_search_threads: Option<usize>,
-    /// Pin every thread of this shard's search pool to the given CPU core. Bounds the shard's
-    /// search *compute* to one core no matter how many pool threads run — the threads still
-    /// overlap on object-storage IO, which is what a large pool is for. Serverless uses this so
-    /// one collection cannot overtake a whole multi-tenant worker. `None` (the default) leaves
-    /// thread placement to the OS scheduler.
+    /// Pin every thread of this shard's search pool to the given CPU core: bounds the shard's
+    /// search compute to one core while keeping the pool's IO overlap. Best-effort. `None` (the
+    /// default) leaves thread placement to the OS scheduler.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_pool_core: Option<usize>,
 }
