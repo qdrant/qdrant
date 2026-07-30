@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, read_json_via};
 use uuid::Uuid;
 
@@ -29,11 +30,21 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
     /// `fs` opens the component files; `raw_fs` is the canonical backend, kept
     /// by components that re-open files after this call and by the segment
     /// itself for its appends.
+    ///
+    /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
+    /// working the same directory: slots at or above it load into the id
+    /// tracker's deferred track, marking them as outside the rebuild snapshot.
+    /// It does not hide anything from the writer — resolution runs
+    /// `WithDeferred`, so every point still locates at its latest slot. `None`
+    /// (a writer running alone) keeps every mapping active. Only the
+    /// appendable segment has a deferred track; on any other segment the
+    /// cutoff is ignored.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         raw_fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written
@@ -56,15 +67,17 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
             WRITER_POPULATE,
         )?));
 
+        let appendable = config.is_appendable();
+
         // Detect the persisted format by attempting each format's open (no
         // per-file `exists` round-trips — important for object-storage
-        // backends). No deferred threshold: the writer does not run
-        // optimizations, so it has no deferred slot of its own to respect.
+        // backends). The deferred threshold applies to the appendable tracker
+        // only, mirroring `ReadOnlySegment::open_via`.
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             fs,
             raw_fs,
             segment_path,
-            None,
+            deferred_internal_id.filter(|_| appendable),
         )?));
 
         let mut vector_data = HashMap::new();
@@ -96,8 +109,6 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
                 },
             );
         }
-
-        let appendable = config.is_appendable();
 
         Ok(Self {
             uuid,

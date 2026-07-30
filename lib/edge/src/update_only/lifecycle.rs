@@ -38,7 +38,9 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     {
         let mut holder = UpdateOnlySegmentHolder::default();
         for (uuid, segment_path) in enumerator.list_segments()? {
-            let segment = UpdateOnlySegment::<S>::open(&fs, &fs, &segment_path, uuid)?;
+            // No deferred threshold yet: it belongs to the coordination with
+            // an external rebuilder, which does not exist in this iteration.
+            let segment = UpdateOnlySegment::<S>::open(&fs, &fs, &segment_path, uuid, None)?;
             holder.insert(uuid, segment);
         }
 
