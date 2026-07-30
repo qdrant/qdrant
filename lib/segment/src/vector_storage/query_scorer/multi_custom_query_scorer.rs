@@ -47,10 +47,8 @@ impl<
         TInputQuery: Query<MultiDenseVectorInternal>
             + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
     {
-        let mut dim = 0;
         let query = query
-            .transform(|vector| {
-                dim = vector.dim;
+            .transform(&|vector| {
                 let mut preprocessed = DenseVector::new();
                 for slice in vector.multi_vectors() {
                     preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
@@ -63,6 +61,7 @@ impl<
             })
             .unwrap();
 
+        let dim = vector_storage.vector_dim();
         hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
         if vector_storage.is_on_disk() {
             hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());

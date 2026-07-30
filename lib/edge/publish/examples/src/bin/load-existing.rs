@@ -7,7 +7,7 @@ use examples::{TMP_DIR, load_new_shard};
 use qdrant_edge::external::serde_json::json;
 use qdrant_edge::external::uuid::Uuid;
 use qdrant_edge::{
-    EdgeShard, PointId, PointInsertOperations, PointOperations, PointStruct, ScrollRequest,
+    EdgeShard, PointId, PointInsertOperations, PointOperations, PointStruct, ScrollRequestBuilder,
     UpdateOperation, WithPayloadInterface, WithVector,
 };
 
@@ -62,28 +62,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         ])),
     ))?;
 
-    let (expected_points, _) = edge.scroll(ScrollRequest {
-        offset: None,
-        limit: Some(5),
-        filter: None,
-        with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: WithVector::Bool(true),
-        order_by: None,
-    })?;
+    let (expected_points, _) = edge.scroll(
+        ScrollRequestBuilder::new()
+            .limit(5)
+            .with_payload(WithPayloadInterface::Bool(true))
+            .with_vector(WithVector::Bool(true))
+            .build(),
+    )?;
     println!("{expected_points:?}");
 
     // Re-load edge shard from disk, assert points are available
     drop(edge);
     let edge = EdgeShard::load(Path::new(TMP_DIR), None)?;
 
-    let (points, _) = edge.scroll(ScrollRequest {
-        offset: None,
-        limit: Some(5),
-        filter: None,
-        with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: WithVector::Bool(true),
-        order_by: None,
-    })?;
+    let (points, _) = edge.scroll(
+        ScrollRequestBuilder::new()
+            .limit(5)
+            .with_payload(WithPayloadInterface::Bool(true))
+            .with_vector(WithVector::Bool(true))
+            .build(),
+    )?;
     println!("{points:?}");
 
     assert_eq!(points, expected_points);

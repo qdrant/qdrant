@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use atomic_refcell::AtomicRefCell;
-use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
+use common::condition_checker::{
+    CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
+};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use serde_json::Value;
@@ -20,7 +22,7 @@ use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
 };
-use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer};
+use crate::types::{Condition, FieldCondition, OwnedPayloadRef, PayloadContainer, Slice};
 use crate::vector_storage::VectorStorageRead;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
@@ -81,13 +83,14 @@ where
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
             Condition::HasId(has_id) => {
-                let segment_ids: AHashSet<_> = has_id
-                    .has_id
-                    .iter()
-                    .filter_map(|external_id| {
-                        id_tracker.internal_id_with_behavior(*external_id, deferred_behavior)
-                    })
-                    .collect();
+                let mut segment_ids = AHashSet::with_capacity(has_id.has_id.len());
+                id_tracker.resolve_external_ids(
+                    has_id.has_id.iter().copied(),
+                    deferred_behavior,
+                    |_, offset| {
+                        segment_ids.insert(offset);
+                    },
+                )?;
                 ConditionCheckerEnum::Ids(IdsConditionChecker(segment_ids))
             }
             Condition::HasVector(has_vector) => {
@@ -150,6 +153,12 @@ where
                         }
                         Ok(false)
                     },
+                }))
+            }
+            Condition::Slice(slice_condition) => {
+                ConditionCheckerEnum::Dyn(Box::new(SliceConditionChecker {
+                    id_tracker,
+                    slice: slice_condition.slice,
                 }))
             }
             Condition::CustomIdChecker(cond) => {
@@ -223,6 +232,13 @@ where
             &self.hw_counter,
         )
     }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
 }
 
 /// For [`Condition::HasId`] and [`Condition::CustomIdChecker`].
@@ -234,6 +250,39 @@ impl ConditionChecker for IdsConditionChecker {
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(self.0.contains(&point_id))
     }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
+}
+
+/// For [`Condition::Slice`]. Resolves the external id and checks slice
+/// membership per candidate point; unlike [`IdsConditionChecker`] it does not
+/// materialize the matching id set, which holds `~points / total` entries.
+struct SliceConditionChecker<'a, I: IdTrackerRead> {
+    id_tracker: &'a I,
+    slice: Slice,
+}
+
+impl<I: IdTrackerRead> ConditionChecker for SliceConditionChecker<'_, I> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(self
+            .id_tracker
+            .external_id(point_id)
+            .is_some_and(|external_id| self.slice.check(external_id)))
+    }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
 }
 
 /// For [`Condition::HasVector`].
@@ -244,5 +293,14 @@ impl<V: VectorStorageRead> ConditionChecker for HasVectorConditionChecker<V> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(!self.0.borrow().is_deleted_vector(point_id))
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        default_check_batched(ids, select, rest, |id| self.check(id))
     }
 }

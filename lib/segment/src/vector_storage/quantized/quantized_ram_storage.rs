@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
 use fs_err as fs;
 use fs_err::File;
+use quantization::encoded_storage::default_for_each_batch;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
@@ -86,6 +87,14 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Some(Cow::Borrowed(
             self.vectors.get_opt(index as VectorOffsetType)?,
         ))
+    }
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        default_for_each_batch(self, offsets, callback);
     }
 
     fn upsert_vector(

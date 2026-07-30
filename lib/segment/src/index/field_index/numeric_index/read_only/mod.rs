@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
+use blobstore::Blob;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 
 use super::Encodable;
 use super::storage::read_only::ReadOnlyNumericIndexInner;

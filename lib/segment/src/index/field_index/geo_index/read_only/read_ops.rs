@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::super::read_ops::{self, GeoConditionChecker, GeoIndexRead};
 use super::ReadOnlyGeoIndex;
@@ -97,6 +97,32 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
             }
             ReadOnlyGeoIndex::OnDisk(index) => {
                 GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+            }
+        }
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&GeoPoint) -> bool,
+        M: FnMut(U, bool),
+    {
+        match self {
+            ReadOnlyGeoIndex::Appendable(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
+            ReadOnlyGeoIndex::Immutable(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+            }
+            ReadOnlyGeoIndex::OnDisk(index) => {
+                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
             }
         }
     }

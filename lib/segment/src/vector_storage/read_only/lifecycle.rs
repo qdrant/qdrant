@@ -4,13 +4,17 @@ use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::VectorStorageReadEnum;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::{VectorDataConfig, VectorStorageDatatype, VectorStorageType};
 use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
 };
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
+use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
+use crate::vector_storage::turbo::read_only::{
+    ReadOnlyChunkedTurboVectorStorage, ReadOnlyImmutableTurboVectorStorage,
+};
 
 /// How the [`VectorStorageType`] maps onto the read-only open path: mmap
 /// advice, whether the storage is populated on open, and whether it uses the
@@ -77,9 +81,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, advice, populate,
                     )
                 }
-                VectorStorageDatatype::Turbo4 => Err(OperationError::service_error(
-                    "Turbo4 datatype storage is not yet supported",
-                )),
+                VectorStorageDatatype::Turbo4 => {
+                    ReadOnlyChunkedMultiTurboVectorStorage::<S>::preopen(fs, path, advice, populate)
+                }
             };
         }
 
@@ -101,9 +105,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, advice, populate,
                     )
                 }
-                VectorStorageDatatype::Turbo4 => Err(OperationError::service_error(
-                    "Turbo4 datatype storage is not yet supported",
-                )),
+                VectorStorageDatatype::Turbo4 => {
+                    ReadOnlyChunkedTurboVectorStorage::<S>::preopen(fs, path, populate)
+                }
             }
         } else {
             match datatype {
@@ -119,9 +123,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     VectorElementTypeHalf,
                     S,
                 >::preopen(fs, path, populate),
-                VectorStorageDatatype::Turbo4 => Err(OperationError::service_error(
-                    "Turbo4 datatype storage is not yet supported",
-                )),
+                VectorStorageDatatype::Turbo4 => {
+                    ReadOnlyImmutableTurboVectorStorage::<S>::preopen(fs, path, populate)
+                }
             }
         }
     }
@@ -183,9 +187,15 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     )?,
                 )),
                 VectorStorageDatatype::Turbo4 => {
-                    return Err(OperationError::service_error(
-                        "Turbo4 datatype storage is not yet supported",
-                    ));
+                    Self::MultiDenseTurbo(Box::new(ReadOnlyChunkedMultiTurboVectorStorage::open(
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        multivector_config,
+                        advice,
+                        populate,
+                    )?))
                 }
             }));
         }
@@ -208,11 +218,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, dim, distance, advice, populate,
                     )?))
                 }
-                VectorStorageDatatype::Turbo4 => {
-                    return Err(OperationError::service_error(
-                        "Turbo4 datatype storage is not yet supported",
-                    ));
-                }
+                VectorStorageDatatype::Turbo4 => Self::DenseTurboChunked(Box::new(
+                    ReadOnlyChunkedTurboVectorStorage::open(fs, path, dim, distance, populate)?,
+                )),
             }
         } else {
             match datatype {
@@ -225,11 +233,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                 VectorStorageDatatype::Float16 => Self::DenseHalf(Box::new(
                     ReadOnlyImmutableDenseVectorStorage::open(fs, path, dim, distance, populate)?,
                 )),
-                VectorStorageDatatype::Turbo4 => {
-                    return Err(OperationError::service_error(
-                        "Turbo4 datatype storage is not yet supported",
-                    ));
-                }
+                VectorStorageDatatype::Turbo4 => Self::DenseTurbo(Box::new(
+                    ReadOnlyImmutableTurboVectorStorage::open(fs, path, dim, distance, populate)?,
+                )),
             }
         }))
     }

@@ -325,10 +325,17 @@ pub struct AbortShardTransfer {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct StartResharding {
+    /// Unique identifier of this resharding operation, random if not specified.
     #[schemars(skip)]
     pub uuid: Option<Uuid>,
+    /// Whether to add a shard (`up`) or remove the last shard (`down`).
     pub direction: ReshardingDirection,
+    /// Peer to create the new shard on, or to migrate points away from when scaling down.
+    /// If not specified, the least loaded peer is picked when scaling up, a peer holding the
+    /// removed shard when scaling down.
     pub peer_id: Option<PeerId>,
+    /// Custom shard key to reshard, must already exist.
+    /// If not specified, shards without a shard key are resharded.
     pub shard_key: Option<ShardKey>,
 }
 

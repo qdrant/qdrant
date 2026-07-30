@@ -3,7 +3,7 @@ use std::ops::Range;
 use super::{MmapFile, read_bytes};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
-use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UserData};
+use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UserData};
 
 pub struct MmapReadPipeline<'file, U> {
     result: Option<(U, &'file [u8])>,
@@ -15,7 +15,7 @@ where
 {
     type File = MmapFile;
 
-    fn new() -> Result<Self> {
+    fn new() -> UioResult<Self> {
         Ok(Self { result: None })
     }
 
@@ -29,7 +29,7 @@ where
         file: &'file MmapFile,
         range: Range<u64>,
         _align: usize,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         if self.result.is_some() {
             return Err(UniversalIoError::QueueIsFull);
         }
@@ -38,12 +38,17 @@ where
         Ok(())
     }
 
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file Self::File,
+        from: u64,
+    ) -> UioResult<()> {
         let eof = file.len as u64;
         self.schedule::<Sequential>(user_data, file, from..eof, 1)
     }
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         let result = self.result.take();
         Ok(result.map(|(user_data, bytes)| (user_data, ACow::Borrowed(bytes))))
     }

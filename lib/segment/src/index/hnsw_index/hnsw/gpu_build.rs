@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::SimpleCow;
 use common::types::PointOffsetType;
 
 use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
@@ -99,7 +98,7 @@ pub(super) fn build_filtered_graph_on_gpu(
                 block_point_id,
                 vector_storage,
                 quantized_vectors.as_ref(),
-                Some(SimpleCow::Owned(block_condition_checker)),
+                Some(block_condition_checker),
                 id_tracker.deleted_point_bitslice(),
                 hardware_counter,
             )

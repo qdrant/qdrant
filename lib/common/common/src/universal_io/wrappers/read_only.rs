@@ -10,8 +10,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
-    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, Result, UniversalKind, UniversalRead,
-    UniversalReadFs, UserData,
+    Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
 
 #[derive(Debug, TransparentWrapper)]
@@ -38,15 +38,15 @@ impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
 impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
     type ContextConfig = ReadOnlyConfigContext<F::ContextConfig>;
 
-    fn from_context(ctx: Self::ContextConfig) -> Result<Self> {
+    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
         Ok(ReadOnlyFs(F::from_context(ctx.0)?))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<ListedFile>> {
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.0.list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
+    fn exists(&self, path: &Path) -> UioResult<bool> {
         self.0.exists(path)
     }
 
@@ -63,7 +63,7 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: F::OpenExtra,
-    ) -> Result<Self::File> {
+    ) -> UioResult<Self::File> {
         debug_assert!(!options.writeable);
         Ok(ReadOnly(self.0.open(path, options, extra)?))
     }
@@ -91,7 +91,7 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         debug_assert!(!options.writeable);
         let io = fs.open(path, options, extra)?;
         Ok(Self(io))
@@ -111,71 +111,75 @@ where
         U: UserData;
 
     #[inline]
-    fn reopen(&mut self) -> Result<()> {
+    fn reopen(&mut self) -> UioResult<()> {
         self.0.reopen()
     }
 
     #[inline]
-    fn read<P: AccessPattern, T: Item>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        self.0.read::<P, T>(range)
+    fn read<P: AccessPattern, T: Item>(
+        &self,
+        range: ReadRange,
+        access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
+        self.0.read(range, access_pattern)
     }
 
     #[inline]
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, align: usize) -> Result<ACow<'_>> {
-        self.0.read_bytes::<P>(range, align)
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        self.0.read_bytes(range, access_pattern, align)
     }
 
     #[inline]
-    fn read_whole<T: Item>(&self) -> Result<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         self.0.read_whole()
     }
 
     #[inline]
-    fn read_batch<P, T, U>(
+    fn read_batch<P, T, U, E>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
+        access_pattern: P,
+        callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E>
     where
         P: AccessPattern,
         T: Item,
         U: UserData,
+        E: From<UniversalIoError>,
     {
-        self.0.read_batch::<P, T, U>(ranges, callback)
+        self.0.read_batch(ranges, access_pattern, callback)
     }
 
     #[inline]
-    fn read_iter<P, T, U>(
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>>
-    where
-        P: AccessPattern,
-        T: Item,
-        U: UserData,
-    {
-        self.0.read_iter::<P, T, U>(ranges)
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
+        self.0.read_iter(ranges, access_pattern)
     }
 
     #[inline]
-    fn read_bytes_iter<P, U>(
+    fn read_bytes_iter<P: AccessPattern, U: UserData>(
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
-    ) -> Result<impl Iterator<Item = Result<(U, ACow<'_>)>>>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
-        self.0.read_bytes_iter::<P, U>(ranges)
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
+        self.0.read_bytes_iter(ranges, access_pattern)
     }
 
     #[inline]
-    fn len<T>(&self) -> Result<u64> {
+    fn len<T>(&self) -> UioResult<u64> {
         self.0.len::<T>()
     }
 
     #[inline]
-    fn populate(&self) -> Result<()> {
+    fn populate(&self) -> UioResult<()> {
         self.0.populate()
     }
 
@@ -185,7 +189,7 @@ where
     }
 
     #[inline]
-    fn clear_ram_cache(&self) -> Result<()> {
+    fn clear_ram_cache(&self) -> UioResult<()> {
         self.0.clear_ram_cache()
     }
 

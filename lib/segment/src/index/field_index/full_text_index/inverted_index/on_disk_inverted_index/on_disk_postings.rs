@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{
-    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UniversalRead, UniversalReadFs,
+    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UioResult, UniversalRead,
+    UniversalReadFs,
 };
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
@@ -56,7 +57,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
             return Ok(None);
         };
 
-        let header = storage.read::<Sequential, PostingsHeader>(ReadRange::one(0))?[0];
+        let header = storage.read::<_, PostingsHeader>(ReadRange::one(0), Sequential)?[0];
 
         Ok(Some(Self {
             _path: path,
@@ -115,13 +116,13 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         // the read — `read_batch` is sufficient here, no pipeline needed.
         let mut headers: Vec<HeaderResult> = Vec::with_capacity(valid_ranges.len());
         self.storage
-            .read_batch::<Random, u8, _>(valid_ranges, |token_id, bytes| {
+            .read_batch(valid_ranges, Random, |token_id, bytes| {
                 headers.push(
                     PostingListHeader::read_from_prefix(bytes)
                         .map(|(header, _)| (token_id, header))
                         .map_err(UniversalIoError::from),
                 );
-                Ok(())
+                UioResult::Ok(())
             })?;
 
         Ok(HeadersBatch {
@@ -160,7 +161,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
             byte_offset: header.offset,
             length: header.posting_size::<V>() as u64,
         };
-        let bytes = self.storage.read::<Sequential, u8>(read_range)?;
+        let bytes = self.storage.read::<_, u8>(read_range, Sequential)?;
         let result = RawPostingList::new(bytes, header);
         Ok(result)
     }
@@ -210,7 +211,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         let mut raw_postings: Vec<(TokenId, RawPostingList<'_>)> =
             Vec::with_capacity(expected_capacity);
 
-        for entry in self.storage.read_iter::<Sequential, u8, _>(range_iter)? {
+        for entry in self.storage.read_iter(range_iter, Sequential)? {
             let ((token_id, header), bytes) = entry?;
             raw_postings.push((token_id, RawPostingList::new(bytes, header)));
         }
@@ -227,21 +228,24 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         callback(views)
     }
 
-    /// Fetch posting lists for the given token ids and hand them to `callback`.
-    /// If any of posting lists is not found - return `None`.
+    /// Fetch posting lists for the given token ids and hand them to `callback`,
+    /// which is *always* invoked: with `Some(views)` when every token has a
+    /// posting list, or `None` when at least one is missing (i.e. nothing can
+    /// match). Always running lets batch callers iterate their items in a single
+    /// pass, reporting a non-match for the `None` case, instead of a separate
+    /// fallback loop.
     pub fn with_all_or_none_postings<T>(
         &self,
         token_ids: &[TokenId],
-        callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
-    ) -> OperationResult<Option<T>> {
+        callback: impl FnOnce(Option<Vec<(TokenId, PostingListView<'_, V>)>>) -> OperationResult<T>,
+    ) -> OperationResult<T> {
         let HeadersBatch { headers, missing } = self.headers_iter(token_ids)?;
 
         if !missing.is_empty() {
-            return Ok(None);
+            return callback(None);
         }
 
-        self.with_posting_views(headers, token_ids.len(), callback)
-            .map(Some)
+        self.with_posting_views(headers, token_ids.len(), |views| callback(Some(views)))
     }
 
     /// Fetch all existing posting lists for the given token ids and hand them

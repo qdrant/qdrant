@@ -15,7 +15,7 @@ use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
-use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
+use crate::vector_storage::turbo::multi_turbo::AppendableMmapMultiTurboVectorStorage;
 use crate::vector_storage::{MultiVectorStorage, VectorStorageRead};
 
 // Multivector shader binding is after vectot data and quantization data bindings.
@@ -102,13 +102,13 @@ impl GpuMultivectors {
 
     /// Construct multivectors data from a TurboQuant multivector storage.
     ///
-    /// Unlike [`Self::new_multidense`], `TurboMultiVectorStorage` does not
+    /// Unlike [`Self::new_multidense`], `AppendableMmapMultiTurboVectorStorage` does not
     /// implement [`MultiVectorStorage`], so the per-point inner counts are read
     /// directly via `point_inner_vectors_count` and turned into start/count
     /// offsets here.
     pub fn new_turbo_multi(
         device: Arc<gpu::Device>,
-        vector_storage: &TurboMultiVectorStorage,
+        vector_storage: &AppendableMmapMultiTurboVectorStorage,
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,

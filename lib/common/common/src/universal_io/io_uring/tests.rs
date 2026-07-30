@@ -7,10 +7,11 @@ use nix::libc;
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
+use crate::universal_io::UioResult;
 
 /// Create `path`, populate it with the binary representation of `data`,
 /// then open and return it.
-fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> Result<IoUringFile> {
+fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> UioResult<IoUringFile> {
     fs_err::write(path, bytemuck::cast_slice(data))?;
 
     let fs = IoUringFs::from_context(Default::default())?;
@@ -35,7 +36,7 @@ fn read_range<T>(offset: usize, length: usize) -> ReadRange {
 }
 
 #[test]
-fn test_io_uring_read() -> Result<()> {
+fn test_io_uring_read() -> UioResult<()> {
     // 1. Populate test file with u64 binary data
     let dir = tempfile::tempdir().unwrap();
 
@@ -46,11 +47,11 @@ fn test_io_uring_read() -> Result<()> {
     // 2. Read data back and verify it matches what was written
 
     // Read all elements
-    let full = file.read::<Sequential>(read_range::<u64>(0, data.len()))?;
+    let full = file.read(read_range::<u64>(0, data.len()), Sequential)?;
     assert_eq!(full.as_ref(), &data);
 
     // Read a sub-range (elements 10..30)
-    let sub = file.read::<Sequential>(read_range::<u64>(10, 20))?;
+    let sub = file.read(read_range::<u64>(10, 20), Sequential)?;
     assert_eq!(sub.as_ref(), &data[10..30]);
 
     // Verify len()
@@ -61,7 +62,7 @@ fn test_io_uring_read() -> Result<()> {
 }
 
 #[test]
-fn test_io_uring_read_batch_read_iter() -> Result<()> {
+fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     let dir = tempfile::tempdir().unwrap();
 
     let data: Vec<u64> = (0..256).collect();
@@ -86,9 +87,9 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
     // --- read_batch (callback API) ---
     let mut batch_results = Vec::new();
 
-    file.read_batch::<Sequential, _>(ranges.into_iter().enumerate(), |idx, items| {
+    file.read_batch(ranges.into_iter().enumerate(), Sequential, |idx, items| {
         batch_results.push((idx, items.to_vec()));
-        Ok(())
+        UioResult::Ok(())
     })?;
 
     batch_results.sort_by_key(|&(idx, _)| idx);
@@ -102,9 +103,9 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
     }
 
     // --- read_iter (iterator API) ---
-    let read_iter = file.read_iter::<Sequential, _>(ranges.into_iter().enumerate())?;
+    let read_iter = file.read_iter(ranges.into_iter().enumerate(), Sequential)?;
 
-    let mut iter_results: Vec<_> = read_iter.collect::<Result<Vec<_>>>()?;
+    let mut iter_results: Vec<_> = read_iter.collect::<UioResult<Vec<_>>>()?;
     iter_results.sort_by_key(|&(idx, _)| idx);
 
     for (idx, items) in iter_results {
@@ -119,7 +120,7 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
     let many_ranges = (0..64).map(|i| read_range::<u64>(i, 1)).enumerate();
 
     let mut count = 0;
-    for record in file.read_iter::<Sequential, _>(many_ranges)? {
+    for record in file.read_iter(many_ranges, Sequential)? {
         let (idx, items) = record?;
 
         assert_eq!(
@@ -137,7 +138,7 @@ fn test_io_uring_read_batch_read_iter() -> Result<()> {
 }
 
 #[test]
-fn test_io_uring_read_iter_concurrent() -> Result<()> {
+fn test_io_uring_read_iter_concurrent() -> UioResult<()> {
     let dir = tempfile::tempdir().unwrap();
 
     // Large enough to span many io_uring batches (64 ranges, queue depth 16).
@@ -159,8 +160,8 @@ fn test_io_uring_read_iter_concurrent() -> Result<()> {
     let ranges_a = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
     let ranges_b = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
 
-    let iter_a = file_a.read_iter::<Sequential, _>(ranges_a.enumerate())?;
-    let iter_b = file_b.read_iter::<Sequential, _>(ranges_b.enumerate())?;
+    let iter_a = file_a.read_iter(ranges_a.enumerate(), Sequential)?;
+    let iter_b = file_b.read_iter(ranges_b.enumerate(), Sequential)?;
 
     // Zip alternates next() calls between the two iterators on the same
     // thread-local io_uring ring. With in-flight operations left across
@@ -203,7 +204,7 @@ extern "C" fn noop_signal_handler(_sig: libc::c_int) {}
 /// `submit_and_wait`. Under signal bombardment with cold page cache,
 /// no errors or panics should surface to the caller.
 #[test]
-fn test_io_uring_eintr_handling() -> Result<()> {
+fn test_io_uring_eintr_handling() -> UioResult<()> {
     // Install a no-op SIGUSR1 handler *without* SA_RESTART so that
     // io_uring_enter() receives EINTR instead of auto-restarting.
     unsafe {
@@ -266,7 +267,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
 
-            let Ok(iter) = file.read_iter::<Sequential, _>(ranges) else {
+            let Ok(iter) = file.read_iter(ranges, Sequential) else {
                 return 1;
             };
 
@@ -311,7 +312,7 @@ fn test_io_uring_eintr_handling() -> Result<()> {
 /// Every read is `KERNEL_PAGE_SIZE` aligned on both ends, with `align` set to `KERNEL_PAGE_SIZE`.
 /// The last block extends past EOF, so its read returns a truncated tail of valid bytes.
 #[test]
-fn test_io_uring_direct_io() -> Result<()> {
+fn test_io_uring_direct_io() -> UioResult<()> {
     use super::pipeline::IoUringPipeline;
 
     let dir = tempfile::tempdir().unwrap();
@@ -332,7 +333,7 @@ fn test_io_uring_direct_io() -> Result<()> {
         let end = start + expected.len();
 
         let range = start as u64..end as u64;
-        let bytes = file.read_bytes::<Sequential>(range, KERNEL_PAGE_SIZE)?;
+        let bytes = file.read_bytes(range, Sequential, KERNEL_PAGE_SIZE)?;
 
         assert_eq!(bytes.as_ref(), expected, "O_DIRECT block {idx} mismatch");
     }

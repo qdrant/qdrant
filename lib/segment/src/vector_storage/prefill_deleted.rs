@@ -12,6 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVector;
+use crate::vector_storage::VectorStorage;
 
 // Append `count` deleted placeholders in the storage's own element type. The
 // placeholder content is irrelevant — every entry is flagged deleted — so we
@@ -128,7 +129,12 @@ impl VectorStorageEnum {
                 fill_dense(&mut **v, count, &stopped)
             }
 
-            VectorStorageEnum::DenseTurbo(v) => fill_turbo(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseTurboMemmap(v) => fill_turbo(&mut **v, count, &stopped),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(v) => fill_turbo(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
+                fill_turbo(&mut **v, count, &stopped)
+            }
             VectorStorageEnum::MultiDenseTurbo(v) => fill_turbo_multi(&mut **v, count, &stopped),
 
             VectorStorageEnum::MultiDenseVolatile(v) => fill_multi(v, count, &stopped),
@@ -148,6 +154,9 @@ impl VectorStorageEnum {
 
             VectorStorageEnum::SparseVolatile(v) => fill_sparse(v, count, &stopped),
             VectorStorageEnum::SparseMmap(v) => fill_sparse(v, count, &stopped),
-        }
+        }?;
+
+        // Make sure any buffered updates are persisted.
+        self.flusher()()
     }
 }

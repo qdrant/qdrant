@@ -223,15 +223,15 @@ pub type ByteOffset = u64;
 
 pub type FileIndex = usize;
 
-pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
+pub type Flusher = Box<dyn FnOnce() -> UioResult<()> + Send>;
 
-pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
+pub type UioResult<T> = Result<T, UniversalIoError>;
 
 pub fn read_whole_via<Fs, T>(
     fs: &Fs,
     path: impl AsRef<Path>,
-    callback: impl FnOnce(Cow<'_, [u8]>) -> Result<T, UniversalIoError>,
-) -> Result<T, UniversalIoError>
+    callback: impl FnOnce(Cow<'_, [u8]>) -> UioResult<T>,
+) -> UioResult<T>
 where
     Fs: UniversalReadFs,
 {
@@ -256,7 +256,7 @@ where
 ///
 /// Uses a single logical read when the backend overrides
 /// [`UniversalRead::read_whole`](super::UniversalRead::read_whole).
-pub fn read_json_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> Result<T>
+pub fn read_json_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> UioResult<T>
 where
     Fs: UniversalReadFs,
     T: DeserializeOwned,
@@ -270,7 +270,7 @@ where
 ///
 /// Uses a single logical read when the backend overrides
 /// [`UniversalRead::read_whole`](super::UniversalRead::read_whole).
-pub fn read_bin_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> Result<T>
+pub fn read_bin_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> UioResult<T>
 where
     Fs: UniversalReadFs,
     T: DeserializeOwned,

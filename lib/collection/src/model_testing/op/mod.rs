@@ -2,6 +2,7 @@ mod generators;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
@@ -9,7 +10,7 @@ use generators::{
     random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
     random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
     random_point, random_prefetch, random_query_for_name, random_recommend_strategy,
-    random_scroll_filter, random_tag, random_update_mode, random_url_prefix_probe,
+    random_scroll_filter, random_slice, random_tag, random_update_mode, random_url_prefix_probe,
     random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
     upsert_fallback,
 };
@@ -30,7 +31,8 @@ use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
     MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    PointIdType, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface, WithVector,
+    PointIdType, Slice, SliceCondition, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface,
+    WithVector,
 };
 use segment::vector_storage::turbo::turbo_storage_roundtrip;
 use sparse::common::sparse_vector::SparseVector;
@@ -48,7 +50,14 @@ pub(super) enum Op {
     Upsert(PointIdType, NamedVectors, Payload),
     UpsertBatch(Vec<(PointIdType, NamedVectors, Payload)>),
     Delete(Vec<PointIdType>),
-    DeleteByFilter(i64),
+    /// Delete every point matching `num == X`, optionally further restricted to an id-space
+    /// `slice`. The engine resolves the filter to concrete ids at submit time before the WAL
+    /// append (issue #9575); with `slice: Some`, that resolution path also evaluates the
+    /// per-candidate slice check, and reload replays the resolved id list.
+    DeleteByFilter {
+        num: i64,
+        slice: Option<Slice>,
+    },
     SetPayload(Vec<PointIdType>, Payload),
     OverwritePayload(Vec<PointIdType>, Payload),
     DeletePayload(Vec<PointIdType>, Vec<JsonPath>),
@@ -118,9 +127,10 @@ pub(super) enum Op {
     },
     /// Same as `DeleteVectors` but driven by a `num == X` filter instead of an id list.
     ///
-    /// NOTE: this is structurally similar to `DeleteByFilter` (which is currently disabled
-    /// due to https://github.com/qdrant/qdrant/issues/9575). If post-reload count
-    /// mismatches appear here, the same WAL-replay nondeterminism is the prime suspect.
+    /// NOTE: this is structurally similar to `DeleteByFilter`. If post-reload count
+    /// mismatches appear here, the same WAL-replay nondeterminism is the prime suspect
+    /// (see https://github.com/qdrant/qdrant/issues/9575 — filter ops are now resolved to
+    /// concrete ids before the WAL append).
     DeleteVectorsByFilter {
         num: i64,
         names: Vec<VectorNameBuf>,
@@ -131,6 +141,12 @@ pub(super) enum Op {
     CountByTag(String),
     /// Verification op: count points whose `url` starts with the given prefix.
     CountByUrlPrefix(String),
+    /// Verification op: count points in a deterministic id-space slice
+    /// (`stable_hash(id) % total == index`), compare to model count via [`Slice::check`].
+    CountBySlice {
+        total: NonZeroU32,
+        index: u32,
+    },
     /// Verification op: scroll all points matching `tag == X`, compare id set to model.
     ScrollFilteredByTag(String),
     /// Verification op: scroll all points whose `url` starts with the given prefix.
@@ -248,7 +264,7 @@ pub(super) enum FusionKind {
 }
 
 /// Filter selector for `ScrollPaged`. Beyond the payload filters the other scroll verifiers
-/// support, this also covers a `has_id` matcher (restrict to an explicit point-id set).
+/// support, this also covers id-based matchers (`has_id`, `slice`, `num`∧`slice`) and `has_vector`.
 #[derive(Debug, Clone)]
 pub(super) enum ScrollFilter {
     None,
@@ -263,6 +279,21 @@ pub(super) enum ScrollFilter {
     HasVector(VectorNameBuf),
     /// `url` prefix matcher: only points whose `url` payload starts with the given prefix.
     UrlPrefix(String),
+    /// `slice` matcher: only points whose id falls in slice `index` of `total`
+    /// (`stable_hash(id) % total == index`). Deterministic and model-checkable via
+    /// [`Slice::check`]; primary use case of sliced scroll.
+    Slice {
+        total: NonZeroU32,
+        index: u32,
+    },
+    /// Composed `num == X` ∧ `slice`: the indexed `num` condition drives candidate
+    /// selection; `slice` is evaluated per candidate (no primary clause). Exercises the
+    /// planner path where an indexed payload filter is combined with an id-hash check.
+    NumAndSlice {
+        num: i64,
+        total: NonZeroU32,
+        index: u32,
+    },
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -281,7 +312,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 38;
+    const N: usize = 39;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -323,6 +354,7 @@ impl Swarm {
         "CountByUrlPrefix",
         "ScrollFilteredByUrlPrefix",
         "CreateSnapshot",
+        "CountBySlice",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -377,6 +409,7 @@ impl Swarm {
         // Background snapshot: cheap to *start* (the loop just spawns it), but it does real IO on a
         // blocking thread, so keep the weight modest.
         2, // CreateSnapshot
+        4, // CountBySlice
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -466,7 +499,16 @@ impl Op {
             }
             1 => Op::UpsertBatch(random_distinct_points(rng, active, 2..=5, id_space)),
             2 => Op::Delete(random_distinct_ids(rng, 1..=3, id_space)),
-            3 => Op::DeleteByFilter(random_num(rng)),
+            3 => {
+                let num = random_num(rng);
+                // Half the time compose with a slice so submit-time filter resolution and
+                // WAL-replayed id lists exercise Condition::Slice, not only payload match.
+                let slice = rng.random_bool(0.5).then(|| {
+                    let (total, index) = random_slice(rng);
+                    Slice { total, index }
+                });
+                Op::DeleteByFilter { num, slice }
+            }
             4 => {
                 let Some(ids) = random_existing_ids(rng, model, 3) else {
                     return upsert_fallback(rng, active, id_space);
@@ -725,6 +767,10 @@ impl Op {
             35 => Op::CountByUrlPrefix(random_url_prefix_probe(rng).to_string()),
             36 => Op::ScrollFilteredByUrlPrefix(random_url_prefix_probe(rng).to_string()),
             37 => Op::CreateSnapshot,
+            38 => {
+                let (total, index) = random_slice(rng);
+                Op::CountBySlice { total, index }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -736,7 +782,7 @@ impl Op {
             Op::Upsert(..) => "Upsert",
             Op::UpsertBatch(_) => "UpsertBatch",
             Op::Delete(_) => "Delete",
-            Op::DeleteByFilter(_) => "DeleteByFilter",
+            Op::DeleteByFilter { .. } => "DeleteByFilter",
             Op::SetPayload(..) => "SetPayload",
             Op::OverwritePayload(..) => "OverwritePayload",
             Op::DeletePayload(..) => "DeletePayload",
@@ -746,6 +792,7 @@ impl Op {
             Op::RetrieveRandom(_) => "RetrieveRandom",
             Op::RetrieveExisting(_) => "RetrieveExisting",
             Op::CountByNum(_) => "CountByNum",
+            Op::CountBySlice { .. } => "CountBySlice",
             Op::Search { .. } => "Search",
             Op::Query { .. } => "Query",
             Op::UpsertConditional { .. } => "UpsertConditional",
@@ -827,6 +874,17 @@ pub(super) fn match_has_vector_filter(name: &str) -> Filter {
     Filter::new_must(Condition::HasVector(HasVectorCondition::from(
         name.to_string(),
     )))
+}
+
+pub(super) fn match_slice_filter(total: NonZeroU32, index: u32) -> Filter {
+    Filter::new_must(Condition::Slice(SliceCondition {
+        slice: Slice { total, index },
+    }))
+}
+
+/// Indexed `num` ∧ id-space `slice` — `num` can be a primary clause; `slice` is per-candidate.
+pub(super) fn match_num_and_slice_filter(num: i64, total: NonZeroU32, index: u32) -> Filter {
+    match_num_filter(num).merge(&match_slice_filter(total, index))
 }
 
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {

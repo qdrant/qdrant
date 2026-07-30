@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
+use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig, StorageConfig};
+use blobstore::error::BlobstoreError;
+use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::config::StorageOptions;
-use gridstore::error::GridstoreError;
-use gridstore::{Blob, Gridstore};
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
@@ -14,14 +14,14 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Default options for Gridstore storage
-const fn default_gridstore_options(block_size: usize) -> StorageOptions {
-    StorageOptions {
+const fn default_gridstore_options(block_size: usize) -> StorageConfig {
+    StorageConfig::Mutable(GridstoreConfig {
+        page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size dependent on map value type
-        block_size_bytes: Some(block_size),
-        compression: Some(gridstore::config::Compression::None),
-        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-        region_size_blocks: None,
-    }
+        block_size_bytes: block_size,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        compression: blobstore::config::Compression::None,
+    })
 }
 
 impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
@@ -44,13 +44,13 @@ where
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             let options = default_gridstore_options(N::gridstore_block_size());
-            Gridstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
+            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))
@@ -66,7 +66,7 @@ where
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
-            .iter::<_, GridstoreError>(
+            .iter::<_, BlobstoreError>(
                 |idx, values: Vec<_>| {
                     in_memory_index.add_many_to_map(idx, values);
                     Ok(true)

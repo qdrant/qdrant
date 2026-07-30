@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -5,7 +9,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::common::snapshots_manager::SnapshotsConfig;
-use collection::config::{WalConfig, default_on_disk_payload};
+use collection::config::{PayloadStorageParams, WalConfig, default_on_disk_payload};
 use collection::operations::config_diff::OptimizersConfigDiff;
 use collection::operations::shared_storage_config::{
     DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH, SharedStorageConfig,
@@ -19,6 +23,7 @@ use common::low_memory::LowMemoryMode;
 use common::mmap;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
+use segment::common::io_uring::IoUringMode;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::{HnswConfig, HnswGlobalConfig};
 use serde::{Deserialize, Serialize};
@@ -55,6 +60,11 @@ pub struct PerformanceConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
+    /// Whether components that can be opened on either mmap or io_uring should use io_uring.
+    /// Unset leaves the vector storages following [`Self::async_scorer`] and nothing else on
+    /// io_uring. Kernel io_uring support is required whatever this is set to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub io_uring: Option<IoUringMode>,
     #[serde(default, flatten)]
     pub load_concurrency: LoadConcurrencyConfig,
 }
@@ -76,8 +86,15 @@ pub struct StorageConfig {
     #[validate(custom(function = validate_path))]
     #[serde(default)]
     pub temp_path: Option<PathBuf>,
+    /// Deprecated: use `payload.memory` instead.
     #[serde(default = "default_on_disk_payload")]
+    #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
     pub on_disk_payload: bool,
+    /// Default configuration of the payload storage for newly created collections.
+    /// Overrides the deprecated `on_disk_payload` flag if both are set.
+    #[serde(default)]
+    #[validate(nested)]
+    pub payload: Option<PayloadStorageParams>,
     #[validate(nested)]
     pub optimizers: OptimizersConfig,
     #[validate(nested)]

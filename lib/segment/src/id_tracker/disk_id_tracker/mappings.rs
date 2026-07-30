@@ -66,6 +66,22 @@ pub trait DiskMappingsSource {
             self.mapping_reader().external_id(offset)
         }
     }
+
+    /// Batched external→internal resolution streamed through `on_live`: one
+    /// pipelined mapping-lookup pass ([`lookup_batch`](DiskMappingReader::lookup_batch)),
+    /// with a per-point deleted check dropping points tombstoned after build.
+    /// Each surviving `(id, offset)` is delivered in read-completion order; no
+    /// buffer is built.
+    ///
+    /// The deleted check is not batched: the set is resident (or the on-disk
+    /// file is prefetched whole for the read-only tracker, since other reads
+    /// need it too), so each check is a cheap in-memory bit test — pipelining
+    /// it would buy nothing.
+    fn resolve_internal_batch(
+        &self,
+        external_ids: impl IntoIterator<Item = PointIdType>,
+        on_live: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()>;
 }
 
 /// A borrowed `(reader, deleted)` view; a `Copy` pair of references whose
@@ -126,8 +142,6 @@ fn live_filter(deleted: &BitSlice) -> impl Fn(&(PointIdType, PointOffsetType)) -
 
 /// The one place a disk lookup error is dropped: logged and turned into `None`
 /// to satisfy the `Option`-returning `IdTrackerRead` boundary.
-///
-/// ToDo: this should be removed after we have a batch-read interface for id tracker lookups
 pub fn log_lookup_err<T>(result: OperationResult<Option<T>>) -> Option<T> {
     result.unwrap_or_else(|err| {
         log::error!("disk id tracker lookup failed: {err}");

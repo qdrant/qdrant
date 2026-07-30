@@ -6,14 +6,14 @@ use std::io::{self, ErrorKind};
 
 use super::{DiskCache, State};
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
-use crate::universal_io::{OwnedPipeline, Populate, Result, UniversalIoError, UniversalRead};
+use crate::universal_io::{OwnedPipeline, Populate, UioResult, UniversalIoError, UniversalRead};
 
 impl<R> DiskCache<R>
 where
     R: DiskCacheRemote,
 {
     /// Body of [`UniversalRead::reopen`](crate::universal_io::UniversalRead::reopen).
-    pub(super) fn reopen_impl(&mut self) -> Result<()> {
+    pub(super) fn reopen_impl(&mut self) -> UioResult<()> {
         // `&mut self` gives exclusive access, so we can transition `state`
         // directly without locking or touching the `ready` gate concurrently.
         //

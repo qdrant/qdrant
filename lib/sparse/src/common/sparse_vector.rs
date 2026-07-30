@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
+use blobstore::Blob;
+use blobstore::error::BlobstoreError;
 use common::types::ScoreType;
-use gridstore::Blob;
-use gridstore::error::GridstoreError;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -269,9 +269,9 @@ impl Blob for SparseVector {
         bincode::serialize(&self).expect("Sparse vector serialization should not fail")
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, GridstoreError> {
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
         bincode::deserialize(data).map_err(|err| {
-            GridstoreError::service_error(format!("Failed to deserialize SparseVector: {err}"))
+            BlobstoreError::service_error(format!("Failed to deserialize SparseVector: {err}"))
         })
     }
 }

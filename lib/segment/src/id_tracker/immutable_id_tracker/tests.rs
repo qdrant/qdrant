@@ -120,7 +120,7 @@ fn test_load_store() {
 /// ID tracker.
 #[test]
 fn test_store_load_mutated() {
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let (dropped_points, custom_version) = {
@@ -288,7 +288,7 @@ fn test_point_deletion_persists_reload() {
 /// Tests de/serializing of whole `PointMappings`.
 #[test]
 fn test_point_mappings_de_serialization() {
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
 
     let mut buf = vec![];
 
@@ -317,7 +317,7 @@ fn test_point_mappings_de_serialization() {
 /// Verifies that de/serializing works properly for empty `PointMappings`.
 #[test]
 fn test_point_mappings_de_serialization_empty() {
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
     let mappings = CompressedPointMappings::random(&mut rng, 0);
 
     let mut buf = vec![];
@@ -336,7 +336,7 @@ fn test_point_mappings_de_serialization_empty() {
 /// Tests de/serializing of only single ID mappings.
 #[test]
 fn test_point_mappings_de_serialization_single() {
-    let mut rng = StdRng::seed_from_u64(RAND_SEED);
+    let mut rng = SmallRng::seed_from_u64(RAND_SEED);
 
     const SIZE: usize = 400_000;
 

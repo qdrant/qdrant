@@ -1,5 +1,5 @@
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::GridstoreReader;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
@@ -10,7 +10,7 @@ mod read_ops;
 
 #[derive(Debug)]
 pub struct ReadOnlySparseVectorStorage<S: UniversalRead> {
-    storage: GridstoreReader<StoredSparseVector, S>,
+    storage: BlobstoreReader<StoredSparseVector, S>,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     next_point_offset: usize,
@@ -234,5 +234,50 @@ mod tests {
             assert!(reader.is_deleted_vector(id));
         }
         assert!(!reader.is_deleted_vector(0));
+    }
+
+    #[test]
+    fn live_reload_picks_up_appended_vector_deletion() {
+        let dir = Builder::new()
+            .prefix("ro_sparse_appended_deleted")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        fn make(id: usize) -> SparseVector {
+            SparseVector {
+                indices: vec![1, 5, 9],
+                values: vec![id as f32 + 0.1, id as f32 + 0.2, id as f32 + 0.3],
+            }
+        }
+
+        let mut writer = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+        writer
+            .insert_vector(0, VectorRef::from(&make(0)), &hw)
+            .unwrap();
+        writer.flusher()().unwrap();
+
+        let mut reader =
+            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
+
+        writer
+            .insert_vector(1, VectorRef::from(&make(1)), &hw)
+            .unwrap();
+        writer.delete_vector(1).unwrap();
+        writer.flusher()().unwrap();
+
+        let deleted_ids: Vec<PointOffsetType> = vec![];
+        let new_ids: Vec<PointOffsetType> = vec![1];
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+                &hw,
+            )
+            .unwrap();
+
+        assert!(reader.is_deleted_vector(1));
     }
 }

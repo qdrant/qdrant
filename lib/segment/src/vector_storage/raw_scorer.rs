@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
@@ -33,8 +34,7 @@ use crate::vector_storage::query_scorer::turbo_multi_custom_query_scorer::TurboM
 use crate::vector_storage::query_scorer::turbo_multi_query_scorer::TurboMultiQueryScorer;
 use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
-use crate::vector_storage::turbo::TurboVectorStorage;
-use crate::vector_storage::turbo::multi::TurboMultiVectorStorage;
+use crate::vector_storage::{TurboMultiScoring, TurboScoring};
 
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
@@ -83,7 +83,12 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseTurbo(vs) => raw_turbo_scorer_impl(query, vs, hc),
+        VectorStorageEnum::DenseTurboMemmap(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        #[cfg(target_os = "linux")]
+        VectorStorageEnum::DenseTurboUring(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseTurboAppendableMemmap(vs) => {
+            raw_turbo_scorer_impl(query, vs.as_ref(), hc)
+        }
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
@@ -100,7 +105,9 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
-        VectorStorageEnum::MultiDenseTurbo(vs) => raw_turbo_multi_scorer_impl(query, vs, hc),
+        VectorStorageEnum::MultiDenseTurbo(vs) => {
+            raw_turbo_multi_scorer_impl(query, vs.as_ref(), hc)
+        }
         VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
     }
@@ -325,16 +332,9 @@ fn new_scorer_with_metric<
     }
 }
 
-/// Build a [`RawScorer`] for a [`TurboVectorStorage`].
-///
-/// The metric is selected at runtime from the storage's distance (no generic
-/// `TMetric`): query preprocessing and the score sign convention live inside
-/// [`TurboVectorStorage`], so the scorers here only carry the precomputed
-/// query. `Nearest` uses the asymmetric [`TurboQueryScorer`]; the multi-vector
-/// queries use [`TurboCustomQueryScorer`].
-pub fn raw_turbo_scorer_impl<'a>(
+pub fn raw_turbo_scorer_impl<'a, TStorage: TurboScoring>(
     query: QueryVector,
-    vector_storage: &'a TurboVectorStorage,
+    vector_storage: &'a TStorage,
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
@@ -386,14 +386,9 @@ pub fn raw_turbo_scorer_impl<'a>(
     }
 }
 
-/// Build a [`RawScorer`] for a [`TurboMultiVectorStorage`].
-///
-/// Mirror of [`raw_turbo_scorer_impl`] for multivectors: `Nearest` uses the
-/// MaxSim [`TurboMultiQueryScorer`]; the multi-vector queries use
-/// [`TurboMultiCustomQueryScorer`].
-pub fn raw_turbo_multi_scorer_impl<'a>(
+pub fn raw_turbo_multi_scorer_impl<'a, TStorage: TurboMultiScoring>(
     query: QueryVector,
-    vector_storage: &'a TurboMultiVectorStorage,
+    vector_storage: &'a TStorage,
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
@@ -581,16 +576,36 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
     }
 }
 
-#[inline]
-pub fn check_deleted_condition(
-    point: PointOffsetType,
-    vec_deleted: &BitSlice,
-    point_deleted: &BitSlice,
-) -> bool {
-    // Deleted points propagate to vectors; check vector deletion for possible early return
-    // Default to not deleted if our deleted flags failed grow
-    !vec_deleted.get_bit(point as usize).unwrap_or(false)
-        // Additionally check point deletion for integrity if delete propagation to vector failed
-        // Default to deleted if the point mapping was removed from the ID tracker
-        && !point_deleted.get_bit(point as usize).unwrap_or(true)
+/// A [`ConditionChecker`] matching points that not deleted.
+pub struct NotDeletedChecker<'a> {
+    /// [`BitSlice`] defining flags for deleted points (and thus their vectors).
+    ///
+    /// Point deleted flags should be explicitly present as `false`
+    /// for each existing point in the segment.
+    /// If there are no flags for some points, they are considered deleted.
+    pub point_deleted: &'a BitSlice,
+
+    /// [`BitSlice`] defining flags for deleted vectors in this segment.
+    pub vec_deleted: &'a BitSlice,
+}
+
+impl ConditionChecker for NotDeletedChecker<'_> {
+    type Error = OperationError;
+
+    #[inline]
+    fn check(&self, point: PointOffsetType) -> OperationResult<bool> {
+        // Deleted points propagate to vectors; check vector deletion for possible early return
+        // Default to not deleted if our deleted flags failed grow
+        Ok(!self.vec_deleted.get_bit(point as usize).unwrap_or(false)
+            // Additionally check point deletion for integrity if delete propagation to vector failed
+            // Default to deleted if the point mapping was removed from the ID tracker
+            && !self.point_deleted.get_bit(point as usize).unwrap_or(true))
+    }
+
+    fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
+    where
+        K: CheckItem,
+    {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
 }

@@ -7,10 +7,10 @@
 //! below plugs it in. Mirror of the writable side in
 //! `numeric_index/value_indexer.rs`.
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 use serde_json::{Number, Value};
 
 use super::super::Encodable;

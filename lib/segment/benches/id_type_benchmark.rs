@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::RngExt;
+use rand::rngs::SmallRng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,7 +30,7 @@ struct StructId {
 
 fn id_serialization_speed(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization-group");
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
 
     group.bench_function("u64", |b| {
         b.iter(|| {

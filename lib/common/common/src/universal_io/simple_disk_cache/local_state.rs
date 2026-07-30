@@ -11,7 +11,7 @@ use roaring::RoaringBitmap;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, Result, UniversalIoError, UniversalRead,
+    MmapFile, MmapFs, OpenOptions, Populate, UioResult, UniversalIoError, UniversalRead,
     UniversalReadFs, UniversalWrite, mmap as mmap_file,
 };
 
@@ -34,7 +34,7 @@ impl LocalState {
         local_path: impl AsRef<Path>,
         len: u64,
         options: OpenOptions,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         if let Some(parent) = local_path.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }
@@ -72,7 +72,7 @@ impl LocalState {
         })
     }
 
-    pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> Result<()> {
+    pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> UioResult<()> {
         let mmap = self.mmap.get_mut();
         let current_len = mmap.len::<u8>()?;
         if current_len == new_len {
@@ -133,7 +133,7 @@ impl LocalState {
     pub(super) unsafe fn read_mmap_bytes<P: AccessPattern>(
         &self,
         range: Range<u64>,
-    ) -> Result<&[u8]> {
+    ) -> UioResult<&[u8]> {
         let mmap_bytes = self.mmap().as_bytes::<P>();
         mmap_file::read_bytes(mmap_bytes, range)
     }

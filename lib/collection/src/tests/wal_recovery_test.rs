@@ -1,28 +1,49 @@
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
-use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
+use segment::types::{
+    Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector,
+};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointStructRawPersisted,
+    VectorPersisted, VectorStructPersisted,
 };
 use shard::segment_holder::FlushMode;
 use shard::wal::{SerdeWal, WalRawRecord};
+use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
+use crate::config::{CollectionConfigInternal, CollectionParams};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::PointRequestInternal;
+use crate::operations::types::{
+    CollectionError, Datatype, PointRequestInternal, SparseVectorParams, VectorsConfig,
+};
+use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::tests::fixtures::*;
 use crate::update_workers::applied_seq::{APPLIED_SEQ_SAVE_INTERVAL, AppliedSeqHandler};
+
+/// Collection config with `prevent_unoptimized`.
+///
+/// `load_from_wal` honors the persisted `applied_seq` — and therefore splits the replay, handing
+/// the unapplied WAL tail to the update worker — only under that flag. Any test that needs that
+/// tail to exist must build its config through here, otherwise the replay is exhaustive and the
+/// test silently stops exercising the path it was written for.
+fn create_collection_config_with_prevent_unoptimized() -> CollectionConfigInternal {
+    let mut config = create_collection_config();
+    config.optimizer_config.prevent_unoptimized = Some(true);
+    config
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
@@ -434,7 +455,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -588,6 +609,137 @@ async fn test_wal_replay_loads_pending_to_queue() {
     shard.stop_gracefully().await;
 }
 
+/// Without `prevent_unoptimized`, WAL replay must be exhaustive before `LocalShard::load` returns.
+///
+/// `applied_seq` splits the replay in two: everything past it is handed to the update worker and
+/// applied in the background, *after* `load` returns and the shard starts answering reads. Only
+/// `prevent_unoptimized` needs that routing, and doing it anywhere else is observable as data
+/// loss — an operation already acknowledged to a client is missing from reads until the worker
+/// catches up, then reappears.
+///
+/// Force `applied_seq` far below the WAL end and reload: every point must be visible immediately,
+/// with no plunger, no queue drain and no polling.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    // Plain config: no `prevent_unoptimized`, so `applied_seq` must not be honored.
+    let config = create_collection_config();
+    assert!(
+        !config
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or_default(),
+        "this test requires a collection without prevent_unoptimized",
+    );
+
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shared_storage_config = Arc::new(SharedStorageConfig {
+        update_queue_size: 10_000,
+        ..Default::default()
+    });
+
+    // Enough operations that a stale applied_seq would leave a large tail behind.
+    let total_ops = 500u64;
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        shared_storage_config.clone(),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Stop flush worker to prevent automatic WAL truncation.
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Every one of these is acknowledged with `WaitUntil::Visible`, so a client has been told
+    // they are durable *and* readable.
+    for i in 0..total_ops {
+        let point = PointStructPersisted {
+            id: i.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await
+            .unwrap();
+    }
+
+    // Stop the shard without flush to preserve WAL.
+    shard.stop_gracefully().await;
+
+    // Push applied_seq well below the WAL end. Under `prevent_unoptimized` this would send
+    // everything past `applied_seq + APPLIED_SEQ_SAVE_INTERVAL` to the update queue.
+    let applied_seq_handler = AppliedSeqHandler::load_or_init(collection_dir.path(), total_ops);
+    let low_applied_seq = total_ops.saturating_sub(100);
+    if applied_seq_handler.op_num().unwrap_or(0) > low_applied_seq {
+        applied_seq_handler
+            .force_set_and_persist(low_applied_seq)
+            .unwrap();
+    }
+
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        shared_storage_config,
+        payload_index_schema,
+        false,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .unwrap();
+
+    // Read first, exactly as a client would the moment the shard starts serving: no plunger, no
+    // drain, no polling. Both samples are taken before asserting, so the visible count is the
+    // earliest observation possible rather than one taken after the queue check gave the worker
+    // time to catch up.
+    let visible_points = shard.info().await.unwrap().points_count.unwrap_or(0);
+    let pending_updates = shard.local_update_queue_info().await.length;
+
+    // The symptom: every one of these was acknowledged as visible before the restart.
+    assert_eq!(
+        visible_points, total_ops as usize,
+        "all {total_ops} acknowledged points must be visible as soon as load returns",
+    );
+
+    // The cause: nothing may be left for the update worker to apply in the background.
+    assert_eq!(
+        pending_updates, 0,
+        "no WAL entry may be deferred to the update queue without prevent_unoptimized",
+    );
+
+    shard.stop_gracefully().await;
+}
+
 /// A deferred-tail WAL entry that fails deserialization must not fail shard load.
 ///
 /// `load_from_wal` reads the tail past `applied_seq` to advance the newest clocks before
@@ -599,7 +751,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -740,7 +892,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -878,7 +1030,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    let config = create_collection_config_with_prevent_unoptimized();
 
     let collection_name = "test".to_string();
 
@@ -1328,4 +1480,233 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
     );
 
     shard.stop_gracefully().await;
+}
+
+/// Shared driver for the bad-op WAL-replay reproducers: apply `valid_op`
+/// (point 1) and `bad_op` (point 2, must be rejected), then reload the shard
+/// so both ops replay from the WAL. `submit_update` writes to the WAL *before*
+/// applying, so the bad op survives its own failed apply — recovery must skip
+/// it and complete (a replay-aborting `ServiceError` fails this reload on
+/// every start: a crash loop), and only the valid point may survive.
+///
+/// Returns the bad op's rejection error for extra assertions.
+async fn assert_bad_op_skipped_on_wal_replay(
+    config: CollectionConfigInternal,
+    valid_op: CollectionUpdateOperations,
+    bad_op: CollectionUpdateOperations,
+) -> CollectionError {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    shard
+        .update(valid_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .await
+        .expect("valid op should succeed");
+
+    let err = shard
+        .update(bad_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .await
+        .expect_err("bad op must be rejected");
+
+    shard.stop_gracefully().await;
+
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        true,
+        update_runtime,
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .expect("shard must recover: the bad op is skipped, not crash-looped");
+
+    let request = Arc::new(PointRequestInternal {
+        ids: vec![1.into(), 2.into()],
+        with_payload: None,
+        with_vector: WithVector::Bool(false),
+    });
+    let retrieved = shard
+        .retrieve(
+            request,
+            &WithPayload::from(false),
+            &WithVector::Bool(false),
+            &current_runtime,
+            None,
+            hw_acc,
+            DeferredBehavior::VisibleOnly,
+        )
+        .await
+        .unwrap();
+
+    let present: Vec<_> = retrieved.iter().map(|record| record.id).collect();
+    assert_eq!(
+        present,
+        vec![1.into()],
+        "only the valid point should survive; the bad op must be skipped on replay",
+    );
+
+    shard.stop_gracefully().await;
+
+    err
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
+    let raw_upsert = |id: u64, bytes: Vec<u8>| {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
+            PointStructRawPersisted {
+                id: id.into(),
+                vectors: std::iter::once((DEFAULT_VECTOR_NAME.to_owned(), bytes)).collect(),
+                payload: None,
+            },
+        ]))
+    };
+
+    // A dim-4 dense f32 vector is exactly 16 storage-native bytes; 12 bytes
+    // (3 floats) is a dimension mismatch the storage must reject.
+    let good_bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+    let bad_bytes: Vec<u8> = [1.0f32, 2.0, 3.0]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+
+    // Single dense vector, dim 4, Distance::Dot (no cosine preprocessing, so
+    // the storage-native form is just the packed f32 bytes).
+    let err = assert_bad_op_skipped_on_wal_replay(
+        create_collection_config(),
+        raw_upsert(1, good_bytes),
+        raw_upsert(2, bad_bytes),
+    )
+    .await;
+
+    // The apply must fail as a user error (`BadInput`), not a `ServiceError` —
+    // that is exactly what makes replay skip it.
+    assert!(
+        matches!(err, CollectionError::BadInput { .. }),
+        "malformed raw blob must be a BadInput user error (skipped on replay), got {err:?}",
+    );
+}
+
+/// Sparse counterpart of [`test_malformed_raw_upsert_is_skipped_on_wal_replay`]:
+/// a raw sparse blob that doesn't decode as a stored sparse vector.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
+    let sparse_name = "sparse";
+
+    // Sparse-only collection: one sparse vector, default index parameters.
+    let mut config = create_collection_config();
+    config.params = CollectionParams {
+        sparse_vectors: Some(BTreeMap::from([(
+            sparse_name.to_owned(),
+            SparseVectorParams {
+                index: None,
+                modifier: None,
+            },
+        )])),
+        ..CollectionParams::empty()
+    };
+
+    // A valid sparse point via the plain upsert path.
+    let valid_upsert = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(vec![PointStructPersisted {
+            id: 1.into(),
+            vector: VectorStructPersisted::Named(HashMap::from([(
+                sparse_name.to_owned(),
+                VectorPersisted::Sparse(
+                    SparseVector::new(vec![0, 2, 5], vec![0.5, 0.7, 0.9]).unwrap(),
+                ),
+            )])),
+            payload: None,
+        }]),
+    ));
+
+    // A raw upsert whose blob is not a decodable stored sparse vector.
+    let malformed_raw_upsert =
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
+            PointStructRawPersisted {
+                id: 2.into(),
+                vectors: std::iter::once((sparse_name.to_owned(), vec![0_u8, 1, 2])).collect(),
+                payload: None,
+            },
+        ]));
+
+    assert_bad_op_skipped_on_wal_replay(config, valid_upsert, malformed_raw_upsert).await;
+}
+
+/// A multivector exceeding whole-chunk capacity in TurboQuant storage is only
+/// rejected during apply, after the WAL write. Public APIs can't produce one
+/// (`MAX_MULTIVECTOR_FLATTENED_LEN`); the internal API applies operations
+/// without that validation.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_over_capacity_multivector_upsert_is_skipped_on_wal_replay() {
+    // Test builds use a 512 KiB storage chunk; a Turbo4 record of a dim-128
+    // subvector is at least 64 bytes, so one chunk holds at most 8192 subvectors.
+    const DIM: usize = 128;
+    const OVER_CAPACITY_COUNT: usize = 9000;
+
+    // Single multivector with TurboQuant (Turbo4) storage.
+    let mut vector_params = VectorParamsBuilder::new(DIM as u64, Distance::Dot)
+        .with_datatype(Datatype::Turbo4)
+        .build();
+    vector_params.multivector_config = Some(MultiVectorConfig::default());
+
+    let mut config = create_collection_config();
+    config.params = CollectionParams {
+        vectors: VectorsConfig::Single(vector_params),
+        ..CollectionParams::empty()
+    };
+    // The over-capacity operation (~4.6 MB of f32 input) must fit a WAL segment.
+    config.wal_config.wal_capacity_mb = 16;
+
+    let multi_upsert = |id: u64, count: usize| {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::from(vec![PointStructPersisted {
+                id: id.into(),
+                vector: VectorStructPersisted::MultiDense(vec![vec![1.0; DIM]; count]),
+                payload: None,
+            }]),
+        ))
+    };
+
+    assert_bad_op_skipped_on_wal_replay(
+        config,
+        multi_upsert(1, 2),
+        multi_upsert(2, OVER_CAPACITY_COUNT),
+    )
+    .await;
 }

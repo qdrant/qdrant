@@ -40,9 +40,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, Result, UniversalKind};
+use common::universal_io::{ListedFile, UioResult, UniversalKind};
 use futures::stream::{self, BoxStream, StreamExt as _};
-use io_bridge::{AsyncRead, BlobFile, BlobFs};
+use io_bridge::{AsyncRead, BlobFile, BlobFs, OffsetByteStream};
 use tokio::sync::OnceCell;
 use uio_grpc_client::Client;
 
@@ -77,7 +77,7 @@ impl Inner {
     /// The shared gRPC client, building it on first use. Must be awaited from
     /// within the runtime that drives the reads (the tonic channel captures the
     /// current reactor on construction).
-    async fn client(&self) -> Result<&Client> {
+    async fn client(&self) -> UioResult<&Client> {
         self.client
             .get_or_try_init(|| async {
                 Client::connect_lazy(self.endpoint.clone(), self.api_key.clone())
@@ -123,7 +123,7 @@ fn path_to_string(path: &Path) -> String {
 impl AsyncRead for UioGrpcSource {
     type Config = UioGrpcConfig;
 
-    fn open(config: &Self::Config) -> Result<Self> {
+    fn open(config: &Self::Config) -> UioResult<Self> {
         Ok(Self::new(
             config.endpoint.clone(),
             config.collection.as_str(),
@@ -135,7 +135,7 @@ impl AsyncRead for UioGrpcSource {
     fn list_files(
         &self,
         prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         let inner = self.inner.clone();
         let prefix = path_to_string(prefix);
         async move {
@@ -146,7 +146,7 @@ impl AsyncRead for UioGrpcSource {
         }
     }
 
-    fn exists(&self, path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+    fn exists(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
         let inner = self.inner.clone();
         let path = path_to_string(path);
         async move {
@@ -161,7 +161,8 @@ impl AsyncRead for UioGrpcSource {
         &self,
         path: &Path,
         range: Range<u64>,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
+    {
         let inner = self.inner.clone();
         let path = path_to_string(path);
         let length = range.end - range.start;
@@ -183,8 +184,7 @@ impl AsyncRead for UioGrpcSource {
         &self,
         path: &Path,
         from: u64,
-    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
-    {
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
         let inner = self.inner.clone();
         let path = path_to_string(path);
         async move {
@@ -199,17 +199,17 @@ impl AsyncRead for UioGrpcSource {
             if length == 0 {
                 // Nothing to read past `from`; yield the size with an empty body
                 // rather than issuing a zero-length range request.
-                let empty: BoxStream<'static, Result<Bytes>> = stream::empty().boxed();
+                let empty: OffsetByteStream = stream::empty().boxed();
                 return Ok((total, empty));
             }
             let stream = client
                 .read_bytes_stream_raw(&inner.collection, inner.shard_id, &path, from, length)
                 .await?;
-            Ok((total, stream))
+            Ok((total, io_bridge::with_running_offsets(stream)))
         }
     }
 
-    fn len(&self, path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+    fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let inner = self.inner.clone();
         let path = path_to_string(path);
         async move {

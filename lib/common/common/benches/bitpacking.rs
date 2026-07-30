@@ -5,18 +5,18 @@ use common::bitpacking_links::{iterate_packed_links, pack_links};
 use common::bitpacking_ordered;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use itertools::Itertools as _;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng as _};
 use zerocopy::IntoBytes;
 
 pub fn bench_bitpacking(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitpacking");
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     let data8 = (0..64_000_000).map(|_| rng.random()).collect::<Vec<u8>>();
     let data32 = (0..4_000_000).map(|_| rng.random()).collect::<Vec<u32>>();
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("read", |b| {
         b.iter_batched(
             || {
@@ -36,7 +36,7 @@ pub fn bench_bitpacking(c: &mut Criterion) {
         )
     });
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     let mut out = Vec::new();
     group.bench_function("write", |b| {
         b.iter_batched(
@@ -63,7 +63,7 @@ pub fn bench_bitpacking(c: &mut Criterion) {
 pub fn bench_bitpacking_links(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitpacking_links");
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     let mut links = Vec::new();
     let mut pos = vec![(0, 0, 0)];
     while links.len() <= 64_000_000 {
@@ -86,7 +86,7 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
         pos.push((links.len(), bits_per_unsorted, sorted_count));
     }
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("read", |b| {
         b.iter_batched(
             || {
@@ -106,7 +106,8 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
 pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitpacking_ordered");
 
-    let values = bitpacking_ordered::gen_test_sequence(&mut StdRng::seed_from_u64(42), 32, 1 << 22);
+    let values =
+        bitpacking_ordered::gen_test_sequence(&mut SmallRng::seed_from_u64(42), 32, 1 << 22);
 
     group.sample_size(10);
     group.bench_function("compress", |b| {
@@ -125,7 +126,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
         decompressor.parameters(),
     );
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("get_raw", |b| {
         b.iter_batched(
             || rng.random_range(0..values.len()),
@@ -136,7 +137,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
         )
     });
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("get", |b| {
         b.iter_batched(
             || rng.random_range(0..values.len()),
@@ -147,7 +148,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
         )
     });
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("get2", |b| {
         b.iter_batched(
             || rng.random_range(0..values.len() - 1),

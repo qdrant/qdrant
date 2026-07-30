@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::{ReadRange, UniversalRead};
+use common::universal_io::{ReadRange, UniversalRead, UserData};
 use itertools::Either;
 
 use super::super::Encodable;
@@ -39,6 +39,27 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         } else {
             false
         }
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&T) -> bool,
+        M: FnMut(U, bool),
+    {
+        self.storage.point_to_values.values_iter_batch(
+            items,
+            &self.storage.deleted,
+            ConditionedCounter::always(hw_counter),
+            |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
+        )
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
@@ -163,10 +184,13 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
                 // saturates to the boundary the block lies beyond.
                 return Ok(Err(if block.end <= lo { lo } else { hi }));
             }
-            let elems = self.storage.pairs.read::<Random>(ReadRange {
-                byte_offset: (block_lo * size_of::<Point<T>>()) as u64,
-                length: (block_hi - block_lo) as u64,
-            })?;
+            let elems = self.storage.pairs.read(
+                ReadRange::new(
+                    (block_lo * size_of::<Point<T>>()) as u64,
+                    (block_hi - block_lo) as u64,
+                ),
+                Random,
+            )?;
             return Ok(elems
                 .binary_search(bound)
                 .map(|idx| idx + block_lo)
@@ -177,11 +201,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         let mut right = hi;
         while left < right {
             let mid = left + (right - left) / 2;
-            // TODO(luis): use read_one
-            let elem = self.storage.pairs.read::<Random>(ReadRange {
-                byte_offset: (mid * size_of::<Point<T>>()) as u64,
-                length: 1,
-            })?;
+            let elem = self
+                .storage
+                .pairs
+                .read(ReadRange::one((mid * size_of::<Point<T>>()) as u64), Random)?;
             match elem[0].cmp(bound) {
                 std::cmp::Ordering::Less => left = mid + 1,
                 std::cmp::Ordering::Equal => return Ok(Ok(mid)),
@@ -240,10 +263,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         let count = end_pos - start_pos;
 
         let iter = if count > 0 {
-            match self.storage.pairs.read::<Random>(ReadRange {
-                byte_offset: (start_pos * size_of::<Point<T>>()) as u64,
-                length: count as u64,
-            })? {
+            match self.storage.pairs.read(
+                ReadRange::new((start_pos * size_of::<Point<T>>()) as u64, count as u64),
+                Random,
+            )? {
                 Cow::Borrowed(slice) => Either::Left(slice.iter().copied()),
                 Cow::Owned(vec) => Either::Right(vec.into_iter()),
             }

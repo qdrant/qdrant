@@ -11,7 +11,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use rand::prelude::StdRng;
+use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
 use segment::entry::entry_point::SegmentEntry;
@@ -38,7 +38,7 @@ const TOP: usize = 10;
 // intent: bench `search` without filter
 fn multi_vector_search_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi-vector-search-group");
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
 
     let hnsw_index = make_segment_index(&mut rnd, Dot);
     group.bench_function("hnsw-multivec-search-dot", |b| {

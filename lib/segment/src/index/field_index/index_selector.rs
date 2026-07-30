@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
-use gridstore::Blob;
 
 use super::bool_index::BoolIndex;
 use super::bool_index::immutable_bool_index::ImmutableBoolIndex;

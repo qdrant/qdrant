@@ -18,7 +18,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use bytes::Bytes;
-use common::universal_io::{Result, UniversalIoError};
+use common::universal_io::{UioResult, UniversalIoError};
 use io_bridge::AsyncAppend;
 use object_store::aws::{AmazonS3, AwsAuthorizer};
 use object_store::client::{HttpClient, HttpConnector as _, HttpRequestBody, ReqwestConnector};
@@ -72,7 +72,7 @@ impl AppendContext {
 
     /// The shared HTTP client, built on first call. Concurrent first calls
     /// may build a transient extra client; exactly one is kept.
-    fn client(&self) -> Result<HttpClient> {
+    fn client(&self) -> UioResult<HttpClient> {
         if let Some(client) = self.client.get() {
             return Ok(client.clone());
         }
@@ -97,7 +97,7 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
         path: &std::path::Path,
         offset: u64,
         data: Bytes,
-    ) -> impl Future<Output = Result<u64>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store().clone();
         let context = self.append_context().cloned();
         let key = crate::source::build_key(path);
@@ -134,7 +134,7 @@ async fn append_request(
     key: &object_store::path::Path,
     offset: u64,
     data: Bytes,
-) -> Result<u64> {
+) -> UioResult<u64> {
     let credential = store
         .credentials()
         .get_credential()
@@ -468,7 +468,7 @@ mod tests {
 
     /// Append `b"data"` at `offset` to `dir/append.dat` via the stub, so a
     /// consistent store would report a new object size of `offset + 4`.
-    fn append_data_at(endpoint: &str, offset: u64) -> Result<u64> {
+    fn append_data_at(endpoint: &str, offset: u64) -> UioResult<u64> {
         let store = Arc::new(
             AmazonS3Builder::new()
                 .with_bucket_name("bucket")

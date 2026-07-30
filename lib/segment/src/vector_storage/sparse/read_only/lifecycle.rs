@@ -1,7 +1,7 @@
 use std::path::Path;
 
+use blobstore::BlobstoreReader;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use gridstore::GridstoreReader;
 
 use super::ReadOnlySparseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -24,8 +24,8 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        // Gridstore reader
-        GridstoreReader::<StoredSparseVector, S>::preopen(fs, path.join(STORAGE_DIRNAME), populate)
+        // Blobstore reader
+        BlobstoreReader::<StoredSparseVector, S>::preopen(fs, path.join(STORAGE_DIRNAME), populate)
             .map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to preopen read-only sparse vector storage: {err}"
@@ -42,14 +42,14 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
     /// threading every file open through `fs`; reads the existing layout but
     /// creates and writes nothing. `populate` mirrors [`Self::preopen`].
     /// `next_point_offset` is reconstructed like the
-    /// writable storage on reopen: the highest deleted id or the Gridstore
+    /// writable storage on reopen: the highest deleted id or the Blobstore
     /// pointer count, whichever is larger.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let storage = GridstoreReader::<StoredSparseVector, S>::open(
+        let storage = BlobstoreReader::<StoredSparseVector, S>::open(
             fs,
             path.join(STORAGE_DIRNAME),
             populate,

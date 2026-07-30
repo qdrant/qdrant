@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use examples::DATA_DIR;
 use qdrant_edge::external::serde_json;
-use qdrant_edge::{EdgeShard, PointId, WithPayloadInterface, WithVector};
+use qdrant_edge::{EdgeShard, PointId, RetrieveRequestBuilder, WithPayloadInterface};
 
 const SNAPSHOT_URL: &str =
     "https://storage.googleapis.com/qdrant-benchmark-snapshots/test-shard.snapshot";
@@ -34,9 +34,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shard = EdgeShard::load(&recovered_path, None)?;
 
     let points = shard.retrieve(
-        &[PointId::NumId(1), PointId::NumId(2), PointId::NumId(3)],
-        Some(WithPayloadInterface::Bool(true)),
-        Some(WithVector::Bool(false)),
+        RetrieveRequestBuilder::new(vec![
+            PointId::NumId(1),
+            PointId::NumId(2),
+            PointId::NumId(3),
+        ])
+        .with_payload(WithPayloadInterface::Bool(true))
+        .build(),
     )?;
 
     for point in &points {
@@ -56,9 +60,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shard = EdgeShard::load(&recovered_path, None)?;
 
     let points = shard.retrieve(
-        &[PointId::NumId(100500)],
-        Some(WithPayloadInterface::Bool(true)),
-        Some(WithVector::Bool(false)),
+        RetrieveRequestBuilder::new(vec![PointId::NumId(100500)])
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
     )?;
 
     for point in &points {

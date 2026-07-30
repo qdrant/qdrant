@@ -26,7 +26,7 @@ jobs:
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       with:
         components: rustfmt, clippy
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -45,3 +45,18 @@ jobs:
       run: cargo clippy --workspace --all-targets -- -D warnings
     - name: Check cargo clippy warnings for all targets and features
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  ast-grep:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Install uv
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+    - name: Install ast-grep
+      run: uv tool install ast-grep-cli==0.44.1
+    - name: Test ast-grep rules (tools/ast-grep/rule-tests)
+      run: sg test --config tools/ast-grep/sgconfig.yml --skip-snapshot-tests
+    - name: Check ast-grep rules (tools/ast-grep/rules)
+      run: sg scan --config tools/ast-grep/sgconfig.yml

@@ -25,12 +25,8 @@ pub trait EncodedStorage {
     fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        for (index, &offset) in offsets.iter().enumerate() {
-            callback(index, self.get_vector_data(offset));
-        }
-    }
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    );
 
     fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
@@ -53,6 +49,16 @@ pub trait EncodedStorage {
     /// Additional heap memory used by this storage beyond what's tracked in files.
     /// RAM-based storages should report their in-memory data size here.
     fn heap_size_bytes(&self) -> usize;
+}
+
+pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
+    this: &E,
+    offsets: &[u32],
+    mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+) {
+    for (index, &offset) in offsets.iter().enumerate() {
+        callback(index, this.get_vector_data(offset));
+    }
 }
 
 pub trait EncodedStorageBuilder {
@@ -153,6 +159,14 @@ impl EncodedStorage for TestEncodedStorage {
             .saturating_mul(index as usize + 1);
 
         Some(Cow::Borrowed(self.data.get(start..end)?))
+    }
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        default_for_each_batch(self, offsets, callback);
     }
 
     fn upsert_vector(

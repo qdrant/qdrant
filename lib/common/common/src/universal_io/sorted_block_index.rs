@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::traits::UniversalReadFs;
 use super::types::read_whole_via;
-use super::{OkNotFound, Result};
+use super::{OkNotFound, UioResult};
 
 /// Target size of one logical block of the indexed array, in bytes.
 ///
@@ -106,7 +106,7 @@ impl<T: bytemuck::Pod> SortedBlockIndex<T> {
         fs: &Fs,
         path: &Path,
         expected_len: usize,
-    ) -> Result<Option<Self>> {
+    ) -> UioResult<Option<Self>> {
         let parsed =
             read_whole_via(fs, path, |bytes| Ok(Self::parse(&bytes, path))).ok_not_found()?;
         let Some(index) = parsed.flatten() else {

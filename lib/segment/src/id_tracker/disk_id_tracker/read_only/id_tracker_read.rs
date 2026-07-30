@@ -2,8 +2,10 @@
 
 use common::bitvec::BitSlice;
 use common::generic_consts::{Random, Sequential};
+use common::iterator_ext::IteratorExt as _;
 use common::types::{DeferredBehavior, PointOffsetType};
-use common::universal_io::{ReadRange, UniversalRead};
+use common::universal_io::{ReadRange, UioResult, UniversalRead};
+use itertools::Itertools as _;
 
 use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -32,6 +34,19 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
     fn deleted_bitslice(&self) -> OperationResult<&BitSlice> {
         Ok(self.deleted_full()?.as_bitslice())
     }
+
+    fn resolve_internal_batch(
+        &self,
+        external_ids: impl IntoIterator<Item = PointIdType>,
+        mut on_live: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        self.reader.lookup_batch(external_ids, |id, offset| {
+            if !self.point_deleted(offset)? {
+                on_live(id, offset);
+            }
+            Ok(())
+        })
+    }
 }
 
 impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
@@ -45,10 +60,10 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         if u64::from(internal_id) >= self.versions_len {
             return None;
         }
-        match self.versions.read::<Random>(ReadRange {
-            byte_offset: u64::from(internal_id) * size_of::<SeqNumberType>() as u64,
-            length: 1,
-        }) {
+        match self.versions.read(
+            ReadRange::one(u64::from(internal_id) * size_of::<SeqNumberType>() as u64),
+            Random,
+        ) {
             Ok(values) => values.first().copied(),
             Err(err) => {
                 log::error!("disk id tracker version read failed: {err}");
@@ -67,6 +82,64 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         log_lookup_err(self.resolve_external(internal_id))
+    }
+
+    /// Deleted offsets are dropped before any read is scheduled (the deleted
+    /// file is prefetched whole, so each check is an in-memory bit test), then
+    /// one pipelined mapping-read pass delivers each surviving `(offset, id)`
+    /// in read-completion order; nothing is buffered.
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        internal_ids
+            .into_iter()
+            .try_filter(|&offset| OperationResult::Ok(!self.point_deleted(offset)?))
+            .process_results(|it| self.reader.external_ids_batch(it, callback))?
+    }
+
+    /// One pipelined pass over the versions file instead of a read per point,
+    /// streaming each `(internal_id, version)` to `callback` as its read
+    /// completes. The input is walked once and nothing is buffered; out-of-range
+    /// offsets are skipped and a storage error propagates.
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        mut callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        // Each read is tagged with its `internal_id` so the callback can pair it
+        // with the version; the range iterator stays lazy (no collect).
+        let ranges = internal_ids
+            .into_iter()
+            .filter(|&internal_id| u64::from(internal_id) < self.versions_len)
+            .map(|internal_id| {
+                let range = ReadRange {
+                    byte_offset: u64::from(internal_id) * size_of::<SeqNumberType>() as u64,
+                    length: 1,
+                };
+                (internal_id, range)
+            });
+        self.versions
+            .read_batch(ranges, Random, |internal_id, values| {
+                if let Some(&version) = values.first() {
+                    callback(internal_id, version);
+                }
+                UioResult::Ok(())
+            })?;
+
+        Ok(())
+    }
+
+    /// Batched external→internal resolution; the behavior argument is ignored
+    /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
+    fn resolve_external_ids(
+        &self,
+        point_ids: impl IntoIterator<Item = PointIdType>,
+        _deferred_behavior: DeferredBehavior,
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        self.resolve_internal_batch(point_ids, callback)
     }
 
     fn total_point_count(&self) -> usize {
@@ -100,10 +173,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         let versions = self
             .versions
-            .read::<Sequential>(ReadRange {
-                byte_offset: 0,
-                length: self.versions_len,
-            })?
+            .read(ReadRange::new(0, self.versions_len), Sequential)?
             .into_owned();
         Ok(Box::new(versions.into_iter().enumerate().map(
             |(offset, version)| (offset as PointOffsetType, version),

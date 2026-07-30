@@ -34,14 +34,12 @@ def test_delete_and_search(collection_name):
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": {
-                "name": "image",
-                "vector": [0.0, 0.0, 1.0, 1.0]
-            },
+            "query": [0.0, 0.0, 1.0, 1.0],
+            "using": "image",
             "limit": 10,
             "with_payload": True,
             "with_vector": ["text"],

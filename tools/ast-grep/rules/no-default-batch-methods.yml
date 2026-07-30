@@ -1,0 +1,24 @@
+id: no-default-batch-methods
+language: rust
+severity: error
+message: Default batch method in trait
+note: |-
+  Batch methods on traits must be mandatory so that every implementation makes
+  an explicit choice. If the streaming fallback is the right body for some
+  implementers, move it into a `default_*` free function next to the trait and
+  call it explicitly from each of them.
+rule:
+  # Methods with a body are `function_item`s;
+  # body-less signatures are `function_signature_item`s.
+  kind: function_item
+  has:
+    field: name
+    regex: batch
+  inside:
+    kind: trait_item
+    stopBy: end
+    not:
+      has:
+        field: name
+        # The universal_io primitives keep their intentional default bodies.
+        regex: Universal

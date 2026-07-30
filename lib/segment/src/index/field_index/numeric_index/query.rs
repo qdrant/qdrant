@@ -12,11 +12,11 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::str::FromStr;
 
-use common::condition_checker::ConditionChecker;
+use blobstore::Blob;
+use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use itertools::Either;
 use ordered_float::OrderedFloat;
 use uuid::Uuid;
@@ -367,6 +367,22 @@ where
             |value| self.typed_range.check_range(*value),
             &self.hw_counter,
         ))
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        _rest: Rest,
+    ) -> OperationResult<usize> {
+        let p = Partitioner::new(ids);
+        self.index.for_each_matching_value(
+            p.iter().map(|item| (item, item.point_id())),
+            &self.hw_counter,
+            |value| self.typed_range.check_range(*value),
+            |item, matched| p.write(item, matched == select.is_match()),
+        )?;
+        Ok(p.finish())
     }
 }
 

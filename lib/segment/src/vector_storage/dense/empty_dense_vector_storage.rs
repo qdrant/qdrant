@@ -7,6 +7,7 @@ use common::bitvec::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -14,7 +15,8 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
-    DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
+    DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum,
+    VectorStorageRead, default_for_each_in_dense_batch, default_read_vector_bytes_impl,
 };
 
 /// Placeholder vector storage that contains no data.
@@ -96,6 +98,14 @@ impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         // flag from `is_deleted_vector` keeps the placeholder from being read.
         Cow::Owned(vec![0.0; self.dim])
     }
+
+    fn for_each_in_dense_batch<F: FnMut(usize, &[VectorElementType])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_in_dense_batch(self, keys, f)
+    }
 }
 
 impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
@@ -152,6 +162,14 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted_bitvec.as_bitslice()
     }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+    }
 }
 
 impl VectorStorage for EmptyDenseVectorStorage {
@@ -181,6 +199,8 @@ impl VectorStorage for EmptyDenseVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::generic_consts::Random;
+
     use super::*;
 
     #[test]
@@ -208,16 +228,8 @@ mod tests {
         assert!(storage.multi_vector_config().is_none());
 
         // get_vector_opt always returns None
-        assert!(
-            storage
-                .get_vector_opt::<common::generic_consts::Random>(0)
-                .is_none()
-        );
-        assert!(
-            storage
-                .get_vector_opt::<common::generic_consts::Random>(500)
-                .is_none()
-        );
+        assert!(storage.get_vector_opt::<Random>(0).is_none());
+        assert!(storage.get_vector_opt::<Random>(500).is_none());
     }
 
     #[test]

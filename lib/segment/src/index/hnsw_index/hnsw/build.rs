@@ -4,7 +4,6 @@ use std::thread;
 
 use common::bitvec::{BitSliceExt as _, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cow::SimpleCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::progress_tracker::ProgressTracker;
@@ -682,7 +681,7 @@ fn build_filtered_graph(
             block_point_id,
             vector_storage,
             quantized_vectors.as_ref(),
-            Some(SimpleCow::Borrowed(&block_condition_checker)),
+            Some(block_condition_checker),
             id_tracker.deleted_point_bitslice(),
             internal_hardware_counter,
         )?;

@@ -27,16 +27,15 @@ mod reexports_from_qdrant_crates {
         NestedCondition, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadSchemaParams,
         PayloadSchemaType, PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude,
         ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams, Range,
-        RangeInterface, ScalarQuantizationConfig, ScalarType, ScoredPoint, SearchParams,
-        ValueVariants, ValuesCount, VectorStorageDatatype, WithPayloadInterface, WithVector,
+        RangeInterface, ScalarQuantizationConfig, ScalarType, ScoredPoint, SearchParams, Slice,
+        SliceCondition, ValueVariants, ValuesCount, VectorStorageDatatype, WithPayloadInterface,
+        WithVector,
     };
     pub use segment::vector_storage::query::{
         ContextPair, ContextQuery, DiscoverQuery, FeedbackItem,
         NaiveFeedbackCoefficients as NaiveFeedbackStrategy,
         NaiveFeedbackQuery as FeedbackNaiveQuery, RecoQuery as RecommendQuery,
     };
-    pub use shard::count::CountRequestInternal as CountRequest;
-    pub use shard::facet::FacetRequestInternal as FacetRequest;
     pub use shard::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     pub use shard::operations::point_ops::{
         ConditionalInsertOperationInternal as ConditionalInsertOperation, PointIdsList,
@@ -55,11 +54,8 @@ mod reexports_from_qdrant_crates {
     pub use shard::query::query_enum::QueryEnum;
     pub use shard::query::{
         FusionInternal as Fusion, MmrInternal as Mmr, SampleInternal as Sample, ScoringQuery,
-        ShardPrefetch as Prefetch, ShardQueryRequest as QueryRequest,
     };
     pub use shard::retrieve::record_internal::RecordInternal as Record;
-    pub use shard::scroll::ScrollRequestInternal as ScrollRequest;
-    pub use shard::search::CoreSearchRequest as SearchRequest;
     pub use sparse::common::sparse_vector::SparseVector;
 }
 pub use reexports_from_qdrant_crates::*;

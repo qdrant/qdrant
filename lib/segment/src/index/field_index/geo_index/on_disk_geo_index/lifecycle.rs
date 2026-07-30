@@ -13,7 +13,7 @@ use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, SortedBlockIndex,
-    TypedStorage, UniversalRead, UniversalReadFs, read_json_via,
+    TypedStorage, UioResult, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -289,6 +289,28 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         }
     }
 
+    /// Batched counterpart of [`Self::check_values_any`].
+    pub fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        mut on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&GeoPoint) -> bool,
+        M: FnMut(U, bool),
+    {
+        self.storage.point_to_values.values_iter_batch(
+            items,
+            &self.storage.deleted,
+            ConditionedCounter::always(hw_counter),
+            |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
+        )
+    }
+
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
         self.storage
             .point_to_values
@@ -315,10 +337,10 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         &self,
         filter: impl Fn(&(GeoHash, usize)) -> bool,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        let counts = self.storage.counts_per_hash.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: self.storage.counts_per_hash.len()?,
-        })?;
+        let counts = self.storage.counts_per_hash.read(
+            ReadRange::new(0, self.storage.counts_per_hash.len()?),
+            Sequential,
+        )?;
         let mut results = Vec::with_capacity(counts.len());
         for count in counts.iter() {
             let pair = (count.hash.normalize(), count.points as usize);
@@ -369,10 +391,11 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 .payload_index_io_read_counter()
                 .incr_delta(block.len() * size_of::<Counts>());
 
-            let counts = self.storage.counts_per_hash.read::<Random>(ReadRange {
-                byte_offset: (block.start * size_of::<Counts>()) as u64,
-                length: block.len() as u64,
-            })?;
+            let range = ReadRange::new(
+                (block.start * size_of::<Counts>()) as u64,
+                block.len() as u64,
+            );
+            let counts = self.storage.counts_per_hash.read(range, Random)?;
             return Ok(counts
                 .binary_search_by(|counts| counts.hash.normalize().cmp(&hash))
                 .ok()
@@ -386,7 +409,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
 
         let read_one = |idx| -> OperationResult<Counts> {
             let range = ReadRange::one((idx * size_of::<Counts>()) as u64);
-            let value = self.storage.counts_per_hash.read::<Random>(range)?;
+            let value = self.storage.counts_per_hash.read(range, Random)?;
             Ok(value[0])
         };
 
@@ -507,10 +530,13 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // block instead of `O(log n)` random reads.
         let start_idx = if let Some(block_index) = &self.storage.points_map_block_index {
             let block = block_index.find_block(|entry| entry.hash.normalize().cmp(&smallest_hash));
-            let entries = self.storage.points_map.read::<Random>(ReadRange {
-                byte_offset: (block.start * size_of::<PointKeyValue>()) as u64,
-                length: block.len() as u64,
-            })?;
+            let entries = self.storage.points_map.read(
+                ReadRange {
+                    byte_offset: (block.start * size_of::<PointKeyValue>()) as u64,
+                    length: block.len() as u64,
+                },
+                Random,
+            )?;
             let idx = entries
                 .binary_search_by(|entry| entry.hash.normalize().cmp(&smallest_hash))
                 .unwrap_or_else(|idx| idx);
@@ -518,7 +544,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         } else {
             binary_search_by(0..len, |idx| {
                 let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
-                let value = self.storage.points_map.read::<Random>(range)?;
+                let value = self.storage.points_map.read(range, Random)?;
                 OperationResult::Ok(value[0].hash.normalize().cmp(&smallest_hash))
             })?
             .unwrap_or_else(|index| index)
@@ -528,13 +554,14 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // arrive out of order from the underlying IO, so we reorder them with
         // `OrderingIterator` before inspecting their contents; this lets us
         // stop reading as soon as we walk past the last prefix.
-        let chunks = self.storage.points_map.read_iter::<Sequential, _>(
+        let chunks = self.storage.points_map.read_iter(
             ReadRange {
                 byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
                 length: len - start_idx,
             }
             .iter_autochunks::<PointKeyValue>()
             .enumerate(),
+            Sequential,
         )?;
 
         let ordered_chunks = OrderingIterator::new(chunks);
@@ -578,11 +605,12 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // non-deleted point ids.
         let mut points = AHashSet::new();
         let deleted = &self.storage.deleted;
-        self.storage.points_map_ids.read_batch::<Random, _>(
+        self.storage.points_map_ids.read_batch(
             point_map_ranges.into_iter().enumerate(),
+            Random,
             |_idx, values| {
                 points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
-                Ok(())
+                UioResult::Ok(())
             },
         )?;
 

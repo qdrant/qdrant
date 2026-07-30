@@ -98,10 +98,8 @@ def corpus_collection_setup(collection_name):
 
 def search(collection_name, filter=None, params=None, limit=10):
     body = {
-        "vector": {
-            "name": SPARSE_VECTOR_NAME,
-            "vector": QUERY,
-        },
+        "query": QUERY,
+        "using": SPARSE_VECTOR_NAME,
         "limit": limit,
     }
     if filter is not None:
@@ -110,13 +108,13 @@ def search(collection_name, filter=None, params=None, limit=10):
         body["params"] = params
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body=body,
     )
     assert response.ok, response.json()
-    return {point['id']: point['score'] for point in response.json()['result']}
+    return {point['id']: point['score'] for point in response.json()['result']['points']}
 
 
 def test_explicit_global_matches_default(collection_name):
@@ -173,33 +171,14 @@ def test_empty_corpus_never_falls_back_to_global(collection_name):
     assert scores[3] == pytest.approx(ln2)
 
 
-def test_query_api_supports_idf_corpus(collection_name):
-    # The universal query API carries the same `params.idf`.
+def search_expecting_error(collection_name, query, using, params, expected_status):
     response = request_with_validation(
         api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "query": QUERY,
-            "using": SPARSE_VECTOR_NAME,
-            "params": {"idf": {"corpus": tenant_filter("a")}},
-            "limit": 10,
-        },
-    )
-    assert response.ok, response.json()
-
-    scores = {point['id']: point['score'] for point in response.json()['result']['points']}
-    idf = [expected_idf(2, 2), expected_idf(2, 1), expected_idf(2, 0)]
-    assert scores[2] == pytest.approx(idf[0] + idf[1] + idf[2])
-
-
-def search_expecting_error(collection_name, vector, params, expected_status):
-    response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
-        method="POST",
-        path_params={'collection_name': collection_name},
-        body={
-            "vector": vector,
+            "query": query,
+            "using": using,
             "params": params,
             "limit": 10,
         },
@@ -252,7 +231,8 @@ def test_idf_params_require_idf_modifier(collection_name):
     # than silently ignored.
     error = search_expecting_error(
         collection_name,
-        {"name": "dense", "vector": [1.0, 0.0]},
+        [1.0, 0.0],
+        "dense",
         {"idf": {"corpus": tenant_filter("a")}},
         expected_status=400,
     )

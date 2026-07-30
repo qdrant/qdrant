@@ -16,8 +16,8 @@ use crate::types::GeoPoint;
 /// In-memory state shared by [`super::MutableGeoIndex`] and
 /// [`super::read_only::ReadOnlyAppendableGeoIndex`].
 ///
-/// Both wrappers add a different backing storage (`Gridstore` vs
-/// `GridstoreReader`); the in-memory layout that serves every
+/// Both wrappers add a different backing storage (`Blobstore` vs
+/// `BlobstoreReader`); the in-memory layout that serves every
 /// [`GeoIndexRead`] method is the same, so it lives here once.
 pub struct InMemoryGeoIndex {
     /*

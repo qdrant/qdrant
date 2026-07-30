@@ -16,7 +16,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
-use rand::rng;
+use rand::rngs::SmallRng;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
@@ -30,7 +30,7 @@ use tokio::sync::RwLock;
 mod prof;
 
 fn create_rnd_batch() -> CollectionUpdateOperations {
-    let mut rng = rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let num_points = 2000;
     let dim = 100;
     let mut points = Vec::with_capacity(num_points);
@@ -153,7 +153,7 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let mut rng = rng();
+                    let mut rng = rand::make_rng::<SmallRng>();
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequestInternal {
@@ -187,7 +187,7 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-batch-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let mut rng = rng();
+                    let mut rng = rand::make_rng::<SmallRng>();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);

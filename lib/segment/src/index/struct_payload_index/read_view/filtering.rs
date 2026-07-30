@@ -120,13 +120,12 @@ where
             }
             Condition::HasId(has_id) => {
                 let point_ids = has_id.has_id.clone();
-                let resolved_point_offsets: Vec<PointOffsetType> = point_ids
-                    .iter()
-                    .filter_map(|external_id| {
-                        self.id_tracker
-                            .internal_id_with_behavior(*external_id, deferred_behavior)
-                    })
-                    .collect();
+                let mut resolved_point_offsets = Vec::with_capacity(point_ids.len());
+                self.id_tracker.resolve_external_ids(
+                    point_ids.iter().copied(),
+                    deferred_behavior,
+                    |_, offset| resolved_point_offsets.push(offset),
+                )?;
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {
@@ -152,6 +151,16 @@ where
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition, nested_path, hw_counter)?
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
+
+            Condition::Slice(slice_condition) => {
+                let available_points = self.available_point_count();
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: 0,
+                    exp: available_points / slice_condition.slice.total.get() as usize,
+                    max: available_points,
+                }
+            }
 
             Condition::CustomIdChecker(cond) => {
                 cond.0.estimate_cardinality(self.available_point_count())

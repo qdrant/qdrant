@@ -13,11 +13,11 @@ def setup(on_disk_vectors, collection_name):
 
 def test_geo_polygon_simple(collection_name):
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -43,19 +43,19 @@ def test_geo_polygon_simple(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 2
+    assert len(json["result"]["points"]) == 2
 
-    ids = [x["id"] for x in json["result"]]
+    ids = [x["id"] for x in json["result"]["points"]]
     assert 2 in ids
     assert 4 in ids
 
     # interiors is optional
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -80,19 +80,19 @@ def test_geo_polygon_simple(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 2
+    assert len(json["result"]["points"]) == 2
 
-    ids = [x["id"] for x in json["result"]]
+    ids = [x["id"] for x in json["result"]["points"]]
     assert 2 in ids
     assert 4 in ids
 
     # a polygon spans from negative to positive
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -117,19 +117,19 @@ def test_geo_polygon_simple(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 2
+    assert len(json["result"]["points"]) == 2
 
-    ids = [x["id"] for x in json["result"]]
+    ids = [x["id"] for x in json["result"]["points"]]
     assert 1 in ids
     assert 3 in ids
 
     # a polygon cover all geo space lat[-90, -90], lon[-180, 180]
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -154,9 +154,9 @@ def test_geo_polygon_simple(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 3
+    assert len(json["result"]["points"]) == 3
 
-    ids = [x["id"] for x in json["result"]]
+    ids = [x["id"] for x in json["result"]["points"]]
     assert 1 in ids
     assert 3 in ids
     assert 4 in ids
@@ -165,11 +165,11 @@ def test_geo_polygon_simple(collection_name):
 def test_geo_polygon_with_interiors(collection_name):
     # a polygon with interior
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -205,20 +205,20 @@ def test_geo_polygon_with_interiors(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 1
+    assert len(json["result"]["points"]) == 1
 
-    ids = [x["id"] for x in json["result"]]
+    ids = [x["id"] for x in json["result"]["points"]]
     assert 1 in ids
 
 
 def test_geo_polygon_invalid(collection_name):
     # invalid polygons should be rejected
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -242,11 +242,11 @@ def test_geo_polygon_invalid(collection_name):
     assert not response.ok
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -272,11 +272,11 @@ def test_geo_polygon_invalid(collection_name):
 def test_geo_polygon_multiple(collection_name):
     # multiple polygons
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "should": [
@@ -315,19 +315,19 @@ def test_geo_polygon_multiple(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 2
+    assert len(json["result"]["points"]) == 2
 
-    ids = [x["id"] for x in json["result"]]
+    ids = [x["id"] for x in json["result"]["points"]]
     assert 2 in ids
     assert 4 in ids
 
     # multiple polygons no overlap
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "filter": {
                 "must": [
@@ -366,4 +366,4 @@ def test_geo_polygon_multiple(collection_name):
     assert response.ok
 
     json = response.json()
-    assert len(json["result"]) == 0
+    assert len(json["result"]["points"]) == 0

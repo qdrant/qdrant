@@ -158,7 +158,7 @@ pub struct MinShould {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     #[validate(nested)]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
@@ -181,6 +181,8 @@ pub mod condition {
         Nested(super::NestedCondition),
         #[prost(message, tag = "7")]
         HasVector(super::HasVectorCondition),
+        #[prost(message, tag = "8")]
+        Slice(super::SliceCondition),
     }
 }
 #[derive(serde::Serialize)]
@@ -206,6 +208,16 @@ pub struct HasIdCondition {
 pub struct HasVectorCondition {
     #[prost(string, tag = "1")]
     pub has_vector: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SliceCondition {
+    /// Total number of disjoint deterministic slices the id space is split into, must be >= 1
+    #[prost(uint32, tag = "1")]
+    pub total: u32,
+    /// Which slice to select, must be less than `total`
+    #[prost(uint32, tag = "2")]
+    pub index: u32,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -8440,6 +8452,9 @@ pub mod points_client {
         }
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `Query` instead.
+        #[deprecated]
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPoints>,
@@ -8460,6 +8475,9 @@ pub mod points_client {
         }
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `QueryBatch` instead.
+        #[deprecated]
         pub async fn search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchBatchPoints>,
@@ -8485,6 +8503,9 @@ pub mod points_client {
         }
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` instead.
+        #[deprecated]
         pub async fn search_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPointGroups>,
@@ -8530,6 +8551,9 @@ pub mod points_client {
         }
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `Query` with a `recommend` query instead.
+        #[deprecated]
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPoints>,
@@ -8553,6 +8577,9 @@ pub mod points_client {
         }
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `QueryBatch` with `recommend` queries instead.
+        #[deprecated]
         pub async fn recommend_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendBatchPoints>,
@@ -8579,6 +8606,9 @@ pub mod points_client {
         }
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` with a `recommend` query instead.
+        #[deprecated]
         pub async fn recommend_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPointGroups>,
@@ -8622,6 +8652,9 @@ pub mod points_client {
         /// distance to the target. The context part of the score for each pair is
         /// calculated +1 if the point is closer to a positive than to a negative part
         /// of a pair, and -1 otherwise.
+        ///
+        /// Deprecated: use `Query` with a `discover` or `context` query instead.
+        #[deprecated]
         pub async fn discover(
             &mut self,
             request: impl tonic::IntoRequest<super::DiscoverPoints>,
@@ -8644,6 +8677,9 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         /// Batch request points based on { positive, negative } pairs of examples, and/or a target
+        ///
+        /// Deprecated: use `QueryBatch` with `discover` or `context` queries instead.
+        #[deprecated]
         pub async fn discover_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::DiscoverBatchPoints>,
@@ -8972,12 +9008,16 @@ pub mod points_server {
         >;
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `Query` instead.
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `QueryBatch` instead.
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPoints>,
@@ -8987,6 +9027,8 @@ pub mod points_server {
         >;
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` instead.
         async fn search_groups(
             &self,
             request: tonic::Request<super::SearchPointGroups>,
@@ -9001,6 +9043,8 @@ pub mod points_server {
         ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `Query` with a `recommend` query instead.
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPoints>,
@@ -9010,6 +9054,8 @@ pub mod points_server {
         >;
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `QueryBatch` with `recommend` queries instead.
         async fn recommend_batch(
             &self,
             request: tonic::Request<super::RecommendBatchPoints>,
@@ -9019,6 +9065,8 @@ pub mod points_server {
         >;
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` with a `recommend` query instead.
         async fn recommend_groups(
             &self,
             request: tonic::Request<super::RecommendPointGroups>,
@@ -9045,6 +9093,8 @@ pub mod points_server {
         /// distance to the target. The context part of the score for each pair is
         /// calculated +1 if the point is closer to a positive than to a negative part
         /// of a pair, and -1 otherwise.
+        ///
+        /// Deprecated: use `Query` with a `discover` or `context` query instead.
         async fn discover(
             &self,
             request: tonic::Request<super::DiscoverPoints>,
@@ -9053,6 +9103,8 @@ pub mod points_server {
             tonic::Status,
         >;
         /// Batch request points based on { positive, negative } pairs of examples, and/or a target
+        ///
+        /// Deprecated: use `QueryBatch` with `discover` or `context` queries instead.
         async fn discover_batch(
             &self,
             request: tonic::Request<super::DiscoverBatchPoints>,

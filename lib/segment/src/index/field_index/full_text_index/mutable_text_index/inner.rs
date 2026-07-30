@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
-use super::super::full_text_index_read::FullTextIndexRead;
+use super::super::full_text_index_read::{FullTextIndexRead, default_check_match_batch};
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
@@ -15,8 +15,8 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// In-memory state shared by [`MutableFullTextIndex`] and
 /// [`ReadOnlyAppendableFullTextIndex`].
 ///
-/// Both wrappers add a different backing storage (`Gridstore` vs
-/// `GridstoreReader`); the in-memory layout that serves every
+/// Both wrappers add a different backing storage (`Blobstore` vs
+/// `BlobstoreReader`); the in-memory layout that serves every
 /// [`FullTextIndexRead`] method is the same, so it lives here once.
 ///
 /// [`MutableFullTextIndex`]: super::MutableFullTextIndex
@@ -79,6 +79,15 @@ impl FullTextIndexRead for MutableFullTextIndexInner {
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
         self.inverted_index.check_match(query, point_id)
+    }
+
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        default_check_match_batch(self, query, items, on_match)
     }
 
     fn for_each_payload_block_inner(

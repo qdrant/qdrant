@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::super::read_ops::GeoIndexRead;
 use super::OnDiskGeoIndex;
@@ -47,6 +47,22 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         OnDiskGeoIndex::check_values_any(self, idx, hw_counter, |p| check_fn(p))
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        hw_counter: &HardwareCounterCell,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&GeoPoint) -> bool,
+        M: FnMut(U, bool),
+    {
+        OnDiskGeoIndex::for_each_matching_value(self, items, hw_counter, check_fn, on_match)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {

@@ -773,7 +773,7 @@ fn test_retrieve_raw_multivec_bytes() {
 /// `StoredSparseVector` bincode form, which decodes back to the original vector.
 #[test]
 fn test_retrieve_raw_sparse_bytes() {
-    use gridstore::Blob;
+    use blobstore::Blob;
 
     use crate::vector_storage::sparse::StoredSparseVector;
 
@@ -1393,7 +1393,16 @@ fn test_upsert_raw_malformed_blob_rejected() {
         &[(DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2])],
         &hw_counter,
     );
-    assert!(result.is_err(), "malformed blob must be rejected");
+    // Must be a user error (`MalformedVectorBlob`), not a `ServiceError`: a
+    // malformed blob that reached the WAL is skipped on replay instead of
+    // crash-looping recovery.
+    assert!(
+        matches!(
+            result,
+            Err(crate::common::operation_error::OperationError::MalformedVectorBlob { .. })
+        ),
+        "malformed blob must be rejected as MalformedVectorBlob, got {result:?}",
+    );
 }
 
 /// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested

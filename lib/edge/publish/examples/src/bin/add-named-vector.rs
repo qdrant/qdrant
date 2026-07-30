@@ -14,9 +14,9 @@ use qdrant_edge::external::serde_json::json;
 use qdrant_edge::{
     CreateVectorName, DeleteVectorName, DenseVectorConfig, Distance, EdgeConfig, EdgeShard,
     EdgeVectorParams, Modifier, NamedQuery, PointInsertOperations, PointOperations, PointStruct,
-    QueryEnum, QueryRequest, ScoringQuery, SparseVector, SparseVectorConfig, UpdateOperation,
-    Vector, VectorInternal, VectorNameConfig, VectorNameOperations, Vectors, WithPayloadInterface,
-    WithVector,
+    QueryEnum, QueryRequestBuilder, ScoringQuery, SparseVector, SparseVectorConfig,
+    UpdateOperation, Vector, VectorInternal, VectorNameConfig, VectorNameOperations, Vectors,
+    WithPayloadInterface,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -65,20 +65,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Verify search works on the default vector
-    let results = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: vec![0.1, 0.2, 0.3, 0.4].into(),
-            using: None,
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 3,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let results = shard.query(
+        QueryRequestBuilder::new(3)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: vec![0.1, 0.2, 0.3, 0.4].into(),
+                using: None,
+            })))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
     println!("Search on default vector: {} results", results.len());
     assert_eq!(results.len(), 3);
 
@@ -132,20 +127,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Points after adding v2: {}", shard.info()?.points_count);
 
     // Search on the new vector - only points 4 and 5 have 'v2'
-    let results = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0].into(),
-            using: Some("v2".to_string()),
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 5,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let results = shard.query(
+        QueryRequestBuilder::new(5)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0].into(),
+                using: Some("v2".to_string()),
+            })))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
     println!("Search on 'v2': {} results", results.len());
     assert!(!results.is_empty(), "Should find at least point 4 or 5");
 
@@ -188,20 +178,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Search on sparse vector
-    let results = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: VectorInternal::Sparse(SparseVector::new(vec![10, 25], vec![1.0, 0.5])?),
-            using: Some("keywords".to_string()),
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 5,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let results = shard.query(
+        QueryRequestBuilder::new(5)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: VectorInternal::Sparse(SparseVector::new(vec![10, 25], vec![1.0, 0.5])?),
+                using: Some("keywords".to_string()),
+            })))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
     println!("Search on 'keywords': {} results", results.len());
     assert!(!results.is_empty());
 
@@ -219,20 +204,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Points after deleting v2: {}", shard.info()?.points_count);
 
     // Search on the default vector still works
-    let results = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: vec![0.1, 0.2, 0.3, 0.4].into(),
-            using: None,
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 5,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let results = shard.query(
+        QueryRequestBuilder::new(5)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: vec![0.1, 0.2, 0.3, 0.4].into(),
+                using: None,
+            })))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
     println!(
         "Search on default vector after deleting v2: {} results",
         results.len()
@@ -250,20 +230,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let info = shard.info()?;
     println!("Reopened shard: {} points", info.points_count);
 
-    let results = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: VectorInternal::Sparse(SparseVector::new(vec![10, 25], vec![1.0, 0.5])?),
-            using: Some("keywords".to_string()),
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 5,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let results = shard.query(
+        QueryRequestBuilder::new(5)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: VectorInternal::Sparse(SparseVector::new(vec![10, 25], vec![1.0, 0.5])?),
+                using: Some("keywords".to_string()),
+            })))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
     println!(
         "Search on 'keywords' after reopen: {} results",
         results.len()

@@ -1,4 +1,6 @@
-use common::condition_checker::{ConditionChecker, ConstantConditionChecker};
+use common::condition_checker::{
+    CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
+};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
@@ -47,6 +49,8 @@ pub enum ConditionCheckerEnum<'a> {
     Ids(IdsConditionChecker),
     #[cfg(feature = "testing")]
     Plain(PlainFilterContext<'a>),
+    #[cfg(feature = "testing")]
+    TestBitOfId(TestBitOfId),
 
     // bool index
     BoolImmutable(BoolCC<'a, ImmutableBoolIndex>),
@@ -120,6 +124,75 @@ pub enum ConditionCheckerEnum<'a> {
 impl ConditionChecker for ConditionCheckerEnum<'_> {
     type Error = OperationError;
 
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        match self {
+            Self::Dyn(c) => default_check_batched(ids, select, rest, |id| c.check(id)),
+            Self::Build(c) => c.check_batched(ids, select, rest),
+            Self::Constant(c) => c.check_batched(ids, select, rest),
+            Self::Filter(c) => c.check_batched(ids, select, rest),
+            Self::Ids(c) => c.check_batched(ids, select, rest),
+            #[cfg(feature = "testing")]
+            Self::Plain(c) => c.check_batched(ids, select, rest),
+            #[cfg(feature = "testing")]
+            Self::TestBitOfId(c) => c.check_batched(ids, select, rest),
+            Self::BoolImmutable(c) => c.check_batched(ids, select, rest),
+            Self::BoolMutable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::BoolRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::BoolRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NullImmutable(c) => c.check_batched(ids, select, rest),
+            Self::NullMutable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NullRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::NullRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::GeoRadiusWritable(c) => c.check_batched(ids, select, rest),
+            Self::GeoBoundingBoxWritable(c) => c.check_batched(ids, select, rest),
+            Self::GeoPolygonWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::GeoRadiusRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::GeoBoundingBoxRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::GeoPolygonRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::GeoRadiusRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::GeoBoundingBoxRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::GeoPolygonRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NumericFloatWritable(c) => c.check_batched(ids, select, rest),
+            Self::NumericIntWritable(c) => c.check_batched(ids, select, rest),
+            Self::NumericUuidWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NumericFloatRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NumericIntRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::NumericUuidRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::NumericFloatRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NumericIntRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::NumericUuidRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::FullTextWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::FullTextRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::FullTextRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::MapIntWritable(c) => c.check_batched(ids, select, rest),
+            Self::MapStrWritable(c) => c.check_batched(ids, select, rest),
+            Self::MapUuidWritable(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::MapIntRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::MapStrRoIoUring(c) => c.check_batched(ids, select, rest),
+            #[cfg(target_os = "linux")]
+            Self::MapUuidRoIoUring(c) => c.check_batched(ids, select, rest),
+            Self::MapIntRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::MapStrRoMmap(c) => c.check_batched(ids, select, rest),
+            Self::MapUuidRoMmap(c) => c.check_batched(ids, select, rest),
+        }
+    }
+
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         match self {
             Self::Build(c) => c.check(point_id),
@@ -129,6 +202,8 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Ids(c) => c.check(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check(point_id),
+            #[cfg(feature = "testing")]
+            Self::TestBitOfId(c) => c.check(point_id),
             Self::BoolImmutable(c) => c.check(point_id),
             Self::BoolMutable(c) => c.check(point_id),
             #[cfg(target_os = "linux")]
@@ -191,6 +266,8 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Ids(c) => c.check_infallible(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_infallible(point_id),
+            #[cfg(feature = "testing")]
+            Self::TestBitOfId(c) => c.check_infallible(point_id),
             Self::BoolImmutable(c) => c.check_infallible(point_id),
             Self::BoolMutable(c) => c.check_infallible(point_id),
             #[cfg(target_os = "linux")]
@@ -242,5 +319,40 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::MapStrRoMmap(c) => c.check_infallible(point_id),
             Self::MapUuidRoMmap(c) => c.check_infallible(point_id),
         }
+    }
+}
+
+/// Point matches when its ID has specified bit set.
+#[cfg(feature = "testing")]
+pub struct TestBitOfId(pub u32);
+
+#[cfg(feature = "testing")]
+impl ConditionChecker for TestBitOfId {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        Ok(point_id >> self.0 & 1 == 1)
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        let (mut left, mut right): (Vec<K>, Vec<K>) = ids
+            .iter()
+            .copied()
+            .partition(|item| (item.point_id() >> self.0 & 1 == 1) == select.is_match());
+        left.reverse();
+        right.reverse();
+        if rest == Rest::Discard
+            && let Some(&poison) = left.first().or(right.first())
+        {
+            right.fill(poison);
+        }
+        ids[..left.len()].copy_from_slice(&left);
+        ids[left.len()..].copy_from_slice(&right);
+        Ok(left.len())
     }
 }

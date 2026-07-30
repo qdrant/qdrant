@@ -162,10 +162,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             return Ok(Vec::new());
         }
 
-        let bytes = file.read::<Sequential, u8>(ReadRange {
-            byte_offset: start,
-            length: file_len - start,
-        })?;
+        let bytes = file.read::<_, u8>(ReadRange::new(start, file_len - start), Sequential)?;
         let mut reader = Cursor::new(bytes.as_ref());
 
         let mut changes = Vec::new();
@@ -218,10 +215,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // Append the newly flushed tail. Anything beyond `versions_len` is not flushed yet and
         // stays absent until a later reload (the mapped-but-versionless case).
         if versions_len > loaded_len {
-            let tail = versions_file.read::<Sequential, SeqNumberType>(ReadRange {
-                byte_offset: loaded_len * VERSION_ELEMENT_SIZE,
-                length: versions_len - loaded_len,
-            })?;
+            let tail = versions_file.read::<_, SeqNumberType>(
+                ReadRange::new(loaded_len * VERSION_ELEMENT_SIZE, versions_len - loaded_len),
+                Sequential,
+            )?;
             internal_to_version.extend_from_slice(&tail);
         }
 

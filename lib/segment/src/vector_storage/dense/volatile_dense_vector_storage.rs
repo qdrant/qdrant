@@ -6,6 +6,7 @@ use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
@@ -16,7 +17,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    VectorStorageRead, default_for_each_in_dense_batch, default_read_vector_bytes_impl,
 };
 
 /// In-memory vector storage that is volatile
@@ -84,6 +85,14 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for VolatileDenseVecto
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
         Cow::Borrowed(self.vectors.get(key as VectorOffsetType))
     }
+
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_in_dense_batch(self, keys, f)
+    }
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorStorage<T> {
@@ -146,6 +155,14 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
     }
 }
 

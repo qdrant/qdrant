@@ -10,12 +10,12 @@ use bytes::Bytes;
 use common::generic_consts::Sequential;
 use common::universal_io::{
     DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, OwnedPipeline,
-    Populate, ReadRange, Result, UniversalIoError, UniversalKind, UniversalRead,
+    Populate, ReadRange, UioResult, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFileOps, UniversalReadFs,
 };
 use futures::stream::{BoxStream, StreamExt};
 
-use crate::read::AsyncRead;
+use crate::read::{AsyncRead, OffsetByteStream};
 use crate::{BlobFile, BridgeRuntime};
 
 /// Request counters shared with every clone of a [`CountingSource`], so a test
@@ -63,7 +63,7 @@ impl CountingSource {
 impl AsyncRead for CountingSource {
     type Config = CountingConfig;
 
-    fn open(config: &Self::Config) -> Result<Self> {
+    fn open(config: &Self::Config) -> UioResult<Self> {
         Ok(Self {
             data: config.data.clone(),
             counters: config.counters.clone(),
@@ -73,11 +73,11 @@ impl AsyncRead for CountingSource {
     fn list_files(
         &self,
         _prefix: &Path,
-    ) -> impl Future<Output = Result<Vec<ListedFile>>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         std::future::ready(Ok(vec![]))
     }
 
-    fn exists(&self, _path: &Path) -> impl Future<Output = Result<bool>> + Send + 'static {
+    fn exists(&self, _path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
         std::future::ready(Ok(true))
     }
 
@@ -85,7 +85,8 @@ impl AsyncRead for CountingSource {
         &self,
         _path: &Path,
         range: Range<u64>,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<Bytes>>>> + Send + 'static {
+    ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
+    {
         self.counters.range.fetch_add(1, Ordering::Relaxed);
         let bytes = self.data.slice(range.start as usize..range.end as usize);
         async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
@@ -95,8 +96,7 @@ impl AsyncRead for CountingSource {
         &self,
         _path: &Path,
         from: u64,
-    ) -> impl Future<Output = Result<(u64, BoxStream<'static, Result<Bytes>>)>> + Send + 'static
-    {
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
         if from == 0 {
             self.counters.whole.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -114,11 +114,14 @@ impl AsyncRead for CountingSource {
                 });
             }
             let tail = data.slice(from as usize..);
-            Ok((size, futures::stream::once(async move { Ok(tail) }).boxed()))
+            Ok((
+                size,
+                futures::stream::once(async move { Ok((0, tail)) }).boxed(),
+            ))
         }
     }
 
-    fn len(&self, _path: &Path) -> impl Future<Output = Result<u64>> + Send + 'static {
+    fn len(&self, _path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         self.counters.len.fetch_add(1, Ordering::Relaxed);
         let len = self.data.len() as u64;
         async move { Ok(len) }
@@ -246,7 +249,7 @@ fn disk_cache_read_whole_skips_remote_len() {
     );
 
     let again = file
-        .read::<Sequential, u8>(ReadRange::new(0, DATA.len() as u64))
+        .read::<_, u8>(ReadRange::new(0, DATA.len() as u64), Sequential)
         .expect("local read");
     assert_eq!(&again[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);

@@ -8,7 +8,7 @@ use common::fs::atomic_save_json;
 use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, read_json_via};
+use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
@@ -307,7 +307,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
-    ) -> common::universal_io::Result<Self> {
+    ) -> UioResult<Self> {
         let metadata: Metadata = read_json_via(fs, meta_path)?;
 
         let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
@@ -342,7 +342,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     }
 
     pub fn layout(&self) -> Layout {
-        Layout::from_size_align(self.quantized_vector_size(), align_of::<f32>()).unwrap()
+        Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
     pub fn get_metadata(&self) -> &Metadata {

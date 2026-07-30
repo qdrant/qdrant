@@ -212,7 +212,13 @@ fn op_payload(op: &Op) -> Value {
             "ids": points.iter().map(|(id, _, _)| id).collect::<Vec<_>>(),
         }),
         Op::Delete(ids) => json!({ "ids": ids }),
-        Op::DeleteByFilter(num) => json!({ "num": num }),
+        Op::DeleteByFilter { num, slice } => json!({
+            "num": num,
+            "slice": slice.map(|s| json!({
+                "total": s.total.get(),
+                "index": s.index,
+            })),
+        }),
         Op::SetPayload(ids, _payload) => json!({ "ids": ids }),
         Op::OverwritePayload(ids, _payload) => json!({ "ids": ids }),
         Op::DeletePayload(ids, keys) => json!({
@@ -225,6 +231,10 @@ fn op_payload(op: &Op) -> Value {
         Op::RetrieveRandom(ids) => json!({ "ids": ids }),
         Op::RetrieveExisting(ids) => json!({ "ids": ids }),
         Op::CountByNum(num) => json!({ "num": num }),
+        Op::CountBySlice { total, index } => json!({
+            "total": total.get(),
+            "index": index,
+        }),
         Op::Search {
             vector_name,
             limit,

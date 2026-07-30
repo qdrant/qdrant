@@ -66,6 +66,58 @@ impl IdTrackerRead for IdTrackerEnum {
         }
     }
 
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => t.internal_versions_batch(internal_ids, callback),
+            IdTrackerEnum::ImmutableIdTracker(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            IdTrackerEnum::InMemoryIdTracker(t) => {
+                t.internal_versions_batch(internal_ids, callback)
+            }
+            IdTrackerEnum::DiskIdTracker(t) => t.internal_versions_batch(internal_ids, callback),
+        }
+    }
+
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::ImmutableIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::InMemoryIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::DiskIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+        }
+    }
+
+    fn resolve_external_ids(
+        &self,
+        point_ids: impl IntoIterator<Item = PointIdType>,
+        deferred_behavior: common::types::DeferredBehavior,
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+            IdTrackerEnum::ImmutableIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+            IdTrackerEnum::InMemoryIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+            IdTrackerEnum::DiskIdTracker(t) => {
+                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+            }
+        }
+    }
+
     type Backend = MmapFile;
 
     fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {

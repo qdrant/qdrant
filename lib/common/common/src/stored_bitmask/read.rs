@@ -8,7 +8,8 @@ use super::format::{BitmaskContent, BitmaskHeader, Encoding, HEADER_SIZE, MAGIC,
 use crate::bitvec::{BitSlice, BitVec};
 use crate::generic_consts::Sequential;
 use crate::universal_io::{
-    OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
+    OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
+    UniversalReadFs,
 };
 
 /// Read handle over a bitmask persisted by [`save_bitmask`].
@@ -47,7 +48,7 @@ impl<S: UniversalRead> StoredBitmask<S> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         let path = path.as_ref();
         let storage = TypedStorage::open(fs, path, options, extra)?;
 
@@ -59,10 +60,7 @@ impl<S: UniversalRead> StoredBitmask<S> {
             ));
         }
 
-        let header_bytes = storage.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: HEADER_SIZE as u64,
-        })?;
+        let header_bytes = storage.read(ReadRange::new(0, HEADER_SIZE as u64), Sequential)?;
         let header: BitmaskHeader = bytemuck::pod_read_unaligned(&header_bytes);
 
         if header.magic != MAGIC {
@@ -132,11 +130,11 @@ impl<S: UniversalRead> StoredBitmask<S> {
     }
 
     /// Read and decode the payload, in the stored polarity.
-    pub fn read(&self) -> Result<BitmaskContent<'_>> {
-        let payload = self.storage.read::<Sequential>(ReadRange {
-            byte_offset: HEADER_SIZE as u64,
-            length: self.payload_len,
-        })?;
+    pub fn read(&self) -> UioResult<BitmaskContent<'_>> {
+        let payload = self.storage.read(
+            ReadRange::new(HEADER_SIZE as u64, self.payload_len),
+            Sequential,
+        )?;
 
         match self.encoding {
             Encoding::Dense => {
@@ -160,7 +158,7 @@ impl<S: UniversalRead> StoredBitmask<S> {
 
     /// Read and decode the payload into a bitmap of the set positions,
     /// normalizing away the stored encoding/polarity.
-    pub fn read_ones(&self) -> Result<RoaringBitmap> {
+    pub fn read_ones(&self) -> UioResult<RoaringBitmap> {
         match self.read()? {
             BitmaskContent::Dense(bits) => Ok(bits
                 .iter_ones()
@@ -182,7 +180,7 @@ impl<S: UniversalRead> StoredBitmask<S> {
     /// Deserialize a roaring payload, rejecting positions outside
     /// `0..logical_len` so [`BitmaskContent`]'s range contract holds even for
     /// corrupted files.
-    fn decode_roaring(&self, payload: &[u8]) -> Result<RoaringBitmap> {
+    fn decode_roaring(&self, payload: &[u8]) -> UioResult<RoaringBitmap> {
         let bitmap = RoaringBitmap::deserialize_from(payload)?;
         if let Some(max) = bitmap.max()
             && u64::from(max) >= self.logical_len

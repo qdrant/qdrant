@@ -11,7 +11,7 @@ use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Sequential;
 use crate::iterator_ext::ordering_iterator::OrderingIterator;
 use crate::universal_io::{
-    CachedReadFs, OpenOptions, ReadRange, Result, TypedStorage, UniversalIoError, UniversalRead,
+    CachedReadFs, OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
     UniversalReadFs, UserData,
 };
 
@@ -51,7 +51,7 @@ where
         fs: &Fs,
         path: impl AsRef<Path>,
         mut options: OpenOptions,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         // Default a lazy open to partially populating the header + a slice of
         // the perfect-hash table, so the map can be opened without a full read.
         options.populate = options.populate.or_partial(0..HEADER_AND_BASIC_PHF_SIZE);
@@ -65,14 +65,12 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         let storage = TypedStorage::<S, u8>::open(fs, path, options, extra)?;
 
         // 1. Read header.
-        let header_bytes = storage.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: size_of::<Header>() as u64,
-        })?;
+        let header_bytes =
+            storage.read(ReadRange::new(0, size_of::<Header>() as u64), Sequential)?;
         let (header, _) = Header::read_from_prefix(&header_bytes)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid header"))?;
 
@@ -93,10 +91,8 @@ where
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "buckets_pos before header end")
             })?;
-        let phf_bytes = storage.read::<Sequential>(ReadRange {
-            byte_offset: phf_region_start,
-            length: phf_region_len,
-        })?;
+        let phf_bytes =
+            storage.read(ReadRange::new(phf_region_start, phf_region_len), Sequential)?;
         let phf = Function::read(&mut Cursor::new(&*phf_bytes))?;
 
         let entries_start =
@@ -122,12 +118,12 @@ where
     }
 
     /// Populate the RAM cache for the backing file.
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self) -> UioResult<()> {
         self.storage.populate()
     }
 
     /// Evict the backing file data from RAM cache.
-    pub fn clear_ram_cache(&self) -> Result<()> {
+    pub fn clear_ram_cache(&self) -> UioResult<()> {
         self.storage.clear_ram_cache()
     }
 
@@ -154,7 +150,7 @@ where
         };
         let mut iter = OrderingIterator::new(
             self.storage
-                .read_iter::<Sequential, usize>(range.iter_autochunks::<u8>().enumerate())?,
+                .read_iter::<_, usize>(range.iter_autochunks::<u8>().enumerate(), Sequential)?,
         );
 
         while let Some(chunk) = iter.next() {
@@ -196,10 +192,13 @@ where
         if self.average_entry_size < SEQUENTIAL_READ_THRESHOLD {
             self.for_each_entry(|key, _| f(key))
         } else {
-            let buckets = self.storage.read::<Sequential>(ReadRange {
-                byte_offset: self.header.buckets_pos,
-                length: self.header.buckets_count * size_of::<BucketOffset>() as u64,
-            })?;
+            let buckets = self.storage.read(
+                ReadRange::new(
+                    self.header.buckets_pos,
+                    self.header.buckets_count * size_of::<BucketOffset>() as u64,
+                ),
+                Sequential,
+            )?;
             let mut offsets: Vec<BucketOffset> = buckets
                 .as_chunks::<{ size_of::<BucketOffset>() }>()
                 .0
@@ -243,36 +242,36 @@ where
     /// Get the values associated with the `key`.
     ///
     /// Prefer to use [`Self::for_each_entry_in_iter`] instead.
-    pub fn unbatched_get(&self, key: &K) -> Result<Option<Vec<V>>> {
+    pub fn unbatched_get(&self, key: &K) -> UioResult<Option<Vec<V>>> {
         let mut result: Option<Vec<V>> = None;
-        self.for_each_entry_in_iter(std::iter::once(((), key)), |(), values| -> Result<()> {
+        self.for_each_entry_in_iter(std::iter::once(((), key)), |(), values| {
             result = values.map(|v| v.to_vec());
-            Ok(())
+            UioResult::Ok(())
         })?;
         Ok(result)
     }
 
     /// Return the number of values for `key` without reading the values themselves.
-    pub fn unbatched_get_values_count(&self, key: &K) -> Result<Option<usize>> {
+    pub fn unbatched_get_values_count(&self, key: &K) -> UioResult<Option<usize>> {
         let mut result: Option<usize> = None;
         self.for_each_sparse(
             MaybeIncompleteEntryKind::KeyAndValuesLen,
             std::iter::once(((), Request::Key(key))),
-            |(), entry| -> Result<()> {
+            |(), entry| {
                 if let Some(e) = entry {
                     let values_len = e
                         .values_len()
                         .expect("KeyAndValuesLen entry should have values len");
                     result = Some(values_len as usize);
                 }
-                Ok(())
+                UioResult::Ok(())
             },
         )?;
         Ok(result)
     }
 }
 
-fn parse_bucket_offset(data: &[u8]) -> Result<BucketOffset> {
+fn parse_bucket_offset(data: &[u8]) -> UioResult<BucketOffset> {
     match <[u8; size_of::<BucketOffset>()]>::try_from(data) {
         Ok(bytes) => Ok(BucketOffset::from_ne_bytes(bytes)),
         Err(_) => Err(UniversalIoError::Io(read_err("Can't read bucket offset"))),

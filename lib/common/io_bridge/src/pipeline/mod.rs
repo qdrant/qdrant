@@ -16,7 +16,7 @@ use std::ops::Range;
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{ReadPipeline, Result, UserData};
+use common::universal_io::{ReadPipeline, UioResult, UserData};
 
 pub(crate) use self::buffer::{
     read_from_into_byte_buffer, read_into_byte_buffer, read_whole_into_byte_buffer,
@@ -45,7 +45,7 @@ where
 {
     type File = BlobFile<A>;
 
-    fn new() -> Result<Self> {
+    fn new() -> UioResult<Self> {
         Ok(Self {
             inner: None,
             _phantom: PhantomData,
@@ -62,7 +62,7 @@ where
         file: &'file BlobFile<A>,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         let inner = self.inner.get_or_insert_with(|| {
             let (tx, rx) = PipelineInner::<U>::default_channel();
             PipelineInner::new(tx, rx)
@@ -77,7 +77,12 @@ where
         inner.schedule(&file.runtime, user_data, future)
     }
 
-    fn schedule_whole(&mut self, user_data: U, file: &'file BlobFile<A>, from: u64) -> Result<()> {
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file BlobFile<A>,
+        from: u64,
+    ) -> UioResult<()> {
         // One open-ended GET from `from` to EOF, byte-aligned, sized from the
         // response — no separate `len`/HEAD round-trip. `from == 0` reads the
         // whole object; an offset at or past EOF resolves to an empty read
@@ -98,7 +103,7 @@ where
         inner.schedule(&file.runtime, user_data, future)
     }
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         let Some(inner) = self.inner.as_mut() else {
             return Ok(None);
         };

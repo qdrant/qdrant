@@ -222,7 +222,10 @@ fn collect_filter_keys(
                 continue;
             }
             // Id- and vector-level conditions read no payload index.
-            Condition::HasId(_) | Condition::HasVector(_) | Condition::CustomIdChecker(_) => {
+            Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_) => {
                 continue;
             }
         };

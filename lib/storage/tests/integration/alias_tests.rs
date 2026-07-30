@@ -36,6 +36,7 @@ fn test_alias_operation() {
         snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,
+        payload: None,
         optimizers: OptimizersConfig {
             deleted_threshold: 0.5,
             vacuum_min_vector_number: 100,
@@ -60,6 +61,7 @@ fn test_alias_operation() {
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
+            io_uring: None,
             load_concurrency: LoadConcurrencyConfig::default(),
         },
         hnsw_index: Default::default(),

@@ -4,7 +4,7 @@
 //! than patching it up after the fact on reload.
 //!
 //! The structure deliberately follows the Gridstore flusher convention
-//! (`lib/gridstore/src/gridstore/mod.rs` + `tracker/mod.rs`):
+//! (`lib/blobstore/src/blobstore/mod.rs` + `tracker/mod.rs`):
 //!
 //! - pending writes live *inside* the lock-guarded store (one `Arc<RwLock<_>>`),
 //!   so a read consults the pending overlay and the durable bytes under a single

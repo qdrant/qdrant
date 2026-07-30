@@ -5,7 +5,7 @@ use bytemuck::TransparentWrapper;
 
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{ReadPipeline, Result, UserData};
+use crate::universal_io::{ReadPipeline, UioResult, UserData};
 
 /// Default [`ReadPipeline`] implementation for transparent wrappers
 pub struct WrappedReadPipeline<File, Inner> {
@@ -22,7 +22,7 @@ where
     type File = File;
 
     #[inline]
-    fn new() -> Result<Self> {
+    fn new() -> UioResult<Self> {
         let wrapper = Self {
             inner: Inner::new()?,
             _phantom: PhantomData,
@@ -43,18 +43,23 @@ where
         file: &'file File,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()> {
+    ) -> UioResult<()> {
         self.inner
             .schedule::<P>(user_data, File::peel_ref(file), range, align)
     }
 
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64) -> Result<()> {
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file Self::File,
+        from: u64,
+    ) -> UioResult<()> {
         self.inner
             .schedule_whole(user_data, File::peel_ref(file), from)
     }
 
     #[inline]
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         self.inner.wait()
     }
 }

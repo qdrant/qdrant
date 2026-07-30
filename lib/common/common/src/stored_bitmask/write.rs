@@ -4,7 +4,7 @@ use std::path::Path;
 use roaring::RoaringBitmap;
 
 use super::format::{BitmaskHeader, Encoding, HEADER_SIZE};
-use crate::universal_io::{Result, UniversalIoError, UniversalWriteFileOps};
+use crate::universal_io::{UioResult, UniversalIoError, UniversalWriteFileOps};
 
 /// Atomically persist a bitmask of `logical_len` bits whose set positions are
 /// `ones`.
@@ -16,7 +16,7 @@ pub fn save_bitmask(
     path: &Path,
     logical_len: u64,
     ones: RoaringBitmap,
-) -> Result<()> {
+) -> UioResult<()> {
     validate(logical_len, &ones)?;
 
     let (polarity, mut minority) = minority_polarity(logical_len, ones);
@@ -34,7 +34,7 @@ pub fn save_bitmask(
     fs.atomic_save(path, &bytes)
 }
 
-fn validate(logical_len: u64, ones: &RoaringBitmap) -> Result<()> {
+fn validate(logical_len: u64, ones: &RoaringBitmap) -> UioResult<()> {
     let invalid = |message: String| {
         UniversalIoError::Io(io::Error::new(io::ErrorKind::InvalidInput, message))
     };
@@ -74,7 +74,7 @@ fn roaring_file_bytes(
     logical_len: u64,
     polarity: Encoding,
     minority: &RoaringBitmap,
-) -> Result<Vec<u8>> {
+) -> UioResult<Vec<u8>> {
     let payload_len = minority.serialized_size();
     let header = BitmaskHeader::new(logical_len, polarity, payload_len as u64);
 

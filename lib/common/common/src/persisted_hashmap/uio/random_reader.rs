@@ -7,7 +7,7 @@ use super::{BucketOffset, Key, MaybeIncompleteEntry, MaybeIncompleteEntryKind, U
 use crate::aligned_buf::AlignedBuf;
 use crate::generic_consts::Random;
 use crate::persisted_hashmap::uio::parse_bucket_offset;
-use crate::universal_io::{ReadPipeline, Result, UniversalIoError, UniversalRead, UserData};
+use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData};
 
 pub(super) enum Request<'a, K: Key + ?Sized> {
     /// Request an entry by the given offset with unknown key.
@@ -130,7 +130,7 @@ where
     fn new(
         map: &'map UniversalHashMap<K, V, S>,
         entry_kind: MaybeIncompleteEntryKind,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         Ok(Self {
             map,
             entry_kind,

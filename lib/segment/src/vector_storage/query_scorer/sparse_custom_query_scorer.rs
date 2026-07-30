@@ -30,7 +30,7 @@ impl<
         vector_storage: &'a TVectorStorage,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self {
-        let query: TQuery = TransformInto::transform(query, |mut vector| {
+        let query: TQuery = TransformInto::transform(query, &|mut vector| {
             vector.sort_by_indices();
             Ok(vector)
         })

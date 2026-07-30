@@ -11,7 +11,7 @@ use super::DiskCacheRemote;
 use super::local_state::LocalState;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    OpenOptions, OwnedPipeline, Populate, Result, UniversalRead, UniversalReadFs,
+    OpenOptions, OwnedPipeline, Populate, UioResult, UniversalRead, UniversalReadFs,
 };
 
 mod init;
@@ -132,7 +132,7 @@ where
         }
     }
 
-    pub(super) fn open_remote(&self) -> Result<R> {
+    pub(super) fn open_remote(&self) -> UioResult<R> {
         let remote_options = OpenOptions {
             writeable: false,
             populate: Populate::No,

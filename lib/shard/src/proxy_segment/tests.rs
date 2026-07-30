@@ -55,7 +55,7 @@ impl ProxySegment {
 /// `deleted_mask` is a snapshot of the wrapped segment's deleted bitvec. If it is synced while
 /// the wrapped segment is still appendable, an upsert can still land afterwards at an internal
 /// offset past the snapshot; the scored search consults `deleted_mask` and treats every
-/// out-of-range offset as deleted (`check_deleted_condition` → `unwrap_or(true)`), silently
+/// out-of-range offset as deleted (`NotDeletedChecker` → `unwrap_or(true)`), silently
 /// excluding the live point even though scroll/retrieve still see it.
 ///
 /// [`UnsyncedProxySegment::finalize`] is what reads the mask, so the fix is timing: finalize
