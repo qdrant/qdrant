@@ -45,18 +45,20 @@ where
             return Ok(false);
         };
 
-        match std::mem::replace(scheduled_reopen, ScheduledReopen::No) {
-            // Nothing staged
-            ScheduledReopen::No => Ok(false),
+        let Some(scheduled_reopen) = scheduled_reopen.take() else {
+            // There isn't anything scheduled.
+            return Ok(false);
+        };
+
+        // Handle the scheduled reopen.
+        match scheduled_reopen {
             // It was staged without changes.
-            ScheduledReopen::Unchanged => Ok(true),
+            ScheduledReopen::Unchanged => {}
             ScheduledReopen::Resize { target_len } => {
                 // reopen remote, so we can read up to the new length.
                 remote.reopen()?;
 
                 local.resize(&self.local_path, target_len)?;
-
-                Ok(true)
             }
             ScheduledReopen::Tail {
                 mut pipeline,
@@ -80,10 +82,10 @@ where
 
                 // replace remote with the one from the owned pipeline
                 *remote = pipeline.into_inner();
-
-                Ok(true)
             }
         }
+
+        Ok(true)
     }
 
     pub(super) fn schedule_reopen_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
@@ -145,7 +147,10 @@ where
         }
 
         // Check if staged length has grown
-        if scheduled_reopen.target_len() == Some(remote_len) {
+        if scheduled_reopen
+            .as_ref()
+            .is_some_and(|r| r.target_len() == Some(remote_len))
+        {
             return Ok(());
         }
 
@@ -159,8 +164,7 @@ where
                         block_aligned_fetch(local_len..remote_len, remote_len)
                             .expect("the byte range is non-empty");
 
-                    // Fresh handle: the staged fetch must not share a mapping with
-                    // the held remote, which later reopens would remap.
+                    // Fresh remote handle
                     let new_remote = self.open_remote()?;
                     let mut pipeline = OwnedPipeline::new(new_remote)?;
                     // FIXME: check can_schedule in a loop?
@@ -191,7 +195,7 @@ where
         else {
             unreachable!("state was Ready above");
         };
-        *scheduled_reopen = new_scheduled_reopen;
+        *scheduled_reopen = Some(new_scheduled_reopen);
 
         Ok(())
     }
