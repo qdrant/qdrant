@@ -264,6 +264,31 @@ where
         }
     }
 
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce,
+    /// valid as [`put_value_bytes`](Self::put_value_bytes) input regardless of either
+    /// storage's compression setting.
+    pub fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        match self {
+            Blobstore::Gridstore(storage) => {
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+            }
+            Blobstore::Logstore(storage) => {
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         match self {

@@ -184,6 +184,29 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce.
+    pub fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        match self {
+            Self::Gridstore(reader) => {
+                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+            }
+            Self::Logstore(reader) => {
+                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+            }
+        }
+    }
+
     /// Return the storage size in bytes.
     ///
     /// Approximate (total page capacity) in mutable mode, exact in append-only mode.

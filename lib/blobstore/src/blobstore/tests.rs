@@ -213,6 +213,57 @@ fn test_value_bytes_cross_compression(
 }
 
 #[rstest]
+fn test_read_values_bytes(
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
+    #[values(Compression::None, Compression::LZ4)] compression: Compression,
+) {
+    let (_dir, mut storage) = empty_storage_compression(mode, compression);
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let payloads = (0..10).map(|_| random_payload(rng, 2)).collect::<Vec<_>>();
+
+    for (point_offset, payload) in payloads.iter().enumerate() {
+        storage
+            .put_value(point_offset as PointOffset, payload, hw_counter_ref)
+            .unwrap();
+    }
+
+    // Include offsets past the end: like `read_values`, they must not yield a value.
+    let offsets: Vec<PointOffset> = (0..payloads.len() as PointOffset + 2).collect();
+
+    // Slots are pre-filled with the expected absent value, so this does not rely on
+    // the batched read invoking the callback for offsets that have no pointer at all
+    // (it may skip them, exactly like `read_values`).
+    let mut batch: Vec<Option<Vec<u8>>> = vec![None; offsets.len()];
+    storage
+        .read_values_bytes::<Random, _, BlobstoreError>(
+            offsets.iter().copied().enumerate(),
+            |idx, _, bytes| {
+                batch[idx] = bytes.map(<[u8]>::to_vec);
+                Ok(())
+            },
+            hw_counter.payload_io_read_counter(),
+        )
+        .unwrap();
+
+    for (idx, &point_offset) in offsets.iter().enumerate() {
+        // Agrees with the single-value byte read, and with the values as they were stored.
+        let single = storage
+            .get_value_bytes::<Random>(point_offset, &hw_counter)
+            .unwrap();
+        assert_eq!(batch[idx], single, "mismatch at offset {point_offset}");
+        assert_eq!(
+            batch[idx],
+            payloads.get(point_offset as usize).map(Blob::to_bytes),
+            "mismatch at offset {point_offset}",
+        );
+    }
+}
+
+#[rstest]
 fn test_storage_files(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (dir, mut storage) = empty_storage_mode(mode);
 

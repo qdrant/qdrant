@@ -106,6 +106,28 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         U: UserData,
         E: From<BlobstoreError>,
     {
+        self.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, point_offset, bytes| {
+                callback(user_data, point_offset, bytes.map(V::from_bytes))
+            },
+            hw_counter_cell,
+        )
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce.
+    pub(crate) fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<bool, E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
         let point_offsets = point_offsets
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
 
@@ -131,8 +153,7 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
                 hw_counter_cell.incr_delta(bytes.len());
 
                 let decompressed = self.config.compression.decompress(bytes);
-                let value = V::from_bytes(&decompressed);
-                callback(user_data, point_offset, Some(value))
+                callback(user_data, point_offset, Some(&decompressed))
             },
         )
     }

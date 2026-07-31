@@ -166,6 +166,30 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         Ok(())
     }
 
+    /// Byte-blob analogue of [`Self::read_values`].
+    pub(crate) fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.view().read_values_bytes::<P, _, _>(
+            point_offsets,
+            move |user_data, point_offset, bytes| -> Result<_, E> {
+                callback(user_data, point_offset, bytes)?;
+                Ok(true)
+            },
+            hw_counter_cell,
+        )?;
+
+        Ok(())
+    }
+
     /// Return the storage size in bytes (precise, the exact amount of appended value data).
     pub(crate) fn get_storage_size_bytes(&self) -> usize {
         self.view().get_storage_size_bytes()
