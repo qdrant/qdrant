@@ -11,7 +11,9 @@ fn main() -> std::io::Result<()> {
     // by git so that the crate also builds standalone (e.g. from crates.io).
     if source.exists() {
         println!("cargo:rerun-if-changed={}", source.display());
-        fs_err::copy(source, local)?;
+        if fs_err::read(source)? != fs_err::read(local).unwrap_or_default() {
+            fs_err::copy(source, local)?;
+        }
     }
 
     tonic_prost_build::configure()
