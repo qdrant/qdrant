@@ -437,6 +437,32 @@ where
         Ok(())
     }
 
+    /// Byte-blob analogue of [`Self::read_values`].
+    pub(super) fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.with_view(|view| {
+            view.read_values_bytes::<P, _, _>(
+                point_offsets,
+                move |user_data, point_offset, bytes| -> Result<_, E> {
+                    callback(user_data, point_offset, bytes)?;
+                    Ok(true)
+                },
+                hw_counter_cell,
+            )
+        })?;
+
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(super) fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         self.tracker.read().get(point_offset).ok().flatten()
