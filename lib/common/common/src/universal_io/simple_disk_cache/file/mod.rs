@@ -99,6 +99,9 @@ pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     /// site, and what a no-growth schedule leaves behind. `reopen` then
     /// schedules and waits inline.
     No,
+    /// Scheduling detected that the file size has not changed, so no need to
+    /// reopen.
+    Unchanged,
     /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
     /// `target_len` and lets the new blocks fault in on demand.
     Resize { target_len: u64 },
@@ -117,7 +120,8 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
     /// staged.
     pub(super) fn target_len(&self) -> Option<u64> {
         match self {
-            ScheduledReopen::No => None,
+            ScheduledReopen::No |
+            ScheduledReopen::Unchanged => None,
             ScheduledReopen::Resize { target_len }
             | ScheduledReopen::Tail {
                 target_len,
