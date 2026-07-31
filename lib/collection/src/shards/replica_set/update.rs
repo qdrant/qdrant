@@ -501,7 +501,8 @@ impl ShardReplicaSet {
         }
 
         // Notify consensus about replica failures if:
-        // 1. there are some failures, but enough successes for the operation to be accepted
+        // 1. there are some failures, all of them transient, but enough successes for the
+        //    operation to be accepted
         // 2. a resharding replica failed, and there are not enough successes for the operation to be accepted
         //
         // Notify user about potential consistency problems if:
@@ -510,6 +511,7 @@ impl ShardReplicaSet {
         //
         // Notify user with operation error if:
         // 1. there are not enough successes for the operation to be accepted
+        // 2. a replica rejected the operation with a non-transient error
 
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
             format!("Failed peer: {peer_id}, error: {collection_error}")
@@ -526,29 +528,38 @@ impl ShardReplicaSet {
                 );
             }
 
-            // If there is at least one full-complete operation, we can't ignore non-transient errors (4xx)
-            // And we must deactivate failed replicas to ensure consistency
-            let has_full_completed_updates = successes.iter().any(|(_, res)| match res.status {
-                UpdateStatus::Completed => true,
-                UpdateStatus::Acknowledged => false,
-                UpdateStatus::ClockRejected => false,
-                UpdateStatus::WaitTimeout => false,
-            });
-
             if successes.len() >= minimal_success_count {
-                // If there are enough successes, deactivate failed replicas
-                // Failed replicas will automatically recover from another replica ensuring consistency
-
-                let failures_to_handle: Vec<_> = if !has_full_completed_updates {
-                    // We can only deactivate transient errors
+                // Failures we have to act on: replicas that are a source of truth, reporting
+                // an error that is not expected for the state they are in.
+                let mut failures_to_handle: Vec<_> = {
+                    let state = self.replica_state.read();
                     failures
                         .into_iter()
-                        .filter(|(_, err)| err.is_transient())
+                        .filter(|(peer_id, err)| {
+                            state.get_peer_state(*peer_id).is_some_and(|peer_state| {
+                                Self::failure_needs_handling(peer_state, err, update_only_existing)
+                            })
+                        })
                         .collect()
-                } else {
-                    failures
                 };
 
+                // A replica that rejected the operation with a non-transient error rejects it
+                // on retry as well, so deactivating it recovers nothing — it would only trade
+                // a healthy replica for a shard transfer. Report the failure to the user
+                // instead: a notified user owns retrying the update, and inconsistency between
+                // replicas is accepted, exactly like an operation that misses the write
+                // consistency factor.
+                if let Some(index) = failures_to_handle
+                    .iter()
+                    .position(|(_, err)| !err.is_transient())
+                {
+                    let (_peer_id, err) = failures_to_handle.swap_remove(index);
+                    return Err(err);
+                }
+
+                // Every remaining failure is transient and the operation is reported as
+                // successful, so deactivate those replicas: they recover from one that did
+                // apply the operation, which restores consistency.
                 let wait_for_deactivation = self.handle_failed_replicas(
                     &failures_to_handle,
                     &self.replica_state.read(),
@@ -691,6 +702,52 @@ impl ShardReplicaSet {
         is_resharding && !self.is_locally_disabled(peer_id)
     }
 
+    /// Whether a failed update on a replica in `peer_state` has to be acted on at all.
+    ///
+    /// `false` for replicas that cannot be a source of truth, and for errors that are
+    /// expected while a replica is receiving a shard transfer. Such a failure neither
+    /// deactivates the replica nor fails the operation for the user.
+    fn failure_needs_handling(
+        peer_state: ReplicaState,
+        err: &CollectionError,
+        update_only_existing: bool,
+    ) -> bool {
+        // Ignore errors entirely for dead and listener replicas
+        match peer_state {
+            ReplicaState::Dead | ReplicaState::Listener | ReplicaState::ManualRecovery => {
+                return false;
+            }
+            ReplicaState::Active
+            | ReplicaState::Initializing
+            | ReplicaState::Partial
+            | ReplicaState::Recovery
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown
+            | ReplicaState::ActiveRead => (),
+        }
+
+        // Handle a special case where transfer receiver is not in the expected replica state yet.
+        // Data consistency will be handled by the shard transfer and the associated proxies.
+        if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
+            return false;
+        }
+
+        // Ignore missing point errors if replica is in partial or recovery state
+        // Partial or recovery state indicates that the replica is receiving a shard transfer,
+        // it might not have received all the points yet
+        // See: <https://github.com/qdrant/qdrant/pull/5991>
+        if peer_state.is_partial_or_recovery() && err.is_missing_point() {
+            return false;
+        }
+
+        if update_only_existing && err.is_missing_point() {
+            return false;
+        }
+
+        true
+    }
+
     fn handle_failed_replicas<'a>(
         &self,
         failures: impl IntoIterator<Item = &'a (PeerId, CollectionError)>,
@@ -704,36 +761,7 @@ impl ShardReplicaSet {
                 continue;
             };
 
-            // Ignore errors entirely for dead and listener replicas
-            match peer_state {
-                ReplicaState::Dead | ReplicaState::Listener | ReplicaState::ManualRecovery => {
-                    continue;
-                }
-                ReplicaState::Active
-                | ReplicaState::Initializing
-                | ReplicaState::Partial
-                | ReplicaState::Recovery
-                | ReplicaState::PartialSnapshot
-                | ReplicaState::Resharding
-                | ReplicaState::ReshardingScaleDown
-                | ReplicaState::ActiveRead => (),
-            }
-
-            // Handle a special case where transfer receiver is not in the expected replica state yet.
-            // Data consistency will be handled by the shard transfer and the associated proxies.
-            if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
-                continue;
-            }
-
-            // Ignore missing point errors if replica is in partial or recovery state
-            // Partial or recovery state indicates that the replica is receiving a shard transfer,
-            // it might not have received all the points yet
-            // See: <https://github.com/qdrant/qdrant/pull/5991>
-            if peer_state.is_partial_or_recovery() && err.is_missing_point() {
-                continue;
-            }
-
-            if update_only_existing && err.is_missing_point() {
+            if !Self::failure_needs_handling(peer_state, err, update_only_existing) {
                 continue;
             }
 
@@ -875,7 +903,7 @@ mod tests {
 
     use common::budget::ResourceBudget;
     use common::save_on_disk::SaveOnDisk;
-    use segment::types::Distance;
+    use segment::types::{Distance, PointIdType};
     use tempfile::{Builder, TempDir};
     use tokio::runtime::Handle;
     use tokio::sync::RwLock;
@@ -887,6 +915,68 @@ mod tests {
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+
+    #[test]
+    fn test_failure_needs_handling_ignores_replicas_that_are_not_source_of_truth() {
+        let err = CollectionError::bad_input("rejected");
+
+        for peer_state in [
+            ReplicaState::Dead,
+            ReplicaState::Listener,
+            ReplicaState::ManualRecovery,
+        ] {
+            assert!(
+                !ShardReplicaSet::failure_needs_handling(peer_state, &err, false),
+                "{peer_state:?} must be ignored",
+            );
+        }
+
+        assert!(ShardReplicaSet::failure_needs_handling(
+            ReplicaState::Active,
+            &err,
+            false,
+        ));
+    }
+
+    #[test]
+    fn test_failure_needs_handling_ignores_errors_expected_during_transfer() {
+        let missing_point = CollectionError::PointNotFound {
+            missed_point_id: PointIdType::NumId(1),
+        };
+        let not_ready = CollectionError::pre_condition_failed("not ready");
+
+        // A replica receiving a shard transfer may not have all points yet, and may
+        // not be in the state the operation expects
+        assert!(!ShardReplicaSet::failure_needs_handling(
+            ReplicaState::Partial,
+            &missing_point,
+            false,
+        ));
+        assert!(!ShardReplicaSet::failure_needs_handling(
+            ReplicaState::Recovery,
+            &not_ready,
+            false,
+        ));
+
+        // The same errors from a replica that is a source of truth are real failures
+        assert!(ShardReplicaSet::failure_needs_handling(
+            ReplicaState::Active,
+            &missing_point,
+            false,
+        ));
+        assert!(ShardReplicaSet::failure_needs_handling(
+            ReplicaState::Active,
+            &not_ready,
+            false,
+        ));
+
+        // ... unless the operation only updates points that already exist
+        assert!(!ShardReplicaSet::failure_needs_handling(
+            ReplicaState::Active,
+            &missing_point,
+            true,
+        ));
+    }
 
     #[test]
     fn test_merge_successful_update_results_wait_timeout_dominates() {
