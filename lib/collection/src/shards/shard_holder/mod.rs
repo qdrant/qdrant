@@ -488,13 +488,19 @@ impl ShardHolder {
         (incoming, outgoing)
     }
 
-    /// Start tracking recovery progress for a shard (destination side).
+    /// Start a snapshot recovery of a shard (destination side).
     ///
-    /// Returns a [`ShardRecoveryGuard`] that must be held for the duration of the
-    /// recovery. Dropping the guard - on success, error, or cancellation - stops
-    /// tracking and removes the progress entry.
-    pub fn start_shard_recovery(&self, shard_id: ShardId) -> ShardRecoveryGuard {
-        self.active_recoveries.start(shard_id)
+    /// Requires the shard's recovery lock, which the returned [`ShardRecoveryGuard`]
+    /// takes ownership of. Prefer [`Collection::start_shard_recovery`], which acquires
+    /// the lock and calls this.
+    ///
+    /// [`Collection::start_shard_recovery`]: crate::collection::Collection::start_shard_recovery
+    pub fn start_shard_recovery(
+        &self,
+        shard_id: ShardId,
+        recovery_lock: tokio::sync::OwnedMutexGuard<()>,
+    ) -> ShardRecoveryGuard {
+        self.active_recoveries.start(shard_id, recovery_lock)
     }
 
     pub fn get_shard_transfer_info(

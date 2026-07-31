@@ -188,13 +188,16 @@ pub async fn recover_shard_snapshot(
         let (collection, download_dir) =
             cancel::future::cancel_on_token(cancel.clone(), pre_recovery_task).await??;
 
-        // Guard tracks recovery progress and removes it on drop, on every exit path
-        // (success, error, or cancellation), so stale timings are never reported.
-        let recovery_guard = collection
-            .shards_holder()
-            .read()
-            .await
-            .start_shard_recovery(shard_id);
+        // Waits for a recovery of this shard already in progress, then holds it excluded
+        // for the whole recovery below and reports progress meanwhile. An abandoned
+        // recovery keeps running - `recover_shard_snapshot_impl` is not cancel safe - and
+        // would otherwise restore on top of the recovery that replaced it, discarding
+        // writes the caller made after being told it had succeeded.
+        let recovery_guard = cancel::future::cancel_on_token(
+            cancel.clone(),
+            collection.start_shard_recovery(shard_id),
+        )
+        .await??;
 
         // For shard transfers, drop the existing shard and clear its on-disk data
         // before downloading the new snapshot so we don't need space for both copies.
@@ -298,8 +301,8 @@ pub async fn recover_shard_snapshot(
         )
         .await;
 
-        // `recovery_guard` is dropped here (and on every early return above),
-        // which stops tracking recovery progress for this shard.
+        // `recovery_guard` is dropped here (and on every early return above), releasing
+        // the shard for the next queued recovery and stopping progress tracking.
         drop(recovery_guard);
 
         result
