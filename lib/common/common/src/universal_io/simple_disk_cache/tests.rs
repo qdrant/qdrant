@@ -1,7 +1,7 @@
 use std::assert_matches;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fs_err as fs;
@@ -12,9 +12,11 @@ use super::{
 };
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
-    MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend, UniversalFlush,
-    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
+    CachedFs, CachedReadFs, MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange,
+    UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    UniversalReadFs, UniversalWrite,
 };
 
 // The disk cache is strictly read-only: mutating it must stay a
@@ -128,6 +130,19 @@ impl Scenario {
     /// Slice of the remote data corresponding to `range`.
     fn slice(&self, range: &std::ops::Range<u64>) -> &[u8] {
         &self.data[range.start as usize..range.end as usize]
+    }
+
+    /// A `get_file_info` for `schedule_reopen`, backed by a `CachedFs`
+    /// listing snapshot taken now — the schedule-phase view of the remote.
+    /// Take a fresh one after growing the remote, as a refresh pass would.
+    fn snapshot_file_info<R>(&self) -> impl Fn(&Path) -> Option<FileInfo>
+    where
+        R: DiskCacheRemote,
+        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    {
+        let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        move |path| cached_fs.file_info(path).cloned()
     }
 
     /// Append `additional_bytes` bytes to the remote file in-place.
@@ -330,28 +345,6 @@ mod tests_mod {
         assert!(!local_path.exists());
     }
 
-    /// Reopen with no prior reads leaves the local mirror untouched.
-    #[test]
-    fn reopen_without_prior_reads_keeps_local_uninitialized() {
-        let scn = Scenario::new(BLOCK_SIZE * 2);
-        let mut cache = scn.open::<R>(PREFILL);
-        let expected_local = cache.local_path.clone();
-        assert!(!expected_local.exists());
-
-        cache.reopen().unwrap();
-
-        // it it was scheduled for prefill, it materializes the local file
-        if PREFILL {
-            assert!(expected_local.exists());
-        } else {
-            assert!(!expected_local.exists());
-        }
-
-        // In both Populate::No and Populate::PreferBackground, we still
-        // have local marked as uninitialized at this point
-        assert!(!cache.is_ready());
-    }
-
     /// Reopen on an unchanged remote must not resize, repopulate, or mutate
     /// the fetched bitmap.
     #[test]
@@ -450,6 +443,159 @@ mod tests_mod {
             )
             .unwrap();
         assert_eq!(&*bytes, &new_data[BLOCK_SIZE..BLOCK_SIZE * 2]);
+    }
+
+    /// Staging must be invisible to readers: the mirror keeps its old length
+    /// (so components keep `len()` as their growth signal) until `reopen`
+    /// applies the staged work.
+    #[test]
+    fn reopen_schedule_is_invisible_until_reopen() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let original_len = scn.data.len() as u64;
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
+
+        // Nothing changed yet: same length, and the appended region is still
+        // out of bounds.
+        assert_eq!(cache.len::<u8>().unwrap(), original_len);
+        let err = cache
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .unwrap_err();
+        assert_matches!(err, UniversalIoError::OutOfBounds { .. });
+
+        cache.reopen().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        // A populated cache staged the tail fetch, so the appended block is
+        // already local; a lazy one only learned the new length.
+        let new_block = (original_len / BLOCK_SIZE as u64) as u32;
+        assert_eq!(
+            cache
+                .state()
+                .unwrap()
+                .local
+                .contains(new_block..new_block + 1),
+            PREFILL,
+        );
+
+        let bytes = cache
+            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .unwrap();
+        assert_eq!(&*bytes, &new_data[original_len as usize..]);
+    }
+
+    /// Staging against a cold cache materializes the mirror at the known
+    /// length, and applying it changes nothing.
+    #[test]
+    fn reopen_schedule_materializes_cold_mirror() {
+        let scn = Scenario::new(BLOCK_SIZE * 2 + 100);
+        let mut cache = scn.open::<R>(PREFILL);
+        assert!(!cache.is_ready());
+
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
+
+        assert!(cache.is_ready());
+        assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
+
+        // A later reopen (nothing staged — the length didn't grow) must
+        // leave the mirror alone.
+        cache.reopen().unwrap();
+        assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
+
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &scn.data[..]);
+    }
+
+    /// Scheduling an unchanged length stages nothing; the schedule/apply pair
+    /// must neither resize nor invalidate.
+    #[test]
+    fn reopen_schedule_no_growth_does_not_repopulate() {
+        let scn = Scenario::new(BLOCK_SIZE * 3);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let (len_before, fetched_before) = {
+            let local = cache.state().unwrap().local;
+            (
+                local.mmap().len::<u8>().unwrap(),
+                local.fetched.lock().clone(),
+            )
+        };
+
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
+        cache.reopen().unwrap();
+
+        let local = cache.state().unwrap().local;
+        assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
+        assert_eq!(*local.fetched.lock(), fetched_before);
+    }
+
+    /// Two schedules without an apply in between: the second supersedes the
+    /// first, so one `reopen` lands all the growth.
+    #[test]
+    fn reopen_schedule_twice_without_apply() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        scn.grow_remote(BLOCK_SIZE);
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        cache
+            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .unwrap();
+
+        cache.reopen().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &new_data[..]);
+    }
+
+    /// Re-scheduling the same length keeps the first staging as is — the
+    /// staged tail's in-flight read must survive to be applied.
+    #[test]
+    fn reopen_schedule_twice_with_same_length() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        let get_file_info = scn.snapshot_file_info::<R>();
+        cache.schedule_reopen(&get_file_info).unwrap();
+        cache.schedule_reopen(&get_file_info).unwrap();
+
+        cache.reopen().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &new_data[..]);
+    }
+
+    /// Scheduling against a snapshot that does not cover the file fails with
+    /// `NotFound` — the file resolves its own remote path, so there is no
+    /// path argument to mispair.
+    #[test]
+    fn reopen_schedule_missing_from_snapshot_errors() {
+        let scn = Scenario::new(BLOCK_SIZE);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let err = cache.schedule_reopen(|_| None).unwrap_err();
+        assert_matches!(err, UniversalIoError::NotFound { .. });
     }
 
     /// `Populate::Partial` prefetches only the requested (block-aligned) range;
