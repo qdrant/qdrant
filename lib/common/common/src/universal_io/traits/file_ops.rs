@@ -170,6 +170,19 @@ pub trait CachedReadFs: UniversalReadFs {
         open_extra: Option<Self::OpenExtra>,
     ) -> UioResult<()>;
 
+    /// Schedule a prefetch for a file that has been opened already.
+    ///
+    /// Checks if the modified time has changed since the last file listing snapshot.
+    ///
+    /// This will force `Self::open` to return `UnchangedOpen` error if the file
+    /// did not change its `FileInfo` in between snapshots.
+    fn reschedule_prefetch(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Self::OpenExtra>,
+    ) -> UioResult<()>;
+
     /// Return the file info from the current snapshot.
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;
 }
