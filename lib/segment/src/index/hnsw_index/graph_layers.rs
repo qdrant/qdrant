@@ -40,9 +40,9 @@ use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use super::HnswM;
 use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksResidency};
+use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
@@ -560,14 +560,11 @@ impl GraphLayers {
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn search_with_vectors(
         &self,
         top: usize,
         ef: usize,
-        links_scorer: &FilteredScorer,
-        links_scorer_bytes: &FilteredBytesScorer,
-        base_scorer: &dyn QueryScorerBytes,
+        scorers: GraphWithVectorsScorers,
         entry_point: EntryPoint,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
@@ -575,16 +572,16 @@ impl GraphLayers {
             entry_point.point_id,
             entry_point.level,
             0,
-            links_scorer.raw_scorer(),
-            links_scorer_bytes,
+            scorers.links.raw_scorer(),
+            scorers.links_bytes,
             is_stopped,
         )?;
         let nearest = self.search_on_level_with_vectors(
             zero_level_entry,
             0,
             max(top, ef),
-            links_scorer_bytes,
-            base_scorer,
+            scorers.links_bytes,
+            scorers.base,
             is_stopped,
         )?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())

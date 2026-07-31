@@ -8,6 +8,7 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph_layers::{GraphLayersWithVectors, SearchAlgorithm};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
@@ -132,9 +133,11 @@ where
             Ok(Some(self.graph.search_with_vectors(
                 top,
                 std::cmp::max(ef, oversampled_top),
-                &link_scorer_filtered,
-                &link_scorer_filtered_bytes,
-                base_scorer_bytes,
+                GraphWithVectorsScorers {
+                    links: &link_scorer_filtered,
+                    links_bytes: &link_scorer_filtered_bytes,
+                    base: base_scorer_bytes,
+                },
                 entry_point,
                 &vector_query_context.is_stopped(),
             )?))
