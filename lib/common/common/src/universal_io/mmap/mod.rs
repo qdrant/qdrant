@@ -75,16 +75,9 @@ impl UniversalReadFs for MmapFs {
 
 /// A memory-mapped local file handle.
 ///
-/// # Clones share the mapping
-///
-/// Clones share the underlying mapping but keep their own raw `ptr`/`len`
-/// copies. Growing the file through one handle ([`UniversalAppend::append`],
-/// or [`UniversalRead::reopen`] after external growth) remaps the shared
-/// mapping, which may move or replace it — the sibling clones' cached
-/// pointers then dangle. Reading through such a clone is undefined behavior
-/// (not merely a stale view), even long after the growing call returned,
-/// until that clone calls [`UniversalRead::reopen`] itself.
-#[derive(Debug, Clone)]
+/// `Clone` is deliberately not implemented because it's unsound to `reopen`
+/// while a clone is still in use.
+#[derive(Debug)]
 pub struct MmapFile {
     path: PathBuf,
 
@@ -95,9 +88,7 @@ pub struct MmapFile {
 
     /// Dedicated `O_APPEND` fd, lazily opened on the first
     /// [`UniversalAppend::append`]. Kept separate from the mmap so appends
-    /// cannot disturb the mapping, and shared across clones so every
-    /// handle's flusher fdatasyncs appended growth — regardless of which
-    /// clone appended, or in which order clones and flushers were created.
+    /// cannot disturb the mapping.
     append_file: Arc<OnceLock<fs_err::File>>,
 
     // `mmap` and `mmap_seq` own the mmaps.
@@ -671,33 +662,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
     use super::*;
-
-    /// The append fd is shared across clones, so a flusher from any clone —
-    /// even one created before the first append — fdatasyncs the growth.
-    #[test]
-    fn clone_flusher_sees_appends() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("append.dat");
-        MmapFs.create(&path, 0).unwrap();
-
-        let options = OpenOptions {
-            writeable: true,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Global,
-        };
-        let mut file = MmapFs.open(&path, options, ()).unwrap();
-        let clone = file.clone();
-        let flusher = clone.flusher();
-
-        file.append(0, b"tail".as_slice()).unwrap();
-
-        // The append fd is visible through the sibling clone, and the
-        // pre-created flusher takes the fdatasync path.
-        assert!(clone.append_file.get().is_some());
-        flusher().unwrap();
-    }
 
     /// A `need_sequential` file is mapped twice, and `MADV_PAGEOUT` refuses pages
     /// carrying more than one page-table reference. Without zapping the page tables
