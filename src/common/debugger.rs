@@ -28,7 +28,6 @@ pub enum DebugConfigPatch {
 }
 
 pub struct DebuggerState {
-    #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
     pub pyroscope: Arc<Mutex<Option<PyroscopeState>>>,
 }
 
@@ -40,7 +39,6 @@ impl DebuggerState {
         }
     }
 
-    #[cfg_attr(not(target_os = "linux"), allow(clippy::unused_self))]
     pub fn get_config(&self) -> DebuggerConfig {
         let pyroscope_config = {
             #[cfg(target_os = "linux")]
@@ -50,6 +48,7 @@ impl DebuggerState {
             }
             #[cfg(not(target_os = "linux"))]
             {
+                let _ = self; // Suppress unused_self lint
                 None
             }
         };
@@ -59,7 +58,6 @@ impl DebuggerState {
         }
     }
 
-    #[cfg_attr(not(target_os = "linux"), allow(clippy::unused_self))]
     pub fn apply_config_patch(&self, patch: DebugConfigPatch) -> bool {
         #[cfg(target_os = "linux")]
         {
@@ -81,7 +79,8 @@ impl DebuggerState {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = patch; // Ignore new_config on non-linux OS
+            let _ = patch; // Suppress unused variable lint
+            let _ = self.pyroscope; // Suppress unused variable lint
             false
         }
     }
