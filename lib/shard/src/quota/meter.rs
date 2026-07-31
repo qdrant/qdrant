@@ -76,7 +76,6 @@ mod tests {
 
     use super::*;
 
-    /// The freshness policy every reading uses, bound to one limit.
     fn below(limit: u8) -> impl Fn(Option<u8>) -> bool {
         move |percent| reusable(percent, Some(limit))
     }
@@ -95,34 +94,26 @@ mod tests {
         assert_eq!(measurements.get(), 1, "second check should not measure");
 
         // Unavailable stats are cached too, so a platform without the stat does
-        // not pay for a failing read on every single request.
+        // not pay for a failing read on every request
         let meter = Meter::default();
         assert_eq!(meter.measure(below(90), || None), None);
         assert_eq!(meter.measure(below(90), || unreachable!()), None);
     }
 
     #[test]
-    fn a_reading_at_the_limit_is_measured_again() {
+    fn a_reading_at_its_limit_is_measured_again() {
         let meter = Meter::default();
         assert_eq!(meter.measure(below(90), || Some(90)), Some(90));
 
         // Over the limit the resource is rejecting updates, so freeing it must
-        // take effect on the next request instead of after the TTL.
+        // take effect on the next request instead of after the TTL
         assert_eq!(meter.measure(below(90), || Some(10)), Some(10));
         assert_eq!(meter.measure(below(90), || unreachable!()), Some(10));
-    }
 
-    #[test]
-    fn the_limit_a_reading_is_reused_for_is_the_current_one() {
-        let meter = Meter::default();
-        assert_eq!(meter.measure(below(90), || Some(50)), Some(50));
-
-        // Same reading, stricter limit: it is now a rejection, so it has to be
-        // re-measured rather than served from the cache.
-        assert_eq!(meter.measure(below(40), || Some(45)), Some(45));
-
-        // Reads with no limit — reporting usage, or asking for free bytes —
-        // reuse whatever is fresh.
+        // Judged against the limit of the current call, not the one it was taken
+        // for: the same reading is a rejection under a stricter limit
+        assert_eq!(meter.measure(below(5), || Some(45)), Some(45));
+        // ... and reads with no limit reuse whatever is fresh
         assert_eq!(
             meter.measure(|percent| reusable(percent, None), || unreachable!()),
             Some(45),

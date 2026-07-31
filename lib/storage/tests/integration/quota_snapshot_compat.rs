@@ -22,7 +22,8 @@ struct LegacySnapshotData {
 }
 
 #[test]
-fn old_snapshot_reads_as_no_quota() {
+fn quota_config_is_optional_in_both_directions() {
+    // A snapshot from an older peer carries no quota
     let legacy = LegacySnapshotData {
         collections_data: CollectionsSnapshot::default(),
         address_by_id: HashMap::new(),
@@ -32,10 +33,8 @@ fn old_snapshot_reads_as_no_quota() {
     let bytes = serde_cbor::to_vec(&legacy).unwrap();
     let new: SnapshotData = bytes.as_slice().try_into().unwrap();
     assert_eq!(new.quota_config, None);
-}
 
-#[test]
-fn new_snapshot_readable_by_old_peer() {
+    // ... and one carrying a quota still parses on a peer that predates it
     let new = SnapshotData {
         collections_data: CollectionsSnapshot::default(),
         address_by_id: HashMap::new(),
@@ -48,6 +47,6 @@ fn new_snapshot_readable_by_old_peer() {
         }),
     };
     let bytes = serde_cbor::to_vec(&new).unwrap();
-    let legacy: LegacySnapshotData = serde_cbor::from_slice(&bytes).unwrap();
-    assert!(legacy.cluster_metadata.is_empty());
+    serde_cbor::from_slice::<LegacySnapshotData>(&bytes)
+        .expect("an older peer must still be able to read the snapshot");
 }

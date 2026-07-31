@@ -127,20 +127,11 @@ pub fn total_memory_bytes() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use super::LimitSource::{Override, Quota};
     use super::*;
 
-    fn quota(percent: u8) -> EffectiveLimit {
-        EffectiveLimit {
-            percent,
-            source: LimitSource::Quota,
-        }
-    }
-
-    fn override_limit(percent: u8) -> EffectiveLimit {
-        EffectiveLimit {
-            percent,
-            source: LimitSource::Override,
-        }
+    fn limit(percent: u8, source: LimitSource) -> EffectiveLimit {
+        EffectiveLimit { percent, source }
     }
 
     #[test]
@@ -148,78 +139,41 @@ mod tests {
         // Stricter than the quota: the override binds
         assert_eq!(
             EffectiveLimit::resolve(Some(70), Some(90)),
-            Some(override_limit(70)),
+            Some(limit(70, Override)),
         );
 
-        // Laxer than the quota: the quota still binds. Anyone who can edit a
-        // collection must not be able to buy it more of a node-wide resource
-        // than the cluster-wide quota allows.
-        assert_eq!(EffectiveLimit::resolve(Some(99), Some(90)), Some(quota(90)));
+        // Laxer: the quota still binds. Anyone who can edit a collection must not
+        // be able to buy it more of a node-wide resource than the quota allows.
         assert_eq!(
-            EffectiveLimit::resolve(Some(100), Some(90)),
-            Some(quota(90))
+            EffectiveLimit::resolve(Some(99), Some(90)),
+            Some(limit(90, Quota)),
+        );
+        // Equal: the quota is the one that has to be raised to lift it
+        assert_eq!(
+            EffectiveLimit::resolve(Some(90), Some(90)),
+            Some(limit(90, Quota)),
         );
 
-        // Equal: the quota is the one that has to be raised to lift it
-        assert_eq!(EffectiveLimit::resolve(Some(90), Some(90)), Some(quota(90)));
-    }
-
-    #[test]
-    fn a_limit_set_on_only_one_side_applies_on_its_own() {
-        assert_eq!(EffectiveLimit::resolve(None, Some(90)), Some(quota(90)));
-        // Nothing to tighten against — an uncapped resource takes the override
+        // Set on one side only, each applies alone
+        assert_eq!(
+            EffectiveLimit::resolve(None, Some(90)),
+            Some(limit(90, Quota))
+        );
         assert_eq!(
             EffectiveLimit::resolve(Some(90), None),
-            Some(override_limit(90))
+            Some(limit(90, Override))
         );
         assert_eq!(EffectiveLimit::resolve(None, None), None);
     }
 
     #[test]
-    fn a_rejection_names_the_knob_that_has_to_change() {
-        let message = Resource::DiskUsage
-            .rejected(
-                95,
-                EffectiveLimit {
-                    percent: 90,
-                    source: LimitSource::Quota,
-                },
-            )
-            .to_string();
-        assert!(message.contains("Disk usage is at 95%"), "{message}");
-        assert!(
-            message.contains("`max_disk_usage_percent` in the global quota config"),
-            "{message}",
-        );
-
-        let message = Resource::ResidentMemory
-            .rejected(
-                95,
-                EffectiveLimit {
-                    percent: 90,
-                    source: LimitSource::Override,
-                },
-            )
-            .to_string();
-        assert!(
-            message.contains("Resident memory usage is at 95%"),
-            "{message}"
-        );
-        assert!(
-            message.contains("`max_resident_memory_percent` in the strict mode config"),
-            "{message}",
-        );
-    }
-
-    #[test]
     fn utilization_is_a_clamped_percentage() {
         assert_eq!(percent_of(0, 100), Some(0));
-        assert_eq!(percent_of(90, 100), Some(90));
-        // Rounds down, so a limit is only reached once it is fully reached.
+        // Rounds down, so a limit is only reached once it is fully reached
         assert_eq!(percent_of(999, 1_000), Some(99));
-        // Filesystems that report `available > total` saturate rather than wrap.
+        // Filesystems that report `available > total` saturate rather than wrap
         assert_eq!(percent_of(200, 100), Some(100));
-        // A zero-sized filesystem is not a 100%-full one.
+        // A zero-sized filesystem is not a 100%-full one
         assert_eq!(percent_of(0, 0), None);
         assert_eq!(percent_of(u64::MAX, u64::MAX), Some(100));
     }

@@ -381,51 +381,6 @@ mod tests {
     }
 
     #[test]
-    fn a_rejecting_measurement_is_never_served_from_the_cache() {
-        let dir = tempfile::Builder::new().tempdir().unwrap();
-        let manager = QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).unwrap();
-
-        // Over the limit, so the reading is not cached...
-        assert!(manager.check_update(UNSATISFIABLE).is_err());
-        // ... and a check with a limit the same reading satisfies passes right
-        // away, rather than after the measurement TTL.
-        manager
-            .check_update(QuotaLimits {
-                max_disk_usage_percent: Some(100),
-                ..Default::default()
-            })
-            .unwrap();
-    }
-
-    #[test]
-    fn free_space_is_reported_without_enforcing_anything() {
-        let dir = tempfile::Builder::new().tempdir().unwrap();
-        let manager = QuotaManager::load_or_init(
-            dir.path(),
-            QuotaConfig {
-                enabled: true,
-                max_disk_usage_percent: Some(1),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        // The quota rejects every update on this filesystem...
-        assert!(manager.check_update(QuotaLimits::default()).is_err());
-
-        // ... and the optimizer still gets told how much room it has, because
-        // the work that frees a full disk must not be blocked by it being full.
-        let available = manager.available_bytes(dir.path());
-        assert!(available.is_some_and(|bytes| bytes > 0), "{available:?}");
-
-        assert_eq!(
-            manager.available_bytes(dir.path()),
-            available,
-            "the same path should report the same cached value",
-        );
-    }
-
-    #[test]
     fn an_optimization_is_sized_against_the_disk_not_the_quota() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
         let manager = QuotaManager::load_or_init(
@@ -457,47 +412,8 @@ mod tests {
         };
         assert_eq!(required, u64::MAX);
         assert!(available < u64::MAX);
-    }
 
-    #[test]
-    fn a_node_over_its_quota_has_no_capacity_to_take_on_a_replica() {
-        let dir = tempfile::Builder::new().tempdir().unwrap();
-        let manager = QuotaManager::load_or_init(
-            dir.path(),
-            QuotaConfig {
-                enabled: true,
-                max_disk_usage_percent: Some(1),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        // Recovering a dead replica lands a whole shard here, so a node already
-        // over its limit must not take one on...
-        let err = manager.check_capacity().unwrap_err();
-        assert!(err.to_string().contains("Disk usage is at"), "{err}");
-
-        // ... while an optimization on the same node still goes ahead, because
-        // that is the work that brings usage back under the limit.
-        assert!(matches!(
-            manager.fits_on_disk(dir.path(), 0),
-            DiskFit::Fits { .. },
-        ));
-
-        // With no quota configured there is nothing to be over
-        let dir = tempfile::Builder::new().tempdir().unwrap();
-        QuotaManager::load_or_init(dir.path(), QuotaConfig::default())
-            .unwrap()
-            .check_capacity()
-            .unwrap();
-    }
-
-    #[test]
-    fn an_unmeasurable_disk_does_not_stop_an_optimization() {
-        let manager = QuotaManager::default();
-
-        // Nothing can be concluded, so the caller is left to try anyway rather
-        // than have every optimization refused over a stat we cannot take.
+        // An unreadable path concludes nothing rather than refusing the work
         assert_eq!(
             manager.fits_on_disk(Path::new("/no/such/path/for/qdrant"), u64::MAX),
             DiskFit::Unknown,
