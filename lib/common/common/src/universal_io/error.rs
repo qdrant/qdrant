@@ -47,6 +47,7 @@ impl IsNotFound for UniversalIoError {
             | Self::OutOfBounds { .. }
             | Self::InvalidFileIndex { .. }
             | Self::Uninitialized { .. }
+            | Self::UnchangedOpen { .. }
             | Self::QueueIsFull
             | Self::AppendOffsetConflict { .. }
             | Self::S3(_)
@@ -80,6 +81,12 @@ pub enum UniversalIoError {
     /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
     #[error("path {path} not found")]
     NotFound { path: PathBuf },
+
+    #[error("Did not open a new instance of {path} because it didn't change since {since:?}")]
+    UnchangedOpen {
+        path: PathBuf,
+        since: Option<std::time::SystemTime>,
+    },
 
     #[error("elements range {start}..{end} is out of bounds, file contains {elements} elements")]
     OutOfBounds {
