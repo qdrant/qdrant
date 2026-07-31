@@ -73,7 +73,7 @@ pub(crate) enum State<R: UniversalRead + 'static> {
         ///
         /// [`reopen`]: UniversalRead::reopen
         /// [`schedule_reopen`]: UniversalRead::schedule_reopen
-        scheduled_reopen: ScheduledReopen<R>,
+        scheduled_reopen: Option<ScheduledReopen<R>>,
     },
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
     /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
@@ -95,10 +95,6 @@ pub(crate) enum State<R: UniversalRead + 'static> {
 /// the staged targets, hence the `target_len` on every variant.
 #[derive(Debug)]
 pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
-    /// Nothing staged — the default at every [`State::Ready`] construction
-    /// site, and what a no-growth schedule leaves behind. `reopen` then
-    /// schedules and waits inline.
-    No,
     /// Scheduling detected that the file size has not changed, so no need to
     /// reopen.
     Unchanged,
@@ -120,7 +116,6 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
     /// staged.
     pub(super) fn target_len(&self) -> Option<u64> {
         match self {
-            ScheduledReopen::No |
             ScheduledReopen::Unchanged => None,
             ScheduledReopen::Resize { target_len }
             | ScheduledReopen::Tail {
@@ -138,7 +133,7 @@ impl<R: UniversalRead + 'static> State<R> {
         State::Ready {
             remote,
             local,
-            scheduled_reopen: ScheduledReopen::No,
+            scheduled_reopen: None,
         }
     }
 
