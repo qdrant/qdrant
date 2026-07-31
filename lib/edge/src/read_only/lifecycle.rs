@@ -92,7 +92,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
         // Segments never carry `max_search_threads` / `search_pool_core`, so the pool is sized and
         // pinned from the caller-provided config alone: the CPU-derived default unless set.
-        let search_pool = crate::read_view::build_search_pool(
+        let search_pool = crate::read_view::build_segment_pool(
+            "edge-search",
             provided_config.search_thread_count(),
             provided_config.search_pool_core,
         )?;

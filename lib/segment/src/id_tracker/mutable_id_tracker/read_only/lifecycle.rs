@@ -25,11 +25,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
     /// Schedule background prefetch of the mappings log and versions file that
     /// [`open`](Self::open) reads via [`live_reload`](Self::live_reload).
+    ///
+    /// Either file may not exist yet — the writer only creates them once it
+    /// flushes the first point, and [`open`](Self::open) treats a missing file
+    /// as an empty storage — so absence is tolerated here too.
     pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
         let options = Self::open_options();
 
-        fs.schedule_prefetch(&mappings_path(segment_path), Some(options), None)?;
-        fs.schedule_prefetch(&versions_path(segment_path), Some(options), None)?;
+        fs.schedule_prefetch(&mappings_path(segment_path), Some(options), None)
+            .ok_not_found()?;
+        fs.schedule_prefetch(&versions_path(segment_path), Some(options), None)
+            .ok_not_found()?;
 
         Ok(())
     }

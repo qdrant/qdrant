@@ -28,10 +28,9 @@ mod vector_index;
 mod vector_storage;
 
 pub(crate) use id_tracker::create_mutable_id_tracker;
-pub(crate) use paths::get_payload_index_path;
 pub use paths::{
-    PAYLOAD_INDEX_PATH, VECTOR_INDEX_PATH, VECTOR_STORAGE_PATH, get_vector_index_path,
-    get_vector_name_with_prefix, get_vector_storage_path,
+    PAYLOAD_INDEX_PATH, VECTOR_INDEX_PATH, VECTOR_STORAGE_PATH, get_payload_index_path,
+    get_vector_index_path, get_vector_name_with_prefix, get_vector_storage_path,
 };
 pub(crate) use payload_storage::create_payload_storage;
 pub use segment::{NewSegmentToken, build_segment, load_segment, normalize_segment_dir};

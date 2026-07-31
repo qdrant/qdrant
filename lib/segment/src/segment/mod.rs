@@ -15,6 +15,8 @@ mod tests;
 
 pub mod read_only;
 
+pub mod update_only;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;

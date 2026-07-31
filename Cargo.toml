@@ -363,6 +363,7 @@ members = [
     "lib/edge/ffi",
     "lib/edge/ffi/bindgen",
     "lib/edge/tools/shard_query",
+    "lib/edge/tools/shard_update",
     "lib/blobstore",
     "lib/macros",
     "lib/posting_list",
