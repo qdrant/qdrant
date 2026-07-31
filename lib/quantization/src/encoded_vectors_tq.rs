@@ -513,4 +513,19 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             score
         }
     }
+
+    fn score_internal_bytes(
+        &self,
+        a: &[u8],
+        b: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<f32> {
+        hw_counter.cpu_counter().incr_delta(a.len() + b.len());
+        let score = self.quantizer.score_symmetric(a, b);
+        Some(if self.metadata.vector_parameters.invert {
+            -score
+        } else {
+            score
+        })
+    }
 }

@@ -114,6 +114,24 @@ pub trait EncodedVectors: Sized {
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> f32;
+
+    /// Score two stored vectors given their encoded bytes, applying the same
+    /// symmetric kernel [`Self::score_internal`] applies to the bytes it
+    /// fetches by id - given the same bytes, the scores must be bitwise
+    /// identical.
+    ///
+    /// `None` means this encoder exposes no byte-level symmetric scoring and
+    /// the caller must score by id instead. That is the default; encoders
+    /// whose symmetric kernel already reduces to a pair of byte slices can
+    /// opt in.
+    fn score_internal_bytes(
+        &self,
+        _a: &[u8],
+        _b: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<f32> {
+        None
+    }
 }
 
 impl DistanceType {
