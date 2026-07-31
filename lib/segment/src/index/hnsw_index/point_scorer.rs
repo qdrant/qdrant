@@ -493,7 +493,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             }
 
             let base = start as PointOffsetType;
-            if candidates == u64::MAX && false {
+            if candidates == u64::MAX {
                 // Fully live block — the common no-deletions case.
                 for (i, slot) in chunk[chunk_size..chunk_size + 64].iter_mut().enumerate() {
                     *slot = base + i as PointOffsetType;
