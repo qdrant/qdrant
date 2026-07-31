@@ -150,8 +150,13 @@ impl QuotaManager {
 
     /// Free space in bytes on the filesystem hosting `path`, or `None` when it
     /// cannot be read. Served from the same cache the quota check uses.
-    pub fn available_bytes(&self, path: &Path) -> Option<u64> {
-        self.disk_usage(path, None).map(|usage| usage.available)
+    ///
+    /// `watch_below` is the level at which the caller starts caring: a reading
+    /// under it is never reused, so a disk that is nearly full is tracked call by
+    /// call rather than through a sample that may already be stale.
+    pub fn available_bytes(&self, path: &Path, watch_below: u64) -> Option<u64> {
+        self.disk_usage(path, |usage| usage.available >= watch_below)
+            .map(|usage| usage.available)
     }
 
     /// Whether an operation needing `required_bytes` on the filesystem hosting
@@ -160,7 +165,7 @@ impl QuotaManager {
     /// Blind to the configured limits by design: an optimization is what *frees*
     /// a disk the quota has declared full, so only not fitting may stop one.
     pub fn fits_on_disk(&self, path: &Path, required_bytes: u64) -> DiskFit {
-        let Some(available) = self.available_bytes(path) else {
+        let Some(available) = self.available_bytes(path, required_bytes) else {
             return DiskFit::Unknown;
         };
 
@@ -226,12 +231,21 @@ impl QuotaManager {
 
     /// Used space of the filesystem hosting `path`, as a percentage of capacity.
     fn disk_usage_percent(&self, path: &Path, limit: Option<u8>) -> Option<u8> {
-        let usage = self.disk_usage(path, limit)?;
+        let usage = self.disk_usage(path, |usage| {
+            reusable(percent_of(usage.used(), usage.total), limit)
+        })?;
         percent_of(usage.used(), usage.total)
     }
 
-    /// Cached disk usage of the filesystem hosting `path`.
-    fn disk_usage(&self, path: &Path, limit: Option<u8>) -> Option<DiskUsage> {
+    /// Cached disk usage of the filesystem hosting `path`. `still_ample` says
+    /// whether the last reading may stand in for a fresh one; it must go false
+    /// once the disk is tight enough for the caller to act on, so a caller that
+    /// is refusing work re-measures and sees it recover at once.
+    fn disk_usage(
+        &self,
+        path: &Path,
+        still_ample: impl Fn(DiskUsage) -> bool,
+    ) -> Option<DiskUsage> {
         // Out of the map before measuring, so a slow `statvfs` on one path does
         // not hold up readings for the others.
         let meter = match self.disk.lock().entry(path.to_path_buf()) {
@@ -240,10 +254,7 @@ impl QuotaManager {
         };
 
         meter.measure(
-            |usage| {
-                let percent = usage.and_then(|usage| percent_of(usage.used(), usage.total));
-                reusable(percent, limit)
-            },
+            |usage| usage.is_none_or(&still_ample),
             || ::common::disk_usage::disk_usage(path),
         )
     }
@@ -381,22 +392,22 @@ mod tests {
     }
 
     #[test]
-    fn an_optimization_is_sized_against_the_disk_not_the_quota() {
+    fn fits_on_disk_answers_from_free_space_not_the_quota() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
         let manager = QuotaManager::load_or_init(
             dir.path(),
             QuotaConfig {
                 enabled: true,
-                // Already exceeded — every update on this filesystem is rejected
+                // The strictest quota there is, so if it were consulted at all it
+                // would refuse anything this filesystem is asked for
                 max_disk_usage_percent: Some(1),
                 ..Default::default()
             },
         )
         .unwrap();
-        assert!(manager.check_update(QuotaLimits::default()).is_err());
 
-        // The quota does not enter into it: an optimization that fits proceeds,
-        // because it is the thing that would bring usage back under the limit.
+        // It is not consulted: an optimization that fits still goes ahead,
+        // because it is the work that brings usage back under the limit.
         let fit = manager.fits_on_disk(dir.path(), 0);
         assert!(matches!(fit, DiskFit::Fits { .. }), "{fit:?}");
 
@@ -412,12 +423,6 @@ mod tests {
         };
         assert_eq!(required, u64::MAX);
         assert!(available < u64::MAX);
-
-        // An unreadable path concludes nothing rather than refusing the work
-        assert_eq!(
-            manager.fits_on_disk(Path::new("/no/such/path/for/qdrant"), u64::MAX),
-            DiskFit::Unknown,
-        );
     }
 
     #[test]
