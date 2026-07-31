@@ -7,16 +7,14 @@
 //! root of the storage directory, and updated cluster-wide through consensus.
 //! `storage` re-exports this module and drives all of that.
 //!
-//! It is also the single place that measures those resources — both for its own
-//! limit checks and for everything else that needs to know how full a disk is,
-//! such as the optimizer sizing up a merge or the WAL checking it has room to
-//! write. Nothing else calls `statvfs` or reads process memory, so a measurement
-//! is taken once and shared rather than repeated per caller.
+//! It is also the single place that measures those resources, for its own limit
+//! checks and for anything else that needs to know how full a disk is — the
+//! optimizer sizing up a merge, the WAL checking it has room to write. Nothing
+//! else calls `statvfs` or reads process memory.
 //!
 //! Code with limits of its own — a collection's strict mode config — passes them
-//! in as [`QuotaLimits`] overrides and gets a decision back. An override can only
-//! tighten what the quota already allows, so no per-collection setting can lift a
-//! cluster-wide limit.
+//! in as [`QuotaLimits`] overrides. An override can only tighten, so no
+//! per-collection setting can lift a cluster-wide limit.
 
 mod check;
 mod config;
@@ -34,13 +32,11 @@ pub use status::{QuotaStatus, QuotaUsage};
 
 static GLOBAL: OnceLock<Arc<QuotaManager>> = OnceLock::new();
 
-/// Install the node's quota manager. Called once at startup, before anything
-/// that measures a resource — `storage` does it while building the table of
-/// contents, ahead of loading any collection.
+/// Install the node's quota manager, once at startup before anything measures a
+/// resource. `storage` does it while building the table of contents.
 ///
-/// Ignored if a manager is already in place, which for a second call means the
-/// quota it configures would silently not be the one being enforced. Loud,
-/// because that is a startup-order bug rather than a runtime condition.
+/// A second call is a startup-order bug — the quota it configures would silently
+/// not be the one enforced — so it is loud rather than ignored.
 pub fn set_global(manager: Arc<QuotaManager>) {
     if GLOBAL.set(manager).is_err() {
         log::error!(
@@ -51,11 +47,9 @@ pub fn set_global(manager: Arc<QuotaManager>) {
     }
 }
 
-/// The node's quota manager.
-///
-/// Falls back to one that enforces nothing, for binaries with no quota config to
-/// install — the edge shard, and tests. Its measurements work either way, which
-/// is all the callers that are not enforcing a limit need.
+/// The node's quota manager. Falls back to one that enforces nothing for
+/// binaries with no quota config to install — edge, and tests — whose
+/// measurements still work, which is all a non-enforcing caller needs.
 pub fn global() -> &'static Arc<QuotaManager> {
     GLOBAL.get_or_init(|| Arc::new(QuotaManager::default()))
 }

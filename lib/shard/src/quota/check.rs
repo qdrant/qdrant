@@ -10,8 +10,8 @@ pub enum Resource {
 }
 
 impl Resource {
-    /// The limit parameter that governs this resource, named the same way in the
-    /// quota config and in a strict mode config.
+    /// The parameter governing this resource, named the same in the quota config
+    /// and in a strict mode config.
     fn parameter(self) -> &'static str {
         match self {
             Resource::ResidentMemory => "max_resident_memory_percent",
@@ -19,8 +19,8 @@ impl Resource {
         }
     }
 
-    /// Build the user-facing rejection, naming the exact condition that tripped
-    /// and the parameter that governs it.
+    /// The user-facing rejection, naming the condition that tripped and the
+    /// parameter governing it.
     pub(super) fn rejected(self, used_percent: u8, limit: EffectiveLimit) -> QuotaError {
         let EffectiveLimit { percent, source } = limit;
 
@@ -78,13 +78,11 @@ pub struct EffectiveLimit {
 }
 
 impl EffectiveLimit {
-    /// Resolve a single limit from the quota's own value and a caller-supplied
-    /// override.
+    /// Resolve one limit from the quota's value and a caller's override.
     ///
-    /// An override can only ever tighten: the stricter of the two wins, so no
-    /// caller can grant itself more of a resource than the cluster-wide quota
-    /// allows. A resource the quota leaves uncapped is governed by the override
-    /// alone.
+    /// The override can only tighten — the stricter of the two wins — so no
+    /// caller can grant itself more than the cluster-wide quota allows. A
+    /// resource the quota leaves uncapped is governed by the override alone.
     pub fn resolve(override_limit: Option<u8>, quota: Option<u8>) -> Option<Self> {
         let override_limit = override_limit.map(|percent| EffectiveLimit {
             percent,
@@ -113,9 +111,9 @@ pub fn percent_of(used: u64, total: u64) -> Option<u8> {
     if total == 0 {
         return None;
     }
-    // Widened, not saturated: saturating the multiply would divide a capped
-    // numerator by a huge total and report a *lower* utilization than the truth,
-    // which is the one direction a quota must never round.
+    // Widened, not saturated: a saturating multiply divides a capped numerator by
+    // a huge total and under-reports utilization — the one direction a quota must
+    // never round.
     let percent = u128::from(used) * 100 / u128::from(total);
     Some(percent.min(100) as u8)
 }

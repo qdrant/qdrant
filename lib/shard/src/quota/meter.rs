@@ -2,20 +2,17 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-/// How long a measurement taken below its limit stays usable.
-///
-/// Sets how long it takes for a resource that has just filled up to start
-/// rejecting updates. Recovery in the other direction is immediate — see
-/// [`reusable`].
+/// How long a measurement below its limit stays usable, and so how long a
+/// resource that just filled up takes to start rejecting updates. Dropping back
+/// under the limit takes effect immediately instead — see [`reusable`].
 const MEASUREMENT_TTL: Duration = Duration::from_secs(5);
 
-/// Cache of one resource's last measurement, holding the freshness policy that
-/// [`super::QuotaManager`] applies to every reading it takes.
+/// Cache of one resource's last measurement, holding the freshness policy
+/// [`super::QuotaManager`] applies to every reading.
 ///
 /// Measuring is not free — resident memory advances the jemalloc stats epoch,
-/// disk usage costs two `statvfs` calls — and updates check their quota on every
-/// request, so a measurement taken while the resource sat below its limit is
-/// reused for [`MEASUREMENT_TTL`] instead of repeated.
+/// disk usage costs two `statvfs` calls — and every update checks its quota, so
+/// a measurement taken below the limit is reused for [`MEASUREMENT_TTL`].
 pub struct Meter<T> {
     last: Mutex<Option<Sample<T>>>,
 }
@@ -30,16 +27,12 @@ impl<T> Default for Meter<T> {
 
 impl<T: Copy> Meter<T> {
     /// The current measurement, taken with `measure` or served from the last one
-    /// while that is still usable.
-    ///
-    /// `is_reusable` decides whether the previous measurement may stand in for a
-    /// fresh one — see [`reusable`], which is what every caller passes.
+    /// while `is_reusable` accepts it — see [`reusable`], what every caller passes.
     pub fn measure(&self, is_reusable: impl FnOnce(T) -> bool, measure: impl FnOnce() -> T) -> T {
         let now = Instant::now();
 
-        // Held across `measure` on purpose: when many requests arrive at once we
-        // want one of them to take the syscall and the rest to reuse it, not all
-        // of them to measure in parallel.
+        // Held across `measure` on purpose: under a burst one request should take
+        // the syscall and the rest reuse it, not all measure in parallel.
         let mut last = self.last.lock();
 
         if let Some(sample) = *last
@@ -67,10 +60,9 @@ struct Sample<T> {
 
 /// Whether a measurement of `percent` may be reused for a check against `limit`.
 ///
-/// A measurement at or above the limit never is. It is rejecting updates, and
-/// the clients it rejects retry — so the moment the resource is freed they have
-/// to get through, rather than stay locked out for the rest of the TTL. Anything
-/// below the limit, or with no limit to compare against, is fine to reuse.
+/// A measurement at or above the limit is never reused: it is rejecting updates,
+/// and the clients it rejects retry, so freeing the resource must let them
+/// through right away rather than once the TTL runs out.
 pub fn reusable(percent: Option<u8>, limit: Option<u8>) -> bool {
     match (percent, limit) {
         (Some(percent), Some(limit)) => percent < limit,
@@ -84,8 +76,7 @@ mod tests {
 
     use super::*;
 
-    /// The freshness policy every [`super::super::QuotaManager`] reading uses,
-    /// bound to one limit.
+    /// The freshness policy every reading uses, bound to one limit.
     fn below(limit: u8) -> impl Fn(Option<u8>) -> bool {
         move |percent| reusable(percent, Some(limit))
     }

@@ -1,10 +1,8 @@
 use thiserror::Error;
 
-/// Why a quota operation did not go through.
-///
-/// Deliberately narrow: `storage` maps these onto its own error type, and the
-/// mapping has to keep a limit rejection a client error (the client can free the
-/// resource and retry) while a quota file it cannot read stays a server one.
+/// Why a quota operation did not go through. `storage` maps these onto its own
+/// error type: a limit rejection stays a client error, an unreadable quota file
+/// a server one.
 #[derive(Debug, Error)]
 pub enum QuotaError {
     /// An update was refused because a resource has reached its limit.
