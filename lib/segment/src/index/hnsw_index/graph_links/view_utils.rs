@@ -92,6 +92,6 @@ pub(super) fn last_offset_idx(total_offset_count: u64) -> OperationResult<u64> {
     })
 }
 
-pub(super) fn error_insufficient_size() -> OperationError {
-    OperationError::service_error("Insufficient file size for GraphLinks file")
+pub(super) fn error_size() -> OperationError {
+    OperationError::service_error("GraphLinks file is shorter than expected")
 }
