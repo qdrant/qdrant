@@ -8,7 +8,7 @@ use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
-use crate::mmap::AdviceSetting;
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
@@ -95,16 +95,8 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         path: impl AsRef<Path>,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
     ) -> UioResult<R> {
-        self.remote_fs.open(
-            path.as_ref(),
-            OpenOptions {
-                writeable: false,
-                need_sequential: true,
-                populate: Populate::No,
-                advice: AdviceSetting::Global,
-            },
-            extra,
-        )
+        self.remote_fs
+            .open(path.as_ref(), REMOTE_OPEN_OPTIONS, extra)
     }
 }
 
@@ -213,7 +205,7 @@ where
 
                 let local = LocalState::new(&local_path, len, options)?;
 
-                State::Ready { remote, local }
+                State::ready(remote, local)
             }
             // Even if we know length, we don't need it to do `schedule_whole`.
             (None | Some(_), Populate::Blocking | Populate::PreferBackground) => {
@@ -261,7 +253,7 @@ where
                 } else {
                     // empty byte range, just initialize with length.
                     let local = LocalState::new(&local_path, file_len, options)?;
-                    State::Ready { remote, local }
+                    State::ready(remote, local)
                 }
             }
         };
