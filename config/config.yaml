@@ -283,14 +283,16 @@ storage:
   # Memory and disk are node-wide resources, so their limits are configured once for the whole
   # cluster instead of per collection. Quotas reject updates that would consume more of a resource,
   # regardless of whether strict mode is enabled for the collection being written to. A limit set in
-  # a collection's strict mode config overrides the quota for that collection.
+  # a collection's strict mode config can tighten the quota for that collection, but never lift it.
   #
   # These values only seed the quota manager on the first start. Afterwards the quota config is read
   # from (and written to) `quota.json` in the storage directory, which is kept in sync across the
   # cluster through consensus and can be changed with the `PUT /quotas` API.
-  quotas:
+  #
+  # If this section is absent - no quota is enforced.
+  #quotas:
     # Whether the limits below are enforced.
-    enabled: false
+    #enabled: false
 
     # Reject memory-consuming updates once process resident memory reaches this percentage of total
     # system memory (or of the cgroup limit, if one applies).

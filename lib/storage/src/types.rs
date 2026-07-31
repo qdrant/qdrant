@@ -137,13 +137,13 @@ pub struct StorageConfig {
     /// Maximum number of collections to allow in the cluster.
     #[serde(default)]
     pub max_collections: Option<usize>,
-    /// Cluster-wide resource quotas.
+    /// Cluster-wide resource quotas. Absent means no quota is enforced.
     ///
     /// Only used to seed the quota manager the first time a node starts: once a
     /// quota config file exists in the storage directory, it takes over.
     #[validate(nested)]
     #[serde(default)]
-    pub quotas: QuotaConfig,
+    pub quotas: Option<QuotaConfig>,
 }
 
 impl StorageConfig {

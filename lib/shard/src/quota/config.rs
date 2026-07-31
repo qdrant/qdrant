@@ -48,7 +48,12 @@ impl QuotaConfig {
     }
 }
 
-/// Limits in effect, with the `enabled` flag already resolved.
+/// Limits on the quota-managed resources, with the `enabled` flag already
+/// resolved. `None` leaves the corresponding resource uncapped.
+///
+/// Doubles as the override a caller hands to
+/// [`QuotaManager::check_update`](super::QuotaManager::check_update): same
+/// resources, same units, but taking precedence over the configured quota.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct QuotaLimits {
     pub max_resident_memory_percent: Option<u8>,

@@ -191,6 +191,21 @@ impl StorageError {
     }
 }
 
+impl From<shard::quota::QuotaError> for StorageError {
+    fn from(err: shard::quota::QuotaError) -> Self {
+        use shard::quota::QuotaError;
+
+        match err {
+            // The client can free the resource and retry, or raise the limit —
+            // both make this their error, not ours.
+            QuotaError::LimitReached(description) => StorageError::BadRequest { description },
+            QuotaError::InvalidConfig(description) => StorageError::BadRequest { description },
+            // A quota file we cannot read or write is the node's problem.
+            QuotaError::Io(description) => StorageError::service_error(description),
+        }
+    }
+}
+
 impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
         match err {

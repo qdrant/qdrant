@@ -72,7 +72,7 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError> {
-        self.quota_manager().set_config(config)
+        Ok(self.quota_manager().set_config(config)?)
     }
 
     fn sync_local_state(&self) -> Result<(), StorageError> {

@@ -9,6 +9,7 @@ use collection::operations::verification::{
 use super::errors::StorageError;
 use super::toc::TableOfContent;
 use crate::dispatcher::Dispatcher;
+use crate::quota::QuotaLimits;
 use crate::rbac::{AccessRequirements, Auth};
 
 /// Checks strict mode using `TableOfContent` instead of `Dispatcher`.
@@ -67,12 +68,21 @@ where
 
     // Disk usage shares the same op set as memory: anything that writes new
     // bytes (upsert, set/overwrite payload, update vectors) can also fill the
-    // disk, while deletes free it. Both readers are TTL-cached (5s) so high-RPS
-    // request paths don't hammer `statvfs` — the checks run cheaply on the hot
-    // path.
+    // disk, while deletes free it. The quota manager caches its measurements, so
+    // high-RPS request paths don't hammer `statvfs` — the checks run cheaply on
+    // the hot path.
     if any_consumes_memory {
-        toc.quota_manager()
-            .check_update(strict_mode_config.as_ref())?;
+        // What this collection sets in strict mode can tighten the global quota
+        // for it, never lift it; whatever it leaves unset the quota governs.
+        let overrides = strict_mode_config
+            .as_ref()
+            .map(|config| QuotaLimits {
+                max_resident_memory_percent: config.max_resident_memory_percent,
+                max_disk_usage_percent: config.max_disk_usage_percent,
+            })
+            .unwrap_or_default();
+
+        toc.quota_manager().check_update(overrides)?;
     }
 
     if let (Some(strict_mode_config), Some(timeout)) = (&strict_mode_config, timeout) {

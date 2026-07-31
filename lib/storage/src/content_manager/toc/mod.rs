@@ -51,7 +51,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
-use crate::quota::{QuotaConfig, QuotaManager};
+use crate::quota::{self, QuotaConfig, QuotaManager};
 use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 use crate::types::StorageConfig;
 
@@ -160,6 +160,15 @@ impl TableOfContent {
         let collection_paths = fs::read_dir(&collections_path)?;
         let is_distributed = consensus_proposal_sender.is_some();
 
+        // Installed before the collections that use it: it is the node's only
+        // reader of memory and disk usage, and the shards loaded below already go
+        // through it to size up their optimizations and WAL writes.
+        let quota_manager = Arc::new(QuotaManager::load_or_init(
+            &storage_config.storage_path,
+            storage_config.quotas.unwrap_or_default(),
+        )?);
+        quota::set_global(quota_manager.clone());
+
         // Collect valid collection paths for loading
         let mut collection_load_tasks = Vec::new();
         for entry in collection_paths {
@@ -252,9 +261,6 @@ impl TableOfContent {
         let alias_path = storage_config.storage_path.join(ALIASES_PATH);
         let alias_persistence = AliasPersistence::open(&alias_path)?;
 
-        let quota_manager =
-            QuotaManager::load_or_init(&storage_config.storage_path, storage_config.quotas)?;
-
         let rate_limiter = match storage_config.performance.update_rate_limit {
             Some(limit) => Some(Semaphore::new(limit)),
             None => {
@@ -290,7 +296,7 @@ impl TableOfContent {
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
             telemetry,
-            quota_manager: Arc::new(quota_manager),
+            quota_manager,
         })
     }
 
@@ -310,7 +316,7 @@ impl TableOfContent {
         wait: bool,
     ) -> Result<(), StorageError> {
         if !self.is_distributed() {
-            return self.quota_manager.set_config(config);
+            return Ok(self.quota_manager.set_config(config)?);
         }
 
         let operation = ConsensusOperations::SetQuotaConfig(config);

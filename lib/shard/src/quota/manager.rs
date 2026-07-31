@@ -1,0 +1,534 @@
+use std::collections::hash_map::Entry;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use ::common::disk_usage::DiskUsage;
+use ::common::save_on_disk::SaveOnDisk;
+use ahash::AHashMap;
+use parking_lot::{Mutex, RwLock};
+use validator::Validate as _;
+
+use super::check::{EffectiveLimit, Resource, percent_of, total_memory_bytes};
+use super::config::{QuotaConfig, QuotaLimits};
+use super::error::{QuotaError, QuotaResult};
+use super::meter::{Meter, reusable};
+use super::status::{QuotaStatus, QuotaUsage};
+
+/// Quota configuration file, at the root of the storage directory.
+pub const QUOTA_CONFIG_FILE: &str = "quota.json";
+
+/// Cluster-wide quota configuration, and the single place that measures the
+/// resources it caps.
+///
+/// Nothing else reads process memory or disk usage. Callers that enforce a limit
+/// hand their own in as overrides (see [`QuotaManager::check_update`]); callers
+/// that just need a number ask for one ([`QuotaManager::available_bytes`]).
+/// Either way the reading comes from the cache in [`Meter`] rather than straight
+/// from the OS, so a busy node measures once per interval instead of once per
+/// caller.
+///
+/// The in-memory config always matches [`QUOTA_CONFIG_FILE`] on disk: it is read
+/// from there at startup if the file exists, and every update rewrites the file
+/// before it takes effect.
+pub struct QuotaManager {
+    /// Quota enforced on incoming updates.
+    config: Store,
+    /// Root of the storage directory, whose filesystem the disk limit applies to.
+    storage_path: PathBuf,
+    /// Last known resident memory utilization.
+    memory: Meter<Option<u8>>,
+    /// Last known usage of each filesystem we have been asked about. Keyed by
+    /// path rather than filesystem: the storage directory, a collection's temp
+    /// directory and a shard's WAL can all sit on different mounts, and resolving
+    /// which is which would cost the `statvfs` we are trying to avoid.
+    disk: Mutex<AHashMap<PathBuf, Arc<Meter<Option<DiskUsage>>>>>,
+}
+
+/// Whether the disk has room for a piece of work — see
+/// [`QuotaManager::fits_on_disk`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskFit {
+    /// Room to spare, with this many bytes free.
+    Fits { available: u64 },
+    /// Not enough room: `required` bytes are needed, `available` are free.
+    TooLarge { available: u64, required: u64 },
+    /// Free space could not be measured, so nothing can be concluded either way.
+    /// Callers proceed — refusing work over a stat we could not take would stall
+    /// the node on any filesystem that does not report one.
+    Unknown,
+}
+
+/// Where the quota config lives.
+enum Store {
+    /// Persisted to [`QUOTA_CONFIG_FILE`] in the storage directory, and kept in
+    /// step with the rest of the cluster through consensus.
+    Persisted(SaveOnDisk<QuotaConfig>),
+    /// Held in memory only, for a node that has no storage directory to own the
+    /// file — the edge shard, and tests.
+    Ephemeral(RwLock<QuotaConfig>),
+}
+
+impl Store {
+    fn read(&self) -> QuotaConfig {
+        match self {
+            Store::Persisted(config) => *config.read(),
+            Store::Ephemeral(config) => *config.read(),
+        }
+    }
+
+    /// The file is written before the in-memory value is swapped, so a crash can
+    /// only lose the update, never apply an unpersisted one.
+    fn write(&self, new: QuotaConfig) -> QuotaResult<()> {
+        match self {
+            Store::Persisted(config) => config
+                .write(|current| *current = new)
+                .map_err(|err| QuotaError::Io(format!("Failed to persist quota config: {err}"))),
+            Store::Ephemeral(config) => {
+                *config.write() = new;
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for QuotaManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Measurements are deliberately left out: printing them would take them.
+        f.debug_struct("QuotaManager")
+            .field("config", &self.config.read())
+            .field("storage_path", &self.storage_path)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Default for QuotaManager {
+    /// A manager that enforces nothing and persists nothing. Its measurements
+    /// still work for any path it is asked about; only the storage directory it
+    /// would apply its own disk limit to is unknown.
+    fn default() -> Self {
+        QuotaManager {
+            config: Store::Ephemeral(RwLock::new(QuotaConfig::default())),
+            storage_path: PathBuf::new(),
+            memory: Meter::default(),
+            disk: Mutex::new(AHashMap::new()),
+        }
+    }
+}
+
+impl QuotaManager {
+    /// Load the persisted quota config, falling back to `from_settings` when the
+    /// storage directory holds no quota file yet.
+    ///
+    /// Fails if the config that ends up in effect cannot be read or does not
+    /// validate: quotas protect the node against resource exhaustion, so one we
+    /// cannot honour must not be silently downgraded to "no limits".
+    pub fn load_or_init(storage_path: &Path, from_settings: QuotaConfig) -> QuotaResult<Self> {
+        let config =
+            SaveOnDisk::load_or_init(storage_path.join(QUOTA_CONFIG_FILE), || from_settings)
+                .map_err(|err| QuotaError::Io(format!("Failed to read quota config: {err}")))?;
+
+        validate(&config.read())?;
+
+        Ok(QuotaManager {
+            config: Store::Persisted(config),
+            storage_path: storage_path.to_path_buf(),
+            memory: Meter::default(),
+            disk: Mutex::new(AHashMap::new()),
+        })
+    }
+
+    pub fn config(&self) -> QuotaConfig {
+        self.config.read()
+    }
+
+    /// Persist `config` and start enforcing it.
+    pub fn set_config(&self, config: QuotaConfig) -> QuotaResult<()> {
+        validate(&config)?;
+        self.config.write(config)
+    }
+
+    /// Current quota config together with the utilization it is measured against.
+    pub fn status(&self) -> QuotaStatus {
+        QuotaStatus {
+            config: self.config(),
+            usage: self.usage(),
+        }
+    }
+
+    /// Current utilization of the quota-managed resources.
+    pub fn usage(&self) -> QuotaUsage {
+        QuotaUsage {
+            resident_memory_percent: self.resident_memory_percent(None),
+            disk_usage_percent: self.disk_usage_percent(&self.storage_path, None),
+        }
+    }
+
+    /// Free space in bytes on the filesystem hosting `path`, or `None` when it
+    /// cannot be read.
+    ///
+    /// For callers sizing up work against the disk they are about to write to —
+    /// the WAL checking it can still append. They get the same cached
+    /// measurement the quota check uses, so asking costs nothing beyond the
+    /// first read in an interval.
+    pub fn available_bytes(&self, path: &Path) -> Option<u64> {
+        self.disk_usage(path, None).map(|usage| usage.available)
+    }
+
+    /// Whether an operation that needs `required_bytes` of space on the
+    /// filesystem hosting `path` — an optimization sizing up the segment it is
+    /// about to build — can go ahead.
+    ///
+    /// Deliberately blind to the configured limits: this compares against the
+    /// physical free space and nothing else. An optimization is what *frees* a
+    /// disk the quota has already declared full, so the quota must never be what
+    /// stops one; only not physically fitting can.
+    pub fn fits_on_disk(&self, path: &Path, required_bytes: u64) -> DiskFit {
+        let Some(available) = self.available_bytes(path) else {
+            return DiskFit::Unknown;
+        };
+
+        if available < required_bytes {
+            DiskFit::TooLarge {
+                available,
+                required: required_bytes,
+            }
+        } else {
+            DiskFit::Fits { available }
+        }
+    }
+
+    /// Reject an update that consumes memory or disk when it would run past an
+    /// effective limit.
+    ///
+    /// `overrides` are per-request limits carried by the caller — in practice
+    /// the `strict_mode_config` of the collection being written to. They can
+    /// only tighten: the quota is a ceiling no caller can raise, and it governs
+    /// every limit an override leaves unset.
+    pub fn check_update(&self, overrides: QuotaLimits) -> QuotaResult<()> {
+        let quota = self.config().limits();
+
+        let memory = EffectiveLimit::resolve(
+            overrides.max_resident_memory_percent,
+            quota.max_resident_memory_percent,
+        );
+        let disk = EffectiveLimit::resolve(
+            overrides.max_disk_usage_percent,
+            quota.max_disk_usage_percent,
+        );
+
+        check(Resource::ResidentMemory, memory, |limit| {
+            self.resident_memory_percent(limit)
+        })?;
+        check(Resource::DiskUsage, disk, |limit| {
+            self.disk_usage_percent(&self.storage_path, limit)
+        })?;
+
+        Ok(())
+    }
+
+    /// Process resident memory as a percentage of total system memory. `limit`
+    /// is what the reading is about to be compared against, `None` when reading
+    /// it for reporting.
+    fn resident_memory_percent(&self, limit: Option<u8>) -> Option<u8> {
+        self.memory.measure(
+            |percent| reusable(percent, limit),
+            || {
+                let resident = ::common::memory_usage::resident_bytes()?;
+                percent_of(resident as u64, total_memory_bytes())
+            },
+        )
+    }
+
+    /// Used space of the filesystem hosting `path`, as a percentage of capacity.
+    fn disk_usage_percent(&self, path: &Path, limit: Option<u8>) -> Option<u8> {
+        let usage = self.disk_usage(path, limit)?;
+        percent_of(usage.used(), usage.total)
+    }
+
+    /// Cached disk usage of the filesystem hosting `path`.
+    fn disk_usage(&self, path: &Path, limit: Option<u8>) -> Option<DiskUsage> {
+        // Take the meter out of the map before measuring, so a slow `statvfs` on
+        // one path does not hold up readings for any other.
+        let meter = match self.disk.lock().entry(path.to_path_buf()) {
+            Entry::Occupied(entry) => Arc::clone(entry.get()),
+            Entry::Vacant(entry) => Arc::clone(entry.insert(Arc::new(Meter::default()))),
+        };
+
+        meter.measure(
+            |usage| {
+                let percent = usage.and_then(|usage| percent_of(usage.used(), usage.total));
+                reusable(percent, limit)
+            },
+            || ::common::disk_usage::disk_usage(path),
+        )
+    }
+}
+
+/// Reject an update if `resource` is at or above `limit`.
+///
+/// Allowed through when no limit is in effect — which also means the resource is
+/// never measured then — and when it cannot be measured at all.
+fn check(
+    resource: Resource,
+    limit: Option<EffectiveLimit>,
+    measure: impl FnOnce(Option<u8>) -> Option<u8>,
+) -> QuotaResult<()> {
+    let Some(limit) = limit else {
+        return Ok(());
+    };
+
+    let Some(used_percent) = measure(Some(limit.percent)) else {
+        return Ok(());
+    };
+
+    if used_percent < limit.percent {
+        return Ok(());
+    }
+
+    Err(resource.rejected(used_percent, limit))
+}
+
+/// Guard both persistence boundaries: the REST handler validates its own body,
+/// but a hand-edited quota file and a config arriving through consensus do not
+/// pass through it. A `0%` limit would reject every update forever, and one above
+/// `100%` would cap nothing.
+fn validate(config: &QuotaConfig) -> QuotaResult<()> {
+    config.validate().map_err(|errs| {
+        let fields = errs
+            .field_errors()
+            .iter()
+            .map(|(field, errs)| {
+                let messages = errs
+                    .iter()
+                    .map(|err| {
+                        err.message
+                            .as_deref()
+                            .map_or_else(|| err.code.to_string(), ToString::to_string)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{field}: {messages}")
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        QuotaError::InvalidConfig(format!("Invalid quota config: [{fields}]"))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A limit no real filesystem or process can satisfy, so a check against it
+    /// always rejects.
+    const UNSATISFIABLE: QuotaLimits = QuotaLimits {
+        max_resident_memory_percent: None,
+        max_disk_usage_percent: Some(1),
+    };
+
+    #[test]
+    fn persisted_config_takes_priority_over_settings() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let settings = QuotaConfig {
+            enabled: true,
+            max_disk_usage_percent: Some(80),
+            ..Default::default()
+        };
+
+        let manager = QuotaManager::load_or_init(dir.path(), settings).unwrap();
+        assert_eq!(manager.config(), settings);
+
+        let updated = QuotaConfig {
+            enabled: true,
+            max_disk_usage_percent: Some(95),
+            max_resident_memory_percent: Some(90),
+        };
+        manager.set_config(updated).unwrap();
+
+        // A restart picks up the file, not the settings
+        let reloaded = QuotaManager::load_or_init(dir.path(), settings).unwrap();
+        assert_eq!(reloaded.config(), updated);
+    }
+
+    #[test]
+    fn disabled_quota_enforces_nothing() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(
+            dir.path(),
+            QuotaConfig {
+                enabled: false,
+                max_resident_memory_percent: Some(1),
+                max_disk_usage_percent: Some(1),
+            },
+        )
+        .unwrap();
+
+        manager.check_update(QuotaLimits::default()).unwrap();
+
+        // ... but an override that sets the same limit still does
+        assert!(manager.check_update(UNSATISFIABLE).is_err());
+    }
+
+    #[test]
+    fn an_enabled_quota_cannot_be_lifted_by_an_override() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(
+            dir.path(),
+            QuotaConfig {
+                enabled: true,
+                max_disk_usage_percent: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let err = manager.check_update(QuotaLimits::default()).unwrap_err();
+        assert!(err.to_string().contains("global quota config"), "{err}");
+
+        // The quota is a ceiling: a laxer override does not buy this caller more
+        // disk, and the rejection keeps pointing at the quota as the way out.
+        let err = manager
+            .check_update(QuotaLimits {
+                max_disk_usage_percent: Some(100),
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("global quota config"), "{err}");
+    }
+
+    #[test]
+    fn a_rejecting_measurement_is_never_served_from_the_cache() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).unwrap();
+
+        // Over the limit, so the reading is not cached...
+        assert!(manager.check_update(UNSATISFIABLE).is_err());
+        // ... and a check with a limit the same reading satisfies passes right
+        // away, rather than after the measurement TTL.
+        manager
+            .check_update(QuotaLimits {
+                max_disk_usage_percent: Some(100),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn free_space_is_reported_without_enforcing_anything() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(
+            dir.path(),
+            QuotaConfig {
+                enabled: true,
+                max_disk_usage_percent: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // The quota rejects every update on this filesystem...
+        assert!(manager.check_update(QuotaLimits::default()).is_err());
+
+        // ... and the optimizer still gets told how much room it has, because
+        // the work that frees a full disk must not be blocked by it being full.
+        let available = manager.available_bytes(dir.path());
+        assert!(available.is_some_and(|bytes| bytes > 0), "{available:?}");
+
+        assert_eq!(
+            manager.available_bytes(dir.path()),
+            available,
+            "the same path should report the same cached value",
+        );
+    }
+
+    #[test]
+    fn an_optimization_is_sized_against_the_disk_not_the_quota() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(
+            dir.path(),
+            QuotaConfig {
+                enabled: true,
+                // Already exceeded — every update on this filesystem is rejected
+                max_disk_usage_percent: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(manager.check_update(QuotaLimits::default()).is_err());
+
+        // The quota does not enter into it: an optimization that fits proceeds,
+        // because it is the thing that would bring usage back under the limit.
+        let fit = manager.fits_on_disk(dir.path(), 0);
+        assert!(matches!(fit, DiskFit::Fits { .. }), "{fit:?}");
+
+        // Only not physically fitting stops one, and the verdict carries both
+        // numbers so the caller can say by how much.
+        let fit = manager.fits_on_disk(dir.path(), u64::MAX);
+        let DiskFit::TooLarge {
+            available,
+            required,
+        } = fit
+        else {
+            panic!("expected the disk to be too small, got {fit:?}");
+        };
+        assert_eq!(required, u64::MAX);
+        assert!(available < u64::MAX);
+    }
+
+    #[test]
+    fn an_unmeasurable_disk_does_not_stop_an_optimization() {
+        let manager = QuotaManager::default();
+
+        // Nothing can be concluded, so the caller is left to try anyway rather
+        // than have every optimization refused over a stat we cannot take.
+        assert_eq!(
+            manager.fits_on_disk(Path::new("/no/such/path/for/qdrant"), u64::MAX),
+            DiskFit::Unknown,
+        );
+    }
+
+    #[test]
+    fn out_of_range_limits_are_rejected() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let manager = QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).unwrap();
+
+        // A 0% limit can never be satisfied, so it must not be installable —
+        // neither through consensus, nor by hand-editing the quota file.
+        let impossible = QuotaConfig {
+            enabled: true,
+            max_disk_usage_percent: Some(0),
+            ..Default::default()
+        };
+        let err = manager.set_config(impossible).unwrap_err();
+        assert!(
+            err.to_string().contains("max_disk_usage_percent"),
+            "the error should name the field that is out of range: {err}",
+        );
+        assert_eq!(manager.config(), QuotaConfig::default());
+
+        fs_err::write(
+            dir.path().join(QUOTA_CONFIG_FILE),
+            serde_json::to_vec(&impossible).unwrap(),
+        )
+        .unwrap();
+        assert!(QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).is_err());
+    }
+
+    #[test]
+    fn invalid_settings_leave_no_quota_file_behind() {
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        let config_path = dir.path().join(QUOTA_CONFIG_FILE);
+
+        let impossible = QuotaConfig {
+            enabled: true,
+            max_resident_memory_percent: Some(0),
+            ..Default::default()
+        };
+        assert!(QuotaManager::load_or_init(dir.path(), impossible).is_err());
+
+        // Seeding must not persist before it validates, or the node would be stuck
+        // failing to start until the file is deleted by hand.
+        assert!(!config_path.exists());
+    }
+}
