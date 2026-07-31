@@ -7,6 +7,7 @@ mod read_view;
 mod reexports;
 mod requests;
 mod types;
+mod update_only;
 pub use types::*;
 
 #[cfg(test)]
@@ -31,3 +32,7 @@ pub use requests::{
     ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
+pub use update_only::{
+    PointAction, PointCopy, PointPreview, PointUpdates, SegmentConfigInfo, UpdateBatchOutcome,
+    UpdateBatchPlan, UpdateBatchPreview, UpdateOnlyEdgeShard,
+};
