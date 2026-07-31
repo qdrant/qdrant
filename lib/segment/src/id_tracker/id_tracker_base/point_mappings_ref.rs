@@ -162,6 +162,25 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
+    /// Word-scan form of [`Self::filter_deferred_and_deleted`] with
+    /// [`DeferredBehavior::VisibleOnly`], for full-range scans.  Returns
+    /// `(cutoff, mapping_deleted, shadowed)`: a point is visible iff its id
+    /// is below the cutoff (when `Some`) and its bit is unset in both
+    /// bitslices.  Callers OR the bitslices into a word-level liveness
+    /// harvest (see `BatchFilteredSearcher::peek_top_visible`) instead of
+    /// filtering ids one at a time.
+    ///
+    /// Branches mirror [`Self::filter_deferred_and_deleted`]: without a
+    /// deferred cutoff the shadowed-actives bitslice applies (it is empty
+    /// unless deferred mutations exist); with a cutoff only the deleted
+    /// bitslice and the cutoff itself apply.
+    pub fn visible_scan_masks(self) -> (Option<PointOffsetType>, &'a BitSlice, &'a BitSlice) {
+        match DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id()) {
+            None => (None, self.deleted(), self.shadowed()),
+            Some(cutoff) => (Some(cutoff), self.deleted(), BitSlice::empty()),
+        }
+    }
+
     /// Iterate starting from a given ID, with deferred filtering selected by
     /// `deferred_behavior`. See [`PointMappings::iter_from_with_behavior`] for
     /// the per-mode contract. Compressed mappings ignore the parameter (they
