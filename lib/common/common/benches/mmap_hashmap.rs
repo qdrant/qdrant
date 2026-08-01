@@ -14,12 +14,12 @@ const LIMIT_MEMORY_ENV: &str = "LIMIT_MEMORY";
 const LIMIT_MEMORY_ENV_INTERNAL: &str = "_LIMIT_MEMORY_INTERNAL";
 
 type Backend = cfg_select! {
-    target_os = "linux" => { common::universal_io::IoUringFile }
-    _ => { common::universal_io::MmapFile }
+    target_os = "linux" => common::universal_io::IoUringFile,
+    _ => common::universal_io::MmapFile,
 };
 type BackendFs = cfg_select! {
-    target_os = "linux" => { common::universal_io::IoUringFs }
-    _ => { common::universal_io::MmapFs }
+    target_os = "linux" => common::universal_io::IoUringFs,
+    _ => common::universal_io::MmapFs,
 };
 
 fn bench_mmap_hashmap(c: &mut Criterion) {
