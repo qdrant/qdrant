@@ -138,7 +138,7 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
     }
 
     struct StateDependent<'a> {
-        decompressor: bitpacking_ordered::Reader<'a>,
+        slice_reader: bitpacking_ordered::SliceReader<'a>,
     }
 
     self_cell::self_cell! {
@@ -153,45 +153,32 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
         let values =
             bitpacking_ordered::gen_test_sequence(&mut SmallRng::seed_from_u64(42), 32, 1 << 22);
 
-        let (compressed, parameters) = bitpacking_ordered::compress(&values);
+        let (compressed, params) = bitpacking_ordered::compress(&values);
 
         State::new(StateOwner { values, compressed }, |owner| {
-            let (decompressor, _) =
-                bitpacking_ordered::Reader::new(parameters, &owner.compressed).unwrap();
+            let reader = params.validate().unwrap();
+            let slice_reader = reader.slice_reader(&owner.compressed).unwrap();
             println!(
                 "Original size: {:.1} MB, compressed size: {:.1} MB, {:?}",
                 owner.values.as_bytes().len() as f64 / 1e6,
                 owner.compressed.len() as f64 / 1e6,
-                decompressor.parameters(),
+                params,
             );
-            StateDependent { decompressor }
+            StateDependent { slice_reader }
         })
     });
 
-    [
-        b.benchmark_fn("ordered/get", {
-            move |b: Bencher, state| {
-                let mut rng = rand::make_rng::<SmallRng>();
-                let len = state.borrow_owner().values.len() - 1;
-                b.iter(move || {
-                    let i = rng.random_range(0..len);
-                    black_box(state.borrow_dependent().decompressor.get(i));
-                })
-            }
-        }),
-        b.benchmark_fn("ordered/get2", {
-            move |b: Bencher, state| {
-                let mut rng = rand::make_rng::<SmallRng>();
-                let len = state.borrow_owner().values.len() - 1;
-                b.iter(move || {
-                    let i = rng.random_range(0..len);
-                    let a = state.borrow_dependent().decompressor.get(i);
-                    let b = state.borrow_dependent().decompressor.get(i + 1);
-                    black_box((a, b));
-                })
-            }
-        }),
-    ]
+    [b.benchmark_fn("ordered/read_pair", {
+        move |b: Bencher, state| {
+            let mut rng = rand::make_rng::<SmallRng>();
+            let len = state.borrow_owner().values.len() - 1;
+            b.iter(move || {
+                let i = rng.random_range(0..len);
+                let r = state.borrow_dependent().slice_reader.read_pair(i);
+                black_box(r);
+            })
+        }
+    })]
 }
 
 #[expect(clippy::type_complexity)]
