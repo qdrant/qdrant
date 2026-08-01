@@ -400,23 +400,24 @@ impl MmapFile {
                 let remap_options = memmap2::RemapOptions::new().may_move(true);
                 unsafe {
                     mmap.remap(new_len, remap_options)?;
-                    mmap_seq.as_mut().map(|m| m.remap(new_len, remap_options)).transpose()?;
+                    mmap_seq
+                        .as_mut()
+                        .map(|m| m.remap(new_len, remap_options))
+                        .transpose()?;
                 };
 
                 // Whether or not `remap` moved the memory region let's update the pointers
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
-                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
+                let ptr_seq = mmap_seq
+                    .as_ref()
+                    .map(|m| SendSyncPtr(m.as_mut_ptr()))
+                    .unwrap_or(ptr);
                 let len = new_len;
             }
             // otherwise, let's open again
             _ => {
                 let _ = new_len; // suppress unused variable lint.
-                *mmap = open_mmap(
-                    self.path.as_ref(),
-                    self.writeable,
-                    populate,
-                    self.advice,
-                )?;
+                *mmap = open_mmap(self.path.as_ref(), self.writeable, populate, self.advice)?;
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
                 let ptr_seq;
