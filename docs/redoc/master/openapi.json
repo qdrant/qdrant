@@ -11691,6 +11691,17 @@
                 "nullable": true
               }
             ]
+          },
+          "quota": {
+            "description": "Resource quota this node is enforcing, which is whatever it last persisted — so a peer that missed a consensus update reports the config it is actually applying, not the one the cluster agreed on. Absent for a token without global access, which `GET /quotas` requires as well.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuotaConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

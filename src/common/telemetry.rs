@@ -14,7 +14,8 @@ use serde::Serialize;
 use shard::common::stopping_guard::StoppingGuard;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Auth;
+use storage::quota::QuotaConfig;
+use storage::rbac::{AccessRequirements, Auth};
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 use tonic::Status;
@@ -63,6 +64,13 @@ pub struct TelemetryData {
     pub(crate) hardware: Option<HardwareTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) search_pool: Option<SearchThreadPoolTelemetry>,
+    /// Resource quota this node is enforcing, which is whatever it last
+    /// persisted — so a peer that missed a consensus update reports the config it
+    /// is actually applying, not the one the cluster agreed on. Absent for a
+    /// token without global access, which `GET /quotas` requires as well.
+    #[anonymize(false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) quota: Option<QuotaConfig>,
 }
 
 impl TelemetryCollector {
@@ -128,6 +136,17 @@ impl TelemetryCollector {
             .await
             .map_err(|_: Elapsed| StorageError::timeout(timeout, "collections telemetry"))???;
 
+        // Read before `access` is handed to the hardware telemetry below.
+        let quota = access
+            .check_global_access(AccessRequirements::new())
+            .is_ok()
+            .then(|| {
+                self.dispatcher
+                    .toc(auth, &new_unchecked_verification_pass())
+                    .quota_manager()
+                    .config()
+            });
+
         Ok(TelemetryData {
             id: self.process_id.to_string(),
             collections: collections_telemetry,
@@ -154,6 +173,7 @@ impl TelemetryCollector {
                         .toc(auth, &new_unchecked_verification_pass()),
                 )
             }),
+            quota,
         })
     }
 }
@@ -195,6 +215,8 @@ impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
             memory: None,
             hardware: None,
             search_pool: None,
+            // Not carried by `PeerTelemetry`; each peer reports its own quota.
+            quota: None,
         })
     }
 }
@@ -212,6 +234,7 @@ impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
             memory: _,
             hardware: _,
             search_pool: _,
+            quota: _,
         } = telemetry_data;
 
         let app = app.map(grpc::AppTelemetry::from);

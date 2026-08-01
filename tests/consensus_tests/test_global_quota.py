@@ -32,6 +32,9 @@ def test_global_quota(tmp_path: pathlib.Path):
     set_quotas(peer_api_uris[0], UNSATISFIABLE_QUOTA)
     for peer_api_uri in peer_api_uris:
         wait_for(_quota_config_matches, peer_api_uri, UNSATISFIABLE_QUOTA)
+        # Telemetry reports the quota the peer is enforcing. None of these peers
+        # was started with one, so this can only come from the applied config.
+        assert _telemetry_quota(peer_api_uri) == UNSATISFIABLE_QUOTA
 
     # Every peer now rejects disk-consuming updates, and says exactly why
     for peer_api_uri in peer_api_uris:
@@ -74,6 +77,12 @@ def set_quotas(peer_api_uri: str, config: dict[str, Any]):
 
 def _quota_config_matches(peer_api_uri: str, expected: dict[str, Any]) -> bool:
     return get_quotas(peer_api_uri)["config"] == expected
+
+
+def _telemetry_quota(peer_api_uri: str) -> dict[str, Any]:
+    resp = requests.get(f"{peer_api_uri}/telemetry")
+    assert_http_ok(resp)
+    return resp.json()["result"]["quota"]
 
 
 def _upsert_error(peer_api_uri: str) -> str:
