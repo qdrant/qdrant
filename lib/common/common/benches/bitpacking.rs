@@ -1,12 +1,20 @@
 use std::hint::black_box;
+use std::io::Write;
+use std::path::Path;
 
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::{iterate_packed_links, pack_links};
 use common::bitpacking_ordered;
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use common::mmap::AdviceSetting;
+#[cfg(target_os = "linux")]
+use common::universal_io::IoUringFs;
+use common::universal_io::{MmapFs, OpenOptions, Populate, UniversalReadFs};
+use criterion::measurement::WallTime;
+use criterion::{BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use itertools::Itertools as _;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng as _};
+use tempfile::NamedTempFile;
 use zerocopy::IntoBytes;
 
 pub fn bench_bitpacking(c: &mut Criterion) {
@@ -117,13 +125,14 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     drop(group);
     let mut group = c.benchmark_group("bitpacking_ordered");
 
-    let (compressed, parameters) = bitpacking_ordered::compress(&values);
-    let (decompressor, _) = bitpacking_ordered::Reader::new(parameters, &compressed).unwrap();
+    let (compressed, params) = bitpacking_ordered::compress(&values);
+    let reader = params.validate().unwrap();
+    let slice_reader = reader.slice_reader(&compressed).unwrap();
     println!(
         "Original size: {:.1} MB, compressed size: {:.1} MB, {:?}",
         values.as_bytes().len() as f64 / 1e6,
         compressed.len() as f64 / 1e6,
-        decompressor.parameters(),
+        params,
     );
 
     let mut rng = SmallRng::seed_from_u64(42);
@@ -138,24 +147,71 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     });
 
     let mut rng = SmallRng::seed_from_u64(42);
-    group.bench_function("get", |b| {
+    let mut out = [(0, 0); MAX_BATCH_SIZE];
+    group.bench_function("batch/slice_reader", |b| {
         b.iter_batched(
-            || rng.random_range(0..values.len()),
-            |i| {
-                black_box(decompressor.get(i));
+            || random_batch(&mut rng, values.len()),
+            |indices| {
+                for (&index, out) in indices.iter().zip(&mut out) {
+                    *out = slice_reader.read_pair(index).unwrap();
+                }
+                black_box(&mut out);
             },
             BatchSize::SmallInput,
         )
     });
 
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(&compressed).unwrap();
+
+    bench_uio_batch(&mut group, "batch/uio_mmap", &MmapFs, file.path(), reader);
+    #[cfg(target_os = "linux")]
+    bench_uio_batch(
+        &mut group,
+        "batch/uio_io_uring",
+        &IoUringFs,
+        file.path(),
+        reader,
+    );
+}
+
+const MAX_BATCH_SIZE: usize = 32;
+
+fn random_batch(rng: &mut SmallRng, len: usize) -> Vec<usize> {
+    let batch_size = rng.random_range(1..=MAX_BATCH_SIZE);
+    (0..batch_size)
+        .map(|_| rng.random_range(0..len - 1))
+        .collect()
+}
+
+fn bench_uio_batch<Fs: UniversalReadFs>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    name: &str,
+    fs: &Fs,
+    path: &Path,
+    reader: bitpacking_ordered::Reader,
+) {
+    let options = OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::Blocking,
+        advice: AdviceSetting::Global,
+    };
+    let storage = fs.open(path, options, Default::default()).unwrap();
+
+    let len = reader.decompressed_len();
     let mut rng = SmallRng::seed_from_u64(42);
-    group.bench_function("get2", |b| {
+    let mut out = [(0, 0); MAX_BATCH_SIZE];
+    group.bench_function(name, |b| {
         b.iter_batched(
-            || rng.random_range(0..values.len() - 1),
-            |i| {
-                let a = decompressor.get(i);
-                let b = decompressor.get(i + 1);
-                black_box((a, b));
+            || random_batch(&mut rng, len),
+            |indices| {
+                let out = &mut out[..indices.len()];
+                for result in reader.read_pairs_iter(&storage, 0, &indices).unwrap() {
+                    let (position, pair) = result.unwrap();
+                    out[position] = pair;
+                }
+                black_box(out);
             },
             BatchSize::SmallInput,
         )

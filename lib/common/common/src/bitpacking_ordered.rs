@@ -45,10 +45,12 @@ use zerocopy::little_endian::U64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::bitpacking::{BitWriter, make_bitmask, packed_bits};
+use crate::generic_consts::Random;
+use crate::universal_io::{ReadBytesItem, UioResult, UniversalIoError, UniversalRead};
 
 /// The size of the tail padding.
-/// These extra 7 bytes after the last chunk allows the decompressor to safely
-/// perform unchecked unaligned 8-byte reads.
+/// These extra 7 bytes after the last chunk let the decompressor read a whole
+/// 8-byte word even when a delta ends in the last byte of the last chunk.
 const TAIL_SIZE: usize = size_of::<u64>() - 1;
 
 /// The allowed range for the `delta_bits` parameter.
@@ -73,7 +75,7 @@ pub fn compress(values: &[u64]) -> (Vec<u8>, Parameters) {
 
 /// Compress the data with given parameters.
 fn compress_with_parameters(values: &[u64], parameters: Parameters) -> Vec<u8> {
-    let expected_size = parameters.total_chunks_size_bytes().unwrap() + TAIL_SIZE;
+    let expected_size = parameters.compressed_size_bytes().unwrap();
     let mut compressed = Vec::with_capacity(expected_size);
 
     for chunk in values.chunks(1 << parameters.chunk_len_log2) {
@@ -100,127 +102,49 @@ fn compress_with_parameters(values: &[u64], parameters: Parameters) -> Vec<u8> {
     compressed
 }
 
-#[derive(Clone, Debug)]
-pub struct Reader<'a> {
-    base_bits: u8,
-    base_mask: u64,
-    delta_bits: u8,
-    delta_mask: u64,
-    chunk_len_log2: u8,
-    chunk_len_mask: usize,
-    chunk_size_bytes: usize,
-    compressed: &'a [u8],
-    len: usize,
-}
-
 #[derive(Error, Debug)]
 #[error("decompression error: {0}")]
 pub struct DecompressionError(String);
 
-impl<'a> Reader<'a> {
-    pub fn new(
-        parameters: Parameters,
-        bytes: &'a [u8],
-    ) -> Result<(Self, &'a [u8]), DecompressionError> {
-        // Safety checks: the `get()` method doesn't perform bounds checking,
-        // so we need to be extra cautious here, including checking for
-        // overflows.
-        if !parameters.valid() {
-            return Err(DecompressionError("invalid parameters".to_string()));
-        }
-        let total_size_bytes = parameters
-            .total_chunks_size_bytes()
-            .and_then(|size| size.checked_add(TAIL_SIZE))
-            .ok_or_else(|| DecompressionError("invalid parameters".to_string()))?;
+/// [`Reader`] bundled with in-memory compressed data.
+#[derive(Clone, Debug)]
+pub struct SliceReader<'a> {
+    reader: Reader,
+    data: &'a [u8],
+}
 
-        let (compressed, bytes) = bytes.split_at_checked(total_size_bytes).ok_or_else(|| {
-            DecompressionError(format!(
-                "insufficient length (compressed data, expected {total_size_bytes} bytes, got {})",
-                bytes.len(),
-            ))
-        })?;
-
-        let result = Self {
-            base_bits: parameters.base_bits,
-            base_mask: make_bitmask(parameters.base_bits),
-            delta_bits: parameters.delta_bits,
-            delta_mask: make_bitmask(parameters.delta_bits),
-            chunk_len_log2: parameters.chunk_len_log2,
-            chunk_len_mask: make_bitmask(parameters.chunk_len_log2),
-            chunk_size_bytes: parameters.chunk_size_bytes().unwrap(),
-            compressed,
-            len: parameters.length.get() as usize,
-        };
-
-        // Safety checks: the `get()` method doesn't perform bounds checking.
-        // The assertions below ensure that the `compressed` slice holds enough
-        // bytes for any index reachable by `get()`.
-        if let Some(max_index) = result.len.checked_sub(1) {
-            let chunk_offset = (max_index >> result.chunk_len_log2) * result.chunk_size_bytes;
-            // *base*
-            assert!(chunk_offset + size_of::<u64>() <= result.compressed.len());
-
-            let max_value_index = result.chunk_len_mask;
-            if max_value_index > 0 {
-                let delta_offset_bits =
-                    result.base_bits as usize + (max_value_index - 1) * result.delta_bits as usize;
-                // *delta*
-                assert!(
-                    chunk_offset + delta_offset_bits / u8::BITS as usize + size_of::<u64>()
-                        <= result.compressed.len()
-                );
-            }
-        }
-
-        Ok((result, bytes))
-    }
-
-    /// Parameters used to compress the data.
-    #[cfg(feature = "testing")]
-    pub fn parameters(&self) -> Parameters {
-        Parameters {
-            length: U64::new(self.len as u64),
-            base_bits: self.base_bits,
-            delta_bits: self.delta_bits,
-            chunk_len_log2: self.chunk_len_log2,
-        }
-    }
-
-    /// The number of values in the decompressed data.
+impl<'a> SliceReader<'a> {
+    /// Read `value[index]` and `value[index + 1]`. `index + 1` should be less
+    /// than [`Reader::decompressed_len()`].
     #[inline]
-    #[expect(clippy::len_without_is_empty, reason = "len() is cheap")]
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Get the value at the given index.
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<u64> {
-        if index >= self.len {
+    pub fn read_pair(&self, index: usize) -> Option<(u64, u64)> {
+        // Each pair needs `index + 1`, so the last value is not a valid index.
+        if index >= self.reader.decompressed_len().saturating_sub(1) {
             return None;
         }
-
-        let chunk_offset = (index >> self.chunk_len_log2) * self.chunk_size_bytes;
-        let value_index = index & self.chunk_len_mask;
-        let chunk_ptr = self.compressed.as_ptr().wrapping_add(chunk_offset);
-        // SAFETY: see the *base* comment in `new()`.
-        let base = unsafe { read_u64_le(chunk_ptr) } & self.base_mask;
-        if value_index == 0 {
-            return Some(base);
-        }
-        let delta_offset_bits =
-            self.base_bits as usize + (value_index - 1) * self.delta_bits as usize;
-        // SAFETY: see the *delta* comment in `new()`.
-        let delta = (unsafe { read_u64_le(chunk_ptr.add(delta_offset_bits / u8::BITS as usize)) }
-            >> (delta_offset_bits % u8::BITS as usize))
-            & self.delta_mask;
-        Some(base + delta)
+        let end_index = index + 1;
+        let chunk = &self.data[self.reader.chunk_offset(index)..];
+        let start = self.reader.decode_chunk(index, chunk);
+        let end = if end_index & self.reader.chunk_len_mask != 0 {
+            self.reader.decode_chunk(end_index, chunk)
+        } else {
+            let chunk = &self.data[self.reader.chunk_offset(end_index)..];
+            self.reader.decode_chunk(end_index, chunk)
+        };
+        Some((start, end))
     }
 }
 
-#[inline(always)]
-unsafe fn read_u64_le(ptr: *const u8) -> u64 {
-    unsafe { u64::from_le(ptr.cast::<u64>().read_unaligned()) }
+/// Validated [`Parameters`] with precomputed values, plus the decompression
+/// logic.
+#[derive(Clone, Copy, Debug)]
+pub struct Reader {
+    params: Parameters,
+    base_mask: u64,
+    delta_mask: u64,
+    /// `chunk_len - 1`, i.e. the maximum in-chunk index.
+    chunk_len_mask: usize,
+    chunk_size_bytes: usize,
 }
 
 /// Compression parameters. Required for decompression.
@@ -238,16 +162,33 @@ pub struct Parameters {
 }
 
 impl Parameters {
-    /// Check if the parameters are valid.
-    fn valid(self) -> bool {
-        u32::from(self.base_bits) <= u64::BITS
+    pub fn validate(self) -> Result<Reader, DecompressionError> {
+        let valid = (1..=u64::BITS as u8).contains(&self.base_bits)
             && DELTA_BITS_RANGE.contains(&self.delta_bits)
             && self.chunk_len_log2 <= MAX_CHUNK_LEN_LOG2
+            && self.compressed_size_bytes().is_some();
+        if !valid {
+            return Err(DecompressionError("invalid parameters".to_string()));
+        }
+        Ok(Reader {
+            params: self,
+            base_mask: make_bitmask(self.base_bits),
+            delta_mask: make_bitmask(self.delta_bits),
+            chunk_len_mask: make_bitmask(self.chunk_len_log2),
+            chunk_size_bytes: self.chunk_size_bytes().unwrap(),
+        })
+    }
+
+    /// Size of the compressed data, including the tail.
+    fn compressed_size_bytes(self) -> Option<usize> {
+        let chunks_count = (self.length.get() as usize).div_ceil(1 << self.chunk_len_log2);
+        chunks_count
+            .checked_mul(self.chunk_size_bytes()?)?
+            .checked_add(TAIL_SIZE)
     }
 
     /// Size of a single chunk in bytes.
-    /// Returns `None` on overflow: see safety comments in [`Reader::new()`].
-    #[deny(clippy::arithmetic_side_effects, reason = "extra cautious for safety")]
+    /// Returns `None` on overflow.
     fn chunk_size_bytes(self) -> Option<usize> {
         let bits = (self.base_bits as usize).checked_add(
             (self.delta_bits as usize).checked_mul(make_bitmask::<usize>(self.chunk_len_log2))?,
@@ -255,18 +196,10 @@ impl Parameters {
         Some(bits.div_ceil(u8::BITS as usize))
     }
 
-    /// Size of the compressed data, without the tail.
-    /// Returns `None` on overflow: see safety comments in [`Reader::new()`].
-    #[deny(clippy::arithmetic_side_effects, reason = "extra cautious for safety")]
-    fn total_chunks_size_bytes(self) -> Option<usize> {
-        let chunks_count = (self.length.get() as usize).div_ceil(1 << self.chunk_len_log2);
-        chunks_count.checked_mul(self.chunk_size_bytes()?)
-    }
-
     /// Find the best compression parameters for the given values.
     fn find_best(values: &[u64]) -> Self {
         Self::try_all(values)
-            .min_by_key(|parameters| parameters.total_chunks_size_bytes())
+            .min_by_key(|parameters| parameters.compressed_size_bytes().unwrap())
             .unwrap()
     }
 
@@ -277,7 +210,8 @@ impl Parameters {
             .map(move |chunk_len_log2| {
                 let mut delta_bits = *DELTA_BITS_RANGE.start();
                 for chunk in values.chunks(1 << chunk_len_log2) {
-                    delta_bits = delta_bits.max(packed_bits(chunk.last().unwrap() - chunk[0]));
+                    let delta = chunk.last().unwrap().strict_sub(chunk[0]);
+                    delta_bits = delta_bits.max(packed_bits(delta));
                 }
                 Parameters {
                     length: U64::new(values.len() as u64),
@@ -286,7 +220,98 @@ impl Parameters {
                     chunk_len_log2,
                 }
             })
-            .filter(|parameters| DELTA_BITS_RANGE.contains(&parameters.delta_bits))
+            .filter(|params| DELTA_BITS_RANGE.contains(&params.delta_bits))
+    }
+}
+
+impl Reader {
+    /// Create a [`SliceReader`] from the compressed data slice.
+    pub fn slice_reader(self, bytes: &[u8]) -> Result<SliceReader<'_>, DecompressionError> {
+        let size = self.compressed_size_bytes();
+        let Some(data) = bytes.get(..size) else {
+            return Err(DecompressionError(format!(
+                "insufficient length (compressed data, expected {size} bytes, got {})",
+                bytes.len(),
+            )));
+        };
+        Ok(SliceReader { reader: self, data })
+    }
+
+    /// Number of values in the decompressed data.
+    #[inline]
+    pub fn decompressed_len(self) -> usize {
+        self.params.length.get() as usize
+    }
+
+    /// Size of the compressed data in bytes, including the tail.
+    #[inline]
+    pub fn compressed_size_bytes(self) -> usize {
+        self.params.compressed_size_bytes().unwrap() // Checked by `Parameters::validate`.
+    }
+
+    /// For each `i` in `indices`, read a pair of values:
+    /// `value[i]` and `value[i + 1]`.
+    pub fn read_pairs_iter<'a, S: UniversalRead>(
+        self,
+        storage: &'a S,
+        file_offset: u64,
+        indices: &'a [usize],
+    ) -> UioResult<impl Iterator<Item = UioResult<(usize, (u64, u64))>> + 'a> {
+        // Each pair needs `index + 1`, so the last value is not a valid index.
+        let max_index = self.decompressed_len().saturating_sub(1);
+        if let Some(&index) = indices.iter().find(|&&index| index >= max_index) {
+            return Err(UniversalIoError::OutOfBounds {
+                start: index as u64,
+                end: index as u64 + 2,
+                elements: self.decompressed_len(),
+            });
+        }
+
+        // One read per pair, from `index`'s chunk through the end of what
+        // `index + 1` needs. Both values share a chunk unless `index` ends one.
+        let chunk_read_len = (self.chunk_size_bytes + TAIL_SIZE) as u64;
+        let items = indices.iter().enumerate().map(move |(position, &index)| {
+            let first = file_offset + self.chunk_offset(index) as u64;
+            let second = file_offset + self.chunk_offset(index + 1) as u64;
+            ReadBytesItem {
+                user_data: (position, index),
+                range: first..second + chunk_read_len,
+                align: 1,
+            }
+        });
+        Ok(storage.read_bytes_iter(items, Random)?.map(move |result| {
+            let ((position, index), chunk) = result?;
+            // `chunk` starts at `index`'s chunk, so locate `index + 1` in it.
+            let second = self.chunk_offset(index + 1) - self.chunk_offset(index);
+            let start = self.decode_chunk(index, &chunk);
+            let end = self.decode_chunk(index + 1, &chunk[second..]);
+            Ok((position, (start, end)))
+        }))
+    }
+
+    /// Byte offset of the chunk containing the value at `index`.
+    #[inline]
+    fn chunk_offset(self, index: usize) -> usize {
+        (index >> self.params.chunk_len_log2) * self.chunk_size_bytes
+    }
+
+    /// Decode the value at `index` from `chunk`.
+    ///
+    /// The `chunk` must hold at least `chunk_size_bytes + TAIL_SIZE` bytes.
+    /// The `index` must be less than [`Self::decompressed_len()`].
+    #[inline]
+    fn decode_chunk(self, index: usize, chunk: &[u8]) -> u64 {
+        let word = |offset: usize| u64::from_le_bytes(*chunk[offset..].first_chunk().unwrap());
+        let base = word(0) & self.base_mask;
+        if let Some(delta_index) = (index & self.chunk_len_mask).checked_sub(1) {
+            let bits =
+                self.params.base_bits as usize + delta_index * self.params.delta_bits as usize;
+            let delta =
+                (word(bits / u8::BITS as usize) >> (bits % u8::BITS as usize)) & self.delta_mask;
+            base + delta
+        } else {
+            base
+        }
     }
 }
 
@@ -307,23 +332,48 @@ pub fn gen_test_sequence(rng: &mut impl rand::Rng, max_delta: u64, len: usize) -
 mod tests {
     use std::iter::{once, once_with};
 
+    use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
     use super::*;
+    use crate::universal_io::{MmapFs, OpenOptions, UniversalReadFs as _};
 
     #[test]
     fn test_compress_decompress() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let file = file.path();
+
         for values in test_sequences() {
-            for parameters in Parameters::try_all(&values) {
-                let compressed = compress_with_parameters(&values, parameters);
-                let (decompressor, bytes) = Reader::new(parameters, &compressed).unwrap();
-                assert!(bytes.is_empty());
-                assert_eq!(decompressor.len(), values.len());
-                for (i, &value) in values.iter().enumerate() {
-                    assert_eq!(decompressor.get(i), Some(value));
+            for params in Parameters::try_all(&values) {
+                let reader = params.validate().unwrap();
+                let compressed = compress_with_parameters(&values, params);
+                assert_eq!(reader.decompressed_len(), values.len());
+                assert_eq!(params.compressed_size_bytes(), Some(compressed.len()));
+
+                let expected = values.iter().copied().tuple_windows().collect::<Vec<_>>();
+                let oob = values.len().saturating_sub(1); // the last value starts no pair
+
+                // SliceReader::read_pair
+                let slice_reader = reader.slice_reader(&compressed).unwrap();
+                for (index, &expected) in expected.iter().enumerate() {
+                    assert_eq!(slice_reader.read_pair(index), Some(expected));
                 }
-                assert_eq!(decompressor.get(values.len()), None);
+                assert_eq!(slice_reader.read_pair(oob), None);
+
+                // Reader::read_pairs_iter
+                let unrelated_data = [0xAA; 3]; // for `file_offset` testing
+                fs_err::write(file, [&unrelated_data[..], &compressed].concat()).unwrap();
+                let storage = MmapFs.open(file, OpenOptions::new_for_test(), ()).unwrap();
+                let offset = unrelated_data.len() as u64;
+                let indices = (0..expected.len()).collect::<Vec<_>>();
+                let mut out = vec![(1234, 12345); expected.len()];
+                for result in reader.read_pairs_iter(&storage, offset, &indices).unwrap() {
+                    let (position, pair) = result.unwrap();
+                    out[position] = pair;
+                }
+                assert_eq!(out, expected);
+                assert!(reader.read_pairs_iter(&storage, offset, &[oob]).is_err());
             }
         }
     }
