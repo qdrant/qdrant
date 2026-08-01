@@ -230,6 +230,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn recover_first_voter(&self) -> Result<(), StorageError> {
+        // `load_or_init` sets `first_voter` explicitly when reinitializing as first peer,
+        // so guard below short circuits and WAL is never read in that case
         if self.persistent.read().first_voter().is_none() {
             log::debug!("Recovering first voter peer...");
 
@@ -893,6 +895,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// before reinit, its log still holds a committed `RemoveNode(self)` conf-change
     /// (and possibly other topology changes from the old cluster). Replaying those on
     /// top of the reset single-voter config makes Raft abort with "removed all voters".
+    ///
+    /// Also drops pending WAL log entries that could re-trigger joint-consensus or auto leave
+    /// transitions if the node was killed mid transition.
     ///
     /// Drop that tail: physically truncate the WAL to the last applied index, pin
     /// `commit` to it and clear the apply-progress queue, so a fresh single-node

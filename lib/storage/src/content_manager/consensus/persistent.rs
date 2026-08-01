@@ -148,6 +148,12 @@ impl Persistent {
                 // so we can accept consensus operations.
                 state.state.conf_state.voters = vec![state.this_peer_id];
                 state.state.conf_state.learners = vec![];
+                // Clear joint consensus fields left over from a mid transition crash
+                // otherwise, Raft demands quorum from the stale outgoing voter set,
+                // deadlocking this peer by waiting for nodes that no longer exist.
+                state.state.conf_state.voters_outgoing = vec![];
+                state.state.conf_state.learners_next = vec![];
+                state.state.conf_state.auto_leave = false;
                 state.state.hard_state.vote = state.this_peer_id;
                 // If this peer was removed from the old cluster but killed before it
                 // applied `RemoveNode(self)`, `first_voter` and the address book still
@@ -520,6 +526,11 @@ mod tests {
         state
             .apply_state_update(|state| {
                 state.conf_state.voters = vec![old_first_peer_id, this_peer_id];
+                // simulate the node going down mid membership change, alll three
+                // joint consensus fields are non empty and must be wiped on reinit.
+                state.conf_state.voters_outgoing = vec![old_first_peer_id];
+                state.conf_state.learners_next = vec![this_peer_id];
+                state.conf_state.auto_leave = true;
             })
             .unwrap();
         drop(state);
@@ -528,6 +539,12 @@ mod tests {
 
         assert_eq!(state.this_peer_id(), this_peer_id);
         assert_eq!(state.state().conf_state.voters, vec![this_peer_id]);
+        assert!(state.state().conf_state.learners.is_empty());
+        // all joint consensus fields must be zeroed, a non empty `voters_outgoing`
+        // forces Raft to require quorum from peers that no longer exist
+        assert!(state.state().conf_state.voters_outgoing.is_empty());
+        assert!(state.state().conf_state.learners_next.is_empty());
+        assert!(!state.state().conf_state.auto_leave);
         assert_eq!(state.first_voter(), Some(this_peer_id));
         assert_eq!(
             state
@@ -537,5 +554,78 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![this_peer_id],
         );
+    }
+
+    /// `recover_first_voter` only runs when `first_voter` is `None`, if left unset after
+    /// reinit it would re-derive the stale first voter from the old cluster's WAL
+    #[test]
+    fn reinit_first_peer_sets_first_voter_preventing_wal_recovery() {
+        let dir = tempfile::Builder::new()
+            .prefix("consensus_state")
+            .tempdir()
+            .unwrap();
+
+        let this_peer_id = 1;
+        let old_first_peer_id = 2;
+
+        let mut state =
+            Persistent::load_or_init(dir.path(), false, false, Some(this_peer_id)).unwrap();
+        state.set_first_voter(old_first_peer_id).unwrap();
+        drop(state);
+
+        // first_voter must be reset to this_peer_id,
+        // not left as None (which would trigger WAL-based re-derivation).
+        let state = Persistent::load_or_init(dir.path(), true, true, None).unwrap();
+        assert_eq!(
+            state.first_voter(),
+            Some(this_peer_id),
+            "first_voter must be Some(this_peer_id) after reinit so \
+             ConsensusManager::recover_first_voter short-circuits without reading the WAL",
+        );
+    }
+
+    /// clears joint consensus fields even with pending entries in the apply queue
+    /// acts as a fallback in case `clear_unapplied_entries_on_reinit` ordering changes
+    #[test]
+    fn reinit_first_peer_joint_consensus_state_cleaned_despite_pending_queue() {
+        let dir = tempfile::Builder::new()
+            .prefix("consensus_state")
+            .tempdir()
+            .unwrap();
+
+        let this_peer_id = 1;
+        let old_first_peer_id = 2;
+
+        // node killed mid membership change, joint conf change committed but not applied
+        let mut state =
+            Persistent::load_or_init(dir.path(), false, false, Some(this_peer_id)).unwrap();
+        state
+            .insert_peer(old_first_peer_id, "http://127.0.0.1:7335".parse().unwrap())
+            .unwrap();
+        state
+            .apply_state_update(|state| {
+                state.conf_state.voters = vec![old_first_peer_id, this_peer_id];
+                state.conf_state.voters_outgoing = vec![old_first_peer_id];
+                state.conf_state.learners_next = vec![this_peer_id];
+                state.conf_state.auto_leave = true;
+                state.hard_state.commit = 5;
+            })
+            .unwrap();
+        // index 5 is the pending ConfChangeV2
+        state.set_unapplied_entries(5, 5).unwrap();
+        assert_eq!(
+            state.unapplied_entities_count(),
+            1,
+            "sanity: one entry pending in queue",
+        );
+        drop(state);
+
+        // reinit must clean the conf_state even with pending entry in the queue
+        let state = Persistent::load_or_init(dir.path(), true, true, None).unwrap();
+
+        assert!(state.state().conf_state.voters_outgoing.is_empty());
+        assert!(state.state().conf_state.learners_next.is_empty());
+        assert!(!state.state().conf_state.auto_leave);
+        assert_eq!(state.first_voter(), Some(this_peer_id));
     }
 }
