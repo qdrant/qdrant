@@ -1,45 +1,18 @@
-use std::cmp::max;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFileOps, UniversalWrite,
 };
-use num_traits::AsPrimitive;
 
-use super::chunks::{create_chunk, read_chunks};
-use super::config::{ChunkedVectorsConfig, Status};
-use super::read::ChunkedVectorsRead;
+use super::ChunkedVectors;
+use super::chunks::read_chunks;
+use super::config::{ChunkedVectorsConfig, Status, config_file, load_config, status_file};
+use super::read_only::ChunkedVectorsRead;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
-
-#[derive(Debug)]
-pub struct ChunkedVectors<T, S>
-where
-    T: bytemuck::Pod + Send,
-    S: UniversalWrite + Send + 'static,
-{
-    inner: ChunkedVectorsRead<T, S>,
-    status: StoredStruct<S, Status>,
-    fs: S::Fs,
-}
-
-impl<T, S> Deref for ChunkedVectors<T, S>
-where
-    T: bytemuck::Pod + Send,
-    S: UniversalWrite + Send + 'static,
-{
-    type Target = ChunkedVectorsRead<T, S>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
 
 impl<T, S> ChunkedVectors<T, S>
 where
@@ -51,7 +24,7 @@ where
     }
 
     pub fn ensure_status_file(fs: &S::Fs, directory: &Path) -> OperationResult<PathBuf> {
-        let status_file = ChunkedVectorsRead::<T, S>::status_file(directory);
+        let status_file = status_file(directory);
         if !fs.exists(&status_file)? {
             {
                 let length = std::mem::size_of::<Status>();
@@ -68,8 +41,8 @@ where
         dim: usize,
         populate: bool,
     ) -> OperationResult<ChunkedVectorsConfig> {
-        let config_file = ChunkedVectorsRead::<T, S>::config_file(directory);
-        match ChunkedVectorsRead::<T, S>::load_config(fs, &config_file) {
+        let config_file = config_file(directory);
+        match load_config(fs, &config_file) {
             Ok(Some(config)) => {
                 if config.dim == dim {
                     Ok(config)
@@ -148,86 +121,6 @@ where
             populate,
         };
         Ok(Self { inner, status, fs })
-    }
-
-    fn add_chunk(&mut self) -> OperationResult<()> {
-        let chunk = create_chunk(
-            &self.fs,
-            &self.inner.directory,
-            self.inner.chunks.len(),
-            self.inner.config.chunk_size_bytes,
-        )?;
-
-        self.inner.chunks.push(chunk);
-        Ok(())
-    }
-
-    pub fn insert(
-        &mut self,
-        key: VectorOffsetType,
-        vector: &[T],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.insert_many(key, vector, 1, hw_counter)
-    }
-
-    #[inline]
-    pub fn insert_many(
-        &mut self,
-        start_key: VectorOffsetType,
-        vectors: &[T],
-        count: usize,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        assert_eq!(
-            vectors.len(),
-            count * self.inner.config.dim,
-            "Vector size mismatch"
-        );
-
-        let start_key = start_key.as_();
-        let chunk_idx = self.inner.get_chunk_index(start_key);
-        let chunk_offset = self.inner.get_chunk_offset(start_key);
-
-        // check if the vectors fit in the chunk
-        if chunk_offset + vectors.len()
-            > self.inner.config.dim * self.inner.config.chunk_size_vectors
-        {
-            return Err(OperationError::service_error(format!(
-                "Vectors do not fit in the chunk. Chunk idx {chunk_idx}, chunk offset {chunk_offset}, vectors count {count}",
-            )));
-        }
-
-        // Ensure capacity
-        while chunk_idx >= self.inner.chunks.len() {
-            self.add_chunk()?;
-        }
-
-        let chunk = &mut self.inner.chunks[chunk_idx];
-
-        chunk.write((chunk_offset * size_of::<T>()) as u64, vectors)?;
-
-        hw_counter
-            .vector_io_write_counter()
-            .incr_delta(size_of_val(vectors));
-
-        let new_len = max(self.status.len, start_key + count);
-
-        if new_len > self.status.len {
-            self.status.len = new_len;
-            self.inner.len = new_len;
-        }
-        Ok(())
-    }
-
-    pub fn push(
-        &mut self,
-        vector: &[T],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<VectorOffsetType> {
-        let new_id = self.status.len;
-        self.insert(new_id, vector, hw_counter)?;
-        Ok(new_id)
     }
 
     pub fn flusher(&self) -> Flusher {

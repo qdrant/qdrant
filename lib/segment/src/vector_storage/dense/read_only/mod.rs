@@ -3,7 +3,7 @@ use common::universal_io::UniversalRead;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::Distance;
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
 
 mod immutable;
 mod lifecycle;

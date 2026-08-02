@@ -9,7 +9,7 @@ use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadF
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
 
 /// Read-only counterpart of [`super::QuantizedChunkedStorage`], generic over the
 /// [`UniversalRead`] backend `S`.

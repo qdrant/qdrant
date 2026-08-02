@@ -3,8 +3,9 @@ use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use super::chunks::read_chunks_from;
-use super::read::{ChunkedVectorsRead, read_status_len};
+use super::super::chunks::read_chunks_from;
+use super::super::config::{read_status_len, status_file};
+use super::ChunkedVectorsRead;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
@@ -30,7 +31,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRea
         _new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let new_len = read_status_len(fs, &Self::status_file(&self.directory))?;
+        let new_len = read_status_len(fs, &status_file(&self.directory))?;
         if new_len == self.len {
             return Ok(());
         }

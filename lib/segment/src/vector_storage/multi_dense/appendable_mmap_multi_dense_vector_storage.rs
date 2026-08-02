@@ -22,7 +22,8 @@ use crate::data_types::vectors::{
     TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::chunked_vectors::{ChunkedVectors, ChunkedVectorsRead};
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
     open_appendable_memmap_vector_storage_half,

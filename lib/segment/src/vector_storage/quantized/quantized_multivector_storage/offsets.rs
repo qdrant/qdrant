@@ -15,7 +15,8 @@ use memmap2::MmapMut;
 use super::{MultivectorOffset, MultivectorOffsetsStorage};
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::{ChunkedVectors, ChunkedVectorsRead};
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
 
 pub struct MultivectorOffsetsStorageRam {
     offsets: Vec<MultivectorOffset>,

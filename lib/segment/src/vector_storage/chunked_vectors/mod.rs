@@ -1,11 +1,61 @@
+//! Fixed-dimension vectors stored flattened across a directory of
+//! equally-sized chunk files.
+//!
+//! The directory holds a config file, a status file carrying the vector count,
+//! and `chunk_<n>.mmap` files preallocated to the configured chunk size. A
+//! vector never straddles a chunk boundary.
+//!
+//! Two types share that layout:
+//!
+//! - [`ChunkedVectors`] — the writable storage. Its impls are split across
+//!   [`lifecycle`] (open, config creation, flush) and [`write_ops`] (insert,
+//!   push).
+//! - [`read_only::ChunkedVectorsRead`] — the read-only view, which
+//!   [`ChunkedVectors`] wraps and derefs to for every read.
+//!
+//! [`chunks`] and [`config`] hold what both sides need: the chunk files and
+//! the on-disk metadata files respectively.
+
 mod chunks;
 mod config;
-mod live_reload;
-mod read;
-mod write;
+mod lifecycle;
+pub mod read_only;
+mod write_ops;
 
-pub use read::ChunkedVectorsRead;
-pub use write::ChunkedVectors;
+use std::ops::Deref;
+
+use common::universal_io::{StoredStruct, UniversalWrite};
+
+use self::config::Status;
+use self::read_only::ChunkedVectorsRead;
+
+/// Writable chunked vectors.
+///
+/// Wraps the read-only view — every read goes through the [`Deref`] — and adds
+/// the writable status mapping, so appends update the stored vector count in
+/// the same place they extend the chunks.
+#[derive(Debug)]
+pub struct ChunkedVectors<T, S>
+where
+    T: bytemuck::Pod + Send,
+    S: UniversalWrite + Send + 'static,
+{
+    inner: ChunkedVectorsRead<T, S>,
+    status: StoredStruct<S, Status>,
+    fs: S::Fs,
+}
+
+impl<T, S> Deref for ChunkedVectors<T, S>
+where
+    T: bytemuck::Pod + Send,
+    S: UniversalWrite + Send + 'static,
+{
+    type Target = ChunkedVectorsRead<T, S>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 
 #[cfg(test)]
 mod tests {
