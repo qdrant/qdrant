@@ -286,6 +286,10 @@ storage:
   # `max_resident_memory_percent` in a collection's strict mode config can tighten the memory limit
   # for that collection, but never lift it.
   #
+  # A limit that is reached has to be cleared by 5 percentage points before the node accepts writes
+  # again. Without that margin a resource resting on its limit would put the node in and out of
+  # service on the noise between two readings, restarting a shard recovery every time.
+  #
   # These values only seed the quota manager on the first start. Afterwards the quota config is read
   # from (and written to) `quota.json` in the storage directory, which is kept in sync across the
   # cluster through consensus and can be changed with the `PUT /quotas` API.

@@ -16,18 +16,42 @@ impl Resource {
         }
     }
 
+    /// What this resource is a percentage of.
+    fn total(self) -> &'static str {
+        match self {
+            Resource::ResidentMemory => "total memory",
+            Resource::DiskUsage => "total capacity",
+        }
+    }
+
+    /// The name this resource goes by in a message.
+    fn description(self) -> &'static str {
+        match self {
+            Resource::ResidentMemory => "Resident memory usage",
+            Resource::DiskUsage => "Disk usage",
+        }
+    }
+
     /// The user-facing rejection, naming the condition that tripped and the
     /// parameter governing it.
-    pub(super) fn rejected(self, used_percent: u8, limit: u8) -> QuotaError {
-        let condition = match self {
-            Resource::ResidentMemory => format!(
-                "Resident memory usage is at {used_percent}% of total memory, \
+    ///
+    /// `threshold` is what the reading was actually compared against, which is
+    /// below `limit` for a resource that has already tripped. Saying only that
+    /// the limit was exceeded would then be untrue — usage is back under it, and
+    /// the caller is waiting on the release margin instead.
+    pub(super) fn rejected(self, used_percent: u8, limit: u8, threshold: u8) -> QuotaError {
+        let (description, total) = (self.description(), self.total());
+
+        let condition = if used_percent >= limit {
+            format!(
+                "{description} is at {used_percent}% of {total}, \
                  exceeding the configured limit of {limit}%",
-            ),
-            Resource::DiskUsage => format!(
-                "Disk usage is at {used_percent}% of total capacity, \
-                 exceeding the configured limit of {limit}%",
-            ),
+            )
+        } else {
+            format!(
+                "{description} is at {used_percent}% of {total}. It reached the configured limit \
+                 of {limit}% and has to fall below {threshold}% before this node takes writes again",
+            )
         };
 
         let remedy = match self {

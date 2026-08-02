@@ -48,16 +48,22 @@ pub struct QuotaTelemetry {
     pub exceeded: QuotaExceeded,
 }
 
-/// Which of the enforced limits a node is currently at or over.
+/// Which of the enforced limits a node is currently refusing work over.
 ///
 /// Reported per resource because they are freed by different actions: disk by
 /// deleting or optimizing, memory by unloading. A single flag would not say
 /// which one to go and fix.
 ///
-/// A field is `null` when that resource is not capped — either the quota is
-/// disabled, or it sets no limit for it. That is deliberately distinct from
-/// `false`: a resource with no limit can never trip, so reporting it as "within
-/// limits" would invite an alert that can never fire.
+/// `true` outlasts the reading that caused it: a resource that reaches its limit
+/// stays flagged until it has fallen a margin below, so that one resting near
+/// the limit does not flip the node in and out of service. Expect to see it set
+/// while the reported utilization is already back under the configured limit.
+///
+/// A field is `null` when the node is not enforcing that resource — the quota is
+/// disabled, no limit is set for it, or it cannot be measured here. That is
+/// deliberately distinct from `false`: a resource that can never trip must not
+/// be reported as one that is within its limits, or it invites an alert that can
+/// never fire.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
 pub struct QuotaExceeded {
     pub resident_memory: Option<bool>,

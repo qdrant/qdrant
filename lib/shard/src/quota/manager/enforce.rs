@@ -3,8 +3,18 @@
 use super::QuotaManager;
 use crate::quota::check::Resource;
 use crate::quota::config::QuotaLimits;
-use crate::quota::error::QuotaResult;
+use crate::quota::error::{QuotaError, QuotaResult};
 use crate::quota::status::QuotaExceeded;
+
+/// How far below its limit a resource has to fall, in percentage points, before
+/// this node starts accepting work again.
+///
+/// Without it a resource resting near its limit flips the node in and out of
+/// service on the noise between two readings. That is self-sustaining once
+/// replicas are involved: the node comes back, recovery starts sending it a
+/// shard, the arriving data pushes usage over the limit again, the replica is
+/// deactivated, and round it goes — each lap costing a full shard transfer.
+const RELEASE_MARGIN_PERCENT: u8 = 5;
 
 impl QuotaManager {
     /// Whether the node has room to take on more data.
@@ -17,31 +27,14 @@ impl QuotaManager {
         self.check_update()
     }
 
-    /// Which of the limits this node enforces it is at or over, `None` for a
-    /// resource it does not cap.
+    /// Which of the limits this node enforces it is at or over.
     ///
-    /// For reporting. It measures the same way a check does, so a node sitting
-    /// over its limit re-reads the resource rather than serving a stale figure.
+    /// For reporting, and reports what is actually being enforced: a resource
+    /// that has tripped stays exceeded until it clears the release margin, so a
+    /// reading below the limit is not on its own enough to be listed as within
+    /// it.
     pub fn exceeded(&self) -> QuotaExceeded {
-        let QuotaLimits {
-            max_resident_memory_percent,
-            max_disk_usage_percent,
-        } = self.config().limits();
-
-        QuotaExceeded {
-            resident_memory: max_resident_memory_percent.map(|limit| {
-                check(Resource::ResidentMemory, Some(limit), |limit| {
-                    self.resident_memory_percent(limit)
-                })
-                .is_err()
-            }),
-            disk_usage: max_disk_usage_percent.map(|limit| {
-                check(Resource::DiskUsage, Some(limit), |limit| {
-                    self.disk_usage_percent(&self.storage_path, limit)
-                })
-                .is_err()
-            }),
-        }
+        self.evaluate().0
     }
 
     /// Reject an update that consumes memory or disk when it would run past a
@@ -51,51 +44,156 @@ impl QuotaManager {
     /// one of its own enforces it separately, so this cannot be relaxed per
     /// caller.
     pub fn check_update(&self) -> QuotaResult<()> {
+        match self.evaluate().1 {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
+    /// Measure both resources, update the verdict each one is holding, and
+    /// produce the rejection for the first that is over.
+    ///
+    /// Both are always evaluated, even once the first has failed: the verdicts
+    /// are what reporting reads, and a resource left unevaluated would keep
+    /// answering with whatever it last said. The reading it costs is served from
+    /// cache whenever that resource is comfortably within its limit.
+    fn evaluate(&self) -> (QuotaExceeded, Option<QuotaError>) {
         let QuotaLimits {
             max_resident_memory_percent,
             max_disk_usage_percent,
         } = self.config().limits();
 
-        check(
+        let mut exceeded = self.exceeded.lock();
+
+        let memory = evaluate(
             Resource::ResidentMemory,
             max_resident_memory_percent,
-            |limit| self.resident_memory_percent(limit),
-        )?;
-        check(Resource::DiskUsage, max_disk_usage_percent, |limit| {
-            self.disk_usage_percent(&self.storage_path, limit)
-        })?;
+            &mut exceeded.resident_memory,
+            |threshold| self.resident_memory_percent(threshold),
+        );
 
-        Ok(())
+        let disk = evaluate(
+            Resource::DiskUsage,
+            max_disk_usage_percent,
+            &mut exceeded.disk_usage,
+            |threshold| self.disk_usage_percent(&self.storage_path, threshold),
+        );
+
+        (*exceeded, memory.or(disk))
     }
 }
 
-/// Reject an update if `resource` is at or above `limit`. Allowed through when no
-/// limit applies (the resource is then never measured), and when it cannot be
-/// measured at all.
-fn check(
+/// Judge one resource against its limit and update `verdict`, which is both the
+/// answer from last time and where this answer is left.
+///
+/// The limit trips it; the release threshold clears it. Both "not capped" and
+/// "cannot be measured" leave no verdict at all, because neither is a statement
+/// about how full the resource is.
+fn evaluate(
     resource: Resource,
     limit: Option<u8>,
+    verdict: &mut Option<bool>,
     measure: impl FnOnce(Option<u8>) -> Option<u8>,
-) -> QuotaResult<()> {
+) -> Option<QuotaError> {
     let Some(limit) = limit else {
-        return Ok(());
+        *verdict = None;
+        return None;
     };
 
-    let Some(used_percent) = measure(Some(limit)) else {
-        return Ok(());
+    let threshold = threshold(limit, verdict.unwrap_or(false));
+
+    let Some(used_percent) = measure(Some(threshold)) else {
+        *verdict = None;
+        return None;
     };
 
-    if used_percent < limit {
-        return Ok(());
+    let exceeded = used_percent >= threshold;
+    *verdict = Some(exceeded);
+
+    exceeded.then(|| resource.rejected(used_percent, limit, threshold))
+}
+
+/// The level a resource is compared against: its limit while it is within it,
+/// and [`RELEASE_MARGIN_PERCENT`] below that once it has tripped.
+fn threshold(limit: u8, was_exceeded: bool) -> u8 {
+    if !was_exceeded {
+        return limit;
     }
 
-    Err(resource.rejected(used_percent, limit))
+    // Never below 1, or a limit smaller than the margin could never be fallen
+    // back under and the node would stay out of service for good.
+    limit.saturating_sub(RELEASE_MARGIN_PERCENT).max(1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::quota::QuotaConfig;
+
+    #[test]
+    fn a_tripped_resource_clears_only_below_the_release_margin() {
+        // Untripped, the limit is the limit
+        assert_eq!(threshold(90, false), 90);
+
+        // Tripped, it has to fall a margin below before the node comes back,
+        // so a resource hovering at 89-91% does not flip on every reading
+        assert_eq!(threshold(90, true), 85);
+
+        // A limit at or under the margin still has to be escapable, or a node
+        // that tripped it could never return
+        assert_eq!(threshold(5, true), 1);
+        assert_eq!(threshold(1, true), 1);
+    }
+
+    #[test]
+    fn a_tripped_resource_keeps_refusing_until_it_clears_the_margin() {
+        let mut verdict = None;
+        let judge = |used: u8, verdict: &mut Option<bool>| {
+            evaluate(Resource::DiskUsage, Some(90), verdict, |_| Some(used))
+        };
+
+        // Under the limit, nothing to report
+        assert!(judge(80, &mut verdict).is_none());
+        assert_eq!(verdict, Some(false));
+
+        // Reaching it trips the node out of service
+        assert!(judge(90, &mut verdict).is_some());
+        assert_eq!(verdict, Some(true));
+
+        // Back under the limit, but inside the margin: still refused. This is the
+        // reading that used to put the node back in service and start a recovery
+        // that would push it straight over again.
+        let err = judge(87, &mut verdict).expect("still within the release margin");
+        assert_eq!(verdict, Some(true));
+        // ... and it says so, rather than claiming a limit that is not exceeded
+        assert!(err.to_string().contains("has to fall below 85%"), "{err}");
+
+        // Clear of the margin, back in service
+        assert!(judge(84, &mut verdict).is_none());
+        assert_eq!(verdict, Some(false));
+
+        // Having cleared, it takes the whole limit to trip again — the margin
+        // applies on the way out, not on the way in
+        assert!(judge(88, &mut verdict).is_none());
+        assert_eq!(verdict, Some(false));
+    }
+
+    #[test]
+    fn a_resource_that_cannot_be_judged_holds_no_verdict() {
+        // Tripped, then the stat stops being readable
+        let mut verdict = Some(true);
+        assert!(evaluate(Resource::DiskUsage, Some(90), &mut verdict, |_| None).is_none());
+        assert_eq!(
+            verdict, None,
+            "an unreadable stat is not a statement about the resource, \
+             and must not leave the node refusing work forever",
+        );
+
+        // Same for a resource nobody caps
+        let mut verdict = Some(true);
+        assert!(evaluate(Resource::DiskUsage, None, &mut verdict, |_| unreachable!()).is_none());
+        assert_eq!(verdict, None);
+    }
 
     #[test]
     fn limits_only_apply_while_the_quota_is_enabled() {
@@ -110,6 +208,7 @@ mod tests {
 
         let manager = QuotaManager::load_or_init(dir.path(), settings).unwrap();
         manager.check_update().unwrap();
+        assert_eq!(manager.exceeded().disk_usage, None);
 
         manager
             .set_config(QuotaConfig {
@@ -120,5 +219,6 @@ mod tests {
 
         let err = manager.check_update().unwrap_err();
         assert!(err.to_string().contains("global quota config"), "{err}");
+        assert_eq!(manager.exceeded().disk_usage, Some(true));
     }
 }
