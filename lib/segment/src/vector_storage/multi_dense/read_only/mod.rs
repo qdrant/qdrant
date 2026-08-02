@@ -7,7 +7,7 @@ use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, MultiVectorConfig};
-use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 
 mod lifecycle;
 mod live_reload;
@@ -15,8 +15,8 @@ mod read_ops;
 
 #[derive(Debug)]
 pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
-    vectors: ChunkedVectorsRead<T, S>,
-    offsets: ChunkedVectorsRead<MultivectorMmapOffset, S>,
+    vectors: ReadOnlyChunkedVectors<T, S>,
+    offsets: ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
@@ -24,8 +24,8 @@ pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: 
 }
 
 pub fn for_each_vector<P, T, U, S>(
-    offsets: &ChunkedVectorsRead<MultivectorMmapOffset, S>,
-    vectors: &ChunkedVectorsRead<T, S>,
+    offsets: &ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
+    vectors: &ReadOnlyChunkedVectors<T, S>,
     keys: impl IntoIterator<Item = (U, PointOffsetType)>,
     mut callback: impl FnMut(U, &[T]) -> OperationResult<()>,
 ) -> OperationResult<()>

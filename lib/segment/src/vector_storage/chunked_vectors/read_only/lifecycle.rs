@@ -9,10 +9,10 @@ use super::super::chunks::{
     check_mmap_file_name_pattern, chunk_name, chunk_open_options, chunks_prefix, read_chunks,
 };
 use super::super::config::{config_file, load_config, read_status_len, status_file};
-use super::ChunkedVectorsRead;
+use super::ReadOnlyChunkedVectors;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
+impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     /// Schedule background prefetch of every file [`Self::open`] will read.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,

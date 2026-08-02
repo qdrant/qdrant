@@ -5,11 +5,11 @@ use common::universal_io::UniversalRead;
 
 use super::super::chunks::read_chunks_from;
 use super::super::config::{read_status_len, status_file};
-use super::ChunkedVectorsRead;
+use super::ReadOnlyChunkedVectors;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
-impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ChunkedVectorsRead<T, S> {
+impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVectors<T, S> {
     type Fs = S::Fs;
 
     /// Refresh the chunks that can have gained vectors since the last load; a

@@ -23,7 +23,7 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
     open_appendable_memmap_vector_storage_half,
@@ -71,8 +71,8 @@ pub(crate) fn flattened_to_multi_vector<T: PrimitiveVectorElement>(
 /// same on-disk layout, so they only differ in the writability of the chunked
 /// stores.
 pub(crate) fn read_multi_vector<'a, T, P, S>(
-    offsets: &'a ChunkedVectorsRead<MultivectorMmapOffset, S>,
-    vectors: &'a ChunkedVectorsRead<T, S>,
+    offsets: &'a ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
+    vectors: &'a ReadOnlyChunkedVectors<T, S>,
     key: PointOffsetType,
 ) -> Option<CowMultiVector<'a, T>>
 where

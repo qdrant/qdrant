@@ -8,7 +8,7 @@ use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::Distance;
-use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     DELETED_DIR_PATH, VECTORS_DIR_PATH,
 };
@@ -25,7 +25,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
         populate: Populate,
     ) -> OperationResult<()> {
         // Vectors
-        ChunkedVectorsRead::<T, S>::preopen(fs, &path.join(VECTORS_DIR_PATH), advice, populate)?;
+        ReadOnlyChunkedVectors::<T, S>::preopen(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            advice,
+            populate,
+        )?;
 
         // Deleted flags
         InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
@@ -45,7 +50,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
         populate: Populate,
     ) -> OperationResult<Self> {
         let vectors =
-            ChunkedVectorsRead::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
+            ReadOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 

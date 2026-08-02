@@ -7,13 +7,13 @@ use common::types::PointOffsetType;
 use common::universal_io::{ReadPipeline, ReadRange, TypedStorage, UniversalRead, UserData};
 use num_traits::AsPrimitive;
 
-use super::ChunkedVectorsRead;
+use super::ReadOnlyChunkedVectors;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{VectorOffset, VectorOffsetType};
 
-impl<T: bytemuck::Pod + Send, S: UniversalRead> ChunkedVectorsRead<T, S> {
+impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     #[inline]
     pub(in crate::vector_storage::chunked_vectors) fn get_chunk_index(&self, key: usize) -> usize {
         key / self.config.chunk_size_vectors

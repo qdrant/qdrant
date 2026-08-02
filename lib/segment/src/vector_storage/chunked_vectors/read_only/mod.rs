@@ -31,7 +31,7 @@ use super::config::ChunkedVectorsConfig;
 /// read-side API. Mutating storage uses [`ChunkedVectors`](super::ChunkedVectors)
 /// which wraps this and adds a writable status mmap.
 #[derive(Debug)]
-pub struct ChunkedVectorsRead<T: bytemuck::Pod + Send, S: UniversalRead> {
+pub struct ReadOnlyChunkedVectors<T: bytemuck::Pod + Send, S: UniversalRead> {
     pub(super) config: ChunkedVectorsConfig,
     /// Number of vectors currently stored. Snapshot for read-only mode; for
     /// [`ChunkedVectors`](super::ChunkedVectors) this is kept in sync with the
@@ -85,7 +85,7 @@ mod tests {
         }
         writer.flusher()().unwrap();
 
-        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
             dir.path(),
             DIM,
@@ -158,7 +158,7 @@ mod tests {
             remote: Default::default(),
         })
         .unwrap();
-        let mut reader = ChunkedVectorsRead::<f32, DiskCache<MmapFile>>::open(
+        let mut reader = ReadOnlyChunkedVectors::<f32, DiskCache<MmapFile>>::open(
             &cache_fs,
             &dir,
             DIM,
@@ -218,7 +218,7 @@ mod tests {
         }
         writer.flusher()().unwrap();
 
-        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
             dir.path(),
             DIM,
@@ -277,7 +277,7 @@ mod tests {
         }
         writer.flusher()().unwrap();
 
-        let mut reader = ChunkedVectorsRead::<f32, MmapFile>::open(
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
             dir.path(),
             DIM,

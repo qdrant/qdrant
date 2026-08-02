@@ -9,7 +9,7 @@ use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadF
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 
 /// Read-only counterpart of [`super::QuantizedChunkedStorage`], generic over the
 /// [`UniversalRead`] backend `S`.
@@ -18,7 +18,7 @@ use crate::vector_storage::chunked_vectors::read_only::ChunkedVectorsRead;
 /// so the mutable storage format can be loaded by the read-only quantized storage.
 #[derive(Debug)]
 pub struct QuantizedChunkedStorageRead<S: UniversalRead> {
-    pub(super) data: ChunkedVectorsRead<u8, S>,
+    pub(super) data: ReadOnlyChunkedVectors<u8, S>,
 }
 
 impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
@@ -31,7 +31,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        ChunkedVectorsRead::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate)
+        ReadOnlyChunkedVectors::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate)
     }
 
     pub fn open(
@@ -39,7 +39,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<Self> {
-        let data = ChunkedVectorsRead::open(
+        let data = ReadOnlyChunkedVectors::open(
             fs,
             path,
             quantized_vector_size,

@@ -9,7 +9,7 @@ use common::universal_io::{
 use super::ChunkedVectors;
 use super::chunks::read_chunks;
 use super::config::{ChunkedVectorsConfig, Status, config_file, load_config, status_file};
-use super::read_only::ChunkedVectorsRead;
+use super::read_only::ReadOnlyChunkedVectors;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::CHUNK_SIZE;
@@ -112,7 +112,7 @@ where
 
         let config = Self::ensure_config(&fs, directory, dim, populate.to_bool::<S>())?;
         let chunks = read_chunks(&fs, directory, advice, populate, true)?;
-        let inner = ChunkedVectorsRead {
+        let inner = ReadOnlyChunkedVectors {
             config,
             len: status.len,
             chunks,

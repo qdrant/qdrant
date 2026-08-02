@@ -539,7 +539,7 @@ fn assert_internal_scorer_eq(
 /// `live_reload` on a chunked quantized storage reopens its backing without
 /// disturbing the data: scores match before and after. There is no public append
 /// API to drive growth here; the chunked reload primitive is covered by
-/// `ChunkedVectorsRead`'s own tests.
+/// `ReadOnlyChunkedVectors`'s own tests.
 #[test]
 fn live_reload_chunked_preserves_scores() {
     let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();

@@ -10,7 +10,7 @@
 //! - [`ChunkedVectors`] — the writable storage. Its impls are split across
 //!   [`lifecycle`] (open, config creation, flush) and [`write_ops`] (insert,
 //!   push).
-//! - [`read_only::ChunkedVectorsRead`] — the read-only view, which
+//! - [`read_only::ReadOnlyChunkedVectors`] — the read-only view, which
 //!   [`ChunkedVectors`] wraps and derefs to for every read.
 //!
 //! [`chunks`] and [`config`] hold what both sides need: the chunk files and
@@ -27,7 +27,7 @@ use std::ops::Deref;
 use common::universal_io::{StoredStruct, UniversalWrite};
 
 use self::config::Status;
-use self::read_only::ChunkedVectorsRead;
+use self::read_only::ReadOnlyChunkedVectors;
 
 /// Writable chunked vectors.
 ///
@@ -40,7 +40,7 @@ where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
-    inner: ChunkedVectorsRead<T, S>,
+    inner: ReadOnlyChunkedVectors<T, S>,
     status: StoredStruct<S, Status>,
     fs: S::Fs,
 }
@@ -50,7 +50,7 @@ where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
-    type Target = ChunkedVectorsRead<T, S>;
+    type Target = ReadOnlyChunkedVectors<T, S>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
