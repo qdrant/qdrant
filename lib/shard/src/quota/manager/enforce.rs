@@ -9,12 +9,9 @@ use crate::quota::error::{QuotaError, QuotaResult};
 use crate::quota::status::QuotaExceeded;
 
 /// Whether each resource was over its limit when it was last judged, which is
-/// what the release margin needs to know to hold a tripped limit.
+/// what the release margin needs to hold a tripped limit.
 ///
-/// Atomic rather than locked: the two resources are judged independently and
-/// nothing reads them as a pair, so a lock on the path every update takes would
-/// buy only contention. A verdict that races a concurrent check is re-decided by
-/// the next one from a fresh reading.
+/// Each verdict stands on its own; they are never read as a pair.
 #[derive(Debug, Default)]
 pub struct ExceededVerdicts {
     resident_memory: AtomicBool,
