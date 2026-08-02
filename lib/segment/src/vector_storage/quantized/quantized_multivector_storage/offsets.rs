@@ -15,7 +15,8 @@ use memmap2::MmapMut;
 use super::{MultivectorOffset, MultivectorOffsetsStorage};
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::{ChunkedVectors, ChunkedVectorsRead};
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 
 pub struct MultivectorOffsetsStorageRam {
     offsets: Vec<MultivectorOffset>,
@@ -404,7 +405,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
 /// Read-only counterpart of [`MultivectorOffsetsStorageChunked`], generic over
 /// the [`UniversalRead`] backend `S`.
 pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
-    pub(super) data: ChunkedVectorsRead<MultivectorOffset, S>,
+    pub(super) data: ReadOnlyChunkedVectors<MultivectorOffset, S>,
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
@@ -417,7 +418,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        ChunkedVectorsRead::<MultivectorOffset, S>::preopen(
+        ReadOnlyChunkedVectors::<MultivectorOffset, S>::preopen(
             fs,
             path,
             AdviceSetting::Global,
@@ -426,7 +427,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
     }
 
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
-        let data = ChunkedVectorsRead::open(
+        let data = ReadOnlyChunkedVectors::open(
             fs,
             path,
             1,

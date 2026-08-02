@@ -11,7 +11,7 @@ use quantization::turboquant::quantization::TurboQuantizer;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::types::{Distance, MultiVectorConfig};
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
 
@@ -29,7 +29,7 @@ pub struct ReadOnlyChunkedMultiTurboVectorStorage<S: UniversalRead> {
     /// Flat inner-vector space: one fixed-size encoded record per inner vector.
     storage: QuantizedChunkedStorageRead<S>,
     /// Maps each point to its record range in the inner space.
-    offsets: ChunkedVectorsRead<MultivectorMmapOffset, S>,
+    offsets: ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
     /// Quantizer used to de/quantize and score; rebuilt from `(dim, distance)`.
     quantizer: TurboQuantizer,
     /// Persisted soft-deletion flags, materialized in memory.
