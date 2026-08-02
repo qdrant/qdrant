@@ -13,7 +13,6 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
-use storage::content_manager::errors::StorageError;
 use storage::quota;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
@@ -129,8 +128,7 @@ impl QdrantInternal for QdrantInternalService {
     ) -> Result<Response<GetQuotaUsageResponse>, Status> {
         let auth = extract_auth(&mut request);
         auth.unlogged_access()
-            .check_global_access(AccessRequirements::new())
-            .map_err(StorageError::from)?;
+            .check_global_access(AccessRequirements::new())?;
 
         let timing = Instant::now();
 
