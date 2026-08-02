@@ -270,12 +270,10 @@ pub fn check_resident_memory(
     Ok(())
 }
 
-/// Total system memory (or cgroup limit) in bytes. Cached once — total memory
-/// is effectively constant for a running process.
+/// Total system memory (or cgroup limit) in bytes.
+/// Memory allowance can change in a cgroup-limited node, so need to refresh the cache periodically.
 fn total_memory_bytes() -> u64 {
-    use std::sync::OnceLock;
-    static TOTAL: OnceLock<u64> = OnceLock::new();
-    *TOTAL.get_or_init(|| segment::utils::mem::Mem::new().total_memory_bytes())
+    segment::utils::mem::total_memory_bytes()
 }
 
 /// Reject a disk-consuming update if the filesystem hosting Qdrant storage is
