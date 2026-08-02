@@ -1420,17 +1420,6 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, max = 100))]
     pub max_resident_memory_percent: Option<u8>,
-
-    /// Reject disk-consuming update operations (e.g. upsert, set payload) when
-    /// the filesystem hosting Qdrant storage is filled above this percentage
-    /// of its total capacity. Value in [1, 100]. Applied uniformly to external
-    /// and internal (replication) traffic — rejection is deterministic so it
-    /// does not cause replica divergence. Delete operations are not affected,
-    /// so callers can still free disk space. Free space is sampled with a
-    /// small TTL cache; the gate may take a few seconds to react.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1, max = 100))]
-    pub max_disk_usage_percent: Option<u8>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -1460,7 +1449,6 @@ impl Hash for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
@@ -1482,7 +1470,6 @@ impl Hash for StrictModeConfig {
         sparse_config.hash(state);
         max_payload_index_count.hash(state);
         max_resident_memory_percent.hash(state);
-        max_disk_usage_percent.hash(state);
     }
 }
 
@@ -1588,10 +1575,6 @@ pub struct StrictModeConfigOutput {
     #[anonymize(false)]
     pub max_resident_memory_percent: Option<u8>,
 
-    /// Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[anonymize(false)]
-    pub max_disk_usage_percent: Option<u8>,
 }
 
 impl From<StrictModeConfig> for StrictModeConfigOutput {
@@ -1618,7 +1601,6 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
         } = config;
 
         Self {
@@ -1643,7 +1625,6 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
         }
     }
 }

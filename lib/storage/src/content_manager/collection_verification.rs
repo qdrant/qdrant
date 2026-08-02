@@ -78,7 +78,7 @@ where
             .as_ref()
             .map(|config| QuotaLimits {
                 max_resident_memory_percent: config.max_resident_memory_percent,
-                max_disk_usage_percent: config.max_disk_usage_percent,
+                max_disk_usage_percent: None,
             })
             .unwrap_or_default();
 
