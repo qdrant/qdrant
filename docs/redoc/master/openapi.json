@@ -13750,12 +13750,12 @@
             "nullable": true
           },
           "release_margin_percent": {
-            "description": "How many percentage points below its limit a resource has to fall before this node starts accepting work again.\n\nWithout a margin, a resource resting on its limit crosses it in both directions on the noise between two readings, putting the node in and out of service each time — and restarting a shard recovery with it. Raise it where usage is volatile; `0` disables the margin and releases as soon as usage is back under the limit.",
-            "default": 5,
+            "description": "How many percentage points below its limit a resource has to fall before this node starts accepting work again.\n\nWithout a margin, a resource resting on its limit crosses it in both directions on the noise between two readings, putting the node in and out of service each time — and restarting a shard recovery with it. Raise it where usage is volatile; `0` disables the margin and releases as soon as usage is back under the limit.\n\nUnset leaves the built-in default in force, so a config written today does not pin a number that a later release may want to revise.",
             "type": "integer",
             "format": "uint8",
             "maximum": 100,
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           }
         }
       },

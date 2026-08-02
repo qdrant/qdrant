@@ -9,13 +9,14 @@ use ::common::disk_usage::DiskUsage;
 use ahash::AHashMap;
 use parking_lot::Mutex;
 
+pub use self::enforce::ExceededVerdicts;
 pub use self::measure::DiskFit;
 pub use self::store::QUOTA_CONFIG_FILE;
 use self::store::Store;
 use super::config::QuotaConfig;
 use super::error::QuotaResult;
 use super::meter::Meter;
-use super::status::{QuotaExceeded, QuotaStatus};
+use super::status::QuotaStatus;
 
 /// Cluster-wide quota configuration, and the single place that measures the
 /// resources it caps. Nothing else reads process memory or disk usage.
@@ -36,10 +37,10 @@ pub struct QuotaManager {
     /// and WAL may sit on different mounts, and telling which is which would
     /// cost the `statvfs` we are avoiding.
     disk: Mutex<AHashMap<PathBuf, Arc<Meter<Option<DiskUsage>>>>>,
-    /// Whether each resource is currently over its limit. Carried between checks
-    /// rather than recomputed from scratch, because clearing a limit takes more
-    /// than falling back under it — see `enforce::RELEASE_MARGIN_PERCENT`.
-    exceeded: Mutex<QuotaExceeded>,
+    /// Whether each resource was over its limit at the last check. Carried
+    /// between checks rather than recomputed, because clearing a limit takes
+    /// more than falling back under it — see the release margin in `enforce`.
+    exceeded: ExceededVerdicts,
 }
 
 impl std::fmt::Debug for QuotaManager {
@@ -61,7 +62,7 @@ impl Default for QuotaManager {
             storage_path: PathBuf::new(),
             memory: Meter::default(),
             disk: Mutex::new(AHashMap::new()),
-            exceeded: Mutex::new(QuotaExceeded::default()),
+            exceeded: ExceededVerdicts::default(),
         }
     }
 }
@@ -78,7 +79,7 @@ impl QuotaManager {
             storage_path: storage_path.to_path_buf(),
             memory: Meter::default(),
             disk: Mutex::new(AHashMap::new()),
-            exceeded: Mutex::new(QuotaExceeded::default()),
+            exceeded: ExceededVerdicts::default(),
         })
     }
 
@@ -93,7 +94,7 @@ impl QuotaManager {
         // New limits, so the old verdicts say nothing: an operator raising a
         // limit expects that to take effect now, not once the node has also
         // cleared the release margin of a limit that no longer exists.
-        *self.exceeded.lock() = QuotaExceeded::default();
+        self.exceeded.clear();
 
         Ok(())
     }

@@ -1,10 +1,33 @@
 //! Comparing the readings against the configured limits.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use super::QuotaManager;
 use crate::quota::check::Resource;
 use crate::quota::config::QuotaLimits;
 use crate::quota::error::{QuotaError, QuotaResult};
 use crate::quota::status::QuotaExceeded;
+
+/// Whether each resource was over its limit when it was last judged, which is
+/// what the release margin needs to know to hold a tripped limit.
+///
+/// Atomic rather than locked: the two resources are judged independently and
+/// nothing reads them as a pair, so a lock on the path every update takes would
+/// buy only contention. A verdict that races a concurrent check is re-decided by
+/// the next one from a fresh reading.
+#[derive(Debug, Default)]
+pub struct ExceededVerdicts {
+    resident_memory: AtomicBool,
+    disk_usage: AtomicBool,
+}
+
+impl ExceededVerdicts {
+    /// Forget what was decided, so the next check starts from the limits alone.
+    pub fn clear(&self) {
+        self.resident_memory.store(false, Ordering::Relaxed);
+        self.disk_usage.store(false, Ordering::Relaxed);
+    }
+}
 
 impl QuotaManager {
     /// Whether the node has room to take on more data.
@@ -40,13 +63,13 @@ impl QuotaManager {
         }
     }
 
-    /// Measure both resources, update the verdict each one is holding, and
-    /// produce the rejection for the first that is over.
+    /// Judge both resources, updating the verdicts they carry, and produce the
+    /// rejection for the first that is over.
     ///
-    /// Both are always evaluated, even once the first has failed: the verdicts
-    /// are what reporting reads, and a resource left unevaluated would keep
-    /// answering with whatever it last said. The reading it costs is served from
-    /// cache whenever that resource is comfortably within its limit.
+    /// Both are always judged, even once the first has failed: the verdicts are
+    /// what reporting reads, and a resource left unjudged would keep answering
+    /// with whatever it last said. The reading it costs is served from cache
+    /// whenever that resource is comfortably within its limit.
     fn evaluate(&self) -> (QuotaExceeded, Option<QuotaError>) {
         let QuotaLimits {
             max_resident_memory_percent,
@@ -54,12 +77,10 @@ impl QuotaManager {
             release_margin_percent,
         } = self.config().limits();
 
-        let mut exceeded = self.exceeded.lock();
-
         let memory = evaluate(
             Resource::ResidentMemory,
             max_resident_memory_percent,
-            &mut exceeded.resident_memory,
+            &self.exceeded.resident_memory,
             release_margin_percent,
             |threshold| self.resident_memory_percent(threshold),
         );
@@ -67,44 +88,67 @@ impl QuotaManager {
         let disk = evaluate(
             Resource::DiskUsage,
             max_disk_usage_percent,
-            &mut exceeded.disk_usage,
+            &self.exceeded.disk_usage,
             release_margin_percent,
             |threshold| self.disk_usage_percent(&self.storage_path, threshold),
         );
 
-        (*exceeded, memory.or(disk))
+        let exceeded = QuotaExceeded {
+            resident_memory: reported(&memory),
+            disk_usage: reported(&disk),
+        };
+
+        (exceeded, memory.err().or(disk.err()))
     }
 }
 
-/// Judge one resource against its limit and update `verdict`, which is both the
-/// answer from last time and where this answer is left.
+/// Judge one resource against its limit, carrying `was_exceeded` in and leaving
+/// this judgement there.
 ///
-/// The limit trips it; the release threshold clears it. Both "not capped" and
-/// "cannot be measured" leave no verdict at all, because neither is a statement
-/// about how full the resource is.
+/// The limit trips it; the release threshold clears it. `Ok(None)` is a resource
+/// this node is not enforcing — not capped, or not measurable here — which is
+/// not a statement about how full it is, and so leaves nothing behind for the
+/// margin to hold on to.
 fn evaluate(
     resource: Resource,
     limit: Option<u8>,
-    verdict: &mut Option<bool>,
+    was_exceeded: &AtomicBool,
     release_margin_percent: u8,
     measure: impl FnOnce(Option<u8>) -> Option<u8>,
-) -> Option<QuotaError> {
+) -> Result<Option<bool>, QuotaError> {
     let Some(limit) = limit else {
-        *verdict = None;
-        return None;
+        was_exceeded.store(false, Ordering::Relaxed);
+        return Ok(None);
     };
 
-    let threshold = threshold(limit, verdict.unwrap_or(false), release_margin_percent);
+    let threshold = threshold(
+        limit,
+        was_exceeded.load(Ordering::Relaxed),
+        release_margin_percent,
+    );
 
     let Some(used_percent) = measure(Some(threshold)) else {
-        *verdict = None;
-        return None;
+        was_exceeded.store(false, Ordering::Relaxed);
+        return Ok(None);
     };
 
     let exceeded = used_percent >= threshold;
-    *verdict = Some(exceeded);
+    was_exceeded.store(exceeded, Ordering::Relaxed);
 
-    exceeded.then(|| resource.rejected(used_percent, limit, threshold))
+    if exceeded {
+        return Err(resource.rejected(used_percent, limit, threshold));
+    }
+
+    Ok(Some(false))
+}
+
+/// What to report for a resource. A rejection is itself the statement that it is
+/// over, so it needs no separate verdict alongside.
+fn reported(outcome: &Result<Option<bool>, QuotaError>) -> Option<bool> {
+    match outcome {
+        Ok(verdict) => *verdict,
+        Err(_) => Some(true),
+    }
 }
 
 /// The level a resource is compared against: its limit while it is within it,
@@ -150,76 +194,67 @@ mod tests {
 
     #[test]
     fn a_tripped_resource_keeps_refusing_until_it_clears_the_margin() {
-        let mut verdict = None;
-        let judge = |used: u8, verdict: &mut Option<bool>| {
+        let was_exceeded = AtomicBool::new(false);
+        let judge = |used: u8| {
             evaluate(
                 Resource::DiskUsage,
                 Some(90),
-                verdict,
+                &was_exceeded,
                 DEFAULT_RELEASE_MARGIN_PERCENT,
                 |_| Some(used),
             )
         };
 
         // Under the limit, nothing to report
-        assert!(judge(80, &mut verdict).is_none());
-        assert_eq!(verdict, Some(false));
+        assert_eq!(judge(80).ok(), Some(Some(false)));
 
         // Reaching it trips the node out of service
-        assert!(judge(90, &mut verdict).is_some());
-        assert_eq!(verdict, Some(true));
+        assert!(judge(90).is_err());
 
         // Back under the limit, but inside the margin: still refused. This is the
         // reading that used to put the node back in service and start a recovery
         // that would push it straight over again.
-        let err = judge(87, &mut verdict).expect("still within the release margin");
-        assert_eq!(verdict, Some(true));
+        let err = judge(87).expect_err("still within the release margin");
         // ... and it says so, rather than claiming a limit that is not exceeded
         assert!(err.to_string().contains("has to fall below 85%"), "{err}");
 
         // Clear of the margin, back in service
-        assert!(judge(84, &mut verdict).is_none());
-        assert_eq!(verdict, Some(false));
+        assert_eq!(judge(84).ok(), Some(Some(false)));
 
         // Having cleared, it takes the whole limit to trip again — the margin
         // applies on the way out, not on the way in
-        assert!(judge(88, &mut verdict).is_none());
-        assert_eq!(verdict, Some(false));
+        assert_eq!(judge(88).ok(), Some(Some(false)));
     }
 
     #[test]
     fn a_resource_that_cannot_be_judged_holds_no_verdict() {
         // Tripped, then the stat stops being readable
-        let mut verdict = Some(true);
-        assert!(
-            evaluate(
-                Resource::DiskUsage,
-                Some(90),
-                &mut verdict,
-                DEFAULT_RELEASE_MARGIN_PERCENT,
-                |_| None,
-            )
-            .is_none()
+        let was_exceeded = AtomicBool::new(true);
+        let outcome = evaluate(
+            Resource::DiskUsage,
+            Some(90),
+            &was_exceeded,
+            DEFAULT_RELEASE_MARGIN_PERCENT,
+            |_| None,
         );
-        assert_eq!(
-            verdict, None,
+        assert_eq!(outcome.ok(), Some(None));
+        assert!(
+            !was_exceeded.load(Ordering::Relaxed),
             "an unreadable stat is not a statement about the resource, \
              and must not leave the node refusing work forever",
         );
 
         // Same for a resource nobody caps
-        let mut verdict = Some(true);
-        assert!(
-            evaluate(
-                Resource::DiskUsage,
-                None,
-                &mut verdict,
-                DEFAULT_RELEASE_MARGIN_PERCENT,
-                |_| unreachable!(),
-            )
-            .is_none()
+        let was_exceeded = AtomicBool::new(true);
+        let outcome = evaluate(
+            Resource::DiskUsage,
+            None,
+            &was_exceeded,
+            DEFAULT_RELEASE_MARGIN_PERCENT,
+            |_| unreachable!(),
         );
-        assert_eq!(verdict, None);
+        assert_eq!(outcome.ok(), Some(None));
+        assert!(!was_exceeded.load(Ordering::Relaxed));
     }
 
     #[test]

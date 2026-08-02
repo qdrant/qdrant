@@ -312,7 +312,8 @@ storage:
     # How many percentage points below its limit a resource has to fall before this node starts
     # accepting work again. Raise it where usage is volatile; 0 releases as soon as usage is back
     # under the limit.
-    #release_margin_percent: 5
+    # If null - the built-in default of 5 applies.
+    #release_margin_percent: null
 
 service:
   # Maximum size of POST data in a single request in megabytes

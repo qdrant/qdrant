@@ -17,9 +17,9 @@ UNSATISFIABLE_QUOTA = {
     "release_margin_percent": 5,
 }
 
-# What a node with no quota reports: the release margin is always answered with,
-# filled in from the default when a request leaves it out.
-NO_QUOTA = {"enabled": False, "release_margin_percent": 5}
+# What a node with no quota reports. The release margin is left unset, so the
+# node applies its built-in default rather than pinning a number in the config.
+NO_QUOTA = {"enabled": False}
 
 
 def test_global_quota(tmp_path: pathlib.Path):

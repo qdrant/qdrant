@@ -6,15 +6,13 @@ use validator::Validate;
 /// again, when the config does not say.
 pub const DEFAULT_RELEASE_MARGIN_PERCENT: u8 = 5;
 
-const fn default_release_margin_percent() -> u8 {
-    DEFAULT_RELEASE_MARGIN_PERCENT
-}
-
 /// Cluster-wide limits on node resources.
 ///
 /// An unset limit means the corresponding resource is not capped. Limits are
 /// only enforced while `enabled` is true.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Validate)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Validate,
+)]
 pub struct QuotaConfig {
     /// Whether the limits below are enforced.
     #[serde(default)]
@@ -40,20 +38,12 @@ pub struct QuotaConfig {
     /// of service each time — and restarting a shard recovery with it. Raise it
     /// where usage is volatile; `0` disables the margin and releases as soon as
     /// usage is back under the limit.
-    #[serde(default = "default_release_margin_percent")]
+    ///
+    /// Unset leaves the built-in default in force, so a config written today
+    /// does not pin a number that a later release may want to revise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(range(max = 100))]
-    pub release_margin_percent: u8,
-}
-
-impl Default for QuotaConfig {
-    fn default() -> Self {
-        QuotaConfig {
-            enabled: false,
-            max_resident_memory_percent: None,
-            max_disk_usage_percent: None,
-            release_margin_percent: DEFAULT_RELEASE_MARGIN_PERCENT,
-        }
-    }
+    pub release_margin_percent: Option<u8>,
 }
 
 impl QuotaConfig {
@@ -74,7 +64,10 @@ impl QuotaConfig {
         QuotaLimits {
             max_resident_memory_percent,
             max_disk_usage_percent,
-            release_margin_percent,
+            // Resolved here, next to `enabled`, so enforcement never has to know
+            // that the margin was left to us to pick.
+            release_margin_percent: release_margin_percent
+                .unwrap_or(DEFAULT_RELEASE_MARGIN_PERCENT),
         }
     }
 }
