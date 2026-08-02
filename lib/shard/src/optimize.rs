@@ -216,10 +216,19 @@ pub fn proxy_vector_name_changes(proxies: &[LockedSegment]) -> ProxyVectorNameCh
 /// Warn: this function might be _VERY_ CPU intensive,
 /// so it is necessary to avoid any locks inside this part of the code
 ///
+/// `temp_path` and `space_estimate` are used by [`recheck_free_space`] to
+/// re-validate available disk between the long phases (`update`,
+/// `populate_vector_storages`, `build`) so that we abort with a clean
+/// "No space left on device" error rather than crashing inside the
+/// segment builder if the disk fills up mid-optimization. The watchdog
+/// enforces remaining headroom (precheck_available - space_needed), so
+/// it does NOT trip on the optimizer's own expected writes.
+///
 /// Returns the newly constructed optimized segment.
 #[allow(clippy::too_many_arguments)]
 fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     factory: &F,
+    optimizer_name: &str,
     input_segments: &[LockedSegment], // Segments to optimize/merge into one
     output_segment_uuid: Uuid,        // The UUID of the resulting optimized segment
     deferred_internal_id: Option<PointOffsetType>,
@@ -230,6 +239,8 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     hw_counter: &HardwareCounterCell,
     progress: ProgressTracker,
     segments_path: &Path,
+    temp_path: &Path,
+    space_estimate: OptimizationSpaceEstimate,
 ) -> OperationResult<Segment> {
     let mut segment_builder = factory.create_segment_builder(input_segments)?;
 
@@ -286,6 +297,13 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         drop(progress_copy_data);
     }
 
+    // Mid-flight watchdog: copying segment data may have consumed a lot of
+    // disk, and other tenants may have done the same in parallel. Re-check
+    // before we kick off the (longer) HNSW indexing phase. We compare
+    // against expected headroom, not the original estimate, because the
+    // optimizer itself is expected to consume the estimate by design.
+    recheck_free_space(optimizer_name, temp_path, space_estimate)?;
+
     let index_changes = proxy_index_changes(proxies);
 
     // Apply index changes to segment builder
@@ -309,6 +327,13 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     progress_populate_storages.start();
     segment_builder.populate_vector_storages()?;
     drop(progress_populate_storages);
+
+    // Mid-flight watchdog: vector storage population may have written a
+    // significant amount of data. Re-check before the HNSW build phase,
+    // which is both the longest phase and the one that produces the link
+    // tables that historically blow up disk usage past the pre-flight
+    // estimate (see review of <https://github.com/qdrant/qdrant/pull/4578>).
+    recheck_free_space(optimizer_name, temp_path, space_estimate)?;
 
     // 000 - acquired
     // +++ - blocked on waiting
@@ -427,6 +452,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
 #[allow(clippy::too_many_arguments)]
 fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     factory: &F,
+    optimizer_name: &str,
     optimizing_segments: Vec<LockedSegment>,
     output_segment_uuid: Uuid,
     deferred_internal_id: Option<PointOffsetType>,
@@ -437,6 +463,8 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     hw_counter: &HardwareCounterCell,
     progress: ProgressTracker,
     segments_path: &Path,
+    temp_path: &Path,
+    space_estimate: OptimizationSpaceEstimate,
 ) -> OperationResult<(Segment, DeletedPoints)> {
     check_process_stopped(stopped)?;
 
@@ -444,6 +472,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
 
     let optimized_segment = build_new_segment(
         factory,
+        optimizer_name,
         &optimizing_segments,
         output_segment_uuid,
         deferred_internal_id,
@@ -454,6 +483,8 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
         hw_counter,
         progress,
         segments_path,
+        temp_path,
+        space_estimate,
     )?;
 
     // Avoid unnecessary point removing in the critical section:
@@ -644,12 +675,49 @@ fn finish_optimization(
     Ok(point_count)
 }
 
-/// Returns error if segment size is larger than available disk space
+/// Minimum free disk space we want to keep available at any point during the
+/// slow part of an optimization. If the available space drops below this
+/// threshold mid-flight, we abort the optimization with a canonical
+/// `"No space left on device:"` error so we never let the segment builder
+/// crash on a raw `ENOSPC`.
+///
+/// This buffer is intentionally small: the accurate size estimation is done
+/// up-front in [`check_segments_size`]. This watchdog only catches the case
+/// where an external process (or a parallel optimization) consumed disk
+/// space between the pre-flight check and now.
+const OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Outcome of [`check_segments_size`] used by the mid-flight watchdog.
+///
+/// We pass both numbers around (rather than just the single `space_needed`
+/// estimate) so that [`recheck_free_space`] can enforce **remaining
+/// headroom** rather than the full initial estimate. Without
+/// `space_available_at_precheck` we can't tell the difference between
+/// "the optimizer wrote the bytes we expected it to write" (healthy)
+/// and "an external process consumed disk on top of our writes"
+/// (the only thing the watchdog should care about).
+#[derive(Copy, Clone, Debug)]
+struct OptimizationSpaceEstimate {
+    /// Estimated bytes the optimization will consume on disk
+    /// (`2 * total_input_segment_size`). `None` if the estimate failed.
+    space_needed: Option<u64>,
+    /// Available bytes at `temp_path` observed during the pre-flight check.
+    /// `None` if `fs4::available_space` failed.
+    space_available_at_precheck: Option<u64>,
+}
+
+/// Returns error if segment size is larger than available disk space.
+///
+/// On success, returns the estimate plus the observed pre-flight free
+/// space. The mid-flight watchdog ([`recheck_free_space`]) consumes both
+/// to enforce the **headroom** the optimizer expects to preserve, rather
+/// than the full pre-flight estimate (which the optimizer itself is
+/// allowed to consume by design).
 fn check_segments_size(
     optimizer_name: &str,
     optimizing_segments: &[LockedSegment],
     temp_path: &Path,
-) -> OperationResult<()> {
+) -> OperationResult<OptimizationSpaceEstimate> {
     // Counting up how much space do the segments being optimized actually take on the fs.
     // If there was at least one error while reading the size, this will be `None`.
     let mut space_occupied = Some(0u64);
@@ -717,11 +785,17 @@ fn check_segments_size(
                 );
             }
             if space_available < space_needed {
+                // Lead with `No space left on device:` so this error is
+                // surfaced consistently with the WAL/insertion path
+                // (`DiskUsageWatcher`) and matches the assertion in
+                // `tests/e2e_tests/test_low_disk.py`.
                 return Err(
                     segment::common::operation_error::OperationError::service_error(format!(
-                        "Not enough space available for optimization, needed: {}, available: {}",
+                        "No space left on device: optimization '{optimizer_name}' aborted, \
+                         needed: {}, available: {} in '{}'",
                         bytes_to_human(space_needed as usize),
                         bytes_to_human(space_available as usize),
+                        temp_path.display(),
                     )),
                 );
             }
@@ -731,6 +805,112 @@ fn check_segments_size(
                 "Could not estimate available storage space in `{optimizer_name}`; will try optimizing anyway",
             );
         }
+    }
+
+    Ok(OptimizationSpaceEstimate {
+        space_needed,
+        space_available_at_precheck: space_available,
+    })
+}
+
+/// Computes the **headroom** the optimizer expects to preserve on the
+/// `temp_path` filesystem during its slow phases.
+///
+/// `headroom = max(precheck_available - space_needed, safety_floor)`
+///
+/// In other words: at any mid-flight checkpoint, the disk should still
+/// have at least as much free space as we _hadn't_ planned to consume,
+/// minus the safety floor. If it has less, *some external party*
+/// consumed disk on top of our writes (parallel optimization, snapshot,
+/// WAL growth, neighbouring service, ...) and the run is no longer safe
+/// to continue.
+///
+/// When the pre-flight failed to compute either value, we fall back to
+/// the safety floor only. That keeps the watchdog non-trivial even on
+/// hosts where `statvfs` is flaky, while never tightening the contract
+/// the pre-flight already accepted.
+fn expected_headroom_bytes(estimate: OptimizationSpaceEstimate) -> u64 {
+    estimate
+        .space_available_at_precheck
+        .unwrap_or(0)
+        .saturating_sub(estimate.space_needed.unwrap_or(0))
+        .max(OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES)
+}
+
+/// Mid-flight watchdog. Re-checks that there is still enough **headroom**
+/// at `temp_path` to keep the optimization running.
+///
+/// Pre-flight [`check_segments_size`] only runs once at the start of an
+/// optimization. The slow part (vector storage population + HNSW indexing)
+/// can take many minutes, during which:
+///
+/// * other parallel optimizations on the same shard may consume disk,
+/// * external processes (snapshots, WAL growth, neighboring services) may
+///   consume disk,
+/// * the optimization itself may exceed the conservative `2 * x`
+///   pre-flight estimate when the input is unusually compressible or when
+///   HNSW link tables turn out larger than the raw vector data.
+///
+/// In all those cases we want to fail with a clean
+/// `"No space left on device:"` error rather than let the segment builder
+/// panic when a `write(2)` returns `ENOSPC`. This is what xhjkl flagged in
+/// the review of <https://github.com/qdrant/qdrant/pull/4578> as the main
+/// known weakness of the up-front-only check.
+///
+/// Errors from `fs4::available_space` are intentionally treated as "skip"
+/// (returns `Ok(())`) so a transient `statvfs` failure can't itself abort
+/// an otherwise healthy optimization.
+///
+/// We compare against **headroom**, not the original `space_needed`,
+/// because the optimizer itself consumes that budget by design — using
+/// `space_needed` directly would trip the watchdog on every healthy run
+/// past the first phase (caught by CodeRabbit on the original review of
+/// this PR).
+fn recheck_free_space(
+    optimizer_name: &str,
+    temp_path: &Path,
+    estimate: OptimizationSpaceEstimate,
+) -> OperationResult<()> {
+    recheck_free_space_with(optimizer_name, temp_path, estimate, |p| {
+        fs4::available_space(p).ok()
+    })
+}
+
+/// Test seam for [`recheck_free_space`] that lets unit tests inject the
+/// `available_space` lookup. Production callers go through
+/// [`recheck_free_space`].
+fn recheck_free_space_with<F>(
+    optimizer_name: &str,
+    temp_path: &Path,
+    estimate: OptimizationSpaceEstimate,
+    available_space_fn: F,
+) -> OperationResult<()>
+where
+    F: FnOnce(&Path) -> Option<u64>,
+{
+    let space_available = match available_space_fn(temp_path) {
+        Some(available) => available,
+        None => {
+            log::debug!(
+                "Could not re-check available storage space in `{}`",
+                temp_path.display(),
+            );
+            return Ok(());
+        }
+    };
+
+    let required_headroom = expected_headroom_bytes(estimate);
+
+    if space_available < required_headroom {
+        return Err(
+            segment::common::operation_error::OperationError::service_error(format!(
+                "No space left on device: optimization '{optimizer_name}' aborted mid-flight, \
+                 only {} free in '{}' (need at least {} headroom)",
+                bytes_to_human(space_available as usize),
+                temp_path.display(),
+                bytes_to_human(required_headroom as usize),
+            )),
+        );
     }
 
     Ok(())
@@ -783,7 +963,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         return Ok(OptimizationResult { points_count: 0 });
     }
 
-    check_segments_size(optimizer_name, &input_segments, &paths.temp_path)?;
+    let space_estimate = check_segments_size(optimizer_name, &input_segments, &paths.temp_path)?;
 
     check_process_stopped(stopped)?;
 
@@ -882,6 +1062,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     // SLOW PART: create single optimized segment and propagate all new changes to it
     let build_result = optimize_segment_propagate_changes(
         factory,
+        optimizer_name,
         input_segments,
         output_segment_uuid,
         deferred_internal_id,
@@ -892,6 +1073,8 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         &hw_counter,
         progress,
         &paths.segments_path,
+        &paths.temp_path,
+        space_estimate,
     );
 
     let (optimized_segment, already_remove_points) = match build_result {
@@ -943,4 +1126,168 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     timer.set_success(true);
 
     Ok(OptimizationResult { points_count })
+}
+
+#[cfg(test)]
+mod disk_watchdog_tests {
+    //! Tests for the optimizer's mid-flight disk-space watchdog
+    //! ([`recheck_free_space`]). These tests do not exercise an actual
+    //! optimization; they pin the watchdog's threshold semantics
+    //! (headroom, not full estimate) and the canonical
+    //! `"No space left on device:"` error format.
+    //!
+    //! Regression target: <https://github.com/qdrant/qdrant/issues/4297>.
+    //! In particular, [`watchdog_does_not_trip_on_optimizers_own_writes`]
+    //! pins the bug fix called out by CodeRabbit on the original review
+    //! of this PR — the optimizer is *expected* to consume `space_needed`
+    //! bytes by design, so the watchdog must enforce **headroom** rather
+    //! than the original full estimate.
+
+    use std::cell::Cell;
+    use std::path::Path;
+
+    use super::{
+        OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES, OptimizationSpaceEstimate, expected_headroom_bytes,
+        recheck_free_space_with,
+    };
+
+    fn estimate(space_needed: u64, precheck_available: u64) -> OptimizationSpaceEstimate {
+        OptimizationSpaceEstimate {
+            space_needed: Some(space_needed),
+            space_available_at_precheck: Some(precheck_available),
+        }
+    }
+
+    fn unknown_estimate() -> OptimizationSpaceEstimate {
+        OptimizationSpaceEstimate {
+            space_needed: None,
+            space_available_at_precheck: None,
+        }
+    }
+
+    fn run(
+        temp_path: &Path,
+        est: OptimizationSpaceEstimate,
+        available: Option<u64>,
+    ) -> Result<(), String> {
+        recheck_free_space_with("test-optimizer", temp_path, est, |_| available)
+            .map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn headroom_is_precheck_minus_needed_clamped_to_safety_floor() {
+        // Healthy: 100 MiB available, plan to consume 60 MiB → 40 MiB
+        // expected to remain free at all times. 40 MiB > 8 MiB floor, so
+        // headroom is the slack value.
+        let est = estimate(60 << 20, 100 << 20);
+        assert_eq!(expected_headroom_bytes(est), 40 << 20);
+
+        // Tight: 10 MiB available, plan to consume 9 MiB → only 1 MiB
+        // slack, but the safety floor of 8 MiB takes over. The watchdog
+        // never tightens below the floor (the up-front check already
+        // accepted this run, we don't second-guess it mid-flight).
+        let est = estimate(9 << 20, 10 << 20);
+        assert_eq!(expected_headroom_bytes(est), OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES);
+
+        // Unknown estimate: floor only.
+        assert_eq!(
+            expected_headroom_bytes(unknown_estimate()),
+            OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES,
+        );
+    }
+
+    #[test]
+    fn watchdog_does_not_trip_on_optimizers_own_writes() {
+        // This is the regression test for the CodeRabbit-flagged bug.
+        //
+        // Pre-flight: 100 MiB available, plan to consume 60 MiB → 40 MiB
+        //             headroom.
+        // Mid-flight: optimizer has written ~50 MiB of its own data, so
+        //             only 50 MiB free. That's less than the original
+        //             `space_needed` (60 MiB) but *more* than the
+        //             headroom (40 MiB). The watchdog must accept.
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let est = estimate(60 << 20, 100 << 20);
+        run(tmp.path(), est, Some(50 << 20)).expect(
+            "watchdog must not trip when free space drops to a value the \
+             optimizer was expected to consume by design",
+        );
+    }
+
+    #[test]
+    fn watchdog_trips_when_external_consumer_eats_into_headroom() {
+        // Pre-flight: 100 MiB available, plan to consume 60 MiB → 40 MiB
+        //             headroom.
+        // Mid-flight: someone else (parallel optimizer, snapshot, WAL,
+        //             external process) consumed enough that only 30 MiB
+        //             is free, below the 40 MiB headroom. The watchdog
+        //             must abort with the canonical OOD message.
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let est = estimate(60 << 20, 100 << 20);
+        let err = run(tmp.path(), est, Some(30 << 20)).unwrap_err();
+
+        assert!(
+            err.contains("No space left on device:"),
+            "must lead with canonical OOD prefix to match \
+             tests/e2e_tests/test_low_disk.py; got: {err}",
+        );
+        assert!(
+            err.contains("test-optimizer"),
+            "must name the optimizer for log triage; got: {err}",
+        );
+        assert!(
+            err.contains(&tmp.path().display().to_string()),
+            "must include the temp path for log triage; got: {err}",
+        );
+    }
+
+    #[test]
+    fn watchdog_trips_below_safety_floor_even_without_estimate() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        // No estimate at all; only the 8 MiB floor applies.
+        let err = run(tmp.path(), unknown_estimate(), Some(1024)).unwrap_err();
+        assert!(err.contains("No space left on device:"), "got: {err}");
+    }
+
+    #[test]
+    fn watchdog_skips_on_statvfs_failure() {
+        // `available_space_fn` returning `None` simulates a transient
+        // statvfs/GetDiskFreeSpaceEx failure. The watchdog must NOT abort
+        // an otherwise healthy optimization on its own observability
+        // hiccup.
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let est = estimate(60 << 20, 100 << 20);
+        run(tmp.path(), est, None).expect(
+            "watchdog must skip (return Ok) when available_space lookup \
+             itself fails; we never want to abort an otherwise healthy \
+             optimization on a transient observability hiccup",
+        );
+    }
+
+    #[test]
+    fn watchdog_evaluates_available_space_lookup_exactly_once() {
+        // Make sure the production pathway never calls `statvfs` more
+        // than once per checkpoint (it's a syscall on every platform).
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let calls = Cell::new(0u32);
+        let est = estimate(60 << 20, 100 << 20);
+        let _ = recheck_free_space_with("test-optimizer", tmp.path(), est, |_| {
+            calls.set(calls.get() + 1);
+            Some(50 << 20)
+        });
+        assert_eq!(calls.get(), 1, "available_space_fn must be called exactly once");
+    }
+
+    #[test]
+    fn safety_buffer_constant_stays_in_sane_range() {
+        assert!(
+            OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES >= 1024 * 1024,
+            "watchdog buffer must be at least 1 MB or it's pointless",
+        );
+        assert!(
+            OPTIMIZER_DISK_WATCHDOG_BUFFER_BYTES <= 64 * 1024 * 1024,
+            "watchdog buffer must stay small or it'll false-positive on \
+             tight test environments",
+        );
+    }
 }
