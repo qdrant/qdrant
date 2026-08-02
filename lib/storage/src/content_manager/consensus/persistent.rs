@@ -526,7 +526,7 @@ mod tests {
         state
             .apply_state_update(|state| {
                 state.conf_state.voters = vec![old_first_peer_id, this_peer_id];
-                // simulate the node going down mid membership change, alll three
+                // simulate the node going down mid membership change, all three
                 // joint consensus fields are non empty and must be wiped on reinit.
                 state.conf_state.voters_outgoing = vec![old_first_peer_id];
                 state.conf_state.learners_next = vec![this_peer_id];
