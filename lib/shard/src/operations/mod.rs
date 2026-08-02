@@ -64,11 +64,15 @@ impl CollectionUpdateOperations {
     /// Whether applying this operation grows what the node holds, which is what
     /// [`crate::quota`] caps.
     ///
-    /// Deletes are excluded so a node that has hit its limit can still be emptied
-    /// — refusing them would leave no way out. So are the shard-transfer syncs:
-    /// a transfer is sized up once before it starts, and refusing its batches
-    /// partway would abandon work that is nearly done, only for the whole
-    /// transfer to be retried from the beginning.
+    /// Only deleting whole points is excluded, and it has to be: it is the one
+    /// way out of a node that has hit its limit. Deleting a vector or a payload
+    /// key is not — copy-on-write rewrites the point to drop a field, so it
+    /// grows storage before anything is reclaimed.
+    ///
+    /// Shard-transfer syncs are excluded as well: a transfer is sized up once
+    /// before it starts, and refusing its batches partway would abandon work
+    /// that is nearly done, only for the whole transfer to be retried from the
+    /// beginning.
     pub fn consumes_quota(&self) -> bool {
         match self {
             Self::PointOperation(op) => match op {
@@ -82,15 +86,17 @@ impl CollectionUpdateOperations {
             },
             Self::VectorOperation(op) => match op {
                 vector_ops::VectorOperations::UpdateVectors(_) => true,
+                // With CoW all modifications to points create more load.
                 vector_ops::VectorOperations::DeleteVectors(..)
-                | vector_ops::VectorOperations::DeleteVectorsByFilter(..) => false,
+                | vector_ops::VectorOperations::DeleteVectorsByFilter(..) => true,
             },
             Self::PayloadOperation(op) => match op {
                 payload_ops::PayloadOps::SetPayload(_)
                 | payload_ops::PayloadOps::OverwritePayload(_) => true,
+                // With CoW all modifications to points create more load.
                 payload_ops::PayloadOps::DeletePayload(_)
                 | payload_ops::PayloadOps::ClearPayload { .. }
-                | payload_ops::PayloadOps::ClearPayloadByFilter(_) => false,
+                | payload_ops::PayloadOps::ClearPayloadByFilter(_) => true,
             },
             // Both arrive already committed through consensus, on a path that
             // does not go past a quota check — they are gated before the
