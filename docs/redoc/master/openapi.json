@@ -13721,6 +13721,33 @@
           }
         }
       },
+      "QuotaConfig": {
+        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true.",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether the limits below are enforced.",
+            "default": false,
+            "type": "boolean"
+          },
+          "max_resident_memory_percent": {
+            "description": "Reject memory-consuming updates once process resident memory reaches this percentage of total system memory (or of the cgroup limit, if one applies).",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming updates once the filesystem hosting the storage directory is filled to this percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
       "ClusterOperations": {
         "anyOf": [
           {
@@ -16868,33 +16895,6 @@
           },
           "usage": {
             "$ref": "#/components/schemas/QuotaUsage"
-          }
-        }
-      },
-      "QuotaConfig": {
-        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true.",
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "description": "Whether the limits below are enforced.",
-            "default": false,
-            "type": "boolean"
-          },
-          "max_resident_memory_percent": {
-            "description": "Reject memory-consuming updates once process resident memory reaches this percentage of total system memory (or of the cgroup limit, if one applies).",
-            "type": "integer",
-            "format": "uint8",
-            "maximum": 100,
-            "minimum": 1,
-            "nullable": true
-          },
-          "max_disk_usage_percent": {
-            "description": "Reject disk-consuming updates once the filesystem hosting the storage directory is filled to this percentage of its capacity.",
-            "type": "integer",
-            "format": "uint8",
-            "maximum": 100,
-            "minimum": 1,
-            "nullable": true
           }
         }
       },

@@ -130,11 +130,13 @@ def test_telemetry_detail(level: int):
     assert endpoint['200']['count'] > 0
 
     if level == 0:
-        assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests'}
+        # The quota is reported at every level: it is three scalars, and it is
+        # what explains an update being rejected.
+        assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests', 'quota'}
         assert set(result['collections'].keys()) == {'number_of_collections'}
         return
     else:
-        assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests', 'memory', 'hardware', 'search_pool'}
+        assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests', 'memory', 'hardware', 'search_pool', 'quota'}
         assert set(result['collections'].keys()) == {'number_of_collections', 'collections', 'snapshots'}
 
     last_queried = endpoint['200']['last_responded'].replace('Z', '+00:00')
