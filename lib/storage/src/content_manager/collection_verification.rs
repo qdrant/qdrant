@@ -2,14 +2,13 @@ use std::iter;
 use std::sync::Arc;
 
 use collection::operations::verification::{
-    StrictModeVerification, VerificationPass, check_search_batch_size, check_timeout,
-    new_unchecked_verification_pass,
+    StrictModeVerification, VerificationPass, check_resident_memory, check_search_batch_size,
+    check_timeout, new_unchecked_verification_pass,
 };
 
 use super::errors::StorageError;
 use super::toc::TableOfContent;
 use crate::dispatcher::Dispatcher;
-use crate::quota::QuotaLimits;
 use crate::rbac::{AccessRequirements, Auth};
 
 /// Checks strict mode using `TableOfContent` instead of `Dispatcher`.
@@ -72,17 +71,13 @@ where
     // high-RPS request paths don't hammer `statvfs` — the checks run cheaply on
     // the hot path.
     if any_consumes_memory {
-        // What this collection sets in strict mode can tighten the global quota
-        // for it, never lift it; whatever it leaves unset the quota governs.
-        let overrides = strict_mode_config
-            .as_ref()
-            .map(|config| QuotaLimits {
-                max_resident_memory_percent: config.max_resident_memory_percent,
-                max_disk_usage_percent: None,
-            })
-            .unwrap_or_default();
+        // The collection's own memory limit, which only tightens the quota below
+        // for this one collection. Deprecated, and independent of it.
+        if let Some(strict_mode_config) = &strict_mode_config {
+            check_resident_memory(strict_mode_config)?;
+        }
 
-        toc.quota_manager().check_update(overrides)?;
+        toc.quota_manager().check_update()?;
     }
 
     if let (Some(strict_mode_config), Some(timeout)) = (&strict_mode_config, timeout) {

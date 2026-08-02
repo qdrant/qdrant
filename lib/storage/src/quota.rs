@@ -8,6 +8,6 @@
 //! consensus, and exposed over the `/quotas` API.
 
 pub use shard::quota::{
-    QUOTA_CONFIG_FILE, QuotaConfig, QuotaError, QuotaLimits, QuotaManager, QuotaResult,
-    QuotaStatus, QuotaUsage, global, set_global,
+    QUOTA_CONFIG_FILE, QuotaConfig, QuotaError, QuotaManager, QuotaResult, QuotaStatus, QuotaUsage,
+    global, set_global,
 };

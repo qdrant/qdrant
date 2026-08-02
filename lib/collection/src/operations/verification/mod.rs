@@ -231,6 +231,42 @@ pub fn check_search_batch_size(
     )
 }
 
+/// Reject a memory-consuming update when process resident memory has reached the
+/// collection's `max_resident_memory_percent`.
+///
+/// Superseded by the node-wide quota, which caps the same resource for every
+/// collection whether or not strict mode is on. This only tightens that cap for
+/// one collection, and is deliberately self-contained so that retiring the
+/// setting is a matter of deleting this function and its single caller.
+///
+/// The measurement comes from the quota manager, the node's single reader of
+/// process memory, so the two checks share one reading rather than each taking
+/// their own.
+pub fn check_resident_memory(strict_mode_config: &StrictModeConfig) -> CollectionResult<()> {
+    let Some(limit) = strict_mode_config.max_resident_memory_percent else {
+        return Ok(());
+    };
+
+    // Unreadable stats let the update through: a limit we cannot evaluate must
+    // not become a limit of zero.
+    let Some(used_percent) = shard::quota::global().resident_memory_percent(Some(limit)) else {
+        return Ok(());
+    };
+
+    if used_percent < limit {
+        return Ok(());
+    }
+
+    Err(CollectionError::strict_mode(
+        format!(
+            "Resident memory usage is at {used_percent}% of total memory, \
+             exceeding the configured limit of {limit}%",
+        ),
+        "Reduce memory usage (e.g. delete points or drop collections), or raise \
+         `max_resident_memory_percent` in the strict mode config of this collection.",
+    ))
+}
+
 pub(crate) fn check_bool_opt(
     value: Option<bool>,
     allowed: Option<bool>,

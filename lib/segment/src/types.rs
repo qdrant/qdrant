@@ -1574,7 +1574,6 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub max_resident_memory_percent: Option<u8>,
-
 }
 
 impl From<StrictModeConfig> for StrictModeConfigOutput {

@@ -10,8 +10,7 @@ pub enum Resource {
 }
 
 impl Resource {
-    /// The parameter governing this resource, named the same in the quota config
-    /// and in a strict mode config.
+    /// The parameter governing this resource in the quota config.
     fn parameter(self) -> &'static str {
         match self {
             Resource::ResidentMemory => "max_resident_memory_percent",
@@ -21,17 +20,15 @@ impl Resource {
 
     /// The user-facing rejection, naming the condition that tripped and the
     /// parameter governing it.
-    pub(super) fn rejected(self, used_percent: u8, limit: EffectiveLimit) -> QuotaError {
-        let EffectiveLimit { percent, source } = limit;
-
+    pub(super) fn rejected(self, used_percent: u8, limit: u8) -> QuotaError {
         let condition = match self {
             Resource::ResidentMemory => format!(
                 "Resident memory usage is at {used_percent}% of total memory, \
-                 exceeding the configured limit of {percent}%",
+                 exceeding the configured limit of {limit}%",
             ),
             Resource::DiskUsage => format!(
                 "Disk usage is at {used_percent}% of total capacity, \
-                 exceeding the configured limit of {percent}%",
+                 exceeding the configured limit of {limit}%",
             ),
         };
 
@@ -43,66 +40,9 @@ impl Resource {
         };
 
         QuotaError::LimitReached(format!(
-            "{condition}. Help: {remedy}, or raise {}.",
-            source.describe(self.parameter()),
+            "{condition}. Help: {remedy}, or raise `{}` in the global quota config.",
+            self.parameter(),
         ))
-    }
-}
-
-/// Where an effective limit was configured, so a rejected request can point at
-/// the knob that has to change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LimitSource {
-    /// A per-request override, i.e. the collection's `strict_mode_config`.
-    Override,
-    /// Cluster-wide quota config.
-    Quota,
-}
-
-impl LimitSource {
-    fn describe(self, parameter: &str) -> String {
-        match self {
-            LimitSource::Override => {
-                format!("`{parameter}` in the strict mode config of this collection")
-            }
-            LimitSource::Quota => format!("`{parameter}` in the global quota config"),
-        }
-    }
-}
-
-/// A limit that is in effect, and where it came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EffectiveLimit {
-    pub percent: u8,
-    pub source: LimitSource,
-}
-
-impl EffectiveLimit {
-    /// Resolve one limit from the quota's value and a caller's override.
-    ///
-    /// The override can only tighten — the stricter of the two wins — so no
-    /// caller can grant itself more than the cluster-wide quota allows. A
-    /// resource the quota leaves uncapped is governed by the override alone.
-    pub fn resolve(override_limit: Option<u8>, quota: Option<u8>) -> Option<Self> {
-        let override_limit = override_limit.map(|percent| EffectiveLimit {
-            percent,
-            source: LimitSource::Override,
-        });
-        let quota = quota.map(|percent| EffectiveLimit {
-            percent,
-            source: LimitSource::Quota,
-        });
-
-        match (override_limit, quota) {
-            (Some(override_limit), Some(quota)) if override_limit.percent < quota.percent => {
-                Some(override_limit)
-            }
-            // Includes the tie: when both name the same percentage it is the
-            // quota that binds, and raising the override would not lift the
-            // rejection — so the message has to point at the quota.
-            (_, Some(quota)) => Some(quota),
-            (override_limit, None) => override_limit,
-        }
     }
 }
 
@@ -127,44 +67,7 @@ pub fn total_memory_bytes() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::LimitSource::{Override, Quota};
     use super::*;
-
-    fn limit(percent: u8, source: LimitSource) -> EffectiveLimit {
-        EffectiveLimit { percent, source }
-    }
-
-    #[test]
-    fn an_override_can_only_tighten_the_quota() {
-        // Stricter than the quota: the override binds
-        assert_eq!(
-            EffectiveLimit::resolve(Some(70), Some(90)),
-            Some(limit(70, Override)),
-        );
-
-        // Laxer: the quota still binds. Anyone who can edit a collection must not
-        // be able to buy it more of a node-wide resource than the quota allows.
-        assert_eq!(
-            EffectiveLimit::resolve(Some(99), Some(90)),
-            Some(limit(90, Quota)),
-        );
-        // Equal: the quota is the one that has to be raised to lift it
-        assert_eq!(
-            EffectiveLimit::resolve(Some(90), Some(90)),
-            Some(limit(90, Quota)),
-        );
-
-        // Set on one side only, each applies alone
-        assert_eq!(
-            EffectiveLimit::resolve(None, Some(90)),
-            Some(limit(90, Quota))
-        );
-        assert_eq!(
-            EffectiveLimit::resolve(Some(90), None),
-            Some(limit(90, Override))
-        );
-        assert_eq!(EffectiveLimit::resolve(None, None), None);
-    }
 
     #[test]
     fn utilization_is_a_clamped_percentage() {

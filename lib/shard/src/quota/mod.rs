@@ -12,9 +12,10 @@
 //! optimizer sizing up a merge, the WAL checking it has room to write. Nothing
 //! else calls `statvfs` or reads process memory.
 //!
-//! Code with limits of its own — a collection's strict mode config — passes them
-//! in as [`QuotaLimits`] overrides. An override can only tighten, so no
-//! per-collection setting can lift a cluster-wide limit.
+//! The quota is the only limit it enforces. Code with a limit of its own — a
+//! collection's deprecated `max_resident_memory_percent` — enforces that itself
+//! against a measurement taken from here, so no per-collection setting can lift
+//! a cluster-wide limit by going through this.
 
 mod check;
 mod config;

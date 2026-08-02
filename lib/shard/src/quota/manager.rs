@@ -8,7 +8,7 @@ use ahash::AHashMap;
 use parking_lot::{Mutex, RwLock};
 use validator::Validate as _;
 
-use super::check::{EffectiveLimit, Resource, percent_of, total_memory_bytes};
+use super::check::{Resource, percent_of, total_memory_bytes};
 use super::config::{QuotaConfig, QuotaLimits};
 use super::error::{QuotaError, QuotaResult};
 use super::meter::{Meter, reusable};
@@ -179,47 +179,47 @@ impl QuotaManager {
         }
     }
 
-    /// Whether the node has room to take on more data, against the quota alone.
+    /// Whether the node has room to take on more data.
     ///
     /// For work that lands bytes here without being an update — recovering a
     /// dead replica pulls a whole shard copy onto this node. Unlike
     /// [`QuotaManager::fits_on_disk`] the limits do apply: taking on a replica
     /// is not what frees a full node, so there is no deadlock to avoid.
     pub fn check_capacity(&self) -> QuotaResult<()> {
-        self.check_update(QuotaLimits::default())
+        self.check_update()
     }
 
-    /// Reject an update that consumes memory or disk when it would run past an
-    /// effective limit.
+    /// Reject an update that consumes memory or disk when it would run past a
+    /// configured limit.
     ///
-    /// `overrides` are the caller's own limits, in practice the
-    /// `strict_mode_config` of the collection being written to. They can only
-    /// tighten: the quota is a ceiling, and governs whatever they leave unset.
-    pub fn check_update(&self, overrides: QuotaLimits) -> QuotaResult<()> {
-        let quota = self.config().limits();
+    /// The quota is the only limit consulted. A collection that sets a stricter
+    /// one of its own enforces it separately, so this cannot be relaxed per
+    /// caller.
+    pub fn check_update(&self) -> QuotaResult<()> {
+        let QuotaLimits {
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+        } = self.config().limits();
 
-        let memory = EffectiveLimit::resolve(
-            overrides.max_resident_memory_percent,
-            quota.max_resident_memory_percent,
-        );
-        let disk = EffectiveLimit::resolve(
-            overrides.max_disk_usage_percent,
-            quota.max_disk_usage_percent,
-        );
-
-        check(Resource::ResidentMemory, memory, |limit| {
-            self.resident_memory_percent(limit)
-        })?;
-        check(Resource::DiskUsage, disk, |limit| {
+        check(
+            Resource::ResidentMemory,
+            max_resident_memory_percent,
+            |limit| self.resident_memory_percent(limit),
+        )?;
+        check(Resource::DiskUsage, max_disk_usage_percent, |limit| {
             self.disk_usage_percent(&self.storage_path, limit)
         })?;
 
         Ok(())
     }
 
-    /// Process resident memory as a percentage of total system memory. `limit` is
-    /// what it will be compared against, `None` when reading for reporting.
-    fn resident_memory_percent(&self, limit: Option<u8>) -> Option<u8> {
+    /// Process resident memory as a percentage of total system memory, or `None`
+    /// when it cannot be read.
+    ///
+    /// `limit` is what the reading will be compared against — `None` when reading
+    /// for reporting. A reading at or above it is never served from the cache, so
+    /// a caller that is rejecting updates sees memory being freed at once.
+    pub fn resident_memory_percent(&self, limit: Option<u8>) -> Option<u8> {
         self.memory.measure(
             |percent| reusable(percent, limit),
             || {
@@ -265,18 +265,18 @@ impl QuotaManager {
 /// measured at all.
 fn check(
     resource: Resource,
-    limit: Option<EffectiveLimit>,
+    limit: Option<u8>,
     measure: impl FnOnce(Option<u8>) -> Option<u8>,
 ) -> QuotaResult<()> {
     let Some(limit) = limit else {
         return Ok(());
     };
 
-    let Some(used_percent) = measure(Some(limit.percent)) else {
+    let Some(used_percent) = measure(Some(limit)) else {
         return Ok(());
     };
 
-    if used_percent < limit.percent {
+    if used_percent < limit {
         return Ok(());
     }
 
@@ -314,13 +314,6 @@ fn validate(config: &QuotaConfig) -> QuotaResult<()> {
 mod tests {
     use super::*;
 
-    /// A limit no real filesystem or process can satisfy, so a check against it
-    /// always rejects.
-    const UNSATISFIABLE: QuotaLimits = QuotaLimits {
-        max_resident_memory_percent: None,
-        max_disk_usage_percent: Some(1),
-    };
-
     #[test]
     fn persisted_config_takes_priority_over_settings() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
@@ -346,48 +339,27 @@ mod tests {
     }
 
     #[test]
-    fn disabled_quota_enforces_nothing() {
+    fn limits_only_apply_while_the_quota_is_enabled() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
-        let manager = QuotaManager::load_or_init(
-            dir.path(),
-            QuotaConfig {
-                enabled: false,
-                max_resident_memory_percent: Some(1),
-                max_disk_usage_percent: Some(1),
-            },
-        )
-        .unwrap();
+        // No real filesystem is less than 1% full, so this limit rejects
+        // everything — while it is in force.
+        let settings = QuotaConfig {
+            enabled: false,
+            max_disk_usage_percent: Some(1),
+            ..Default::default()
+        };
 
-        manager.check_update(QuotaLimits::default()).unwrap();
+        let manager = QuotaManager::load_or_init(dir.path(), settings).unwrap();
+        manager.check_update().unwrap();
 
-        // ... but an override that sets the same limit still does
-        assert!(manager.check_update(UNSATISFIABLE).is_err());
-    }
-
-    #[test]
-    fn an_enabled_quota_cannot_be_lifted_by_an_override() {
-        let dir = tempfile::Builder::new().tempdir().unwrap();
-        let manager = QuotaManager::load_or_init(
-            dir.path(),
-            QuotaConfig {
+        manager
+            .set_config(QuotaConfig {
                 enabled: true,
-                max_disk_usage_percent: Some(1),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let err = manager.check_update(QuotaLimits::default()).unwrap_err();
-        assert!(err.to_string().contains("global quota config"), "{err}");
-
-        // The quota is a ceiling: a laxer override does not buy this caller more
-        // disk, and the rejection keeps pointing at the quota as the way out.
-        let err = manager
-            .check_update(QuotaLimits {
-                max_disk_usage_percent: Some(100),
-                ..Default::default()
+                ..settings
             })
-            .unwrap_err();
+            .unwrap();
+
+        let err = manager.check_update().unwrap_err();
         assert!(err.to_string().contains("global quota config"), "{err}");
     }
 
