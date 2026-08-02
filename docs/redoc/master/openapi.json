@@ -13720,8 +13720,7 @@
             "$ref": "#/components/schemas/QuotaConfig"
           },
           "exceeded": {
-            "description": "Whether this node is at or over one of the enforced limits. Always false while the quota is disabled.",
-            "type": "boolean"
+            "$ref": "#/components/schemas/QuotaExceeded"
           }
         }
       },
@@ -13748,6 +13747,20 @@
             "format": "uint8",
             "maximum": 100,
             "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "QuotaExceeded": {
+        "description": "Which of the enforced limits a node is currently at or over.\n\nReported per resource because they are freed by different actions: disk by deleting or optimizing, memory by unloading. A single flag would not say which one to go and fix.\n\nA field is `null` when that resource is not capped — either the quota is disabled, or it sets no limit for it. That is deliberately distinct from `false`: a resource with no limit can never trip, so reporting it as \"within limits\" would invite an alert that can never fire.",
+        "type": "object",
+        "properties": {
+          "resident_memory": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "disk_usage": {
+            "type": "boolean",
             "nullable": true
           }
         }

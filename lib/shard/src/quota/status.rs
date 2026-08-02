@@ -45,9 +45,36 @@ pub struct PeerQuotaUsage {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 pub struct QuotaTelemetry {
     pub config: QuotaConfig,
-    /// Whether this node is at or over one of the enforced limits. Always false
-    /// while the quota is disabled.
-    pub exceeded: bool,
+    pub exceeded: QuotaExceeded,
+}
+
+/// Which of the enforced limits a node is currently at or over.
+///
+/// Reported per resource because they are freed by different actions: disk by
+/// deleting or optimizing, memory by unloading. A single flag would not say
+/// which one to go and fix.
+///
+/// A field is `null` when that resource is not capped — either the quota is
+/// disabled, or it sets no limit for it. That is deliberately distinct from
+/// `false`: a resource with no limit can never trip, so reporting it as "within
+/// limits" would invite an alert that can never fire.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
+pub struct QuotaExceeded {
+    pub resident_memory: Option<bool>,
+    pub disk_usage: Option<bool>,
+}
+
+impl QuotaExceeded {
+    /// Whether any enforced limit is reached, and so the node is refusing
+    /// updates.
+    pub fn any(&self) -> bool {
+        let Self {
+            resident_memory,
+            disk_usage,
+        } = self;
+
+        resident_memory.unwrap_or(false) || disk_usage.unwrap_or(false)
+    }
 }
 
 /// Utilization of the quota-managed resources **on this node alone** — memory

@@ -149,7 +149,7 @@ impl TelemetryCollector {
 
                 QuotaTelemetry {
                     config: manager.config(),
-                    exceeded: manager.is_exceeded(),
+                    exceeded: manager.exceeded(),
                 }
             });
 

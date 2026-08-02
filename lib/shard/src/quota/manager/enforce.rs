@@ -4,6 +4,7 @@ use super::QuotaManager;
 use crate::quota::check::Resource;
 use crate::quota::config::QuotaLimits;
 use crate::quota::error::QuotaResult;
+use crate::quota::status::QuotaExceeded;
 
 impl QuotaManager {
     /// Whether the node has room to take on more data.
@@ -16,13 +17,31 @@ impl QuotaManager {
         self.check_update()
     }
 
-    /// Whether this node is at or over one of the limits it enforces, and so is
-    /// currently refusing updates. Always false while the quota is disabled.
+    /// Which of the limits this node enforces it is at or over, `None` for a
+    /// resource it does not cap.
     ///
     /// For reporting. It measures the same way a check does, so a node sitting
     /// over its limit re-reads the resource rather than serving a stale figure.
-    pub fn is_exceeded(&self) -> bool {
-        self.check_update().is_err()
+    pub fn exceeded(&self) -> QuotaExceeded {
+        let QuotaLimits {
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+        } = self.config().limits();
+
+        QuotaExceeded {
+            resident_memory: max_resident_memory_percent.map(|limit| {
+                check(Resource::ResidentMemory, Some(limit), |limit| {
+                    self.resident_memory_percent(limit)
+                })
+                .is_err()
+            }),
+            disk_usage: max_disk_usage_percent.map(|limit| {
+                check(Resource::DiskUsage, Some(limit), |limit| {
+                    self.disk_usage_percent(&self.storage_path, limit)
+                })
+                .is_err()
+            }),
+        }
     }
 
     /// Reject an update that consumes memory or disk when it would run past a

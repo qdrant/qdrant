@@ -143,7 +143,7 @@ impl QdrantInternal for QdrantInternalService {
             result: Some(QuotaUsage {
                 resident_memory_percent: usage.resident_memory_percent.map(u32::from),
                 disk_usage_percent: usage.disk_usage_percent.map(u32::from),
-                exceeded: manager.is_exceeded(),
+                exceeded: manager.exceeded().any(),
             }),
             time: timing.elapsed().as_secs_f64(),
         };
