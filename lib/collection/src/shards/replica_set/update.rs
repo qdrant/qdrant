@@ -358,7 +358,21 @@ impl ShardReplicaSet {
         // Local is defined and can receive updates
         let local_is_updatable = local.is_some() && self.is_peer_updatable(this_peer_id);
 
+        // A resource quota describes this node, not the operation, so it only
+        // disqualifies the local replica from taking the write. The other
+        // replicas are on other machines and answer for themselves.
+        let local_quota_failure = (local_is_updatable && operation.consumes_quota())
+            .then(|| shard::quota::global().check_update().err())
+            .flatten();
+        let local_is_updatable = local_is_updatable && local_quota_failure.is_none();
+
         if updatable_remote_shards.is_empty() && !local_is_updatable {
+            // With nowhere else for the write to land, the quota is the answer
+            // the client gets, rather than a note about a deactivated replica.
+            if let Some(err) = local_quota_failure {
+                return Err(err.into());
+            }
+
             return Err(CollectionError::service_error(format!(
                 "The replica set for shard {} on peer {this_peer_id} has no active replica",
                 self.shard_id,
@@ -408,7 +422,7 @@ impl ShardReplicaSet {
         // completion. Holding the guard across a deferred-points wait would
         // deadlock concurrent shard transfers that need `local.write()`.
         // Proxy variants are transient and keep the inline-await path.
-        let all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
+        let mut all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
             match local.deref() {
                 Some(Shard::Local(local_shard)) if local_is_updatable => {
                     let outcome = local_shard
@@ -456,6 +470,13 @@ impl ShardReplicaSet {
                     res
                 }
             };
+
+        // Recorded as a failure of this peer, so the replica set treats a node
+        // over its quota exactly like one that went offline: deactivate it, and
+        // let the operation stand if enough replicas took the write.
+        if let Some(err) = local_quota_failure {
+            all_res.push(Err((this_peer_id, err.into())));
+        }
 
         let write_consistency_factor = self
             .collection_config

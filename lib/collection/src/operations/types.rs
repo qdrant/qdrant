@@ -950,6 +950,13 @@ pub enum CollectionError {
     },
     #[error("Shard temporarily unavailable: {description}")]
     ShardUnavailable { description: String },
+    /// A node has reached its resource quota and cannot take on more data.
+    ///
+    /// Deliberately transient: it describes the node, not the request, so it
+    /// clears on its own once space is freed — the same shape as a peer being
+    /// unreachable, and handled the same way by the replica set.
+    #[error("Insufficient storage: {description}")]
+    InsufficientStorage { description: String },
 }
 
 /// Which rate limiter rejected an operation.
@@ -1078,6 +1085,10 @@ impl CollectionError {
             Self::OutOfMemory { .. } => true,
             Self::PreConditionFailed { .. } => true,
             Self::ShardUnavailable { .. } => true,
+            // A node over its quota is a node that cannot take writes right now,
+            // which is the same situation as one that is offline: the replica
+            // set deactivates it and carries on with the rest.
+            Self::InsufficientStorage { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,
@@ -1213,10 +1224,7 @@ impl From<shard::quota::QuotaError> for CollectionError {
         use shard::quota::QuotaError;
 
         match err {
-            // The caller asked for more of a resource than the node is allowed
-            // to give, and retrying unchanged will not help — the client has to
-            // free something or the quota has to be raised.
-            QuotaError::LimitReached(description) => Self::BadRequest { description },
+            QuotaError::LimitReached(description) => Self::InsufficientStorage { description },
             QuotaError::InvalidConfig(description) => Self::BadRequest { description },
             QuotaError::Io(description) => Self::service_error(description),
         }
@@ -1253,6 +1261,15 @@ impl From<InvalidUri> for CollectionError {
     }
 }
 
+/// Marks a `ResourceExhausted` status as a quota rejection rather than rate
+/// limiting.
+///
+/// gRPC spends one code on both ("a per-user quota, or the entire file system is
+/// out of space"), but they are not interchangeable here: one asks the caller to
+/// retry later, the other says a replica is out of room and has to be taken out
+/// of the set. Set on the way out, read on the way back in.
+pub const INSUFFICIENT_STORAGE_METADATA_KEY: &str = "qdrant-insufficient-storage";
+
 impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
@@ -1265,6 +1282,15 @@ impl From<tonic::Status> for CollectionError {
             },
             tonic::Code::Cancelled => Self::cancelled(err.to_string()),
             tonic::Code::FailedPrecondition => Self::pre_condition_failed(err.to_string()),
+            tonic::Code::ResourceExhausted
+                if err
+                    .metadata()
+                    .contains_key(INSUFFICIENT_STORAGE_METADATA_KEY) =>
+            {
+                Self::InsufficientStorage {
+                    description: err.message().to_string(),
+                }
+            }
             tonic::Code::ResourceExhausted => {
                 // extract retry-after from metadata
                 // the value is passed as a String containing an integer number of seconds

@@ -90,5 +90,8 @@ def _upsert_error(peer_api_uri: str) -> str:
         f"{peer_api_uri}/collections/test_collection/points?wait=true",
         json={"points": [{"id": 1000, "vector": [0.0] * 4}]},
     )
-    assert resp.status_code == 400, resp.text
+    # Every replica of this shard is over the quota, so none of them could take
+    # the write and the client is told the cluster is out of room, rather than
+    # that its request was bad.
+    assert resp.status_code == 507, resp.text
     return resp.json()["status"]["error"]

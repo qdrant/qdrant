@@ -12,7 +12,9 @@ use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
 use collection::operations::conversions::sharding_method_from_proto;
-use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
+use collection::operations::types::{
+    INSUFFICIENT_STORAGE_METADATA_KEY, SparseVectorsConfig, VectorsConfigDiff,
+};
 use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
 use tonic::Status;
 use tonic::metadata::MetadataValue;
@@ -56,6 +58,13 @@ impl From<StorageError> for Status {
             }
             StorageError::ShardUnavailable { .. } => tonic::Code::Unavailable,
             StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
+            StorageError::InsufficientStorage { .. } => {
+                // Shares `ResourceExhausted` with rate limiting, so it carries a
+                // marker to tell the two apart when a peer converts the status
+                // back into an error.
+                metadata_headers.insert(INSUFFICIENT_STORAGE_METADATA_KEY, "1".to_string());
+                tonic::Code::ResourceExhausted
+            }
         };
         let mut status = Status::new(error_code, error.to_string());
         // add metadata headers

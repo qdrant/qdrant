@@ -167,11 +167,10 @@ impl Collection {
         shard_keys_selection: Option<ShardKey>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        // Ahead of the shard split below, so the operation is accepted or refused
-        // as a whole rather than landing on some shards and being refused by
-        // others.
-        check_quota(&operation)?;
-
+        // Deliberately no quota check here: this node may hold no replica of the
+        // shards being written, and even where it does, its own limit must not
+        // decide the fate of replicas on other machines. Each replica set gates
+        // its own local write instead.
         let updates = FuturesUnordered::new();
 
         {
@@ -543,12 +542,13 @@ impl Collection {
     }
 }
 
-/// Reject an update that would take the node past its resource quota.
+/// Reject an update that would take this node past its resource quota.
 ///
-/// Runs on both entry points — writes from a client and writes forwarded from a
-/// peer — so a node at its limit refuses the bytes wherever they come from. The
-/// rejection is deterministic, so a replicated operation that overruns the quota
-/// fails the same way on every retry rather than flapping the replica set.
+/// Guards the forwarded-write entry point, where this node is acting as a
+/// replica and answers only for itself. The coordinator sees the rejection as
+/// this peer failing the operation, and deactivates it exactly as it would a
+/// peer that had gone offline — see `ShardReplicaSet::update`, which applies the
+/// same gate to the local replica.
 fn check_quota(operation: &CollectionUpdateOperations) -> CollectionResult<()> {
     if !operation.consumes_quota() {
         return Ok(());
