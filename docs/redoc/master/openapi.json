@@ -7593,7 +7593,8 @@
             "nullable": true
           },
           "max_resident_memory_percent": {
-            "description": "Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
+            "description": "Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
+            "deprecated": true,
             "type": "integer",
             "format": "uint8",
             "minimum": 0,
@@ -10008,7 +10009,8 @@
             "nullable": true
           },
           "max_resident_memory_percent": {
-            "description": "Reject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free memory.",
+            "description": "Deprecated: use the node-wide quota config (`PUT /quotas`) instead, which caps the same resource for every collection. Scheduled for removal in 1.21.\n\nReject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Memory is a node-wide resource, so this only tightens the quota for one collection; it cannot lift it. Delete operations are not affected, so callers can still free memory.",
+            "deprecated": true,
             "type": "integer",
             "format": "uint8",
             "maximum": 100,

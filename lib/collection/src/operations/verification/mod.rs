@@ -232,16 +232,17 @@ pub fn check_search_batch_size(
 }
 
 /// Reject a memory-consuming update when process resident memory has reached the
-/// collection's `max_resident_memory_percent`.
+/// collection's deprecated `max_resident_memory_percent`.
 ///
 /// Superseded by the node-wide quota, which caps the same resource for every
 /// collection whether or not strict mode is on. This only tightens that cap for
 /// one collection, and is deliberately self-contained so that retiring the
-/// setting is a matter of deleting this function and its single caller.
+/// setting in 1.21 is a matter of deleting this function and its single caller.
 ///
 /// The measurement comes from the quota manager, the node's single reader of
 /// process memory, so the two checks share one reading rather than each taking
 /// their own.
+#[allow(deprecated)] // this *is* the deprecated setting's enforcement
 pub fn check_resident_memory(strict_mode_config: &StrictModeConfig) -> CollectionResult<()> {
     let Some(limit) = strict_mode_config.max_resident_memory_percent else {
         return Ok(());

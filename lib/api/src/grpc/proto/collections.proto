@@ -494,9 +494,10 @@ message StrictModeConfig {
   optional uint64 max_points_count = 18;
   // Max number of payload indexes in a collection
   optional uint64 max_payload_index_count = 19;
+  // Deprecated: memory is node-wide, use the global quota config instead. Removal planned for 1.21.
   // Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
   // Delete-style operations are still allowed so memory can be freed.
-  optional uint32 max_resident_memory_percent = 21;
+  optional uint32 max_resident_memory_percent = 21 [deprecated = true];
   // 22 was `max_disk_usage_percent`, superseded by the global quota config
   reserved 22;
 }
