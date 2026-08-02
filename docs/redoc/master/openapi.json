@@ -969,7 +969,7 @@
           "Quotas"
         ],
         "summary": "Get global quotas",
-        "description": "Get the cluster-wide resource quota configuration, together with the current utilization it is measured against",
+        "description": "Get the cluster-wide resource quota configuration, together with the current utilization it is measured against.\nThe configuration is the same on every peer, but the reported utilization is for the node serving this request only -\nmemory and disk are node-local, so query each peer to see where the whole cluster stands.\n",
         "operationId": "get_quotas",
         "responses": {
           "default": {
@@ -16870,7 +16870,7 @@
         }
       },
       "QuotaStatus": {
-        "description": "Quota configuration in effect, and how close the node is to it.",
+        "description": "Quota configuration in effect, and how close the node is to it.\n\nThe configuration is cluster-wide, the utilization is not: `usage` describes the peer that served the request. Ask each peer separately to see where the cluster stands.",
         "type": "object",
         "required": [
           "config",
@@ -16886,18 +16886,18 @@
         }
       },
       "QuotaUsage": {
-        "description": "Current utilization of the quota-managed resources. A field is `null` when the platform does not expose the underlying stat.",
+        "description": "Utilization of the quota-managed resources **on this node alone** — memory and disk are node-local, so a peer under its limit says nothing about the rest of the cluster.\n\nA field is `null` when the platform does not expose the underlying stat.",
         "type": "object",
         "properties": {
           "resident_memory_percent": {
-            "description": "Process resident memory as a percentage of total system memory.",
+            "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
             "type": "integer",
             "format": "uint8",
             "minimum": 0,
             "nullable": true
           },
           "disk_usage_percent": {
-            "description": "Used space of the storage filesystem as a percentage of its capacity.",
+            "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
             "type": "integer",
             "format": "uint8",
             "minimum": 0,
