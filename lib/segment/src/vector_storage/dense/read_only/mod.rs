@@ -3,7 +3,7 @@ use common::universal_io::UniversalRead;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::Distance;
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 
 mod immutable;
 mod lifecycle;
@@ -14,7 +14,7 @@ pub use immutable::ReadOnlyImmutableDenseVectorStorage;
 
 #[derive(Debug)]
 pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
-    vectors: ChunkedVectorsRead<T, S>,
+    vectors: ReadOnlyChunkedVectors<T, S>,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,

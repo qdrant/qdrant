@@ -8,7 +8,7 @@ use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, MultiVectorConfig};
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     DELETED_DIR_PATH, MultivectorMmapOffset, OFFSETS_DIR_PATH, VECTORS_DIR_PATH,
 };
@@ -25,10 +25,15 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
         populate: Populate,
     ) -> OperationResult<()> {
         // Vectors
-        ChunkedVectorsRead::<T, S>::preopen(fs, &path.join(VECTORS_DIR_PATH), advice, populate)?;
+        ReadOnlyChunkedVectors::<T, S>::preopen(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            advice,
+            populate,
+        )?;
 
         // Offsets
-        ChunkedVectorsRead::<MultivectorMmapOffset, S>::preopen(
+        ReadOnlyChunkedVectors::<MultivectorMmapOffset, S>::preopen(
             fs,
             &path.join(OFFSETS_DIR_PATH),
             advice,
@@ -55,12 +60,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
         populate: Populate,
     ) -> OperationResult<Self> {
         let vectors =
-            ChunkedVectorsRead::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
+            ReadOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
 
         // Offsets store one `MultivectorMmapOffset` element per point, so the
         // chunked storage dimensionality is 1.
         let offsets =
-            ChunkedVectorsRead::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
+            ReadOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 
