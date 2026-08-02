@@ -114,6 +114,7 @@ mod tests {
             enabled: true,
             max_disk_usage_percent: Some(95),
             max_resident_memory_percent: Some(90),
+            ..Default::default()
         };
         manager.set_config(updated).unwrap();
 

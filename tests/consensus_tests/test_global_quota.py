@@ -8,8 +8,18 @@ from .utils import *
 N_PEERS = 3
 
 # No real filesystem is less than 1% full, so this quota rejects every update
-# that consumes disk.
-UNSATISFIABLE_QUOTA = {"enabled": True, "max_disk_usage_percent": 1}
+# that consumes disk. The release margin is set explicitly so the config we PUT
+# is exactly the config we expect back, and so the new field is covered by the
+# propagation and restart assertions below.
+UNSATISFIABLE_QUOTA = {
+    "enabled": True,
+    "max_disk_usage_percent": 1,
+    "release_margin_percent": 5,
+}
+
+# What a node with no quota reports: the release margin is always answered with,
+# filled in from the default when a request leaves it out.
+NO_QUOTA = {"enabled": False, "release_margin_percent": 5}
 
 
 def test_global_quota(tmp_path: pathlib.Path):
@@ -25,7 +35,7 @@ def test_global_quota(tmp_path: pathlib.Path):
 
     # Quotas are disabled by default, so updates pass
     for peer_api_uri in peer_api_uris:
-        assert get_quotas(peer_api_uri)["config"] == {"enabled": False}
+        assert get_quotas(peer_api_uri)["config"] == NO_QUOTA
     upsert_random_points(peer_api_uris[0], 10)
 
     # Setting the quota on one peer applies it on all of them
@@ -70,7 +80,7 @@ def test_global_quota(tmp_path: pathlib.Path):
     peer_api_uris = peer_api_uris[:-1] + [restarted_api_uri]
     set_quotas(peer_api_uris[0], {"enabled": False})
     for peer_api_uri in peer_api_uris:
-        wait_for(_quota_config_matches, peer_api_uri, {"enabled": False})
+        wait_for(_quota_config_matches, peer_api_uri, NO_QUOTA)
         upsert_random_points(peer_api_uri, 1)
 
 

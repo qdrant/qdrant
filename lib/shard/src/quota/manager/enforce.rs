@@ -6,16 +6,6 @@ use crate::quota::config::QuotaLimits;
 use crate::quota::error::{QuotaError, QuotaResult};
 use crate::quota::status::QuotaExceeded;
 
-/// How far below its limit a resource has to fall, in percentage points, before
-/// this node starts accepting work again.
-///
-/// Without it a resource resting near its limit flips the node in and out of
-/// service on the noise between two readings. That is self-sustaining once
-/// replicas are involved: the node comes back, recovery starts sending it a
-/// shard, the arriving data pushes usage over the limit again, the replica is
-/// deactivated, and round it goes — each lap costing a full shard transfer.
-const RELEASE_MARGIN_PERCENT: u8 = 5;
-
 impl QuotaManager {
     /// Whether the node has room to take on more data.
     ///
@@ -61,6 +51,7 @@ impl QuotaManager {
         let QuotaLimits {
             max_resident_memory_percent,
             max_disk_usage_percent,
+            release_margin_percent,
         } = self.config().limits();
 
         let mut exceeded = self.exceeded.lock();
@@ -69,6 +60,7 @@ impl QuotaManager {
             Resource::ResidentMemory,
             max_resident_memory_percent,
             &mut exceeded.resident_memory,
+            release_margin_percent,
             |threshold| self.resident_memory_percent(threshold),
         );
 
@@ -76,6 +68,7 @@ impl QuotaManager {
             Resource::DiskUsage,
             max_disk_usage_percent,
             &mut exceeded.disk_usage,
+            release_margin_percent,
             |threshold| self.disk_usage_percent(&self.storage_path, threshold),
         );
 
@@ -93,6 +86,7 @@ fn evaluate(
     resource: Resource,
     limit: Option<u8>,
     verdict: &mut Option<bool>,
+    release_margin_percent: u8,
     measure: impl FnOnce(Option<u8>) -> Option<u8>,
 ) -> Option<QuotaError> {
     let Some(limit) = limit else {
@@ -100,7 +94,7 @@ fn evaluate(
         return None;
     };
 
-    let threshold = threshold(limit, verdict.unwrap_or(false));
+    let threshold = threshold(limit, verdict.unwrap_or(false), release_margin_percent);
 
     let Some(used_percent) = measure(Some(threshold)) else {
         *verdict = None;
@@ -114,42 +108,57 @@ fn evaluate(
 }
 
 /// The level a resource is compared against: its limit while it is within it,
-/// and [`RELEASE_MARGIN_PERCENT`] below that once it has tripped.
-fn threshold(limit: u8, was_exceeded: bool) -> u8 {
+/// and `release_margin_percent` below that once it has tripped.
+fn threshold(limit: u8, was_exceeded: bool, release_margin_percent: u8) -> u8 {
     if !was_exceeded {
         return limit;
     }
 
-    // Never below 1, or a limit smaller than the margin could never be fallen
-    // back under and the node would stay out of service for good.
-    limit.saturating_sub(RELEASE_MARGIN_PERCENT).max(1)
+    // Never below 1, or a margin wider than the limit could never be fallen back
+    // under and the node would stay out of service for good.
+    limit.saturating_sub(release_margin_percent).max(1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::quota::QuotaConfig;
+    use crate::quota::config::DEFAULT_RELEASE_MARGIN_PERCENT;
 
     #[test]
     fn a_tripped_resource_clears_only_below_the_release_margin() {
+        const MARGIN: u8 = DEFAULT_RELEASE_MARGIN_PERCENT;
+
         // Untripped, the limit is the limit
-        assert_eq!(threshold(90, false), 90);
+        assert_eq!(threshold(90, false, MARGIN), 90);
 
         // Tripped, it has to fall a margin below before the node comes back,
         // so a resource hovering at 89-91% does not flip on every reading
-        assert_eq!(threshold(90, true), 85);
+        assert_eq!(threshold(90, true, MARGIN), 85);
 
-        // A limit at or under the margin still has to be escapable, or a node
+        // A margin as wide as the limit still has to be escapable, or a node
         // that tripped it could never return
-        assert_eq!(threshold(5, true), 1);
-        assert_eq!(threshold(1, true), 1);
+        assert_eq!(threshold(5, true, MARGIN), 1);
+        assert_eq!(threshold(1, true, MARGIN), 1);
+
+        // Configured away, a limit releases as soon as usage is back under it
+        assert_eq!(threshold(90, true, 0), 90);
+
+        // Widened, the node has to come further down before it takes work again
+        assert_eq!(threshold(90, true, 20), 70);
     }
 
     #[test]
     fn a_tripped_resource_keeps_refusing_until_it_clears_the_margin() {
         let mut verdict = None;
         let judge = |used: u8, verdict: &mut Option<bool>| {
-            evaluate(Resource::DiskUsage, Some(90), verdict, |_| Some(used))
+            evaluate(
+                Resource::DiskUsage,
+                Some(90),
+                verdict,
+                DEFAULT_RELEASE_MARGIN_PERCENT,
+                |_| Some(used),
+            )
         };
 
         // Under the limit, nothing to report
@@ -182,7 +191,16 @@ mod tests {
     fn a_resource_that_cannot_be_judged_holds_no_verdict() {
         // Tripped, then the stat stops being readable
         let mut verdict = Some(true);
-        assert!(evaluate(Resource::DiskUsage, Some(90), &mut verdict, |_| None).is_none());
+        assert!(
+            evaluate(
+                Resource::DiskUsage,
+                Some(90),
+                &mut verdict,
+                DEFAULT_RELEASE_MARGIN_PERCENT,
+                |_| None,
+            )
+            .is_none()
+        );
         assert_eq!(
             verdict, None,
             "an unreadable stat is not a statement about the resource, \
@@ -191,7 +209,16 @@ mod tests {
 
         // Same for a resource nobody caps
         let mut verdict = Some(true);
-        assert!(evaluate(Resource::DiskUsage, None, &mut verdict, |_| unreachable!()).is_none());
+        assert!(
+            evaluate(
+                Resource::DiskUsage,
+                None,
+                &mut verdict,
+                DEFAULT_RELEASE_MARGIN_PERCENT,
+                |_| unreachable!(),
+            )
+            .is_none()
+        );
         assert_eq!(verdict, None);
     }
 

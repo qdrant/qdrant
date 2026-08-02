@@ -286,9 +286,9 @@ storage:
   # `max_resident_memory_percent` in a collection's strict mode config can tighten the memory limit
   # for that collection, but never lift it.
   #
-  # A limit that is reached has to be cleared by 5 percentage points before the node accepts writes
-  # again. Without that margin a resource resting on its limit would put the node in and out of
-  # service on the noise between two readings, restarting a shard recovery every time.
+  # A limit that is reached has to be cleared by `release_margin_percent` before the node accepts
+  # writes again. Without that margin a resource resting on its limit would put the node in and out
+  # of service on the noise between two readings, restarting a shard recovery every time.
   #
   # These values only seed the quota manager on the first start. Afterwards the quota config is read
   # from (and written to) `quota.json` in the storage directory, which is kept in sync across the
@@ -308,6 +308,11 @@ storage:
     # this percentage of its capacity.
     # If null - disk usage is not capped.
     #max_disk_usage_percent: null
+
+    # How many percentage points below its limit a resource has to fall before this node starts
+    # accepting work again. Raise it where usage is volatile; 0 releases as soon as usage is back
+    # under the limit.
+    #release_margin_percent: 5
 
 service:
   # Maximum size of POST data in a single request in megabytes

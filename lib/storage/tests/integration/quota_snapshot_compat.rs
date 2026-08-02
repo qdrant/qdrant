@@ -44,6 +44,7 @@ fn quota_config_is_optional_in_both_directions() {
             enabled: true,
             max_resident_memory_percent: Some(90),
             max_disk_usage_percent: Some(95),
+            ..Default::default()
         }),
     };
     let bytes = serde_cbor::to_vec(&new).unwrap();

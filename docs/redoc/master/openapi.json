@@ -13748,6 +13748,14 @@
             "maximum": 100,
             "minimum": 1,
             "nullable": true
+          },
+          "release_margin_percent": {
+            "description": "How many percentage points below its limit a resource has to fall before this node starts accepting work again.\n\nWithout a margin, a resource resting on its limit crosses it in both directions on the noise between two readings, putting the node in and out of service each time — and restarting a shard recovery with it. Raise it where usage is volatile; `0` disables the margin and releases as soon as usage is back under the limit.",
+            "default": 5,
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 0
           }
         }
       },
