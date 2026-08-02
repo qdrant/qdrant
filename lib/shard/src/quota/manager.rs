@@ -8,7 +8,7 @@ use ahash::AHashMap;
 use parking_lot::{Mutex, RwLock};
 use validator::Validate as _;
 
-use super::check::{Resource, percent_of, total_memory_bytes};
+use super::check::{Resource, percent_of};
 use super::config::{QuotaConfig, QuotaLimits};
 use super::error::{QuotaError, QuotaResult};
 use super::meter::{Meter, reusable};
@@ -159,6 +159,15 @@ impl QuotaManager {
             .map(|usage| usage.available)
     }
 
+    /// Total capacity in bytes of the filesystem hosting `path`, or `None` when
+    /// it cannot be read. Served from the same cache the quota check uses.
+    ///
+    /// For reporting rather than deciding, so any reading still within the cache
+    /// window will do.
+    pub fn disk_capacity_bytes(&self, path: &Path) -> Option<u64> {
+        self.disk_usage(path, |_| true).map(|usage| usage.total)
+    }
+
     /// Whether an operation needing `required_bytes` on the filesystem hosting
     /// `path` can go ahead — an optimization sizing up the segment it will build.
     ///
@@ -224,7 +233,7 @@ impl QuotaManager {
             |percent| reusable(percent, limit),
             || {
                 let resident = ::common::memory_usage::resident_bytes()?;
-                percent_of(resident as u64, total_memory_bytes())
+                percent_of(resident as u64, segment::utils::mem::total_memory_bytes())
             },
         )
     }

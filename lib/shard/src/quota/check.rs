@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use super::error::QuotaError;
 
 /// A resource that [`super::QuotaManager`] measures and caps.
@@ -56,13 +54,6 @@ pub fn percent_of(used: u64, total: u64) -> Option<u8> {
     // never round.
     let percent = u128::from(used) * 100 / u128::from(total);
     Some(percent.min(100) as u8)
-}
-
-/// Total system memory (or cgroup limit) in bytes. Cached once — total memory
-/// is effectively constant for a running process.
-pub fn total_memory_bytes() -> u64 {
-    static TOTAL: OnceLock<u64> = OnceLock::new();
-    *TOTAL.get_or_init(|| segment::utils::mem::Mem::new().total_memory_bytes())
 }
 
 #[cfg(test)]
