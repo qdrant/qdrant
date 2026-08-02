@@ -11680,10 +11680,10 @@
             ]
           },
           "quota": {
-            "description": "Resource quota this node is enforcing, which is whatever it last persisted — so a peer that missed a consensus update reports the config it is actually applying, not the one the cluster agreed on. Absent for a token without global access, which `GET /quotas` requires as well.",
+            "description": "Resource quota this node is enforcing, and whether it is currently over it. The config is whatever this node last persisted, so a peer that missed a consensus update reports what it is actually applying rather than what the cluster agreed on. Absent for a token without global access, which `GET /quotas` requires as well.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/QuotaConfig"
+                "$ref": "#/components/schemas/QuotaTelemetry"
               },
               {
                 "nullable": true
@@ -13705,6 +13705,23 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          }
+        }
+      },
+      "QuotaTelemetry": {
+        "description": "What a node reports about the quota it is enforcing.\n\nCarries the verdict rather than the raw utilization, because the point of reporting it is to know whether this node is currently refusing writes — which depends on the limits as well as the readings.",
+        "type": "object",
+        "required": [
+          "config",
+          "exceeded"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          },
+          "exceeded": {
+            "description": "Whether this node is at or over one of the enforced limits. Always false while the quota is disabled.",
+            "type": "boolean"
           }
         }
       },
@@ -16870,7 +16887,7 @@
         }
       },
       "QuotaStatus": {
-        "description": "Quota configuration in effect, and how close the node is to it.\n\nThe configuration is cluster-wide, the utilization is not: `usage` describes the peer that served the request. Ask each peer separately to see where the cluster stands.",
+        "description": "Quota configuration in effect, and how close each peer is to it.\n\nThe configuration is cluster-wide; the utilization is not. `usage` is the node that served the request, and `peers` is what every peer that answered reports about itself — memory and disk are node-local, so one peer being under its limit says nothing about the others.",
         "type": "object",
         "required": [
           "config",
@@ -16882,6 +16899,14 @@
           },
           "usage": {
             "$ref": "#/components/schemas/QuotaUsage"
+          },
+          "peers": {
+            "description": "Utilization reported by each peer, keyed by peer ID, including the one that served the request.\n\nOnly peers that answered are listed: a peer missing from the map could not be reached, which is itself worth seeing. Absent entirely outside distributed mode, where there are no peers to ask.",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PeerQuotaUsage"
+            },
+            "nullable": true
           }
         }
       },
@@ -16889,6 +16914,33 @@
         "description": "Utilization of the quota-managed resources **on this node alone** — memory and disk are node-local, so a peer under its limit says nothing about the rest of the cluster.\n\nA field is `null` when the platform does not expose the underlying stat.",
         "type": "object",
         "properties": {
+          "resident_memory_percent": {
+            "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_usage_percent": {
+            "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "PeerQuotaUsage": {
+        "description": "What one peer reports about the quota it is enforcing.",
+        "type": "object",
+        "required": [
+          "exceeded"
+        ],
+        "properties": {
+          "exceeded": {
+            "description": "Whether this peer is at or over one of the enforced limits, and so is currently refusing updates. Always false while the quota is disabled.",
+            "type": "boolean"
+          },
           "resident_memory_percent": {
             "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
             "type": "integer",

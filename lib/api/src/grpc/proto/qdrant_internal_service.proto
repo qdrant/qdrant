@@ -4,6 +4,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "telemetry_internal.proto";
+import "quota_internal.proto";
 
 service QdrantInternal {
   // Get current commit and term on the target peer.
@@ -19,6 +20,9 @@ service QdrantInternal {
 
   // Get audit log entries from this peer
   rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse) {}
+
+  // Get how much of its resource quota this peer is using
+  rpc GetQuotaUsage(GetQuotaUsageRequest) returns (GetQuotaUsageResponse) {}
 }
 
 message GetConsensusCommitRequest {}

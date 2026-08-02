@@ -29,7 +29,7 @@ use std::sync::{Arc, OnceLock};
 pub use config::{QuotaConfig, QuotaLimits};
 pub use error::{QuotaError, QuotaResult};
 pub use manager::{DiskFit, QUOTA_CONFIG_FILE, QuotaManager};
-pub use status::{QuotaStatus, QuotaUsage};
+pub use status::{PeerQuotaUsage, QuotaStatus, QuotaTelemetry, QuotaUsage};
 
 static GLOBAL: OnceLock<Arc<QuotaManager>> = OnceLock::new();
 

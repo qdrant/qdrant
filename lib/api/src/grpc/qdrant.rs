@@ -13737,6 +13737,35 @@ impl StateRole {
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetQuotaUsageRequest {}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetQuotaUsageResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<QuotaUsage>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+/// Utilization of the quota-managed resources on the peer that answered.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuotaUsage {
+    /// Resident memory as a percentage of the memory available to the process,
+    /// absent when the platform does not expose the stat.
+    #[prost(uint32, optional, tag = "1")]
+    pub resident_memory_percent: ::core::option::Option<u32>,
+    /// Used space of the storage filesystem as a percentage of its capacity,
+    /// absent when it cannot be read.
+    #[prost(uint32, optional, tag = "2")]
+    pub disk_usage_percent: ::core::option::Option<u32>,
+    /// Whether this peer is at or over one of the limits it enforces, and so is
+    /// currently refusing updates. Always false while the quota is disabled.
+    #[prost(bool, tag = "3")]
+    pub exceeded: bool,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetConsensusCommitRequest {}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -13987,6 +14016,31 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetAuditLog"));
             self.inner.unary(req, path, codec).await
         }
+        /// Get how much of its resource quota this peer is using
+        pub async fn get_quota_usage(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetQuotaUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotaUsageResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetQuotaUsage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetQuotaUsage"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -14032,6 +14086,14 @@ pub mod qdrant_internal_server {
             request: tonic::Request<super::GetAuditLogRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetAuditLogResponse>,
+            tonic::Status,
+        >;
+        /// Get how much of its resource quota this peer is using
+        async fn get_quota_usage(
+            &self,
+            request: tonic::Request<super::GetQuotaUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotaUsageResponse>,
             tonic::Status,
         >;
     }
@@ -14281,6 +14343,52 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetAuditLogSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.QdrantInternal/GetQuotaUsage" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetQuotaUsageSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetQuotaUsageRequest>
+                    for GetQuotaUsageSvc<T> {
+                        type Response = super::GetQuotaUsageResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetQuotaUsageRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_quota_usage(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetQuotaUsageSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

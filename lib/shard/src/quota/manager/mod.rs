@@ -85,11 +85,16 @@ impl QuotaManager {
         self.config.write(config)
     }
 
-    /// Current quota config together with the utilization it is measured against.
+    /// Current quota config together with the utilization it is measured against
+    /// on this node.
+    ///
+    /// `peers` is left unset: reaching the other peers needs a channel to them,
+    /// which belongs to the API layer rather than here.
     pub fn status(&self) -> QuotaStatus {
         QuotaStatus {
             config: self.config(),
             usage: self.usage(),
+            peers: None,
         }
     }
 }

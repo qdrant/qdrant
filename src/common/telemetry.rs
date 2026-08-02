@@ -14,7 +14,7 @@ use serde::Serialize;
 use shard::common::stopping_guard::StoppingGuard;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
-use storage::quota::QuotaConfig;
+use storage::quota::QuotaTelemetry;
 use storage::rbac::{AccessRequirements, Auth};
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
@@ -64,13 +64,14 @@ pub struct TelemetryData {
     pub(crate) hardware: Option<HardwareTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) search_pool: Option<SearchThreadPoolTelemetry>,
-    /// Resource quota this node is enforcing, which is whatever it last
-    /// persisted — so a peer that missed a consensus update reports the config it
-    /// is actually applying, not the one the cluster agreed on. Absent for a
-    /// token without global access, which `GET /quotas` requires as well.
+    /// Resource quota this node is enforcing, and whether it is currently over
+    /// it. The config is whatever this node last persisted, so a peer that missed
+    /// a consensus update reports what it is actually applying rather than what
+    /// the cluster agreed on. Absent for a token without global access, which
+    /// `GET /quotas` requires as well.
     #[anonymize(false)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) quota: Option<QuotaConfig>,
+    pub(crate) quota: Option<QuotaTelemetry>,
 }
 
 impl TelemetryCollector {
@@ -141,10 +142,15 @@ impl TelemetryCollector {
             .check_global_access(AccessRequirements::new())
             .is_ok()
             .then(|| {
-                self.dispatcher
+                let manager = self
+                    .dispatcher
                     .toc(auth, &new_unchecked_verification_pass())
-                    .quota_manager()
-                    .config()
+                    .quota_manager();
+
+                QuotaTelemetry {
+                    config: manager.config(),
+                    exceeded: manager.is_exceeded(),
+                }
             });
 
         Ok(TelemetryData {

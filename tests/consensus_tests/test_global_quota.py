@@ -34,7 +34,17 @@ def test_global_quota(tmp_path: pathlib.Path):
         wait_for(_quota_config_matches, peer_api_uri, UNSATISFIABLE_QUOTA)
         # Telemetry reports the quota the peer is enforcing. None of these peers
         # was started with one, so this can only come from the applied config.
-        assert _telemetry_quota(peer_api_uri) == UNSATISFIABLE_QUOTA
+        assert _telemetry_quota(peer_api_uri)["config"] == UNSATISFIABLE_QUOTA
+
+    # Any peer can answer for the whole cluster: each one reports the usage of
+    # every peer it can reach, so an operator does not have to poll them
+    # individually to find the node that is out of room.
+    for peer_api_uri in peer_api_uris:
+        peers = get_quotas(peer_api_uri)["peers"]
+        assert len(peers) == N_PEERS, peers
+        for peer_id, peer_usage in peers.items():
+            assert peer_usage["exceeded"] is True, (peer_id, peer_usage)
+            assert peer_usage["disk_usage_percent"] >= 1, (peer_id, peer_usage)
 
     # Every peer now rejects disk-consuming updates, and says exactly why
     for peer_api_uri in peer_api_uris:

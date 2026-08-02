@@ -7,6 +7,7 @@ use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use shard::PeerId;
+use storage::quota::QuotaTelemetry;
 use storage::types::ConsensusThreadStatus;
 
 use super::telemetry_ops::hardware::HardwareTelemetry;
@@ -150,12 +151,34 @@ impl MetricsProvider for TelemetryData {
         if let Some(mem) = &self.memory {
             mem.add_metrics(metrics, prefix);
         }
+        if let Some(quota) = &self.quota {
+            quota.add_metrics(metrics, prefix);
+        }
 
         #[cfg(target_os = "linux")]
         match procfs_metrics::ProcFsMetrics::collect() {
             Ok(procfs_provider) => procfs_provider.add_metrics(metrics, prefix),
             Err(err) => log::warn!("Error reading procfs infos: {err:?}"),
         };
+    }
+}
+
+impl MetricsProvider for QuotaTelemetry {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        // Emitted only while the quota is on. With it off the value would be a
+        // constant 0 that says nothing about the node, and an alert built on it
+        // would go quiet rather than firing if the quota were ever disabled.
+        if !self.config.enabled {
+            return;
+        }
+
+        metrics.push_metric(metric_family(
+            "quota_exceeded",
+            "whether this node is at or over one of its configured resource quotas",
+            MetricType::GAUGE,
+            vec![gauge(f64::from(u8::from(self.exceeded)), &[])],
+            prefix,
+        ));
     }
 }
 

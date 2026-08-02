@@ -16,6 +16,15 @@ impl QuotaManager {
         self.check_update()
     }
 
+    /// Whether this node is at or over one of the limits it enforces, and so is
+    /// currently refusing updates. Always false while the quota is disabled.
+    ///
+    /// For reporting. It measures the same way a check does, so a node sitting
+    /// over its limit re-reads the resource rather than serving a stale figure.
+    pub fn is_exceeded(&self) -> bool {
+        self.check_update().is_err()
+    }
+
     /// Reject an update that consumes memory or disk when it would run past a
     /// configured limit.
     ///
