@@ -49,11 +49,6 @@ where
         check_search_batch_size(batch_size, strict_mode_config)?;
     }
 
-    // Memory and disk quotas apply uniformly to external and internal traffic.
-    // Like `max_collection_vector_size_bytes`, the rejection is deterministic
-    // — a replicated op that overruns a quota fails the same way on every
-    // peer on retry — so it does not flap the replica set or produce dead
-    // shards.
     let mut any_consumes_memory = false;
 
     for request in requests {
@@ -65,19 +60,11 @@ where
         }
     }
 
-    // Disk usage shares the same op set as memory: anything that writes new
-    // bytes (upsert, set/overwrite payload, update vectors) can also fill the
-    // disk, while deletes free it. The quota manager caches its measurements, so
-    // high-RPS request paths don't hammer `statvfs` — the checks run cheaply on
-    // the hot path.
-    if any_consumes_memory {
-        // The collection's own memory limit, which only tightens the quota below
-        // for this one collection. Deprecated, and independent of it.
-        if let Some(strict_mode_config) = &strict_mode_config {
-            check_resident_memory(strict_mode_config)?;
-        }
-
-        toc.quota_manager().check_update()?;
+    // The node-wide quota governs this collection too, but it is enforced on the
+    // update path rather than here — every update reaches it, whether or not the
+    // handler it arrived through remembered to ask for a strict mode check.
+    if let (Some(strict_mode_config), true) = (&strict_mode_config, any_consumes_memory) {
+        check_resident_memory(strict_mode_config)?;
     }
 
     if let (Some(strict_mode_config), Some(timeout)) = (&strict_mode_config, timeout) {

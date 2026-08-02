@@ -1208,6 +1208,21 @@ impl From<WalError> for CollectionError {
     }
 }
 
+impl From<shard::quota::QuotaError> for CollectionError {
+    fn from(err: shard::quota::QuotaError) -> Self {
+        use shard::quota::QuotaError;
+
+        match err {
+            // The caller asked for more of a resource than the node is allowed
+            // to give, and retrying unchanged will not help — the client has to
+            // free something or the quota has to be raised.
+            QuotaError::LimitReached(description) => Self::BadRequest { description },
+            QuotaError::InvalidConfig(description) => Self::BadRequest { description },
+            QuotaError::Io(description) => Self::service_error(description),
+        }
+    }
+}
+
 impl<T> From<SendError<T>> for CollectionError {
     fn from(err: SendError<T>) -> Self {
         Self::service_error(format!("Can't reach one of the workers: {err}"))

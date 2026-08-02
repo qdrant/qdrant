@@ -61,6 +61,47 @@ impl CollectionUpdateOperations {
         }
     }
 
+    /// Whether applying this operation grows what the node holds, which is what
+    /// [`crate::quota`] caps.
+    ///
+    /// Deletes are excluded so a node that has hit its limit can still be emptied
+    /// — refusing them would leave no way out. So are the shard-transfer syncs:
+    /// a transfer is sized up once before it starts, and refusing its batches
+    /// partway would abandon work that is nearly done, only for the whole
+    /// transfer to be retried from the beginning.
+    pub fn consumes_quota(&self) -> bool {
+        match self {
+            Self::PointOperation(op) => match op {
+                PointOperations::UpsertPoints(_)
+                | PointOperations::UpsertPointsConditional(_)
+                | PointOperations::UpsertPointsRaw(_) => true,
+                PointOperations::DeletePoints { .. } | PointOperations::DeletePointsByFilter(_) => {
+                    false
+                }
+                PointOperations::SyncPoints(_) | PointOperations::SyncPointsRaw(_) => false,
+            },
+            Self::VectorOperation(op) => match op {
+                vector_ops::VectorOperations::UpdateVectors(_) => true,
+                vector_ops::VectorOperations::DeleteVectors(..)
+                | vector_ops::VectorOperations::DeleteVectorsByFilter(..) => false,
+            },
+            Self::PayloadOperation(op) => match op {
+                payload_ops::PayloadOps::SetPayload(_)
+                | payload_ops::PayloadOps::OverwritePayload(_) => true,
+                payload_ops::PayloadOps::DeletePayload(_)
+                | payload_ops::PayloadOps::ClearPayload { .. }
+                | payload_ops::PayloadOps::ClearPayloadByFilter(_) => false,
+            },
+            // Both arrive already committed through consensus, on a path that
+            // does not go past a quota check — they are gated before the
+            // proposal instead, so that a peer cannot refuse what the cluster
+            // has already agreed to.
+            Self::FieldIndexOperation(_) | Self::VectorNameOperation(_) => false,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => false,
+        }
+    }
+
     /// List point IDs that can be created during the operation.
     /// Do not list IDs that are deleted or modified.
     pub fn upsert_point_ids(&self) -> Option<Vec<PointIdType>> {
