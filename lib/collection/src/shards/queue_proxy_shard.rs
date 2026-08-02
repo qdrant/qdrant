@@ -90,6 +90,27 @@ impl QueueProxyShard {
         }
     }
 
+    /// Create a queue proxy shard from prevalidated details.
+    ///
+    /// This is synchronous and cannot fail.
+    pub fn new_prevalidated(
+        wrapped_shard: LocalShard,
+        remote_shard: RemoteShard,
+        wal_keep_from: Arc<AtomicU64>,
+        version: u64,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
+    ) -> Self {
+        Self {
+            inner: Some(Inner::new_from_version(
+                wrapped_shard,
+                remote_shard,
+                wal_keep_from,
+                version,
+                progress,
+            )),
+        }
+    }
+
     /// Queue proxy the given local shard and point to the remote shard, from a specific WAL version.
     ///
     /// This queues all (existing) updates from a specific WAL `version` and onwards. In other

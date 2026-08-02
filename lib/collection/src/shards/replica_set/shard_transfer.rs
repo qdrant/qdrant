@@ -8,11 +8,39 @@ use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::forward_proxy_shard::{ForwardProxyShard, PreparedTransferBatch};
+use crate::shards::local_shard::LocalShard;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::Shard;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
+
+// Whitebox hook for stopping in the cancellation window after `local.take()`.
+#[cfg(test)]
+static QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK: std::sync::Mutex<
+    Option<tokio::sync::oneshot::Sender<()>>,
+> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn notify_queue_proxify_local_after_take() {
+    if let Some(sender) = QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK.lock().unwrap().take() {
+        let _ = sender.send(());
+    }
+}
+
+struct TakenLocalShardGuard<'a> {
+    slot: &'a mut Option<Shard>,
+    original_shard: Option<Shard>,
+}
+
+impl Drop for TakenLocalShardGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(original_shard) = self.original_shard.take() {
+            log::warn!("Reverting taken shard due to cancel or panic");
+            self.slot.get_or_insert(original_shard);
+        }
+    }
+}
 
 impl ShardReplicaSet {
     /// Convert `Local` shard into `ForwardProxy`.
@@ -163,11 +191,14 @@ impl ShardReplicaSet {
             }
         };
 
-        // Get `max_ack_version` without "taking" local shard (to maintain cancel safety)
+        // Get `wal_keep_from` and start `version` without "taking" local shard (to maintain cancel safety)
         let local_shard = match local.deref() {
             Some(Shard::Local(local)) => local,
             Some(Shard::ForwardProxy(proxy)) => &proxy.wrapped_shard,
-            _ => unreachable!(),
+            Some(Shard::Proxy(_)) => unreachable!(),
+            Some(Shard::QueueProxy(_)) => unreachable!(),
+            Some(Shard::Dummy(_)) => unreachable!(),
+            None => unreachable!(),
         };
 
         let wal_keep_from = local_shard
@@ -177,45 +208,68 @@ impl ShardReplicaSet {
             .wal_keep_from
             .clone();
 
+        let wal = local_shard.wal.wal.clone();
+        let _wal_lock = wal.lock().await;
+
+        let version = match from_version {
+            None => _wal_lock.last_index() + 1,
+            Some(version) => {
+                // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
+                // Allow it to be one higher than the last index to only send new updates
+                let (first_idx, last_idx) =
+                    (_wal_lock.first_closed_index(), _wal_lock.last_index());
+                if !(first_idx..=last_idx + 1).contains(&version) {
+                    return Err(CollectionError::service_error(format!(
+                        "Cannot create queue proxy shard from version {version} because it is out of WAL bounds ({first_idx}..={last_idx})",
+                    )));
+                }
+                version
+            }
+        };
+
         // Proxify local shard
-        //
-        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
-        let local_shard = match local.take() {
-            Some(Shard::Local(local)) => local,
-            Some(Shard::ForwardProxy(proxy)) => proxy.wrapped_shard,
-            _ => unreachable!(),
+        let original_shard = match local.take() {
+            Some(shard @ Shard::Local(_)) => shard,
+            Some(shard @ Shard::ForwardProxy(_)) => shard,
+            Some(Shard::Proxy(_)) => unreachable!(),
+            Some(Shard::QueueProxy(_)) => unreachable!(),
+            Some(Shard::Dummy(_)) => unreachable!(),
+            None => unreachable!(),
         };
 
-        // Try to queue proxify with or without version
-        let proxy_shard = match from_version {
-            None => {
-                Ok(QueueProxyShard::new(local_shard, remote_shard, wal_keep_from, progress).await)
-            }
-            Some(from_version) => {
-                QueueProxyShard::new_from_version(
-                    local_shard,
-                    remote_shard,
-                    wal_keep_from,
-                    from_version,
-                    progress,
-                )
-                .await
-            }
+        // Guard to restore local shard in case of cancellation or panic while we construct the proxy
+        let mut guard = TakenLocalShardGuard {
+            slot: &mut local,
+            original_shard: Some(original_shard),
         };
 
-        // Insert queue proxy shard on success or revert to local shard on failure
-        match proxy_shard {
-            // All good, insert queue proxy shard
-            Ok(proxy_shard) => {
-                let _ = local.insert(Shard::QueueProxy(proxy_shard));
-                Ok(())
-            }
-            Err((local_shard, err)) => {
-                log::warn!("Failed to queue proxify shard, reverting to local shard: {err}");
-                let _ = local.insert(Shard::Local(local_shard));
-                Err(err)
-            }
-        }
+        #[cfg(test)]
+        notify_queue_proxify_local_after_take();
+
+        #[cfg(test)]
+        // Yield to allow the test to cancel us while the shard is taken and the guard is active
+        tokio::task::yield_now().await;
+
+        let original_shard = guard.original_shard.take().unwrap();
+        let local_shard = match original_shard {
+            Shard::Local(local) => local,
+            Shard::ForwardProxy(proxy) => proxy.wrapped_shard,
+            Shard::Proxy(_) => unreachable!(),
+            Shard::QueueProxy(_) => unreachable!(),
+            Shard::Dummy(_) => unreachable!(),
+        };
+
+        let proxy_shard = QueueProxyShard::new_prevalidated(
+            local_shard,
+            remote_shard,
+            wal_keep_from,
+            version,
+            progress,
+        );
+
+        let _ = guard.slot.insert(Shard::QueueProxy(proxy_shard));
+
+        Ok(())
     }
 
     /// Un-proxify local shard wrapped as `ForwardProxy` or `QueueProxy`.
@@ -563,5 +617,210 @@ impl ShardReplicaSet {
         };
 
         local_shard.wal_version().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+
+    use common::budget::ResourceBudget;
+    use common::save_on_disk::SaveOnDisk;
+    use segment::types::Distance;
+    use tempfile::{Builder, TempDir};
+    use tokio::runtime::Handle;
+    use tokio::sync::{RwLock, oneshot};
+
+    use super::*;
+    use crate::collection::payload_index_schema::PayloadIndexSchema;
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+    use crate::operations::shared_storage_config::SharedStorageConfig;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::optimizers_builder::OptimizersConfig;
+    use crate::shards::channel_service::ChannelService;
+    use crate::shards::replica_set::replica_set_state::ReplicaState;
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cancel_queue_proxify_after_local_take_drops_local_shard() {
+        let collection_dir = Builder::new()
+            .prefix("queue-proxy-cancel")
+            .tempdir()
+            .unwrap();
+        let replica_set = new_shard_replica_set(&collection_dir).await;
+
+        let (after_take_tx, after_take_rx) = oneshot::channel();
+        install_queue_proxify_local_after_take_hook(after_take_tx);
+
+        let remote_shard = RemoteShard::new(
+            replica_set.shard_id,
+            replica_set.collection_id.clone(),
+            2,
+            ChannelService::default(),
+        );
+        let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
+        let cancel = cancel::CancellationToken::new();
+
+        let queue_proxify = replica_set.queue_proxify_local(remote_shard, None, progress);
+        let cancelable_queue_proxify =
+            cancel::future::cancel_on_token(cancel.clone(), queue_proxify);
+        tokio::pin!(cancelable_queue_proxify);
+
+        tokio::select! {
+            _ = after_take_rx => {}
+            result = &mut cancelable_queue_proxify => {
+                panic!("queue proxification completed before the cancellation window: {result:?}");
+            }
+        }
+
+        cancel.cancel();
+        let result = cancelable_queue_proxify.await;
+        assert!(matches!(result, Err(cancel::Error::Cancelled)));
+
+        assert!(
+            replica_set.has_local_shard().await,
+            "queue_proxification cancellation must not drop the local shard slot"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cancel_queue_proxify_from_forward_proxy_restores_forward_proxy() {
+        let collection_dir = Builder::new()
+            .prefix("queue-proxy-cancel-fp")
+            .tempdir()
+            .unwrap();
+        let replica_set = new_shard_replica_set(&collection_dir).await;
+
+        let remote_shard = RemoteShard::new(
+            replica_set.shard_id,
+            replica_set.collection_id.clone(),
+            2,
+            ChannelService::default(),
+        );
+
+        // Turn local shard into ForwardProxy first
+        replica_set
+            .proxify_local(remote_shard.clone(), None, None)
+            .await
+            .unwrap();
+
+        // Verify it is a ForwardProxy now
+        {
+            let local = replica_set.local.read().await;
+            assert!(matches!(local.deref(), Some(Shard::ForwardProxy(_))));
+        }
+
+        let (after_take_tx, after_take_rx) = oneshot::channel();
+        install_queue_proxify_local_after_take_hook(after_take_tx);
+
+        let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
+        let cancel = cancel::CancellationToken::new();
+
+        let queue_proxify = replica_set.queue_proxify_local(remote_shard, None, progress);
+        let cancelable_queue_proxify =
+            cancel::future::cancel_on_token(cancel.clone(), queue_proxify);
+        tokio::pin!(cancelable_queue_proxify);
+
+        tokio::select! {
+            _ = after_take_rx => {}
+            result = &mut cancelable_queue_proxify => {
+                panic!("queue proxification completed before the cancellation window: {result:?}");
+            }
+        }
+
+        cancel.cancel();
+        let result = cancelable_queue_proxify.await;
+        assert!(matches!(result, Err(cancel::Error::Cancelled)));
+
+        // Verify that the shard was restored specifically as a ForwardProxy (and not Local or None)
+        let local = replica_set.local.read().await;
+        match local.deref() {
+            Some(Shard::ForwardProxy(_)) => {}
+            Some(Shard::Local(_)) => panic!("Restored as Local instead of ForwardProxy"),
+            Some(Shard::Proxy(_)) => panic!("Restored as Proxy"),
+            Some(Shard::QueueProxy(_)) => panic!("Restored as QueueProxy"),
+            Some(Shard::Dummy(_)) => panic!("Restored as Dummy"),
+            None => panic!("Restored as None"),
+        }
+    }
+
+    fn install_queue_proxify_local_after_take_hook(sender: oneshot::Sender<()>) {
+        let mut hook = QUEUE_PROXIFY_LOCAL_AFTER_TAKE_HOOK.lock().unwrap();
+        assert!(
+            hook.is_none(),
+            "queue-proxify test hook is already installed"
+        );
+        *hook = Some(sender);
+    }
+
+    async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+
+        let wal_config = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+
+        let collection_params = CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
+        };
+
+        let optimizers_config = OptimizersConfig::fixture();
+        let config = CollectionConfigInternal {
+            params: collection_params,
+            optimizer_config: optimizers_config.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+            quantization_config: None,
+            strict_mode_config: None,
+            uuid: None,
+            metadata: None,
+        };
+
+        let payload_index_schema_file = collection_dir.path().join("payload-schema.json");
+        let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+        let shared_config = Arc::new(RwLock::new(config));
+
+        ShardReplicaSet::build(
+            1,
+            None,
+            "test_collection".to_string(),
+            1,
+            true,
+            HashSet::from([2]),
+            dummy_on_replica_failure(),
+            dummy_abort_shard_transfer(),
+            collection_dir.path(),
+            shared_config,
+            optimizers_config,
+            Arc::new(SharedStorageConfig::default()),
+            payload_index_schema,
+            ChannelService::default(),
+            update_runtime,
+            search_runtime,
+            ResourceBudget::default(),
+            Some(ReplicaState::Active),
+        )
+        .await
+        .unwrap()
+    }
+
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
+    }
+
+    fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+        Arc::new(|_shard_transfer, _reason| {})
     }
 }
