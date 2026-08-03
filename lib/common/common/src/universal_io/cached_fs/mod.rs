@@ -168,7 +168,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             )
             .collect();
 
-        self.previous_files_info = std::mem::replace(&mut self.files_info, Some(files_info));
+        self.previous_files_info = self.files_info.replace(files_info);
 
         Ok(())
     }
@@ -216,17 +216,17 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         }
 
         // Check if contents changed
-        if let Some((previous, current)) = self.previous_file_info(path).zip(self.file_info(path)) {
-            if previous == current {
-                files_prefetched.insert(
-                    path.to_path_buf(),
-                    Err(UniversalIoError::UnchangedOpen {
-                        path: path.to_path_buf(),
-                        since: previous.last_modified,
-                    }),
-                );
-                return Ok(());
-            }
+        if let Some((previous, current)) = self.previous_file_info(path).zip(self.file_info(path))
+            && previous == current
+        {
+            files_prefetched.insert(
+                path.to_path_buf(),
+                Err(UniversalIoError::UnchangedOpen {
+                    path: path.to_path_buf(),
+                    since: previous.last_modified,
+                }),
+            );
+            return Ok(());
         }
 
         // Otherwise schedule normally
