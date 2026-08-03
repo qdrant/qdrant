@@ -52,7 +52,7 @@ pub struct CachedFs<Fs: UniversalReadFs> {
     files_info: Option<HashMap<PathBuf, FileInfo>>,
     /// Previous listing snapshot.
     previous_files_info: Option<HashMap<PathBuf, FileInfo>>,
-    files_prefetched: Arc<Mutex<HashMap<PathBuf, UioResult<Fs::File>>>>,
+    files_prefetched: Arc<Mutex<HashMap<PathBuf, Option<Fs::File>>>>,
 }
 
 /// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
@@ -197,8 +197,8 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             open_extra = open_extra.with_known_len(info.size);
         }
 
-        let file = self.fs.open(path, open_options, open_extra);
-        files_prefetched.insert(path.to_path_buf(), file);
+        let file = self.fs.open(path, open_options, open_extra)?;
+        files_prefetched.insert(path.to_path_buf(), Some(file));
 
         Ok(())
     }
@@ -219,13 +219,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         if let Some((previous, current)) = self.previous_file_info(path).zip(self.file_info(path))
             && previous == current
         {
-            files_prefetched.insert(
-                path.to_path_buf(),
-                Err(UniversalIoError::UnchangedOpen {
-                    path: path.to_path_buf(),
-                    since: previous.last_modified,
-                }),
-            );
+            files_prefetched.insert(path.to_path_buf(), None);
             return Ok(());
         }
 
@@ -312,7 +306,13 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         }
 
         if let Some(file) = self.files_prefetched.lock().remove(path) {
-            return file;
+            return match file {
+                Some(file) => Ok(file),
+                None => Err(UniversalIoError::UnchangedOpen {
+                    path: path.to_owned(),
+                    since: self.file_info(path).and_then(|info| info.last_modified),
+                }),
+            };
         }
 
         // With a snapshot, unlisted paths fail locally — probing for
