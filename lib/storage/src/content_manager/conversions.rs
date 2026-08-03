@@ -54,7 +54,12 @@ impl From<StorageError> for Status {
                 }
                 tonic::Code::ResourceExhausted
             }
-            StorageError::ShardUnavailable { .. } => tonic::Code::Unavailable,
+            StorageError::ShardUnavailable { reason, .. } => {
+                // Carry the reason across the wire so the receiving replica set recognizes a
+                // self-healing capacity condition structurally rather than by message text.
+                metadata_headers.extend(reason.to_metadata_pairs());
+                tonic::Code::Unavailable
+            }
             StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
         };
         let mut status = Status::new(error_code, error.to_string());
@@ -390,6 +395,26 @@ impl From<ConsensusThreadStatus> for grpc::ConsensusThreadStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn out_of_appendable_capacity_survives_grpc_round_trip() {
+        // Encode a capacity failure to a gRPC status, then decode it back: the typed reason must
+        // survive so a replica set recognizes the self-healing condition on a remote replica
+        // rather than deactivating it.
+        let collection_err = collection::operations::types::CollectionError::from(
+            segment::common::operation_error::OperationError::OutOfAppendableCapacity {
+                max_segment_size_bytes: 1024,
+            },
+        );
+        let status = Status::from(StorageError::from(collection_err));
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+
+        let round_tripped = collection::operations::types::CollectionError::from(status);
+        assert!(
+            round_tripped.is_out_of_appendable_capacity(),
+            "the replica set would deactivate a replica that self-heals: {round_tripped}",
+        );
+    }
 
     fn create_request(
         vector_memory: Option<grpc::Memory>,

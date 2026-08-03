@@ -1,6 +1,9 @@
+use std::num::NonZeroUsize;
+
 use common::progress_tracker::ProgressTree;
 use common::types::PointOffsetType;
 use schemars::JsonSchema;
+use segment::common::BYTES_IN_KB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -128,4 +131,14 @@ pub struct OptimizerThresholds {
     pub memmap_threshold_kb: usize,
     pub indexing_threshold_kb: usize,
     pub deferred_internal_id: Option<PointOffsetType>,
+}
+
+impl OptimizerThresholds {
+    /// The appendable-segment size cap in bytes, or `None` when `max_segment_size_kb` is zero
+    /// (uncapped). The single derivation of the cap: the shard arms the segment holder with it, the
+    /// update path checks destinations against it, and the optimizer's ensure step provisions
+    /// against it, so the three cannot disagree on what "full" means.
+    pub fn max_segment_size_bytes(&self) -> Option<NonZeroUsize> {
+        NonZeroUsize::new(self.max_segment_size_kb.saturating_mul(BYTES_IN_KB))
+    }
 }

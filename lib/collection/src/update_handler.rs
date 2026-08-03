@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -78,6 +79,11 @@ pub struct UpdateHandler {
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
+    /// Appendable-segment size cap, from the same threshold resolution the optimizers were built
+    /// with (`build_optimizers` returns both). Handed to the update and optimization workers,
+    /// which pass it down the apply path; synchronous WAL replay passes `None` instead.
+    /// This parameter depends on the optimizer config and should be updated accordingly.
+    pub max_segment_size_bytes: Option<NonZeroUsize>,
     /// Log of optimizer statuses
     optimizers_log: Arc<Mutex<TrackerLog>>,
     /// Total number of optimized points since last start
@@ -143,6 +149,7 @@ impl UpdateHandler {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
         optimizer_resource_budget: ResourceBudget,
@@ -163,6 +170,7 @@ impl UpdateHandler {
             shared_storage_config,
             payload_index_schema,
             optimizers,
+            max_segment_size_bytes,
             segments,
             update_worker: None,
             update_worker_cancel: CancellationToken::new(),
@@ -208,6 +216,7 @@ impl UpdateHandler {
                 self.max_optimization_threads,
                 self.has_triggered_optimizers.clone(),
                 self.payload_index_schema.clone(),
+                self.max_segment_size_bytes,
                 self.scroll_read_lock.clone(),
                 self.update_tracker.clone(),
                 optimization_finished_sender,
@@ -235,6 +244,7 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             self.prevent_unoptimized,
+            self.max_segment_size_bytes,
             optimization_finished_receiver,
             applied_seq_handler,
             cancel,

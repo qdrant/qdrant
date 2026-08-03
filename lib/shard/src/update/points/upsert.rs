@@ -1,10 +1,12 @@
 //! Point upserts: plain, conditional and raw.
 
+use std::num::NonZeroUsize;
+
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use parking_lot::RwLockWriteGuard;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{Filter, Payload, PointIdType, SeqNumberType, VectorNameBuf};
@@ -29,12 +31,13 @@ pub fn upsert_points<'a, T>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: T,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
-    upsert_points_impl(segments, op_num, points, hw_counter)
+    upsert_points_impl(segments, op_num, points, max_segment_size_bytes, hw_counter)
 }
 
 /// Same as [`upsert_points`], but for points carrying raw vector bytes verbatim.
@@ -42,12 +45,13 @@ pub fn upsert_points_raw<'a, T>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: T,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
     T: IntoIterator<Item = &'a PointStructRawPersisted>,
 {
-    upsert_points_impl(segments, op_num, points, hw_counter)
+    upsert_points_impl(segments, op_num, points, max_segment_size_bytes, hw_counter)
 }
 
 /// Drop from `points_op` every point that the conditional-upsert
@@ -98,6 +102,7 @@ pub fn conditional_upsert(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     operation: ConditionalInsertOperationInternal,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let ConditionalInsertOperationInternal {
@@ -109,7 +114,13 @@ pub fn conditional_upsert(
     retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode, hw_counter)?;
 
     let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
+    let upserted_points = upsert_points(
+        segments,
+        op_num,
+        points.iter(),
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -163,6 +174,7 @@ pub(super) fn upsert_points_impl<'a, P>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: impl IntoIterator<Item = &'a P>,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
@@ -182,23 +194,25 @@ where
             |id, raw_vectors, updated_vectors, old_payload| {
                 points_map[&id].write_moved(raw_vectors, updated_vectors, old_payload)
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
 
         res += updated_points.len();
-        // Insert new points, which was not updated or existed
-        let new_point_ids = ids_chunk
+        // Insert new points, which were not updated or existed. Peekable rather than collected:
+        // only their existence is needed before iterating them below.
+        let mut new_point_ids = ids_chunk
             .iter()
             .copied()
-            .filter(|x| !updated_points.contains(x));
+            .filter(|x| !updated_points.contains(x))
+            .peekable();
 
-        {
+        // Only look up an insert destination when there is something to insert: the lookup
+        // fails with `OutOfAppendableCapacity` when all appendable segments are at the size
+        // cap, and a chunk that updated every point in place needs no capacity at all.
+        if new_point_ids.peek().is_some() {
             let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
-                    OperationError::service_error(
-                        "No appendable segments exist, expected at least one",
-                    )
-                })?;
+                segments.smallest_appendable_segment(max_segment_size_bytes)?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
@@ -210,7 +224,7 @@ where
                 )?);
             }
             RwLockWriteGuard::unlock_fair(write_segment);
-        };
+        }
     }
 
     Ok(res)

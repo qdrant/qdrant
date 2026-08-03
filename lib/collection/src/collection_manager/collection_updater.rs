@@ -6,7 +6,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::*;
 
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateFailureKind};
 use crate::shards::update_tracker::UpdateTracker;
 
 /// Implementation of the update operation
@@ -26,15 +26,35 @@ impl CollectionUpdater {
                     segments.write().failed_operation.remove(&op_num);
                 }
             }
-            Err(collection_error) => {
-                if collection_error.is_transient() {
-                    let mut write_segments = segments.write();
-                    write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {collection_error}")
-                } else {
-                    log::warn!("Update operation declined: {collection_error}")
+            Err(collection_error) => match collection_error.update_failure_kind() {
+                UpdateFailureKind::Backpressure => {
+                    segments.write().failed_operation.insert(op_num);
+                    // Expected backpressure rather than a failure: the update worker retries
+                    // inline and recovery re-applies the operation once the optimizer provisions
+                    // a fresh appendable segment.
+                    log::debug!(
+                        "Update operation {op_num} ran out of appendable capacity, \
+                         it will be retried: {collection_error}"
+                    )
                 }
-            }
+                UpdateFailureKind::Transient => {
+                    segments.write().failed_operation.insert(op_num);
+                    log::error!("Update operation failed: {collection_error}")
+                }
+                UpdateFailureKind::Permanent => {
+                    if segments.write().failed_operation.remove(&op_num) {
+                        // A previously failed operation declined permanently on re-apply: it can
+                        // never succeed anymore (e.g. later operations deleted the points it
+                        // references). Drop it so it stops pinning the WAL acknowledge forever.
+                        log::warn!(
+                            "Update operation {op_num} declined on re-apply, dropping it: \
+                             {collection_error}"
+                        )
+                    } else {
+                        log::warn!("Update operation declined: {collection_error}")
+                    }
+                }
+            },
         }
     }
 
@@ -44,6 +64,7 @@ impl CollectionUpdater {
         operation: CollectionUpdateOperations,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<std::num::NonZeroUsize>,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
@@ -62,16 +83,29 @@ impl CollectionUpdater {
 
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(&segments_guard, op_num, point_operation, hw_counter)
+                    process_point_operation(
+                        &segments_guard,
+                        op_num,
+                        point_operation,
+                        max_segment_size_bytes,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(&segments_guard, op_num, vector_operation, hw_counter)
+                    process_vector_operation(
+                        &segments_guard,
+                        op_num,
+                        vector_operation,
+                        max_segment_size_bytes,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                     process_payload_operation(
                         &segments_guard,
                         op_num,
                         payload_operation,
+                        max_segment_size_bytes,
                         hw_counter,
                     )
                 }
@@ -136,6 +170,52 @@ mod tests {
         PointOperations, PointStructPersisted, VectorStructPersisted,
     };
 
+    /// `failed_operation` pins the WAL acknowledge, so every transition in and out of it is
+    /// load-bearing: an entry that is never removed stalls the acknowledge forever, and one that
+    /// is removed too eagerly drops an operation that still needed re-applying.
+    #[test]
+    fn test_failed_operation_queue_lifecycle() {
+        let segments = LockedSegmentHolder::new(SegmentHolder::default());
+        let failed_operations = |segments: &LockedSegmentHolder| -> Vec<SeqNumberType> {
+            segments.read().failed_operation.iter().copied().collect()
+        };
+
+        // A transient failure queues for recovery.
+        CollectionUpdater::handle_update_result(
+            &segments,
+            42,
+            &Err(CollectionError::service_error("all segments at the cap")),
+        );
+        assert_eq!(
+            failed_operations(&segments),
+            vec![42],
+            "a transient failure must be queued so recovery re-applies it",
+        );
+
+        // A successful re-apply unpins its own operation and leaves the others queued.
+        segments.write().failed_operation.insert(43);
+        CollectionUpdater::handle_update_result(&segments, 42, &Ok(1));
+        assert_eq!(
+            failed_operations(&segments),
+            vec![43],
+            "a successful re-apply must unpin its own operation and leave the others",
+        );
+
+        // A queued operation that declines permanently can never succeed again (e.g. later
+        // operations deleted the points it references) and must stop pinning the WAL.
+        CollectionUpdater::handle_update_result(
+            &segments,
+            43,
+            &Err(CollectionError::PointNotFound {
+                missed_point_id: 1.into(),
+            }),
+        );
+        assert!(
+            failed_operations(&segments).is_empty(),
+            "a queued operation that declines can never succeed, it must stop pinning the WAL",
+        );
+    }
+
     #[test]
     fn test_sync_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -182,6 +262,7 @@ mod tests {
             Some(10.into()),
             None,
             &points,
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -213,7 +294,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let res = upsert_points(&segments.read(), 100, &points, &hw_counter);
+        let res = upsert_points(&segments.read(), 100, &points, None, &hw_counter);
         assert_matches!(res, Ok(1));
 
         let records = retrieve_blocking(
@@ -251,6 +332,7 @@ mod tests {
             PointOperations::DeletePoints {
                 ids: vec![500.into()],
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -295,6 +377,7 @@ mod tests {
                 filter: None,
                 key: None,
             }),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -334,6 +417,7 @@ mod tests {
                 keys: vec!["color".parse().unwrap(), "empty".parse().unwrap()],
                 filter: None,
             }),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -380,6 +464,7 @@ mod tests {
             PayloadOps::ClearPayload {
                 points: vec![2.into()],
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -452,6 +537,7 @@ mod tests {
                 filter: None,
                 key: Some(meta_key_path.clone()),
             }),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -516,6 +602,7 @@ mod tests {
                 filter: None,
                 key: Some(meta_key_path.clone()),
             }),
+            None,
             &hw_counter,
         )
         .unwrap();

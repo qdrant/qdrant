@@ -278,7 +278,7 @@ pub fn build_optimizers(
     hnsw_config: &HnswConfig,
     hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
-) -> Arc<Vec<Arc<Optimizer>>> {
+) -> (Arc<Vec<Arc<Optimizer>>>, OptimizerThresholds) {
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     let segment_config =
@@ -293,7 +293,7 @@ pub fn build_optimizers(
         ),
     );
 
-    Arc::new(vec![
+    let optimizers: Arc<Vec<Arc<Optimizer>>> = Arc::new(vec![
         Arc::new(MergeOptimizer::new(
             optimizers_config.get_number_segments(),
             threshold_config,
@@ -327,7 +327,12 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
         )),
-    ])
+    ]);
+
+    // Returned alongside so shard-level consumers (the appendable-segment size cap the
+    // `UpdateHandler` hands to its workers) share the exact resolution the optimizers were built
+    // with, instead of re-deriving it or reaching into the optimizer list.
+    (optimizers, threshold_config)
 }
 
 #[cfg(test)]

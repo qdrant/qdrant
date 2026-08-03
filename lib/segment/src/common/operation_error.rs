@@ -93,6 +93,10 @@ pub enum OperationError {
     /// All appendable segments reached `max_segment_size`, so there is no valid destination for
     /// new or moved points. Recoverable by provisioning a fresh appendable segment and re-applying
     /// the operation; already-applied points are skipped by their point version.
+    ///
+    /// The collection-level conversion preserves this condition as a typed
+    /// `ShardUnavailableReason::OutOfAppendableCapacity`, so consumers recognize it structurally
+    /// rather than by the message text.
     #[error(
         "All appendable segments reached the maximum segment size of {max_segment_size_bytes} bytes"
     )]

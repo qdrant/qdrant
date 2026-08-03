@@ -111,7 +111,7 @@ impl LocalShard {
         // config if it changed again while we were waiting.
         let config = self.collection_config.read().await;
 
-        let new_optimizers = build_optimizers(
+        let (new_optimizers, new_optimizer_thresholds) = build_optimizers(
             &self.path,
             self.collection_config.clone(),
             &config.params,
@@ -122,6 +122,7 @@ impl LocalShard {
         );
 
         update_handler.optimizers = new_optimizers.clone();
+        update_handler.max_segment_size_bytes = new_optimizer_thresholds.max_segment_size_bytes();
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.prevent_unoptimized = config

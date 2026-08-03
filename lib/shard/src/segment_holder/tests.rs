@@ -64,6 +64,7 @@ fn test_apply_to_appendable() {
             |point_id, _, _, _| {
                 moved_to_appendable.push(point_id);
             },
+            None,
             &HardwareCounterCell::new(),
         )
         .unwrap();
@@ -188,6 +189,7 @@ fn test_apply_and_move_old_versions(
                 Ok(true)
             },
             |point_id, _, _, _| processed_points2.push(point_id),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -279,6 +281,7 @@ fn test_cow_operation() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -343,6 +346,7 @@ fn test_cow_move_append_only_single_slot() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -462,6 +466,7 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
                 &[point_id],
                 |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
                 |_, _, _, _| {}, // no-op: a pure move
+                None,
                 &hw_counter,
             )
             .unwrap();
@@ -593,6 +598,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
                     VectorInternal::Dense(fresh_replace.clone()),
                 );
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -691,6 +697,7 @@ fn test_cow_move_delete_name_preserves_survivor() {
             |_, raw_vectors, _, _| {
                 raw_vectors.retain(|(name, _)| name != DROP);
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -788,6 +795,7 @@ fn test_cow_move_allows_role_config_differences() {
             &[point_id],
             |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
             |_, _, _, _| {}, // no-op: a pure move
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2008,6 +2016,7 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
             |_, _, _, _| {},
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2175,6 +2184,7 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
             |_, _, _, _| {},
+            None,
             &hw_counter,
         )
         .unwrap();
