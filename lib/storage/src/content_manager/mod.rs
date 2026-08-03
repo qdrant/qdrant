@@ -3,6 +3,7 @@ use collection::shards::shard::PeerId;
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
 use self::errors::StorageError;
+use crate::quota::QuotaConfig;
 
 pub mod alias_mapping;
 pub mod collection_meta_ops;
@@ -34,6 +35,7 @@ pub mod consensus_ops {
         CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,
         UpdateCollectionOperation,
     };
+    use crate::quota::QuotaConfig;
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
@@ -52,6 +54,8 @@ pub mod consensus_ops {
             key: String,
             value: serde_json::Value,
         },
+        /// Replace the cluster-wide resource quota config on every peer.
+        SetQuotaConfig(QuotaConfig),
         RequestSnapshot,
         ReportSnapshot {
             peer_id: PeerId,
@@ -210,6 +214,10 @@ pub trait CollectionContainer {
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 
     fn sync_local_state(&self) -> Result<(), StorageError>;
+
+    fn quota_config(&self) -> QuotaConfig;
+
+    fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError>;
 }
 
 #[cfg(test)]

@@ -79,6 +79,7 @@ fn test_storage_config(storage_path: &Path) -> StorageConfig {
         shard_transfer_method: None,
         collection: None,
         max_collections: None,
+        quotas: Default::default(),
     }
 }
 

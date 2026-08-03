@@ -15,6 +15,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::{CollectionContainer, consensus_manager};
+use crate::quota::QuotaConfig;
 
 impl CollectionContainer for TableOfContent {
     fn perform_collection_meta_op(
@@ -64,6 +65,14 @@ impl CollectionContainer for TableOfContent {
             }
             Ok(())
         })
+    }
+
+    fn quota_config(&self) -> QuotaConfig {
+        self.quota_manager().config()
+    }
+
+    fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError> {
+        Ok(self.quota_manager().set_config(config)?)
     }
 
     fn sync_local_state(&self) -> Result<(), StorageError> {

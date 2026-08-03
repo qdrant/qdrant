@@ -235,8 +235,12 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         cores: Some(common::cpu::get_num_cpus()),
         cpu_cores_used: common::process_cpu_usage::process_cpu_usage_cores(),
         ram_size: Some((segment::utils::mem::total_memory_bytes() / 1024) as usize),
-        disk_size: common::disk_usage::disk_usage(storage_path)
-            .map(|usage| (usage.total / 1024) as usize)
+        // Through the quota manager, the node's single reader of disk usage, so
+        // this shares the reading the quota check takes rather than adding a
+        // `statvfs` to every telemetry request.
+        disk_size: shard::quota::global()
+            .disk_capacity_bytes(storage_path)
+            .map(|total| (total / 1024) as usize)
             .or_else(|| sys_info::disk_info().ok().map(|x| x.total as usize)),
         cpu_flags: cpu_flags.join(","),
         cpu_endian: Some(CpuEndian::current()),

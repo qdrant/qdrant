@@ -936,6 +936,12 @@ pub async fn do_create_index(
     )
     .await?;
 
+    // Building an index consumes memory and disk, but arrives at the shards
+    // through consensus, past the check on the update path — a peer must not
+    // refuse what the cluster has already agreed to. So the quota is applied
+    // here, before the operation is proposed at all.
+    shard::quota::global().check_update()?;
+
     let Some(field_schema) = operation.field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
@@ -1080,10 +1086,10 @@ pub async fn do_create_vector_name(
         StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
     })?;
 
-    // Reject before consensus submission if strict mode is violated — in
-    // particular, refuse creating a new named vector while process memory is
-    // already over the configured threshold, since this operation allocates
-    // storage for the new vector across every existing point.
+    // Reject before consensus submission — this operation allocates storage for
+    // the new vector across every existing point, and once proposed it reaches
+    // the shards past the check on the update path, where a peer must not refuse
+    // what the cluster has already agreed to.
     let operation = shard::operations::CreateVectorName {
         vector_name: vector_name.clone(),
         config: config.clone(),
@@ -1096,6 +1102,7 @@ pub async fn do_create_vector_name(
         &auth,
     )
     .await?;
+    shard::quota::global().check_update()?;
 
     let consensus_op = CreateNamedVector {
         collection_name: collection_name.clone(),

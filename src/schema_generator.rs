@@ -27,6 +27,7 @@ use shard::operations::optimization::OptimizationsResponse;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
+use storage::quota::QuotaStatus;
 use storage::types::ClusterStatus;
 
 use crate::common::telemetry::TelemetryData;
@@ -91,6 +92,7 @@ struct AllDefinitions {
     bp: OptimizationsResponse,
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
+    bs: QuotaStatus,
 }
 
 fn save_schema<T: JsonSchema>() {
