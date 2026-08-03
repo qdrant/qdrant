@@ -251,34 +251,63 @@ impl ShardHolder {
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        let evicted = self.shards.insert(shard_id, Arc::new(shard));
-        if let Some(evicted) = evicted {
-            debug_assert!(false, "Overwriting existing shard id {shard_id}");
-            evicted.stop_gracefully().await;
+        self.add_shards(vec![(shard_id, shard)], shard_key).await
+    }
+
+    /// Add batch of shards to shard holder and atomically update shard key mapping.
+    ///
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
+    pub async fn add_shards(
+        &mut self,
+        shards: Vec<(ShardId, ShardReplicaSet)>,
+        shard_key: Option<ShardKey>,
+    ) -> CollectionResult<()> {
+        if shards.is_empty() {
+            return Ok(());
         }
 
-        self.rings
-            .entry(shard_key.clone())
-            .or_insert_with(HashRingRouter::single)
-            .add(shard_id);
+        // Persist mapping first: it is the only fallible step, so a failed write leaves
+        // in-memory state untouched.
+        if let Some(shard_key) = &shard_key {
+            self.key_mapping.write_optional(|mapping| {
+                let mut mapping = mapping.clone();
+                let shard_ids = mapping.entry(shard_key.clone()).or_default();
 
-        if let Some(shard_key) = shard_key {
-            self.key_mapping.write_optional(|key_mapping| {
-                let has_id = key_mapping
-                    .get(&shard_key)
-                    .map(|shard_ids| shard_ids.contains(&shard_id))
-                    .unwrap_or(false);
+                let mut changed = false;
 
-                if has_id {
-                    return None;
+                for &(shard_id, _) in &shards {
+                    changed |= shard_ids.insert(shard_id);
                 }
-                let mut copy_of_mapping = key_mapping.clone();
-                let shard_ids = copy_of_mapping.entry(shard_key.clone()).or_default();
-                shard_ids.insert(shard_id);
-                Some(copy_of_mapping)
+
+                if changed { Some(mapping) } else { None }
             })?;
-            self.shard_id_to_key_mapping.insert(shard_id, shard_key);
         }
+
+        let ring = self
+            .rings
+            .entry(shard_key.clone())
+            .or_insert_with(HashRingRouter::single);
+
+        for &(shard_id, _) in &shards {
+            ring.add(shard_id);
+        }
+
+        for (shard_id, shard) in shards {
+            let evicted = self.shards.insert(shard_id, Arc::new(shard));
+
+            if let Some(evicted) = evicted {
+                debug_assert!(false, "Overwriting existing shard id {shard_id}");
+                evicted.stop_gracefully().await;
+            }
+
+            if let Some(shard_key) = &shard_key {
+                self.shard_id_to_key_mapping
+                    .insert(shard_id, shard_key.clone());
+            }
+        }
+
         Ok(())
     }
 
