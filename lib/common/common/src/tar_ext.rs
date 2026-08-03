@@ -522,6 +522,44 @@ mod tests {
     }
 
     #[test]
+    fn test_append_dir_all_skips_zero_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("storage");
+        std::fs::create_dir_all(src.join("nested")).unwrap();
+        let contents = zero_heavy_contents();
+        std::fs::write(src.join("nested").join("page_0.dat"), &contents).unwrap();
+        std::fs::write(src.join("meta.json"), b"{}").unwrap();
+
+        let mut output = CountingWriter {
+            inner: io::Cursor::new(Vec::new()),
+            written: 0,
+        };
+        let tar = BuilderExt::new_seekable_borrowed(&mut output);
+        tar.blocking_append_dir_all(&src, Path::new("storage"))
+            .unwrap();
+        tar.blocking_finish().unwrap();
+
+        let archive = output.inner.into_inner();
+        assert!(archive.len() as u64 > contents.len() as u64);
+        assert!(
+            output.written < 64 * 1024,
+            "expected zero runs to be skipped, but {} bytes were written",
+            output.written
+        );
+
+        let unpack_dir = tempfile::tempdir().unwrap();
+        tar::Archive::new(io::Cursor::new(archive))
+            .unpack(unpack_dir.path())
+            .unwrap();
+        let unpacked = unpack_dir.path().join("storage");
+        assert_eq!(
+            std::fs::read(unpacked.join("nested").join("page_0.dat")).unwrap(),
+            contents
+        );
+        assert_eq!(std::fs::read(unpacked.join("meta.json")).unwrap(), b"{}");
+    }
+
+    #[test]
     fn test_append_file_streaming_writes_zero_runs() {
         let contents = zero_heavy_contents();
         let dir = tempfile::tempdir().unwrap();
