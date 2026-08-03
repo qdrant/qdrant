@@ -40,9 +40,10 @@ edge = { path = ".." }
 segment = { path = "../../segment", default-features = false }
 # default-features = false drops shard's `default = ["api"]` (the gRPC/prost
 # `api` types crate), which the FFI never uses — matching the `edge` and
-# `edge-python` siblings. (Note: `tonic`/`tokio` are still pulled in via
-# non-optional deps of `shard`/`common`, so this trims the `api`/prost crate,
-# not the whole server stack.)
+# `edge-python` siblings. `tonic` is optional in `shard` and enabled only by
+# that feature, so the gRPC/router stack (tonic/axum) is trimmed as well.
+# `tokio` remains: `common` uses it for snapshot tar extraction and budget
+# semaphores.
 shard = { path = "../../shard", default-features = false }
 sparse = { path = "../../sparse" }
 
