@@ -148,6 +148,12 @@ impl Persistent {
                 // so we can accept consensus operations.
                 state.state.conf_state.voters = vec![state.this_peer_id];
                 state.state.conf_state.learners = vec![];
+                // Clear joint consensus fields left over from a mid transition crash
+                // otherwise, Raft demands quorum from the stale outgoing voter set,
+                // deadlocking this peer by waiting for nodes that no longer exist.
+                state.state.conf_state.voters_outgoing = vec![];
+                state.state.conf_state.learners_next = vec![];
+                state.state.conf_state.auto_leave = false;
                 state.state.hard_state.vote = state.this_peer_id;
                 // If this peer was removed from the old cluster but killed before it
                 // applied `RemoveNode(self)`, `first_voter` and the address book still
@@ -520,6 +526,11 @@ mod tests {
         state
             .apply_state_update(|state| {
                 state.conf_state.voters = vec![old_first_peer_id, this_peer_id];
+                // simulate the node going down mid membership change, all three
+                // joint consensus fields are non empty and must be wiped on reinit.
+                state.conf_state.voters_outgoing = vec![old_first_peer_id];
+                state.conf_state.learners_next = vec![this_peer_id];
+                state.conf_state.auto_leave = true;
             })
             .unwrap();
         drop(state);
@@ -528,6 +539,12 @@ mod tests {
 
         assert_eq!(state.this_peer_id(), this_peer_id);
         assert_eq!(state.state().conf_state.voters, vec![this_peer_id]);
+        assert!(state.state().conf_state.learners.is_empty());
+        // all joint consensus fields must be zeroed, a non empty `voters_outgoing`
+        // forces Raft to require quorum from peers that no longer exist
+        assert!(state.state().conf_state.voters_outgoing.is_empty());
+        assert!(state.state().conf_state.learners_next.is_empty());
+        assert!(!state.state().conf_state.auto_leave);
         assert_eq!(state.first_voter(), Some(this_peer_id));
         assert_eq!(
             state
