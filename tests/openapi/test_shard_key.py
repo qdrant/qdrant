@@ -35,6 +35,68 @@ def get_shard_keys(collection_name):
     return response
 
 
+def test_set_payload_with_multiple_shard_keys_and_point_ids(collection_name):
+    create_shard_key("1", collection_name)
+    create_shard_key("2", collection_name)
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "shard_key": "1",
+            "points": [
+                {"id": 9, "vector": [0.1, 0.2, 0.3, 0.4]},
+            ],
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "shard_key": "2",
+            "points": [
+                {"id": 101, "vector": [0.4, 0.3, 0.2, 0.1]},
+            ],
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/payload",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "payload": {"color": "black"},
+            "points": [9, 101],
+            "shard_key": ["1", "2"],
+        },
+    )
+    assert response.ok, response.json()
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/{id}",
+        method="GET",
+        path_params={"collection_name": collection_name, "id": 9},
+    )
+    assert response.ok
+    assert response.json()["result"]["payload"]["color"] == "black"
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/{id}",
+        method="GET",
+        path_params={"collection_name": collection_name, "id": 101},
+    )
+    assert response.ok
+    assert response.json()["result"]["payload"]["color"] == "black"
+
+
 @pytest.mark.skipif(
     not os.getenv("QDRANT__CLUSTER__ENABLED"),
     reason="only works in distributed mode"

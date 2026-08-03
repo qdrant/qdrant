@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use collection::collection::Collection;
@@ -497,11 +498,53 @@ impl TableOfContent {
     ) -> StorageResult<UpdateResult> {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
-        let updates: FuturesUnordered<_> = shard_keys
+        let mut operations_per_key = Vec::with_capacity(shard_keys.len());
+        let has_explicit_point_ids = operation.point_ids().is_some();
+
+        {
+            let shards_holder = collection.shards_holder();
+            let shard_holder = shards_holder.read().await;
+
+            for shard_key in &shard_keys {
+                let mut operation_for_key = operation.clone();
+
+                if has_explicit_point_ids {
+                    let matching_ids: HashSet<_> = shard_holder
+                        .split_by_shard(operation.clone(), &Some(shard_key.clone()))?
+                        .into_iter()
+                        .filter_map(|(_, split_operation)| split_operation.point_ids())
+                        .flatten()
+                        .collect();
+
+                    operation_for_key.retain_point_ids(|point_id| matching_ids.contains(point_id));
+
+                    if operation_for_key
+                        .point_ids()
+                        .is_some_and(|point_ids| point_ids.is_empty())
+                    {
+                        continue;
+                    }
+                }
+
+                operations_per_key.push((shard_key.clone(), operation_for_key));
+            }
+        }
+
+        // If no operation has relevant point IDs for the selected shard keys,
+        // preserve previous behavior and surface a point-not-found style error.
+        if operations_per_key.is_empty() {
+            operations_per_key = shard_keys
+                .iter()
+                .cloned()
+                .map(|shard_key| (shard_key, operation.clone()))
+                .collect();
+        }
+
+        let updates: FuturesUnordered<_> = operations_per_key
             .into_iter()
-            .map(|shard_key| {
+            .map(|(shard_key, operation_for_key)| {
                 collection.update_from_client(
-                    operation.clone(),
+                    operation_for_key,
                     wait,
                     timeout,
                     ordering,
