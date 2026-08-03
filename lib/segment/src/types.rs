@@ -761,19 +761,31 @@ pub struct VectorsConfigDefaults {
     pub memory: Option<Memory>,
 }
 
-/// Reject memory placements not supported by dense vector storage.
-/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
-fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
+/// Reject memory placements not supported by a storage kind.
+///
+/// `reason` becomes the message of the `unsupported_memory_placement` error, so each storage kind
+/// keeps its own user-facing wording while the error key and construction stay in one place.
+pub fn validate_memory_placement(
+    memory: &Memory,
+    reason: &'static str,
+) -> Result<(), ValidationError> {
     match memory {
         Memory::Cold | Memory::Cached => Ok(()),
         Memory::Pinned => {
             let mut error = ValidationError::new("unsupported_memory_placement");
-            error.message = Some(Cow::from(
-                "`pinned` memory placement is not supported for dense vector storage",
-            ));
+            error.message = Some(Cow::from(reason));
             Err(error)
         }
     }
+}
+
+/// Reject memory placements not supported by dense vector storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+pub fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
+    validate_memory_placement(
+        memory,
+        "`pinned` memory placement is not supported for dense vector storage",
+    )
 }
 
 /// Vector index configuration
@@ -4768,6 +4780,35 @@ mod tests {
             Some(Memory::Pinned)
         );
         assert_eq!(Memory::resolve(None, None), None);
+    }
+
+    #[test]
+    fn test_memory_placement_validation_rejects_pinned() {
+        // `Cold`/`Cached` are valid everywhere; `Pinned` is rejected with a shared
+        // error code and the storage-kind-specific message.
+        for placement in [Memory::Cold, Memory::Cached] {
+            assert!(validate_memory_placement(&placement, "storage").is_ok());
+            assert!(validate_dense_vector_memory(&placement).is_ok());
+        }
+
+        let dense_error = validate_dense_vector_memory(&Memory::Pinned)
+            .expect_err("Pinned must be rejected for dense vector storage");
+        assert_eq!(dense_error.code, "unsupported_memory_placement");
+        assert_eq!(
+            dense_error.message.as_deref(),
+            Some("`pinned` memory placement is not supported for dense vector storage"),
+        );
+
+        let payload_error = validate_memory_placement(
+            &Memory::Pinned,
+            "`pinned` memory placement is not supported for payload storage",
+        )
+        .expect_err("Pinned must be rejected for payload storage");
+        assert_eq!(payload_error.code, "unsupported_memory_placement");
+        assert_eq!(
+            payload_error.message.as_deref(),
+            Some("`pinned` memory placement is not supported for payload storage"),
+        );
     }
 
     #[test]

@@ -188,16 +188,10 @@ impl PayloadStorageParams {
 /// Reject memory placements not supported by payload storage.
 /// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
 fn validate_payload_storage_memory(memory: &Memory) -> Result<(), ValidationError> {
-    match memory {
-        Memory::Cold | Memory::Cached => Ok(()),
-        Memory::Pinned => {
-            let mut error = ValidationError::new("unsupported_memory_placement");
-            error.message = Some(std::borrow::Cow::from(
-                "`pinned` memory placement is not supported for payload storage",
-            ));
-            Err(error)
-        }
-    }
+    segment::types::validate_memory_placement(
+        memory,
+        "`pinned` memory placement is not supported for payload storage",
+    )
 }
 
 impl CollectionParams {

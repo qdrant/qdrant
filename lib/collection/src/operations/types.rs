@@ -3,7 +3,6 @@
 #![allow(deprecated)]
 
 use std::backtrace::Backtrace;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
@@ -1398,7 +1397,7 @@ pub struct VectorParams {
     /// flag if both are set. `pinned` is not supported for dense vector storage.
     /// Default: `cached` (`cold` if `on_disk` is set to true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[validate(custom(function = "validate_dense_vector_memory"))]
+    #[validate(custom(function = "segment::types::validate_dense_vector_memory"))]
     pub memory: Option<Memory>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1433,21 +1432,6 @@ fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> 
         return Err(common::validation::sparse_turbo4_unsupported_error());
     }
     Ok(())
-}
-
-/// Reject memory placements not supported by dense vector storage.
-/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
-fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
-    match memory {
-        Memory::Cold | Memory::Cached => Ok(()),
-        Memory::Pinned => {
-            let mut error = ValidationError::new("unsupported_memory_placement");
-            error.message = Some(Cow::from(
-                "`pinned` memory placement is not supported for dense vector storage",
-            ));
-            Err(error)
-        }
-    }
 }
 
 /// Is considered empty if `None` or if diff has no field specified
@@ -1785,7 +1769,7 @@ pub struct VectorParamsDiff {
     /// Memory placement of the original vector storage. Overrides the deprecated `on_disk`
     /// flag if both are set. `pinned` is not supported for dense vector storage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[validate(custom(function = "validate_dense_vector_memory"))]
+    #[validate(custom(function = "segment::types::validate_dense_vector_memory"))]
     pub memory: Option<Memory>,
 }
 
