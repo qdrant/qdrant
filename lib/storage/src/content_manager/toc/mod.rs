@@ -51,6 +51,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
+use crate::quota::{self, QuotaConfig, QuotaManager};
 use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 use crate::types::StorageConfig;
 
@@ -106,6 +107,8 @@ pub struct TableOfContent {
     collection_hw_metrics: DashMap<CollectionId, Arc<HwSharedDrain>>,
     /// Collector for various telemetry/metrics.
     telemetry: TocTelemetryCollector,
+    /// Cluster-wide resource quotas, applied to updates on top of strict mode.
+    quota_manager: Arc<QuotaManager>,
 }
 
 impl TableOfContent {
@@ -156,6 +159,15 @@ impl TableOfContent {
 
         let collection_paths = fs::read_dir(&collections_path)?;
         let is_distributed = consensus_proposal_sender.is_some();
+
+        // Installed before the collections that use it: it is the node's only
+        // reader of memory and disk usage, and the shards loaded below already go
+        // through it to size up their optimizations and WAL writes.
+        let quota_manager = Arc::new(QuotaManager::load_or_init(
+            &storage_config.storage_path,
+            storage_config.quotas.unwrap_or_default(),
+        )?);
+        quota::set_global(quota_manager.clone());
 
         // Collect valid collection paths for loading
         let mut collection_load_tasks = Vec::new();
@@ -284,7 +296,51 @@ impl TableOfContent {
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
             telemetry,
+            quota_manager,
         })
+    }
+
+    /// Cluster-wide resource quotas.
+    pub fn quota_manager(&self) -> &Arc<QuotaManager> {
+        &self.quota_manager
+    }
+
+    /// Set the quota config for the whole cluster.
+    ///
+    /// In distributed mode the new config is proposed through consensus, so every
+    /// peer persists and starts enforcing it; `wait` blocks until the operation is
+    /// confirmed by this peer. In single node mode it is applied directly.
+    pub async fn update_quota_config(
+        &self,
+        config: QuotaConfig,
+        wait: bool,
+    ) -> Result<(), StorageError> {
+        if !self.is_distributed() {
+            return Ok(self.quota_manager.set_config(config)?);
+        }
+
+        let operation = ConsensusOperations::SetQuotaConfig(config);
+
+        if wait {
+            let dispatcher = self
+                .toc_dispatcher
+                .lock()
+                .clone()
+                .ok_or_else(StorageError::standalone_mode)?;
+            dispatcher
+                .consensus_state()
+                .propose_consensus_op_with_await(operation, None)
+                .await
+                .map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Failed to propose and confirm quota update operation through consensus: {err}",
+                    ))
+                })?;
+        } else {
+            self.get_consensus_proposal_sender()?.send(operation)?;
+        }
+
+        Ok(())
     }
 
     /// Return `true` if service is working in distributed mode.

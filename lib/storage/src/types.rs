@@ -30,6 +30,8 @@ use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::{Validate, ValidationError};
 
+use crate::quota::QuotaConfig;
+
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
@@ -135,6 +137,13 @@ pub struct StorageConfig {
     /// Maximum number of collections to allow in the cluster.
     #[serde(default)]
     pub max_collections: Option<usize>,
+    /// Cluster-wide resource quotas. Absent means no quota is enforced.
+    ///
+    /// Only used to seed the quota manager the first time a node starts: once a
+    /// quota config file exists in the storage directory, it takes over.
+    #[validate(nested)]
+    #[serde(default)]
+    pub quotas: Option<QuotaConfig>,
 }
 
 impl StorageConfig {

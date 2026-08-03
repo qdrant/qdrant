@@ -7,6 +7,7 @@ use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use shard::PeerId;
+use storage::quota::{QuotaExceeded, QuotaTelemetry};
 use storage::types::ConsensusThreadStatus;
 
 use super::telemetry_ops::hardware::HardwareTelemetry;
@@ -150,12 +151,48 @@ impl MetricsProvider for TelemetryData {
         if let Some(mem) = &self.memory {
             mem.add_metrics(metrics, prefix);
         }
+        if let Some(quota) = &self.quota {
+            quota.add_metrics(metrics, prefix);
+        }
 
         #[cfg(target_os = "linux")]
         match procfs_metrics::ProcFsMetrics::collect() {
             Ok(procfs_provider) => procfs_provider.add_metrics(metrics, prefix),
             Err(err) => log::warn!("Error reading procfs infos: {err:?}"),
         };
+    }
+}
+
+impl MetricsProvider for QuotaTelemetry {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        let QuotaExceeded {
+            resident_memory,
+            disk_usage,
+        } = self.exceeded;
+
+        // One series per capped resource, and none for a resource with no limit:
+        // a series that can never reach 1 reads as "healthy" and would silently
+        // carry an alert that cannot fire. So the quota being disabled, or a
+        // resource being left uncapped, shows up as an absent series rather than
+        // a reassuring zero.
+        let series = [("memory", resident_memory), ("disk", disk_usage)]
+            .into_iter()
+            .filter_map(|(resource, exceeded)| {
+                let exceeded = exceeded?;
+                Some(gauge(
+                    f64::from(u8::from(exceeded)),
+                    &[("resource", resource)],
+                ))
+            })
+            .collect();
+
+        metrics.push_metric(metric_family(
+            "quota_exceeded",
+            "whether this node is at or over the configured quota for a resource",
+            MetricType::GAUGE,
+            series,
+            prefix,
+        ));
     }
 }
 

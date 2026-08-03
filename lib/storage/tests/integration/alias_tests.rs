@@ -77,6 +77,7 @@ fn test_alias_operation() {
         shard_transfer_method: None,
         collection: None,
         max_collections: None,
+        quotas: Default::default(),
     };
 
     let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();

@@ -39,6 +39,7 @@ use crate::proxy_segment::{
     DeletedPoints, IntendedVector, ProxyIndexChange, ProxyIndexChanges, ProxyVectorNameChanges,
     UnsyncedProxySegment,
 };
+use crate::quota::{self, DiskFit};
 use crate::segment_holder::SegmentId;
 use crate::segment_holder::locked::LockedSegmentHolder;
 use crate::segment_manifest::NewSegmentToken;
@@ -645,6 +646,15 @@ fn finish_optimization(
 }
 
 /// Returns error if segment size is larger than available disk space
+///
+/// The verdict comes from [`QuotaManager::fits_on_disk`], the node's single
+/// reader of disk usage, so an optimizer starting up does not repeat a `statvfs`
+/// the quota check just took. It answers against physical free space only: this
+/// refuses an optimization that provably cannot fit, never one that the quota
+/// would refuse an update for — optimizations are what free a full disk, so
+/// gating them on one would remove the way out.
+///
+/// [`QuotaManager::fits_on_disk`]: crate::quota::QuotaManager::fits_on_disk
 fn check_segments_size(
     optimizer_name: &str,
     optimizing_segments: &[LockedSegment],
@@ -695,45 +705,41 @@ fn check_segments_size(
         })?;
     }
 
-    let space_available = match fs4::available_space(temp_path) {
-        Ok(available) => Some(available),
-        Err(err) => {
-            log::debug!(
-                "Could not estimate available storage space in `{}`: {}",
-                temp_path.display(),
-                err
-            );
-            None
-        }
+    let Some(space_needed) = space_needed else {
+        log::warn!(
+            "Could not estimate the space needed by `{optimizer_name}`; will try optimizing anyway",
+        );
+        return Ok(());
     };
 
-    match (space_available, space_needed) {
-        (Some(space_available), Some(space_needed)) => {
+    match quota::global().fits_on_disk(temp_path, space_needed) {
+        DiskFit::Fits { available } => {
             if space_needed > 0 {
                 log::debug!(
                     "Available space: {}, needed for optimization: {}",
-                    bytes_to_human(space_available as usize),
+                    bytes_to_human(available as usize),
                     bytes_to_human(space_needed as usize),
                 );
             }
-            if space_available < space_needed {
-                return Err(
-                    segment::common::operation_error::OperationError::service_error(format!(
-                        "Not enough space available for optimization, needed: {}, available: {}",
-                        bytes_to_human(space_needed as usize),
-                        bytes_to_human(space_available as usize),
-                    )),
-                );
-            }
+            Ok(())
         }
-        _ => {
+        DiskFit::TooLarge {
+            available,
+            required,
+        } => Err(
+            segment::common::operation_error::OperationError::service_error(format!(
+                "Not enough space available for optimization, needed: {}, available: {}",
+                bytes_to_human(required as usize),
+                bytes_to_human(available as usize),
+            )),
+        ),
+        DiskFit::Unknown => {
             log::warn!(
                 "Could not estimate available storage space in `{optimizer_name}`; will try optimizing anyway",
             );
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 /// Performs optimization of segments (merge / reindex / vacuum, etc.)

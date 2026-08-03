@@ -16,6 +16,7 @@ mod common;
 pub mod content_manager;
 pub mod dispatcher;
 pub mod issues_subscribers;
+pub mod quota;
 pub mod rbac;
 pub mod types;
 

@@ -49,6 +49,9 @@ pub enum StorageError {
     ShardUnavailable { description: String },
     #[error("Partial snapshot for shard {shard_id} contains no changes")]
     EmptyPartialSnapshot { shard_id: ShardId },
+    /// A node has reached its resource quota and cannot take on more data.
+    #[error("Insufficient storage: {description}")]
+    InsufficientStorage { description: String },
 }
 
 impl StorageError {
@@ -187,6 +190,24 @@ impl StorageError {
             CollectionError::ShardUnavailable { .. } => StorageError::ShardUnavailable {
                 description: overriding_description,
             },
+            CollectionError::InsufficientStorage { .. } => StorageError::InsufficientStorage {
+                description: overriding_description,
+            },
+        }
+    }
+}
+
+impl From<shard::quota::QuotaError> for StorageError {
+    fn from(err: shard::quota::QuotaError) -> Self {
+        use shard::quota::QuotaError;
+
+        match err {
+            QuotaError::LimitReached(description) => {
+                StorageError::InsufficientStorage { description }
+            }
+            QuotaError::InvalidConfig(description) => StorageError::BadRequest { description },
+            // A quota file we cannot read or write is the node's problem.
+            QuotaError::Io(description) => StorageError::service_error(description),
         }
     }
 }
@@ -243,6 +264,9 @@ impl From<CollectionError> for StorageError {
                 description,
                 retry_after,
             },
+            CollectionError::InsufficientStorage { description } => {
+                StorageError::InsufficientStorage { description }
+            }
             CollectionError::ShardUnavailable { description } => {
                 StorageError::ShardUnavailable { description }
             }
