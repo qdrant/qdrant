@@ -7,7 +7,7 @@ use super::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::types::{Distance, MultiVectorConfig};
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
 use crate::vector_storage::turbo::multi_turbo::OFFSETS_DIR_PATH;
@@ -25,7 +25,7 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         populate: Populate,
     ) -> OperationResult<()> {
         QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_DIR_PATH), populate)?;
-        ChunkedVectorsRead::<MultivectorMmapOffset, S>::preopen(
+        ReadOnlyChunkedVectors::<MultivectorMmapOffset, S>::preopen(
             fs,
             &path.join(OFFSETS_DIR_PATH),
             advice,
@@ -60,7 +60,7 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         }
 
         let offsets =
-            ChunkedVectorsRead::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
+            ReadOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 

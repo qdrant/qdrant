@@ -278,6 +278,43 @@ storage:
   # If null - no limit.
   max_collections: null
 
+  # Cluster-wide resource quotas.
+  #
+  # Memory and disk are node-wide resources, so their limits are configured once for the whole
+  # cluster instead of per collection. Quotas reject updates that would consume more of a resource,
+  # regardless of whether strict mode is enabled for the collection being written to. The deprecated
+  # `max_resident_memory_percent` in a collection's strict mode config can tighten the memory limit
+  # for that collection, but never lift it.
+  #
+  # A limit that is reached has to be cleared by `release_margin_percent` before the node accepts
+  # writes again. Without that margin a resource resting on its limit would put the node in and out
+  # of service on the noise between two readings, restarting a shard recovery every time.
+  #
+  # These values only seed the quota manager on the first start. Afterwards the quota config is read
+  # from (and written to) `quota.json` in the storage directory, which is kept in sync across the
+  # cluster through consensus and can be changed with the `PUT /quotas` API.
+  #
+  # If this section is absent - no quota is enforced.
+  #quotas:
+    # Whether the limits below are enforced.
+    #enabled: false
+
+    # Reject memory-consuming updates once process resident memory reaches this percentage of total
+    # system memory (or of the cgroup limit, if one applies).
+    # If null - resident memory is not capped.
+    #max_resident_memory_percent: null
+
+    # Reject disk-consuming updates once the filesystem hosting the storage directory is filled to
+    # this percentage of its capacity.
+    # If null - disk usage is not capped.
+    #max_disk_usage_percent: null
+
+    # How many percentage points below its limit a resource has to fall before this node starts
+    # accepting work again. Raise it where usage is volatile; 0 releases as soon as usage is back
+    # under the limit.
+    # If null - the built-in default of 5 applies.
+    #release_margin_percent: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32

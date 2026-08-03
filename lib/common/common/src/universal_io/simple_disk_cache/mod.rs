@@ -13,27 +13,25 @@ pub use config::DiskCacheConfig;
 pub use file::DiskCache;
 pub use fs::{DiskCacheFs, DiskCacheFsContext};
 
-use crate::universal_io::{UniversalRead, UniversalReadFs};
+use crate::mmap::AdviceSetting;
+use crate::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 /// Trait bundle for remote backends that can be cached by [`DiskCache`].
 pub trait DiskCacheRemote:
     UniversalRead<
         Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
         ReadPipeline<'static, ()>: Send,
-        ReadPipeline<'static, u64>: Send,
         ReadPipeline<'static, Range<u32>>: Send,
-    > + Clone
-    + 'static
+    > + 'static
 {
 }
 
 impl<R> DiskCacheRemote for R
 where
-    R: UniversalRead + Clone + 'static,
+    R: UniversalRead + 'static,
     R::Fs: Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::ReadPipeline<'static, ()>: Send,
-    R::ReadPipeline<'static, u64>: Send,
     R::ReadPipeline<'static, Range<u32>>: Send,
 {
 }
@@ -44,6 +42,13 @@ where
 /// Matches `disk_cache::BLOCK_SIZE` and is a small multiple of typical
 /// filesystem block sizes (usually 4 KiB).
 const BLOCK_SIZE: usize = 16 * 1024; // 16kB
+
+const REMOTE_OPEN_OPTIONS: OpenOptions = OpenOptions {
+    writeable: false,
+    populate: Populate::No,
+    need_sequential: false,
+    advice: AdviceSetting::Global,
+};
 
 fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
     let start = (byte_range.start / BLOCK_SIZE as u64) as u32;

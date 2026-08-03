@@ -115,6 +115,19 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         self.view().get_value::<P>(point_offset, hw_counter)
     }
 
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub(crate) fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Vec<u8>>> {
+        let view = self.view();
+        let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+        Ok(bytes.map(std::borrow::Cow::into_owned))
+    }
+
     /// Iterate over all values with point offsets below `max_id` and execute callback for each one.
     /// Missing values are skipped.
     ///
@@ -166,6 +179,30 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
             point_offsets,
             move |user_data, point_offset, value| -> Result<_, E> {
                 callback(user_data, point_offset, value)?;
+                Ok(true)
+            },
+            hw_counter_cell,
+        )?;
+
+        Ok(())
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`].
+    pub(crate) fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.view().read_values_bytes::<P, _, _>(
+            point_offsets,
+            move |user_data, point_offset, bytes| -> Result<_, E> {
+                callback(user_data, point_offset, bytes)?;
                 Ok(true)
             },
             hw_counter_cell,

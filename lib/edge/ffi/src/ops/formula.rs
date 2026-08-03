@@ -344,7 +344,7 @@ impl Expression {
 /// compiling until the constructor surface decision is recorded here.
 ///
 /// Never called; it exists only for the exhaustiveness check.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn assert_every_expression_is_mapped(e: ExpressionInternal) {
     match e {
         // [`Expression::constant`]

@@ -25,7 +25,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 /// already folded in but not yet flushed to the flags file is never lost to a
 /// re-read.
 #[derive(Debug)]
-#[allow(dead_code)] // pending: read-only vector storages will hold `deleted` as this
 pub struct InMemoryBitvecFlags {
     /// Flags, materialized on open and patched in place on live-reload.
     bitvec: BitVec,

@@ -235,6 +235,7 @@ impl HttpError {
             StorageError::InferenceError { .. } => {}
             StorageError::ShardUnavailable { .. } => {}
             StorageError::EmptyPartialSnapshot { .. } => {}
+            StorageError::InsufficientStorage { .. } => {}
         }
         headers
     }
@@ -258,6 +259,7 @@ impl ResponseError for HttpError {
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
             StorageError::EmptyPartialSnapshot { .. } => http::StatusCode::NOT_MODIFIED,
+            StorageError::InsufficientStorage { .. } => http::StatusCode::INSUFFICIENT_STORAGE,
         }
     }
 }

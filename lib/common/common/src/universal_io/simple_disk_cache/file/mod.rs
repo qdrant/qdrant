@@ -9,10 +9,8 @@ use parking_lot::Mutex;
 
 use super::DiskCacheRemote;
 use super::local_state::LocalState;
-use crate::mmap::AdviceSetting;
-use crate::universal_io::{
-    OpenOptions, OwnedPipeline, Populate, UioResult, UniversalRead, UniversalReadFs,
-};
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
+use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
 
 mod init;
 mod read;
@@ -65,18 +63,22 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     /// Uninitialized start. Chosen for `Populate::No` / `Auto`.
     Uninit,
     /// The live mirror: the opened `remote` handle paired with its local mmap.
-    Ready { remote: R, local: LocalState },
+    Ready {
+        remote: R,
+        local: LocalState,
+        /// What the next [`reopen`] must do. Staged by [`schedule_reopen`],
+        /// consumed (reset to [`ScheduledReopen::No`]) by [`reopen`]. Only
+        /// touched under `&mut self`, and `ReadyRef` borrows just
+        /// `remote`/`local`, so staging never disturbs the served state.
+        ///
+        /// [`reopen`]: UniversalRead::reopen
+        /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+        scheduled_reopen: ScheduledReopen<R>,
+    },
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
     /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
     /// `PreferBackground`.
     OpenPrefill { pipeline: OwnedPipeline<R, ()> },
-    /// The reopen-time counterpart of [`OpenPrefill`](Self::OpenPrefill): an
-    /// in-flight read of just the appended tail (block-aligned old length → new
-    /// EOF). Init resizes the mirror and writes only that suffix. See [`reopen`].
-    ReopenPrefill {
-        pipeline: OwnedPipeline<R, u64>,
-        local: LocalState,
-    },
     /// Open-time partial prefill
     PartialPrefill {
         pipeline: OwnedPipeline<R, Range<u32>>,
@@ -84,15 +86,63 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     },
 }
 
+/// The obligation of the next [`reopen`](UniversalRead::reopen), staged ahead
+/// of time by [`schedule_reopen`](UniversalRead::schedule_reopen).
+///
+/// Staging deliberately leaves the mirror alone: its length keeps matching its
+/// persisted content until the apply, so readers observe nothing in between
+/// and components keep `len()` as their growth signal. Nothing else remembers
+/// the staged targets, hence the `target_len` on every variant.
+#[derive(Debug)]
+pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
+    /// Nothing staged — the default at every [`State::Ready`] construction
+    /// site, and what a no-growth schedule leaves behind. `reopen` then
+    /// schedules and waits inline.
+    No,
+    /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
+    /// `target_len` and lets the new blocks fault in on demand.
+    Resize { target_len: u64 },
+    /// Populated (`Blocking` / `PreferBackground`): the appended tail is
+    /// already in flight on a clone of the remote; apply resizes, drains it
+    /// and writes it. Holds exactly one read, whose user data is the block
+    /// range it covers, as in [`State::PartialPrefill`].
+    Tail {
+        pipeline: OwnedPipeline<R, Range<u32>>,
+        target_len: u64,
+    },
+}
+
+impl<R: UniversalRead + 'static> ScheduledReopen<R> {
+    /// Length the scheduled reopen would bring the mirror to, if anything is
+    /// staged.
+    pub(super) fn target_len(&self) -> Option<u64> {
+        match self {
+            ScheduledReopen::No => None,
+            ScheduledReopen::Resize { target_len }
+            | ScheduledReopen::Tail {
+                target_len,
+                pipeline: _,
+            } => Some(*target_len),
+        }
+    }
+}
+
 impl<R: UniversalRead + 'static> State<R> {
+    /// A live mirror with nothing staged — the default at every construction
+    /// site.
+    pub fn ready(remote: R, local: LocalState) -> Self {
+        State::Ready {
+            remote,
+            local,
+            scheduled_reopen: ScheduledReopen::No,
+        }
+    }
+
     #[inline]
     pub fn is_ready(&self) -> bool {
         match self {
             State::Ready { .. } => true,
-            State::Uninit
-            | State::OpenPrefill { .. }
-            | State::ReopenPrefill { .. }
-            | State::PartialPrefill { .. } => false,
+            State::Uninit | State::OpenPrefill { .. } | State::PartialPrefill { .. } => false,
         }
     }
 
@@ -100,10 +150,7 @@ impl<R: UniversalRead + 'static> State<R> {
     pub fn is_uninit(&self) -> bool {
         match self {
             State::Uninit => true,
-            State::Ready { .. }
-            | State::OpenPrefill { .. }
-            | State::ReopenPrefill { .. }
-            | State::PartialPrefill { .. } => false,
+            State::Ready { .. } | State::OpenPrefill { .. } | State::PartialPrefill { .. } => false,
         }
     }
 }
@@ -133,15 +180,11 @@ where
     }
 
     pub(super) fn open_remote(&self) -> UioResult<R> {
-        let remote_options = OpenOptions {
-            writeable: false,
-            populate: Populate::No,
-            need_sequential: false,
-            advice: AdviceSetting::Global,
-        };
-
-        self.remote_fs
-            .open(&self.remote_path, remote_options, self.remote_extra.clone())
+        self.remote_fs.open(
+            &self.remote_path,
+            REMOTE_OPEN_OPTIONS,
+            self.remote_extra.clone(),
+        )
     }
 }
 

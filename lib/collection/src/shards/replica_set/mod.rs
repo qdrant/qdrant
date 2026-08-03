@@ -125,6 +125,10 @@ pub struct ShardReplicaSet {
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
     pub partial_snapshot_meta: PartialSnapshotMeta,
+    /// Serializes full snapshot recoveries of this shard.
+    ///
+    /// See [`ShardReplicaSet::take_snapshot_recovery_lock`].
+    snapshot_recovery_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
@@ -224,6 +228,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             partial_snapshot_meta: PartialSnapshotMeta::default(),
+            snapshot_recovery_lock: Default::default(),
         })
     }
 
@@ -355,6 +360,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             partial_snapshot_meta: PartialSnapshotMeta::default(),
+            snapshot_recovery_lock: Default::default(),
         };
 
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!

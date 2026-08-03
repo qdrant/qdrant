@@ -2550,7 +2550,6 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
         } = value;
         Self {
             enabled,
@@ -2576,7 +2575,6 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             sparse_config: sparse_config.map(segment::types::StrictModeSparseConfig::from),
             max_payload_index_count: max_payload_index_count.map(|i| i as usize),
             max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
-            max_disk_usage_percent: max_disk_usage_percent.map(|i| i as u8),
         }
     }
 }
@@ -2681,7 +2679,6 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
         } = value;
         Self {
             enabled,
@@ -2705,7 +2702,6 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
             max_points_count: max_points_count.map(|i| i as u64),
             max_payload_index_count: max_payload_index_count.map(|i| i as u64),
             max_resident_memory_percent: max_resident_memory_percent.map(u32::from),
-            max_disk_usage_percent: max_disk_usage_percent.map(u32::from),
         }
     }
 }
@@ -2734,7 +2730,6 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
         } = value;
         Self {
             enabled,
@@ -2760,7 +2755,6 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             sparse_config: sparse_config.map(segment::types::StrictModeSparseConfigOutput::from),
             max_payload_index_count: max_payload_index_count.map(|i| i as usize),
             max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
-            max_disk_usage_percent: max_disk_usage_percent.map(|i| i as u8),
         }
     }
 }

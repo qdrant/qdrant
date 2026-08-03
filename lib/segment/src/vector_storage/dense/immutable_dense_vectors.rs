@@ -176,7 +176,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         Ok(())
     }
 
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn for_each_in_batch_async<F>(
         &self,
         keys: &[PointOffsetType],

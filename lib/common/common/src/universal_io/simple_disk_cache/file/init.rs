@@ -30,7 +30,12 @@ where
         }
 
         // SAFETY: self.ready tracks whether `state` is `State::Ready`, to make reads "lock-free".
-        let State::Ready { remote, local } = (unsafe { &*self.state.data_ptr() }) else {
+        let State::Ready {
+            remote,
+            local,
+            scheduled_reopen: _, // only ever touched under `&mut self`
+        } = (unsafe { &*self.state.data_ptr() })
+        else {
             unreachable!("the `ready` flag guarantees the `Ready` variant")
         };
         Ok(ReadyRef { remote, local })
@@ -56,9 +61,6 @@ where
         let (remote, local) = match std::mem::replace(&mut *state, State::Uninit) {
             State::Uninit => self.init_from_scratch(self.open_remote()?)?,
             State::OpenPrefill { pipeline } => self.init_from_open_prefill(pipeline)?,
-            State::ReopenPrefill { pipeline, local } => {
-                self.init_from_reopen_prefill(pipeline, local)?
-            }
             State::PartialPrefill { pipeline, len } => {
                 self.init_from_partial_prefill(pipeline, len)?
             }
@@ -67,7 +69,7 @@ where
             }
         };
 
-        *state = State::Ready { remote, local };
+        *state = State::ready(remote, local);
         self.is_ready.store(true, Ordering::Release);
 
         Ok(())
@@ -103,30 +105,6 @@ where
             // to a from-scratch, zero-length mirror.
             None => self.init_from_scratch(pipeline.into_inner()),
         }
-    }
-
-    /// Resolve a [`State::ReopenPrefill`] tail read: resize the mirror and write
-    /// only the appended suffix. See [`super::reopen`].
-    pub(super) fn init_from_reopen_prefill(
-        &self,
-        mut pipeline: OwnedPipeline<R, u64>,
-        mut local: LocalState,
-    ) -> UioResult<(R, LocalState)> {
-        match pipeline.wait()? {
-            Some((start, bytes)) if !bytes.is_empty() => {
-                let end = start + bytes.len() as u64;
-                local.resize(&self.local_path, end)?;
-                let blocks_range = to_block_range(start..end);
-                // SAFETY: `bytes` covers `blocks_range` exactly, and the remote
-                // is immutable, so the mmap suffix is filled once with correct data.
-                unsafe { local.write_mmap_bytes(&bytes, blocks_range) }
-            }
-            // There is nothing to apply.
-            // TODO: double check that the remote didn't shrink?
-            Some(_) | None => {}
-        }
-
-        Ok((pipeline.into_inner(), local))
     }
 
     /// Resolve a [`State::PartialPrefill`] read: size the mirror from `len` and

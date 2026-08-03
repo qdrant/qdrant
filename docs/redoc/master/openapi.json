@@ -963,6 +963,161 @@
         }
       }
     },
+    "/quotas": {
+      "get": {
+        "tags": [
+          "Quotas"
+        ],
+        "summary": "Get global quotas",
+        "description": "Get the cluster-wide resource quota configuration, together with the current utilization it is measured against.\nThe configuration is the same on every peer, but the reported utilization is for the node serving this request only -\nmemory and disk are node-local, so query each peer to see where the whole cluster stands.\n",
+        "operationId": "get_quotas",
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/QuotaStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Quotas"
+        ],
+        "summary": "Set global quotas",
+        "description": "Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts",
+        "operationId": "update_quotas",
+        "requestBody": {
+          "description": "Quota configuration to apply",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaConfig"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait until the new configuration is confirmed by consensus on this peer.\nIf false - the request returns as soon as the change is proposed.\n",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections": {
       "get": {
         "tags": [
@@ -6243,6 +6398,10 @@
       "description": "Qdrant service utilities."
     },
     {
+      "name": "Quotas",
+      "description": "Cluster-wide resource quotas."
+    },
+    {
       "name": "Beta",
       "description": "Beta features, do not depend on these yet."
     }
@@ -7434,14 +7593,8 @@
             "nullable": true
           },
           "max_resident_memory_percent": {
-            "description": "Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0,
-            "nullable": true
-          },
-          "max_disk_usage_percent": {
-            "description": "Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)",
+            "description": "Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
+            "deprecated": true,
             "type": "integer",
             "format": "uint8",
             "minimum": 0,
@@ -9856,15 +10009,8 @@
             "nullable": true
           },
           "max_resident_memory_percent": {
-            "description": "Reject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free memory.",
-            "type": "integer",
-            "format": "uint8",
-            "maximum": 100,
-            "minimum": 1,
-            "nullable": true
-          },
-          "max_disk_usage_percent": {
-            "description": "Reject disk-consuming update operations (e.g. upsert, set payload) when the filesystem hosting Qdrant storage is filled above this percentage of its total capacity. Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free disk space. Free space is sampled with a small TTL cache; the gate may take a few seconds to react.",
+            "description": "Deprecated: use the node-wide quota config (`PUT /quotas`) instead, which caps the same resource for every collection. Scheduled for removal in 1.21.\n\nReject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Memory is a node-wide resource, so this only tightens the quota for one collection; it cannot lift it. Delete operations are not affected, so callers can still free memory.",
+            "deprecated": true,
             "type": "integer",
             "format": "uint8",
             "maximum": 100,
@@ -11532,6 +11678,17 @@
                 "nullable": true
               }
             ]
+          },
+          "quota": {
+            "description": "Resource quota this node is enforcing, and whether it is currently over it. The config is whatever this node last persisted, so a peer that missed a consensus update reports what it is actually applying rather than what the cluster agreed on. Absent for a token without global access, which `GET /quotas` requires as well.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuotaTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11774,12 +11931,14 @@
             "nullable": true
           },
           "ram_size": {
+            "description": "Effective total memory for this process in KiB (cgroup limit or host RAM).",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "disk_size": {
+            "description": "Size in KiB of the filesystem hosting Qdrant's /storage path (if not available, fallback to host disk size)",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -13546,6 +13705,71 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          }
+        }
+      },
+      "QuotaTelemetry": {
+        "description": "What a node reports about the quota it is enforcing.\n\nCarries the verdict rather than the raw utilization, because the point of reporting it is to know whether this node is currently refusing writes — which depends on the limits as well as the readings.",
+        "type": "object",
+        "required": [
+          "config",
+          "exceeded"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          },
+          "exceeded": {
+            "$ref": "#/components/schemas/QuotaExceeded"
+          }
+        }
+      },
+      "QuotaConfig": {
+        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true.",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether the limits below are enforced.",
+            "default": false,
+            "type": "boolean"
+          },
+          "max_resident_memory_percent": {
+            "description": "Reject memory-consuming updates once process resident memory reaches this percentage of total system memory (or of the cgroup limit, if one applies).",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming updates once the filesystem hosting the storage directory is filled to this percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "release_margin_percent": {
+            "description": "How many percentage points below its limit a resource has to fall before this node starts accepting work again.\n\nWithout a margin, a resource resting on its limit crosses it in both directions on the noise between two readings, putting the node in and out of service each time — and restarting a shard recovery with it. Raise it where usage is volatile; `0` disables the margin and releases as soon as usage is back under the limit.\n\nUnset leaves the built-in default in force, so a config written today does not pin a number that a later release may want to revise.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "QuotaExceeded": {
+        "description": "Which of the enforced limits a node is currently refusing work over.\n\nReported per resource because they are freed by different actions: disk by deleting or optimizing, memory by unloading. A single flag would not say which one to go and fix.\n\n`true` outlasts the reading that caused it: a resource that reaches its limit stays flagged until it has fallen a margin below, so that one resting near the limit does not flip the node in and out of service. Expect to see it set while the reported utilization is already back under the configured limit.\n\nA field is `null` when the node is not enforcing that resource — the quota is disabled, no limit is set for it, or it cannot be measured here. That is deliberately distinct from `false`: a resource that can never trip must not be reported as one that is within its limits, or it invites an alert that can never fire.",
+        "type": "object",
+        "properties": {
+          "resident_memory": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "disk_usage": {
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -16680,6 +16904,77 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "QuotaStatus": {
+        "description": "Quota configuration in effect, and how close each peer is to it.\n\nThe configuration is cluster-wide; the utilization is not. `usage` is the node that served the request, and `peers` is what every peer that answered reports about itself — memory and disk are node-local, so one peer being under its limit says nothing about the others.",
+        "type": "object",
+        "required": [
+          "config",
+          "usage"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/QuotaUsage"
+          },
+          "peers": {
+            "description": "Utilization reported by each peer, keyed by peer ID, including the one that served the request.\n\nOnly peers that answered are listed: a peer missing from the map could not be reached, which is itself worth seeing. Absent entirely outside distributed mode, where there are no peers to ask.",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PeerQuotaUsage"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "QuotaUsage": {
+        "description": "Utilization of the quota-managed resources **on this node alone** — memory and disk are node-local, so a peer under its limit says nothing about the rest of the cluster.\n\nA field is `null` when the platform does not expose the underlying stat.",
+        "type": "object",
+        "properties": {
+          "resident_memory_percent": {
+            "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_usage_percent": {
+            "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "PeerQuotaUsage": {
+        "description": "What one peer reports about the quota it is enforcing.",
+        "type": "object",
+        "required": [
+          "exceeded"
+        ],
+        "properties": {
+          "exceeded": {
+            "description": "Whether this peer is at or over one of the enforced limits, and so is currently refusing updates. Always false while the quota is disabled.",
+            "type": "boolean"
+          },
+          "resident_memory_percent": {
+            "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_usage_percent": {
+            "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
           }
         }
       }

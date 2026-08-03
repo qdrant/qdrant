@@ -77,6 +77,18 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
+        let bytes = self.get_value_bytes::<P>(point_offset, hw_counter)?;
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(pointer) = self.get_pointer(point_offset)? else {
             return Ok(None);
         };
@@ -84,16 +96,36 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         let raw = self.read_from_pages::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
-        let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed)?;
-
-        Ok(Some(value))
+        Ok(Some(self.decompress(raw)))
     }
 
     pub fn read_values<P, U, E>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
+        hw_counter_cell: &CounterCell,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, point_offset, bytes| {
+                let value = bytes.map(V::from_bytes).transpose().map_err(E::from)?;
+                callback(user_data, point_offset, value)
+            },
+            hw_counter_cell,
+        )
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce.
+    pub fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
     ) -> Result<bool, E>
     where
@@ -127,8 +159,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
                 hw_counter_cell.incr_delta(bytes.len());
 
                 let decompressed = self.decompress(bytes);
-                let value = V::from_bytes(&decompressed)?;
-                callback(user_data, point_offset, Some(value))
+                callback(user_data, point_offset, Some(&decompressed))
             },
         )
     }

@@ -247,6 +247,8 @@ tags:
     description: Storage and collections snapshots.
   - name: Service
     description: Qdrant service utilities.
+  - name: Quotas
+    description: Cluster-wide resource quotas.
   - name: Beta
     description: Beta features, do not depend on these yet.
 

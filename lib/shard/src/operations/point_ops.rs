@@ -3,6 +3,8 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
+#[cfg(feature = "api")]
+use api::grpc::RawPayload;
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -498,6 +500,7 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
             payload: payload
                 .map(api::conversions::json::payload_to_proto)
                 .unwrap_or_default(),
+            raw_payload: None,
         }
     }
 }
@@ -511,23 +514,38 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             id,
             vectors,
             payload,
+            raw_payload,
         } = value;
 
         let id = id
             .ok_or_else(|| tonic::Status::invalid_argument("Empty id is not allowed"))?
             .try_into()?;
 
-        let payload = if payload.is_empty() {
-            None
-        } else {
-            Some(api::conversions::json::proto_to_payloads(payload)?)
+        // Prefer the raw payload blob and fall back to the serialized payload otherwise.
+        // An empty payload is normalized to `None`.
+        let payload = match raw_payload {
+            Some(raw_payload) => decode_payload(raw_payload)?,
+            None => api::conversions::json::proto_to_payloads(payload)?,
         };
+        let payload = (!payload.is_empty()).then_some(payload);
 
         Ok(Self {
             id,
             vectors: vectors.into_iter().collect(),
             payload,
         })
+    }
+}
+
+/// Decodes the RawPayload according to its encoding.
+#[cfg(feature = "api")]
+fn decode_payload(raw_payload: RawPayload) -> Result<Payload, tonic::Status> {
+    match raw_payload.encoding() {
+        api::grpc::RawPayloadEncoding::JsonBytes => {
+            serde_json::from_slice(&raw_payload.payload_bytes).map_err(|err| {
+                tonic::Status::invalid_argument(format!("Malformed raw payload blob: {err}"))
+            })
+        }
     }
 }
 

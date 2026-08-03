@@ -200,16 +200,6 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
-    /// Iterate starting from a given ID, filtering deferred points using the
-    /// mapping's own threshold. Shorthand for
-    /// [`Self::iter_from_with_behavior`] with [`DeferredBehavior::VisibleOnly`].
-    pub fn iter_from_visible(
-        self,
-        external_id: Option<PointIdType>,
-    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
-        self.iter_from_with_behavior(external_id, DeferredBehavior::VisibleOnly)
-    }
-
     /// Iterate over internal IDs in random order, filtering deferred points
     /// using the mapping's own threshold. Shorthand for
     /// [`Self::iter_random_with_behavior`] with [`DeferredBehavior::VisibleOnly`].

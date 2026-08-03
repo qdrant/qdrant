@@ -14,6 +14,7 @@ pub mod issues_api;
 pub mod local_shard_api;
 pub mod profiler_api;
 pub mod query_api;
+pub mod quota_api;
 pub mod read_params;
 pub mod recommend_api;
 pub mod retrieve_api;

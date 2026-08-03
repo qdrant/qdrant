@@ -288,7 +288,7 @@ pub fn geo_hash_to_box(geo_hash: GeoHash) -> GeoBoundingBox {
 struct GeohashBoundingBox {
     north_west: GeoHash,
     south_west: GeoHash,
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     south_east: GeoHash, // field is not involved in the calculations, but is kept for symmetry
     north_east: GeoHash,
 }

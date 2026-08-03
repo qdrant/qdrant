@@ -1121,16 +1121,13 @@ pub struct StrictModeConfig {
     /// Max number of payload indexes in a collection
     #[prost(uint64, optional, tag = "19")]
     pub max_payload_index_count: ::core::option::Option<u64>,
+    /// Deprecated: memory is node-wide, use the global quota config instead. Removal planned for 1.21.
     /// Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
     /// Delete-style operations are still allowed so memory can be freed.
+    #[deprecated]
     #[prost(uint32, optional, tag = "21")]
     #[validate(range(min = 1, max = 100))]
     pub max_resident_memory_percent: ::core::option::Option<u32>,
-    /// Reject disk-consuming update operations when the filesystem hosting Qdrant storage exceeds this percentage of total capacity (1-100).
-    /// Free space is sampled with a small TTL cache so the gate may take a few seconds to react. Delete-style operations are still allowed so disk can be freed.
-    #[prost(uint32, optional, tag = "22")]
-    #[validate(range(min = 1, max = 100))]
-    pub max_disk_usage_percent: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -10620,6 +10617,19 @@ pub struct PointStructRaw {
     >,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Byte-encoded payload blob.
+    #[prost(message, optional, tag = "4")]
+    pub raw_payload: ::core::option::Option<RawPayload>,
+}
+/// The whole payload object of a point as a single encoded blob.
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RawPayload {
+    /// The encoded payload object, see `encoding` for the format.
+    #[prost(bytes = "vec", tag = "1")]
+    pub payload_bytes: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "RawPayloadEncoding", tag = "2")]
+    pub encoding: i32,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -11436,6 +11446,33 @@ pub struct FacetResponseInternal {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
+}
+/// Encoding of `RawPayload.payload_bytes`.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    JsonBytes = 0,
+}
+impl RawPayloadEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::JsonBytes => "JsonBytes",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "JsonBytes" => Some(Self::JsonBytes),
+            _ => None,
+        }
+    }
 }
 /// Controls how an update operation waits for completion.
 /// When present, fully overrides the `wait` boolean from the wrapped public message.
@@ -13700,6 +13737,35 @@ impl StateRole {
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetQuotaUsageRequest {}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetQuotaUsageResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<QuotaUsage>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+/// Utilization of the quota-managed resources on the peer that answered.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuotaUsage {
+    /// Resident memory as a percentage of the memory available to the process,
+    /// absent when the platform does not expose the stat.
+    #[prost(uint32, optional, tag = "1")]
+    pub resident_memory_percent: ::core::option::Option<u32>,
+    /// Used space of the storage filesystem as a percentage of its capacity,
+    /// absent when it cannot be read.
+    #[prost(uint32, optional, tag = "2")]
+    pub disk_usage_percent: ::core::option::Option<u32>,
+    /// Whether this peer is at or over one of the limits it enforces, and so is
+    /// currently refusing updates. Always false while the quota is disabled.
+    #[prost(bool, tag = "3")]
+    pub exceeded: bool,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetConsensusCommitRequest {}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -13950,6 +14016,31 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetAuditLog"));
             self.inner.unary(req, path, codec).await
         }
+        /// Get how much of its resource quota this peer is using
+        pub async fn get_quota_usage(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetQuotaUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotaUsageResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetQuotaUsage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetQuotaUsage"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -13995,6 +14086,14 @@ pub mod qdrant_internal_server {
             request: tonic::Request<super::GetAuditLogRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetAuditLogResponse>,
+            tonic::Status,
+        >;
+        /// Get how much of its resource quota this peer is using
+        async fn get_quota_usage(
+            &self,
+            request: tonic::Request<super::GetQuotaUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotaUsageResponse>,
             tonic::Status,
         >;
     }
@@ -14244,6 +14343,52 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetAuditLogSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.QdrantInternal/GetQuotaUsage" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetQuotaUsageSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetQuotaUsageRequest>
+                    for GetQuotaUsageSvc<T> {
+                        type Response = super::GetQuotaUsageResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetQuotaUsageRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_quota_usage(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetQuotaUsageSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

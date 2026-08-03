@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
 use blobstore::error::BlobstoreError;
+use common::bitpacking_ordered::DecompressionError;
 use common::mmap::Error as MmapError;
 use common::universal_io::{IsNotFound, UniversalIoError};
 use rayon::ThreadPoolBuildError;
@@ -146,33 +147,6 @@ impl OperationError {
         }
     }
 
-    /// Whether this error signals that all appendable segments are at `max_segment_size` capacity,
-    /// so the operation can be re-applied after provisioning a fresh appendable segment.
-    pub fn is_out_of_appendable_capacity(&self) -> bool {
-        match self {
-            Self::OutOfAppendableCapacity { .. } => true,
-            Self::WrongVectorDimension { .. }
-            | Self::MalformedVectorBlob { .. }
-            | Self::VectorNameNotExists { .. }
-            | Self::PointIdError { .. }
-            | Self::TypeError { .. }
-            | Self::TypeInferenceError { .. }
-            | Self::ServiceError { .. }
-            | Self::InconsistentStorage { .. }
-            | Self::FileNotFound { .. }
-            | Self::OutOfMemory { .. }
-            | Self::Cancelled { .. }
-            | Self::Timeout { .. }
-            | Self::ValidationError { .. }
-            | Self::WrongSparse
-            | Self::WrongMulti
-            | Self::MissingRangeIndexForOrderBy { .. }
-            | Self::MissingMapIndexForFacet { .. }
-            | Self::VariableTypeError { .. }
-            | Self::NonFiniteNumber { .. } => false,
-        }
-    }
-
     pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(
@@ -225,6 +199,12 @@ pub struct SegmentFailedState {
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
         Self::service_error(error.to_string())
+    }
+}
+
+impl From<DecompressionError> for OperationError {
+    fn from(err: DecompressionError) -> Self {
+        Self::service_error(err.to_string())
     }
 }
 

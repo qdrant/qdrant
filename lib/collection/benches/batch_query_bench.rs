@@ -32,9 +32,6 @@ use tempfile::{Builder, TempDir};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 fn setup() -> (TempDir, LocalShard, Runtime) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 

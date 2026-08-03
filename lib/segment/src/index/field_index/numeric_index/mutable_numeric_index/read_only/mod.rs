@@ -28,7 +28,6 @@ where
     /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
     /// reads it lands with the storage-variant enum lifecycle (it isn't part of
     /// the [`NumericIndexRead`](super::super::numeric_index_read::NumericIndexRead) surface).
-    #[allow(dead_code)]
     pub(super) storage: BlobstoreReader<Vec<T>, S>,
 }
 

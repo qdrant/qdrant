@@ -65,6 +65,11 @@ pub struct EdgeConfig {
     /// [`EdgeConfig::search_thread_count`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_search_threads: Option<usize>,
+    /// Pin every thread of this shard's search pool to the given CPU core: bounds the shard's
+    /// search compute to one core while keeping the pool's IO overlap. Best-effort. `None` (the
+    /// default) leaves thread placement to the OS scheduler.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_pool_core: Option<usize>,
 }
 
 impl EdgeConfig {
@@ -107,6 +112,7 @@ impl EdgeConfig {
             optimizers,
             wal_options,
             max_search_threads,
+            search_pool_core,
         } = self;
         Self {
             on_disk_payload: on_disk_payload.or(base.on_disk_payload),
@@ -125,6 +131,7 @@ impl EdgeConfig {
             optimizers: optimizers.or_else(|| base.optimizers.clone()),
             wal_options: wal_options.or_else(|| base.wal_options.clone()),
             max_search_threads: max_search_threads.or(base.max_search_threads),
+            search_pool_core: search_pool_core.or(base.search_pool_core),
         }
     }
 
@@ -193,6 +200,7 @@ impl EdgeConfig {
             optimizers: None,
             wal_options: None,
             max_search_threads: None,
+            search_pool_core: None,
         }
     }
 

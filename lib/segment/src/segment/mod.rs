@@ -13,8 +13,9 @@ mod read_view;
 #[cfg(test)]
 mod tests;
 
-#[allow(dead_code)]
 pub mod read_only;
+
+pub mod update_only;
 
 use std::collections::HashMap;
 use std::fmt;

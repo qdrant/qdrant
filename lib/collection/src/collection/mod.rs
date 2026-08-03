@@ -767,6 +767,10 @@ impl Collection {
         // of this function
         let mut proposed = HashMap::<PeerId, usize>::new();
 
+        // Hoisted out of the loop: a node over its limit re-measures on every
+        // call, so checking per dead shard would cost a `statvfs` each.
+        let node_at_capacity = shard::quota::global().check_capacity().err();
+
         // Check for proper replica states
         for replica_set in shard_holder.all_shards() {
             let this_peer_id = replica_set.this_peer_id();
@@ -806,6 +810,16 @@ impl Collection {
             // Don't recover replicas if not dead
             let is_dead = this_peer_state == Some(Dead);
             if !is_dead {
+                continue;
+            }
+
+            // Don't recover replicas onto a node that is out of memory or disk
+            if let Some(err) = &node_at_capacity {
+                log::debug!(
+                    "Postponing recovery of shard {}:{shard_id} on this peer, \
+                     it is at a resource limit: {err}",
+                    self.name(),
+                );
                 continue;
             }
 

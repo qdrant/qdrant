@@ -5,7 +5,6 @@ mod versions_storage;
 #[cfg(test)]
 pub(super) mod tests;
 
-#[allow(dead_code)]
 pub mod read_only;
 
 use std::fmt::Debug;

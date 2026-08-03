@@ -22,6 +22,7 @@ criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rand_distr = { workspace = true }
+rmp-serde = { workspace = true }
 rstest = { workspace = true }
 tar = { workspace = true }
 approx = "0.5.1"
@@ -43,7 +44,6 @@ rand = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rmp-serde = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
 tinyvec = { workspace = true }

@@ -1,4 +1,6 @@
 pub mod aligned_buf;
+#[cfg(feature = "testing")]
+pub mod bench_cache;
 pub mod binary_search;
 pub mod bitpacking;
 pub mod bitpacking_links;

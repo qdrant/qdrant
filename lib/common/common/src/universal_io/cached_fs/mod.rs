@@ -192,6 +192,10 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
 
         Ok(())
     }
+
+    fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
+        self.files_info.as_ref()?.get(path).cloned()
+    }
 }
 
 /// Construction context for [`CachedReadFs`]: the inner filesystem's own

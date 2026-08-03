@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::path::Path;
 
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{ListedFile, OpenOptions, UioResult};
@@ -143,4 +144,7 @@ pub trait CachedReadFs: UniversalReadFs {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
     ) -> UioResult<()>;
+
+    /// Return the file info from the current snapshot.
+    fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;
 }

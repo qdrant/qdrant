@@ -1194,6 +1194,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             optimizers: _,
             wal_options: _,
             max_search_threads: _,
+            search_pool_core: _,
         } = c;
         let vector_data = vectors
             .iter()

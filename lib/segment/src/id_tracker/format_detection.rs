@@ -50,8 +50,4 @@ impl IdTrackerFormat {
             i2e_path(segment_path).is_file(),
         )
     }
-
-    pub fn is_mutable(self) -> bool {
-        matches!(self, Self::Mutable)
-    }
 }

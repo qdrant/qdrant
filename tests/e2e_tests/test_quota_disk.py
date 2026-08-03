@@ -1,12 +1,11 @@
-"""End-to-end test for the strict-mode `max_disk_usage_percent` threshold.
+"""End-to-end test for the global quota's `max_disk_usage_percent` threshold.
 
 The disk-usage gate samples the filesystem hosting Qdrant storage with a 5s
 TTL cache, so the test has to be patient on both sides:
 
 1. Boot Qdrant with `/qdrant/storage` backed by a small tmpfs so the gate is
    reachable with a modest amount of data.
-2. Create a collection and turn strict mode on with a disk threshold well
-   below the tmpfs capacity.
+2. Set a node-wide quota with a disk threshold well below the tmpfs capacity.
 3. Upsert dense vectors (which actually hit disk via mmap segments) until
    the gate trips with the `"disk usage"` error.
 4. Drop the collection — deletes alone don't free disk before segment
@@ -43,8 +42,8 @@ DISK_PERCENT_THRESHOLD = 20
 
 VECTOR_DIM = 128
 BATCH_SIZE = 200
-COLLECTION_NAME = "strict_mode_disk_test"
-RECOVERY_COLLECTION_NAME = "strict_mode_disk_recovery"
+COLLECTION_NAME = "quota_disk_test"
+RECOVERY_COLLECTION_NAME = "quota_disk_recovery"
 
 # Generous ceiling; the gate usually trips by ~300. The loop breaks on trip, so
 # the headroom is free and just absorbs variance in the check's 5s cache lag.
@@ -53,15 +52,15 @@ MAX_INSERT_BATCHES = 600
 RECOVERY_TIMEOUT_SECS = 60
 
 
-def _set_strict_mode_via_rest(host: str, port: int, collection: str, config: dict) -> None:
-    """PATCH strict mode directly through REST.
+def _set_quota_via_rest(host: str, port: int, config: dict) -> None:
+    """Install the node-wide quota through REST.
 
-    Bypasses the Python client model because older releases may not yet know
-    about the ``max_disk_usage_percent`` field.
+    Not offered by the Python client, and node-wide rather than per collection,
+    so unlike the strict mode config it is set once for the whole test.
     """
-    response = requests.patch(
-        f"http://{host}:{port}/collections/{collection}",
-        json={"strict_mode_config": config},
+    response = requests.put(
+        f"http://{host}:{port}/quotas",
+        json=config,
         timeout=30,
     )
     response.raise_for_status()
@@ -100,12 +99,22 @@ def _is_disk_rejection(err: str) -> bool:
     return "disk usage" in err.lower()
 
 
-class TestStrictModeDisk:
+def _create_collection(client: ClientUtils, name: str) -> None:
+    client.client.create_collection(
+        collection_name=name,
+        vectors_config=models.VectorParams(
+            size=VECTOR_DIM, distance=models.Distance.COSINE
+        ),
+        wal_config=models.WalConfigDiff(wal_capacity_mb=WAL_CAPACITY_MB),
+    )
+
+
+class TestQuotaDisk:
     def test_disk_threshold_blocks_then_recovers_after_drop(
         self, qdrant_container_factory
     ):
         config = QdrantContainerConfig(
-            name=f"qdrant-sm-disk-{uuid.uuid4().hex[:8]}",
+            name=f"qdrant-quota-disk-{uuid.uuid4().hex[:8]}",
             mounts=[
                 Mount(
                     target="/qdrant/storage",
@@ -121,23 +130,18 @@ class TestStrictModeDisk:
         client = ClientUtils(host=container_info.host, port=container_info.http_port)
         assert client.wait_for_server(), "Server failed to start"
 
-        client.client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=models.VectorParams(
-                size=VECTOR_DIM, distance=models.Distance.COSINE
-            ),
-            wal_config=models.WalConfigDiff(wal_capacity_mb=WAL_CAPACITY_MB),
-        )
-
-        _set_strict_mode_via_rest(
+        # Node-wide, so it governs every collection below, including the one
+        # created after the gate has already tripped.
+        _set_quota_via_rest(
             container_info.host,
             container_info.http_port,
-            COLLECTION_NAME,
             {
                 "enabled": True,
                 "max_disk_usage_percent": DISK_PERCENT_THRESHOLD,
             },
         )
+
+        _create_collection(client, COLLECTION_NAME)
 
         inserted = 0
         rejection_msg: Optional[str] = None
@@ -151,7 +155,7 @@ class TestStrictModeDisk:
             if _is_disk_rejection(err):
                 rejection_msg = err
                 print(
-                    f"Strict mode tripped after {batch_idx} batches "
+                    f"Quota tripped after {batch_idx} batches "
                     f"({inserted} points inserted). Error: {err}"
                 )
                 break
@@ -174,22 +178,7 @@ class TestStrictModeDisk:
         # The reader is TTL-cached (5s). Give it room to refresh, then probe
         # with a fresh collection so we exercise the recovered-state path
         # without the rejected collection getting in the way.
-        client.client.create_collection(
-            collection_name=RECOVERY_COLLECTION_NAME,
-            vectors_config=models.VectorParams(
-                size=VECTOR_DIM, distance=models.Distance.COSINE
-            ),
-            wal_config=models.WalConfigDiff(wal_capacity_mb=WAL_CAPACITY_MB),
-        )
-        _set_strict_mode_via_rest(
-            container_info.host,
-            container_info.http_port,
-            RECOVERY_COLLECTION_NAME,
-            {
-                "enabled": True,
-                "max_disk_usage_percent": DISK_PERCENT_THRESHOLD,
-            },
-        )
+        _create_collection(client, RECOVERY_COLLECTION_NAME)
 
         deadline = time.time() + RECOVERY_TIMEOUT_SECS
         attempt = 0
