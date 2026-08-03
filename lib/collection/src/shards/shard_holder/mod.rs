@@ -264,6 +264,10 @@ impl ShardHolder {
         shards: Vec<(ShardId, ShardReplicaSet)>,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
+        if shards.is_empty() {
+            return Ok(());
+        }
+
         // Persist mapping first: it is the only fallible step, so a failed write leaves
         // in-memory state untouched.
         if let Some(shard_key) = &shard_key {
