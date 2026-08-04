@@ -38,4 +38,6 @@ pub use self::types::{
     ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,
     UioResult, UniversalKind, read_bin_via, read_json_via, read_whole_via,
 };
-pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};
+pub use self::wrappers::{
+    BufferedAppend, ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage,
+};

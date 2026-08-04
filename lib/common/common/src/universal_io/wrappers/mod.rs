@@ -1,9 +1,11 @@
+mod buffered_append;
 mod buffered_update;
 mod read_only;
 mod stored_struct;
 mod typed;
 mod wrapped_pipeline;
 
+pub use buffered_append::BufferedAppend;
 pub use buffered_update::SliceBufferedUpdateWrapper;
 pub use read_only::ReadOnly;
 pub use stored_struct::StoredStruct;
