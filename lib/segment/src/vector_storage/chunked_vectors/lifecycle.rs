@@ -35,7 +35,7 @@ where
         Ok(status_file)
     }
 
-    fn ensure_config(
+    pub(super) fn ensure_config(
         fs: &S::Fs,
         directory: &Path,
         dim: usize,
