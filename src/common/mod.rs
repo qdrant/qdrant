@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod auth;
 pub mod collections;
+pub mod consensus_lag;
 pub mod debugger;
 pub mod error_reporting;
 pub mod health;

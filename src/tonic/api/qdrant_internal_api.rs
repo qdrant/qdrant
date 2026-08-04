@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    GetAuditLogRequest, GetAuditLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
+    AppliedConsensusEntry, GetAuditLogRequest, GetAuditLogResponse, GetConsensusAppliedLogRequest,
+    GetConsensusAppliedLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
     GetQuotaUsageRequest, GetQuotaUsageResponse, GetTelemetryRequest, GetTelemetryResponse,
     PeerTelemetry, QuotaUsage, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
@@ -12,7 +13,7 @@ use chrono::DateTime;
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
-use storage::content_manager::consensus_manager::ConsensusStateRef;
+use storage::content_manager::consensus_manager::{AppliedEntry, AppliedLog, ConsensusStateRef};
 use storage::quota;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
@@ -147,6 +148,42 @@ impl QdrantInternal for QdrantInternalService {
         };
 
         Ok(Response::new(response))
+    }
+
+    async fn get_consensus_applied_log(
+        &self,
+        _: Request<GetConsensusAppliedLogRequest>,
+    ) -> Result<Response<GetConsensusAppliedLogResponse>, Status> {
+        let AppliedLog {
+            entries,
+            now_ms,
+            pending_operations,
+        } = self.consensus_state.applied_log();
+
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                let AppliedEntry {
+                    index,
+                    term,
+                    applied_at_ms,
+                    took_ms,
+                } = entry;
+
+                AppliedConsensusEntry {
+                    index,
+                    term,
+                    applied_at_ms,
+                    took_ms,
+                }
+            })
+            .collect();
+
+        Ok(Response::new(GetConsensusAppliedLogResponse {
+            entries,
+            now_ms,
+            pending_operations: pending_operations as u64,
+        }))
     }
 
     async fn get_audit_log(

@@ -1,5 +1,5 @@
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
@@ -7,7 +7,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, anyhow};
 use chrono::Utc;
@@ -50,6 +50,49 @@ pub mod prelude {
 
 /// Allow us updating our peer metadata once every 60 seconds
 const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How many recently applied consensus entries each peer remembers for lag diagnostics.
+///
+/// Only bounds memory: the log is read by `/profiler/consensus_lag`, which compares peers on the
+/// entry indices they have in common. A peer further behind than this many entries can still be
+/// placed by index, but not timed.
+pub const APPLIED_LOG_SIZE: usize = 32;
+
+/// A consensus entry this peer has finished applying.
+///
+/// Timestamps come from this peer's own wall clock, so comparing them against another peer's
+/// includes whatever clock skew exists between the two machines.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct AppliedEntry {
+    /// Raft log index of the entry.
+    pub index: u64,
+    /// Raft term the entry was proposed in.
+    pub term: u64,
+    /// Wall clock when the entry finished applying, milliseconds since the Unix epoch.
+    pub applied_at_ms: u64,
+    /// How long this single entry took to apply.
+    pub took_ms: u64,
+}
+
+/// Snapshot of a peer's applied-entry log, as served to `/profiler/consensus_lag`.
+#[derive(Debug, Clone, Serialize)]
+pub struct AppliedLog {
+    /// Recently applied entries, oldest first, at most [`APPLIED_LOG_SIZE`] of them.
+    pub entries: Vec<AppliedEntry>,
+    /// Wall clock on this peer when the log was read, milliseconds since the Unix epoch.
+    ///
+    /// Lets a reader age the newest entry against the clock that stamped it, rather than its own.
+    pub now_ms: u64,
+    /// Entries committed but not yet applied on this peer.
+    pub pending_operations: usize,
+}
+
+/// Current wall clock in milliseconds since the Unix epoch, saturating at 0 before it.
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since_epoch| since_epoch.as_millis() as u64)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
@@ -107,6 +150,9 @@ pub struct ConsensusManager<C: CollectionContainer> {
     message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
     /// Last time we attempted to update the peer metadata
     next_peer_metadata_update_attempt: Mutex<Instant>,
+    /// Ring of the last [`APPLIED_LOG_SIZE`] applied entries, oldest first.
+    /// Diagnostics only: nothing in consensus reads it back.
+    applied_log: Mutex<VecDeque<AppliedEntry>>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -150,7 +196,41 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }),
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
+            applied_log: Mutex::new(VecDeque::with_capacity(APPLIED_LOG_SIZE)),
         })
+    }
+
+    /// Record that `entry` finished applying, evicting the oldest entry once the ring is full.
+    fn record_applied_entry(&self, entry: &RaftEntry, took: Duration) {
+        let applied = AppliedEntry {
+            index: entry.index,
+            term: entry.term,
+            applied_at_ms: now_ms(),
+            took_ms: took.as_millis() as u64,
+        };
+
+        let mut applied_log = self.applied_log.lock();
+        while applied_log.len() >= APPLIED_LOG_SIZE {
+            applied_log.pop_front();
+        }
+        applied_log.push_back(applied);
+    }
+
+    /// Snapshot of the recently applied entries on this peer, oldest first.
+    ///
+    /// The log is empty until this peer applies its first entry after startup, so a freshly
+    /// restarted peer reports nothing regardless of how far it has caught up.
+    pub fn applied_log(&self) -> AppliedLog {
+        // Taken one at a time: the apply loop touches both, and holding the ring lock across
+        // the persistent one would be the only place the two ever nest.
+        let entries = self.applied_log.lock().iter().copied().collect();
+        let pending_operations = self.persistent.read().unapplied_entities_count();
+
+        AppliedLog {
+            entries,
+            now_ms: now_ms(),
+            pending_operations,
+        }
     }
 
     pub fn report_snapshot(
@@ -361,6 +441,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
+            let apply_started = Instant::now();
             let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
                 false
@@ -413,6 +494,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
+            self.record_applied_entry(&entry, apply_started.elapsed());
         }
         Ok(false) // do not stop consensus
     }
