@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::path::Path;
 
 use crate::universal_io::cached_fs::FileInfo;
+use crate::universal_io::traits::append::UniversalAppend;
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{ListedFile, OpenOptions, UioResult};
@@ -51,11 +52,21 @@ pub trait UniversalReadFileOps: Clone + Debug + Send + Sync + Sized {
 
 /// Filesystem-level handle for mutating operations.
 ///
-/// Extends [`UniversalReadFileOps`] with create/remove/save operations.
-/// Read-only backends (e.g. `ReadOnlyFs`) implement only the read side,
-/// making the absence of write support a compile-time property instead of
-/// a runtime error.
+/// Extends [`UniversalReadFileOps`] with create/remove/save operations and
+/// with opening append handles ([`Self::open_append`]). Read-only backends
+/// (e.g. `ReadOnlyFs`, the disk caches) implement only the read side, making
+/// the absence of write support a compile-time property instead of a runtime
+/// error.
 pub trait UniversalWriteFileOps: UniversalReadFileOps {
+    /// File handle type produced by [`Self::open_append`].
+    ///
+    /// Deliberately not tied to [`UniversalReadFs::File`]: the two capabilities
+    /// live on independent traits, so a backend may serve reads through one
+    /// handle type and appends through another (and a filesystem that opens no
+    /// read handles at all still names an append handle here). Backends whose
+    /// read handle appends — every local one — simply name it twice.
+    type AppendFile: UniversalAppend;
+
     /// Create or truncate a file at the given path.
     ///
     /// Local backends use `expected_length` to pre-size the file. Backends
@@ -80,6 +91,20 @@ pub trait UniversalWriteFileOps: UniversalReadFileOps {
     /// Local backends should use an atomic file replacement. Object-store
     /// backends may overwrite the full object.
     fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()>;
+
+    /// Open an existing file for appending, per the [`UniversalAppend`]
+    /// contract. The file must exist — [`Self::create`] it first.
+    ///
+    /// `options` are honored as by [`UniversalReadFs::open`], except that
+    /// `writeable` is forced on ([`OpenOptions::for_append`]). There is no
+    /// [`OpenExtra`] counterpart: the append handle may come from a different
+    /// backend than [`UniversalReadFs::File`], whose per-open knobs would then
+    /// not apply.
+    fn open_append(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+    ) -> UioResult<Self::AppendFile>;
 
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.

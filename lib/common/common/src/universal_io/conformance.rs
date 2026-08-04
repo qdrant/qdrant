@@ -153,4 +153,43 @@ where
         first.read_whole::<u8>().unwrap().as_ref(),
         b"aaabbbccc".as_slice(),
     );
+
+    run_open_append_conformance(fs, dir);
+}
+
+/// Exercise [`UniversalWriteFileOps::open_append`] against a backend: the
+/// filesystem hands out an append handle whose writes the read path observes,
+/// whatever file type either side is.
+///
+/// Called by [`run_append_conformance`]; run it directly for a filesystem
+/// whose own [`UniversalReadFs::File`] does not append.
+pub fn run_open_append_conformance<Fs>(fs: &Fs, dir: &Path)
+where
+    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs::OpenExtra: Default,
+{
+    let path = dir.join("open_append.dat");
+    fs.create(&path, 0).unwrap();
+
+    // `writeable` is forced on: an append handle opened as read-only is a
+    // contradiction, not an error to propagate.
+    let mut file = fs.open_append(&path, open_options(false)).unwrap();
+
+    file.append(0, b"one".as_slice()).unwrap();
+    file.append_batch(3, [b"two".as_slice(), b"three".as_slice()])
+        .unwrap();
+    (file.flusher())().unwrap();
+
+    // Same compare-and-swap contract as any other append handle.
+    let err = file.append(0, b"x".as_slice()).unwrap_err();
+    assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
+
+    // The read path sees the appended bytes.
+    let reader = fs
+        .open(&path, open_options(false), Fs::OpenExtra::default())
+        .unwrap();
+    assert_eq!(
+        reader.read_whole::<u8>().unwrap().as_ref(),
+        b"onetwothree".as_slice(),
+    );
 }

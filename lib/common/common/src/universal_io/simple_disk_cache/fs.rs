@@ -12,7 +12,7 @@ use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
+    UniversalRead, UniversalReadFileOps, UniversalReadFs,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -123,31 +123,11 @@ where
     }
 }
 
-impl<R> UniversalWriteFileOps for DiskCacheFs<R>
-where
-    R: UniversalRead,
-    R::Fs: UniversalWriteFileOps,
-{
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
-        self.remote_fs.create(path, expected_length)
-    }
-
-    fn create_dir(&self, path: &Path) -> UioResult<()> {
-        self.remote_fs.create_dir(path)
-    }
-
-    fn remove(&self, path: &Path) -> UioResult<()> {
-        self.remote_fs.remove(path)
-    }
-
-    fn remove_dir(&self, path: &Path) -> UioResult<()> {
-        self.remote_fs.remove_dir(path)
-    }
-
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        self.remote_fs.atomic_save(path, bytes)
-    }
-}
+// Deliberately no `UniversalWriteFileOps` impl: the disk cache is strictly
+// read-only, at the filesystem level as much as at the file level (see the
+// `assert_not_impl_any!` on `DiskCache`). Mutations — creating, removing and
+// appending to files — go straight to the backing storage, whose handle the
+// caller holds anyway to build this one.
 
 /// Make the mirror path unique per open, so concurrently-alive [`DiskCache`]
 /// instances for the same remote path never share (and truncate) each other's
