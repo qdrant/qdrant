@@ -203,6 +203,8 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
 }
 
 impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
+    const APPEND_IS_ATOMIC: bool = true;
+
     fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         self.append_bytes(offset, Bytes::copy_from_slice(bytemuck::cast_slice(data)))
     }

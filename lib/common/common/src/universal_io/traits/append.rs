@@ -55,6 +55,8 @@ use crate::universal_io::{ByteOffset, UioResult};
 /// [`len`]: UniversalRead::len
 /// [`reopen`]: UniversalRead::reopen
 pub trait UniversalAppend: UniversalRead<Fs: UniversalWriteFileOps> + UniversalFlush {
+    const APPEND_IS_ATOMIC: bool;
+
     /// Atomically grow the file by appending `data` at exactly `offset`,
     /// which must equal the current end of file; rejected with
     /// [`AppendOffsetConflict`] otherwise.

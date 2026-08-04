@@ -338,6 +338,8 @@ impl UniversalFlush for IoUringFile {
 }
 
 impl UniversalAppend for IoUringFile {
+    const APPEND_IS_ATOMIC: bool = false;
+
     fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         let mut slices = [io::IoSlice::new(bytes)];

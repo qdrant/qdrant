@@ -321,6 +321,8 @@ impl UniversalFlush for MmapFile {
 }
 
 impl UniversalAppend for MmapFile {
+    const APPEND_IS_ATOMIC: bool = false;
+
     fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         if bytes.is_empty() {
