@@ -51,7 +51,7 @@ impl<S: UniversalAppend + 'static> BufferedAppend<S> {
     /// To check for torn writes, caller can compare length against a watermark,
     /// and use `S::APPEND_IS_ATOMIC` to determine if the backend supports atomic appends.
     ///
-    /// ```rust
+    /// ```ignore
     /// let expected_len = read_watermark(watermark_path)?;
     /// let file = BufferedAppend::open(fs, path, options, extra)?;
     /// match file.persisted_len().cmp(&expected_len) {
@@ -65,8 +65,8 @@ impl<S: UniversalAppend + 'static> BufferedAppend<S> {
     ///         // Check if it can be a torn write.
     ///         if S::APPEND_IS_ATOMIC {
     ///             // Adopt new length
-    ///             write_watermark(watermark_path, file.persisted_len())
-    ///         else {
+    ///             write_watermark(watermark_path, file.persisted_len())?;
+    ///         } else {
     ///             // Truncate to the expected length to avoid torn writes.
     ///             drop(file);
     ///             let content = read_whole(path)?.to_owned();
