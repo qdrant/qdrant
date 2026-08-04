@@ -41,7 +41,7 @@ fn test_snapshot_all() {
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(snapshot_file.path()).unwrap();
 
     let payload_schema_file = dir.path().join("payload.schema");
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
@@ -114,7 +114,7 @@ fn test_snapshot_includes_segment_manifest() {
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(snapshot_file.path()).unwrap();
 
     let payload_schema_file = dir.path().join("payload.schema");
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =

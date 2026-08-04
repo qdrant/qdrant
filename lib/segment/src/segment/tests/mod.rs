@@ -11,7 +11,6 @@ use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
 use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
-use fs_err::File;
 use ordered_float::OrderedFloat;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -246,8 +245,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     segment.flush(true).unwrap();
 
     // snapshotting!
-    let tar =
-        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(parent_snapshot_tar.path()).unwrap();
     segment
         .take_snapshot(temp_dir.path(), &tar, format, None)
         .unwrap();
@@ -367,8 +365,7 @@ fn test_snapshot_streamable_without_files_wrapper() {
     segment.flush(true).unwrap();
 
     // Take a streamable snapshot, which produces a `<segment_id>/files/...` layout.
-    let tar =
-        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(parent_snapshot_tar.path()).unwrap();
     segment
         .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)
         .unwrap();

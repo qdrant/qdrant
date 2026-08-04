@@ -484,7 +484,6 @@ fn payload_index_files_are_immutable_after_build() {
 fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types::SnapshotFormat) {
     use common::tar_ext;
     use common::tar_unpack::tar_unpack_file;
-    use fs_err::File;
 
     use crate::entry::snapshot_entry::SnapshotEntry as _;
 
@@ -531,8 +530,7 @@ fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types
         .suffix(".tar")
         .tempfile()
         .unwrap();
-    let tar =
-        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(parent_snapshot_tar.path()).unwrap();
     segment
         .take_snapshot(snapshot_temp.path(), &tar, format, None)
         .unwrap();
