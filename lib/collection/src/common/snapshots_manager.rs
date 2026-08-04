@@ -58,6 +58,19 @@ pub enum SnapshotStorageManager {
     // AZURE(SnapshotStorageCloud),
 }
 
+/// Assert a snapshot name is a plain file name, not a path.
+///
+/// Backends join it onto a snapshots directory, and `Path::join` drops the base if it is absolute.
+fn validate_snapshot_name(snapshot_name: &str) -> CollectionResult<()> {
+    if Path::new(snapshot_name).file_name() != Some(snapshot_name.as_ref()) {
+        return Err(CollectionError::not_found(format!(
+            "Snapshot {snapshot_name}"
+        )));
+    }
+
+    Ok(())
+}
+
 impl SnapshotStorageManager {
     /// Create a snapshot storage manager from the configured backend.
     ///
@@ -165,11 +178,14 @@ impl SnapshotStorageManager {
         }
     }
 
+    /// Get the storage path for a collection snapshot, confined to `snapshots_path`
     pub fn get_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
+        validate_snapshot_name(snapshot_name)?;
+
         match self {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_snapshot_path(snapshots_path, snapshot_name)
@@ -180,11 +196,14 @@ impl SnapshotStorageManager {
         }
     }
 
+    /// Get the storage path for a full snapshot, confined to `snapshots_path`
     pub fn get_full_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
+        validate_snapshot_name(snapshot_name)?;
+
         match self {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_full_snapshot_path(snapshots_path, snapshot_name)
@@ -447,11 +466,14 @@ impl SnapshotStorageCloud {
         Ok(())
     }
 
+    /// `snapshot_name` must pass [`validate_snapshot_name`] first: unlike the local filesystem,
+    /// object storage has no `canonicalize` to confine the key afterwards.
     fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
         let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
     }
 
+    /// `snapshot_name` must pass [`validate_snapshot_name`] first.
     fn get_full_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
         let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
