@@ -59,6 +59,7 @@ fn test_snapshot_all() {
         None,
     )
     .unwrap();
+    tar.blocking_finish().unwrap();
 
     let after_ids = holder
         .read()
@@ -146,6 +147,7 @@ fn test_snapshot_includes_segment_manifest() {
         None,
     )
     .unwrap();
+    tar.blocking_finish().unwrap();
 
     // The manifest sits at the snapshot root, next to (not inside) `segments/`.
     let manifest_entry_path = SEGMENT_MANIFEST_FILE.to_string();

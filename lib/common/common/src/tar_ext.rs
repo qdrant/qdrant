@@ -83,6 +83,8 @@ impl<W: Seek> Seek for FusedWriteSeek<W> {
     }
 }
 
+/// NOTE: don't forget to explicitly finalize the archive with
+/// [`Self::finish`]/[`Self::blocking_finish`].
 impl BuilderExt<OwnedOutput> {
     pub fn new_file(path: &Path) -> io::Result<Self> {
         let f = File::create(path)?;
@@ -98,6 +100,7 @@ impl BuilderExt<OwnedOutput> {
     }
 }
 
+/// See the NOTE above.
 impl<'a> BuilderExt<BorrowedOutput<'a>> {
     #[cfg(test)]
     fn new_seekable_borrowed(output: impl Write + Seek + 'a) -> Self {
@@ -450,6 +453,7 @@ mod tests {
     #[tokio::test]
     async fn test_dummy_drop_fail() {
         let data = Arc::new(Mutex::new(Vec::new()));
+        // ast-grep-ignore: tar-builder-unfinished
         let tar = BuilderExt::new_seekable_owned(DummyBridgeWriter(true, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
@@ -458,6 +462,7 @@ mod tests {
     #[tokio::test]
     async fn test_dummy_drop_ok() {
         let data = Arc::new(Mutex::new(Vec::new()));
+        // ast-grep-ignore: tar-builder-unfinished
         let tar = BuilderExt::new_seekable_owned(DummyBridgeWriter(false, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
@@ -476,6 +481,7 @@ mod tests {
 
     #[test]
     fn test_write_fail() {
+        // ast-grep-ignore: tar-builder-unfinished
         let tar = BuilderExt::new_streaming_borrowed(Vec::new());
         tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
         let result = tar.blocking_write_fn(Path::new("foo"), |writer| writer.write_all(b"bar"));
