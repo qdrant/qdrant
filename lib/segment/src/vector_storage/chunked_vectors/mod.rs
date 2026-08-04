@@ -5,11 +5,12 @@
 //! and `chunk_<n>.mmap` files preallocated to the configured chunk size. A
 //! vector never straddles a chunk boundary.
 //!
-//! Two types share that layout:
+//! Three types share that layout:
 //!
 //! - [`ChunkedVectors`] — the writable storage. Its impls are split across
-//!   [`lifecycle`] (open, config creation, flush) and [`write_ops`] (insert,
-//!   push).
+//!   [`lifecycle`] (open, flush) and [`write_ops`] (insert, push).
+//! - [`appender::ChunkedVectorsAppender`] — the append-only writer, buffering
+//!   appends in memory until flush.
 //! - [`read_only::ReadOnlyChunkedVectors`] — the read-only view, which
 //!   [`ChunkedVectors`] wraps and derefs to for every read.
 //!

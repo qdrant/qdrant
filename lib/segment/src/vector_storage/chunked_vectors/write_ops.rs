@@ -6,7 +6,7 @@ use num_traits::AsPrimitive;
 
 use super::ChunkedVectors;
 use super::chunks::create_chunk;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 
 impl<T, S> ChunkedVectors<T, S>
@@ -43,24 +43,11 @@ where
         count: usize,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        assert_eq!(
-            vectors.len(),
-            count * self.inner.config.dim,
-            "Vector size mismatch"
-        );
-
         let start_key = start_key.as_();
-        let chunk_idx = self.inner.config.get_chunk_index(start_key);
-        let chunk_offset = self.inner.config.get_chunk_offset(start_key);
-
-        // check if the vectors fit in the chunk
-        if chunk_offset + vectors.len()
-            > self.inner.config.dim * self.inner.config.chunk_size_vectors
-        {
-            return Err(OperationError::service_error(format!(
-                "Vectors do not fit in the chunk. Chunk idx {chunk_idx}, chunk offset {chunk_offset}, vectors count {count}",
-            )));
-        }
+        let (chunk_idx, chunk_offset) =
+            self.inner
+                .config
+                .chunk_slot(start_key, count, vectors.len())?;
 
         // Ensure capacity
         while chunk_idx >= self.inner.chunks.len() {

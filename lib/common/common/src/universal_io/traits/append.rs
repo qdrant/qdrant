@@ -55,6 +55,14 @@ use crate::universal_io::{ByteOffset, UioResult};
 /// [`len`]: UniversalRead::len
 /// [`reopen`]: UniversalRead::reopen
 pub trait UniversalAppend: UniversalRead<Fs: UniversalWriteFileOps> + UniversalFlush {
+    /// Whether an append interrupted by a crash lands either fully or not at
+    /// all — distinct from the offset-conflict atomicity [`append`] always
+    /// provides. Non-atomic backends can leave a torn tail, which callers must
+    /// truncate back to a durable watermark on recovery; see
+    /// [`BufferedAppend::open_with_expected_len`].
+    ///
+    /// [`append`]: UniversalAppend::append
+    /// [`BufferedAppend::open_with_expected_len`]: crate::universal_io::BufferedAppend::open_with_expected_len
     const APPEND_IS_ATOMIC: bool;
 
     /// Atomically grow the file by appending `data` at exactly `offset`,

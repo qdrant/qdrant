@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use common::universal_io::{UniversalIoError, UniversalReadFs, read_json_via, read_whole_via};
+use common::fs::atomic_save_json;
+use common::universal_io::{
+    UniversalIoError, UniversalReadFileOps, UniversalReadFs, read_json_via, read_whole_via,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::common::CHUNK_SIZE;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -36,9 +40,32 @@ impl ChunkedVectorsConfig {
         key / self.chunk_size_vectors
     }
 
+    /// Element offset of the vector within its chunk
     pub fn get_chunk_offset(&self, key: usize) -> usize {
         let chunk_vector_idx = key % self.chunk_size_vectors;
         chunk_vector_idx * self.dim
+    }
+
+    /// Chunk index and element offset for `count` vectors of flattened length
+    /// `vectors_len` starting at `start_key`, validated to fit in one chunk.
+    pub fn chunk_slot(
+        &self,
+        start_key: usize,
+        count: usize,
+        vectors_len: usize,
+    ) -> OperationResult<(usize, usize)> {
+        assert_eq!(vectors_len, count * self.dim, "Vector size mismatch");
+
+        let chunk_idx = self.get_chunk_index(start_key);
+        let chunk_offset = self.get_chunk_offset(start_key);
+
+        if chunk_offset + vectors_len > self.dim * self.chunk_size_vectors {
+            return Err(OperationError::service_error(format!(
+                "Vectors do not fit in the chunk. Chunk idx {chunk_idx}, chunk offset {chunk_offset}, vectors count {count}",
+            )));
+        }
+
+        Ok((chunk_idx, chunk_offset))
     }
 }
 
@@ -48,6 +75,74 @@ pub(super) fn config_file(directory: &Path) -> PathBuf {
 
 pub(super) fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
+}
+
+/// Path of the status file, created zeroed if missing.
+pub(super) fn ensure_status_file<Fs: UniversalReadFileOps>(
+    fs: &Fs,
+    directory: &Path,
+) -> OperationResult<PathBuf> {
+    let status_file = status_file(directory);
+    if !fs.exists(&status_file)? {
+        // TODO(uio): migrate when UniversalWriteFileOps is available
+        common::mmap::create_and_ensure_length(&status_file, size_of::<Status>())?;
+    }
+    Ok(status_file)
+}
+
+/// Load the config, validating `dim`, creating the file if missing or
+/// unreadable.
+pub(super) fn ensure_config<T, Fs: UniversalReadFs>(
+    fs: &Fs,
+    directory: &Path,
+    dim: usize,
+    populate: bool,
+) -> OperationResult<ChunkedVectorsConfig> {
+    let config_file = config_file(directory);
+    match load_config(fs, &config_file) {
+        Ok(Some(config)) => {
+            if config.dim == dim {
+                Ok(config)
+            } else {
+                Err(OperationError::service_error(format!(
+                    "Wrong configuration in {}: expected {}, found {dim}",
+                    config_file.display(),
+                    config.dim,
+                )))
+            }
+        }
+        Ok(None) => create_config::<T>(&config_file, dim, populate),
+        Err(e) => {
+            log::error!("Failed to deserialize config file {config_file:?}: {e}");
+            create_config::<T>(&config_file, dim, populate)
+        }
+    }
+}
+
+fn create_config<T>(
+    config_file: &Path,
+    dim: usize,
+    populate: bool,
+) -> OperationResult<ChunkedVectorsConfig> {
+    if dim == 0 {
+        return Err(OperationError::service_error(
+            "The vector's dimension cannot be 0",
+        ));
+    }
+
+    let chunk_size_bytes = CHUNK_SIZE;
+    let vector_size_bytes = dim * size_of::<T>();
+    let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
+    let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
+
+    let config = ChunkedVectorsConfig {
+        chunk_size_bytes: corrected_chunk_size_bytes,
+        chunk_size_vectors,
+        dim,
+        populate: Some(populate),
+    };
+    atomic_save_json(config_file, &config)?;
+    Ok(config)
 }
 
 /// Read the stored config, or `None` if the file does not exist yet.
