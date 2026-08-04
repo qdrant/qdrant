@@ -1,9 +1,9 @@
+use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
-use tokio::time;
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError};
 
 use crate::cpu;
 
@@ -15,6 +15,38 @@ pub fn get_io_budget(io_budget: usize, cpu_budget: usize) -> usize {
         cpu_budget
     } else {
         io_budget
+    }
+}
+
+/// `Arc<Notify>` wrapper providing `Debug` and `Clone`
+///
+/// Shared across all clones of a [`ResourceBudget`] to wake waiters when a permit is released
+#[derive(Clone)]
+struct BudgetNotify(Arc<Notify>);
+
+impl BudgetNotify {
+    fn new() -> Self {
+        Self(Arc::new(Notify::new()))
+    }
+
+    /// wake all waiting tasks
+    #[inline]
+    fn notify_waiters(&self) {
+        self.0.notify_waiters();
+    }
+
+    /// future that resolves on the next notification
+    #[inline]
+    fn notified(&self) -> tokio::sync::futures::Notified<'_> {
+        self.0.notified()
+    }
+}
+
+impl fmt::Debug for BudgetNotify {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("BudgetNotify")
+            .field(&Arc::as_ptr(&self.0))
+            .finish()
     }
 }
 
@@ -31,6 +63,11 @@ pub struct ResourceBudget {
     io_semaphore: Arc<Semaphore>,
     /// Total IO budget, available and leased out.
     io_budget: usize,
+
+    /// Wakes up tasks in [`Self::notify_on_budget_available`] when permits are returned
+    ///
+    /// This avoids polling and is shared across all `ResourceBudget` clones.
+    budget_released: BudgetNotify,
 }
 
 impl ResourceBudget {
@@ -40,6 +77,7 @@ impl ResourceBudget {
             cpu_budget,
             io_semaphore: Arc::new(Semaphore::new(io_budget)),
             io_budget,
+            budget_released: BudgetNotify::new(),
         }
     }
 
@@ -118,13 +156,22 @@ impl ResourceBudget {
     ///
     pub fn try_acquire(&self, desired_cpus: usize, desired_io: usize) -> Option<ResourcePermit> {
         let (num_cpus, cpu_permit) = self.try_acquire_cpu(desired_cpus)?;
-        let (num_io, io_permit) = self.try_acquire_io(desired_io)?;
+        let Some((num_io, io_permit)) = self.try_acquire_io(desired_io) else {
+            // Return the CPU permit to the semaphore before waking waiters,
+            // otherwise a woken waiter can recheck the budget too early.
+            if cpu_permit.is_some() {
+                drop(cpu_permit);
+                self.budget_released.notify_waiters();
+            }
+            return None;
+        };
 
         Some(ResourcePermit::new(
             num_cpus as u32,
             cpu_permit,
             num_io as u32,
             io_permit,
+            self.budget_released.clone(),
         ))
     }
 
@@ -201,31 +248,37 @@ impl ResourceBudget {
             && self.io_semaphore.available_permits() >= io_budget
     }
 
-    /// Notify when we have CPU budget available for the given number of desired CPUs.
+    /// Wait until sufficient CPU and IO budget is available.
     ///
-    /// This will not resolve until the above condition is met.
+    /// Resolves immediately if the budget is already available. Otherwise, suspends
+    /// the task via [`tokio::sync::Notify`] until a [`ResourcePermit`] is released,
+    /// and then rechecks.
     ///
-    /// Waits for at least the minimum number of permits based on the given desired CPUs. For
-    /// example, if `desired_cpus` is 8, this will wait for at least 4 to be available. See
-    /// [`Self::min_cpu_permits`].
+    /// Waits for at least the minimum number of permits based on the given desired
+    /// counts (see [`Self::min_cpu_permits`] / [`Self::min_io_permits`])
     ///
-    /// - `1` to wait for any CPU budget to be available.
-    /// - `0` will always return immediately.
-    ///
-    /// Uses an exponential backoff strategy up to 10 seconds to avoid busy polling.
+    /// - `desired_cpus = 1` / `desired_io = 1` to wait for any budget
+    /// - `desired_cpus = 0` and `desired_io = 0` returns immediately
     pub async fn notify_on_budget_available(&self, desired_cpus: usize, desired_io: usize) {
         let min_cpu_required = self.min_cpu_permits(desired_cpus);
         let min_io_required = self.min_io_permits(desired_io);
+
+        // fast path: budget is already available
         if self.has_budget_exact(min_cpu_required, min_io_required) {
             return;
         }
 
-        // Wait for CPU budget to be available with exponential backoff
-        // TODO: find better way, don't busy wait
-        let mut delay = Duration::from_micros(100);
-        while !self.has_budget_exact(min_cpu_required, min_io_required) {
-            time::sleep(delay).await;
-            delay = (delay * 2).min(Duration::from_secs(10));
+        // slow path: suspend until a permit is released, then recheck.
+        loop {
+            // Register the `Notified` future before rechecking availability to
+            // avoid missing any release event that happens in between.
+            let notified = self.budget_released.notified();
+
+            if self.has_budget_exact(min_cpu_required, min_io_required) {
+                return;
+            }
+
+            notified.await;
         }
     }
 }
@@ -258,6 +311,9 @@ pub struct ResourcePermit {
     /// Semaphore permit.
     io_permit: Option<OwnedSemaphorePermit>,
 
+    /// Wakes tasks waiting in [`ResourceBudget::notify_on_budget_available`] when permits are returned
+    budget_released: Option<BudgetNotify>,
+
     /// A callback, which should be called when the permit is changed manually.
     /// Originally used to notify the task manager that a permit is available
     /// and schedule more optimization tasks.
@@ -268,11 +324,12 @@ pub struct ResourcePermit {
 
 impl ResourcePermit {
     /// New CPU permit with given CPU count and permit semaphore.
-    pub fn new(
+    fn new(
         cpu_count: u32,
         cpu_permit: Option<OwnedSemaphorePermit>,
         io_count: u32,
         io_permit: Option<OwnedSemaphorePermit>,
+        budget_released: BudgetNotify,
     ) -> Self {
         // Debug assert that cpu/io count and permit counts match
         debug_assert!(cpu_permit.as_ref().map_or(0, |p| p.num_permits()) == cpu_count as usize);
@@ -283,6 +340,7 @@ impl ResourcePermit {
             cpu_permit,
             num_io: io_count,
             io_permit,
+            budget_released: Some(budget_released),
             on_manual_release: None,
         }
     }
@@ -314,6 +372,16 @@ impl ResourcePermit {
             (None, None) => None,
         };
 
+        // Keep one notifier and discard the other, since both point to the same
+        // ResourceBudget. We use `.take()` to remove the other's notifier.
+        // This stops `other`'s Drop implementation from falsely waking up waiters
+        // when no permits are actually returned.
+        if self.budget_released.is_none() {
+            self.budget_released = other.budget_released.take();
+        } else {
+            other.budget_released.take();
+        }
+
         // Debug assert that cpu/io count and permit counts match
         debug_assert!(
             self.cpu_permit.as_ref().map_or(0, |p| p.num_permits()) == self.num_cpus as usize,
@@ -331,6 +399,7 @@ impl ResourcePermit {
             cpu_permit: None,
             num_io: 0,
             io_permit: None,
+            budget_released: None,
             on_manual_release: None,
         }
     }
@@ -381,6 +450,12 @@ impl ResourcePermit {
         self.release_cpu_count(cpu);
         self.release_io_count(io);
 
+        // Only wake waiters if permits were actually returned, this prevents
+        // falsely waking up all waiters when nothing is released. The `Drop` implementation handles notifications for full releases.
+        if let Some(notify) = self.budget_released.as_ref().filter(|_| cpu > 0 || io > 0) {
+            notify.notify_waiters();
+        }
+
         if let Some(on_release) = &self.on_manual_release {
             on_release();
         }
@@ -394,10 +469,163 @@ impl Drop for ResourcePermit {
             cpu_permit,
             num_io: _,
             io_permit,
+            budget_released,
             on_manual_release: _, // Only explicit release() should call the callback
         } = self;
 
         let _ = cpu_permit.take();
         let _ = io_permit.take();
+
+        // Wake any tasks suspended in `notify_on_budget_available`
+        if let Some(notify) = budget_released.take() {
+            notify.notify_waiters();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::time;
+
+    use super::{ResourceBudget, ResourcePermit};
+
+    #[tokio::test]
+    async fn test_notify_returns_immediately_when_budget_available() {
+        let budget = ResourceBudget::new(4, 4);
+        time::timeout(
+            Duration::from_millis(100),
+            budget.notify_on_budget_available(2, 2),
+        )
+        .await
+        .expect("must not block when budget available");
+    }
+
+    #[tokio::test]
+    async fn test_notify_zero_desired_returns_immediately() {
+        let budget = ResourceBudget::new(0, 0);
+        time::timeout(
+            Duration::from_millis(100),
+            budget.notify_on_budget_available(0, 0),
+        )
+        .await
+        .expect("notify_on_budget_available(0,0) must always resolve immediately");
+    }
+
+    #[tokio::test]
+    async fn test_notify_wakes_on_drop() {
+        let budget = ResourceBudget::new(2, 2);
+
+        let permit = budget.try_acquire(2, 2).expect("must succeed");
+
+        let budget_clone = budget.clone();
+        let waiter = tokio::spawn(async move {
+            budget_clone.notify_on_budget_available(1, 1).await;
+        });
+
+        // allow waiter to suspend
+        time::sleep(Duration::from_millis(20)).await;
+        assert!(!waiter.is_finished(), "waiter must suspend");
+
+        // Release permit, waking waiter
+        drop(permit);
+
+        time::timeout(Duration::from_millis(200), waiter)
+            .await
+            .expect("waiter must wake up")
+            .expect("waiter panicked");
+
+        // Verify permits returned
+        assert!(
+            budget.try_acquire(1, 1).is_some(),
+            "permits must be available"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_notify_wakes_on_partial_release() {
+        let budget = ResourceBudget::new(4, 4);
+
+        let mut permit = budget.try_acquire(4, 4).expect("must succeed");
+
+        let budget_clone = budget.clone();
+        let waiter = tokio::spawn(async move {
+            budget_clone.notify_on_budget_available(1, 1).await;
+        });
+
+        // Allow waiter to suspend
+        time::sleep(Duration::from_millis(20)).await;
+        assert!(!waiter.is_finished(), "waiter must suspend");
+
+        // Partially release permits
+        permit.release(2, 2);
+
+        time::timeout(Duration::from_millis(200), waiter)
+            .await
+            .expect("waiter must wake up")
+            .expect("waiter panicked");
+    }
+
+    #[tokio::test]
+    async fn test_multiple_waiters_all_wake() {
+        let budget = ResourceBudget::new(2, 2);
+        let permit = budget.try_acquire(2, 2).expect("must succeed");
+
+        // Spawn multiple waiters
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let b = budget.clone();
+                tokio::spawn(async move {
+                    b.notify_on_budget_available(1, 1).await;
+                })
+            })
+            .collect();
+
+        // Allow waiters to suspend
+        time::sleep(Duration::from_millis(20)).await;
+
+        // Release permit, waking all waiters
+        drop(permit);
+
+        for handle in handles {
+            time::timeout(Duration::from_millis(200), handle)
+                .await
+                .expect("waiter must wake up")
+                .expect("waiter panicked");
+        }
+    }
+
+    /// dropping a dummy permit (which lacks a `BudgetNotify`) must not panic
+    #[cfg(feature = "testing")]
+    #[test]
+    fn test_dummy_permit_drop_is_safe() {
+        let permit = ResourcePermit::dummy(4);
+        drop(permit);
+    }
+
+    #[tokio::test]
+    async fn test_cloned_budgets_share_notifier() {
+        let budget_a = ResourceBudget::new(2, 2);
+        let budget_b = budget_a.clone();
+
+        // Exhaust via B
+        let permit = budget_b.try_acquire(2, 2).expect("must succeed");
+
+        // Wait on A
+        let waiter = tokio::spawn(async move {
+            budget_a.notify_on_budget_available(1, 1).await;
+        });
+
+        time::sleep(Duration::from_millis(20)).await;
+        assert!(!waiter.is_finished(), "waiter must suspend");
+
+        // Release via B, waking A
+        drop(permit);
+
+        time::timeout(Duration::from_millis(200), waiter)
+            .await
+            .expect("waiter on A must wake up")
+            .expect("waiter panicked");
     }
 }
