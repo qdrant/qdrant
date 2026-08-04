@@ -23,7 +23,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::types::{ScoredPoint, ShardKey, WithPayloadInterface};
+use segment::types::{ScoredPoint, ShardKey, WithPayloadInterface, WithVector};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -502,30 +502,40 @@ impl TableOfContent {
         let explicit_point_ids = operation.point_ids().map(|point_ids| point_ids.to_vec());
 
         if let Some(point_ids) = explicit_point_ids {
-            let mut found_point_ids = HashSet::new();
-            let mut ids_per_key = Vec::with_capacity(shard_keys.len());
+            let mut retrieve_requests: FuturesUnordered<_> = shard_keys
+                .iter()
+                .cloned()
+                .map(|shard_key| {
+                    let point_ids = point_ids.clone();
+                    let hw_measurement_acc = hw_measurement_acc.clone();
+                    async move {
+                        let shard_selector = ShardSelectorInternal::ShardKey(shard_key.clone());
+                        let records = collection
+                            .retrieve(
+                                PointRequestInternal {
+                                    ids: point_ids,
+                                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                                    with_vector: WithVector::from(false),
+                                },
+                                None,
+                                None,
+                                &shard_selector,
+                                timeout,
+                                hw_measurement_acc,
+                            )
+                            .await?;
+                        let key_point_ids: HashSet<_> =
+                            records.into_iter().map(|record| record.id).collect();
+                        StorageResult::Ok((shard_key, key_point_ids))
+                    }
+                })
+                .collect();
 
-            for shard_key in &shard_keys {
-                let records = collection
-                    .retrieve(
-                        PointRequestInternal {
-                            ids: point_ids.clone(),
-                            with_payload: Some(WithPayloadInterface::Bool(false)),
-                            with_vector: false.into(),
-                        },
-                        None,
-                        None,
-                        &ShardSelectorInternal::ShardKey(shard_key.clone()),
-                        timeout,
-                        hw_measurement_acc.clone(),
-                    )
-                    .await?;
-
-                let key_point_ids: HashSet<_> =
-                    records.into_iter().map(|record| record.id).collect();
-                found_point_ids.extend(key_point_ids.iter().copied());
-                ids_per_key.push((shard_key.clone(), key_point_ids));
-            }
+            let ids_per_key: Vec<_> = retrieve_requests.try_collect().await?;
+            let found_point_ids: HashSet<_> = ids_per_key
+                .iter()
+                .flat_map(|(_shard_key, key_point_ids)| key_point_ids.iter().copied())
+                .collect();
 
             if let Some(missed_point_id) = point_ids
                 .iter()
