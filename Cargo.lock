@@ -821,7 +821,7 @@ dependencies = [
  "axum-core",
  "bytes",
  "futures-util",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "http-body-util",
  "itoa",
@@ -845,7 +845,7 @@ checksum = "08c78f31d7b1291f7ee735c1c6780ccde7785daae9a9206026862dab7d8792d1"
 dependencies = [
  "bytes",
  "futures-core",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "http-body-util",
  "mime",
@@ -1442,7 +1442,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "hashring",
- "http 1.4.2",
+ "http 1.5.0",
  "indicatif",
  "issues",
  "itertools 0.15.0",
@@ -3199,7 +3199,7 @@ dependencies = [
  "fnv",
  "futures-core",
  "futures-sink",
- "http 1.4.2",
+ "http 1.5.0",
  "indexmap 2.14.0",
  "slab",
  "tokio",
@@ -3392,9 +3392,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.4.2"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6970f50e31d6fc17d3fa27329444bfa74e196cf62e95052a3f6fee181dba6425"
+checksum = "918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0"
 dependencies = [
  "bytes",
  "itoa",
@@ -3407,7 +3407,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1efedce1fb8e6913f23e0c92de8e62cd5b772a67e7b3946df930a62566c93184"
 dependencies = [
  "bytes",
- "http 1.4.2",
+ "http 1.5.0",
 ]
 
 [[package]]
@@ -3418,7 +3418,7 @@ checksum = "b021d93e26becf5dc7e1b75b1bed1fd93124b374ceb73f43d4d4eafec896a64a"
 dependencies = [
  "bytes",
  "futures-core",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "pin-project-lite",
 ]
@@ -3435,7 +3435,7 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f056c8559e3757392c8d091e796416e4649d8e49e88b8d76df6c002f05027fd"
 dependencies = [
- "http 1.4.2",
+ "http 1.5.0",
  "serde",
 ]
 
@@ -3477,7 +3477,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "h2 0.4.14",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "httparse",
  "httpdate",
@@ -3494,7 +3494,7 @@ version = "0.27.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3c93eb611681b207e1fe55d5a71ecf91572ec8a6705cdb6857f7d8d5242cf58"
 dependencies = [
- "http 1.4.2",
+ "http 1.5.0",
  "hyper",
  "hyper-util",
  "rustls",
@@ -3527,7 +3527,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "hyper",
  "ipnet",
@@ -3873,7 +3873,7 @@ dependencies = [
  "bytes",
  "common",
  "futures",
- "http 1.4.2",
+ "http 1.5.0",
  "io_bridge",
  "object_store",
  "tokio",
@@ -3948,7 +3948,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "dashmap",
- "http 1.4.2",
+ "http 1.5.0",
  "http-serde",
  "schemars 0.8.22",
  "serde",
@@ -4502,7 +4502,7 @@ dependencies = [
  "bytes",
  "colored",
  "futures-core",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "http-body-util",
  "hyper",
@@ -4861,7 +4861,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body-util",
  "httparse",
  "humantime",
@@ -5929,7 +5929,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gpu",
- "http 1.4.2",
+ "http 1.5.0",
  "issues",
  "itertools 0.15.0",
  "jsonwebtoken",
@@ -6485,7 +6485,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2 0.4.14",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "http-body-util",
  "hyper",
@@ -7744,7 +7744,7 @@ dependencies = [
  "env_logger",
  "fs-err",
  "futures",
- "http 1.4.2",
+ "http 1.5.0",
  "issues",
  "itertools 0.15.0",
  "log",
@@ -8324,7 +8324,7 @@ dependencies = [
  "bytes",
  "flate2",
  "h2 0.4.14",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "http-body-util",
  "hyper",
@@ -8424,7 +8424,7 @@ dependencies = [
  "bitflags 2.11.0",
  "bytes",
  "futures-util",
- "http 1.4.2",
+ "http 1.5.0",
  "http-body",
  "iri-string",
  "pin-project-lite",
