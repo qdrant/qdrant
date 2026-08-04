@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use bitvec::field::BitField as _;
+use common::bitmap_scan::BatchedBitmapScan;
 use common::bitvec::BitSlice;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -420,19 +420,12 @@ impl<'a> BatchFilteredSearcher<'a> {
         self.peek_top_iter(iter, is_stopped)
     }
 
-    /// Full-scan counterpart of [`Self::peek_top_iter`]: scores every point
-    /// that is not flagged in the deletion bitmaps, is below `cutoff` (when
-    /// `Some`), and is not flagged in `mapping_deleted` / `shadowed`.
-    ///
-    /// Equivalent to feeding `peek_top_iter` the composition of
-    /// [`Self::iter_not_deleted`] with
-    /// `PointMappingsRefEnum::filter_deferred_and_deleted` — callers obtain
-    /// `cutoff`, `mapping_deleted`, and `shadowed` from
-    /// `PointMappingsRefEnum::visible_scan_masks`.  Instead of walking
-    /// `iter_zeros()` bit by bit and re-checking every id against the same
-    /// bitmaps, this combines all bitmaps one 64-bit word at a time and
-    /// extracts candidate ids with `trailing_zeros`, which is where full
-    /// scans over mostly-live segments spend their enumeration time.
+    /// Full-scan counterpart of [`Self::peek_top_iter`]: scores every point that
+    /// is unflagged in the deletion bitmaps and in `mapping_deleted` / `shadowed`,
+    /// and below `cutoff` (when `Some`). Callers obtain those three arguments from
+    /// `PointMappingsRefEnum::visible_scan_masks`; the word-wise harvest via
+    /// [`BatchedBitmapScan`] is what makes this beat the per-id iterator path on
+    /// full scans over mostly-live segments.
     pub fn peek_top_visible(
         self,
         cutoff: Option<PointOffsetType>,
@@ -448,75 +441,35 @@ impl<'a> BatchFilteredSearcher<'a> {
             filters,
         } = self;
 
-        // Number of leading point ids to scan. Points without an explicit
-        // `point_deleted` flag count as deleted (see [`NotDeletedChecker`]),
-        // so that bitmap's length bounds the scan; the deferred cutoff
-        // tightens the bound further.
+        // Ignore points without an entry in `point_deleted` (absent entries count as
+        // deleted, see `NotDeletedChecker`) and points at or above the deferred cutoff.
         let mut point_count = filters.deleted.point_deleted.len();
         if let Some(cutoff) = cutoff {
             point_count = point_count.min(cutoff as usize);
         }
 
+        let mut scan = BatchedBitmapScan::new(
+            point_count,
+            [
+                filters.deleted.point_deleted,
+                filters.deleted.vec_deleted,
+                mapping_deleted,
+                shadowed,
+            ],
+        );
+
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
         let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
-        // Number of candidate ids accumulated in `chunk` (`chunk[..chunk_size]` is the filled prefix); reset on every flush to the scorers.
-        let mut chunk_size = 0;
-
-        // Process points in blocks of 64 — one word from each bitmap.
-        for start in (0..point_count).step_by(64) {
-            // Bit `i` set → point `start + i` is a candidate: not flagged in
-            // any deletion bitmap, not mapping-deleted, not shadowed.
-            let mut candidates = !(bitmap_word(filters.deleted.point_deleted, start)
-                | bitmap_word(filters.deleted.vec_deleted, start)
-                | bitmap_word(mapping_deleted, start)
-                | bitmap_word(shadowed, start));
-
-            // Zero the bits past the scan range in the final block.
-            let block_len = point_count - start;
-            if block_len < 64 {
-                candidates &= (1u64 << block_len) - 1;
+        loop {
+            let n = scan.next_chunk(&mut chunk);
+            if n == 0 {
+                break;
             }
-            if candidates == 0 {
-                continue;
-            }
-
-            // If this block's candidates would overflow the `chunk` buffer, score the ids accumulated so far to make room.
-            if chunk_size + candidates.count_ones() as usize > VECTOR_READ_BATCH_SIZE {
-                check_process_stopped(is_stopped)?;
-                score_chunk(
-                    &filters,
-                    &mut scorer_batch,
-                    &mut chunk[..chunk_size],
-                    &mut scores_buffer,
-                )?;
-                chunk_size = 0;
-            }
-
-            let base = start as PointOffsetType;
-            if candidates == u64::MAX {
-                // Fully live block — the common no-deletions case.
-                for (i, slot) in chunk[chunk_size..chunk_size + 64].iter_mut().enumerate() {
-                    *slot = base + i as PointOffsetType;
-                }
-                chunk_size += 64;
-            } else {
-                // One iteration per set bit, in ascending order:
-                // `trailing_zeros` locates the lowest set bit (the next candidate's offset in the block), `candidates - 1` &-ed
-                // into the mask clears exactly that bit.
-                while candidates != 0 {
-                    chunk[chunk_size] = base + candidates.trailing_zeros() as PointOffsetType;
-                    chunk_size += 1;
-                    candidates &= candidates - 1;
-                }
-            }
-        }
-
-        if chunk_size > 0 {
             check_process_stopped(is_stopped)?;
             score_chunk(
                 &filters,
                 &mut scorer_batch,
-                &mut chunk[..chunk_size],
+                &mut chunk[..n],
                 &mut scores_buffer,
             )?;
         }
@@ -579,18 +532,6 @@ impl<'a> BatchFilteredSearcher<'a> {
             .collect();
         Ok(results)
     }
-}
-
-/// The 64-bit word of `bitmap` covering positions `start..start + 64`.
-/// Positions past the end of the slice read as 0 (not flagged), matching the
-/// `get_bit(id).unwrap_or(false)` convention of the per-id checks.
-#[inline]
-fn bitmap_word(bitmap: &BitSlice, start: usize) -> u64 {
-    let end = (start + 64).min(bitmap.len());
-    if start >= end {
-        return 0;
-    }
-    bitmap[start..end].load_le::<u64>()
 }
 
 /// Score one harvested chunk against every scorer and push into its queue.
