@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use common::fs::atomic_save_json;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFileOps, UniversalWrite,
+    UniversalWriteFileOps,
 };
 
 use super::ChunkedVectors;
@@ -23,19 +23,17 @@ where
         S::kind()
     }
 
-    pub fn ensure_status_file(fs: &S::Fs, directory: &Path) -> OperationResult<PathBuf> {
-        let status_file = status_file(directory);
-        if !fs.exists(&status_file)? {
+    pub fn ensure_status_file(fs: &S::Fs, status_path: &Path) -> OperationResult<()> {
+        if !fs.exists(&status_path)? {
             {
                 let length = std::mem::size_of::<Status>();
-                // TODO(uio): migrate when UniversalWriteFileOps is available
-                common::mmap::create_and_ensure_length(&status_file, length)?;
+                fs.create(&status_path, length)?;
             }
         }
-        Ok(status_file)
+        Ok(())
     }
 
-    fn ensure_config(
+    pub(super) fn ensure_config(
         fs: &S::Fs,
         directory: &Path,
         dim: usize,
@@ -54,15 +52,16 @@ where
                     )))
                 }
             }
-            Ok(None) => Self::create_config(&config_file, dim, populate),
+            Ok(None) => Self::create_config(fs, &config_file, dim, populate),
             Err(e) => {
                 log::error!("Failed to deserialize config file {config_file:?}: {e}");
-                Self::create_config(&config_file, dim, populate)
+                Self::create_config(fs, &config_file, dim, populate)
             }
         }
     }
 
     fn create_config(
+        fs: &impl UniversalWriteFileOps,
         config_file: &Path,
         dim: usize,
         populate: bool,
@@ -84,7 +83,7 @@ where
             dim,
             populate: Some(populate),
         };
-        atomic_save_json(config_file, &config)?;
+        fs.atomic_save(config_file, &serde_json::to_vec(&config)?)?;
         Ok(config)
     }
 
@@ -96,7 +95,8 @@ where
         populate: Populate,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(directory)?;
-        let status_path = Self::ensure_status_file(&fs, directory)?;
+        let status_path = status_file(directory);
+        Self::ensure_status_file(&fs, directory)?;
 
         let status: StoredStruct<S, Status> = StoredStruct::open(
             &fs,

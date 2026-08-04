@@ -16,6 +16,7 @@
 //! [`chunks`] and [`config`] hold what both sides need: the chunk files and
 //! the on-disk metadata files respectively.
 
+pub mod update_only;
 mod chunks;
 mod config;
 mod lifecycle;

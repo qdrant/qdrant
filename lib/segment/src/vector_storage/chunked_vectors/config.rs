@@ -31,6 +31,17 @@ pub(super) struct ChunkedVectorsConfig {
     pub(super) populate: Option<bool>,
 }
 
+impl ChunkedVectorsConfig {
+    pub fn get_chunk_index(&self, key: usize) -> usize {
+        key / self.chunk_size_vectors
+    }
+
+    pub fn get_chunk_offset(&self, key: usize) -> usize {
+        let chunk_vector_idx = key % self.chunk_size_vectors;
+        chunk_vector_idx * self.dim
+    }
+}
+
 pub(super) fn config_file(directory: &Path) -> PathBuf {
     directory.join(CONFIG_FILE_NAME)
 }
