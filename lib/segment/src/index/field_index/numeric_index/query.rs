@@ -88,10 +88,18 @@ where
     );
     let expected_max = min(index.get_points_count(), max_estimation);
 
+    // Count matched values exactly (O(log n), same call `estimate_points` uses
+    // for equality), then convert values->points below. Avoids the histogram's
+    // over-count for `exp`.
+    let (start_bound, end_bound) = range.as_index_key_bounds();
+    // binary-search IO unmetered here; estimate path, not the hot filter.
+    let hw_counter = HardwareCounterCell::disposable();
+    let selected_values = index.values_range_size(start_bound, end_bound, &hw_counter)?;
+
     let estimation = estimate_multi_value_selection_cardinality(
         index.get_points_count(),
         total_values,
-        histogram_estimation.1,
+        selected_values,
     )
     .round() as usize;
 
