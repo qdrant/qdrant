@@ -14,6 +14,10 @@ pub struct BatchedBitmapScan<'a, const N: usize> {
     point_count: usize,
     /// Start of the next unread 64-id block; always a multiple of 64.
     start: usize,
+    /// Candidate word that did not fit into the previous `next_chunk` buffer,
+    /// carried over so the masks are read once per block; 0 = none pending.
+    pending: u64,
+    pending_base: PointOffsetType,
 }
 
 impl<'a, const N: usize> BatchedBitmapScan<'a, N> {
@@ -22,17 +26,32 @@ impl<'a, const N: usize> BatchedBitmapScan<'a, N> {
             masks,
             point_count,
             start: 0,
+            pending: 0,
+            pending_base: 0,
         }
     }
 
     /// Fill `buf` with the next unflagged ids, in ascending order. Returns the
     /// count written; 0 means the scan is exhausted. `buf.len()` must be at
     /// least 64 so a whole 64-id block always fits into an empty buffer.
+    ///
+    /// Inlined so the cursor state stays in registers across a caller's
+    /// chunk loop; with dense bitmaps this is called once per 64 ids.
+    #[inline(always)]
     pub fn next_chunk(&mut self, buf: &mut [PointOffsetType]) -> usize {
         debug_assert!(buf.len() >= 64);
         let mut n = 0;
+
+        // Word carried over because it did not fit into the previous buffer;
+        // an empty buffer always has room for a whole word.
+        if self.pending != 0 {
+            n = expand_word(self.pending, self.pending_base, buf, 0);
+            self.pending = 0;
+        }
+
         while self.start < self.point_count {
             let start = self.start;
+            self.start += 64;
 
             // Bit `i` set → id `start + i` is a candidate: unflagged in every mask.
             let mut flagged = 0u64;
@@ -47,35 +66,46 @@ impl<'a, const N: usize> BatchedBitmapScan<'a, N> {
                 candidates &= (1u64 << block_len) - 1;
             }
             if candidates == 0 {
-                self.start += 64;
                 continue;
             }
 
-            // Return the chunk once this block's ids no longer fit; the block
-            // stays unread and is re-harvested on the next call.
+            // Return the chunk once this block's ids no longer fit; the word
+            // is stashed for the next call rather than re-read from the masks.
             if n + candidates.count_ones() as usize > buf.len() {
+                self.pending = candidates;
+                self.pending_base = start as PointOffsetType;
                 break;
             }
-            self.start += 64;
 
-            let base = start as PointOffsetType;
-            if candidates == u64::MAX {
-                // Fully flag-free block — the common case.
-                for (i, slot) in buf[n..n + 64].iter_mut().enumerate() {
-                    *slot = base + i as PointOffsetType;
-                }
-                n += 64;
-            } else {
-                // One iteration per set bit, in ascending order:
-                // `trailing_zeros` locates the lowest set bit (the next
-                // candidate's offset in the block), `candidates - 1` &-ed
-                // into the mask clears exactly that bit.
-                while candidates != 0 {
-                    buf[n] = base + candidates.trailing_zeros() as PointOffsetType;
-                    n += 1;
-                    candidates &= candidates - 1;
-                }
-            }
+            n = expand_word(candidates, start as PointOffsetType, buf, n);
+        }
+        n
+    }
+}
+
+/// Append the ids of the set bits of `candidates` (offset by `base`) to
+/// `buf[n..]`; returns the new fill count. Caller guarantees the bits fit.
+#[inline(always)]
+fn expand_word(
+    mut candidates: u64,
+    base: PointOffsetType,
+    buf: &mut [PointOffsetType],
+    mut n: usize,
+) -> usize {
+    if candidates == u64::MAX {
+        // Fully flag-free block — the common case.
+        for (i, slot) in buf[n..n + 64].iter_mut().enumerate() {
+            *slot = base + i as PointOffsetType;
+        }
+        n + 64
+    } else {
+        // One iteration per set bit, in ascending order: `trailing_zeros`
+        // locates the lowest set bit (the next candidate's offset in the
+        // block), `candidates - 1` &-ed into the mask clears exactly that bit.
+        while candidates != 0 {
+            buf[n] = base + candidates.trailing_zeros() as PointOffsetType;
+            n += 1;
+            candidates &= candidates - 1;
         }
         n
     }
