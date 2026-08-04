@@ -499,10 +499,13 @@ impl TableOfContent {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
         let mut operations_per_key = Vec::with_capacity(shard_keys.len());
-        let explicit_point_ids = operation.point_ids().map(|point_ids| point_ids.to_vec());
+        let explicit_point_ids = operation.point_ids().map(|point_ids| point_ids.clone());
+        let can_create_points = operation.upsert_point_ids().is_some();
 
-        if let Some(point_ids) = explicit_point_ids {
-            let mut retrieve_requests: FuturesUnordered<_> = shard_keys
+        if let Some(point_ids) = explicit_point_ids
+            && !can_create_points
+        {
+            let retrieve_requests: FuturesUnordered<_> = shard_keys
                 .iter()
                 .cloned()
                 .map(|shard_key| {
