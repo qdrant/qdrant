@@ -92,9 +92,16 @@ where
     // for equality), then convert values->points below. Avoids the histogram's
     // over-count for `exp`.
     let (start_bound, end_bound) = range.as_index_key_bounds();
-    // binary-search IO unmetered here; estimate path, not the hot filter.
-    let hw_counter = HardwareCounterCell::disposable();
-    let selected_values = index.values_range_size(start_bound, end_bound, &hw_counter)?;
+    // Guard the BTree range query the same way `filter` does: an inverted or
+    // empty range (start > end) would panic `values_range_size`, so treat it as
+    // zero matches.
+    let selected_values = if check_boundaries(&start_bound, &end_bound) {
+        // binary-search IO unmetered here; estimate path, not the hot filter.
+        let hw_counter = HardwareCounterCell::disposable();
+        index.values_range_size(start_bound, end_bound, &hw_counter)?
+    } else {
+        0
+    };
 
     let estimation = estimate_multi_value_selection_cardinality(
         index.get_points_count(),
