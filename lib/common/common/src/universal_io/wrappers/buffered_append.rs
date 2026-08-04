@@ -1,4 +1,3 @@
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -6,25 +5,20 @@ use parking_lot::Mutex;
 
 use crate::is_alive_lock::IsAliveLock;
 use crate::universal_io::{
-    ByteOffset, Flusher, OpenOptions, UioResult, UniversalAppend, UniversalIoError, UniversalRead,
+    ByteOffset, Flusher, OpenOptions, UioResult, UniversalAppend, UniversalIoError,
     UniversalReadFs, UniversalWriteFileOps,
 };
 
-/// A wrapper around [`UniversalAppend`] that buffers appends in memory and
-/// lands them in the file as a *single* append per flush, so that many
-/// small appends amortize into one syscall/RPC (object stores limit appends
-/// per object).
-///
-/// The file only ever grows from its current end: there is no preallocation
-/// and no trailing padding, and existing bytes are never rewritten. The
-/// wrapper is write-only; readers open the file through a plain `S` handle.
+/// A write-only wrapper around [`UniversalAppend`] that buffers appends in
+/// memory and lands them in the file as a *single* append per flush, so that
+/// many small appends amortize into one operation.
 ///
 /// [`flusher`](Self::flusher) captures the buffered length as a watermark:
 /// running it appends the buffered bytes up to it and syncs the file, while
 /// bytes appended in between stay buffered for the next flusher.
 ///
-/// Unlike [`UniversalAppend::append`], an `Ok` append is only buffered — it
-/// is durable, and visible to readers, once a flusher covering it ran.
+/// Unlike [`UniversalAppend::append`], an `Ok` append is only buffered. It is
+/// durable and visible to readers once flushed.
 #[derive(Debug)]
 pub struct BufferedAppend<S> {
     /// Path of the file, used in error messages
@@ -34,6 +28,7 @@ pub struct BufferedAppend<S> {
     is_alive_lock: IsAliveLock,
 }
 
+#[derive(Debug)]
 struct Inner<S> {
     /// Open handle to the file
     file: S,
@@ -44,46 +39,77 @@ struct Inner<S> {
     /// Byte `i` corresponds to file offset `persisted_len + i`, so this is
     /// byte for byte the data of the next append.
     pending: Vec<u8>,
+    /// Whether bytes were appended to the file since the last successful
+    /// sync, so flushers with nothing to do skip the sync
+    dirty: bool,
 }
 
-impl<S: fmt::Debug> fmt::Debug for Inner<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self {
-            file,
-            persisted_len,
-            pending,
-        } = self;
-        f.debug_struct("Inner")
-            .field("file", file)
-            .field("persisted_len", persisted_len)
-            .field("pending_len", &pending.len())
-            .finish()
-    }
-}
-
-impl<S: UniversalRead> BufferedAppend<S> {
+impl<S: UniversalAppend + 'static> BufferedAppend<S> {
     /// Open an existing file at the given path to continue appending.
+    ///
+    /// # Torn write detection
+    /// To check for torn writes, caller can compare length against a watermark,
+    /// and use `S::APPEND_IS_ATOMIC` to determine if the backend supports atomic appends.
+    ///
+    /// ```rust
+    /// let expected_len = read_watermark(watermark_path)?;
+    /// let file = BufferedAppend::open(fs, path, options, extra)?;
+    /// match file.persisted_len().cmp(&expected_len) {
+    ///     Ordering::Equal => {
+    ///         // ok
+    ///     }
+    ///     Ordering::Less => {
+    ///         // error
+    ///     }
+    ///     Ordering::Greater => {
+    ///         // Check if it can be a torn write.
+    ///         if S::APPEND_IS_ATOMIC {
+    ///             // Adopt new length
+    ///             write_watermark(watermark_path, file.persisted_len())
+    ///         else {
+    ///             // Truncate to the expected length to avoid torn writes.
+    ///             drop(file);
+    ///             let content = read_whole(path)?.to_owned();
+    ///             fs.atomic_save(path, &content[..expected_len])?;
+    ///         }
+    ///     }
+    /// }
+    /// ```
     pub fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         path: impl AsRef<Path>,
-        options: OpenOptions,
+        mut options: OpenOptions,
         extra: Fs::OpenExtra,
     ) -> UioResult<Self> {
+        options.writeable = true;
         let file = fs.open(&path, options, extra)?;
         let persisted_len = file.len::<u8>()?;
+
         Ok(Self {
             path: path.as_ref().to_path_buf(),
             inner: Arc::new(Mutex::new(Inner {
                 file,
                 persisted_len,
                 pending: Vec::new(),
+                dirty: false,
             })),
             is_alive_lock: IsAliveLock::new(),
         })
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    /// Create a new empty file at the given path, truncating it if it already
+    /// exists. The directory must exist already.
+    pub fn create<Fs>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Fs::OpenExtra,
+    ) -> UioResult<Self>
+    where
+        Fs: UniversalReadFs<File = S> + UniversalWriteFileOps,
+    {
+        fs.create(path.as_ref(), 0)?;
+        Self::open(fs, path, options, extra)
     }
 
     /// Logical length in bytes, including buffered bytes that haven't been
@@ -96,30 +122,9 @@ impl<S: UniversalRead> BufferedAppend<S> {
     pub fn persisted_len(&self) -> u64 {
         self.inner.lock().persisted_len
     }
-}
-
-impl<S: UniversalAppend> BufferedAppend<S> {
-    /// Create a new empty file at the given path, truncating it if it already
-    /// exists. The directory must exist already.
-    pub fn create<Fs>(
-        fs: &Fs,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        extra: Fs::OpenExtra,
-    ) -> UioResult<Self>
-    where
-        Fs: UniversalReadFs<File = S> + UniversalWriteFileOps,
-    {
-        debug_assert!(options.writeable);
-        fs.create(path.as_ref(), 0)?;
-        Self::open(fs, path, options, extra)
-    }
 
     /// Buffer `data` in memory; `offset` must equal the current logical end
-    /// of file ([`byte_len`](Self::byte_len)), rejected with
-    /// [`AppendOffsetConflict`] otherwise.
-    ///
-    /// [`AppendOffsetConflict`]: UniversalIoError::AppendOffsetConflict
+    /// of file ([`byte_len`](Self::byte_len))
     pub fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         if bytes.is_empty() {
@@ -137,18 +142,21 @@ impl<S: UniversalAppend> BufferedAppend<S> {
         inner.pending.extend_from_slice(bytes);
         Ok(())
     }
-}
 
-impl<S: UniversalAppend + 'static> BufferedAppend<S> {
-    /// Flusher that appends the bytes buffered so far to the file and syncs
-    /// it. Bytes appended after the flusher was created stay buffered for the
-    /// next one; running flushers out of order is safe, a stale one is a
-    /// no-op. A flusher outliving the storage is a no-op as well.
+    /// Flusher that appends the bytes buffered so far to the file and syncs it.
     pub fn flusher(&self) -> Flusher {
-        let target_len = self.byte_len();
+        let target_len = {
+            let inner = self.inner.lock();
+            if inner.pending.is_empty() && !inner.dirty {
+                return Box::new(|| Ok(()));
+            }
+            inner.byte_len()
+        };
         let inner = Arc::downgrade(&self.inner);
         let is_alive_handle = self.is_alive_lock.handle();
         Box::new(move || {
+            // The alive guard doubles as the flush lock: flushers of the same
+            // storage run mutually exclusive, start to finish
             let (Some(_is_alive_guard), Some(inner)) =
                 (is_alive_handle.lock_if_alive(), inner.upgrade())
             else {
@@ -156,43 +164,42 @@ impl<S: UniversalAppend + 'static> BufferedAppend<S> {
                 return Ok(());
             };
 
-            // Keep the guard till the end to serialize with other flushers
-            let mut inner = inner.lock();
-            inner.write_pending(target_len)?;
-            inner.file.flusher()()
+            // Write & sync under the state lock.
+            {
+                let mut inner = inner.lock();
+                inner.write_pending(target_len)?;
+                if !inner.dirty {
+                    return Ok(());
+                }
+                inner.file.flusher()()?;
+                inner.dirty = false;
+            };
+            Ok(())
         })
     }
 }
 
-impl<S> Inner<S> {
+impl<S: UniversalAppend> Inner<S> {
     fn byte_len(&self) -> u64 {
         self.persisted_len + self.pending.len() as u64
     }
-}
 
-impl<S: UniversalAppend> Inner<S> {
     /// Append buffered bytes for file offsets up to, but excluding,
-    /// `target_len` to the file. A stale target, at or below what a more
-    /// recent flush already persisted, is a no-op: bytes must never be
-    /// written twice.
+    /// `target_len` to the file.
     fn write_pending(&mut self, target_len: u64) -> UioResult<()> {
         if target_len <= self.persisted_len {
             return Ok(());
         }
 
-        let count = (target_len - self.persisted_len) as usize;
-        debug_assert!(
-            count <= self.pending.len(),
-            "flush target exceeds buffered data",
-        );
-        let count = count.min(self.pending.len());
-        let end = self.persisted_len + count as u64;
-
+        // `target_len` came from `byte_len`, which never shrinks, so `count`
+        // is within `pending`
+        let count = target_len.saturating_sub(self.persisted_len) as usize;
         self.file
             .append(self.persisted_len, &self.pending[..count])?;
 
         self.pending.drain(..count);
-        self.persisted_len = end;
+        self.persisted_len = target_len;
+        self.dirty = true;
 
         Ok(())
     }
@@ -204,16 +211,14 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::mmap::AdviceSetting;
-    use crate::universal_io::{MmapFile, MmapFs, Populate};
+    use crate::universal_io::conformance::open_options;
+    use crate::universal_io::{MmapFile, MmapFs, UniversalRead};
 
-    fn options(writeable: bool) -> OpenOptions {
-        OpenOptions {
-            writeable,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Global,
-        }
+    fn create_storage(dir: &TempDir, name: &str) -> (PathBuf, BufferedAppend<MmapFile>) {
+        let path = dir.path().join(name);
+        let storage =
+            BufferedAppend::<MmapFile>::create(&MmapFs, &path, open_options(true), ()).unwrap();
+        (path, storage)
     }
 
     /// Appends land in the file only up to the watermark captured at flusher
@@ -221,9 +226,7 @@ mod tests {
     #[test]
     fn test_buffered_append_watermark_flush() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("buffered.dat");
-        let mut storage =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (path, mut storage) = create_storage(&dir, "buffered.dat");
 
         storage.append(0, b"hello ".as_slice()).unwrap();
         storage.append(6, b"world".as_slice()).unwrap();
@@ -262,9 +265,7 @@ mod tests {
     #[test]
     fn test_typed_append() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("typed.dat");
-        let mut storage =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (_path, mut storage) = create_storage(&dir, "typed.dat");
 
         storage.append(0, &[1u32, 2]).unwrap();
         storage.append(8, &[3u32]).unwrap();
@@ -287,9 +288,7 @@ mod tests {
     #[test]
     fn test_append_rejects_wrong_offset() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("conflict.dat");
-        let mut storage =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (_path, mut storage) = create_storage(&dir, "conflict.dat");
 
         storage.append(0, b"data".as_slice()).unwrap();
 
@@ -306,9 +305,7 @@ mod tests {
     #[test]
     fn test_flush_keeps_pending_on_conflict() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("foreign.dat");
-        let mut storage =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (path, mut storage) = create_storage(&dir, "foreign.dat");
 
         storage.append(0, &[1u8, 2, 3, 4]).unwrap();
 
@@ -328,9 +325,7 @@ mod tests {
     #[test]
     fn test_stale_flusher_is_noop() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("stale.dat");
-        let mut storage =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (path, mut storage) = create_storage(&dir, "stale.dat");
 
         storage.append(0, b"one".as_slice()).unwrap();
         let early = storage.flusher();
@@ -348,9 +343,7 @@ mod tests {
     #[test]
     fn test_flusher_after_drop_is_noop() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("dropped.dat");
-        let mut storage =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (path, mut storage) = create_storage(&dir, "dropped.dat");
 
         storage.append(0, b"data".as_slice()).unwrap();
         let flush = storage.flusher();
@@ -365,13 +358,11 @@ mod tests {
     #[test]
     fn test_reader_handle_observes_flushed_appends() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("reader.dat");
-        let mut writer =
-            BufferedAppend::<MmapFile>::create(&MmapFs, &path, options(true), ()).unwrap();
+        let (path, mut writer) = create_storage(&dir, "reader.dat");
         writer.append(0, b"one".as_slice()).unwrap();
         writer.flusher()().unwrap();
 
-        let mut reader = MmapFs.open(&path, options(false), ()).unwrap();
+        let mut reader = MmapFs.open(&path, open_options(false), ()).unwrap();
         assert_eq!(reader.read_whole::<u8>().unwrap().as_ref(), b"one");
 
         writer.append(3, b" two".as_slice()).unwrap();
