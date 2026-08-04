@@ -58,6 +58,19 @@ pub enum SnapshotStorageManager {
     // AZURE(SnapshotStorageCloud),
 }
 
+/// Assert a snapshot name is a plain file name, not a path.
+///
+/// Backends join it onto a snapshots directory, and `Path::join` drops the base if it is absolute.
+fn validate_snapshot_name(snapshot_name: &str) -> CollectionResult<()> {
+    if Path::new(snapshot_name).file_name() != Some(snapshot_name.as_ref()) {
+        return Err(CollectionError::not_found(format!(
+            "Snapshot {snapshot_name}"
+        )));
+    }
+
+    Ok(())
+}
+
 impl SnapshotStorageManager {
     /// Create a snapshot storage manager from the configured backend.
     ///
@@ -165,11 +178,14 @@ impl SnapshotStorageManager {
         }
     }
 
+    /// Get the storage path for a collection snapshot, confined to `snapshots_path`
     pub fn get_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
+        validate_snapshot_name(snapshot_name)?;
+
         match self {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_snapshot_path(snapshots_path, snapshot_name)
@@ -180,11 +196,14 @@ impl SnapshotStorageManager {
         }
     }
 
+    /// Get the storage path for a full snapshot, confined to `snapshots_path`
     pub fn get_full_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
+        validate_snapshot_name(snapshot_name)?;
+
         match self {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_full_snapshot_path(snapshots_path, snapshot_name)
@@ -447,11 +466,14 @@ impl SnapshotStorageCloud {
         Ok(())
     }
 
+    /// `snapshot_name` must pass [`validate_snapshot_name`] first: unlike the local filesystem,
+    /// object storage has no `canonicalize` to confine the key afterwards.
     fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
         let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
     }
 
+    /// `snapshot_name` must pass [`validate_snapshot_name`] first.
     fn get_full_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
         let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
@@ -490,5 +512,146 @@ impl SnapshotStorageCloud {
             _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
         Ok(SnapshotStream::new_stream(download.into_stream(), None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Snapshot names that escape the snapshots directory.
+    const TRAVERSING_NAMES: &[&str] = &[
+        "/snapshots/other-collection/victim.snapshot",
+        "/etc/passwd",
+        "other-collection/victim.snapshot",
+        "../other-collection/victim.snapshot",
+        "./victim.snapshot",
+        "..",
+        ".",
+        "",
+    ];
+
+    fn s3_manager() -> SnapshotStorageManager {
+        SnapshotStorageManager::new(&SnapshotsConfig {
+            snapshots_storage: SnapshotsStorageConfig::S3,
+            s3_config: Some(S3Config {
+                bucket: "test-bucket".into(),
+                region: Some("us-east-1".into()),
+                access_key: Some("test-access-key".into()),
+                secret_key: Some("test-secret-key".into()),
+                endpoint_url: Some("http://localhost:9000".into()),
+            }),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn validate_snapshot_name_accepts_plain_file_names() {
+        for name in ["my.snapshot", "collection-2024-01-01-00-00-00.snapshot"] {
+            validate_snapshot_name(name).unwrap();
+        }
+    }
+
+    #[test]
+    fn validate_snapshot_name_rejects_paths() {
+        for name in TRAVERSING_NAMES {
+            assert!(
+                matches!(
+                    validate_snapshot_name(name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the snapshots directory and must be rejected",
+            );
+        }
+    }
+
+    /// GHSA-p9c2-9vq2-gxh8: an unchecked name let a caller scoped to one collection read and
+    /// delete any object in the bucket.
+    #[test]
+    fn object_storage_rejects_traversing_snapshot_name() {
+        let manager = s3_manager();
+        let snapshots_path = Path::new("snapshots/my-collection");
+
+        for name in TRAVERSING_NAMES {
+            assert!(
+                matches!(
+                    manager.get_snapshot_path(snapshots_path, name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the collection prefix and must be rejected",
+            );
+            assert!(
+                matches!(
+                    manager.get_full_snapshot_path(Path::new("snapshots"), name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the snapshots prefix and must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn object_storage_keeps_plain_snapshot_name_under_prefix() {
+        let manager = s3_manager();
+        let snapshots_path = Path::new("snapshots/my-collection");
+
+        assert_eq!(
+            manager
+                .get_snapshot_path(snapshots_path, "my.snapshot")
+                .unwrap(),
+            Path::new("snapshots/my-collection/my.snapshot"),
+        );
+        assert_eq!(
+            manager
+                .get_full_snapshot_path(Path::new("snapshots"), "full.snapshot")
+                .unwrap(),
+            Path::new("snapshots/full.snapshot"),
+        );
+    }
+
+    #[test]
+    fn local_storage_rejects_traversing_snapshot_name() {
+        let manager = SnapshotStorageManager::new(&SnapshotsConfig {
+            snapshots_storage: SnapshotsStorageConfig::Local,
+            s3_config: None,
+        })
+        .unwrap();
+
+        let snapshots_dir = tempfile::Builder::new().tempdir().unwrap();
+        let snapshots_path = snapshots_dir.path();
+
+        // Traversal target
+        let other_collection = snapshots_path.join("other-collection");
+        fs::create_dir_all(&other_collection).unwrap();
+        fs::write(other_collection.join("victim.snapshot"), b"victim").unwrap();
+
+        // The caller's own collection
+        let my_collection = snapshots_path.join("my-collection");
+        fs::create_dir_all(&my_collection).unwrap();
+        fs::write(my_collection.join("my.snapshot"), b"mine").unwrap();
+
+        for name in TRAVERSING_NAMES {
+            assert!(
+                matches!(
+                    manager.get_snapshot_path(&my_collection, name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the collection directory and must be rejected",
+            );
+        }
+
+        // Reaching into a collection directory is not a full snapshot either
+        assert!(matches!(
+            manager.get_full_snapshot_path(snapshots_path, "other-collection/victim.snapshot"),
+            Err(CollectionError::NotFound { .. }),
+        ));
+
+        // An ordinary name still resolves
+        assert_eq!(
+            manager
+                .get_snapshot_path(&my_collection, "my.snapshot")
+                .unwrap(),
+            fs::canonicalize(my_collection.join("my.snapshot")).unwrap(),
+        );
     }
 }
