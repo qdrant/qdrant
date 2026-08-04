@@ -35,6 +35,10 @@ def get_shard_keys(collection_name):
     return response
 
 
+@pytest.mark.skipif(
+    not os.getenv("QDRANT__CLUSTER__ENABLED"),
+    reason="only works in distributed mode"
+)
 def test_set_payload_with_multiple_shard_keys_and_point_ids(collection_name):
     create_shard_key("1", collection_name)
     create_shard_key("2", collection_name)

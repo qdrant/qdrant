@@ -23,7 +23,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::types::{ScoredPoint, ShardKey};
+use segment::types::{ScoredPoint, ShardKey, WithPayloadInterface};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -499,40 +499,54 @@ impl TableOfContent {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
         let mut operations_per_key = Vec::with_capacity(shard_keys.len());
-        let has_explicit_point_ids = operation.point_ids().is_some();
+        let explicit_point_ids = operation.point_ids().map(|point_ids| point_ids.to_vec());
 
-        {
-            let shards_holder = collection.shards_holder();
-            let shard_holder = shards_holder.read().await;
+        if let Some(point_ids) = explicit_point_ids {
+            let mut found_point_ids = HashSet::new();
+            let mut ids_per_key = Vec::with_capacity(shard_keys.len());
 
             for shard_key in &shard_keys {
-                let mut operation_for_key = operation.clone();
+                let records = collection
+                    .retrieve(
+                        PointRequestInternal {
+                            ids: point_ids.clone(),
+                            with_payload: Some(WithPayloadInterface::Bool(false)),
+                            with_vector: false.into(),
+                        },
+                        None,
+                        None,
+                        &ShardSelectorInternal::ShardKey(shard_key.clone()),
+                        timeout,
+                        hw_measurement_acc.clone(),
+                    )
+                    .await?;
 
-                if has_explicit_point_ids {
-                    let matching_ids: HashSet<_> = shard_holder
-                        .split_by_shard(operation.clone(), &Some(shard_key.clone()))?
-                        .into_iter()
-                        .filter_map(|(_, split_operation)| split_operation.point_ids())
-                        .flatten()
-                        .collect();
-
-                    operation_for_key.retain_point_ids(|point_id| matching_ids.contains(point_id));
-
-                    if operation_for_key
-                        .point_ids()
-                        .is_some_and(|point_ids| point_ids.is_empty())
-                    {
-                        continue;
-                    }
-                }
-
-                operations_per_key.push((shard_key.clone(), operation_for_key));
+                let key_point_ids: HashSet<_> =
+                    records.into_iter().map(|record| record.id).collect();
+                found_point_ids.extend(key_point_ids.iter().copied());
+                ids_per_key.push((shard_key.clone(), key_point_ids));
             }
-        }
 
-        // If no operation has relevant point IDs for the selected shard keys,
-        // preserve previous behavior and surface a point-not-found style error.
-        if operations_per_key.is_empty() {
+            if let Some(missed_point_id) = point_ids
+                .iter()
+                .copied()
+                .find(|point_id| !found_point_ids.contains(point_id))
+            {
+                return Err(CollectionError::PointNotFound { missed_point_id }.into());
+            }
+
+            for (shard_key, key_point_ids) in ids_per_key {
+                let mut operation_for_key = operation.clone();
+                operation_for_key.retain_point_ids(|point_id| key_point_ids.contains(point_id));
+                if operation_for_key
+                    .point_ids()
+                    .is_some_and(|point_ids| point_ids.is_empty())
+                {
+                    continue;
+                }
+                operations_per_key.push((shard_key, operation_for_key));
+            }
+        } else {
             operations_per_key = shard_keys
                 .iter()
                 .cloned()
