@@ -102,7 +102,7 @@ rustls-pki-types = "1.14.0"
 rustls-pemfile = "2.2.0"
 prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
-jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 tempfile = { workspace = true }
 
 # Consensus related crates
