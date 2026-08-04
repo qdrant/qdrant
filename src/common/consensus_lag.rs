@@ -21,7 +21,8 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use serde::Serialize;
 use shard::PeerId;
-use storage::content_manager::consensus_manager::{AppliedEntry, AppliedLog, ConsensusStateRef};
+use storage::content_manager::consensus::applied_log::{AppliedEntry, AppliedLog};
+use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::errors::StorageError;
 
 /// Range of entry indices a peer's log covers.
@@ -137,6 +138,40 @@ pub async fn collect_consensus_lag(
     unreachable_peers.sort_by_key(|peer| peer.peer_id);
 
     Ok(build_report(this_peer_id, &logs, unreachable_peers))
+}
+
+/// Serve this peer's log to another peer that is collecting a lag report.
+pub fn applied_log_to_grpc(log: AppliedLog) -> grpc::GetConsensusAppliedLogResponse {
+    let AppliedLog {
+        entries,
+        now_ms,
+        pending_operations,
+    } = log;
+
+    let entries = entries
+        .into_iter()
+        .map(|entry| {
+            let AppliedEntry {
+                index,
+                term,
+                applied_at_ms,
+                took_ms,
+            } = entry;
+
+            grpc::AppliedConsensusEntry {
+                index,
+                term,
+                applied_at_ms,
+                took_ms,
+            }
+        })
+        .collect();
+
+    grpc::GetConsensusAppliedLogResponse {
+        entries,
+        now_ms,
+        pending_operations: pending_operations as u64,
+    }
 }
 
 fn applied_log_from_grpc(response: grpc::GetConsensusAppliedLogResponse) -> AppliedLog {

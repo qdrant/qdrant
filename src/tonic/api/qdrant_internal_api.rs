@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    AppliedConsensusEntry, GetAuditLogRequest, GetAuditLogResponse, GetConsensusAppliedLogRequest,
+    GetAuditLogRequest, GetAuditLogResponse, GetConsensusAppliedLogRequest,
     GetConsensusAppliedLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
     GetQuotaUsageRequest, GetQuotaUsageResponse, GetTelemetryRequest, GetTelemetryResponse,
     PeerTelemetry, QuotaUsage, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
@@ -13,12 +13,13 @@ use chrono::DateTime;
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
-use storage::content_manager::consensus_manager::{AppliedEntry, AppliedLog, ConsensusStateRef};
+use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::quota;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
+use crate::common::consensus_lag::applied_log_to_grpc;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::auth::extract_auth;
@@ -154,36 +155,9 @@ impl QdrantInternal for QdrantInternalService {
         &self,
         _: Request<GetConsensusAppliedLogRequest>,
     ) -> Result<Response<GetConsensusAppliedLogResponse>, Status> {
-        let AppliedLog {
-            entries,
-            now_ms,
-            pending_operations,
-        } = self.consensus_state.applied_log();
-
-        let entries = entries
-            .into_iter()
-            .map(|entry| {
-                let AppliedEntry {
-                    index,
-                    term,
-                    applied_at_ms,
-                    took_ms,
-                } = entry;
-
-                AppliedConsensusEntry {
-                    index,
-                    term,
-                    applied_at_ms,
-                    took_ms,
-                }
-            })
-            .collect();
-
-        Ok(Response::new(GetConsensusAppliedLogResponse {
-            entries,
-            now_ms,
-            pending_operations: pending_operations as u64,
-        }))
+        Ok(Response::new(applied_log_to_grpc(
+            self.consensus_state.applied_log(),
+        )))
     }
 
     async fn get_audit_log(
