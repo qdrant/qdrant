@@ -95,7 +95,9 @@ tap = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
-sysinfo = "0.38"
+# Memory only; disable `user` so macOS does not pull objc2 via open-directory
+# (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 charabia = { version = "0.9.9", default-features = false, features = [
     "greek",
     "hebrew",
