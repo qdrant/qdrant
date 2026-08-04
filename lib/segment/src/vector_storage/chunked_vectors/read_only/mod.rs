@@ -52,11 +52,11 @@ mod tests {
     use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;
 
+    use super::super::appender::ChunkedVectorsAppender;
     use super::super::chunks::chunk_name;
     use super::*;
     use crate::common::live_reload::LiveReload;
     use crate::vector_storage::VectorOffsetType;
-    use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
     fn make_vec(seed: usize, dim: usize) -> Vec<f32> {
         (0..dim).map(|i| (seed * dim + i) as f32).collect()
@@ -72,16 +72,10 @@ mod tests {
         let first: Vec<Vec<f32>> = (0..100).map(|s| make_vec(s, DIM)).collect();
         let second: Vec<Vec<f32>> = (100..250).map(|s| make_vec(s, DIM)).collect();
 
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            dir.path(),
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
+        let mut writer =
+            ChunkedVectorsAppender::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
         for vector in &first {
-            writer.push(vector.as_slice(), &hw).unwrap();
+            writer.append(vector.as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -97,7 +91,7 @@ mod tests {
 
         // Append more through the writer, then reload the read-only view.
         for vector in &second {
-            writer.push(vector.as_slice(), &hw).unwrap();
+            writer.append(vector.as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -111,12 +105,10 @@ mod tests {
         assert_eq!(got.as_ref(), second[0].as_slice());
     }
 
-    /// Case-5 regression of the live-reload staleness audit: chunk files are
-    /// preallocated to full size, so appended vectors are in-place writes
-    /// within the existing file length. A reader over a caching backend that
-    /// fetched a block straddling the old tail (any read near the tail pulls
-    /// a 16KiB block extending into then-unwritten space) would keep serving
-    /// those stale bytes for vectors appended later into that block —
+    /// Case-5 regression of the live-reload staleness audit: a reader over a
+    /// caching backend that fetched a block straddling the old tail (any read
+    /// near the tail pulls a 16KiB block covering space appended into later)
+    /// would keep serving those stale bytes for vectors landing in that block —
     /// `live_reload` must re-open the last held chunk, not keep the handle.
     /// This drives it over `DiskCacheFs`, where the failure actually
     /// reproduces (mmap readers are read-through and can't catch it).
@@ -140,16 +132,9 @@ mod tests {
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            &dir,
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
+        let mut writer = ChunkedVectorsAppender::<f32, MmapFile>::open(MmapFs, &dir, DIM).unwrap();
         for s in 0..100 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+            writer.append(make_vec(s, DIM).as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -168,15 +153,15 @@ mod tests {
         .unwrap();
         assert_eq!(reader.len(), 100);
 
-        // Read the tail vector: the fetched block extends past it into
-        // then-unwritten space — the stale bytes this test must escape are
-        // now in the reader's local cache.
+        // Read the tail vector: the fetched block ends at the old tail —
+        // the stale bytes this test must escape are now in the reader's
+        // local cache.
         let got = reader.get::<Random>(99).unwrap();
         assert_eq!(got.as_ref(), make_vec(99, DIM).as_slice());
 
         // Append into that same block region, then reload.
         for s in 100..150 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+            writer.append(make_vec(s, DIM).as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -205,16 +190,10 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            dir.path(),
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
+        let mut writer =
+            ChunkedVectorsAppender::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
         for s in 0..4000 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+            writer.append(make_vec(s, DIM).as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -230,7 +209,7 @@ mod tests {
         assert_eq!(reader.chunks.len(), 1);
 
         for s in 4000..9000 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+            writer.append(make_vec(s, DIM).as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -264,16 +243,10 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            dir.path(),
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
+        let mut writer =
+            ChunkedVectorsAppender::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
         for s in 0..100 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+            writer.append(make_vec(s, DIM).as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -293,7 +266,7 @@ mod tests {
 
         // Grow within the same chunk so the reload takes the slow path.
         for s in 100..150 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
+            writer.append(make_vec(s, DIM).as_slice(), &hw).unwrap();
         }
         writer.flusher()().unwrap();
 
