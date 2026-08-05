@@ -515,13 +515,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             // Switching the loops improves batching performance, but slightly degrades single-query performance.
             for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
                 raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
-
-                for i in 0..chunk_size {
-                    pq.push(ScoredPointOffset {
-                        idx: chunk[i],
-                        score: scores_buffer[i],
-                    });
-                }
+                push_scored_chunk(pq, &chunk[..chunk_size], &scores_buffer[..chunk_size]);
             }
         }
 
@@ -552,14 +546,42 @@ fn score_chunk(
     }
     for BatchSearch { raw_scorer, pq } in scorer_batch {
         raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()]);
-        for i in 0..chunk.len() {
-            pq.push(ScoredPointOffset {
-                idx: chunk[i],
-                score: scores_buffer[i],
-            });
-        }
+        push_scored_chunk(pq, chunk, &scores_buffer[..chunk.len()]);
     }
     Ok(())
+}
+
+/// Push one chunk of scored ids into `pq`, skipping scores that cannot enter
+/// the full queue.
+/// The outcome is identical to unconditionally pushing every entry.
+#[inline]
+fn push_scored_chunk(
+    pq: &mut FixedLengthPriorityQueue<ScoredPointOffset>,
+    ids: &[PointOffsetType],
+    scores: &[ScoreType],
+) {
+    // Score of the queue's current minimum
+    let mut threshold = pq
+        .is_full()
+        .then(|| pq.top().expect("full queue is not empty").score);
+
+    for (&idx, &score) in ids.iter().zip(scores) {
+        // A score at or below the minimum cannot displace anything — `push`
+        // would hand it back untouched (`ScoredPointOffset` orders by score
+        // alone; NaN falls through to `push`). Rejecting on this register-held
+        // f32 compare skips the call and its heap bookkeeping, and with
+        // `top` ≪ point count nearly every push in a full scan is a rejection.
+        if let Some(threshold) = threshold
+            && score <= threshold
+        {
+            continue;
+        }
+
+        pq.push(ScoredPointOffset { idx, score });
+        if pq.is_full() {
+            threshold = Some(pq.top().expect("full queue is not empty").score);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -688,6 +710,39 @@ mod tests {
                     .unwrap();
 
             assert_eq!(visible, reference, "case {case_idx}");
+        }
+    }
+
+    /// The threshold gate in [`push_scored_chunk`] must leave the queue in
+    /// exactly the state unconditional `push` calls produce — including a
+    /// not-yet-full queue and ties with the current minimum (a coarse score
+    /// grid forces both).
+    #[test]
+    fn push_scored_chunk_matches_plain_push() {
+        let mut rng = StdRng::seed_from_u64(7);
+        for top in [1, 3, 32] {
+            for len in [0usize, 1, 5, 64, 300] {
+                let ids: Vec<PointOffsetType> = (0..len as PointOffsetType).collect();
+                let scores: Vec<ScoreType> = (0..len)
+                    .map(|_| rng.random_range(0..8) as ScoreType)
+                    .collect();
+
+                let mut gated = FixedLengthPriorityQueue::new(top);
+                for (chunk_ids, chunk_scores) in ids.chunks(64).zip(scores.chunks(64)) {
+                    push_scored_chunk(&mut gated, chunk_ids, chunk_scores);
+                }
+
+                let mut plain = FixedLengthPriorityQueue::new(top);
+                for (&idx, &score) in ids.iter().zip(&scores) {
+                    plain.push(ScoredPointOffset { idx, score });
+                }
+
+                assert_eq!(
+                    gated.into_sorted_vec(),
+                    plain.into_sorted_vec(),
+                    "top {top}, len {len}"
+                );
+            }
         }
     }
 }
