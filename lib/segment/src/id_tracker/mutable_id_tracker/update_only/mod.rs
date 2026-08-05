@@ -145,7 +145,12 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             write_version(&mut payload, *version)?;
         }
 
-        file.append(layout.committed_len(), &payload)?;
+        // One entry per buffer: the backend places the whole run in a single
+        // operation, and the entry boundaries stay visible to it.
+        file.append_batch(
+            layout.committed_len(),
+            payload.chunks_exact(VERSION_ELEMENT_SIZE as usize),
+        )?;
         (file.flusher())()?;
 
         Ok(())
@@ -172,7 +177,10 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             None => Some(0),
         };
 
+        // Entries are variable-length, so their bounds within the buffer are
+        // recorded as they are written rather than derived afterwards.
         let mut payload = Vec::new();
+        let mut entries = Vec::with_capacity(operations.len());
         let mut inserted = Vec::new();
         for operation in operations {
             let change = match operation {
@@ -190,13 +198,19 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                 MappingOperation::Delete(external_id) => MappingChange::Delete(*external_id),
             };
 
+            let start = payload.len();
             write_entry(&mut payload, change)?;
+            entries.push(start..payload.len());
         }
 
         let path = mappings_path(&self.segment_path);
         let mut file = self.open_append(&path)?;
         let end_of_file = Self::end_of_file(&file)?;
-        file.append(end_of_file, &payload)?;
+        // One entry per buffer, appended in order in a single operation.
+        file.append_batch(
+            end_of_file,
+            entries.iter().map(|entry| &payload[entry.clone()]),
+        )?;
         (file.flusher())()?;
 
         // Only now do the slots exist: a crash before this point leaves them
