@@ -34,6 +34,11 @@ pub struct FeatureFlags {
     /// When enabled, payload storage backend is decided based on `storage.performance.io_uring` option and payload storage type.
     pub async_payload_storage: bool,
 
+    /// Allow the batched io_uring-based HNSW graph search.
+    /// When disabled, the HNSW graph is *never* opened on io_uring.
+    /// When enabled, the graph backend is decided based on `storage.performance.io_uring` option and links placement.
+    pub async_hnsw_graph: bool,
+
     /// Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory)
     /// listing the shard's segments and their
     /// state, so out-of-process readers can discover segments without scanning the filesystem.
@@ -70,6 +75,7 @@ impl Default for FeatureFlags {
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
+            async_hnsw_graph: false,
             write_segment_manifest: false,
             append_only_mutations: false,
             compact_bitmask: false,
@@ -98,6 +104,7 @@ impl FeatureFlags {
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
+            async_hnsw_graph: true,
             write_segment_manifest: true,
             // Deliberately not enabled by `all`: these change mutation semantics and the
             // persisted storage format, and `all` is enabled in dev and e2e configs.
