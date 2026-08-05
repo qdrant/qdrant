@@ -45,16 +45,20 @@ where
             return Ok(false);
         };
 
-        match std::mem::replace(scheduled_reopen, ScheduledReopen::No) {
-            // Nothing staged
-            ScheduledReopen::No => Ok(false),
+        let Some(scheduled_reopen) = scheduled_reopen.take() else {
+            // There isn't anything scheduled.
+            return Ok(false);
+        };
+
+        // Handle the scheduled reopen.
+        match scheduled_reopen {
+            // It was staged without changes.
+            ScheduledReopen::Unchanged => {}
             ScheduledReopen::Resize { target_len } => {
                 // reopen remote, so we can read up to the new length.
                 remote.reopen()?;
 
                 local.resize(&self.local_path, target_len)?;
-
-                Ok(true)
             }
             ScheduledReopen::Tail {
                 mut pipeline,
@@ -78,10 +82,10 @@ where
 
                 // replace remote with the one from the owned pipeline
                 *remote = pipeline.into_inner();
-
-                Ok(true)
             }
         }
+
+        Ok(true)
     }
 
     pub(super) fn schedule_reopen_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
@@ -142,34 +146,44 @@ where
             )));
         }
 
-        // Check if length has grown
-        if scheduled_reopen.target_len() == Some(remote_len) || remote_len == local_len {
+        // Check if staged length has grown
+        if scheduled_reopen
+            .as_ref()
+            .is_some_and(|r| r.target_len() == Some(remote_len))
+        {
             return Ok(());
         }
 
-        let new_scheduled_reopen = match self.open_options.populate {
-            Populate::Blocking | Populate::PreferBackground => {
-                // Schedule the read of the new tail blocks.
-                let (blocks_range, byte_range) =
-                    block_aligned_fetch(local_len..remote_len, remote_len)
-                        .expect("the byte range is non-empty");
+        let new_scheduled_reopen = if remote_len == local_len {
+            ScheduledReopen::Unchanged
+        } else {
+            match self.open_options.populate {
+                Populate::Blocking | Populate::PreferBackground => {
+                    // Schedule the read of the new tail blocks.
+                    let (blocks_range, byte_range) =
+                        block_aligned_fetch(local_len..remote_len, remote_len)
+                            .expect("the byte range is non-empty");
 
-                // Fresh handle: the staged fetch must not share a mapping with
-                // the held remote, which later reopens would remap.
-                let new_remote = self.open_remote()?;
-                let mut pipeline = OwnedPipeline::new(new_remote)?;
-                // FIXME: check can_schedule in a loop?
-                pipeline.schedule::<Sequential>(blocks_range, byte_range, REMOTE_READ_ALIGNMENT)?;
+                    // Fresh remote handle
+                    let new_remote = self.open_remote()?;
+                    let mut pipeline = OwnedPipeline::new(new_remote)?;
+                    // FIXME: check can_schedule in a loop?
+                    pipeline.schedule::<Sequential>(
+                        blocks_range,
+                        byte_range,
+                        REMOTE_READ_ALIGNMENT,
+                    )?;
 
-                ScheduledReopen::Tail {
-                    pipeline,
-                    target_len: remote_len,
+                    ScheduledReopen::Tail {
+                        pipeline,
+                        target_len: remote_len,
+                    }
                 }
+                // No prefetch for lazy population
+                Populate::Auto | Populate::No | Populate::Partial(_) => ScheduledReopen::Resize {
+                    target_len: remote_len,
+                },
             }
-            // No prefetch for lazy population
-            Populate::Auto | Populate::No | Populate::Partial(_) => ScheduledReopen::Resize {
-                target_len: remote_len,
-            },
         };
 
         // Re-borrow the state: `open_remote` above needs `&self`.
@@ -181,7 +195,7 @@ where
         else {
             unreachable!("state was Ready above");
         };
-        *scheduled_reopen = new_scheduled_reopen;
+        *scheduled_reopen = Some(new_scheduled_reopen);
 
         Ok(())
     }
