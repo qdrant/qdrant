@@ -46,12 +46,13 @@ pub struct LagStats {
 #[derive(Debug, Serialize)]
 pub struct PeerLag {
     pub peer_id: PeerId,
-    /// Highest entry index this peer reported applying, absent when its log is empty.
+    /// Highest entry index this peer has applied, from its consensus state rather than its
+    /// ring, so a peer that has applied nothing since starting still reports where it stands.
     pub last_applied_index: Option<u64>,
-    /// Term of that entry.
+    /// Term of that entry, known only while the entry is still in this peer's ring.
     pub last_applied_term: Option<u64>,
     /// Entries the most advanced peer has applied and this one has not.
-    pub behind_entries: Option<u64>,
+    pub behind_entries: u64,
     /// Entries committed but not yet applied here.
     pub pending_operations: u64,
     /// Age of this peer's newest applied entry, measured against that peer's own clock, so it is
@@ -79,7 +80,8 @@ pub struct UnreachablePeer {
 pub struct ConsensusLagReport {
     /// Peer that has applied the furthest, which `behind_entries` counts back from.
     pub most_advanced_peer: PeerId,
-    /// Index range that peer's log covers, absent when it has applied nothing yet.
+    /// Index range the collected rings cover, which is what the lag figures are drawn from.
+    /// Absent when no peer has applied anything since it started.
     pub applied_window: Option<LogWindow>,
     /// Peer with the lowest average lag. Absent when no entry is held by more than one peer.
     pub fastest_peer: Option<PeerId>,
@@ -146,6 +148,7 @@ pub fn applied_log_to_grpc(log: AppliedLog) -> grpc::GetConsensusAppliedLogRespo
         entries,
         now_ms,
         pending_operations,
+        last_applied_index,
     } = log;
 
     let entries = entries
@@ -171,6 +174,7 @@ pub fn applied_log_to_grpc(log: AppliedLog) -> grpc::GetConsensusAppliedLogRespo
         entries,
         now_ms,
         pending_operations: pending_operations as u64,
+        last_applied_index,
     }
 }
 
@@ -179,6 +183,7 @@ fn applied_log_from_grpc(response: grpc::GetConsensusAppliedLogResponse) -> Appl
         entries,
         now_ms,
         pending_operations,
+        last_applied_index,
     } = response;
 
     let entries = entries
@@ -204,6 +209,7 @@ fn applied_log_from_grpc(response: grpc::GetConsensusAppliedLogResponse) -> Appl
         entries,
         now_ms,
         pending_operations: pending_operations as usize,
+        last_applied_index,
     }
 }
 
@@ -215,24 +221,28 @@ fn build_report(
 ) -> ConsensusLagReport {
     // Ties go to the lowest peer id, so repeated calls against an idle cluster agree with
     // each other instead of alternating between equally-advanced peers.
-    let most_advanced_peer = logs
+    let (frontier, most_advanced_peer) = logs
         .iter()
-        .filter_map(|(&peer_id, log)| Some((log.entries.last()?.index, peer_id)))
-        .max_by_key(|&(last_index, peer_id)| (last_index, std::cmp::Reverse(peer_id)))
-        .map_or(this_peer_id, |(_last_index, peer_id)| peer_id);
+        .map(|(&peer_id, log)| (log.last_applied_index.unwrap_or(0), peer_id))
+        .max_by_key(|&(applied_index, peer_id)| (applied_index, std::cmp::Reverse(peer_id)))
+        .unwrap_or((0, this_peer_id));
 
-    let applied_window = logs.get(&most_advanced_peer).and_then(|log| {
-        Some(LogWindow {
-            first_index: log.entries.first()?.index,
-            last_index: log.entries.last()?.index,
-        })
-    });
+    let first_index = logs.values().filter_map(|log| log.entries.first());
+    let last_index = logs.values().filter_map(|log| log.entries.last());
+    let applied_window = first_index
+        .map(|entry| entry.index)
+        .min()
+        .zip(last_index.map(|entry| entry.index).max())
+        .map(|(first_index, last_index)| LogWindow {
+            first_index,
+            last_index,
+        });
 
     let baseline = Baseline::of(logs);
 
     let mut peers: Vec<_> = logs
         .iter()
-        .map(|(&peer_id, log)| peer_lag(peer_id, log, &baseline, applied_window.as_ref()))
+        .map(|(&peer_id, log)| peer_lag(peer_id, log, &baseline, frontier))
         .collect();
     peers.sort_by_key(|peer| peer.peer_id);
 
@@ -294,12 +304,7 @@ impl Baseline {
     }
 }
 
-fn peer_lag(
-    peer_id: PeerId,
-    log: &AppliedLog,
-    baseline: &Baseline,
-    applied_window: Option<&LogWindow>,
-) -> PeerLag {
+fn peer_lag(peer_id: PeerId, log: &AppliedLog, baseline: &Baseline, frontier: u64) -> PeerLag {
     let newest = log.entries.last();
 
     let lags: Vec<u64> = log
@@ -317,15 +322,96 @@ fn peer_lag(
 
     PeerLag {
         peer_id,
-        last_applied_index: newest.map(|entry| entry.index),
-        last_applied_term: newest.map(|entry| entry.term),
-        behind_entries: newest
-            .zip(applied_window)
-            .map(|(entry, window)| window.last_index.saturating_sub(entry.index)),
+        last_applied_index: log.last_applied_index,
+        last_applied_term: newest
+            .filter(|entry| Some(entry.index) == log.last_applied_index)
+            .map(|entry| entry.term),
+        behind_entries: frontier.saturating_sub(log.last_applied_index.unwrap_or(0)),
         pending_operations: log.pending_operations as u64,
         newest_applied_age_ms: newest.map(|entry| log.now_ms.saturating_sub(entry.applied_at_ms)),
         lag_ms,
         beyond_window: newest.is_some() && lags.is_empty(),
         slowest_apply_ms: log.entries.iter().map(|entry| entry.took_ms).max(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A peer that applied `entries`, given as `(index, applied_at_ms)`, and stands at the
+    /// last of them unless `last_applied_index` says otherwise.
+    fn log(entries: &[(u64, u64)], last_applied_index: Option<u64>) -> AppliedLog {
+        AppliedLog {
+            entries: entries
+                .iter()
+                .map(|&(index, applied_at_ms)| AppliedEntry {
+                    index,
+                    term: 1,
+                    applied_at_ms,
+                    took_ms: 0,
+                })
+                .collect(),
+            now_ms: 1_000,
+            pending_operations: 0,
+            last_applied_index: last_applied_index.or(entries.last().map(|&(index, _)| index)),
+        }
+    }
+
+    fn peer(report: &ConsensusLagReport, peer_id: PeerId) -> &PeerLag {
+        report.peers.iter().find(|p| p.peer_id == peer_id).unwrap()
+    }
+
+    /// A peer that restarted caught up has an empty ring, and nothing to time, but its
+    /// position is still known.
+    #[test]
+    fn empty_ring_still_reports_position() {
+        let logs = HashMap::from([
+            (1, log(&[(11, 100), (12, 110)], None)),
+            (2, log(&[], Some(10))),
+        ]);
+
+        let report = build_report(1, &logs, vec![]);
+        let restarted = peer(&report, 2);
+
+        assert_eq!(restarted.last_applied_index, Some(10));
+        assert_eq!(restarted.behind_entries, 2);
+        assert!(restarted.last_applied_term.is_none());
+        assert!(restarted.lag_ms.is_none());
+        assert_eq!(report.most_advanced_peer, 1);
+    }
+
+    /// The peer that has applied the furthest can be one that has timed nothing, so the
+    /// others are counted back from its position rather than from any ring.
+    #[test]
+    fn peer_behind_an_empty_ring_is_still_behind() {
+        let logs = HashMap::from([
+            (1, log(&[(5, 100), (6, 110), (7, 120)], None)),
+            (2, log(&[], Some(9))),
+        ]);
+
+        let report = build_report(1, &logs, vec![]);
+
+        assert_eq!(report.most_advanced_peer, 2);
+        assert_eq!(peer(&report, 1).behind_entries, 2);
+        assert_eq!(peer(&report, 2).behind_entries, 0);
+    }
+
+    /// Lags are measured from whichever peer applied each entry first, over the entries
+    /// more than one peer still holds.
+    #[test]
+    fn lag_is_measured_against_the_first_peer_to_apply() {
+        let logs = HashMap::from([
+            (1, log(&[(1, 100), (2, 200)], None)),
+            (2, log(&[(1, 150), (2, 800)], None)),
+        ]);
+
+        let report = build_report(1, &logs, vec![]);
+        let window = report.applied_window.as_ref().unwrap();
+
+        assert_eq!((window.first_index, window.last_index), (1, 2));
+        assert_eq!(report.fastest_peer, Some(1));
+        assert_eq!(peer(&report, 2).lag_ms.as_ref().unwrap().max_ms, 600);
+        assert_eq!(peer(&report, 1).lag_ms.as_ref().unwrap().max_ms, 0);
     }
 }

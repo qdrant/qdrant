@@ -160,8 +160,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// Snapshot of the recently applied entries on this peer, oldest first.
     pub fn applied_log(&self) -> AppliedLog {
         // Read the apply queue before taking the ring, so the two locks never nest.
-        let pending_operations = self.persistent.read().unapplied_entities_count();
-        self.applied_log.snapshot(pending_operations)
+        let (pending_operations, last_applied_index) = {
+            let persistent = self.persistent.read();
+            (
+                persistent.unapplied_entities_count(),
+                persistent.last_applied_entry(),
+            )
+        };
+        self.applied_log
+            .snapshot(pending_operations, last_applied_index)
     }
 
     pub fn report_snapshot(

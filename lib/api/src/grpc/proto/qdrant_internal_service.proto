@@ -72,6 +72,8 @@ message GetConsensusAppliedLogResponse {
   uint64 now_ms = 2;
   // Entries committed but not yet applied on the responding peer
   uint64 pending_operations = 3;
+  // Highest entry index the responding peer has applied, from its consensus state
+  optional uint64 last_applied_index = 4;
 }
 
 message GetAuditLogRequest {

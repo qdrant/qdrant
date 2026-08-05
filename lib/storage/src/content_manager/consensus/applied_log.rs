@@ -45,6 +45,9 @@ pub struct AppliedLog {
     pub now_ms: u64,
     /// Entries committed but not yet applied on this peer.
     pub pending_operations: usize,
+    /// Highest entry index this peer has applied, from the consensus state rather than the
+    /// entries above, which cover only this process. `None` if it has never applied one.
+    pub last_applied_index: Option<u64>,
 }
 
 /// Ring of the entries this peer applied most recently, oldest first.
@@ -76,17 +79,21 @@ impl AppliedEntryRing {
     /// Snapshot the ring for a lag report.
     ///
     /// The ring is empty until this peer applies its first entry after startup, so a freshly
-    /// restarted peer reports nothing regardless of how far it has caught up.
-    ///
-    /// `pending_operations` is supplied by the caller: the ring records completed entries and
-    /// has no view of the apply queue behind them.
-    pub fn snapshot(&self, pending_operations: usize) -> AppliedLog {
+    /// restarted peer has nothing to time, however far it has caught up. Both `pending_operations`
+    /// and `last_applied_index` are supplied by the caller from the consensus state, which knows
+    /// where the peer stands whether or not this process applied anything.
+    pub fn snapshot(
+        &self,
+        pending_operations: usize,
+        last_applied_index: Option<u64>,
+    ) -> AppliedLog {
         let entries = self.0.lock().iter().copied().collect();
 
         AppliedLog {
             entries,
             now_ms: now_ms(),
             pending_operations,
+            last_applied_index,
         }
     }
 }

@@ -13828,6 +13828,9 @@ pub struct GetConsensusAppliedLogResponse {
     /// Entries committed but not yet applied on the responding peer
     #[prost(uint64, tag = "3")]
     pub pending_operations: u64,
+    /// Highest entry index the responding peer has applied, from its consensus state
+    #[prost(uint64, optional, tag = "4")]
+    pub last_applied_index: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
