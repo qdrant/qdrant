@@ -16,15 +16,18 @@ use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
     CachedFs, CachedReadFs, MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange,
     UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite,
+    UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
 };
 
 // The disk cache is strictly read-only: mutating it must stay a
 // compile-time error, on top of writeable opens being rejected at runtime
-// (covered per backend variant below).
+// (covered per backend variant below). This holds at the filesystem level
+// too — creating, removing and appending to files goes to the backing
+// storage, never through the cache.
 static_assertions::assert_not_impl_any!(
     DiskCache<MmapFile>: UniversalAppend, UniversalFlush, UniversalWrite
 );
+static_assertions::assert_not_impl_any!(DiskCacheFs<MmapFile>: UniversalWriteFileOps);
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()

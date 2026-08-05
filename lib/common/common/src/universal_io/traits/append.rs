@@ -39,8 +39,10 @@ use crate::universal_io::{ByteOffset, UioResult};
 ///   acknowledgement). Retrying at the *same* offset is safe — it conflicts
 ///   rather than duplicating; re-check the length before appending at a new
 ///   offset.
-/// - Requires a handle opened with `writeable: true`. Not supported on
-///   `prevent_caching` (`O_DIRECT`) handles.
+/// - Requires a handle opened with `writeable: true` — either through
+///   [`UniversalWriteFileOps::open_append`], or through
+///   [`UniversalReadFs::open`] on a backend whose read handle appends. Not
+///   supported on `prevent_caching` (`O_DIRECT`) handles.
 /// - Appending no bytes trivially succeeds, without touching the file or
 ///   validating `offset`.
 /// - Offsets are plain byte offsets; no `T`-alignment is guaranteed or
@@ -50,6 +52,7 @@ use crate::universal_io::{ByteOffset, UioResult};
 ///
 /// [`AppendOffsetConflict`]: crate::universal_io::UniversalIoError::AppendOffsetConflict
 /// [`MmapFile`]: crate::universal_io::MmapFile
+/// [`UniversalReadFs::open`]: super::UniversalReadFs::open
 /// [`UniversalWrite`]: super::UniversalWrite
 /// [`UniversalWrite::write`]: super::UniversalWrite::write
 /// [`len`]: UniversalRead::len

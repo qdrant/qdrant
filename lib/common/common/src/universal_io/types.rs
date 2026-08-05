@@ -119,6 +119,28 @@ pub struct OpenOptions {
 }
 
 impl OpenOptions {
+    /// The same options with `writeable` forced on, as
+    /// [`UniversalWriteFileOps::open_append`] opens them: an append handle
+    /// mutates the file by definition, so the flag carries no information
+    /// there.
+    ///
+    /// [`UniversalWriteFileOps::open_append`]: super::UniversalWriteFileOps::open_append
+    pub fn for_append(self) -> Self {
+        let Self {
+            writeable: _,
+            need_sequential,
+            populate,
+            advice,
+        } = self;
+
+        Self {
+            writeable: true,
+            need_sequential,
+            populate,
+            advice,
+        }
+    }
+
     /// Default values for [`OpenOptions`].
     #[cfg(any(test, feature = "testing"))]
     pub fn new_for_test() -> Self {

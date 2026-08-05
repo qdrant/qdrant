@@ -8,7 +8,7 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     ListedFile, OpenOptions, UioResult, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWriteFileOps, UserData, local_file_ops,
+    UniversalReadFs, UserData, local_file_ops,
 };
 
 mod cached_slice;
@@ -100,27 +100,10 @@ impl UniversalReadFileOps for BlockCacheFs {
     }
 }
 
-impl UniversalWriteFileOps for BlockCacheFs {
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
-        local_file_ops::local_create(path, expected_length)
-    }
-
-    fn create_dir(&self, path: &Path) -> UioResult<()> {
-        local_file_ops::local_create_dir(path)
-    }
-
-    fn remove(&self, path: &Path) -> UioResult<()> {
-        local_file_ops::local_remove(path)
-    }
-
-    fn remove_dir(&self, path: &Path) -> UioResult<()> {
-        local_file_ops::local_remove_dir(path)
-    }
-
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        local_file_ops::local_atomic_save(path, bytes)
-    }
-}
+// Deliberately no `UniversalWriteFileOps` impl: the block cache is strictly
+// read-only ([`CachedSlice`] neither writes nor appends, and `open` rejects
+// writeable opens). Mutations go straight to the underlying local
+// filesystem — `MmapFs`/`IoUringFs` over the very same paths.
 
 impl UniversalReadFs for BlockCacheFs {
     type File = CachedSlice;

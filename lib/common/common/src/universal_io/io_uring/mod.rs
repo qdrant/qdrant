@@ -78,6 +78,8 @@ impl UniversalReadFileOps for IoUringFs {
 }
 
 impl UniversalWriteFileOps for IoUringFs {
+    type AppendFile = IoUringFile;
+
     fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
         local_file_ops::local_create(path, expected_length)
     }
@@ -96,6 +98,13 @@ impl UniversalWriteFileOps for IoUringFs {
 
     fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         local_file_ops::local_atomic_save(path, bytes)
+    }
+
+    /// The very handle [`UniversalReadFs::open`] hands out, opened with the
+    /// default extras: an `O_DIRECT` handle cannot append (its block-aligned
+    /// I/O requirements rule out appends of arbitrary sizes).
+    fn open_append(&self, path: impl AsRef<Path>, options: OpenOptions) -> UioResult<IoUringFile> {
+        self.open(path, options.for_append(), IoUringOpenExtra::default())
     }
 }
 
