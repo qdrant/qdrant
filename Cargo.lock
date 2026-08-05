@@ -484,7 +484,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api"
-version = "1.18.3-dev"
+version = "1.19.1-dev"
 dependencies = [
  "ahash",
  "chrono",
@@ -5902,7 +5902,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "1.18.3-dev"
+version = "1.19.1-dev"
 dependencies = [
  "actix-cors",
  "actix-files",
