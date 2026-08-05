@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
+use collection::collection::AbortReshardingScope;
 use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
@@ -237,7 +238,9 @@ impl TableOfContent {
         let removed_opt = self.collections.write().await.remove(collection_name);
         if let Some(removed) = removed_opt {
             if let Some(state) = removed.resharding_state().await
-                && let Err(err) = removed.abort_resharding(state.key(), true).await
+                && let Err(err) = removed
+                    .abort_resharding(state.key(), true, AbortReshardingScope::default())
+                    .await
             {
                 log::error!(
                     "Failed to abort resharding {} when deleting collection {collection_name}: \
@@ -415,7 +418,9 @@ impl TableOfContent {
             }
 
             ReshardingOperation::Abort(key) => {
-                collection.abort_resharding(key, false).await?;
+                collection
+                    .abort_resharding(key, false, AbortReshardingScope::default())
+                    .await?;
             }
         }
 
