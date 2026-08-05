@@ -26,7 +26,7 @@ from pathlib import Path
 
 import tomlkit
 
-VERSION = "0.7.2"
+VERSION = "0.8.0"
 
 # Assume this script is in <root>/lib/edge/publish/.
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
