@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use crate::is_alive_lock::IsAliveLock;
 use crate::universal_io::{
     ByteOffset, Flusher, OpenOptions, UioResult, UniversalAppend, UniversalIoError,
-    UniversalReadFs, UniversalWriteFileOps,
+    UniversalReadFs, UniversalWriteFileOps, read_whole_via,
 };
 
 /// A write-only wrapper around [`UniversalAppend`] that buffers appends in
@@ -46,35 +46,10 @@ struct Inner<S> {
 
 impl<S: UniversalAppend + 'static> BufferedAppend<S> {
     /// Open an existing file at the given path to continue appending.
+    /// `options.writeable` is forced on.
     ///
-    /// # Torn write detection
-    /// To check for torn writes, caller can compare length against a watermark,
-    /// and use `S::APPEND_IS_ATOMIC` to determine if the backend supports atomic appends.
-    ///
-    /// ```ignore
-    /// let expected_len = read_watermark(watermark_path)?;
-    /// let file = BufferedAppend::open(fs, path, options, extra)?;
-    /// match file.persisted_len().cmp(&expected_len) {
-    ///     Ordering::Equal => {
-    ///         // ok
-    ///     }
-    ///     Ordering::Less => {
-    ///         // error
-    ///     }
-    ///     Ordering::Greater => {
-    ///         // Check if it can be a torn write.
-    ///         if S::APPEND_IS_ATOMIC {
-    ///             // Adopt new length
-    ///             write_watermark(watermark_path, file.persisted_len())?;
-    ///         } else {
-    ///             // Truncate to the expected length to avoid torn writes.
-    ///             drop(file);
-    ///             let content = read_whole(path)?.to_owned();
-    ///             fs.atomic_save(path, &content[..expected_len])?;
-    ///         }
-    ///     }
-    /// }
-    /// ```
+    /// To recover against a durable length watermark, use
+    /// [`open_with_expected_len`](Self::open_with_expected_len) instead.
     pub fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         path: impl AsRef<Path>,
@@ -95,6 +70,54 @@ impl<S: UniversalAppend + 'static> BufferedAppend<S> {
             })),
             is_alive_lock: IsAliveLock::new(),
         })
+    }
+
+    /// Open like [`open`](Self::open), reconciling the file length against
+    /// `expected_len`, the length recorded by a durable watermark. A longer
+    /// file on a backend without atomic appends can only be a torn tail append,
+    /// so it is truncated back to `expected_len`. A smaller persisted len
+    /// returns `None`, to prevent corrupted storage.
+    ///
+    /// The returned [`persisted_len`](Self::persisted_len) can still be greater
+    /// than `expected_len` only if [`APPEND_IS_ATOMIC`]
+    ///
+    /// [`APPEND_IS_ATOMIC`]: UniversalAppend::APPEND_IS_ATOMIC
+    pub fn open_with_expected_len<Fs>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Fs::OpenExtra,
+        expected_len: u64,
+    ) -> UioResult<Option<Self>>
+    where
+        Fs: UniversalReadFs<File = S> + UniversalWriteFileOps,
+        Fs::OpenExtra: Clone,
+    {
+        let path = path.as_ref();
+        let file = Self::open(fs, path, options, extra.clone())?;
+
+        if file.persisted_len() < expected_len {
+            return Ok(None);
+        }
+
+        // If it's equal, or greater with atomic appends, return it.
+        if file.persisted_len() == expected_len || S::APPEND_IS_ATOMIC {
+            return Ok(Some(file));
+        }
+
+        // Truncate the torn tail via a full rewrite; universal_io has no
+        // truncate operation (yet)
+        drop(file);
+        let prefix = read_whole_via(
+            fs,
+            path,
+            |bytes| Ok(bytes[..expected_len as usize].to_vec()),
+        )?;
+        fs.atomic_save(path, &prefix)?;
+
+        let file = Self::open(fs, path, options, extra)?;
+        debug_assert_eq!(file.persisted_len(), expected_len);
+        Ok(Some(file))
     }
 
     /// Create a new empty file at the given path, truncating it if it already
@@ -165,15 +188,14 @@ impl<S: UniversalAppend + 'static> BufferedAppend<S> {
             };
 
             // Write & sync under the state lock.
-            {
-                let mut inner = inner.lock();
-                inner.write_pending(target_len)?;
-                if !inner.dirty {
-                    return Ok(());
-                }
+            // perf: appends to this storage stall behind the sync; the
+            // pending prefix could be staged and written outside the lock
+            let mut inner = inner.lock();
+            inner.write_pending(target_len)?;
+            if inner.dirty {
                 inner.file.flusher()()?;
                 inner.dirty = false;
-            };
+            }
             Ok(())
         })
     }
