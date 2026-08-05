@@ -26,18 +26,15 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
-    ) -> bool {
-        // FIXME: don't silently ignore error — propagate it once
-        // [`NumericIndexRead::check_values_any`] returns `OperationResult`.
+    ) -> OperationResult<bool> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
         if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
                 .check_values_any(idx, |v| check_fn(v), &hw_counter)
-                .unwrap_or(false)
         } else {
-            false
+            Ok(false)
         }
     }
 
