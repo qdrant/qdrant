@@ -7,7 +7,7 @@ name = "qdrant-edge-ffi"
 # `lib/edge/VERSION` single-source-of-truth file and its CI `version-sync` check
 # (also covering the Gradle `VERSION_NAME` and Swift release tag) are introduced
 # with the Gradle/Swift packaging in those follow-up PRs.
-version = "0.7.2"
+version = "0.8.0"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
