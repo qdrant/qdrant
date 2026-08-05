@@ -2,7 +2,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{CachedReadFs, MmapFile, UniversalRead, UniversalReadFs};
+#[cfg(not(target_os = "linux"))]
+use common::universal_io::MmapFile;
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+#[cfg(target_os = "linux")]
+use common::universal_io::{IoUringFile, IoUringFs};
 use itertools::Itertools as _;
 
 use super::GraphWithVectorsScorers;
@@ -22,7 +26,10 @@ pub enum HnswGraph<S: UniversalRead> {
 /// Backend the writable [`HNSWIndex`][1] reads its graph links through.
 ///
 /// [1]: super::hnsw::HNSWIndex
-pub type HnswLinksStorage = MmapFile;
+pub type HnswLinksStorage = cfg_select! {
+    target_os = "linux" => IoUringFile,
+    _ => MmapFile,
+};
 
 /// Default for [`GraphSearchArgs::batch_size`].
 pub const DEFAULT_LINKS_BATCH_SIZE: usize = 512;
@@ -41,6 +48,26 @@ pub struct GraphSearchArgs<'a> {
 pub enum SearchScorers<'a> {
     Regular(FilteredScorer<'a>),
     WithVectors(GraphWithVectorsScorers<'a>),
+}
+
+impl HnswGraph<HnswLinksStorage> {
+    pub fn load(
+        dir: &Path,
+        residency: GraphLinksResidency,
+        do_convert: bool,
+        with_uring: bool,
+    ) -> OperationResult<Self> {
+        if with_uring {
+            #[cfg(target_os = "linux")]
+            if Self::is_batched(&IoUringFs, dir, residency)? {
+                let graph = GraphLayersBatched::load(&IoUringFs, dir, residency)?;
+                return Ok(HnswGraph::Batched(Box::new(graph)));
+            }
+        }
+
+        let graph = GraphLayers::load(dir, residency, do_convert)?;
+        Ok(HnswGraph::Direct(graph))
+    }
 }
 
 impl<S: UniversalRead> HnswGraph<S> {
