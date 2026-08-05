@@ -42,7 +42,7 @@ import Foundation
 // activate release mode you must ALSO set `QDRANT_EDGE_RELEASE`; the
 // `QDRANT_EDGE_XCFRAMEWORK_URL`/`_CHECKSUM` env vars then override the constants
 // without editing the file (used by CI/verification).
-let releaseURL = "https://github.com/qdrant/qdrant/releases/download/edge-v0.7.2/QdrantEdge.xcframework.zip"
+let releaseURL = "https://github.com/qdrant/qdrant/releases/download/edge-v0.8.0/QdrantEdge.xcframework.zip"
 let releaseChecksum = ""  // filled by release-xcframework.sh
 
 let env = ProcessInfo.processInfo.environment
