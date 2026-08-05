@@ -10,6 +10,7 @@ use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::Collection;
+use super::resharding::AbortReshardingScope;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShard;
@@ -465,17 +466,48 @@ impl Collection {
             }
         };
 
-        // Abort resharding before the transfer to be idempotent
+        // Abort resharding *before* aborting the transfer.
+        // Exclude this transfer from `abort_resharding` transfer cleanup (`skip_transfer`),
+        // and abort transfer *last*, after resharding state is cleared.
+        //
+        // On replay after a crash:
+        // - transfer registered, resharding state set: re-run the whole operation
+        // - transfer registered, resharding state cleared: skip resharding abort,
+        //   abort the transfer
+        // - transfer not registered: everything already applied, no-op
+
+        #[cfg(feature = "staging")]
+        let is_resharding_abort = resharding_state.is_some();
+
         if let Some(state) = resharding_state {
-            self.abort_resharding(state.key(), false).await?;
+            self.abort_resharding(
+                state.key(),
+                false,
+                AbortReshardingScope {
+                    skip_transfer: Some(transfer_key),
+                    ..Default::default()
+                },
+            )
+            .await?;
         }
 
-        // Resharding may already have aborted the transfer so we check it again
+        // Staging-only: pause after clearing resharding state, but before aborting
+        // transfer, so test can kill this peer mid-abort (resharding state cleared,
+        // transfer still registered) and verify that replay converges.
+        #[cfg(feature = "staging")]
+        if is_resharding_abort
+            && let Ok(secs) = std::env::var("QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC")
+            && let Ok(secs) = secs.parse::<f64>()
+        {
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
+        }
+
         let shard_holder = self.shards_holder.read().await;
 
-        let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
-            return Ok(());
-        };
+        // Abort resharding must *not* abort this transfer
+        let transfer = shard_holder
+            .get_transfer(&transfer_key)
+            .expect("shard transfer exists");
 
         self.abort_shard_transfer(transfer, &shard_holder).await
     }
