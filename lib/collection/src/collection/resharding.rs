@@ -380,6 +380,22 @@ impl Collection {
             }
         }
 
+        // Staging-only: hard-crash after reverting the scaled-down receiver
+        // replicas back to `Active` (each already persisted above) but before
+        // clearing `resharding_state` in the last step. Crashes in the
+        // partial-persist window: replica state durably reverted, resharding
+        // state still `Some`. On replay the whole abort must re-run and clear
+        // the state (`test_resharding_down_revert_crash_orphans_state.py`).
+        // The env arms the build; a `crash_on_scale_down_revert` marker file
+        // in the working directory selects exactly which peer crashes.
+        #[cfg(feature = "staging")]
+        if resharding_key.direction == ReshardingDirection::Down
+            && std::env::var("QDRANT_STAGING_RESHARDING_CRASH_ON_SCALE_DOWN_REVERT").is_ok()
+            && std::path::Path::new("crash_on_scale_down_revert").exists()
+        {
+            std::process::exit(1);
+        }
+
         // 3. Scale-down: delete points transferred from target shard during resharding
         shard_holder
             .scale_down_cleanup_points(&resharding_key)
