@@ -232,7 +232,10 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
-                .unwrap_or(false) // TODO(uio): handle errors
+                .unwrap_or_else(|err| {
+                    log::warn!("Error evaluating geo condition for point {point}: {err}");
+                    false
+                })
             },
         ))));
     }
@@ -245,7 +248,10 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
-                .unwrap_or(false) // TODO(uio): handle errors
+                .unwrap_or_else(|err| {
+                    log::warn!("Error evaluating geo condition for point {point}: {err}");
+                    false
+                })
             },
         ))));
     }
@@ -258,7 +264,10 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
-                .unwrap_or(false) // TODO(uio): handle errors
+                .unwrap_or_else(|err| {
+                    log::warn!("Error evaluating geo condition for point {point}: {err}");
+                    false
+                })
             },
         ))));
     }
