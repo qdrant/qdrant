@@ -30,9 +30,7 @@ use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    Filter, MaybeRawPayloadRef, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -180,10 +178,10 @@ impl PayloadIndexRead for PlainPayloadIndex {
         unimplemented!()
     }
 
-    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         _point_ids: impl Iterator<Item = (U, PointOffsetType)>,
-        _callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        _callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         unimplemented!()

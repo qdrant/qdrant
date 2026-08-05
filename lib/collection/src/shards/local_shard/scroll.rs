@@ -12,7 +12,6 @@ use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::data_types::segment_record::RawPayloadFormat;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -242,7 +241,6 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -310,7 +308,6 @@ impl LocalShard {
             SegmentsSearcher::retrieve_raw(
                 segments,
                 &point_ids,
-                payload_format,
                 with_vector,
                 search_runtime_handle,
                 timeout,

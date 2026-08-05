@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
@@ -11,7 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
-use crate::types::{MaybeRawPayloadRef, OwnedPayloadRef, Payload};
+use crate::types::{OwnedPayloadRef, Payload};
 
 impl PayloadStorageRead for InMemoryPayloadStorage {
     fn get(
@@ -72,17 +73,17 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<()> {
         for (user_data, point_offset) in point_offsets {
-            // Payloads are kept parsed here, so hand them out as they are rather
-            // than encoding them for a reader that would only parse them back.
-            let payload = self.payload.get(&point_offset);
-            callback(user_data, payload.map(MaybeRawPayloadRef::Parsed))?;
+            // Payloads are kept parsed here, so there is no stored encoding to
+            // hand out: produce the one an on-disk storage would have written.
+            let encoded = self.payload.get(&point_offset).map(Blob::to_bytes);
+            callback(user_data, encoded.as_deref())?;
         }
 
         Ok(())
@@ -199,7 +200,7 @@ mod tests {
     use crate::common::utils::IndexesMap;
     use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
     use crate::payload_storage::query_checker::check_payload;
-    use crate::types::{Condition, FieldCondition, Filter, MaybeRawPayload, OwnedPayloadRef};
+    use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
 
     #[test]
     fn test_condition_checking() {
@@ -254,10 +255,10 @@ mod tests {
         );
     }
 
-    /// This storage keeps payloads parsed, so a raw read gets them as they are
-    /// instead of an encoding produced only to be parsed straight back.
+    /// This storage keeps payloads parsed, so a raw read has to produce the
+    /// encoding an on-disk storage would have written.
     #[test]
-    fn test_read_payloads_maybe_raw_hands_out_parsed() {
+    fn test_read_payloads_raw_encodes_on_the_fly() {
         let mut storage = InMemoryPayloadStorage::default();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
 
@@ -266,10 +267,10 @@ mod tests {
 
         let mut read = Vec::new();
         storage
-            .read_payloads_maybe_raw::<common::generic_consts::Random, _>(
+            .read_payloads_raw::<common::generic_consts::Random, _>(
                 [((), 1), ((), 2)].into_iter(),
                 |(), payload| {
-                    read.push(payload.map(MaybeRawPayloadRef::to_owned));
+                    read.push(payload.map(<[u8]>::to_vec));
                     Ok(())
                 },
                 &hw_counter,
@@ -279,7 +280,7 @@ mod tests {
         assert_eq!(
             read,
             // Point 2 has no payload at all
-            [Some(MaybeRawPayload::Parsed(payload)), None],
+            [Some(payload.to_bytes()), None],
         );
     }
 

@@ -6,7 +6,7 @@ use common::universal_io::UniversalRead;
 use crate::common::operation_error::OperationResult;
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::types::{IoBackend, MaybeRawPayloadRef, OwnedPayloadRef, Payload};
+use crate::types::{IoBackend, OwnedPayloadRef, Payload};
 
 impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     fn io_backend(&self) -> Option<IoBackend> {
@@ -65,15 +65,15 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         )
     }
 
-    fn read_payloads_maybe_raw<P: AccessPattern, U: common::universal_io::UserData>(
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, Option<MaybeRawPayloadRef<'_>>) -> OperationResult<()>,
+        mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.read_values_bytes::<P, _, _>(
             point_offsets,
-            |user_data, _, bytes| callback(user_data, bytes.map(MaybeRawPayloadRef::Raw)),
+            |user_data, _, bytes| callback(user_data, bytes),
             hw_counter.payload_io_read_counter(),
         )
     }

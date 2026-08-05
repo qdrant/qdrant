@@ -3,8 +3,6 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
-#[cfg(feature = "api")]
-use api::grpc::RawPayload;
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -17,7 +15,7 @@ use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
     MultiDenseVectorInternal, VectorInternal, VectorRef, VectorStructInternal,
 };
-use segment::types::{Filter, MaybeRawPayload, Payload, PointIdType, VectorNameBuf};
+use segment::types::{Filter, Payload, PointIdType, RawPayload, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use sparse::common::types::{DimId, DimWeight};
@@ -450,7 +448,7 @@ impl TryFrom<SegmentRecordRaw> for PointStructRawPersisted {
         Ok(Self {
             id,
             vectors: vectors.unwrap_or_default(),
-            payload: payload.map(MaybeRawPayload::into_parsed).transpose()?,
+            payload: payload.as_ref().map(RawPayload::decode).transpose()?,
         })
     }
 }
@@ -490,13 +488,12 @@ impl PointStructRawPersisted {
 
         // Check if payloads are equal, empty and non-existent payloads are considered equal
         let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
-        let Ok(segment_payload) = payload.as_ref().map(MaybeRawPayload::to_parsed).transpose()
-        else {
+        let Ok(segment_payload) = payload.as_ref().map(RawPayload::decode).transpose() else {
             // A blob that cannot be parsed is not the data this point carries
             return false;
         };
         let segment_payload = segment_payload.filter(|payload| !payload.is_empty());
-        self_payload == segment_payload.as_deref()
+        self_payload == segment_payload.as_ref()
     }
 }
 
@@ -554,7 +551,7 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
 
 /// Decodes the RawPayload according to its encoding.
 #[cfg(feature = "api")]
-fn decode_payload(raw_payload: RawPayload) -> Result<Payload, tonic::Status> {
+fn decode_payload(raw_payload: api::grpc::RawPayload) -> Result<Payload, tonic::Status> {
     match raw_payload.encoding() {
         api::grpc::RawPayloadEncoding::JsonBytes => {
             serde_json::from_slice(&raw_payload.payload_bytes).map_err(|err| {

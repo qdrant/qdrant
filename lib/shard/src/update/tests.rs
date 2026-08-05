@@ -85,7 +85,6 @@ fn retrieve_raw_record(
     segment
         .retrieve_raw(
             &[point_id.into()],
-            segment::data_types::segment_record::RawPayloadFormat::Parsed,
             &segment::types::WithVector::Bool(true),
             &hw_counter,
             &is_stopped,
@@ -100,7 +99,7 @@ fn retrieve_raw_record(
 fn stored_payload(
     record: &segment::data_types::segment_record::SegmentRecordRaw,
 ) -> Option<segment::types::Payload> {
-    let payload = record.payload.as_ref()?.to_parsed().unwrap().into_owned();
+    let payload = record.payload.as_ref()?.decode().unwrap();
     (!payload.is_empty()).then_some(payload)
 }
 

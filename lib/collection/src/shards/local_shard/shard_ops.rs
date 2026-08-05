@@ -6,7 +6,6 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::segment_record::RawPayloadFormat;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -624,11 +623,9 @@ impl LocalShard {
     /// Byte-blob analogue of [`ShardOperation::retrieve`] for an explicit id set:
     /// returns storage-native raw vector bytes for shard transfer. Preserves
     /// input id order and silently drops ids not found (like `retrieve`).
-    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve_raw(
         &self,
         ids: &[ExtendedPointId],
-        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
@@ -641,7 +638,6 @@ impl LocalShard {
             SegmentsSearcher::retrieve_raw(
                 self.segments.clone(),
                 ids,
-                payload_format,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -669,7 +665,6 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -681,7 +676,6 @@ impl LocalShard {
         self.internal_scroll_by_id_raw(
             offset,
             limit,
-            payload_format,
             with_vector,
             filter,
             search_runtime_handle,

@@ -26,15 +26,14 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::segment_record::RawPayloadFormat;
 use segment::entry::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    ExtendedPointId, MaybeRawPayload, Payload, PointIdType, SegmentConfig, SeqNumberType,
-    VectorNameBuf, WithVector,
+    ExtendedPointId, Payload, PointIdType, RawPayload, SegmentConfig, SeqNumberType, VectorNameBuf,
+    WithVector,
 };
 use smallvec::SmallVec;
 
@@ -1046,9 +1045,6 @@ impl SegmentHolder {
                         let mut record = write_segment
                             .retrieve_raw(
                                 &[point_id],
-                                // The `SetPayload` callback below merges into the
-                                // parsed payload anyway
-                                RawPayloadFormat::Parsed,
                                 &WithVector::Bool(true),
                                 hw_counter,
                                 &stopped,
@@ -1064,8 +1060,8 @@ impl SegmentHolder {
                         // payload, so a stored blob is decoded here.
                         let mut payload = record
                             .payload
-                            .take()
-                            .map(MaybeRawPayload::into_parsed)
+                            .as_ref()
+                            .map(RawPayload::decode)
                             .transpose()?
                             .unwrap_or_default();
                         let mut updated_vectors = NamedVectors::default();

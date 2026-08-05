@@ -13,7 +13,7 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use crate::data_types::segment_record::{RawPayloadFormat, SegmentRecord, SegmentRecordRaw};
+use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::ReadSegmentEntry;
 use crate::id_tracker::IdTrackerRead;
@@ -149,7 +149,6 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
-        payload_format: RawPayloadFormat,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
@@ -158,7 +157,6 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| {
             view.retrieve_raw(
                 point_ids,
-                payload_format,
                 with_vector,
                 hw_counter,
                 is_stopped,

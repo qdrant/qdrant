@@ -8,7 +8,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::data_types::segment_record::{RawPayloadFormat, SegmentRecordRaw};
+use segment::data_types::segment_record::SegmentRecordRaw;
 use segment::entry::ReadSegmentEntry;
 use segment::types::{PointIdType, SeqNumberType, WithPayload, WithVector};
 
@@ -122,11 +122,9 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
 /// storage-native bytes ([`SegmentRecordRaw`]) instead of decoded records, to
 /// avoid a lossy quantization round-trip when relocating points (shard
 /// transfer). Applies the same cross-segment version-dedup.
-#[allow(clippy::too_many_arguments)]
 pub fn retrieve_raw_blocking(
     segments: LockedSegmentHolder,
     points: &[PointIdType],
-    payload_format: RawPayloadFormat,
     with_vector: &WithVector,
     timeout: Duration,
     is_stopped: &AtomicBool,
@@ -146,7 +144,6 @@ pub fn retrieve_raw_blocking(
     retrieve_raw_over(
         segments,
         points,
-        payload_format,
         with_vector,
         is_stopped,
         hw_measurement_acc,
@@ -158,7 +155,6 @@ pub fn retrieve_raw_blocking(
 pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
     segments: Vec<Arc<RwLock<R>>>,
     points: &[PointIdType],
-    payload_format: RawPayloadFormat,
     with_vector: &WithVector,
     is_stopped: &AtomicBool,
     hw_measurement_acc: HwMeasurementAcc,
@@ -196,7 +192,6 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
 
             for (id, record) in segment.retrieve_raw(
                 &newer_version_points,
-                payload_format,
                 with_vector,
                 &hw_counter,
                 is_stopped,
