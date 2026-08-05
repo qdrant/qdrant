@@ -6,6 +6,7 @@ mod versions_storage;
 pub(super) mod tests;
 
 pub mod read_only;
+pub mod update_only;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
