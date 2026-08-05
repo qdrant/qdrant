@@ -3,7 +3,6 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 
-use byteorder::WriteBytesExt as _;
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -13,9 +12,11 @@ use common::universal_io::{
 
 use super::change::{MappingChange, write_entry};
 use super::mappings_storage::mappings_path;
-use super::versions_storage::{VERSION_ELEMENT_SIZE, versions_path};
+use super::versions_storage::{
+    VERSION_ELEMENT_SIZE, VersionsLayout, version_offset, versions_byte_len, versions_path,
+    write_version,
+};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::point_mappings::FileEndianess;
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A mapping mutation to record: claim a slot for an external id, or retire it.
@@ -105,15 +106,17 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         let path = versions_path(&self.segment_path);
         let mut file = self.open_append(&path)?;
 
-        let end_of_file = Self::end_of_file(&file)?;
-        if end_of_file % VERSION_ELEMENT_SIZE != 0 {
+        // A partial tail is what the in-place writer would truncate; an append
+        // cannot, so it is refused instead.
+        let layout = VersionsLayout::of_len(Self::end_of_file(&file)?);
+        if layout.partial_tail != 0 {
             return Err(OperationError::service_error(format!(
                 "ID tracker versions file ends with a partial entry ({} bytes into a {VERSION_ELEMENT_SIZE}-byte slot), cannot append versions to {}",
-                end_of_file % VERSION_ELEMENT_SIZE,
+                layout.partial_tail,
                 path.display(),
             )));
         }
-        let covered_slots = end_of_file / VERSION_ELEMENT_SIZE;
+        let covered_slots = layout.committed_slots;
 
         let mut changes: Vec<(PointOffsetType, SeqNumberType)> = internal_ids
             .iter()
@@ -122,7 +125,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             .collect();
         changes.sort_unstable_by_key(|(internal_id, _version)| *internal_id);
 
-        let mut payload = Vec::with_capacity(changes.len() * VERSION_ELEMENT_SIZE as usize);
+        let mut payload = Vec::with_capacity(versions_byte_len(changes.len() as u64) as usize);
         for (index, (internal_id, version)) in changes.iter().enumerate() {
             // Sorted ascending, the ids must run `covered_slots, covered_slots + 1, ...`:
             // anything lower is already published, anything higher leaves a
@@ -133,11 +136,16 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                     "ID tracker versions can only be appended for consecutive slots: expected slot {expected}, got {internal_id} ({covered_slots} slots are already committed)",
                 )));
             }
+            debug_assert_eq!(
+                version_offset(*internal_id),
+                layout.committed_len() + payload.len() as u64,
+                "version entry must land at its slot's offset",
+            );
 
-            payload.write_u64::<FileEndianess>(*version)?;
+            write_version(&mut payload, *version)?;
         }
 
-        file.append(end_of_file, &payload)?;
+        file.append(layout.committed_len(), &payload)?;
         (file.flusher())()?;
 
         Ok(())

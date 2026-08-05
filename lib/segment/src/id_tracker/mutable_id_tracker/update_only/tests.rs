@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::Builder;
@@ -6,7 +8,9 @@ use uuid::Uuid;
 use super::MappingOperation::{Delete, Insert};
 use super::UpdateOnlyAppendableIdTracker;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::load_mappings;
-use crate::id_tracker::mutable_id_tracker::versions_storage::{load_versions, versions_path};
+use crate::id_tracker::mutable_id_tracker::versions_storage::{
+    load_versions, store_version_changes, versions_path,
+};
 use crate::id_tracker::mutable_id_tracker::{mappings_storage, versions_storage};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
@@ -193,6 +197,45 @@ fn versions_reject_holes_and_rewrites() {
     // The rejections left the array appendable.
     tracker.set_internal_versions(&[2], &[102]).unwrap();
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102]);
+}
+
+/// The append-only writer and the in-place one lay the versions file out
+/// identically, byte for byte. This is what keeps the two write paths from
+/// drifting apart: a change to either one's layout has to be made in both.
+#[test]
+fn both_writers_produce_the_same_versions_file() {
+    let appended = Builder::new().prefix("update_only").tempdir().unwrap();
+    let stored = Builder::new().prefix("mutable").tempdir().unwrap();
+
+    let internal_ids: Vec<PointOffsetType> = vec![0, 1, 2, 3];
+    let versions: Vec<SeqNumberType> = vec![100, 7, u64::MAX, 0];
+
+    let mut tracker = Tracker::new(MmapFs, appended.path(), None);
+    tracker
+        .set_internal_versions(&internal_ids, &versions)
+        .unwrap();
+
+    let changes: BTreeMap<PointOffsetType, SeqNumberType> = internal_ids
+        .iter()
+        .copied()
+        .zip(versions.iter().copied())
+        .collect();
+    store_version_changes(&versions_path(stored.path()), &changes).unwrap();
+
+    let appended_bytes = fs_err::read(versions_path(appended.path())).unwrap();
+    assert_eq!(
+        appended_bytes,
+        fs_err::read(versions_path(stored.path())).unwrap(),
+    );
+    // Not vacuous: both hold the versions, one entry per slot.
+    assert_eq!(
+        appended_bytes.len(),
+        versions.len() * size_of::<SeqNumberType>()
+    );
+    assert_eq!(
+        load_versions(&versions_path(appended.path())).unwrap(),
+        versions,
+    );
 }
 
 /// The two files a segment's readers consume line up: every allocated slot has

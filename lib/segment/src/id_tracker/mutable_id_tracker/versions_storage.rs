@@ -1,5 +1,19 @@
+//! The point versions file: a dense array of one [`SeqNumberType`] per internal
+//! id, the entry for id `n` sitting at `n * VERSION_ELEMENT_SIZE`.
+//!
+//! Two writers produce it — [`store_version_changes`] here, which seeks and
+//! overwrites in place, and [`UpdateOnlyAppendableIdTracker::set_internal_versions`],
+//! which can only append — and two readers consume it, [`load_versions`] and the
+//! read-only tracker's live reload. Everything that defines the format for all
+//! four lives in this module: the entry codec, the offset of an entry, and
+//! [`VersionsLayout`], which says how many whole entries a file of a given
+//! length holds.
+//!
+//! [`UpdateOnlyAppendableIdTracker::set_internal_versions`]:
+//!     super::update_only::UpdateOnlyAppendableIdTracker::set_internal_versions
+
 use std::collections::BTreeMap;
-use std::io::{self, BufReader, BufWriter, Seek, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -15,26 +29,76 @@ const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
 pub(super) const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
+/// The entry codec below is written in terms of `u64`, so a change to
+/// [`SeqNumberType`] has to be made there too rather than silently shrinking
+/// every offset.
+const _: () = assert!(VERSION_ELEMENT_SIZE == size_of::<u64>() as u64);
+
 pub(super) fn versions_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_VERSIONS)
+}
+
+/// Byte length of `slots` whole entries.
+pub(super) fn versions_byte_len(slots: u64) -> u64 {
+    slots * VERSION_ELEMENT_SIZE
+}
+
+/// Byte offset of the entry holding `internal_id`'s version.
+pub(super) fn version_offset(internal_id: PointOffsetType) -> u64 {
+    versions_byte_len(u64::from(internal_id))
+}
+
+/// Write one entry at the writer's current position.
+pub(super) fn write_version<W: Write>(mut writer: W, version: SeqNumberType) -> io::Result<()> {
+    writer.write_u64::<FileEndianess>(version)
+}
+
+/// Read one entry from the reader's current position.
+pub(super) fn read_version<R: Read>(mut reader: R) -> io::Result<SeqNumberType> {
+    reader.read_u64::<FileEndianess>()
+}
+
+/// How a versions file of a given byte length divides into entries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct VersionsLayout {
+    /// Whole entries the file holds. This is the commit signal: a point's
+    /// version counts as persisted exactly when the array covers its slot.
+    pub committed_slots: u64,
+    /// Trailing bytes that do not make up a whole entry, left behind by a
+    /// writer that crashed mid-write. Zero for an intact file.
+    pub partial_tail: u64,
+}
+
+impl VersionsLayout {
+    pub fn of_len(file_len: u64) -> Self {
+        Self {
+            committed_slots: file_len / VERSION_ELEMENT_SIZE,
+            partial_tail: file_len % VERSION_ELEMENT_SIZE,
+        }
+    }
+
+    /// Byte length of the committed entries, which is where the next one
+    /// belongs — the partial tail, if any, is overwritten or refused.
+    pub fn committed_len(self) -> u64 {
+        versions_byte_len(self.committed_slots)
+    }
 }
 
 pub(super) fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let file = File::open(versions_path)?;
 
-    let file_len = file.metadata()?.len();
-    if file_len % VERSION_ELEMENT_SIZE != 0 {
+    let layout = VersionsLayout::of_len(file.metadata()?.len());
+    if layout.partial_tail != 0 {
         log::warn!(
             "Mutable ID tracker versions file has partial trailing entry, ignoring last {} bytes (will be cleaned up on next flush)",
-            file_len % VERSION_ELEMENT_SIZE,
+            layout.partial_tail,
         );
     }
-    let version_count = file_len / VERSION_ELEMENT_SIZE;
 
     let mut reader = BufReader::new(file);
 
-    Ok((0..version_count)
-        .map(|_| reader.read_u64::<FileEndianess>())
+    Ok((0..layout.committed_slots)
+        .map(|_| read_version(&mut reader))
         .collect::<Result<_, _>>()?)
 }
 
@@ -57,14 +121,13 @@ pub(super) fn store_version_changes(
     // Truncate partial trailing entry if present (e.g. from a previous crash mid-write).
     // Must be done before writing to prevent zero-fill from merging with partial bytes
     // into a corrupt-but-complete-looking entry when extending the file.
-    let file_len = file.metadata()?.len();
-    let valid_len = (file_len / VERSION_ELEMENT_SIZE) * VERSION_ELEMENT_SIZE;
-    if file_len != valid_len {
+    let layout = VersionsLayout::of_len(file.metadata()?.len());
+    if layout.partial_tail != 0 {
         log::warn!(
             "Mutable ID tracker versions file has partial trailing entry ({} extra bytes), truncating",
-            file_len - valid_len,
+            layout.partial_tail,
         );
-        file.set_len(valid_len)?;
+        file.set_len(layout.committed_len())?;
     }
 
     let mut writer = BufWriter::new(file);
@@ -102,7 +165,7 @@ where
 
     // Write all changes, must be ordered by internal ID, see optimization note below
     for (&internal_id, &version) in changes {
-        let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE;
+        let offset = version_offset(internal_id);
 
         // Seek to correct position if not already at it
         //
@@ -125,7 +188,7 @@ where
         }
 
         // Write version and update position
-        writer.write_u64::<FileEndianess>(version)?;
+        write_version(&mut writer, version)?;
         position += VERSION_ELEMENT_SIZE;
     }
 
