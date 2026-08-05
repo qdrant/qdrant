@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -15,38 +14,6 @@ pub fn get_io_budget(io_budget: usize, cpu_budget: usize) -> usize {
         cpu_budget
     } else {
         io_budget
-    }
-}
-
-/// `Arc<Notify>` wrapper providing `Debug` and `Clone`
-///
-/// Shared across all clones of a [`ResourceBudget`] to wake waiters when a permit is released
-#[derive(Clone)]
-struct BudgetNotify(Arc<Notify>);
-
-impl BudgetNotify {
-    fn new() -> Self {
-        Self(Arc::new(Notify::new()))
-    }
-
-    /// wake all waiting tasks
-    #[inline]
-    fn notify_waiters(&self) {
-        self.0.notify_waiters();
-    }
-
-    /// future that resolves on the next notification
-    #[inline]
-    fn notified(&self) -> tokio::sync::futures::Notified<'_> {
-        self.0.notified()
-    }
-}
-
-impl fmt::Debug for BudgetNotify {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("BudgetNotify")
-            .field(&Arc::as_ptr(&self.0))
-            .finish()
     }
 }
 
@@ -67,7 +34,7 @@ pub struct ResourceBudget {
     /// Wakes up tasks in [`Self::notify_on_budget_available`] when permits are returned
     ///
     /// This avoids polling and is shared across all `ResourceBudget` clones.
-    budget_released: BudgetNotify,
+    budget_released: Arc<Notify>,
 }
 
 impl ResourceBudget {
@@ -77,7 +44,7 @@ impl ResourceBudget {
             cpu_budget,
             io_semaphore: Arc::new(Semaphore::new(io_budget)),
             io_budget,
-            budget_released: BudgetNotify::new(),
+            budget_released: Arc::new(Notify::new()),
         }
     }
 
@@ -312,7 +279,7 @@ pub struct ResourcePermit {
     io_permit: Option<OwnedSemaphorePermit>,
 
     /// Wakes tasks waiting in [`ResourceBudget::notify_on_budget_available`] when permits are returned
-    budget_released: Option<BudgetNotify>,
+    budget_released: Option<Arc<Notify>>,
 
     /// A callback, which should be called when the permit is changed manually.
     /// Originally used to notify the task manager that a permit is available
@@ -329,7 +296,7 @@ impl ResourcePermit {
         cpu_permit: Option<OwnedSemaphorePermit>,
         io_count: u32,
         io_permit: Option<OwnedSemaphorePermit>,
-        budget_released: BudgetNotify,
+        budget_released: Arc<Notify>,
     ) -> Self {
         // Debug assert that cpu/io count and permit counts match
         debug_assert!(cpu_permit.as_ref().map_or(0, |p| p.num_permits()) == cpu_count as usize);
@@ -452,7 +419,9 @@ impl ResourcePermit {
 
         // Only wake waiters if permits were actually returned, this prevents
         // falsely waking up all waiters when nothing is released. The `Drop` implementation handles notifications for full releases.
-        if let Some(notify) = self.budget_released.as_ref().filter(|_| cpu > 0 || io > 0) {
+        if let Some(notify) = &self.budget_released
+            && (cpu > 0 || io > 0)
+        {
             notify.notify_waiters();
         }
 
@@ -596,7 +565,7 @@ mod tests {
         }
     }
 
-    /// dropping a dummy permit (which lacks a `BudgetNotify`) must not panic
+    /// dropping a dummy permit (which lacks a `Notify`) must not panic
     #[cfg(feature = "testing")]
     #[test]
     fn test_dummy_permit_drop_is_safe() {
