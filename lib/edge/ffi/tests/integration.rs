@@ -4091,6 +4091,43 @@ fn search_matrix_relates_samples() {
     }
 }
 
+/// `query_batch` returns one result list per request, preserving request order.
+#[test]
+fn query_batch_returns_one_list_per_request() {
+    use qdrant_edge_ffi::{QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let nearest = |limit: u64| QueryRequest {
+        prefetches: Vec::new(),
+        query: Some(ScoringQuery::Vector {
+            query: Query::Nearest {
+                vector: NamedVector::Dense {
+                    values: vec![0.5, 0.5, 0.5, 0.5],
+                },
+                using: Some("vec".to_string()),
+            },
+        }),
+        limit,
+        offset: None,
+        filter: None,
+        params: None,
+        with_vector: None,
+        with_payload: None,
+        score_threshold: None,
+    };
+
+    let batches = shard
+        .query_batch(vec![nearest(1), nearest(2)])
+        .expect("query_batch failed");
+    assert_eq!(batches.len(), 2);
+    assert_eq!(batches[0].len(), 1);
+    assert_eq!(batches[1].len(), 2);
+}
+
 // ── Payload schema in info() ──────────────────────────────────────────────────
 
 /// `info()` must report every payload index: a bare-type index shows its

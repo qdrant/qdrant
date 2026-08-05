@@ -27,7 +27,19 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
-        let planned_query = PlannedQuery::try_from(vec![request])?;
+        let mut batch = self.query_batch(vec![request])?;
+        batch.pop().ok_or_else(|| {
+            OperationError::service_error("unexpected empty query batch response".to_string())
+        })
+    }
+
+    /// Execute multiple queries as one planned batch: shared leaf searches/scrolls are
+    /// collected once, then each root plan is resolved independently.
+    pub(crate) fn query_batch(
+        &self,
+        requests: Vec<ShardQueryRequest>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let planned_query = PlannedQuery::try_from(requests)?;
 
         let PlannedQuery {
             root_plans,
@@ -45,7 +57,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             scroll_results.push(self.query_scroll(scroll)?);
         }
 
-        let mut scored_points_batch = Vec::new();
+        let mut scored_points_batch = Vec::with_capacity(root_plans.len());
         for root_plan in root_plans {
             let scored_points = self.resolve_plan(
                 root_plan,
@@ -57,16 +69,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             scored_points_batch.push(scored_points)
         }
 
-        let [scored_points] = scored_points_batch
-            .try_into()
-            .map_err(|unconverted: Vec<_>| {
-                OperationError::service_error(format!(
-                    "unexpected scored points batch size: expected 1, received {}",
-                    unconverted.len(),
-                ))
-            })?;
-
-        Ok(scored_points)
+        Ok(scored_points_batch)
     }
 
     fn resolve_plan(
@@ -431,6 +434,53 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .collect();
 
         Ok(query_response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::data_types::vectors::{NamedQuery, VectorInternal};
+    use shard::query::ScoringQuery;
+    use shard::query::query_enum::QueryEnum;
+
+    use crate::QueryRequestBuilder;
+    use crate::test_helpers::{VECTOR_NAME, point, test_config, upsert};
+
+    fn nearest(limit: usize) -> crate::QueryRequest {
+        QueryRequestBuilder::new(limit)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                VectorInternal::from(vec![1.0]),
+                VECTOR_NAME.to_string(),
+            ))))
+            .build()
+    }
+
+    #[test]
+    fn query_batch_returns_one_list_per_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = crate::EdgeShard::new(dir.path(), test_config()).unwrap();
+        upsert(&shard, vec![point(1), point(2), point(3)]);
+
+        let batches = shard
+            .query_batch(vec![nearest(1), nearest(2), nearest(3)])
+            .unwrap();
+
+        assert_eq!(batches.len(), 3);
+        assert_eq!(batches[0].len(), 1);
+        assert_eq!(batches[1].len(), 2);
+        assert_eq!(batches[2].len(), 3);
+        // Dot product with [1.0] ranks by vector value, so highest ids first.
+        assert_eq!(batches[0][0].id, 3.into());
+        assert_eq!(batches[1][0].id, 3.into());
+        assert_eq!(batches[1][1].id, 2.into());
+    }
+
+    #[test]
+    fn query_batch_empty_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = crate::EdgeShard::new(dir.path(), test_config()).unwrap();
+        let batches = shard.query_batch(Vec::new()).unwrap();
+        assert!(batches.is_empty());
     }
 }
 

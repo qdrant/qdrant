@@ -129,6 +129,18 @@ class EdgeShard:
         """
         ...
 
+    def query_batch(self, queries: List["QueryRequest"]) -> List[List["ScoredPoint"]]:
+        """
+        Execute multiple queries as one planned batch.
+
+        Args:
+            queries: The query requests to run together.
+
+        Returns:
+            One list of scored points per request, in the same order.
+        """
+        ...
+
     def search(self, search: "SearchRequest") -> List["ScoredPoint"]:
         """
         Execute a search against the shard.

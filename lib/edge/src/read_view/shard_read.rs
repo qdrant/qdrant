@@ -64,6 +64,11 @@ pub trait EdgeShardRead: sealed::Sealed {
 
     fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>>;
 
+    /// Execute multiple [`QueryRequest`]s as one planned batch.
+    ///
+    /// Returns one result list per request, in the same order.
+    fn query_batch(&self, requests: Vec<QueryRequest>) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
     fn scroll(
         &self,
         request: ScrollRequest,
@@ -97,6 +102,10 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
 
     fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         view(self).query(request.into())
+    }
+
+    fn query_batch(&self, requests: Vec<QueryRequest>) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        view(self).query_batch(requests.into_iter().map(Into::into).collect())
     }
 
     fn scroll(
