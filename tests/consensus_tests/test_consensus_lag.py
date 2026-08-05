@@ -16,11 +16,40 @@ from .utils import *
 N_PEERS = 3
 COLLECTION_NAME = "test_collection"
 
+FREEZE_SEC = 15
+# Peers that join last replay the bootstrap entries, which leaves them lags of a few
+# seconds. The threshold has to clear those without reaching the freeze itself.
+STALL_THRESHOLD_MS = 10_000
+
 
 def get_lag(peer_api_uri):
     r = requests.get(f"{peer_api_uri}/profiler/consensus_lag")
     assert_http_ok(r)
     return r.json()["result"]
+
+
+def peer_lag(peer_api_uri, peer_id):
+    return next(p for p in get_lag(peer_api_uri)["peers"] if p["peer_id"] == peer_id)
+
+
+def freeze_peer(peer_api_uri, peer_id, seconds):
+    r = requests.post(
+        f"{peer_api_uri}/collections/{COLLECTION_NAME}/cluster",
+        json={"test_slow_down": {"peer_id": peer_id, "duration": seconds}},
+    )
+    assert_http_ok(r)
+
+
+def stall_visible(peer_api_uri, peer_id):
+    return peer_lag(peer_api_uri, peer_id)["behind_entries"] > 0
+
+
+def stall_recovered(peer_api_uri, peer_id):
+    return peer_lag(peer_api_uri, peer_id)["behind_entries"] == 0
+
+
+def all_caught_up(peer_api_uri):
+    return all(peer["behind_entries"] == 0 for peer in get_lag(peer_api_uri)["peers"])
 
 
 def test_consensus_lag_report(tmp_path: pathlib.Path):
@@ -34,6 +63,8 @@ def test_consensus_lag_report(tmp_path: pathlib.Path):
     upsert_random_points(peer_api_uris[0], 100)
 
     for uri in peer_api_uris:
+        # Nothing above waits on consensus, so a peer can still trail by an entry.
+        wait_for(all_caught_up, uri)
         report = get_lag(uri)
         print(f"\n=== settled: {uri} ===\n{json.dumps(report, indent=2)}")
 
@@ -77,11 +108,7 @@ def test_consensus_lag_frozen_peer(tmp_path: pathlib.Path):
     )
 
     frozen_id = get_cluster_info(peer_api_uris[2])["peer_id"]
-    r = requests.post(
-        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
-        json={"test_slow_down": {"peer_id": frozen_id, "duration": 60.0}},
-    )
-    assert_http_ok(r)
+    freeze_peer(peer_api_uris[0], frozen_id, 60.0)
     time.sleep(1)
 
     # Cluster metadata with `wait=false` is the cheapest consensus entry that does
@@ -114,3 +141,45 @@ def test_consensus_lag_frozen_peer(tmp_path: pathlib.Path):
             frozen,
             peer,
         )
+
+
+def test_consensus_lag_outlives_the_stall(tmp_path: pathlib.Path):
+    """A stall that has already ended is still in the report.
+
+    Every live signal - `behind_entries`, `pending_operations` - is clean again by the
+    time the peer catches up, so a poll landing after the stall would see nothing. The
+    entry the peer was stuck on stays in the window and keeps the delay measurable.
+    """
+    assert_project_root()
+    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS)
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=2)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
+    )
+
+    # The freeze runs inside applying the entry that carries it, so that entry is the
+    # one measured: the other peers apply it at once, the frozen peer FREEZE_SEC later.
+    frozen_id = get_cluster_info(peer_api_uris[2])["peer_id"]
+    freeze_peer(peer_api_uris[0], frozen_id, FREEZE_SEC)
+
+    wait_for(stall_visible, peer_api_uris[0], frozen_id)
+    wait_for(
+        stall_recovered,
+        peer_api_uris[0],
+        frozen_id,
+        wait_for_timeout=FREEZE_SEC + 30,
+    )
+
+    report = get_lag(peer_api_uris[0])
+    print(f"\n=== recovered peer {frozen_id} ===\n{json.dumps(report, indent=2)}")
+
+    frozen = next(p for p in report["peers"] if p["peer_id"] == frozen_id)
+    healthy = [p for p in report["peers"] if p["peer_id"] != frozen_id]
+
+    assert frozen["pending_operations"] == 0, frozen
+    assert frozen["slowest_apply_ms"] >= STALL_THRESHOLD_MS, frozen
+    assert frozen["lag_ms"]["max_ms"] >= STALL_THRESHOLD_MS, frozen
+
+    for peer in healthy:
+        assert peer["slowest_apply_ms"] < frozen["slowest_apply_ms"], (frozen, peer)
+        assert peer["lag_ms"]["max_ms"] < frozen["lag_ms"]["max_ms"], (frozen, peer)
