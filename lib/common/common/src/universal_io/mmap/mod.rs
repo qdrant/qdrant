@@ -38,6 +38,8 @@ impl UniversalReadFileOps for MmapFs {
 }
 
 impl UniversalWriteFileOps for MmapFs {
+    type AppendFile = MmapFile;
+
     fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
         local_file_ops::local_create(path, expected_length)
     }
@@ -56,6 +58,12 @@ impl UniversalWriteFileOps for MmapFs {
 
     fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         local_file_ops::local_atomic_save(path, bytes)
+    }
+
+    /// The very handle [`UniversalReadFs::open`] hands out: an [`MmapFile`]
+    /// appends through a dedicated `O_APPEND` fd of its own.
+    fn open_append(&self, path: impl AsRef<Path>, options: OpenOptions) -> UioResult<MmapFile> {
+        MmapFile::open_inner(path, options.for_append())
     }
 }
 
