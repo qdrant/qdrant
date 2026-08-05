@@ -13,7 +13,7 @@ use once_cell::sync::OnceCell;
 
 use super::read_view::HNSWIndexReadView;
 use super::telemetry::HNSWSearchesTelemetry;
-use crate::common::BYTES_IN_KB;
+use super::{graph_residency, load_or_derive_config};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
@@ -24,8 +24,7 @@ use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndexReadView;
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::types::{HnswConfig, Memory};
-use crate::vector_storage::VectorStorageRead;
+use crate::types::HnswConfig;
 use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 
@@ -83,38 +82,6 @@ type ReadView<'a, S> = HNSWIndexReadView<
     >,
 >;
 
-/// Effective residency of the graph links, and whether the graph counts as
-/// on-disk: the `memory` parameter (falling back to the deprecated `on_disk`
-/// flag), degraded at load time by the node-wide low-memory mode. Mirrors the
-/// writable [`HNSWIndex::open`][1].
-///
-/// A `populate_override` (from a request-specific
-/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) demotes the
-/// effective placement (see [`Memory::with_populate_override`]) — the graph
-/// links support every residency over the same files, so even a `pinned` graph
-/// can be demoted to a lazy cold view. `is_on_disk` stays config-derived: it
-/// describes the configuration, not the per-open placement.
-///
-/// [1]: super::super::HNSWIndex::open
-fn graph_residency(
-    hnsw_config: &HnswConfig,
-    populate_override: Option<Populate>,
-) -> (GraphLinksResidency, bool) {
-    let memory = hnsw_config.memory_placement().clamp_to_low_memory();
-    let is_on_disk = memory.is_on_disk();
-
-    let residency = match memory.with_populate_override(populate_override) {
-        // Keep the links cold: lazily loaded from disk, cached with usage
-        Memory::Cold => GraphLinksResidency::Cold,
-        // Pre-populate the links into the page cache on load
-        Memory::Cached => GraphLinksResidency::Cached,
-        // Materialize the links on heap, so they are never evicted by cache pressure
-        Memory::Pinned => GraphLinksResidency::Pinned,
-    };
-
-    (residency, is_on_disk)
-}
-
 /// Whether a `populate_override` defers the graph load to first use.
 ///
 /// A cold override parks the graph *unloaded*, not merely cold: unlike the
@@ -147,7 +114,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
         // Graph data and links
         if !graph_deferred(populate_override) {
-            let (residency, _is_on_disk) = graph_residency(hnsw_config, populate_override);
+            let (_memory, residency) = graph_residency(hnsw_config, populate_override);
             GraphLayers::preopen_universal(fs, path, residency)?;
         }
 
@@ -182,37 +149,12 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         // boxed trait object, which must outlive the index.
         S: 'static,
     {
-        let config_path = HnswGraphConfig::get_config_path(path);
-        let config = match HnswGraphConfig::load_universal(fs, &config_path)? {
-            Some(config) => config,
-            None => {
-                let vector_storage = vector_storage.borrow();
-                let available_vectors = vector_storage.available_vector_count();
-                let full_scan_threshold = vector_storage
-                    .size_of_available_vectors_in_bytes()
-                    .checked_div(available_vectors)
-                    .and_then(|avg_vector_size| {
-                        hnsw_config
-                            .full_scan_threshold
-                            .saturating_mul(BYTES_IN_KB)
-                            .checked_div(avg_vector_size)
-                    })
-                    .unwrap_or(1);
-
-                HnswGraphConfig::new(
-                    hnsw_config.m,
-                    hnsw_config.ef_construct,
-                    full_scan_threshold,
-                    hnsw_config.max_indexing_threads,
-                    hnsw_config.payload_m,
-                    available_vectors,
-                )
-            }
-        };
+        let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage)?;
 
         // Note that non-borrowable backends materialize the links into heap
         // RAM whatever the residency.
-        let (residency, is_on_disk) = graph_residency(&hnsw_config, populate_override);
+        let (memory, residency) = graph_residency(&hnsw_config, populate_override);
+        let is_on_disk = memory.is_on_disk();
         let graph = if graph_deferred(populate_override) {
             OnceCell::new()
         } else {
