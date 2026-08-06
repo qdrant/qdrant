@@ -5,9 +5,10 @@
 //! overwrites in place, and [`UpdateOnlyAppendableIdTracker::set_internal_versions`],
 //! which can only append — and two readers consume it, [`load_versions`] and the
 //! read-only tracker's live reload. Everything that defines the format for all
-//! four lives in this module: the entry codec, the offset of an entry, and
+//! four lives in this module: the entry codec, the offset of an entry,
 //! [`VersionsLayout`], which says how many whole entries a file of a given
-//! length holds.
+//! length holds, and [`heal_versions_tail`], which both writers run over a file
+//! that ends mid-entry.
 //!
 //! [`UpdateOnlyAppendableIdTracker::set_internal_versions`]:
 //!     super::update_only::UpdateOnlyAppendableIdTracker::set_internal_versions
@@ -84,6 +85,46 @@ impl VersionsLayout {
     }
 }
 
+/// Cut a partial trailing entry off a versions file of `file_len` bytes,
+/// bringing it back to an entry boundary, and return the layout it is left
+/// with. A file that already ends on a boundary is not touched.
+///
+/// Nothing is lost by dropping those bytes: the array covers a slot only once
+/// its whole entry is there, so a partial entry belongs to a slot that no
+/// reader ever saw and no writer ever counted as committed — it is what a
+/// writer that died mid-entry leaves behind. Healing is not optional either.
+/// Every entry has to land on a boundary, so a file left torn would take the
+/// next write either at the wrong offset — merging the stray bytes with a
+/// zero-fill into a plausible-looking version — or not at all, which is how a
+/// writer that can only append would be stuck with it forever.
+///
+/// `shrink_to` cuts the file down to the length it is handed, however its
+/// backend can: [`store_version_changes`] truncates in place, while the
+/// append-only writer, which has no truncate, puts back the prefix it reads
+/// out of the file.
+pub(super) fn heal_versions_tail(
+    versions_path: &Path,
+    file_len: u64,
+    shrink_to: impl FnOnce(u64) -> OperationResult<()>,
+) -> OperationResult<VersionsLayout> {
+    let layout = VersionsLayout::of_len(file_len);
+    if layout.partial_tail == 0 {
+        return Ok(layout);
+    }
+
+    log::warn!(
+        "Mutable ID tracker versions file ends with a partial entry ({} bytes into a {VERSION_ELEMENT_SIZE}-byte slot), dropping it because the slot it belongs to was never committed: {}",
+        layout.partial_tail,
+        versions_path.display(),
+    );
+    shrink_to(layout.committed_len())?;
+
+    Ok(VersionsLayout {
+        committed_slots: layout.committed_slots,
+        partial_tail: 0,
+    })
+}
+
 pub(super) fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let file = File::open(versions_path)?;
 
@@ -118,17 +159,12 @@ pub(super) fn store_version_changes(
         .truncate(false)
         .open(versions_path)?;
 
-    // Truncate partial trailing entry if present (e.g. from a previous crash mid-write).
-    // Must be done before writing to prevent zero-fill from merging with partial bytes
-    // into a corrupt-but-complete-looking entry when extending the file.
-    let layout = VersionsLayout::of_len(file.metadata()?.len());
-    if layout.partial_tail != 0 {
-        log::warn!(
-            "Mutable ID tracker versions file has partial trailing entry ({} extra bytes), truncating",
-            layout.partial_tail,
-        );
-        file.set_len(layout.committed_len())?;
-    }
+    // Heal a partial trailing entry (e.g. from a previous crash mid-write) before writing:
+    // the zero-fill of a later extension would otherwise merge with the partial bytes into
+    // a corrupt-but-complete-looking entry.
+    heal_versions_tail(versions_path, file.metadata()?.len(), |healthy_len| {
+        Ok(file.set_len(healthy_len)?)
+    })?;
 
     let mut writer = BufWriter::new(file);
 

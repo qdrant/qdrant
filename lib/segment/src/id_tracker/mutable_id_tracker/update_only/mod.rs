@@ -3,6 +3,7 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 
+use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -13,8 +14,8 @@ use common::universal_io::{
 use super::change::{MappingChange, write_entry};
 use super::mappings_storage::mappings_path;
 use super::versions_storage::{
-    VERSION_ELEMENT_SIZE, VersionsLayout, version_offset, versions_byte_len, versions_path,
-    write_version,
+    VERSION_ELEMENT_SIZE, VersionsLayout, heal_versions_tail, version_offset, versions_byte_len,
+    versions_path, write_version,
 };
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{PointIdType, SeqNumberType};
@@ -52,8 +53,10 @@ pub enum MappingOperation {
 /// follows the mappings log, so it is not handed out again, but the versions
 /// array then has a hole that every later
 /// [`set_internal_versions`](Self::set_internal_versions) rejects until the
-/// opener fills or tombstones it. And a torn tail: appends land at the file's
-/// true end, which assumes the log ends at an entry boundary.
+/// opener fills or tombstones it. And a torn tail in the mappings log: appends
+/// land at the file's true end, which assumes the log ends at an entry
+/// boundary. A torn tail in the versions array needs no opener — the next write
+/// heals it (see [`heal_versions`](Self::heal_versions)).
 ///
 /// [`Flusher`]: common::universal_io::Flusher
 pub struct UpdateOnlyAppendableIdTracker<S: UniversalAppend> {
@@ -106,15 +109,14 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         let path = versions_path(&self.segment_path);
         let mut file = self.open_append(&path)?;
 
-        // A partial tail is what the in-place writer would truncate; an append
-        // cannot, so it is refused instead.
-        let layout = VersionsLayout::of_len(Self::end_of_file(&file)?);
+        // A torn tail is healed rather than refused: those bytes are a slot no
+        // reader ever saw, and the entries below take their place.
+        let file_len = Self::end_of_file(&file)?;
+        let mut layout = VersionsLayout::of_len(file_len);
         if layout.partial_tail != 0 {
-            return Err(OperationError::service_error(format!(
-                "ID tracker versions file ends with a partial entry ({} bytes into a {VERSION_ELEMENT_SIZE}-byte slot), cannot append versions to {}",
-                layout.partial_tail,
-                path.display(),
-            )));
+            layout = self.heal_versions(&path, &file, file_len)?;
+            // Whatever the healed file is, it is not the one this handle holds.
+            file = self.open_append(&path)?;
         }
         let covered_slots = layout.committed_slots;
 
@@ -155,6 +157,31 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         (file.flusher())()?;
 
         Ok(())
+    }
+
+    /// Heal a versions file that ends mid-entry, per [`heal_versions_tail`],
+    /// and return the layout it is left with.
+    ///
+    /// An append-only backend cannot truncate, so the file is shrunk the only
+    /// way it can be: the committed prefix is read back out of it and put in
+    /// its place as a whole file — one object write on a remote backend, one
+    /// atomic replacement locally.
+    ///
+    /// `file` is invalidated by that write and must not be used again: it is
+    /// the length before healing that its handle holds, and locally the file it
+    /// was opened on has been replaced. The healed layout is returned so a
+    /// caller that has already probed the length does not probe it again.
+    fn heal_versions(
+        &self,
+        path: &Path,
+        file: &S,
+        file_len: u64,
+    ) -> OperationResult<VersionsLayout> {
+        heal_versions_tail(path, file_len, |healthy_len| {
+            let committed = file.read_bytes(0..healthy_len, Sequential, align_of::<u8>())?;
+            self.fs.atomic_save(path, &committed)?;
+            Ok(())
+        })
     }
 
     /// Record `operations` in the mappings log, in the given order, returning

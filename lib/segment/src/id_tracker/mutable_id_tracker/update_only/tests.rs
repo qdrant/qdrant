@@ -104,6 +104,49 @@ fn versions_reject_holes_and_rewrites() {
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102]);
 }
 
+/// A writer that dies mid-entry leaves the versions file ending inside a slot.
+/// The next write heals it instead of being stuck with it forever: the partial
+/// bytes are a slot no reader ever saw, so the entries being committed take
+/// their place.
+#[test]
+fn heals_a_partial_versions_tail() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+    let path = versions_path(dir.path());
+
+    let mut tracker = Tracker::new(MmapFs, dir.path(), None);
+    tracker.set_internal_versions(&[0, 1], &[100, 101]).unwrap();
+
+    // Three bytes into slot 2, as a torn write would leave it.
+    let mut torn = fs_err::read(&path).unwrap();
+    torn.extend_from_slice(&[0xFF; 3]);
+    fs_err::write(&path, &torn).unwrap();
+
+    tracker.set_internal_versions(&[2, 3], &[102, 103]).unwrap();
+
+    // The committed slots survived, and the appended ones landed where the
+    // stray bytes were rather than after them.
+    assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102, 103]);
+    assert_eq!(
+        fs_err::metadata(&path).unwrap().len(),
+        4 * size_of::<SeqNumberType>() as u64,
+    );
+}
+
+/// Healing a file that holds nothing but a torn entry leaves it empty, and the
+/// array starts over at slot 0.
+#[test]
+fn heals_a_versions_file_of_only_a_partial_tail() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+    let path = versions_path(dir.path());
+
+    fs_err::write(&path, [0xFF; 5]).unwrap();
+
+    let mut tracker = Tracker::new(MmapFs, dir.path(), None);
+    tracker.set_internal_versions(&[0], &[100]).unwrap();
+
+    assert_eq!(load_versions(&path).unwrap(), vec![100]);
+}
+
 /// The append-only writer and the in-place one lay the versions file out
 /// identically, byte for byte. This is what keeps the two write paths from
 /// drifting apart: a change to either one's layout has to be made in both.
