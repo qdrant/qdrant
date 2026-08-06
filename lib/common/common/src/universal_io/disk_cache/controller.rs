@@ -245,6 +245,42 @@ impl CacheController {
             GuardResult::Timeout => unreachable!("We didn't set a timeout"),
         }
     }
+
+    /// Fetch a contiguous slice for multiple block requests.
+    ///
+    /// Returns `Some(&[u8])` if all requested blocks are cached consecutively
+    pub(super) fn get_contiguous_from_cache(
+        &self,
+        mut reqs: impl Iterator<Item = BlockRequest>,
+    ) -> Option<&[u8]> {
+        let first_req = reqs.next()?;
+        let first_offset = self.cache.get(&first_req.key)?;
+
+        let mut total_len = first_req.range.len();
+        let mut expected_next_start = first_req.range.end;
+
+        for (i, req) in reqs.enumerate() {
+            // blocks must be logically contiguous to form a valid physical slice
+            if expected_next_start != BLOCK_SIZE || req.range.start != 0 {
+                return None;
+            }
+            expected_next_start = req.range.end;
+
+            let offset = self.cache.get(&req.key)?;
+            let expected_offset = first_offset.0.checked_add((i as u32) + 1)?;
+            if offset.0 != expected_offset {
+                return None;
+            }
+            total_len += req.range.len();
+        }
+
+        let range_start = first_offset.bytes() + first_req.range.start;
+        // SAFETY: blocks are verified to be physically consecutive and logically contiguous.
+        let slice = unsafe {
+            std::slice::from_raw_parts(self.cache_mmap.as_ptr().add(range_start), total_len)
+        };
+        Some(slice)
+    }
 }
 
 /// Result of a cache lookup.
