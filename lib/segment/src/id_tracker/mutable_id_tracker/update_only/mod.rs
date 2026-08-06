@@ -125,7 +125,8 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             .collect();
         changes.sort_unstable_by_key(|(internal_id, _version)| *internal_id);
 
-        let mut versions_buffer = Vec::with_capacity(versions_byte_len(changes.len() as u64) as usize);
+        let mut versions_buffer =
+            Vec::with_capacity(versions_byte_len(changes.len() as u64) as usize);
         for (index, (internal_id, version)) in changes.iter().enumerate() {
             // Sorted ascending, the ids must run `covered_slots, covered_slots + 1, ...`:
             // anything lower is already published, anything higher leaves a
