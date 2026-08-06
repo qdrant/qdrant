@@ -52,9 +52,8 @@ impl EdgeShard {
         EdgeShardRead::query(self, request)
     }
 
-    /// Execute multiple [`QueryRequest`]s as one planned batch.
-    ///
-    /// Returns one result list per request, in the same order.
+    /// Execute several [`QueryRequest`]s as one planned batch — see
+    /// [`EdgeShardRead::query_batch`].
     pub fn query_batch(
         &self,
         requests: Vec<QueryRequest>,

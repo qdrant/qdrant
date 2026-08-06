@@ -51,11 +51,13 @@ impl EdgeShard {
         })
     }
 
-    /// Executes multiple queries as one planned batch.
+    /// Executes several queries as one planned batch.
     ///
     /// Returns one result list per request, in the same order as `requests`.
     /// Prefer this over repeated [`EdgeShard::query`] calls when issuing
-    /// several independent queries against the same shard.
+    /// several independent queries against the same shard: the batch is
+    /// planned as a whole, so its searches share one pass over the segments
+    /// and queries that differ only in their vector are scored together.
     ///
     /// # Errors
     ///

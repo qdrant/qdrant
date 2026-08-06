@@ -131,7 +131,11 @@ class EdgeShard:
 
     def query_batch(self, queries: List["QueryRequest"]) -> List[List["ScoredPoint"]]:
         """
-        Execute multiple queries as one planned batch.
+        Execute several queries as one planned batch.
+
+        Cheaper than calling `query` once per request: the batch is planned as a
+        whole, so its searches share one pass over the segments and queries that
+        differ only in their vector are scored together.
 
         Args:
             queries: The query requests to run together.
