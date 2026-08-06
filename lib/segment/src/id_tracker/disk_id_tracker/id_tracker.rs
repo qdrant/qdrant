@@ -12,7 +12,7 @@ use super::DiskIdTracker;
 use super::mappings::DiskMappingsSource as _;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
+use crate::id_tracker::immutable_id_tracker::version_mapping_path;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -69,7 +69,11 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![deleted_path(&self.path), version_mapping_path(&self.path)];
+        // The deleted flags go in whichever of the two bitmask formats is on disk.
+        let mut files = vec![
+            self.deleted_wrapper.path(),
+            version_mapping_path(&self.path),
+        ];
         files.extend(self.mapping_files());
         files
     }

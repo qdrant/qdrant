@@ -12,10 +12,9 @@ use std::io::{BufReader, BufWriter, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
-use common::bitvec::{BitSlice, BitVec};
+use common::bitvec::BitSlice;
 use common::fs::clear_disk_cache;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
-use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
     OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
@@ -23,14 +22,14 @@ use common::universal_io::{
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
-pub(crate) use self::deleted_storage::deleted_path;
+pub(crate) use self::deleted_storage::{deleted_offsets, deleted_path, deleted_paths};
 pub use self::mappings_storage::{MAPPINGS_FILE_NAME, mappings_path};
 use self::mappings_storage::{load_mapping, store_mapping};
 pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
 use self::versions_storage::mmap_size;
 pub(crate) use self::versions_storage::version_mapping_path;
 use crate::common::Flusher;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
+use crate::common::buffered_update_bitslice::{BitmaskFormat, BufferedUpdateBitSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
@@ -87,22 +86,18 @@ where
     }
 
     pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
-        let deleted_storage = StoredBitSlice::open(
+        let deleted_wrapper = BufferedUpdateBitSlice::open(
             fs,
-            deleted_path(segment_path),
+            &deleted_paths(segment_path),
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
 
-        let mut deleted_bitvec = BitVec::new();
-        deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
-
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
+        let deleted_bitvec = deleted_wrapper.read_all()?;
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             fs,
@@ -140,41 +135,23 @@ where
         internal_to_version: &[SeqNumberType],
         mappings: CompressedPointMappings,
     ) -> OperationResult<Self> {
-        // Create mmap file for deleted bitvec
-        let deleted_filepath = deleted_path(path);
-
-        debug_assert!(mappings.deleted().len() <= mappings.total_point_count());
-
-        let _ = create_and_ensure_length(
-            &deleted_filepath,
-            mappings
-                .total_point_count()
-                .div_ceil(u8::BITS as usize)
-                .next_multiple_of(size_of::<u64>()),
-        )?;
-
-        let mut deleted_storage = StoredBitSlice::open(
+        // Deleted flags: the ones from the mappings, plus any trailing points
+        // beyond `mappings.deleted().len()`, which are deleted too.
+        let deleted_wrapper = BufferedUpdateBitSlice::create(
             fs,
-            &deleted_filepath,
+            &deleted_paths(path),
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
+            // Kept in the legacy dense format: the read-only trackers open
+            // this file as a plain bitslice.
+            BitmaskFormat::Raw,
+            mappings.total_point_count(),
+            deleted_offsets(mappings.deleted(), mappings.total_point_count()),
         )?;
-
-        // Set bits for deleted points from the mappings,
-        deleted_storage.write_bitslice(mappings.deleted())?;
-        // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
-        deleted_storage.set_ascending_bits_batch(
-            (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
-        )?;
-
-        deleted_storage.flusher()()?;
-
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
         // Create mmap file for internal-to-version list
         let version_filepath = version_mapping_path(path);
@@ -370,7 +347,8 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
 
     fn files(&self) -> Vec<PathBuf> {
         vec![
-            deleted_path(&self.path),
+            // Whichever of the two bitmask formats is on disk.
+            self.deleted_wrapper.path(),
             mappings_path(&self.path),
             version_mapping_path(&self.path),
         ]

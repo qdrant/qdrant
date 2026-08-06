@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
-use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
     OpenOptions, Populate, SliceBufferedUpdateWrapper, TypedStorage, UniversalWrite,
 };
@@ -15,11 +14,13 @@ use fs_err::File;
 use super::DiskIdTracker;
 use super::on_disk_format::{e2i_path, i2e_path, store_e2i, store_i2e, store_is_uuid};
 use super::reader::DiskMappingReader;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
+use crate::common::buffered_update_bitslice::{BitmaskFormat, BufferedUpdateBitSlice};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
-use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
+use crate::id_tracker::immutable_id_tracker::{
+    deleted_offsets, deleted_paths, version_mapping_path,
+};
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::types::SeqNumberType;
 
@@ -40,20 +41,17 @@ where
     /// Open an existing disk-resident id tracker: `deleted` and `versions` are
     /// read into RAM (small, mutated in place), the mapping stays on disk.
     pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
-        let deleted_storage = StoredBitSlice::open(
+        let deleted_wrapper = BufferedUpdateBitSlice::open(
             fs,
-            deleted_path(segment_path),
+            &deleted_paths(segment_path),
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Blocking,
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
         )?;
-        let mut deleted = BitVec::new();
-        deleted.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
+        let deleted = deleted_wrapper.read_all()?;
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             fs,
@@ -92,38 +90,28 @@ where
         let total = mappings.total_point_count();
         debug_assert!(mappings.deleted().len() <= total);
 
-        // Deleted bitvec file: one bit per point, rounded up to a `u64` multiple.
-        let deleted_filepath = deleted_path(path);
-        create_and_ensure_length(
-            &deleted_filepath,
-            total
-                .div_ceil(u8::BITS as usize)
-                .next_multiple_of(size_of::<u64>()),
-        )?;
-        let mut deleted_storage = StoredBitSlice::open(
+        // Deleted flags: one per point, the trailing ones beyond
+        // `mappings.deleted()` all deleted.
+        let deleted_wrapper = BufferedUpdateBitSlice::create(
             fs,
-            &deleted_filepath,
+            &deleted_paths(path),
             OpenOptions {
                 writeable: true,
                 need_sequential: false,
                 populate: Populate::Auto,
                 advice: AdviceSetting::Global,
             },
-            Default::default(),
+            // Kept in the legacy dense format: the read-only trackers open
+            // this file as a plain bitslice.
+            BitmaskFormat::Raw,
+            total,
+            deleted_offsets(mappings.deleted(), total),
         )?;
-        deleted_storage.write_bitslice(mappings.deleted())?;
-        deleted_storage.set_ascending_bits_batch(
-            (mappings.deleted().len()..total).map(|i| (i as u64, true)),
-        )?;
-        deleted_storage.flusher()()?;
 
-        // Resident deleted mirror: same bits as on disk (trailing points beyond
-        // `mappings.deleted()` are deleted).
+        // Resident deleted mirror: same bits as on disk.
         let mut deleted = BitVec::new();
         deleted.extend_from_bitslice(mappings.deleted());
         deleted.resize(total, true);
-
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
         // Versions file: one `u64` per point.
         let version_filepath = version_mapping_path(path);
