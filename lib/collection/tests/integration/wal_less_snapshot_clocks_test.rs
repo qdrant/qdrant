@@ -385,6 +385,69 @@ async fn test_wal_less_snapshot_concurrency_race_fence() {
             "the snapshot should archive shard clocks",
         );
 
+        // Restore snapshot into a new isolated collection to verify segment data vs archived clocks
+        let restored_collection_dir = Builder::new()
+            .prefix("restored_collection_race")
+            .tempdir()
+            .unwrap();
+        let restored_snapshots_dir = Builder::new()
+            .prefix("restored_snapshots_race")
+            .tempdir()
+            .unwrap();
+
+        let restored_collection = Collection::new(
+            "restored_race".to_string(),
+            PEER_ID,
+            restored_collection_dir.path(),
+            restored_snapshots_dir.path(),
+            &config,
+            Arc::new(SharedStorageConfig {
+                node_type: NodeType::Normal,
+                ..Default::default()
+            }),
+            CollectionShardDistribution::all_local(Some(1), PEER_ID),
+            None,
+            ChannelService::new(REST_PORT, false, None, None),
+            dummy_on_replica_failure(),
+            dummy_request_shard_transfer(),
+            dummy_abort_shard_transfer(),
+            None,
+            None,
+            ResourceBudget::default(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        restored_collection
+            .restore_shard_snapshot(SHARD_ID, &snapshot_path, snapshot_temp_dir.path(), true)
+            .await
+            .unwrap();
+
+        // Verify the restored recovery point matches the archived clocks, and that no clock exceeds segment data
+        let restored_recovery = restored_collection
+            .shard_recovery_point(SHARD_ID)
+            .await
+            .unwrap();
+        let restored_clocks: HashMap<(u64, u32), u64> = restored_recovery
+            .iter_as_clock_tags()
+            .map(|tag| ((tag.peer_id, tag.clock_id), tag.clock_tick))
+            .collect();
+
+        for clock in &archived.clocks {
+            let restored_tick = restored_clocks
+                .get(&(clock.peer_id, clock.clock_id))
+                .copied();
+            assert!(
+                restored_tick.is_some_and(|tick| clock.current_tick <= tick),
+                "archived clock (peer={}, clock_id={}) tick {} is ahead of restored segment data (tick {:?})",
+                clock.peer_id,
+                clock.clock_id,
+                clock.current_tick,
+                restored_tick,
+            );
+        }
+
         sleep(Duration::from_millis(20)).await;
     }
 
