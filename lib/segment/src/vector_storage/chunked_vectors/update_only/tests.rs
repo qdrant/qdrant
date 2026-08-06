@@ -5,7 +5,6 @@ use common::universal_io::{MmapFile, MmapFs, Populate};
 use tempfile::{Builder, TempDir};
 
 use super::UpdateOnlyChunkedVectors;
-use crate::common::operation_error::OperationError;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::chunked_vectors::chunks::chunk_name;
@@ -121,11 +120,11 @@ fn directory_reads_congruently() {
     }
 }
 
-/// A preallocated (`ChunkedVectors`-written) directory is not appendable-to:
-/// its chunk files are longer than the stored vector count implies, which the
-/// update-only writer rejects instead of adopting.
+/// A preallocated (`ChunkedVectors`-written) directory is repaired on open:
+/// chunk files longer than the stored vector count implies are truncated back
+/// to the data, after which appends continue where the count left off.
 #[test]
-fn rejects_preallocated_chunks() {
+fn repairs_preallocated_chunks() {
     let hw = HardwareCounterCell::disposable();
     let dir = Builder::new().prefix("chunked_prealloc").tempdir().unwrap();
 
@@ -141,9 +140,37 @@ fn rejects_preallocated_chunks() {
     plain.flusher()().unwrap();
     drop(plain);
 
-    let err = UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap_err();
+    let vector_bytes = (DIM * size_of::<f32>()) as u64;
+    let chunk = chunk_name(dir.path(), 0);
     assert!(
-        matches!(err, OperationError::InconsistentStorage { description: _ }),
-        "{err}",
+        fs_err::metadata(&chunk).unwrap().len() > vector_bytes,
+        "chunk must be preallocated past the single stored vector",
     );
+
+    let mut writer =
+        UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+    assert_eq!(
+        fs_err::metadata(&chunk).unwrap().len(),
+        vector_bytes,
+        "chunk truncated back to the data",
+    );
+
+    // The stored vector survived the truncation, and appends continue after it
+    append_range(&mut writer, 1..3, DIM, &hw);
+
+    let reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+        &MmapFs,
+        dir.path(),
+        DIM,
+        AdviceSetting::Global,
+        Populate::No,
+    )
+    .unwrap();
+    assert_eq!(reader.len(), 3);
+    for key in 0..3 {
+        assert_eq!(
+            reader.get::<Random>(key).unwrap().as_ref(),
+            make_vec(key, DIM).as_slice(),
+        );
+    }
 }
