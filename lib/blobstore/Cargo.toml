@@ -28,12 +28,12 @@ strum = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
 zerocopy = { workspace = true }
-dataset = { path = "../common/dataset" }
 common = { path = "../common/common" }
 
 [dev-dependencies]
 criterion = { workspace = true }
 csv = "1.4.0"
+dataset = { path = "../common/dataset" }
 fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
 proptest = { workspace = true }
