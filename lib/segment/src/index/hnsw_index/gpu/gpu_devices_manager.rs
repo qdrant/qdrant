@@ -117,6 +117,26 @@ impl GpuDevicesMaganer {
         })
     }
 
+    /// Acquires a free GPU device, waiting (polling every 100ms) if none is immediately
+    /// available and `wait_free` is set. Bounded by `super::GPU_LOCK_TIMEOUT` — was previously
+    /// an unconditional `loop`, no timeout at all, with no exit besides successfully acquiring a
+    /// device or the whole operation being externally cancelled (`stopped`).
+    ///
+    /// That mattered because of a real, confirmed production failure mode (2026-08-05/06,
+    /// silent multi-hour optimizer stall under concurrent CUDA load — no error, no log line,
+    /// only recoverable via a full qdrant restart): if the thread CURRENTLY holding a device's
+    /// `Mutex` guard gets stuck inside a lower-level driver call that never returns — not a
+    /// clean Vulkan error/`DEVICE_LOST` (those already propagate normally, the guard drops via
+    /// normal Rust scope-exit, and the next caller acquires the device fine) but a genuine hang
+    /// inside the driver itself (observed directly: a thread stuck in `poll()` inside
+    /// `libnvidia-eglcore.so`, 0% GPU utilization, never returning) — the mutex is held forever.
+    /// Every OTHER task calling `lock_device()` then spins in this loop indefinitely, since
+    /// there is no way to detect or break a lock held by a permanently-stuck thread from here.
+    ///
+    /// Falling back to CPU after a bounded wait doesn't recover the stuck device (that
+    /// underlying thread is still wedged, and Rust cannot forcibly reclaim a mutex held by a
+    /// hung thread) — but it stops that one stuck device from taking down every other build
+    /// task with it, and logs the failure so it's actually diagnosable instead of silent.
     pub fn lock_device(
         &self,
         stopped: &AtomicBool,
@@ -124,6 +144,7 @@ impl GpuDevicesMaganer {
         if self.devices.is_empty() {
             return Ok(None);
         }
+        let wait_start = std::time::Instant::now();
         loop {
             for device in &self.devices {
                 if let Some(guard) = device.try_lock() {
@@ -136,6 +157,18 @@ impl GpuDevicesMaganer {
             }
 
             check_stopped(stopped)?;
+
+            if wait_start.elapsed() > super::GPU_LOCK_TIMEOUT {
+                log::error!(
+                    "Timed out after {:?} waiting for a free GPU device (all {} device(s) \
+                     still busy — possibly one is permanently stuck, see lock_device()'s doc \
+                     comment). Falling back to CPU for this build.",
+                    wait_start.elapsed(),
+                    self.devices.len(),
+                );
+                return Ok(None);
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }

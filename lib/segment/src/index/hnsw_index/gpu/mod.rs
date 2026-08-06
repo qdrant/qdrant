@@ -11,6 +11,9 @@ pub mod shader_builder;
 #[cfg(test)]
 mod gpu_heap_tests;
 
+#[cfg(test)]
+mod relock_diagnostic_tests;
+
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use batched_points::BatchedPoints;
@@ -22,11 +25,30 @@ use crate::index::hnsw_index::HnswM;
 
 pub static GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
 
+/// Bounded wait for `GpuDevicesMaganer::lock_device()` to acquire a free device — see that
+/// function's own doc comment for the full story. Was previously UNBOUNDED (a bare
+/// `try_lock()`/`sleep(100ms)` retry loop with no exit besides success or external
+/// cancellation). Confirmed live 2026-08-05/06 (real production incident): if the thread
+/// currently holding a device gets stuck in a lower-level driver call that never returns (not a
+/// clean Vulkan error — those already recover fine via the existing GPU_TIMEOUT/DEVICE_LOST
+/// path below), every other caller waiting on `lock_device()` piles up forever with zero
+/// visibility (no error, no log line) until a full qdrant restart. This bounds that: give up
+/// waiting after this long and fall back to CPU for that one build, same as any other GPU
+/// failure, rather than hanging the entire optimizer indefinitely.
+static GPU_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.
 /// We cannot use too small timeout and check stopper in the loop because
 /// GPU resources should be alive while GPU operation is in progress.
-static GPU_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+/// Was 60s — confirmed live 2026-08-05/06 our workload's bge_colbert (per-token multivector)
+/// segments are genuinely expensive per GPU dispatch (multi-minute builds observed for
+/// individual segments in production), so a single wait_finish() call landing on a slow-but-
+/// genuinely-still-working step could plausibly hit 60s and get killed/misreported even when
+/// nothing is actually stuck. Not yet confirmed as an actual observed failure (no plain
+/// GpuError::Timeout seen in production logs, only real driver-reported DEVICE_LOST errors —
+/// see GPU_LOCK_TIMEOUT above for the fix targeting those), but cheap, safe headroom against it.
+static GPU_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Warps count for GPU.
 /// In other words, how many parallel points can be indexed by GPU.
