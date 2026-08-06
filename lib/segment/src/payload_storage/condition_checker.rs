@@ -3,7 +3,7 @@
 use std::str::FromStr;
 
 use ordered_float::OrderedFloat;
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
@@ -11,6 +11,32 @@ use crate::types::{
     MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants,
     ValuesCount,
 };
+
+/// Convert a JSON Number to i64, handling float values that represent whole integers
+/// (e.g., 42.0 → 42). Mirrors `value_to_integer` in `index/field_index/utils.rs`
+/// so the non-indexed exact-match fallback and integer payload indexes agree.
+fn number_to_integer(number: &Number) -> Option<i64> {
+    if let Some(n) = number.as_i64() {
+        return Some(n);
+    }
+
+    // Accept floats but reject NaN, infinity, and values outside i64 range.
+    // Without the range check, out-of-range f64 values saturate during
+    // the `v as i64` cast and then pass the round-trip equality test
+    // (e.g. 9223372036854775808.0 → i64::MAX → 9223372036854775808.0).
+    if let Some(n) = number.as_f64()
+        && n.is_finite()
+        && n >= (i64::MIN as f64)
+        && n < (i64::MAX as f64)
+    {
+        let int = n as i64;
+        if (int as f64) == n {
+            return Some(int);
+        }
+    }
+
+    None
+}
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
 ///
@@ -167,7 +193,7 @@ impl ValueChecker for Match {
                 (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
                 (Value::String(stored), ValueVariants::String(val)) => stored == val,
                 (Value::Number(stored), ValueVariants::Integer(val)) => {
-                    stored.as_i64().is_some_and(|num| num == *val)
+                    number_to_integer(stored).is_some_and(|num| num == *val)
                 }
                 _ => false,
             },
@@ -207,8 +233,7 @@ impl ValueChecker for Match {
                         list.contains(stored.as_str())
                     }
                 }
-                (Value::Number(stored), AnyVariants::Integers(list)) => stored
-                    .as_i64()
+                (Value::Number(stored), AnyVariants::Integers(list)) => number_to_integer(stored)
                     .map(|num| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
                             list.iter().any(|i| *i == num)
@@ -227,8 +252,7 @@ impl ValueChecker for Match {
                         !list.contains(stored.as_str())
                     }
                 }
-                (Value::Number(stored), AnyVariants::Integers(list)) => stored
-                    .as_i64()
+                (Value::Number(stored), AnyVariants::Integers(list)) => number_to_integer(stored)
                     .map(|num| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
                             !list.iter().any(|i| *i == num)
@@ -574,5 +598,133 @@ mod tests {
         assert!(is_not_null.check(&string));
         assert!(is_not_null.check(&number));
         assert!(is_not_null.check(&bool));
+    }
+
+    #[test]
+    fn test_number_to_integer_valid() {
+        // Integer JSON values
+        assert_eq!(number_to_integer(&serde_json::Number::from(0)), Some(0));
+        assert_eq!(number_to_integer(&serde_json::Number::from(42)), Some(42));
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from(i64::MAX)),
+            Some(i64::MAX)
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from(i64::MIN)),
+            Some(i64::MIN)
+        );
+        assert_eq!(number_to_integer(&serde_json::Number::from(-1)), Some(-1));
+    }
+
+    #[test]
+    fn test_number_to_integer_float_whole() {
+        // Float values that represent whole integers
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(42.0).unwrap()),
+            Some(42)
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(0.0).unwrap()),
+            Some(0)
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(-1.0).unwrap()),
+            Some(-1)
+        );
+    }
+
+    #[test]
+    fn test_number_to_integer_float_non_whole() {
+        // Non-whole float values should return None
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(42.5).unwrap()),
+            None
+        );
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(3.14).unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn test_number_to_integer_out_of_range() {
+        // Out-of-range f64 values should return None (not saturate to i64::MAX)
+        let above_max = 9223372036854775808.0_f64; // just above i64::MAX
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(above_max).unwrap()),
+            None,
+            "Out-of-range above i64::MAX should return None"
+        );
+
+        let below_min = -9223372036854775809.0_f64; // just below i64::MIN
+        assert_eq!(
+            number_to_integer(&serde_json::Number::from_f64(below_min).unwrap()),
+            None,
+            "Out-of-range below i64::MIN should return None"
+        );
+    }
+
+    #[test]
+    fn test_number_to_integer_nan_and_inf() {
+        // NaN and infinity should return None
+        assert_eq!(
+            number_to_integer(
+                &serde_json::Number::from_f64(f64::NAN).unwrap()
+            ),
+            None
+        );
+        assert_eq!(
+            number_to_integer(
+                &serde_json::Number::from_f64(f64::INFINITY).unwrap()
+            ),
+            None
+        );
+        assert_eq!(
+            number_to_integer(
+                &serde_json::Number::from_f64(f64::NEG_INFINITY).unwrap()
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_match_float_out_of_range() {
+        // Match should NOT match an out-of-range float payload
+        let out_of_range = serde_json::Number::from_f64(9223372036854775808.0).unwrap();
+        let payload = json!(out_of_range);
+
+        let condition = Match::Value(MatchValue {
+            value: ValueVariants::Integer(i64::MAX),
+        });
+        assert!(
+            !condition.check_match(&payload),
+            "Out-of-range float should not match i64::MAX"
+        );
+
+        // Normal integer match should still work
+        let normal_payload = json!(42);
+        let condition = Match::Value(MatchValue {
+            value: ValueVariants::Integer(42),
+        });
+        assert!(condition.check_match(&normal_payload));
+    }
+
+    #[test]
+    fn test_match_any_float_out_of_range() {
+        // MatchAny should NOT match an out-of-range float payload in the integer list
+        let out_of_range = serde_json::Number::from_f64(9223372036854775808.0).unwrap();
+        let payload = json!(out_of_range);
+
+        let condition = Match::Any(MatchAny {
+            any: AnyVariants::Integers(vec![0, 1, 2]),
+        });
+        assert!(
+            !condition.check_match(&payload),
+            "Out-of-range float should not match small integers"
+        );
+
+        // Normal MatchAny should still work
+        let normal_payload = json!(2);
+        assert!(condition.check_match(&normal_payload));
     }
 }
