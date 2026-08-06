@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 
+use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
@@ -67,6 +68,20 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         for (user_data, point_offset) in point_offsets {
             let payload = self.get(point_offset, hw_counter)?;
             callback(user_data, payload)?;
+        }
+
+        Ok(())
+    }
+
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
+    ) -> OperationResult<()> {
+        for (user_data, point_offset) in point_offsets {
+            let encoded = self.payload.get(&point_offset).map(Blob::to_bytes);
+            callback(user_data, encoded.as_deref())?;
         }
 
         Ok(())
@@ -235,6 +250,33 @@ mod tests {
             0,
             &IndexesMap::new(),
             &HardwareCounterCell::new(),
+        );
+    }
+
+    #[test]
+    fn test_read_payloads_raw_encodes_on_the_fly() {
+        let mut storage = InMemoryPayloadStorage::default();
+        let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        storage.set(1, &payload, &hw_counter).unwrap();
+
+        let mut read = Vec::new();
+        storage
+            .read_payloads_raw::<common::generic_consts::Random, _>(
+                [((), 1), ((), 2)].into_iter(),
+                |(), payload| {
+                    read.push(payload.map(<[u8]>::to_vec));
+                    Ok(())
+                },
+                &hw_counter,
+            )
+            .unwrap();
+
+        assert_eq!(
+            read,
+            // Point 2 has no payload at all
+            [Some(payload.to_bytes()), None],
         );
     }
 

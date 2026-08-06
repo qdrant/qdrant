@@ -32,8 +32,8 @@ use segment::entry::{
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf,
-    WithPayload, WithVector,
+    ExtendedPointId, Payload, PointIdType, RawPayload, SegmentConfig, SeqNumberType, VectorNameBuf,
+    WithVector,
 };
 use smallvec::SmallVec;
 
@@ -1045,10 +1045,6 @@ impl SegmentHolder {
                         let mut record = write_segment
                             .retrieve_raw(
                                 &[point_id],
-                                &WithPayload {
-                                    enable: true,
-                                    payload_selector: None,
-                                },
                                 &WithVector::Bool(true),
                                 hw_counter,
                                 &stopped,
@@ -1060,7 +1056,14 @@ impl SegmentHolder {
                             })?;
 
                         let mut raw_vectors = record.vectors.take().unwrap_or_default();
-                        let mut payload = record.payload.take().unwrap_or_default();
+                        // The `SetPayload` callback below merges into the parsed
+                        // payload, so a stored blob is decoded here.
+                        let mut payload = record
+                            .payload
+                            .as_ref()
+                            .map(RawPayload::decode)
+                            .transpose()?
+                            .unwrap_or_default();
                         let mut updated_vectors = NamedVectors::default();
 
                         point_cow_operation(

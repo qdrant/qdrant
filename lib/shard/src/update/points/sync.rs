@@ -181,7 +181,6 @@ impl PointToSync for PointStructRawPersisted {
     ) -> OperationResult<AHashMap<PointIdType, SegmentRecordRaw>> {
         segment.retrieve_raw(
             ids,
-            &WithPayload::from(true),
             &WithVector::Bool(true),
             hw_counter,
             is_stopped,

@@ -241,7 +241,6 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -302,7 +301,6 @@ impl LocalShard {
             .into_iter()
             .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
-        let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
         let mut records_map = tokio::time::timeout(
@@ -310,7 +308,6 @@ impl LocalShard {
             SegmentsSearcher::retrieve_raw(
                 segments,
                 &point_ids,
-                &with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -327,8 +324,8 @@ impl LocalShard {
             .iter()
             // Use remove to avoid cloning, we take each point ID only once
             .filter_map(|point_id| records_map.remove(point_id))
-            .map(PointStructRawPersisted::from)
-            .collect();
+            .map(PointStructRawPersisted::try_from)
+            .collect::<Result<_, _>>()?;
 
         Ok(ordered_records)
     }

@@ -144,6 +144,19 @@ where
         )
     }
 
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, _, bytes| callback(user_data, bytes),
+            hw_counter.payload_io_read_counter(),
+        )
+    }
+
     fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,

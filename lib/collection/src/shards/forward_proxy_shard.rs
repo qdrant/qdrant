@@ -454,7 +454,6 @@ impl ForwardProxyShard {
             .local_scroll_by_id_raw(
                 offset,
                 limit,
-                &WithPayloadInterface::Bool(true),
                 &WithVector::Bool(true),
                 filter,
                 runtime_handle,
@@ -520,7 +519,6 @@ impl ForwardProxyShard {
             .wrapped_shard
             .retrieve_raw(
                 &ids,
-                &WithPayload::from(true),
                 &WithVector::Bool(true),
                 runtime_handle,
                 None,                           // No timeout

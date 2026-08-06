@@ -425,7 +425,6 @@ impl SegmentsSearcher {
     pub async fn retrieve_raw(
         segments: LockedSegmentHolder,
         points: &[PointIdType],
-        with_payload: &WithPayload,
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
@@ -436,14 +435,12 @@ impl SegmentsSearcher {
         let points = runtime_handle.spawn_blocking({
             let segments = segments.clone();
             let points = points.to_vec();
-            let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
             move || {
                 retrieve_raw_blocking(
                     segments,
                     &points,
-                    &with_payload,
                     &with_vector,
                     timeout,
                     &is_stopped,

@@ -110,6 +110,28 @@ impl PayloadStorageRead for PayloadStorageEnum {
         }
     }
 
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(s) => {
+                s.read_payloads_raw::<P, _>(point_offsets, callback, hw_counter)
+            }
+
+            PayloadStorageEnum::Mmap(s) => {
+                s.read_payloads_raw::<P, _>(point_offsets, callback, hw_counter)
+            }
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => {
+                s.read_payloads_raw::<P, _>(point_offsets, callback, hw_counter)
+            }
+        }
+    }
+
     fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,

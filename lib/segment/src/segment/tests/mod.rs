@@ -682,7 +682,6 @@ fn test_retrieve_raw_dense_bytes() {
     let raw = segment
         .retrieve_raw(
             &[7.into()],
-            &WithPayload::default(),
             &true.into(),
             &hw_counter,
             &is_stopped,
@@ -750,7 +749,6 @@ fn test_retrieve_raw_multivec_bytes() {
     let raw = segment
         .retrieve_raw(
             &[4.into()],
-            &WithPayload::default(),
             &true.into(),
             &hw_counter,
             &is_stopped,
@@ -815,7 +813,6 @@ fn test_retrieve_raw_sparse_bytes() {
     let raw = segment
         .retrieve_raw(
             &[7.into()],
-            &WithPayload::default(),
             &true.into(),
             &hw_counter,
             &is_stopped,
@@ -841,7 +838,6 @@ fn retrieve_raw_vector(segment: &Segment, point_id: PointIdType, name: &str) -> 
     let raw = segment
         .retrieve_raw(
             &[point_id],
-            &WithPayload::default(),
             &true.into(),
             &hw_counter,
             &is_stopped,

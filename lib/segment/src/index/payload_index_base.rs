@@ -150,6 +150,15 @@ pub trait PayloadIndexRead {
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
+
+    /// Raw analogue of [`Self::read_payloads`], see
+    /// [`PayloadStorageRead::read_payloads_raw`](crate::payload_storage::PayloadStorageRead::read_payloads_raw).
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 }
 
 /// Trait for payload index with mutating operations.
