@@ -19,7 +19,9 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::json_path::JsonPath;
-use crate::types::{FieldCondition, FloatPayloadType, Memory, Range, RangeInterface};
+use crate::types::{
+    FieldCondition, FloatPayloadType, IntPayloadType, Memory, Range, RangeInterface,
+};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///
@@ -146,6 +148,28 @@ fn random_index(
     (temp_dir, index)
 }
 
+fn int_index_with_values(
+    values: &[(PointOffsetType, IntPayloadType)],
+) -> (TempDir, NumericIndex<IntPayloadType, IntPayloadType>) {
+    let temp_dir = Builder::new()
+        .prefix("test_int_numeric_index")
+        .tempdir()
+        .unwrap();
+    let mut builder =
+        NumericIndex::<IntPayloadType, IntPayloadType>::builder_gridstore(temp_dir.path().into());
+    builder.init().unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    for (point_id, value) in values {
+        let payload = Value::from(*value);
+        builder
+            .add_point(*point_id, &[&payload], &hw_counter)
+            .unwrap();
+    }
+
+    (temp_dir, builder.finalize().unwrap())
+}
+
 fn cardinality_request(
     index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
     query: Range<FloatPayloadType>,
@@ -203,6 +227,32 @@ fn test_set_empty_payload() {
     let values_count = index.inner().get_values(point_id).unwrap().count();
 
     assert_eq!(values_count, 0);
+}
+
+#[test]
+fn test_int_range_filter_preserves_large_i64_precision() {
+    let value = -9_223_372_036_854_775_807_i64;
+    let (_temp_dir, index) = int_index_with_values(&[(1, value), (2, i64::MIN)]);
+
+    let condition = FieldCondition::new_int_range(
+        JsonPath::new("unused"),
+        Range {
+            lt: None,
+            gt: None,
+            gte: Some(value),
+            lte: Some(value),
+        },
+    );
+    let hw_counter = HardwareCounterCell::new();
+
+    let point_ids = index
+        .inner()
+        .filter(&condition, &hw_counter)
+        .unwrap()
+        .unwrap()
+        .collect_vec();
+
+    assert_eq!(point_ids, vec![1]);
 }
 
 #[rstest]

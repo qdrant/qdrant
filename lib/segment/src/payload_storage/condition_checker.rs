@@ -7,9 +7,9 @@ use serde_json::Value;
 
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
-    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
-    MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants,
-    ValuesCount,
+    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept,
+    MatchPhrase, MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface,
+    ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -87,6 +87,7 @@ impl ValueChecker for FieldCondition {
                 .as_ref()
                 .is_some_and(|range_interface| match range_interface {
                     RangeInterface::Float(condition) => condition.check_match(payload),
+                    RangeInterface::Integer(condition) => condition.check_match(payload),
                     RangeInterface::DateTime(condition) => condition.check_match(payload),
                 })
             || geo_radius
@@ -255,6 +256,28 @@ impl ValueChecker for Range<OrderedFloat<FloatPayloadType>> {
                 .as_f64()
                 .map(|number| self.check_range(OrderedFloat(number)))
                 .unwrap_or(false),
+            Value::Null
+            | Value::Bool(_)
+            | Value::String(_)
+            | Value::Array(_)
+            | Value::Object(_) => false,
+        }
+    }
+}
+
+impl ValueChecker for Range<IntPayloadType> {
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Number(num) => {
+                if let Some(number) = num.as_i64() {
+                    self.check_range(number)
+                } else {
+                    num.as_f64().is_some_and(|number| {
+                        let float_range = self.map(|bound| OrderedFloat(bound as FloatPayloadType));
+                        float_range.check_range(OrderedFloat(number))
+                    })
+                }
+            }
             Value::Null
             | Value::Bool(_)
             | Value::String(_)
@@ -476,6 +499,21 @@ mod tests {
         });
         // 0 >= 1 is false -> a missing field does not match
         assert!(!gte_one.check_empty());
+    }
+
+    #[test]
+    fn test_int_range_checker_preserves_large_i64_precision() {
+        let value = -9_223_372_036_854_775_807_i64;
+        let payload = json!(value);
+        let range = Range {
+            lt: None,
+            gt: None,
+            gte: Some(value),
+            lte: Some(value),
+        };
+
+        assert!(range.check(&payload));
+        assert!(!range.check(&json!(i64::MIN)));
     }
 
     #[test]
