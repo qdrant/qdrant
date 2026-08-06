@@ -181,6 +181,20 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
+    /// Word-scan form of [`Self::iter_internal`]: it yields an id iff the id
+    /// is below the returned cutoff (the mapping's total point count) and its
+    /// bit is unset in the returned deleted bitslice. Unlike
+    /// [`Self::visible_scan_masks`], no deferred or shadowed-active filtering
+    /// applies.
+    pub fn internal_scan_masks(self) -> (Option<PointOffsetType>, &'a BitSlice) {
+        let total = match self {
+            PointMappingsRefEnum::Plain(m) => m.total_point_count(),
+            PointMappingsRefEnum::Compressed(m) => m.total_point_count(),
+            PointMappingsRefEnum::Disk(m) => m.total_point_count(),
+        };
+        (Some(total as PointOffsetType), self.deleted())
+    }
+
     /// Iterate starting from a given ID, with deferred filtering selected by
     /// `deferred_behavior`. See [`PointMappings::iter_from_with_behavior`] for
     /// the per-mode contract. Compressed mappings ignore the parameter (they

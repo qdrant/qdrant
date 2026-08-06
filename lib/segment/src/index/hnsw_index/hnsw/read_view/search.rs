@@ -207,22 +207,68 @@ where
             .collect()
     }
 
-    fn search_plain_iterator_batched(
+    pub(super) fn search_plain_batched(
         &self,
         query_vectors: &[&QueryVector],
-        points: impl Iterator<Item = PointOffsetType>,
+        filtered_points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let is_stopped = vector_query_context.is_stopped();
+        let batch_filtered_searcher =
+            self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?;
+        let search_results = batch_filtered_searcher.peek_top_iter(filtered_points, &is_stopped)?;
+        self.postprocess_plain_batch(
+            search_results,
+            query_vectors,
+            top,
+            params,
+            vector_query_context,
+        )
+    }
+
+    pub(super) fn search_plain_unfiltered_batched(
+        &self,
+        query_vectors: &[&QueryVector],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let is_stopped = vector_query_context.is_stopped();
+        let batch_filtered_searcher =
+            self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?;
+        // Scan candidates by combining the deletion bitmaps word by word
+        // instead of feeding `iter_internal()` into `peek_top_iter` — the
+        // per-id enumeration dominates unfiltered full scans.
+        let (cutoff, mapping_deleted) = self.id_tracker.point_mappings().internal_scan_masks();
+        let search_results = batch_filtered_searcher.peek_top_visible(
+            cutoff,
+            mapping_deleted,
+            BitSlice::empty(),
+            &is_stopped,
+        )?;
+        self.postprocess_plain_batch(
+            search_results,
+            query_vectors,
+            top,
+            params,
+            vector_query_context,
+        )
+    }
+
+    fn construct_plain_batch_searcher<'b>(
+        &'b self,
+        query_vectors: &[&QueryVector],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &'b VectorQueryContext<'b>,
+    ) -> OperationResult<BatchFilteredSearcher<'b>> {
         let deleted_points = vector_query_context
             .deleted_points()
             .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
-
-        let is_stopped = vector_query_context.is_stopped();
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
-
-        let batch_filtered_searcher = construct_batch_searcher(
+        construct_batch_searcher(
             query_vectors,
             self.vector_storage,
             self.quantized_vectors,
@@ -231,8 +277,17 @@ where
             params,
             vector_query_context.hardware_counter(),
             None,
-        )?;
-        let mut search_results = batch_filtered_searcher.peek_top_iter(points, &is_stopped)?;
+        )
+    }
+
+    fn postprocess_plain_batch(
+        &self,
+        mut search_results: Vec<Vec<ScoredPointOffset>>,
+        query_vectors: &[&QueryVector],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
                 std::mem::take(search_result),
@@ -246,34 +301,6 @@ where
             )?;
         }
         Ok(search_results)
-    }
-
-    pub(super) fn search_plain_batched(
-        &self,
-        vectors: &[&QueryVector],
-        filtered_points: impl Iterator<Item = PointOffsetType>,
-        top: usize,
-        params: Option<&SearchParams>,
-        vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        self.search_plain_iterator_batched(
-            vectors,
-            filtered_points,
-            top,
-            params,
-            vector_query_context,
-        )
-    }
-
-    pub(super) fn search_plain_unfiltered_batched(
-        &self,
-        vectors: &[&QueryVector],
-        top: usize,
-        params: Option<&SearchParams>,
-        vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let ids_iterator = self.id_tracker.point_mappings().iter_internal();
-        self.search_plain_iterator_batched(vectors, ids_iterator, top, params, vector_query_context)
     }
 
     pub(super) fn search_vectors_plain(
