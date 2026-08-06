@@ -145,6 +145,16 @@ impl PyEdgeShard {
         Ok(points)
     }
 
+    /// Execute several queries as one planned batch.
+    ///
+    /// Cheaper than one `query` per request: the batch shares a single pass over the segments.
+    /// Returns one result list per request, in the same order as `queries`.
+    pub fn query_batch(&self, queries: Vec<PyQueryRequest>) -> Result<Vec<Vec<PyScoredPoint>>> {
+        let requests = queries.into_iter().map(Into::into).collect();
+        let batches = self.get_shard()?.query_batch(requests)?;
+        Ok(batches.into_iter().map(PyScoredPoint::wrap_vec).collect())
+    }
+
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.get_shard()?.search(search.into())?;
         let points = PyScoredPoint::wrap_vec(points);

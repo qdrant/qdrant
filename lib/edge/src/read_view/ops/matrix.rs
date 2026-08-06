@@ -62,38 +62,52 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             sample_ids.iter().copied().collect::<AHashSet<_>>(),
         )));
 
-        let mut nearests = Vec::with_capacity(sampled.len());
-        for point in &sampled {
-            let vector = point
-                .vector
-                .as_ref()
-                .and_then(|v| v.get(&using))
-                .map(|v| v.to_owned())
-                .ok_or_else(|| {
-                    OperationError::service_error("sampled point is missing its vector")
-                })?;
-            let nearest = ShardQueryRequest {
-                prefetches: vec![],
-                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
-                    vector,
-                    using.clone(),
-                )))),
-                filter: Some(id_filter.clone()),
-                score_threshold: None,
-                limit: limit_per_sample.saturating_add(1), // +1 to drop the point itself afterwards
-                offset: 0,
-                params: None,
-                with_vector: WithVector::Bool(false),
-                with_payload: WithPayloadInterface::Bool(false),
-            };
-            let mut scores = self.query(nearest)?;
-            if let Some(pos) = scores.iter().position(|p| p.id == point.id) {
-                scores.remove(pos);
-            } else if scores.len() == limit_per_sample.saturating_add(1) {
-                scores.pop();
-            }
-            nearests.push(scores);
-        }
+        // One query per sampled point, but issued as a single batch: they share filter, limit and
+        // vector name, so every segment scores the whole sample in one batched search.
+        let nearest_requests = sampled
+            .iter()
+            .map(|point| {
+                let vector = point
+                    .vector
+                    .as_ref()
+                    .and_then(|v| v.get(&using))
+                    .map(|v| v.to_owned())
+                    .ok_or_else(|| {
+                        OperationError::service_error("sampled point is missing its vector")
+                    })?;
+
+                Ok(ShardQueryRequest {
+                    prefetches: vec![],
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                        vector,
+                        using.clone(),
+                    )))),
+                    filter: Some(id_filter.clone()),
+                    score_threshold: None,
+                    limit: limit_per_sample.saturating_add(1), // +1 to drop the point itself afterwards
+                    offset: 0,
+                    params: None,
+                    with_vector: WithVector::Bool(false),
+                    with_payload: WithPayloadInterface::Bool(false),
+                })
+            })
+            .collect::<OperationResult<Vec<_>>>()?;
+
+        let nearests = self
+            .query_batch(nearest_requests)?
+            .into_iter()
+            .zip(&sampled)
+            .map(|(mut scores, point)| {
+                // Every point matches its own query best, so drop it; if it is missing (e.g. it
+                // was deleted concurrently), drop the extra result we asked for instead.
+                if let Some(pos) = scores.iter().position(|p| p.id == point.id) {
+                    scores.remove(pos);
+                } else if scores.len() == limit_per_sample.saturating_add(1) {
+                    scores.pop();
+                }
+                scores
+            })
+            .collect();
 
         Ok(SearchMatrixResponse {
             sample_ids,

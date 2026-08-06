@@ -27,7 +27,33 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
-        let planned_query = PlannedQuery::try_from(vec![request])?;
+        let [points] =
+            self.query_batch(vec![request])?
+                .try_into()
+                .map_err(|unconverted: Vec<_>| {
+                    OperationError::service_error(format!(
+                        "unexpected query batch size: expected 1, received {}",
+                        unconverted.len(),
+                    ))
+                })?;
+
+        Ok(points)
+    }
+
+    /// Execute several queries as one planned batch.
+    ///
+    /// Planning the whole batch at once puts every request's leaf searches into a single
+    /// [`search_batch`](Self::search_batch): the segments are visited once for the batch, and
+    /// leaves that differ only in their query vector are pushed down to each segment as one
+    /// multi-vector search. Only the plan resolution on top of those leaves — fusion, rescoring,
+    /// payload fetching — stays per request.
+    ///
+    /// Returns one result list per request, in request order.
+    pub(crate) fn query_batch(
+        &self,
+        requests: Vec<ShardQueryRequest>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let planned_query = PlannedQuery::try_from(requests)?;
 
         let PlannedQuery {
             root_plans,
@@ -35,17 +61,14 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             scrolls,
         } = planned_query;
 
-        let mut search_results = Vec::new();
-        for search in &searches {
-            search_results.push(self.search(search.clone())?);
-        }
+        let mut search_results = self.search_batch(&searches)?;
 
-        let mut scroll_results = Vec::new();
+        let mut scroll_results = Vec::with_capacity(scrolls.len());
         for scroll in &scrolls {
             scroll_results.push(self.query_scroll(scroll)?);
         }
 
-        let mut scored_points_batch = Vec::new();
+        let mut scored_points_batch = Vec::with_capacity(root_plans.len());
         for root_plan in root_plans {
             let scored_points = self.resolve_plan(
                 root_plan,
@@ -57,16 +80,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             scored_points_batch.push(scored_points)
         }
 
-        let [scored_points] = scored_points_batch
-            .try_into()
-            .map_err(|unconverted: Vec<_>| {
-                OperationError::service_error(format!(
-                    "unexpected scored points batch size: expected 1, received {}",
-                    unconverted.len(),
-                ))
-            })?;
-
-        Ok(scored_points)
+        Ok(scored_points_batch)
     }
 
     fn resolve_plan(
@@ -450,4 +464,223 @@ fn filter_by_point_ids(points: &[Vec<ScoredPoint>]) -> Filter {
     Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
         point_ids,
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::data_types::vectors::{NamedQuery, VectorInternal};
+    use segment::types::{Condition, WithPayloadInterface};
+    use shard::query::query_enum::QueryEnum;
+
+    use super::*;
+    use crate::test_helpers::{VECTOR_NAME, point, point_with_group, test_config, upsert};
+    use crate::{EdgeShard, PrefetchBuilder, QueryRequest, QueryRequestBuilder};
+
+    fn nearest_query(value: f32) -> ScoringQuery {
+        ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::from(vec![value]),
+            VECTOR_NAME.to_string(),
+        )))
+    }
+
+    fn nearest(limit: usize) -> QueryRequest {
+        QueryRequestBuilder::new(limit)
+            .query(nearest_query(1.0))
+            .build()
+    }
+
+    /// Points 1..=n, dot-product scored against `[1.0]`, so ids rank highest-first.
+    fn shard_with_points(dir: &tempfile::TempDir, n: u64) -> EdgeShard {
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
+        upsert(&shard, (1..=n).map(point).collect());
+        shard
+    }
+
+    /// The whole point of the batch: it must return exactly what the same requests return one by
+    /// one, however the requests are grouped when pushed down to the segments.
+    fn assert_matches_one_by_one(shard: &EdgeShard, requests: Vec<QueryRequest>) {
+        let one_by_one: Vec<_> = requests
+            .iter()
+            .map(|request| shard.query(request.clone()).unwrap())
+            .collect();
+
+        let batched = shard.query_batch(requests).unwrap();
+
+        assert_eq!(batched, one_by_one);
+    }
+
+    #[test]
+    fn query_batch_returns_one_list_per_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 3);
+
+        let batches = shard
+            .query_batch(vec![nearest(1), nearest(2), nearest(3)])
+            .unwrap();
+
+        assert_eq!(batches.len(), 3);
+        assert_eq!(batches[0].len(), 1);
+        assert_eq!(batches[1].len(), 2);
+        assert_eq!(batches[2].len(), 3);
+        // Dot product with [1.0] ranks by vector value, so highest ids first.
+        assert_eq!(batches[0][0].id, 3.into());
+        assert_eq!(batches[1][0].id, 3.into());
+        assert_eq!(batches[1][1].id, 2.into());
+    }
+
+    #[test]
+    fn query_batch_empty_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
+
+        let batches = shard.query_batch(Vec::new()).unwrap();
+
+        assert!(batches.is_empty());
+    }
+
+    /// Requests that agree on everything but the query vector collapse into one segment call;
+    /// results must still be per request.
+    #[test]
+    fn query_batch_groups_identical_params() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 5);
+
+        let requests: Vec<_> = [1.0, -1.0, 3.0]
+            .into_iter()
+            .map(|value| {
+                QueryRequestBuilder::new(2)
+                    .query(nearest_query(value))
+                    .build()
+            })
+            .collect();
+
+        assert_matches_one_by_one(&shard, requests);
+    }
+
+    /// Requests whose params differ split into several segment calls; the results must still line
+    /// up with the requests, including for a param that only differs in the middle of the batch.
+    #[test]
+    fn query_batch_preserves_order_across_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 5);
+
+        let only_odd_ids = Filter::new_must(Condition::HasId(HasIdCondition::from(
+            [1, 3, 5]
+                .map(Into::into)
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+        )));
+
+        let requests = vec![
+            // Same params as the next one: grouped together.
+            QueryRequestBuilder::new(3)
+                .query(nearest_query(1.0))
+                .build(),
+            QueryRequestBuilder::new(3)
+                .query(nearest_query(2.0))
+                .build(),
+            // Filter, limit and offset are pushed down, so each of these starts a new group.
+            QueryRequestBuilder::new(3)
+                .query(nearest_query(1.0))
+                .filter(only_odd_ids)
+                .build(),
+            QueryRequestBuilder::new(1)
+                .query(nearest_query(1.0))
+                .build(),
+            QueryRequestBuilder::new(2)
+                .query(nearest_query(1.0))
+                .offset(2)
+                .build(),
+            // The threshold is applied to the merged result instead, so this one shares a group
+            // with the request above only if the pushed-down params match — either way it must
+            // be cut off for this request alone.
+            QueryRequestBuilder::new(5)
+                .query(nearest_query(1.0))
+                .score_threshold(3.5)
+                .build(),
+            // Back to the params of the first group, but not adjacent to it.
+            QueryRequestBuilder::new(3)
+                .query(nearest_query(4.0))
+                .build(),
+        ];
+
+        assert_matches_one_by_one(&shard, requests);
+    }
+
+    /// A batch of multi-leaf requests: each request contributes several searches to the same
+    /// batched pass, and every root plan must pick up its own leaves.
+    #[test]
+    fn query_batch_resolves_prefetches_per_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 6);
+
+        // Weighted RRF rather than DBSF: with these points DBSF produces tied fused scores, whose
+        // relative order is not defined (`score_fusion` sorts the values of an `AHashMap`).
+        let fusion = |limit: usize, first: f32, second: f32| {
+            QueryRequestBuilder::new(limit)
+                .add_prefetch(PrefetchBuilder::new(4).query(nearest_query(first)).build())
+                .add_prefetch(PrefetchBuilder::new(4).query(nearest_query(second)).build())
+                .query(ScoringQuery::Fusion(FusionInternal::Rrf {
+                    k: 2,
+                    weights: Some(vec![OrderedFloat(1.0), OrderedFloat(0.5)]),
+                }))
+                .build()
+        };
+
+        let requests = vec![
+            fusion(3, 1.0, -1.0),
+            nearest(3),
+            fusion(2, 2.0, 5.0),
+            // A rescore that runs its own search on top of a prefetch.
+            QueryRequestBuilder::new(2)
+                .add_prefetch(PrefetchBuilder::new(4).query(nearest_query(1.0)).build())
+                .query(nearest_query(-1.0))
+                .build(),
+        ];
+
+        assert_matches_one_by_one(&shard, requests);
+    }
+
+    /// Payload and vector fetching happens per root plan, after the shared search pass.
+    #[test]
+    fn query_batch_fills_payload_and_vectors_per_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
+        upsert(
+            &shard,
+            vec![point_with_group(1, "a"), point_with_group(2, "b")],
+        );
+
+        let requests = vec![
+            QueryRequestBuilder::new(2)
+                .query(nearest_query(1.0))
+                .build(),
+            QueryRequestBuilder::new(2)
+                .query(nearest_query(1.0))
+                .with_payload(WithPayloadInterface::Bool(true))
+                .build(),
+            QueryRequestBuilder::new(2)
+                .query(nearest_query(1.0))
+                .with_vector(WithVector::Bool(true))
+                .build(),
+        ];
+
+        let batches = shard.query_batch(requests).unwrap();
+
+        assert!(batches[0].iter().all(|point| point.payload.is_none()));
+        assert!(batches[1].iter().all(|point| point.payload.is_some()));
+        assert!(batches[2].iter().all(|point| point.vector.is_some()));
+    }
+
+    /// An empty shard has no segments to search, so every request gets an empty list — not a
+    /// short batch.
+    #[test]
+    fn query_batch_without_segments_returns_a_list_per_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
+
+        let batches = shard.query_batch(vec![nearest(1), nearest(2)]).unwrap();
+
+        assert_eq!(batches, vec![vec![], vec![]]);
+    }
 }

@@ -4091,6 +4091,79 @@ fn search_matrix_relates_samples() {
     }
 }
 
+/// `query_batch` returns one result list per request, in request order, and each list matches
+/// what the same request returns on its own.
+#[test]
+fn query_batch_matches_individual_queries() {
+    use qdrant_edge_ffi::{QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let nearest = |limit: u64, values: Vec<f32>| QueryRequest {
+        prefetches: Vec::new(),
+        query: Some(ScoringQuery::Vector {
+            query: Query::Nearest {
+                vector: NamedVector::Dense { values },
+                using: Some("vec".to_string()),
+            },
+        }),
+        limit,
+        offset: None,
+        filter: None,
+        params: None,
+        with_vector: None,
+        with_payload: None,
+        score_threshold: None,
+    };
+
+    let requests = vec![
+        nearest(1, vec![0.5, 0.5, 0.5, 0.5]),
+        // Same params as above, so both are pushed down as one batched segment search.
+        nearest(1, vec![0.9, 0.1, 0.1, 0.1]),
+        nearest(2, vec![0.5, 0.5, 0.5, 0.5]),
+    ];
+
+    let batches = shard
+        .query_batch(requests.clone())
+        .expect("query_batch failed");
+
+    assert_eq!(batches.len(), 3);
+    assert_eq!(batches[0].len(), 1);
+    assert_eq!(batches[1].len(), 1);
+    assert_eq!(batches[2].len(), 2);
+
+    let num_ids = |points: &[qdrant_edge_ffi::types::ScoredPoint]| -> Vec<u64> {
+        points
+            .iter()
+            .map(|point| match &point.id {
+                PointId::NumId { value } => *value,
+                PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+            })
+            .collect()
+    };
+
+    for (batch, request) in batches.iter().zip(requests) {
+        let individual = shard.query(request).expect("query failed");
+        assert_eq!(num_ids(batch), num_ids(&individual));
+    }
+}
+
+/// An empty batch is valid and yields no result lists.
+#[test]
+fn query_batch_empty_returns_empty() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let batches = shard.query_batch(Vec::new()).expect("query_batch failed");
+
+    assert!(batches.is_empty());
+}
+
 // ── Payload schema in info() ──────────────────────────────────────────────────
 
 /// `info()` must report every payload index: a bare-type index shows its

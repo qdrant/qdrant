@@ -50,6 +50,34 @@ impl EdgeShard {
             Ok(points.into_iter().map(ScoredPoint::from).collect())
         })
     }
+
+    /// Executes several queries as one planned batch.
+    ///
+    /// Returns one result list per request, in the same order as `requests`.
+    /// Prefer this over repeated [`EdgeShard::query`] calls when issuing
+    /// several independent queries against the same shard: the batch is
+    /// planned as a whole, so its searches share one pass over the segments
+    /// and queries that differ only in their vector are scored together.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EdgeError::ShardClosed`](crate::error::EdgeError) if the
+    /// shard is unloaded, or
+    /// [`EdgeError::OperationError`](crate::error::EdgeError) if any request
+    /// is invalid or a required payload index is missing.
+    pub fn query_batch(&self, requests: Vec<QueryRequest>) -> Result<Vec<Vec<ScoredPoint>>> {
+        self.with_shard(|shard| {
+            let requests = requests
+                .into_iter()
+                .map(edge::QueryRequest::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
+            let batches = shard.query_batch(requests)?;
+            Ok(batches
+                .into_iter()
+                .map(|points| points.into_iter().map(ScoredPoint::from).collect())
+                .collect())
+        })
+    }
 }
 
 // ── SearchParams ────────────────────────────────────────────────────────────
