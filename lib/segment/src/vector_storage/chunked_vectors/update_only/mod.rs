@@ -11,7 +11,7 @@ use common::universal_io::{
     UniversalWrite, UniversalWriteFileOps,
 };
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::chunked_vectors::chunks::{chunk_name, list_chunk_files};
 use crate::vector_storage::chunked_vectors::config::{
     ChunkedVectorsConfig, Status, ensure_config, status_file,
@@ -67,17 +67,14 @@ where
             fs,
             _t: PhantomData,
         };
-        writer.check_chunk_lengths()?;
+        writer.ensure_chunk_lengths()?;
         Ok(writer)
     }
 
-    /// Compare every chunk file's length against the stored vector count,
-    /// without opening any chunk.
+    /// Compare every chunk file's length against the stored vector count.
     ///
-    /// Rejects mismatches in both directions: a shorter chunk lost
-    /// acknowledged data, a longer one holds unacknowledged appends from a
-    /// crashed writer, which we don't attempt to adopt for now.
-    fn check_chunk_lengths(&self) -> OperationResult<()> {
+    /// Ensures every file is at the expected length by truncating or filling with zeroes.
+    fn ensure_chunk_lengths(&self) -> OperationResult<()> {
         let total_bytes = self.status.len * self.config.dim * size_of::<T>();
         let num_chunks = self.status.len.div_ceil(self.config.chunk_size_vectors);
 
@@ -90,18 +87,41 @@ where
                 .min(total_bytes.saturating_sub(chunk_id * self.config.chunk_size_bytes))
                 as u64;
             match listed.remove(&chunk_id) {
-                Some(file) if file.size == expected => {}
-                Some(file) => {
-                    return Err(OperationError::inconsistent_storage(format!(
-                        "Chunk {chunk_id} length {} doesn't match the expected {expected}",
-                        file.size,
-                    )));
+                Some(file_info) => {
+                    match file_info.size.cmp(&expected) {
+                        std::cmp::Ordering::Equal => {
+                            // Ok
+                        }
+                        std::cmp::Ordering::Less => {
+                            // fill with zeroes
+                            log::warn!(
+                                "Expected larger chunk, filling chunk {chunk_id} with zeroes"
+                            );
+                            let data = vec![0u8; (expected - file_info.size) as usize];
+                            let mut file =
+                                self.fs.open_append(&file_info.path, append_options())?;
+                            file.append(file_info.size, &data)?;
+                            file.flusher()()?;
+                        }
+                        std::cmp::Ordering::Greater => {
+                            // truncate
+                            log::warn!("Expected smaller chunk, truncating chunk {chunk_id}");
+                            let file = self.fs.open_append(&file_info.path, append_options())?;
+                            let content = file.read_whole::<u8>()?.into_owned();
+                            drop(file);
+                            self.fs
+                                .atomic_save(&file_info.path, &content[..expected as usize])?;
+                        }
+                    }
                 }
                 None => {
-                    return Err(OperationError::inconsistent_storage(format!(
-                        "Missing chunk {chunk_id} in {}",
-                        self.directory.display(),
-                    )));
+                    // create and fill with zeroes
+                    log::warn!(
+                        "Expected non-existing chunk {chunk_id}, creating and filling with zeroes"
+                    );
+                    let mut file = self.open_chunk_for_append(chunk_id, true)?;
+                    file.append(0, &vec![0u8; expected as usize])?;
+                    file.flusher()()?;
                 }
             }
         }
@@ -110,10 +130,11 @@ where
         // is an unacknowledged append from a crashed writer.
         for (chunk_id, file) in listed {
             if file.size > 0 {
-                return Err(OperationError::inconsistent_storage(format!(
-                    "Chunk {chunk_id} past the stored vector count is not empty ({} bytes)",
+                log::warn!(
+                    "Chunk {chunk_id} past the stored vector count is not empty ({} bytes). Removing.",
                     file.size,
-                )));
+                );
+                self.fs.remove(&file.path)?;
             }
         }
 
