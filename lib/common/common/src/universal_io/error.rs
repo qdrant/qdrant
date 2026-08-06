@@ -115,6 +115,30 @@ pub enum UniversalIoError {
 }
 
 impl UniversalIoError {
+    /// Whether this is an [`AppendOffsetConflict`](Self::AppendOffsetConflict):
+    /// the file does not end where the append said, and *nothing was written*.
+    /// Lets a caller that knows where the file should end tell the one error it
+    /// can act on from the ones it cannot.
+    pub fn is_append_offset_conflict(&self) -> bool {
+        match self {
+            Self::AppendOffsetConflict { .. } => true,
+            Self::Io(_)
+            | Self::Mmap(_)
+            | Self::Bincode(_)
+            | Self::BytemuckCast(_)
+            | Self::ZerocopySize(_)
+            | Self::IoUringNotSupported(_)
+            | Self::NotFound { .. }
+            | Self::OutOfBounds { .. }
+            | Self::InvalidFileIndex { .. }
+            | Self::Uninitialized { .. }
+            | Self::QueueIsFull
+            | Self::S3(_)
+            | Self::S3Config { .. }
+            | Self::TaskPanicked(_) => false,
+        }
+    }
+
     pub fn extract_not_found(err: io::Error, path: impl Into<PathBuf>) -> Self {
         #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match err.kind() {

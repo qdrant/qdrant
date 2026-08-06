@@ -85,23 +85,17 @@ impl VersionsLayout {
     }
 }
 
-/// Cut a partial trailing entry off a versions file of `file_len` bytes,
-/// bringing it back to an entry boundary, and return the layout it is left
-/// with. A file that already ends on a boundary is not touched.
+/// Cut a partial trailing entry off a versions file of `file_len` bytes and
+/// return the layout it is left with; a file already ending on an entry
+/// boundary is not touched.
 ///
-/// Nothing is lost by dropping those bytes: the array covers a slot only once
-/// its whole entry is there, so a partial entry belongs to a slot that no
-/// reader ever saw and no writer ever counted as committed — it is what a
-/// writer that died mid-entry leaves behind. Healing is not optional either.
-/// Every entry has to land on a boundary, so a file left torn would take the
-/// next write either at the wrong offset — merging the stray bytes with a
-/// zero-fill into a plausible-looking version — or not at all, which is how a
-/// writer that can only append would be stuck with it forever.
+/// Dropping those bytes loses nothing: the array covers a slot only once its
+/// whole entry is there, so a torn entry is a slot nobody counted as committed.
+/// Leaving them would misplace every entry written after them.
 ///
-/// `shrink_to` cuts the file down to the length it is handed, however its
-/// backend can: [`store_version_changes`] truncates in place, while the
-/// append-only writer, which has no truncate, puts back the prefix it reads
-/// out of the file.
+/// `shrink_to` cuts the file down however its backend can: in place for
+/// [`store_version_changes`], by rewriting the file for the append-only writer,
+/// which has no truncate.
 pub(super) fn heal_versions_tail(
     versions_path: &Path,
     file_len: u64,

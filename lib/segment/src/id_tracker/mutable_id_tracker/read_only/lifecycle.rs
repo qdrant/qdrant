@@ -91,6 +91,19 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         Ok(tracker)
     }
 
+    /// Byte offset just past the last complete entry consumed from the mappings
+    /// log — where the next appended entry belongs.
+    ///
+    /// A writer resumes from this and cannot recover it from the file, whose
+    /// entries vary in length. A torn tail is below it, which is what lets a
+    /// writer cut it off. See [`UpdateOnlyAppendableIdTracker::new`].
+    ///
+    /// [`UpdateOnlyAppendableIdTracker::new`]:
+    ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+    pub fn mappings_read_to(&self) -> u64 {
+        self.mappings_read_to
+    }
+
     /// Open the file at `path` read-only, returning `None` if it does not exist.
     ///
     /// A read-only follower's mappings/versions files are absent while empty (the writer never
