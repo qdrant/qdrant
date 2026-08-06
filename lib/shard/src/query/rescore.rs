@@ -65,7 +65,7 @@ mod tests {
 
     fn point(id: u64, score: f32) -> ScoredPoint {
         ScoredPoint {
-            id: id.into(),
+            id: PointIdType::from(id),
             version: 0,
             score,
             payload: None,
