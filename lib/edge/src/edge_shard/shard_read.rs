@@ -52,6 +52,15 @@ impl EdgeShard {
         EdgeShardRead::query(self, request)
     }
 
+    /// Execute several [`QueryRequest`]s as one planned batch — see
+    /// [`EdgeShardRead::query_batch`].
+    pub fn query_batch(
+        &self,
+        requests: Vec<QueryRequest>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        EdgeShardRead::query_batch(self, requests)
+    }
+
     pub fn scroll(
         &self,
         request: ScrollRequest,
