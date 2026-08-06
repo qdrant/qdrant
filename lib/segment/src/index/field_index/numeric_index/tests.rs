@@ -2,6 +2,7 @@ use std::path::Path;
 
 use blobstore::Blob;
 use common::bitvec::{BitSlice, BitVec};
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -18,6 +19,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
+use crate::index::field_index::on_disk_point_to_values::corrupt_ranges_table;
 use crate::json_path::JsonPath;
 use crate::types::{FieldCondition, FloatPayloadType, Memory, Range, RangeInterface};
 
@@ -1214,4 +1216,60 @@ fn test_block_index_preopen() {
     .unwrap()
     .unwrap();
     assert!(index.storage.pairs_block_index.is_none());
+}
+
+/// A read failure in the on-disk `check_values_any` must surface as an error
+/// instead of being silently treated as a non-match. The ranges table of
+/// `point_to_values.bin` is corrupted so every values read fails its bounds
+/// check; the error must propagate through both the raw
+/// `NumericIndexRead::check_values_any` and the public `ConditionChecker::check`.
+#[test]
+fn test_check_values_any_propagates_mmap_read_errors() {
+    let (temp_dir, index) = random_index(10, 2, IndexType::Mmap);
+
+    // Sanity: a healthy on-disk index serves the check.
+    let hw_counter = HardwareCounterCell::new();
+    assert_eq!(
+        index.inner().check_values_any(0, |_| true, &hw_counter),
+        Ok(true),
+    );
+
+    let condition = FieldCondition::new_range(
+        JsonPath::new("unused"),
+        Range {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(OrderedFloat(100.0f64)),
+        },
+    );
+
+    // Sanity: the public `ConditionChecker` path works too.
+    {
+        let checker = index
+            .condition_checker(&condition, HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
+        assert!(checker.check(0).unwrap());
+    }
+    drop(index);
+
+    corrupt_ranges_table(temp_dir.path(), 10);
+
+    let index = open_index_from_disk(temp_dir.path(), IndexType::Mmap, &empty_deleted());
+
+    let hw_counter = HardwareCounterCell::new();
+    assert!(
+        index.inner().check_values_any(0, |_| true, &hw_counter).is_err(),
+        "corrupted ranges table must surface as an error"
+    );
+
+    let checker = index
+        .condition_checker(&condition, HwMeasurementAcc::new())
+        .unwrap()
+        .unwrap();
+    assert!(
+        checker.check(0).is_err(),
+        "check() must propagate the mmap read error"
+    );
 }

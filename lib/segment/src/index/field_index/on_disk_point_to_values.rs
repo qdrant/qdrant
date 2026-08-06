@@ -494,6 +494,37 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
     }
 }
 
+/// Test-only helper: overwrite the ranges table of `point_to_values.bin` so
+/// every range points past EOF. Starts are strictly increasing, so `end - start`
+/// never underflows for any non-last point, and the values read fails the mmap
+/// bounds check with `OutOfBounds`.
+///
+/// Note: the last point's `end` is the file length (see
+/// [`OnDiskPointToValues::get_bytes_range`]), so a corrupted last point
+/// underflows instead of erroring. Callers must not visit the last point; the
+/// numeric and geo error-propagation tests query a non-last point on purpose.
+#[cfg(test)]
+pub(crate) fn corrupt_ranges_table(dir: &Path, points_count: u64) {
+    use std::io::{Seek, SeekFrom, Write};
+
+    let path = dir.join(POINT_TO_VALUES_PATH);
+    let file_len = fs_err::metadata(&path).unwrap().len();
+    let ranges_start = PADDING_SIZE as u64;
+
+    let mut bytes = Vec::with_capacity((points_count as usize) * size_of::<MmapRange>());
+    for i in 0..points_count {
+        bytes.extend_from_slice(&(file_len + 10 + 10 * i).to_le_bytes());
+        bytes.extend_from_slice(&1u64.to_le_bytes());
+    }
+
+    let mut file = fs_err::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap();
+    file.seek(SeekFrom::Start(ranges_start)).unwrap();
+    file.write_all(&bytes).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use std::borrow::Borrow;

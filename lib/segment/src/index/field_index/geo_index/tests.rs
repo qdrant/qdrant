@@ -22,6 +22,7 @@ use crate::fixtures::payload_fixtures::random_geo_payload;
 use crate::index::field_index::geo_hash::{
     GeoHash, circle_hashes, encode_max_precision, polygon_hashes,
 };
+use crate::index::field_index::on_disk_point_to_values::corrupt_ranges_table;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
@@ -1380,4 +1381,61 @@ fn test_block_index_preopen() {
     .unwrap();
     assert!(index.storage.counts_per_hash_block_index.is_none());
     assert!(index.storage.points_map_block_index.is_none());
+}
+
+/// A read failure inside the on-disk geo index must surface from `filter`
+/// (and `check_values_any`) instead of being logged and silently dropping
+/// matching points. The ranges table of `point_to_values.bin` is corrupted
+/// so every values read fails its bounds check.
+///
+/// The queried point (NYC, id 1) is deliberately not the last point: a
+/// corrupted last point underflows instead of erroring (its `end` is the file
+/// length), see `corrupt_ranges_table`.
+#[test]
+fn test_on_disk_filter_propagates_mmap_read_errors() {
+    let condition = condition_for_geo_radius(
+        "test",
+        GeoRadius {
+            center: NYC,
+            radius: OrderedFloat(50_000.0),
+        },
+    );
+
+    let temp_dir = {
+        let (mut builder, temp_dir, _) = create_builder(IndexType::OnDisk);
+        let hw_counter = HardwareCounterCell::new();
+
+        builder.add_point(1, &[&json!(NYC)], &hw_counter).unwrap();
+        builder.add_point(2, &[&json!(BERLIN)], &hw_counter).unwrap();
+        builder.add_point(3, &[&json!(BERLIN)], &hw_counter).unwrap();
+        builder.add_point(4, &[&json!(POTSDAM)], &hw_counter).unwrap();
+        builder.add_point(5, &[&json!(POTSDAM)], &hw_counter).unwrap();
+        builder.add_point(6, &[&json!(TOKYO)], &hw_counter).unwrap();
+        builder.add_point(7, &[&json!(TOKYO)], &hw_counter).unwrap();
+
+        let index = builder.finalize().unwrap();
+
+        // Sanity: a healthy on-disk index serves the query.
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+        let matches: Vec<_> = index
+            .filter(&condition, &hw_counter)
+            .unwrap()
+            .unwrap()
+            .collect();
+        assert_eq!(matches, vec![1]);
+        drop(index);
+        temp_dir
+    };
+
+    corrupt_ranges_table(temp_dir.path(), 8);
+
+    let index = reload_index(IndexType::OnDisk, &temp_dir, &empty_deleted());
+
+    let hw_acc = HwMeasurementAcc::new();
+    let hw_counter = hw_acc.get_counter_cell();
+    assert!(
+        index.filter(&condition, &hw_counter).is_err(),
+        "filter must propagate the mmap read error instead of dropping points"
+    );
 }
