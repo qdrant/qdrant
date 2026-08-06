@@ -359,7 +359,8 @@ mod tests {
             "shipped_at": "2020-02-15T00:00:00Z",
             "parts": [],
             "packaging": null,
-            "not_null": [null],
+            "not_null": [true],
+            "null_array": [null, 1],
         };
 
         let hw_counter = HardwareCounterCell::new();
@@ -444,6 +445,13 @@ mod tests {
             },
         }));
         assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: JsonPath::new("null_array"),
+            },
+        }));
+        assert!(payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             JsonPath::new("color"),
