@@ -88,6 +88,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         for change in &changes {
             match *change {
                 MappingChange::Insert(external_id, internal_id) => {
+                    self.max_claimed_internal_id =
+                        self.max_claimed_internal_id.max(Some(internal_id));
                     self.pending_inserts.insert(external_id, internal_id);
                 }
                 MappingChange::Delete(external_id) => {

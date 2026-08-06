@@ -50,6 +50,18 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// a delete for it arrives first.
     pending_inserts: HashMap<PointIdType, PointOffsetType>,
 
+    /// Highest slot any insert in the mappings log has ever claimed, `None` while the log has
+    /// claimed none.
+    ///
+    /// Counts a slot from the moment the log claims it and never lets it go, which is what makes it
+    /// the only sound answer to "which slot may a writer hand out next". Neither of the two
+    /// structures above can answer that: [`Self::mappings`] holds only committed points, and
+    /// [`Self::pending_inserts`] drops an entry the moment a delete for its external id arrives —
+    /// so an `Insert(p, n)` followed by a `Delete(p)` leaves slot `n` claimed on disk yet named
+    /// nowhere else. Its data may be half-written by the writer that claimed it, so handing it out
+    /// again would write a second point over the remains of the first.
+    max_claimed_internal_id: Option<PointOffsetType>,
+
     /// Byte offset up to which the mappings log has been consumed.
     ///
     /// New mapping changes are appended after this offset by the mutable tracker. On live-reload

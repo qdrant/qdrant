@@ -12,6 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
 use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::types::PointIdType;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     fn open_options() -> OpenOptions {
@@ -75,6 +76,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 deferred_internal_id,
             ),
             pending_inserts: Default::default(),
+            max_claimed_internal_id: None,
             mappings_read_to: 0,
             // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
             mappings_file: None,
@@ -102,6 +104,32 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
     pub fn mappings_read_to(&self) -> u64 {
         self.mappings_read_to
+    }
+
+    /// Highest slot the mappings log has claimed, `None` while it has claimed
+    /// none — the slot a writer resumes above.
+    ///
+    /// Counts every slot the log ever handed out, including those no longer
+    /// reachable by external id and those whose version was never committed.
+    /// See [`UpdateOnlyAppendableIdTracker::new`].
+    ///
+    /// [`UpdateOnlyAppendableIdTracker::new`]:
+    ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+    pub fn max_claimed_internal_id(&self) -> Option<PointOffsetType> {
+        self.max_claimed_internal_id
+    }
+
+    /// External ids the mappings log has inserted whose slots the versions array
+    /// does not cover, in arbitrary order.
+    ///
+    /// Each is a point this view withholds because its data may be half-written.
+    /// A writer resuming from this view retires them, see
+    /// [`UpdateOnlyAppendableIdTracker::new`].
+    ///
+    /// [`UpdateOnlyAppendableIdTracker::new`]:
+    ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+    pub fn pending_inserts(&self) -> impl Iterator<Item = PointIdType> + '_ {
+        self.pending_inserts.keys().copied()
     }
 
     /// Open the file at `path` read-only, returning `None` if it does not exist.

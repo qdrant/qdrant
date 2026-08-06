@@ -15,7 +15,7 @@ use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracke
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
     load_versions, store_version_changes, versions_path,
 };
-use crate::id_tracker::{IdTracker, IdTrackerRead};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead};
 use crate::types::{PointIdType, SeqNumberType};
 
 type Tracker = UpdateOnlyAppendableIdTracker<MmapFile>;
@@ -42,7 +42,7 @@ fn log_end(segment_path: &Path) -> u64 {
 fn allocates_consecutive_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut tracker = Tracker::new(MmapFs, dir.path(), None, 0);
+    let mut tracker = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
 
     // Deletes are recorded but claim no slot, so only inserts come back.
     assert_eq!(
@@ -69,7 +69,7 @@ fn allocates_consecutive_slots() {
 
     // A fresh tracker resuming from slot 3, and from the end of the log that
     // handed it out, continues above both.
-    let mut resumed = Tracker::new(MmapFs, dir.path(), Some(3), log_end(dir.path()));
+    let mut resumed = Tracker::new(MmapFs, dir.path(), Some(3), [], log_end(dir.path())).unwrap();
     assert_eq!(
         resumed.insert_operations(&[Insert(num(13))]),
         Ok(vec![(num(13), 4)]),
@@ -98,14 +98,15 @@ fn heals_a_torn_mappings_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = mappings_path(dir.path());
 
-    let mut tracker = Tracker::new(MmapFs, dir.path(), None, 0);
+    let mut tracker = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
     tracker.insert_operations(&[Insert(num(10))]).unwrap();
 
     let committed = fs_err::read(&path).unwrap();
     tear_the_log(dir.path());
 
     // A writer resumes from the log's end, which is below the torn bytes.
-    let mut resumed = Tracker::new(MmapFs, dir.path(), Some(0), committed.len() as u64);
+    let mut resumed =
+        Tracker::new(MmapFs, dir.path(), Some(0), [], committed.len() as u64).unwrap();
     assert_eq!(
         resumed.insert_operations(&[Insert(num(11))]),
         Ok(vec![(num(11), 1)]),
@@ -140,11 +141,11 @@ fn re_appends_a_batch_that_landed_unacknowledged() {
 
     // One writer gets through the batch; another is left believing it did not,
     // and runs the same batch against the file the first one wrote.
-    let mut writer = Tracker::new(MmapFs, landed.path(), None, 0);
+    let mut writer = Tracker::new(MmapFs, landed.path(), None, [], 0).unwrap();
     let inserted = writer.insert_operations(&batch).unwrap();
 
     fs_err::copy(mappings_path(landed.path()), mappings_path(retried.path())).unwrap();
-    let mut retry = Tracker::new(MmapFs, retried.path(), None, 0);
+    let mut retry = Tracker::new(MmapFs, retried.path(), None, [], 0).unwrap();
 
     // Same slots, and the same bytes in the log: the second attempt is the
     // first one, not a duplicate of it.
@@ -161,7 +162,7 @@ fn re_appends_a_batch_that_landed_unacknowledged() {
 fn rejects_a_mappings_file_shorter_than_the_log() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut tracker = Tracker::new(MmapFs, dir.path(), None, 64);
+    let mut tracker = Tracker::new(MmapFs, dir.path(), None, [], 64).unwrap();
     tracker
         .insert_operations(&[Insert(num(10))])
         .expect_err("a log longer than its file must be rejected");
@@ -169,21 +170,22 @@ fn rejects_a_mappings_file_shorter_than_the_log() {
     assert_eq!(log_end(dir.path()), 0, "nothing may be appended");
 }
 
-/// The array can only grow at its end: a hole would publish a slot whose data
-/// is not written yet, and a covered slot cannot be rewritten through an
-/// append. Both are rejected, and neither leaves anything behind.
+/// The array can only grow at its end, and only over slots the log handed out:
+/// a covered slot cannot be rewritten through an append, a slot cannot be given
+/// two versions, and a slot nobody claimed cannot be published at all. None of
+/// the rejections leaves anything behind.
 #[test]
-fn versions_reject_holes_and_rewrites() {
+fn versions_reject_rewrites_duplicates_and_unclaimed_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
 
-    let mut tracker = Tracker::new(MmapFs, dir.path(), None, 0);
+    let mut tracker = Tracker::new(MmapFs, dir.path(), Some(2), [], 0).unwrap();
     tracker.set_internal_versions(&[0, 1], &[100, 101]).unwrap();
 
-    // Slot 2 is missing.
+    // The log claimed up to slot 2, so slot 3 is nobody's.
     tracker
         .set_internal_versions(&[3], &[103])
-        .expect_err("a hole must be rejected");
+        .expect_err("an unclaimed slot must be rejected");
     // Slot 1 is already committed.
     tracker
         .set_internal_versions(&[1], &[111])
@@ -204,6 +206,203 @@ fn versions_reject_holes_and_rewrites() {
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102]);
 }
 
+/// Resume a writer from what a reader makes of the segment on disk, the way a
+/// caller reopening the segment has to.
+fn resume(segment_path: &Path) -> Tracker {
+    let reader = ReadOnlyTracker::open(&MmapFs, segment_path, None).unwrap();
+    Tracker::new(
+        MmapFs,
+        segment_path,
+        reader.max_claimed_internal_id(),
+        reader.pending_inserts(),
+        reader.mappings_read_to(),
+    )
+    .unwrap()
+}
+
+/// A claimed slot the call skips over is covered with [`DELETED_POINT_VERSION`]
+/// rather than refused. The array is dense, so the slots above it cannot be
+/// published any other way.
+///
+/// [`DELETED_POINT_VERSION`]: crate::id_tracker::DELETED_POINT_VERSION
+#[test]
+fn fills_skipped_slots() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+    let path = versions_path(dir.path());
+
+    let mut tracker = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
+    tracker
+        .insert_operations(&[
+            Insert(num(10)),
+            Insert(num(11)),
+            Insert(num(12)),
+            Insert(num(13)),
+        ])
+        .unwrap();
+
+    // Slots 1 and 2 are skipped, one below the committed slot and one between.
+    tracker.set_internal_versions(&[0, 3], &[100, 103]).unwrap();
+
+    assert_eq!(
+        load_versions(&path).unwrap(),
+        vec![100, DELETED_POINT_VERSION, DELETED_POINT_VERSION, 103],
+    );
+}
+
+/// A slot is spoken for from the moment the log claims it, whatever becomes of
+/// the point: a writer that claimed it may have written data at it under any
+/// component, so the next writer allocates above it even once its external id
+/// is gone from the mapping and from the pending inserts alike.
+#[test]
+fn resumes_above_a_slot_claimed_and_then_deleted() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+
+    let mut crashed = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
+    crashed.insert_operations(&[Insert(num(10))]).unwrap();
+    crashed.set_internal_versions(&[0], &[100]).unwrap();
+    // Slot 1 is claimed, never versioned, and then retired.
+    crashed
+        .insert_operations(&[Insert(num(11)), Delete(num(11))])
+        .unwrap();
+
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(reader.max_claimed_internal_id(), Some(1));
+    assert_eq!(
+        reader.pending_inserts().count(),
+        0,
+        "nothing left to retire"
+    );
+    assert_eq!(
+        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        None,
+        "the point is gone, but its slot is not free",
+    );
+
+    assert_eq!(
+        resume(dir.path()).insert_operations(&[Insert(num(12))]),
+        Ok(vec![(num(12), 2)]),
+    );
+}
+
+/// A point on a slot the log claimed but no writer ever versioned is retired by
+/// the writer that inherits it, before anything of its own reaches the log. Its
+/// data was left half-written, so it is in no state to be adopted, and the slot
+/// has to be covered for the slots above it to be published at all.
+#[test]
+fn retires_inherited_pending_inserts() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+
+    let mut crashed = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
+    crashed.insert_operations(&[Insert(num(10))]).unwrap();
+    crashed.set_internal_versions(&[0], &[100]).unwrap();
+    // Slot 1 is claimed and its data left half-written; the writer stops here.
+    crashed.insert_operations(&[Insert(num(11))]).unwrap();
+
+    let inherited = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(
+        inherited.pending_inserts().collect::<Vec<_>>(),
+        vec![num(11)],
+    );
+
+    // The next writer has to cover slot 1 to publish slot 2.
+    let mut resumed = resume(dir.path());
+    assert_eq!(
+        resumed.insert_operations(&[Insert(num(12))]),
+        Ok(vec![(num(12), 2)]),
+    );
+    resumed.set_internal_versions(&[2], &[102]).unwrap();
+
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(
+        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        None,
+        "an abandoned point must not surface once its slot is covered",
+    );
+    assert_eq!(reader.pending_inserts().count(), 0);
+    assert!(reader.is_deleted_point(1));
+    assert_eq!(
+        reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        Some(0),
+    );
+    assert_eq!(
+        reader.internal_id_with_behavior(num(12), DeferredBehavior::VisibleOnly),
+        Some(2),
+    );
+    assert_eq!(reader.available_point_count(), 2);
+}
+
+/// Retiring is done by the time the writer exists, so no write path can reach
+/// the versions file without it — not even one that commits versions and never
+/// touches the mappings log itself. Opening the writer is enough.
+#[test]
+fn retires_inherited_pending_inserts_at_construction() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+
+    let mut crashed = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
+    crashed
+        .insert_operations(&[Insert(num(10)), Insert(num(11))])
+        .unwrap();
+    // Slot 0 is versioned below; slot 1 is left abandoned.
+    crashed.set_internal_versions(&[0], &[100]).unwrap();
+
+    let mut resumed = resume(dir.path());
+    // Construction alone retired it: the log already says so, before this writer
+    // has been asked to do anything.
+    assert_eq!(
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None)
+            .unwrap()
+            .pending_inserts()
+            .count(),
+        0,
+    );
+
+    resumed.set_internal_versions(&[1], &[101]).unwrap();
+
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(
+        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        None,
+    );
+    assert!(reader.is_deleted_point(1));
+    assert_eq!(reader.available_point_count(), 1);
+}
+
+/// An update whose new slot is abandoned costs the point, not just the
+/// unacknowledged update: the same partial write that abandoned the new slot
+/// has likely tombstoned the old one in the components already, so there is no
+/// earlier state to fall back to.
+#[test]
+fn an_abandoned_update_retires_the_point() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+
+    let mut crashed = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
+    crashed.insert_operations(&[Insert(num(10))]).unwrap();
+    crashed.set_internal_versions(&[0], &[100]).unwrap();
+    // Re-inserting moves the id to a fresh slot; the writer stops before the
+    // version that would publish it.
+    assert_eq!(
+        crashed.insert_operations(&[Insert(num(10))]),
+        Ok(vec![(num(10), 1)]),
+    );
+
+    let mut resumed = resume(dir.path());
+    resumed.insert_operations(&[Insert(num(11))]).unwrap();
+    resumed.set_internal_versions(&[2], &[102]).unwrap();
+
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(
+        reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        None,
+        "neither the abandoned slot nor the one it superseded may be served",
+    );
+    assert!(reader.is_deleted_point(0));
+    assert!(reader.is_deleted_point(1));
+    assert_eq!(
+        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        Some(2),
+    );
+}
+
 /// A write that dies mid-entry leaves the versions file ending inside a slot.
 /// The next write heals it rather than being stuck with it forever: those bytes
 /// are a slot no reader ever saw, so the new entries take their place.
@@ -212,7 +411,7 @@ fn heals_a_partial_versions_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
 
-    let mut tracker = Tracker::new(MmapFs, dir.path(), None, 0);
+    let mut tracker = Tracker::new(MmapFs, dir.path(), Some(3), [], 0).unwrap();
     tracker.set_internal_versions(&[0, 1], &[100, 101]).unwrap();
 
     // Three bytes into slot 2, as a torn write would leave it.
@@ -240,7 +439,7 @@ fn heals_a_versions_file_of_only_a_partial_tail() {
 
     fs_err::write(&path, [0xFF; 5]).unwrap();
 
-    let mut tracker = Tracker::new(MmapFs, dir.path(), None, 0);
+    let mut tracker = Tracker::new(MmapFs, dir.path(), Some(0), [], 0).unwrap();
     tracker.set_internal_versions(&[0], &[100]).unwrap();
 
     assert_eq!(load_versions(&path).unwrap(), vec![100]);
@@ -257,7 +456,7 @@ fn both_writers_produce_the_same_versions_file() {
     let internal_ids: Vec<PointOffsetType> = vec![0, 1, 2, 3];
     let versions: Vec<SeqNumberType> = vec![100, 7, u64::MAX, 0];
 
-    let mut tracker = Tracker::new(MmapFs, appended.path(), None, 0);
+    let mut tracker = Tracker::new(MmapFs, appended.path(), Some(3), [], 0).unwrap();
     tracker
         .set_internal_versions(&internal_ids, &versions)
         .unwrap();
@@ -336,7 +535,7 @@ fn matches_the_mutable_tracker() {
     let appended_dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let mutated_dir = Builder::new().prefix("mutable").tempdir().unwrap();
 
-    let mut writer = Tracker::new(MmapFs, appended_dir.path(), None, 0);
+    let mut writer = Tracker::new(MmapFs, appended_dir.path(), None, [], 0).unwrap();
     let mut mutable = MutableIdTracker::open(mutated_dir.path(), None).unwrap();
 
     // The append-only writer hands out the slots; the mutable tracker is told

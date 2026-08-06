@@ -36,7 +36,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     /// Reached only from a conflicted append. The excess is either a torn entry
     /// or a batch that landed unacknowledged; the two cannot be told apart
     /// without parsing the log, and need not be. Nothing the caller asked for is
-    /// written yet and its slots are still unclaimed — `max_internal_id` and
+    /// written yet and its slots are still unclaimed — `max_claimed_internal_id` and
     /// `mappings_end` only move on a durable append — so both are answered by
     /// cutting back and writing the batch again where it belonged.
     ///
