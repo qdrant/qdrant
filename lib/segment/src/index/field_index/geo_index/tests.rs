@@ -1388,9 +1388,9 @@ fn test_block_index_preopen() {
 /// matching points. The ranges table of `point_to_values.bin` is corrupted
 /// so every values read fails its bounds check.
 ///
-/// The queried point (NYC, id 1) is deliberately not the last point: a
-/// corrupted last point underflows instead of erroring (its `end` is the file
-/// length), see `corrupt_ranges_table`.
+/// The queried point (NYC, id 1) is a non-last point, so the corruption
+/// surfaces as an `OutOfBounds` read error (the last point takes the
+/// `checked_sub` path, see `corrupt_ranges_table`).
 #[test]
 fn test_on_disk_filter_propagates_mmap_read_errors() {
     let condition = condition_for_geo_radius(
