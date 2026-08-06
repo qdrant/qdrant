@@ -2,17 +2,15 @@ use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
-use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{ScoreFusion, score_fusion};
-use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{ScoredPoint, WithPayloadInterface, WithVector};
 use shard::query::planned_query::RescoreStages;
+use shard::query::rescore::{filter_with_point_ids, fusion_rescore};
 use shard::search::CoreSearchRequestBatch;
 
 use super::LocalShard;
@@ -26,7 +24,7 @@ use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, RootPlan, Source,
 };
 use crate::operations::universal_query::shard_query::{
-    FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
+    MmrInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
 };
 
 pub enum FetchedSource {
@@ -300,15 +298,16 @@ impl LocalShard {
         } = rescore_params;
 
         match rescore {
-            ScoringQuery::Fusion(fusion) => Self::fusion_rescore(
+            ScoringQuery::Fusion(fusion) => fusion_rescore(
                 sources,
                 fusion,
                 score_threshold.map(OrderedFloat::into_inner),
                 limit,
-            ),
+            )
+            .map_err(Into::into),
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_with_sources_ids(sources.into_iter());
+                let filter = filter_with_point_ids(&sources);
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
@@ -336,7 +335,7 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let filter = filter_with_sources_ids(sources.into_iter());
+                let filter = filter_with_point_ids(&sources);
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
@@ -381,7 +380,7 @@ impl LocalShard {
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
                     // create single scroll request for rescoring query
-                    let filter = filter_with_sources_ids(sources.into_iter());
+                    let filter = filter_with_point_ids(&sources);
 
                     // Note: score_threshold is not used in this case, as all results will have same score and order_value
                     let scroll_request = QueryScrollRequestInternal {
@@ -419,35 +418,6 @@ impl LocalShard {
                 .await
             }
         }
-    }
-
-    fn fusion_rescore(
-        sources: Vec<Vec<ScoredPoint>>,
-        fusion: FusionInternal,
-        score_threshold: Option<f32>,
-        limit: usize,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        let fused = match fusion {
-            FusionInternal::Rrf { k, ref weights } => {
-                let weights_slice = weights
-                    .as_ref()
-                    .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
-                rrf_scoring(sources, k, weights_slice.as_deref())?
-            }
-            FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
-        };
-
-        let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {
-            fused
-                .into_iter()
-                .take_while(|point| point.score >= score_threshold)
-                .take(limit)
-                .collect()
-        } else {
-            fused.into_iter().take(limit).collect()
-        };
-
-        Ok(top_fused)
     }
 
     /// Maximal Marginal Relevance rescoring
@@ -497,20 +467,4 @@ impl LocalShard {
 
         Ok(top_mmr)
     }
-}
-
-/// Extracts point ids from sources, and creates a filter to only include those ids.
-fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> Filter {
-    let mut point_ids = AHashSet::new();
-
-    for source in sources {
-        for point in source.iter() {
-            point_ids.insert(point.id);
-        }
-    }
-
-    // create filter for target point ids
-    Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
-        point_ids,
-    )))
 }

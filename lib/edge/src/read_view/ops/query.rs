@@ -2,21 +2,17 @@ use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DeferredBehavior, ScoreType};
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::query_context::FormulaContext;
 use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use segment::types::{
-    Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
-};
+use segment::types::{ScoredPoint, WithPayload, WithPayloadInterface, WithVector};
 use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
+use shard::query::rescore::{filter_with_point_ids, fusion_rescore};
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 use shard::query::*;
 use shard::retrieve::retrieve_blocking::retrieve_over;
@@ -214,7 +210,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         match rescore {
             ScoringQuery::Fusion(fusion) => {
-                let top_fused = Self::fusion_rescore(
+                let top_fused = fusion_rescore(
                     sources,
                     fusion,
                     score_threshold.map(OrderedFloat::into_inner),
@@ -225,7 +221,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_by_point_ids(&sources);
+                let filter = filter_with_point_ids(&sources);
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
@@ -242,7 +238,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let filter = filter_by_point_ids(&sources);
+                let filter = filter_with_point_ids(&sources);
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
@@ -269,7 +265,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
                     // create single scroll request for rescoring query
-                    let filter = filter_by_point_ids(&sources);
+                    let filter = filter_with_point_ids(&sources);
 
                     // Note: score_threshold is not used in this case, as all results will have same score and order_value
                     let scroll_request = QueryScrollRequestInternal {
@@ -286,35 +282,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
             ScoringQuery::Mmr(mmr) => self.mmr_rescore(sources, mmr, limit, hw_counter_acc),
         }
-    }
-
-    fn fusion_rescore(
-        sources: Vec<Vec<ScoredPoint>>,
-        fusion: FusionInternal,
-        score_threshold: Option<f32>,
-        limit: usize,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        let fused = match fusion {
-            FusionInternal::Rrf { k, ref weights } => {
-                let weights_slice = weights
-                    .as_ref()
-                    .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
-                rrf_scoring(sources, k, weights_slice.as_deref())?
-            }
-            FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
-        };
-
-        let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {
-            fused
-                .into_iter()
-                .take_while(|point| point.score >= score_threshold)
-                .take(limit)
-                .collect()
-        } else {
-            fused.into_iter().take(limit).collect()
-        };
-
-        Ok(top_fused)
     }
 
     pub(crate) fn rescore_with_formula(
@@ -456,20 +423,11 @@ fn take_prefetched_source<T: Default>(items: &mut [T], index: usize) -> Operatio
     Ok(mem::take(source))
 }
 
-/// Extracts point ids from sources, and creates a filter to only include those ids.
-fn filter_by_point_ids(points: &[Vec<ScoredPoint>]) -> Filter {
-    let point_ids: AHashSet<_> = points.iter().flatten().map(|point| point.id).collect();
-
-    // create filter for target point ids
-    Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
-        point_ids,
-    )))
-}
-
 #[cfg(test)]
 mod tests {
+    use ahash::AHashSet;
     use segment::data_types::vectors::{NamedQuery, VectorInternal};
-    use segment::types::{Condition, WithPayloadInterface};
+    use segment::types::{Condition, Filter, HasIdCondition, WithPayloadInterface};
     use shard::query::query_enum::QueryEnum;
 
     use super::*;
