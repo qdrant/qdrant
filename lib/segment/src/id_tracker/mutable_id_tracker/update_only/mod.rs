@@ -125,7 +125,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             .collect();
         changes.sort_unstable_by_key(|(internal_id, _version)| *internal_id);
 
-        let mut payload = Vec::with_capacity(versions_byte_len(changes.len() as u64) as usize);
+        let mut versions_buffer = Vec::with_capacity(versions_byte_len(changes.len() as u64) as usize);
         for (index, (internal_id, version)) in changes.iter().enumerate() {
             // Sorted ascending, the ids must run `covered_slots, covered_slots + 1, ...`:
             // anything lower is already published, anything higher leaves a
@@ -138,18 +138,18 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             }
             debug_assert_eq!(
                 version_offset(*internal_id),
-                layout.committed_len() + payload.len() as u64,
+                layout.committed_len() + versions_buffer.len() as u64,
                 "version entry must land at its slot's offset",
             );
 
-            write_version(&mut payload, *version)?;
+            write_version(&mut versions_buffer, *version)?;
         }
 
         // One entry per buffer: the backend places the whole run in a single
         // operation, and the entry boundaries stay visible to it.
         file.append_batch(
             layout.committed_len(),
-            payload.chunks_exact(VERSION_ELEMENT_SIZE as usize),
+            versions_buffer.chunks_exact(VERSION_ELEMENT_SIZE as usize),
         )?;
         (file.flusher())()?;
 
@@ -179,7 +179,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
 
         // Entries are variable-length, so their bounds within the buffer are
         // recorded as they are written rather than derived afterwards.
-        let mut payload = Vec::new();
+        let mut changes_buffer = Vec::new();
         let mut entries = Vec::with_capacity(operations.len());
         let mut inserted = Vec::new();
         for operation in operations {
@@ -198,9 +198,9 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                 MappingOperation::Delete(external_id) => MappingChange::Delete(*external_id),
             };
 
-            let start = payload.len();
-            write_entry(&mut payload, change)?;
-            entries.push(start..payload.len());
+            let start = changes_buffer.len();
+            write_entry(&mut changes_buffer, change)?;
+            entries.push(start..changes_buffer.len());
         }
 
         let path = mappings_path(&self.segment_path);
@@ -209,7 +209,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         // One entry per buffer, appended in order in a single operation.
         file.append_batch(
             end_of_file,
-            entries.iter().map(|entry| &payload[entry.clone()]),
+            entries.iter().map(|entry| &changes_buffer[entry.clone()]),
         )?;
         (file.flusher())()?;
 
