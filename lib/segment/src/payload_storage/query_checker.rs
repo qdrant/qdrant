@@ -359,7 +359,8 @@ mod tests {
             "shipped_at": "2020-02-15T00:00:00Z",
             "parts": [],
             "packaging": null,
-            "not_null": [null],
+            "array_with_null": [null],
+            "array_with_null_and_value": [null, "a"],
         };
 
         let hw_counter = HardwareCounterCell::new();
@@ -405,7 +406,7 @@ mod tests {
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
-                key: JsonPath::new("not_null"),
+                key: JsonPath::new("array_with_null"),
             },
         }));
         assert!(!payload_checker.check(0, &is_empty_condition));
@@ -438,12 +439,21 @@ mod tests {
         }));
         assert!(payload_checker.check(0, &is_null_condition));
 
+        // Arrays containing null must match IsNullCondition (parity with
+        // FieldCondition { is_null: true } and NullIndex / indexed filters).
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
-                key: JsonPath::new("not_null"),
+                key: JsonPath::new("array_with_null"),
             },
         }));
-        assert!(!payload_checker.check(0, &is_null_condition));
+        assert!(payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: JsonPath::new("array_with_null_and_value"),
+            },
+        }));
+        assert!(payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             JsonPath::new("color"),
