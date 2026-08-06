@@ -101,11 +101,6 @@ where
     /// storage-native bytes to avoid a lossy round-trip of the former and a
     /// parse-then-encode round-trip of the latter. A caller that needs the
     /// parsed payload decodes it itself, see [`RawPayload::decode`].
-    ///
-    /// The payload always comes along, and whole: this reads points to relocate
-    /// them, and keys cannot be selected out of an opaque blob anyway — that is
-    /// [`Self::retrieve`]'s business.
-    /// The body mirrors [`Self::retrieve`] — keep the two in sync.
     pub fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],

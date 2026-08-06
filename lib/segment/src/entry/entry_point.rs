@@ -107,9 +107,6 @@ pub trait ReadSegmentEntry {
     /// a needless parse when relocating points (copy-on-write moves, shard
     /// transfer). A caller that needs the parsed payload decodes it itself.
     ///
-    /// The payload always comes along, and whole: keys cannot be selected out of
-    /// an opaque blob, which is `retrieve`'s business.
-    ///
     /// Like `retrieve`, may return fewer records than requested and in any order.
     fn retrieve_raw(
         &self,

@@ -22,7 +22,5 @@ pub struct SegmentRecord {
 pub struct SegmentRecordRaw {
     pub id: PointIdType,
     pub vectors: Option<NamedVectorBytesOwned>,
-    /// The payload as stored, sparing both a parse here and an encode wherever
-    /// it is going. `None` when the point has no payload stored.
     pub payload: Option<RawPayload>,
 }

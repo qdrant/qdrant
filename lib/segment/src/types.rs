@@ -2950,39 +2950,20 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct RawPayload {
     pub payload_bytes: Vec<u8>,
-    pub encoding: RawPayloadEncoding,
-}
-
-/// Encoding of a raw payload blob.
-///
-/// Internal counterpart of `api::grpc::qdrant::RawPayloadEncoding`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum RawPayloadEncoding {
-    /// serde_json encoding of the whole payload object, uncompressed,
-    /// exactly as stored in gridstore.
-    #[default]
-    JsonBytes,
 }
 
 impl RawPayload {
     /// Wrap payload bytes read from storage, which are plain uncompressed
     /// serde_json.
     pub fn from_storage_bytes(payload_bytes: Vec<u8>) -> Self {
-        Self {
-            payload_bytes,
-            encoding: RawPayloadEncoding::JsonBytes,
-        }
+        Self { payload_bytes }
     }
 
     /// Parse the blob into a [`Payload`].
     pub fn decode(&self) -> OperationResult<Payload> {
-        match self.encoding {
-            RawPayloadEncoding::JsonBytes => {
-                serde_json::from_slice(&self.payload_bytes).map_err(|err| {
-                    OperationError::service_error(format!("Malformed raw payload blob: {err}"))
-                })
-            }
-        }
+        serde_json::from_slice(&self.payload_bytes).map_err(|err| {
+            OperationError::service_error(format!("Malformed raw payload blob: {err}"))
+        })
     }
 }
 

@@ -80,8 +80,6 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<()> {
         for (user_data, point_offset) in point_offsets {
-            // Payloads are kept parsed here, so there is no stored encoding to
-            // hand out: produce the one an on-disk storage would have written.
             let encoded = self.payload.get(&point_offset).map(Blob::to_bytes);
             callback(user_data, encoded.as_deref())?;
         }
@@ -255,8 +253,6 @@ mod tests {
         );
     }
 
-    /// This storage keeps payloads parsed, so a raw read has to produce the
-    /// encoding an on-disk storage would have written.
     #[test]
     fn test_read_payloads_raw_encodes_on_the_fly() {
         let mut storage = InMemoryPayloadStorage::default();
