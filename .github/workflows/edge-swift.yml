@@ -92,7 +92,10 @@ jobs:
         working-directory: lib/edge/swift
         run: |
           set -euo pipefail
-          for f in out/swift-bindings/QdrantEdge.swift out/swift-bindings/QdrantEdgeFFI.h; do
+          # The build moves the generated Swift binding to Sources/QdrantEdge/
+          # (next to the committed Concurrency.swift); only the C header stays in
+          # out/swift-bindings/. Scan each at its post-build location.
+          for f in Sources/QdrantEdge/QdrantEdge.swift out/swift-bindings/QdrantEdgeFFI.h; do
             # Fail closed if a file we must scan is missing (an `if grep … "$f"`
             # on an absent file is a false condition under set -e, i.e. would
             # silently pass the exclusion check).
