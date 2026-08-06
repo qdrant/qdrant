@@ -8,6 +8,13 @@ use crate::universal_io::{ByteOffset, UioResult};
 /// capabilities stay independent — a backend implements either, both, or
 /// neither.
 ///
+/// [`UniversalRead::Fs`] is pinned from both sides here: it opens `Self` for
+/// reading (`Fs::File = Self`) and hands `Self` out as its append handle
+/// (`Fs::AppendFile = Self`), so `S::Fs` is the file-creating, append-opening
+/// filesystem without a second associated type. As on the read side it is the
+/// canonical producer, not the only one — code that accepts any takes
+/// `&impl UniversalWriteFileOps<AppendFile = S>`.
+///
 /// # Contract
 ///
 /// - [`append`](Self::append) grows the file by writing the data at exactly
@@ -57,7 +64,9 @@ use crate::universal_io::{ByteOffset, UioResult};
 /// [`UniversalWrite::write`]: super::UniversalWrite::write
 /// [`len`]: UniversalRead::len
 /// [`reopen`]: UniversalRead::reopen
-pub trait UniversalAppend: UniversalRead<Fs: UniversalWriteFileOps> + UniversalFlush {
+pub trait UniversalAppend:
+    UniversalRead<Fs: UniversalWriteFileOps<AppendFile = Self>> + UniversalFlush
+{
     /// Atomically grow the file by appending `data` at exactly `offset`,
     /// which must equal the current end of file; rejected with
     /// [`AppendOffsetConflict`] otherwise.
