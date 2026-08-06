@@ -32,6 +32,7 @@ use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use super::errors::StorageError;
+use crate::content_manager::consensus::applied_log::{AppliedEntryRing, AppliedLog};
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -107,6 +108,8 @@ pub struct ConsensusManager<C: CollectionContainer> {
     message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
     /// Last time we attempted to update the peer metadata
     next_peer_metadata_update_attempt: Mutex<Instant>,
+    /// Recently applied entries, for `/profiler/consensus_lag`. Diagnostics only.
+    applied_log: AppliedEntryRing,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -150,7 +153,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }),
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
+            applied_log: Default::default(),
         })
+    }
+
+    /// Snapshot of the recently applied entries on this peer, oldest first.
+    pub fn applied_log(&self) -> AppliedLog {
+        // Read the apply queue before taking the ring, so the two locks never nest.
+        let (pending_operations, last_applied_index) = {
+            let persistent = self.persistent.read();
+            (
+                persistent.unapplied_entities_count(),
+                persistent.last_applied_entry(),
+            )
+        };
+        self.applied_log
+            .snapshot(pending_operations, last_applied_index)
     }
 
     pub fn report_snapshot(
@@ -361,6 +379,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
+            let apply_started = Instant::now();
             let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
                 false
@@ -413,6 +432,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
+            self.applied_log.record(&entry, apply_started.elapsed());
         }
         Ok(false) // do not stop consensus
     }

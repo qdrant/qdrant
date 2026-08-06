@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    GetAuditLogRequest, GetAuditLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
+    GetAuditLogRequest, GetAuditLogResponse, GetConsensusAppliedLogRequest,
+    GetConsensusAppliedLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
     GetQuotaUsageRequest, GetQuotaUsageResponse, GetTelemetryRequest, GetTelemetryResponse,
     PeerTelemetry, QuotaUsage, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
@@ -18,6 +19,7 @@ use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
+use crate::common::consensus_lag::applied_log_to_grpc;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::auth::extract_auth;
@@ -147,6 +149,15 @@ impl QdrantInternal for QdrantInternalService {
         };
 
         Ok(Response::new(response))
+    }
+
+    async fn get_consensus_applied_log(
+        &self,
+        _: Request<GetConsensusAppliedLogRequest>,
+    ) -> Result<Response<GetConsensusAppliedLogResponse>, Status> {
+        Ok(Response::new(applied_log_to_grpc(
+            self.consensus_state.applied_log(),
+        )))
     }
 
     async fn get_audit_log(
