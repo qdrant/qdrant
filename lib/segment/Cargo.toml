@@ -39,6 +39,7 @@ anyhow = { workspace = true }
 object_store = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
+tap = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
@@ -91,7 +92,6 @@ siphasher = "1.0.3"
 smallvec = { workspace = true }
 strum = { workspace = true }
 byteorder = { workspace = true }
-tap = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }

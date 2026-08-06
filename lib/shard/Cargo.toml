@@ -45,7 +45,6 @@ uuid = { workspace = true }
 validator = { workspace = true }
 serde_json = { workspace = true }
 fs-err = { workspace = true }
-fs4 = { workspace = true }
 tempfile = { workspace = true }
 
 
