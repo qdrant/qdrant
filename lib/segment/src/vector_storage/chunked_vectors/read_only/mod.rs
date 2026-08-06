@@ -52,28 +52,11 @@ mod tests {
     use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;
 
-    use super::super::update_only::UpdateOnlyChunkedVectors;
     use super::super::chunks::chunk_name;
+    use super::super::test_utils::{append_range, make_vec};
+    use super::super::update_only::UpdateOnlyChunkedVectors;
     use super::*;
     use crate::common::live_reload::LiveReload;
-    use crate::vector_storage::VectorOffsetType;
-
-    fn make_vec(seed: usize, dim: usize) -> Vec<f32> {
-        (0..dim).map(|i| (seed * dim + i) as f32).collect()
-    }
-
-    /// Append one durable batch of `make_vec(seed)` vectors through the writer.
-    fn append_range(
-        writer: &mut UpdateOnlyChunkedVectors<f32, MmapFile>,
-        seeds: std::ops::Range<usize>,
-        dim: usize,
-        hw: &HardwareCounterCell,
-    ) {
-        let batch: Vec<Vec<f32>> = seeds.map(|s| make_vec(s, dim)).collect();
-        writer
-            .append_many(batch.iter().map(|vector| vector.as_slice()), hw)
-            .unwrap();
-    }
 
     /// A read-only view picks up writer-appended vectors after `live_reload`.
     #[test]
@@ -82,14 +65,9 @@ mod tests {
         let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let first: Vec<Vec<f32>> = (0..100).map(|s| make_vec(s, DIM)).collect();
-        let second: Vec<Vec<f32>> = (100..250).map(|s| make_vec(s, DIM)).collect();
-
         let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
-        writer
-            .append_many(first.iter().map(|vector| vector.as_slice()), &hw)
-            .unwrap();
+        append_range(&mut writer, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -99,21 +77,17 @@ mod tests {
             Populate::No,
         )
         .unwrap();
-        assert_eq!(reader.len(), first.len());
+        assert_eq!(reader.len(), 100);
 
         // Append more through the writer, then reload the read-only view.
-        writer
-            .append_many(second.iter().map(|vector| vector.as_slice()), &hw)
-            .unwrap();
+        append_range(&mut writer, 100..250, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
 
-        assert_eq!(reader.len(), first.len() + second.len());
-        let got = reader
-            .get::<Random>(first.len() as VectorOffsetType)
-            .unwrap();
-        assert_eq!(got.as_ref(), second[0].as_slice());
+        assert_eq!(reader.len(), 250);
+        let got = reader.get::<Random>(100).unwrap();
+        assert_eq!(got.as_ref(), make_vec(100, DIM).as_slice());
     }
 
     /// Case-5 regression of the live-reload staleness audit: a reader over a
@@ -143,7 +117,8 @@ mod tests {
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
-        let mut writer = UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, &dir, DIM).unwrap();
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, &dir, DIM).unwrap();
         append_range(&mut writer, 0..100, DIM, &hw);
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {

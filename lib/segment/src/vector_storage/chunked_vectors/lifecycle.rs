@@ -8,11 +8,10 @@ use common::universal_io::{
 
 use super::ChunkedVectors;
 use super::chunks::read_chunks;
-use super::config::{ChunkedVectorsConfig, Status, config_file, load_config, status_file};
+use super::config::{Status, ensure_config, status_file};
 use super::read_only::ReadOnlyChunkedVectors;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::common::CHUNK_SIZE;
+use crate::common::operation_error::OperationResult;
 
 impl<T, S> ChunkedVectors<T, S>
 where
@@ -21,70 +20,6 @@ where
 {
     pub fn storage_kind() -> UniversalKind {
         S::kind()
-    }
-
-    pub fn ensure_status_file(fs: &S::Fs, status_path: &Path) -> OperationResult<()> {
-        if !fs.exists(&status_path)? {
-            {
-                let length = std::mem::size_of::<Status>();
-                fs.create(&status_path, length)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub(super) fn ensure_config(
-        fs: &S::Fs,
-        directory: &Path,
-        dim: usize,
-        populate: bool,
-    ) -> OperationResult<ChunkedVectorsConfig> {
-        let config_file = config_file(directory);
-        match load_config(fs, &config_file) {
-            Ok(Some(config)) => {
-                if config.dim == dim {
-                    Ok(config)
-                } else {
-                    Err(OperationError::service_error(format!(
-                        "Wrong configuration in {}: expected {}, found {dim}",
-                        config_file.display(),
-                        config.dim,
-                    )))
-                }
-            }
-            Ok(None) => Self::create_config(fs, &config_file, dim, populate),
-            Err(e) => {
-                log::error!("Failed to deserialize config file {config_file:?}: {e}");
-                Self::create_config(fs, &config_file, dim, populate)
-            }
-        }
-    }
-
-    fn create_config(
-        fs: &impl UniversalWriteFileOps,
-        config_file: &Path,
-        dim: usize,
-        populate: bool,
-    ) -> OperationResult<ChunkedVectorsConfig> {
-        if dim == 0 {
-            return Err(OperationError::service_error(
-                "The vector's dimension cannot be 0",
-            ));
-        }
-
-        let chunk_size_bytes = CHUNK_SIZE;
-        let vector_size_bytes = dim * std::mem::size_of::<T>();
-        let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
-        let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
-
-        let config = ChunkedVectorsConfig {
-            chunk_size_bytes: corrected_chunk_size_bytes,
-            chunk_size_vectors,
-            dim,
-            populate: Some(populate),
-        };
-        fs.atomic_save(config_file, &serde_json::to_vec(&config)?)?;
-        Ok(config)
     }
 
     pub fn open(
@@ -96,7 +31,9 @@ where
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(directory)?;
         let status_path = status_file(directory);
-        Self::ensure_status_file(&fs, directory)?;
+        if !fs.exists(&status_path)? {
+            fs.create(&status_path, size_of::<Status>())?;
+        }
 
         let status: StoredStruct<S, Status> = StoredStruct::open(
             &fs,
@@ -110,7 +47,7 @@ where
             Default::default(),
         )?;
 
-        let config = Self::ensure_config(&fs, directory, dim, populate.to_bool::<S>())?;
+        let config = ensure_config::<T, _>(&fs, directory, dim, populate.to_bool::<S>())?;
         let chunks = read_chunks(&fs, directory, advice, populate, true)?;
         let inner = ReadOnlyChunkedVectors {
             config,

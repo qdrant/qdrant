@@ -11,18 +11,15 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::chunked_vectors::chunks::chunk_name;
 use crate::vector_storage::chunked_vectors::config::{config_file, status_file};
 use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
+use crate::vector_storage::chunked_vectors::test_utils::{append_range, make_vec};
 
 const DIM: usize = 32;
 /// Spans three test chunks (4096 vectors each), ending mid-chunk.
 const COUNT: usize = 9000;
 
-fn make_vec(seed: usize) -> Vec<f32> {
-    (0..DIM).map(|i| (seed * DIM + i) as f32).collect()
-}
-
 /// Write the same `COUNT` vectors through both writers: `ChunkedVectors` into
-/// the first directory, `ChunkedVectorsAppender` into the second — the latter
-/// over two sessions to also exercise reopening mid-chunk.
+/// the first directory, `UpdateOnlyChunkedVectors` into the second — the
+/// latter over two sessions to also exercise reopening mid-chunk.
 fn write_both() -> (TempDir, TempDir) {
     let hw = HardwareCounterCell::disposable();
     let plain_dir = Builder::new().prefix("chunked_plain").tempdir().unwrap();
@@ -37,18 +34,15 @@ fn write_both() -> (TempDir, TempDir) {
     )
     .unwrap();
     for seed in 0..COUNT {
-        plain.push(make_vec(seed).as_slice(), &hw).unwrap();
+        plain.push(make_vec(seed, DIM).as_slice(), &hw).unwrap();
     }
     plain.flusher()().unwrap();
 
     for range in [0..COUNT / 2, COUNT / 2..COUNT] {
-        let mut appender =
+        let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, appended_dir.path(), DIM)
                 .unwrap();
-        let batch: Vec<Vec<f32>> = range.map(make_vec).collect();
-        appender
-            .append_many(batch.iter().map(|vector| vector.as_slice()), &hw)
-            .unwrap();
+        append_range(&mut writer, range, DIM, &hw);
     }
 
     (plain_dir, appended_dir)
@@ -58,7 +52,7 @@ fn write_both() -> (TempDir, TempDir) {
 /// files, and byte-identical chunk data — an appended chunk is the
 /// preallocated chunk minus the not-yet-written tail.
 #[test]
-fn appender_writes_congruent_format() {
+fn writes_congruent_format() {
     let (plain_dir, appended_dir) = write_both();
 
     assert_eq!(
@@ -92,10 +86,10 @@ fn appender_writes_congruent_format() {
     assert!(!chunk_name(appended_dir.path(), chunk_id).exists());
 }
 
-/// A reader over an appender-written directory serves exactly what one over a
+/// A reader over an append-written directory serves exactly what one over a
 /// `ChunkedVectors`-written directory does.
 #[test]
-fn appender_directory_reads_congruently() {
+fn directory_reads_congruently() {
     let (plain_dir, appended_dir) = write_both();
 
     let open_reader = |dir: &std::path::Path| {
@@ -114,7 +108,7 @@ fn appender_directory_reads_congruently() {
     assert_eq!(plain.len(), COUNT);
     assert_eq!(appended.len(), COUNT);
     for key in 0..COUNT {
-        let expected = make_vec(key);
+        let expected = make_vec(key, DIM);
         let key = key as VectorOffsetType;
         assert_eq!(
             plain.get::<Random>(key).unwrap().as_ref(),
@@ -129,9 +123,9 @@ fn appender_directory_reads_congruently() {
 
 /// A preallocated (`ChunkedVectors`-written) directory is not appendable-to:
 /// its chunk files are longer than the stored vector count implies, which the
-/// appender rejects instead of adopting.
+/// update-only writer rejects instead of adopting.
 #[test]
-fn appender_rejects_preallocated_chunks() {
+fn rejects_preallocated_chunks() {
     let hw = HardwareCounterCell::disposable();
     let dir = Builder::new().prefix("chunked_prealloc").tempdir().unwrap();
 
@@ -143,7 +137,7 @@ fn appender_rejects_preallocated_chunks() {
         Populate::No,
     )
     .unwrap();
-    plain.push(make_vec(0).as_slice(), &hw).unwrap();
+    plain.push(make_vec(0, DIM).as_slice(), &hw).unwrap();
     plain.flusher()().unwrap();
     drop(plain);
 
