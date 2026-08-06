@@ -15,7 +15,7 @@ use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::{
     INSUFFICIENT_STORAGE_METADATA_KEY, SparseVectorsConfig, VectorsConfigDiff,
 };
-use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
+use segment::types::StrictModeConfig;
 use tonic::Status;
 use tonic::metadata::MetadataValue;
 
@@ -126,7 +126,7 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 sharding_method: sharding_method
                     .map(sharding_method_from_proto)
                     .transpose()?,
-                strict_mode_config: strict_mode_config.map(strict_mode_from_api),
+                strict_mode_config: strict_mode_config.map(StrictModeConfig::from),
                 uuid: None,
                 metadata: if metadata.is_empty() {
                     None
@@ -136,55 +136,6 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
             },
         )?;
         Ok(CollectionMetaOperations::CreateCollection(op))
-    }
-}
-
-pub fn strict_mode_from_api(value: grpc::StrictModeConfig) -> StrictModeConfig {
-    let grpc::StrictModeConfig {
-        enabled,
-        max_query_limit,
-        max_timeout,
-        unindexed_filtering_retrieve,
-        unindexed_filtering_update,
-        search_max_hnsw_ef,
-        search_allow_exact,
-        search_max_oversampling,
-        upsert_max_batchsize,
-        search_max_batchsize,
-        max_collection_vector_size_bytes,
-        read_rate_limit,
-        write_rate_limit,
-        max_collection_payload_size_bytes,
-        max_points_count,
-        filter_max_conditions,
-        condition_max_size,
-        multivector_config,
-        sparse_config,
-        max_payload_index_count,
-        max_resident_memory_percent,
-    } = value;
-    StrictModeConfig {
-        enabled,
-        max_query_limit: max_query_limit.map(|i| i as usize),
-        max_timeout: max_timeout.map(|i| i as usize),
-        unindexed_filtering_retrieve,
-        unindexed_filtering_update,
-        search_max_hnsw_ef: search_max_hnsw_ef.map(|i| i as usize),
-        search_allow_exact,
-        search_max_oversampling: search_max_oversampling.map(f64::from),
-        upsert_max_batchsize: upsert_max_batchsize.map(|i| i as usize),
-        search_max_batchsize: search_max_batchsize.map(|i| i as usize),
-        max_collection_vector_size_bytes: max_collection_vector_size_bytes.map(|i| i as usize),
-        read_rate_limit: read_rate_limit.map(|i| i as usize),
-        write_rate_limit: write_rate_limit.map(|i| i as usize),
-        max_collection_payload_size_bytes: max_collection_payload_size_bytes.map(|i| i as usize),
-        max_points_count: max_points_count.map(|i| i as usize),
-        filter_max_conditions: filter_max_conditions.map(|i| i as usize),
-        condition_max_size: condition_max_size.map(|i| i as usize),
-        multivector_config: multivector_config.map(StrictModeMultivectorConfig::from),
-        sparse_config: sparse_config.map(StrictModeSparseConfig::from),
-        max_payload_index_count: max_payload_index_count.map(|i| i as usize),
-        max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
     }
 }
 
