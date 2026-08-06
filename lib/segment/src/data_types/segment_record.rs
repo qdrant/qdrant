@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::data_types::vectors::VectorInternal;
-use crate::types::{Payload, PointIdType, VectorNameBuf};
+use crate::types::{Payload, PointIdType, RawPayload, VectorNameBuf};
 
 /// A point almost always has a single (default) named vector, so keep it inline
 /// to avoid a heap allocation on the common retrieve path.
@@ -17,9 +17,10 @@ pub struct SegmentRecord {
     pub payload: Option<Payload>,
 }
 
-/// Byte-blob analogue of [`SegmentRecord`].
+/// Byte-blob analogue of [`SegmentRecord`]: vectors and payload as stored, so a
+/// reader that only relocates the point does not decode them.
 pub struct SegmentRecordRaw {
     pub id: PointIdType,
     pub vectors: Option<NamedVectorBytesOwned>,
-    pub payload: Option<Payload>,
+    pub payload: Option<RawPayload>,
 }

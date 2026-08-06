@@ -3,8 +3,6 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
-#[cfg(feature = "api")]
-use api::grpc::RawPayload;
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -17,7 +15,7 @@ use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
     MultiDenseVectorInternal, VectorInternal, VectorRef, VectorStructInternal,
 };
-use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
+use segment::types::{Filter, Payload, PointIdType, RawPayload, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use sparse::common::types::{DimId, DimWeight};
@@ -435,23 +433,33 @@ mod raw_vectors_serde {
     }
 }
 
-impl From<SegmentRecordRaw> for PointStructRawPersisted {
-    fn from(record: SegmentRecordRaw) -> Self {
+impl TryFrom<SegmentRecordRaw> for PointStructRawPersisted {
+    type Error = OperationError;
+
+    /// A raw record carries the payload as stored, so it is decoded here — this
+    /// struct goes into the WAL, which holds parsed payloads.
+    fn try_from(record: SegmentRecordRaw) -> Result<Self, Self::Error> {
         let SegmentRecordRaw {
             id,
             vectors,
             payload,
         } = record;
 
-        Self {
+        Ok(Self {
             id,
             vectors: vectors.unwrap_or_default(),
-            payload,
-        }
+            payload: payload.as_ref().map(RawPayload::decode).transpose()?,
+        })
     }
 }
 
 impl PointStructRawPersisted {
+    /// Whether this point carries the data stored in `segment_record`.
+    ///
+    /// Vectors are compared as bytes, so logically equal vectors in a different
+    /// encoding count as unequal, which only costs a redundant upsert on sync.
+    /// Payloads are compared parsed, decoding the stored blob; a blob that does
+    /// not parse counts as unequal.
     pub fn is_equal_to(&self, segment_record: &SegmentRecordRaw) -> bool {
         let SegmentRecordRaw {
             id,
@@ -480,8 +488,12 @@ impl PointStructRawPersisted {
 
         // Check if payloads are equal, empty and non-existent payloads are considered equal
         let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
-        let segment_payload = payload.as_ref().filter(|p| !p.is_empty());
-        self_payload == segment_payload
+        let Ok(segment_payload) = payload.as_ref().map(RawPayload::decode).transpose() else {
+            // A blob that cannot be parsed is not the data this point carries
+            return false;
+        };
+        let segment_payload = segment_payload.filter(|payload| !payload.is_empty());
+        self_payload == segment_payload.as_ref()
     }
 }
 
@@ -537,16 +549,16 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
     }
 }
 
-/// Decodes the RawPayload according to its encoding.
+/// Decodes a raw payload received over the wire.
+///
+/// The blob is decoded by [`RawPayload::decode`], the one place that knows how
+/// each encoding is read; this only restates its errors as the bad input they
+/// are on this side.
 #[cfg(feature = "api")]
-fn decode_payload(raw_payload: RawPayload) -> Result<Payload, tonic::Status> {
-    match raw_payload.encoding() {
-        api::grpc::RawPayloadEncoding::JsonBytes => {
-            serde_json::from_slice(&raw_payload.payload_bytes).map_err(|err| {
-                tonic::Status::invalid_argument(format!("Malformed raw payload blob: {err}"))
-            })
-        }
-    }
+fn decode_payload(raw_payload: api::grpc::RawPayload) -> Result<Payload, tonic::Status> {
+    RawPayload::try_from(raw_payload)?
+        .decode()
+        .map_err(|err| tonic::Status::invalid_argument(err.to_string()))
 }
 
 impl Debug for PointStructRawPersisted {
@@ -1207,5 +1219,48 @@ mod tests {
         };
         assert_eq!(named.keys().cloned().collect::<Vec<_>>(), vec!["a"]);
         assert_eq!(batch.ids.len(), 2);
+    }
+
+    /// A raw payload arriving over the wire is read by the same decoder as one
+    /// read from storage, and a blob that does not parse is reported as the bad
+    /// input it is.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_raw_payload_is_decoded_by_the_shared_decoder() {
+        let expected: Payload = serde_json::from_str(r#"{"city": "Berlin", "count": 3}"#).unwrap();
+
+        let received = decode_payload(api::grpc::RawPayload {
+            payload_bytes: br#"{"city": "Berlin", "count": 3}"#.to_vec(),
+            encoding: api::grpc::RawPayloadEncoding::JsonBytes as i32,
+        })
+        .expect("a well-formed blob must decode");
+        assert_eq!(received, expected);
+
+        let err = decode_payload(api::grpc::RawPayload {
+            payload_bytes: b"not json".to_vec(),
+            encoding: api::grpc::RawPayloadEncoding::JsonBytes as i32,
+        })
+        .expect_err("a malformed blob must not decode");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// An encoding this node has no variant for comes from a node that writes
+    /// payloads some other way: it must be rejected rather than read as the
+    /// default encoding.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_raw_payload_rejects_an_unknown_encoding() {
+        let err = decode_payload(api::grpc::RawPayload {
+            payload_bytes: br#"{"city": "Berlin"}"#.to_vec(),
+            encoding: 12345,
+        })
+        .expect_err("an unknown encoding must not decode");
+
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("Unknown raw payload encoding"),
+            "unexpected message: {}",
+            err.message(),
+        );
     }
 }

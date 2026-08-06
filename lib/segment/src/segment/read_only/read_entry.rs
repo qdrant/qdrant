@@ -149,7 +149,6 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
-        with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
@@ -158,7 +157,6 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| {
             view.retrieve_raw(
                 point_ids,
-                with_payload,
                 with_vector,
                 hw_counter,
                 is_stopped,

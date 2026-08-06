@@ -375,7 +375,6 @@ impl ReadSegmentEntry for ProxySegment {
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
-        with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
@@ -385,7 +384,6 @@ impl ReadSegmentEntry for ProxySegment {
             self.redact_and_filter_for_retrieve(with_vector, point_ids);
         self.wrapped_segment.get().read().retrieve_raw(
             &filtered_point_ids,
-            with_payload,
             with_vector.as_ref(),
             hw_counter,
             is_stopped,

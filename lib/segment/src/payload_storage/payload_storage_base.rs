@@ -49,6 +49,16 @@ pub trait PayloadStorageRead {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
+    /// Raw analogue of [`Self::read_payloads`]: hands the callback each payload
+    /// in its stored encoding, uncompressed, skipping the parse. `None` for
+    /// points that have no payload stored.
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
     /// Iterate over all stored payload and apply the provided callback.
     /// Stop iteration if callback returns false or error.
     ///

@@ -29,6 +29,18 @@ where
             .read_payloads::<P, _>(point_offsets, callback, hw_counter)
     }
 
+    /// Raw analogue of [`Self::read_payloads`], see
+    /// [`PayloadStorageRead::read_payloads_raw`](crate::payload_storage::PayloadStorageRead::read_payloads_raw).
+    pub fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.payload_index
+            .read_payloads_raw::<P, _>(point_offsets, callback, hw_counter)
+    }
+
     /// Retrieve payload by internal ID.
     #[inline]
     pub fn payload_by_offset(
