@@ -6,6 +6,8 @@ use std::vec::IntoIter as VecIntoIter;
 use bytemuck::{TransparentWrapper as _, TransparentWrapperAlloc as _};
 use serde::{Deserialize, Serialize};
 
+use crate::types::ScoredPointOffset;
+
 /// To avoid excessive memory allocation, FixedLengthPriorityQueue
 /// imposes a reasonable limit on the allocation size. If the limit
 /// is extremely large, we treat it as if no limit was set and
@@ -46,16 +48,26 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// If the queue if full, replaces the smallest value and returns it.
     pub fn push(&mut self, value: T) -> Option<T> {
         if !self.is_full() {
-            self.heap.push(Reverse(value));
-            return None;
+            return self.fill(value);
         }
 
-        let mut x = self.heap.peek_mut().unwrap();
-        let mut value = Reverse(value);
-        if x.0 < value.0 {
-            std::mem::swap(&mut *x, &mut value);
+        // Reject without ever constructing the `PeekMut` guard, whose `Drop` sifts the heap.
+        if self.heap.peek().expect("full queue is not empty").0 >= value {
+            return Some(value);
         }
+
+        let mut x = self.heap.peek_mut().expect("full queue is not empty");
+        let mut value = Reverse(value);
+        std::mem::swap(&mut *x, &mut value);
         Some(value.0)
+    }
+
+    /// The `push` path taken only while the queue is not full yet, kept out of line so that
+    /// the hot rejection path does not carry its register pressure.
+    #[inline(never)]
+    fn fill(&mut self, value: T) -> Option<T> {
+        self.heap.push(Reverse(value));
+        None
     }
 
     /// Consumes the [`FixedLengthPriorityQueue`] and returns a vector
@@ -101,5 +113,74 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         F: FnMut(&T) -> bool,
     {
         self.heap.retain(|x| f(&x.0));
+    }
+}
+
+impl FixedLengthPriorityQueue<ScoredPointOffset> {
+    /// Pushes a chunk of points, skipping the ones that cannot enter a full queue.
+    ///
+    /// The outcome is identical to [`Self::push`]-ing every element.
+    #[inline]
+    pub fn push_chunk(&mut self, points: impl IntoIterator<Item = ScoredPointOffset>) {
+        // Score of the queue's current minimum, while the queue is full.
+        let mut threshold = self.min_score();
+
+        for point in points {
+            // A score at or below the minimum cannot displace anything — `push` would hand it
+            // back untouched (`ScoredPointOffset` orders by score alone; NaN falls through to
+            // `push`). Rejecting on this register-held f32 compare skips the call and its heap
+            // bookkeeping, and with `top` ≪ point count nearly every push in a full scan is a
+            // rejection.
+            if threshold.is_some_and(|threshold| point.score <= threshold) {
+                continue;
+            }
+
+            self.push(point);
+            threshold = self.min_score();
+        }
+    }
+
+    #[inline]
+    fn min_score(&self) -> Option<f32> {
+        self.is_full()
+            .then(|| self.top().expect("full queue is not empty").score)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::StdRng;
+    use rand::{RngExt as _, SeedableRng as _};
+
+    use super::*;
+
+    /// `push_chunk` must yield the same queue as pushing element by element.
+    #[test]
+    fn test_push_chunk() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let points = (0..1000)
+            .map(|idx| ScoredPointOffset {
+                idx,
+                score: rng.random_range(0.0..10.0),
+            })
+            .collect::<Vec<_>>();
+
+        for limit in [1, 2, 10, 1000, 2000] {
+            for chunk_size in [1, 7, 64] {
+                let mut expected = FixedLengthPriorityQueue::new(limit);
+                points.iter().for_each(|&point| _ = expected.push(point));
+
+                let mut actual = FixedLengthPriorityQueue::new(limit);
+                for chunk in points.chunks(chunk_size) {
+                    actual.push_chunk(chunk.iter().copied());
+                }
+
+                assert_eq!(
+                    actual.into_sorted_vec(),
+                    expected.into_sorted_vec(),
+                    "limit={limit}, chunk_size={chunk_size}",
+                );
+            }
+        }
     }
 }
