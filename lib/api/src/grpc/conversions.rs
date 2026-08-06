@@ -2366,9 +2366,11 @@ impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
         } = value;
 
         let direction = direction
-            .and_then(|x|
-                // XXX: Invalid values silently converted to None
-                Direction::try_from(x).ok())
+            .map(|x| {
+                Direction::try_from(x)
+                    .map_err(|_| Status::invalid_argument(format!("Cannot convert Direction: {x}")))
+            })
+            .transpose()?
             .map(segment::data_types::order_by::Direction::from);
 
         let start_from = start_from
