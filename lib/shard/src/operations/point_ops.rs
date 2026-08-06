@@ -549,16 +549,16 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
     }
 }
 
-/// Decodes the RawPayload according to its encoding.
+/// Decodes a raw payload received over the wire.
+///
+/// The blob is decoded by [`RawPayload::decode`], the one place that knows how
+/// each encoding is read; this only restates its errors as the bad input they
+/// are on this side.
 #[cfg(feature = "api")]
 fn decode_payload(raw_payload: api::grpc::RawPayload) -> Result<Payload, tonic::Status> {
-    match raw_payload.encoding() {
-        api::grpc::RawPayloadEncoding::JsonBytes => {
-            serde_json::from_slice(&raw_payload.payload_bytes).map_err(|err| {
-                tonic::Status::invalid_argument(format!("Malformed raw payload blob: {err}"))
-            })
-        }
-    }
+    RawPayload::try_from(raw_payload)?
+        .decode()
+        .map_err(|err| tonic::Status::invalid_argument(err.to_string()))
 }
 
 impl Debug for PointStructRawPersisted {
@@ -1219,5 +1219,48 @@ mod tests {
         };
         assert_eq!(named.keys().cloned().collect::<Vec<_>>(), vec!["a"]);
         assert_eq!(batch.ids.len(), 2);
+    }
+
+    /// A raw payload arriving over the wire is read by the same decoder as one
+    /// read from storage, and a blob that does not parse is reported as the bad
+    /// input it is.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_raw_payload_is_decoded_by_the_shared_decoder() {
+        let expected: Payload = serde_json::from_str(r#"{"city": "Berlin", "count": 3}"#).unwrap();
+
+        let received = decode_payload(api::grpc::RawPayload {
+            payload_bytes: br#"{"city": "Berlin", "count": 3}"#.to_vec(),
+            encoding: api::grpc::RawPayloadEncoding::JsonBytes as i32,
+        })
+        .expect("a well-formed blob must decode");
+        assert_eq!(received, expected);
+
+        let err = decode_payload(api::grpc::RawPayload {
+            payload_bytes: b"not json".to_vec(),
+            encoding: api::grpc::RawPayloadEncoding::JsonBytes as i32,
+        })
+        .expect_err("a malformed blob must not decode");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// An encoding this node has no variant for comes from a node that writes
+    /// payloads some other way: it must be rejected rather than read as the
+    /// default encoding.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_raw_payload_rejects_an_unknown_encoding() {
+        let err = decode_payload(api::grpc::RawPayload {
+            payload_bytes: br#"{"city": "Berlin"}"#.to_vec(),
+            encoding: 12345,
+        })
+        .expect_err("an unknown encoding must not decode");
+
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("Unknown raw payload encoding"),
+            "unexpected message: {}",
+            err.message(),
+        );
     }
 }
