@@ -67,7 +67,7 @@ mod tests {
 
         let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
-        append_range(&mut writer, 0..100, DIM, &hw);
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(reader.len(), 100);
 
         // Append more through the writer, then reload the read-only view.
-        append_range(&mut writer, 100..250, DIM, &hw);
+        append_range(&mut writer, 100, 100..250, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
@@ -119,7 +119,7 @@ mod tests {
         // into `local_root` through the disk cache.
         let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, &dir, DIM).unwrap();
-        append_range(&mut writer, 0..100, DIM, &hw);
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
             config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
@@ -143,7 +143,7 @@ mod tests {
         assert_eq!(got.as_ref(), make_vec(99, DIM).as_slice());
 
         // Append into that same block region, then reload.
-        append_range(&mut writer, 100..150, DIM, &hw);
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&cache_fs, &empty, &empty, &hw).unwrap();
@@ -172,7 +172,7 @@ mod tests {
 
         let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
-        append_range(&mut writer, 0..4000, DIM, &hw);
+        append_range(&mut writer, 0, 0..4000, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(reader.chunks.len(), 1);
 
         // Straddles two chunk boundaries: fills chunk 0, spans 1, starts 2.
-        append_range(&mut writer, 4000..9000, DIM, &hw);
+        append_range(&mut writer, 4000, 4000..9000, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
@@ -220,7 +220,7 @@ mod tests {
 
         let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
-        append_range(&mut writer, 0..100, DIM, &hw);
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -237,7 +237,7 @@ mod tests {
         );
 
         // Grow within the same chunk so the reload takes the slow path.
-        append_range(&mut writer, 100..150, DIM, &hw);
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
 
         // Inject a transient error: chunk 0 still exists but cannot be opened.
         let chunk_file = chunk_name(dir.path(), 0);

@@ -7,14 +7,15 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    OpenOptions, Populate, StoredStruct, UniversalAppend, UniversalReadFileOps, UniversalReadFs,
-    UniversalWrite, UniversalWriteFileOps,
+    OpenOptions, Populate, UniversalAppend, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
+    UniversalWriteFileOps,
 };
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::chunks::{chunk_name, list_chunk_files};
 use crate::vector_storage::chunked_vectors::config::{
-    ChunkedVectorsConfig, Status, ensure_config, status_file,
+    ChunkedVectorsConfig, Status, ensure_config, read_status_len, status_file,
 };
 
 /// Short-lived append-only writer for chunked vectors storage.
@@ -24,10 +25,10 @@ use crate::vector_storage::chunked_vectors::config::{
 /// durable when it returns and there is nothing to flush.
 #[derive(Debug)]
 #[cfg_attr(not(test), expect(dead_code))]
-pub struct UpdateOnlyChunkedVectors<T, S: UniversalAppend + UniversalWrite> {
+pub struct UpdateOnlyChunkedVectors<T, S: UniversalAppend> {
     directory: PathBuf,
     config: ChunkedVectorsConfig,
-    status: StoredStruct<S, Status>,
+    status: Status,
     fs: S::Fs,
     _t: PhantomData<T>,
 }
@@ -54,10 +55,11 @@ where
         // An absent status file marks the first open
         if !fs.exists(&status_path)? {
             fs.create_dir(directory)?;
-            fs.create(&status_path, size_of::<Status>())?;
+            fs.atomic_save(&status_path, bytemuck::bytes_of(&Status { len: 0 }))?;
         }
-        let status: StoredStruct<S, Status> =
-            StoredStruct::open(&fs, &status_path, append_options(), Default::default())?;
+        let status = Status {
+            len: read_status_len(&fs, &status_path)?,
+        };
         let config = ensure_config::<T, _>(&fs, directory, dim, false)?;
 
         let writer = Self {
@@ -67,16 +69,16 @@ where
             fs,
             _t: PhantomData,
         };
-        writer.ensure_chunk_lengths()?;
+
         Ok(writer)
     }
 
-    /// Compare every chunk file's length against the stored vector count.
+    /// Compare every chunk file's length against an external total length.
     ///
     /// Ensures every file is at the expected length by truncating or filling with zeroes.
-    fn ensure_chunk_lengths(&self) -> OperationResult<()> {
-        let total_bytes = self.status.len * self.config.dim * size_of::<T>();
-        let num_chunks = self.status.len.div_ceil(self.config.chunk_size_vectors);
+    fn ensure_chunk_lengths(&mut self, target_len: usize) -> OperationResult<()> {
+        let total_bytes = target_len * self.config.dim * size_of::<T>();
+        let num_chunks = target_len.div_ceil(self.config.chunk_size_vectors);
 
         let mut listed = list_chunk_files(&self.fs, &self.directory)?;
 
@@ -107,10 +109,17 @@ where
                             // truncate
                             log::warn!("Expected smaller chunk, truncating chunk {chunk_id}");
                             let file = self.fs.open_append(&file_info.path, append_options())?;
-                            let content = file.read_whole::<u8>()?.into_owned();
+                            let content = file.read_whole::<u8>()?;
+                            let Some(truncated) = content.get(..expected as usize) else {
+                                return Err(OperationError::service_error(format!(
+                                    "Chunk {chunk_id} is {} bytes, shorter than the expected \
+                                     truncation length {expected}",
+                                    content.len(),
+                                )));
+                            };
+                            let truncated = truncated.to_vec();
                             drop(file);
-                            self.fs
-                                .atomic_save(&file_info.path, &content[..expected as usize])?;
+                            self.fs.atomic_save(&file_info.path, &truncated)?;
                         }
                     }
                 }
@@ -126,30 +135,40 @@ where
             }
         }
 
-        // Files past the watermark hold no acknowledged data; a non-empty one
-        // is an unacknowledged append from a crashed writer.
+        // Files past the boundary hold no data this writer should serve
         for (chunk_id, file) in listed {
-            if file.size > 0 {
-                log::warn!(
-                    "Chunk {chunk_id} past the stored vector count is not empty ({} bytes). Removing.",
-                    file.size,
-                );
-                self.fs.remove(&file.path)?;
-            }
+            log::warn!(
+                "Chunk {chunk_id} past the target vector count ({} bytes). Removing.",
+                file.size,
+            );
+            self.fs.remove(&file.path)?;
         }
+
+        self.status.len = target_len;
+        self.fs.atomic_save(
+            &status_file(&self.directory),
+            bytemuck::bytes_of(&self.status),
+        )?;
 
         Ok(())
     }
 
-    /// Append a batch of vectors at the end of the storage, one file append
-    /// per touched chunk, then persist the new vector count.
+    /// Append a batch of vectors at the end of the storage, one file append per
+    /// touched chunk, then persist the new vector count.
+    ///
+    /// This method trusts the `start_key` to be the source of truth, so it will
+    /// fill with zeroes or truncate chunks if necessary to make chunks' sizes
+    /// match the argument
     pub fn append_many<'a>(
         &mut self,
+        start_key: VectorOffsetType,
         vectors: impl IntoIterator<Item = &'a [T]>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        self.ensure_chunk_lengths(start_key)?;
+
         let mut vectors = vectors.into_iter().peekable();
-        let mut len = self.status.len;
+        let mut len = start_key;
 
         while vectors.peek().is_some() {
             let chunk_idx = self.config.get_chunk_index(len);
@@ -176,7 +195,10 @@ where
 
         // Persist the watermark only after the data landed
         self.status.len = len;
-        self.status.flusher()()?;
+        self.fs.atomic_save(
+            &status_file(&self.directory),
+            bytemuck::bytes_of(&self.status),
+        )?;
 
         Ok(())
     }

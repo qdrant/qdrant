@@ -41,7 +41,7 @@ fn write_both() -> (TempDir, TempDir) {
         let mut writer =
             UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, appended_dir.path(), DIM)
                 .unwrap();
-        append_range(&mut writer, range, DIM, &hw);
+        append_range(&mut writer, range.start, range, DIM, &hw);
     }
 
     (plain_dir, appended_dir)
@@ -149,14 +149,15 @@ fn repairs_preallocated_chunks() {
 
     let mut writer =
         UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
-    assert_eq!(
-        fs_err::metadata(&chunk).unwrap().len(),
-        vector_bytes,
-        "chunk truncated back to the data",
-    );
 
-    // The stored vector survived the truncation, and appends continue after it
-    append_range(&mut writer, 1..3, DIM, &hw);
+    // Appends continue after it
+    append_range(&mut writer, 1, 1..3, DIM, &hw);
+
+    // File gets truncated before inserting the new vectors
+    assert!(
+        fs_err::metadata(&chunk).unwrap().len() == 3 * vector_bytes,
+        "file should be re-sized to the new length",
+    );
 
     let reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
         &MmapFs,
@@ -170,6 +171,111 @@ fn repairs_preallocated_chunks() {
     for key in 0..3 {
         assert_eq!(
             reader.get::<Random>(key).unwrap().as_ref(),
+            make_vec(key, DIM).as_slice(),
+        );
+    }
+}
+
+/// A batch whose first offset lands *behind* the persisted watermark is a
+/// replay of an already-applied range (e.g. a WAL resending a batch after a
+/// crash that happened before the outer commit pointer advanced, but after
+/// this writer's data was durable). `append_many` must shrink the chunk back
+/// to that offset and overwrite it, rather than blindly appending after the
+/// existing data and corrupting the offset-to-vector mapping.
+#[test]
+fn replaying_an_already_applied_range_overwrites_it() {
+    let hw = HardwareCounterCell::disposable();
+    let dir = Builder::new().prefix("chunked_replay").tempdir().unwrap();
+
+    let mut writer =
+        UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+    append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+    // Replay offsets 50..100 with different vectors than landed the first
+    // time, so the overwrite is observable.
+    append_range(&mut writer, 50, 1050..1100, DIM, &hw);
+
+    let reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+        &MmapFs,
+        dir.path(),
+        DIM,
+        AdviceSetting::Global,
+        Populate::No,
+    )
+    .unwrap();
+    // Not doubled: the watermark lands back at 100, not 150.
+    assert_eq!(reader.len(), 100);
+    for key in 0..50 {
+        assert_eq!(
+            reader
+                .get::<Random>(key as VectorOffsetType)
+                .unwrap()
+                .as_ref(),
+            make_vec(key, DIM).as_slice(),
+            "untouched prefix should be unchanged",
+        );
+    }
+    for key in 50..100 {
+        assert_eq!(
+            reader
+                .get::<Random>(key as VectorOffsetType)
+                .unwrap()
+                .as_ref(),
+            make_vec(key + 1000, DIM).as_slice(),
+            "replayed range should reflect the newer batch",
+        );
+    }
+}
+
+/// A batch whose first offset lands *ahead* of the persisted watermark
+/// skips a range (e.g. points deleted before ever getting a vector).
+/// `append_many` pads the gap with zero vectors instead of shifting later
+/// offsets down to close it.
+#[test]
+fn extends_across_a_gap_with_zeroes() {
+    let hw = HardwareCounterCell::disposable();
+    let dir = Builder::new().prefix("chunked_gap").tempdir().unwrap();
+
+    let mut writer =
+        UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+    append_range(&mut writer, 0, 0..10, DIM, &hw);
+    // Offsets 10..15 are skipped; the next batch picks up at 15.
+    append_range(&mut writer, 15, 15..20, DIM, &hw);
+
+    let reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+        &MmapFs,
+        dir.path(),
+        DIM,
+        AdviceSetting::Global,
+        Populate::No,
+    )
+    .unwrap();
+    assert_eq!(reader.len(), 20);
+    for key in 0..10 {
+        assert_eq!(
+            reader
+                .get::<Random>(key as VectorOffsetType)
+                .unwrap()
+                .as_ref(),
+            make_vec(key, DIM).as_slice(),
+        );
+    }
+    for key in 10..15 {
+        assert_eq!(
+            reader
+                .get::<Random>(key as VectorOffsetType)
+                .unwrap()
+                .as_ref(),
+            vec![0.0f32; DIM].as_slice(),
+            "skipped offset {key} should read back as zeroes",
+        );
+    }
+    for key in 15..20 {
+        assert_eq!(
+            reader
+                .get::<Random>(key as VectorOffsetType)
+                .unwrap()
+                .as_ref(),
             make_vec(key, DIM).as_slice(),
         );
     }
