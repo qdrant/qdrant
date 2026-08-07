@@ -244,3 +244,71 @@ LABEL org.opencontainers.image.source="https://github.com/qdrant/qdrant"
 LABEL org.opencontainers.image.vendor="Qdrant"
 
 CMD ["./entrypoint.sh"]
+
+
+FROM scratch AS qdrant-scratch
+
+# TODO(scratch): # Install GPU dependencies
+# TODO(scratch): ARG GPU
+# TODO(scratch):
+# TODO(scratch): RUN if [ -n "$GPU" ]; then \
+# TODO(scratch):     apt-get update \
+# TODO(scratch):     && apt-get install -y \
+# TODO(scratch):     libvulkan1 \
+# TODO(scratch):     libvulkan-dev \
+# TODO(scratch):     vulkan-tools \
+# TODO(scratch):     ; fi
+
+# RUN apt-get update \
+#     && apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
+#     && apt-get clean \
+#     && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/lib/dpkg/status-old
+
+ARG APP=/qdrant
+
+ARG USER_ID=0
+
+# TODO(scratch): RUN if [ "$USER_ID" != 0 ]; then \
+# TODO(scratch):         groupadd --gid "$USER_ID" qdrant; \
+# TODO(scratch):         useradd --uid "$USER_ID" --gid "$USER_ID" -m qdrant; \
+# TODO(scratch):         mkdir -p "$APP"/storage "$APP"/snapshots; \
+# TODO(scratch):         chown -R "$USER_ID:$USER_ID" "$APP"; \
+# TODO(scratch):     fi
+
+# System files and shared objects
+# TODO(scratch): include tzdata?
+# TODO(scratch): include ca-certificates?
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /lib/x86_64-linux-gnu/libstdc++.so.6 /lib/x86_64-linux-gnu/libstdc++.so.6
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /lib/x86_64-linux-gnu/libgcc_s.so.1 /lib/x86_64-linux-gnu/libgcc_s.so.1
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libm.so.6
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libc.so.6
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /lib64/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+# TODO(scratch): can /usr prefix be removed?
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /usr/lib/x86_64-linux-gnu/libunwind-ptrace.so.0 /usr/lib/x86_64-linux-gnu/libunwind-ptrace.so.0
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /usr/lib/x86_64-linux-gnu/libunwind-x86_64.so.8 /usr/lib/x86_64-linux-gnu/libunwind-x86_64.so.8 
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /usr/lib/x86_64-linux-gnu/libunwind.so.8 /usr/lib/x86_64-linux-gnu/libunwind.so.8
+COPY --from=qdrant --chown=$USER_ID:$USER_ID /usr/lib/x86_64-linux-gnu/liblzma.so.5 /usr/lib/x86_64-linux-gnu/liblzma.so.5
+
+COPY --from=qdrant --chown=$USER_ID:$USER_ID "$APP"/qdrant "$APP"/qdrant
+COPY --from=qdrant --chown=$USER_ID:$USER_ID "$APP"/qdrant.spdx.json "$APP"/qdrant.spdx.json
+COPY --from=qdrant --chown=$USER_ID:$USER_ID "$APP"/config "$APP"/config
+COPY --from=qdrant --chown=$USER_ID:$USER_ID "$APP"/static "$APP"/static
+
+WORKDIR "$APP"
+
+USER "$USER_ID:$USER_ID"
+
+ENV TZ=Etc/UTC \
+    RUN_MODE=production
+
+EXPOSE 6333
+EXPOSE 6334
+
+LABEL org.opencontainers.image.title="Qdrant"
+LABEL org.opencontainers.image.description="Official Qdrant image"
+LABEL org.opencontainers.image.url="https://qdrant.com/"
+LABEL org.opencontainers.image.documentation="https://qdrant.com/docs"
+LABEL org.opencontainers.image.source="https://github.com/qdrant/qdrant"
+LABEL org.opencontainers.image.vendor="Qdrant"
+
+CMD ["./qdrant"]
