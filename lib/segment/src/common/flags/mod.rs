@@ -9,6 +9,10 @@
 //! - `read_only_roaring_flags`: read-only counterpart of `roaring_flags`, bound to `UniversalRead`.
 //! - `compact_stored_flags`: RAM-resident flags over a single compact stored-bitmask file,
 //!   rewritten whole on flush; serverless-compatible counterpart of the dynamic + buffered stack.
+//!
+//! `bitvec_flags` and `roaring_flags` persist either through the dynamic stack or through
+//! `compact_stored_flags`, selected by [`FlagsMode`] when flags are created and detected
+//! automatically when opening existing flags.
 
 pub mod bitvec_flags;
 mod buffered_dynamic_flags;
@@ -18,5 +22,6 @@ pub mod in_memory_bitvec_flags;
 mod mode;
 pub mod read_only_roaring_flags;
 pub mod roaring_flags;
+mod storage;
 
 pub use mode::FlagsMode;
