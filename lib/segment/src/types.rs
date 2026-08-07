@@ -3252,13 +3252,22 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RangeInterface {
+    Integer(Range<IntPayloadType>),
     Float(Range<OrderedFloat<FloatPayloadType>>),
     DateTime(Range<DateTimePayloadType>),
 }
 
 impl Hash for RangeInterface {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
         match self {
+            RangeInterface::Integer(range) => {
+                let Range { lt, gt, gte, lte } = range;
+                lt.hash(state);
+                gt.hash(state);
+                gte.hash(state);
+                lte.hash(state);
+            }
             RangeInterface::Float(range) => {
                 let Range { lt, gt, gte, lte } = range;
                 lt.hash(state);
@@ -3280,6 +3289,7 @@ impl Hash for RangeInterface {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum RangeInterfaceUntagged {
+    Integer(Range<IntPayloadType>),
     Float(Range<OrderedFloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
@@ -3294,6 +3304,7 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
     {
         if !deserializer.is_human_readable() {
             return RangeInterfaceUntagged::deserialize(deserializer).map(|parsed| match parsed {
+                RangeInterfaceUntagged::Integer(r) => RangeInterface::Integer(r),
                 RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
                 RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
             });
@@ -3320,6 +3331,7 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
             .map_err(serde::de::Error::custom)?;
 
         Ok(match parsed {
+            RangeInterfaceUntagged::Integer(r) => RangeInterface::Integer(r),
             RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
             RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
         })
@@ -3330,7 +3342,7 @@ type OrderedFloatPayloadType = OrderedFloat<FloatPayloadType>;
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(< OrderedFloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
+#[derive_args(< OrderedFloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange", < IntPayloadType > => "IntRange")]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {

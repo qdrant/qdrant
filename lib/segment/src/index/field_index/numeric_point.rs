@@ -6,7 +6,7 @@ use ordered_float::OrderedFloat;
 use serde::Serialize;
 
 pub use self::point::Point;
-use crate::types::{FloatPayloadType, Range};
+use crate::types::{FloatPayloadType, IntPayloadType, Range};
 
 // bytemuck macros expand to code that triggers this clippy lint
 // The only reason this is its own module is so that we scope the lint suppression
@@ -115,6 +115,12 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy + bytemuck::Pod + Sen
     fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
         range.map(|x| Self::from_f64(x.0))
     }
+
+    fn from_i64(x: i64) -> Self;
+
+    fn from_i64_range(range: Range<IntPayloadType>) -> Range<Self> {
+        range.map(Self::from_i64)
+    }
 }
 
 impl Numericable for i64 {
@@ -131,6 +137,9 @@ impl Numericable for i64 {
     }
     fn from_f64(x: f64) -> Self {
         x as Self
+    }
+    fn from_i64(x: i64) -> Self {
+        x
     }
     fn from_u128(x: u128) -> Self {
         x as i64
@@ -164,6 +173,9 @@ impl Numericable for f64 {
     fn from_f64(x: f64) -> Self {
         x
     }
+    fn from_i64(x: i64) -> Self {
+        x as f64
+    }
     fn from_u128(x: u128) -> Self {
         x as Self
     }
@@ -185,6 +197,10 @@ impl Numericable for u128 {
     }
 
     fn from_f64(x: f64) -> Self {
+        x as u128
+    }
+
+    fn from_i64(x: i64) -> Self {
         x as u128
     }
 

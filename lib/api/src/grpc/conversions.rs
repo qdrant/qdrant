@@ -2038,6 +2038,10 @@ impl From<segment::types::FieldCondition> for FieldCondition {
         let (range, datetime_range) = match range {
             Some(segment::types::RangeInterface::Float(range)) => (Some(Range::from(range)), None),
             Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
+            Some(segment::types::RangeInterface::Integer(range)) => {
+                let float_range = range.map(|x| ordered_float::OrderedFloat(x as f64));
+                (Some(Range::from(float_range)), None)
+            }
             None => (None, None),
         };
 

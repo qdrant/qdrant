@@ -805,6 +805,8 @@ fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
                     RangeInterface::Float(_) => {}
                     // [`FieldCondition::datetime_range`] ([`RangeDatetime`])
                     RangeInterface::DateTime(_) => {}
+                    // [`FieldCondition::range`] ([`RangeInteger`])
+                    RangeInterface::Integer(_) => {}
                 }
             }
         }

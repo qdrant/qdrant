@@ -116,10 +116,8 @@ impl OrderBy {
         self.start_from
             .as_ref()
             .map(|start_from| match start_from {
-                // TODO: When we introduce integer ranges, we'll stop doing lossy conversion to f64 here
-                // Accepting an integer as start_from simplifies the client generation.
                 StartFrom::Integer(i) => {
-                    RangeInterface::Float(self.direction().as_range_from(OrderedFloat(*i as f64)))
+                    RangeInterface::Integer(self.direction().as_range_from(*i))
                 }
                 StartFrom::Float(f) => {
                     RangeInterface::Float(self.direction().as_range_from(OrderedFloat(*f)))
@@ -257,7 +255,8 @@ impl Ord for OrderValue {
 mod tests {
     use proptest::proptest;
 
-    use crate::data_types::order_by::OrderValue;
+    use crate::data_types::order_by::{Direction, OrderBy, OrderValue, StartFrom};
+    use crate::types::RangeInterface;
 
     proptest! {
 
@@ -273,6 +272,24 @@ mod tests {
             assert!(OrderValue::MAX.cmp(&OrderValue::from(a)).is_ge());
             assert!(OrderValue::MAX.cmp(&OrderValue::from(b)).is_ge());
             assert!(OrderValue::MAX.cmp(&OrderValue::from(f64::NAN)).is_ge());
+        }
+    }
+
+    #[test]
+    fn test_large_integer_as_range() {
+        // 9_007_199_254_740_995 cannot be accurately represented as f64 (loss of precision)
+        let large_int = 9_007_199_254_740_995_i64;
+        let order_by = OrderBy {
+            key: "a".parse().unwrap(),
+            direction: Some(Direction::Asc),
+            start_from: Some(StartFrom::Integer(large_int)),
+        };
+
+        match order_by.as_range() {
+            RangeInterface::Integer(range) => {
+                assert_eq!(range.gte, Some(large_int));
+            }
+            _ => panic!("Expected RangeInterface::Integer"),
         }
     }
 }
