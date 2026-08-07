@@ -1,29 +1,70 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::PayloadIndexSchema;
 use collection::common::sha_256::hashes_equal;
-use collection::config::CollectionConfigInternal;
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::replica_set_state::{
-    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
+    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaSetState, ReplicaState,
 };
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::shard_holder::SHARD_KEY_MAPPING_FILE;
+use common::fs::read_json;
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
+use segment::types::ShardKey;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_manifest::RecoveryType;
 
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
+    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex, CreateShardKey,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::content_manager::snapshots::download_result::DownloadResult;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{AccessRequirements, Auth, CollectionPass};
 use crate::{StorageError, TableOfContent};
+
+#[derive(serde::Deserialize)]
+struct SnapshotShardKeyMappingEntry {
+    key: ShardKey,
+    shard_ids: HashSet<ShardId>,
+}
+
+async fn snapshot_shard_placement(
+    snapshot_collection_dir: &std::path::Path,
+    shard_ids: &[ShardId],
+) -> Result<Vec<Vec<PeerId>>, StorageError> {
+    let mut placement = Vec::with_capacity(shard_ids.len());
+
+    for shard_id in shard_ids {
+        let shard_path = check_shard_path(snapshot_collection_dir, *shard_id).await?;
+        let replica_state_path = shard_path.join("replica_state.json");
+
+        let replica_state: SaveOnDisk<ReplicaSetState> =
+            SaveOnDisk::load_or_init_default(&replica_state_path).map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to load snapshot replica state from {}: {err}",
+                    replica_state_path.display(),
+                ))
+            })?;
+        let mut replicas: Vec<_> = replica_state.read().peers().keys().copied().collect();
+        replicas.sort_unstable();
+
+        if replicas.is_empty() {
+            return Err(StorageError::service_error(format!(
+                "Snapshot shard {shard_id} has no replicas in replica_state.json",
+            )));
+        }
+
+        placement.push(replicas);
+    }
+
+    Ok(placement)
+}
 
 pub async fn activate_shard(
     toc: &TableOfContent,
@@ -180,10 +221,12 @@ async fn _do_recover_from_snapshot(
 
     let schema = payload_schema.read().schema.clone();
 
+    let mut collection_was_created = false;
     let collection = match toc.get_collection(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
             log::debug!("Collection {collection_pass} does not exist, creating it");
+            collection_was_created = true;
             let operation =
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
                     collection_pass.to_string(),
@@ -213,7 +256,54 @@ async fn _do_recover_from_snapshot(
         }
     };
 
-    let state = collection.state().await;
+    let mut state = collection.state().await;
+
+    // `CreateCollection` with custom sharding starts with empty shard distribution. For fresh
+    // collections this leaves `state.shards` empty, so the restore loop below would skip all
+    // snapshot shards. Materialize custom shard keys from snapshot metadata first.
+    if collection_was_created
+        && state.shards.is_empty()
+        && snapshot_config.params.sharding_method.unwrap_or_default() == ShardingMethod::Custom
+    {
+        let snapshot_mapping_path = tmp_collection_dir.path().join(SHARD_KEY_MAPPING_FILE);
+        if snapshot_mapping_path.exists() {
+            let snapshot_shard_mapping: Vec<SnapshotShardKeyMappingEntry> =
+                read_json(&snapshot_mapping_path)?;
+
+            let mut shard_keys: Vec<_> = snapshot_shard_mapping
+                .iter()
+                .map(|entry| {
+                    let shard_key = entry.key.clone();
+                    let shard_ids = &entry.shard_ids;
+                    let mut shard_ids = shard_ids.iter().copied().collect::<Vec<_>>();
+                    shard_ids.sort_unstable();
+                    (shard_key, shard_ids)
+                })
+                .collect();
+            shard_keys.sort_by_key(|(_, shard_ids)| shard_ids.first().copied().unwrap_or(0));
+
+            for (shard_key, shard_ids) in shard_keys {
+                if shard_ids.is_empty() {
+                    continue;
+                }
+
+                let placement =
+                    snapshot_shard_placement(tmp_collection_dir.path(), &shard_ids).await?;
+                let consensus_op = CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                    collection_name: collection_pass.to_string(),
+                    shard_key,
+                    placement,
+                    initial_state: None,
+                });
+
+                dispatcher
+                    .submit_collection_meta_op(consensus_op, auth.clone(), None)
+                    .await?;
+            }
+        }
+
+        state = collection.state().await;
+    }
 
     // Check config compatibility
     // Check vectors config
