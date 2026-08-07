@@ -402,6 +402,72 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
     assert_eq!(hits, vec![3, 4]);
 }
 
+/// Regression test: `get_values_count()` must stay consistent with
+/// `get_indexed_points()` as points are deleted, both for in-place deletion
+/// (`remove_point`) and across a reload with a pre-supplied `deleted_points`
+/// bitslice. On a single-valued field this ratio (`values_count /
+/// indexed_points`) feeds `combine_match_any_estimations`'s exclusivity
+/// weight — if it drifts away from 1 under deletions, `match_any` cardinality
+/// estimation silently degrades back towards the independence-OR
+/// under-count that this estimator exists to avoid.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_map_index_values_count_consistent_after_deletion(#[case] index_type: IndexType) {
+    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+    // Single-valued: every point contributes exactly one value.
+    let data: Vec<Vec<IntPayloadType>> = vec![
+        vec![1], // id 0
+        vec![1], // id 1
+        vec![2], // id 2
+        vec![2], // id 3
+        vec![3], // id 4
+        vec![3], // id 5
+    ];
+
+    {
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+        let mut index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
+        index.remove_point(1).unwrap();
+        index.remove_point(2).unwrap();
+        index.flusher()().unwrap();
+        assert_eq!(index.get_indexed_points(), 4);
+        assert_eq!(
+            index.get_values_count(),
+            index.get_indexed_points(),
+            "single-valued field must keep values_count == indexed_points after in-place deletion",
+        );
+        drop(index);
+    }
+
+    let deleted = deleted_with(&[1, 2]);
+    let new_index = match index_type {
+        IndexType::MutableGridstore => {
+            MapIndex::<IntPayloadType>::new_mutable(temp_dir.path().to_path_buf(), true, false)
+                .unwrap()
+                .unwrap()
+        }
+        IndexType::Mmap => {
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
+                .unwrap()
+                .unwrap()
+        }
+        IndexType::RamMmap => {
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Pinned, &deleted)
+                .unwrap()
+                .unwrap()
+        }
+    };
+
+    assert_eq!(new_index.get_indexed_points(), 4);
+    assert_eq!(
+        new_index.get_values_count(),
+        new_index.get_indexed_points(),
+        "single-valued field must keep values_count == indexed_points after reload",
+    );
+}
+
 /// Regression test: when reloading an mmap map index with a `deleted_points`
 /// bitslice shorter than `point_to_values.len()`, missing entries must
 /// default to live, not deleted. Empty-payload bits from the on-disk
