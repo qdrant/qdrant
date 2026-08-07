@@ -94,14 +94,14 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
     let results = queries
         .iter()
         .map(|query| {
-            let scorer = vector_holder.scorer(query.clone());
+            let mut scorer = vector_holder.scorer(query.clone());
             graph_layers
                 .search(
                     top,
                     ef,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    graph_layers.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap()

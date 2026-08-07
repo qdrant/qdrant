@@ -36,6 +36,18 @@ impl TestGraphLinksVectors {
             },
         }
     }
+
+    fn assert_base_vector(&self, point_id: PointOffsetType, level: usize, bytes: &[u8]) {
+        if level == 0 {
+            assert_eq!(bytes, self.base_vectors[point_id as usize]);
+        } else {
+            assert!(bytes.is_empty());
+        }
+    }
+
+    fn assert_link_vector(&self, link: PointOffsetType, bytes: &[u8]) {
+        assert_eq!(bytes, self.link_vectors[link as usize]);
+    }
 }
 
 impl GraphLinksVectors for TestGraphLinksVectors {
@@ -87,18 +99,9 @@ fn check_links(
     let mut right_links = right.to_edges_impl(|point_id, level| {
         let links: Vec<_> = if let Some(vectors) = vectors {
             let (base_vector, iter) = right.links_with_vectors(point_id, level);
-            if level == 0 {
-                vectors
-                    .for_base_vector(point_id, &mut |bytes| {
-                        assert_eq!(base_vector, bytes);
-                        Ok(())
-                    })
-                    .unwrap();
-            } else {
-                assert!(base_vector.is_empty());
-            }
+            vectors.assert_base_vector(point_id, level, base_vector);
             iter.map(|(link, bytes)| {
-                assert_eq!(bytes, vectors.get_link_vector(link).unwrap().as_ref());
+                vectors.assert_link_vector(link, bytes);
                 link
             })
             .collect()

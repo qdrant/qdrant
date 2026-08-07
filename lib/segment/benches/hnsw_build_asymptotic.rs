@@ -38,14 +38,14 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let (vector_holder, graph_layers) = &*setup_5k;
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let scorer = vector_holder.scorer(query);
+            let mut scorer = vector_holder.scorer(query);
             graph_layers
                 .search(
                     TOP,
                     EF,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    graph_layers.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();
@@ -64,14 +64,14 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let (vector_holder, graph_layers) = &*setup_1m;
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let scorer = vector_holder.scorer(query);
+            let mut scorer = vector_holder.scorer(query);
             graph_layers
                 .search(
                     TOP,
                     EF,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    graph_layers.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();

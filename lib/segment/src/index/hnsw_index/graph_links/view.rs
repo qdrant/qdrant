@@ -1,21 +1,22 @@
 use std::alloc::Layout;
 use std::iter::{Copied, Zip};
 use std::num::NonZero;
+use std::slice::ChunksExact;
 
-use common::bitpacking::packed_bits;
-use common::bitpacking_links::{
-    MIN_BITS_PER_VALUE, PackedLinksIterator, iterate_packed_links, packed_links_size,
-};
+use common::bitpacking_links::{PackedLinksIterator, iterate_packed_links};
 use common::bitpacking_ordered;
 use common::types::PointOffsetType;
-use integer_encoding::VarInt as _;
-use itertools::{Either, Itertools as _};
+use itertools::Either;
 use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{FromBytes, Immutable};
 
 use super::GraphLinksFormat;
 use super::header::{HEADER_VERSION_COMPRESSED, HeaderCompressed, HeaderPlain};
-use crate::common::operation_error::{OperationError, OperationResult};
+use super::view_utils::{
+    bits_per_unsorted, error_size, find_level, last_offset_idx, link_vector_size,
+    parse_links_with_vectors,
+};
+use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_links::header::{
     HEADER_VERSION_COMPRESSED_WITH_VECTORS, HeaderCompressedWithVectors,
@@ -40,8 +41,7 @@ pub type LinksIterator<'a> = Either<Copied<std::slice::Iter<'a, u32>>, PackedLin
 /// An iterator type returned by [`super::GraphLinks::links_with_vectors`].
 /// Iterates over pairs of ([`PointOffsetType`], `&[u8]`). The second element is
 /// quantized vector bytes.
-pub type LinksWithVectorsIterator<'a> =
-    Zip<PackedLinksIterator<'a>, std::slice::ChunksExact<'a, u8>>;
+pub type LinksWithVectorsIterator<'a> = Zip<PackedLinksIterator<'a>, ChunksExact<'a, u8>>;
 
 #[derive(Debug)]
 pub(super) enum CompressionInfo<'a> {
@@ -119,8 +119,7 @@ impl GraphLinksView<'_> {
     }
 
     fn load_plain(data: &[u8]) -> OperationResult<GraphLinksView<'_>> {
-        let (header, data) =
-            HeaderPlain::ref_from_prefix(data).map_err(|_| error_insufficient_size())?;
+        let (header, data) = HeaderPlain::ref_from_prefix(data).map_err(|_| error_size())?;
         let (level_offsets, data) =
             read_level_offsets(data, header.levels_count, header.total_offset_count)?;
         let (reindex, data) = get_slice::<PointOffsetType>(data, header.point_count)?;
@@ -135,8 +134,7 @@ impl GraphLinksView<'_> {
     }
 
     fn load_compressed(data: &[u8]) -> OperationResult<GraphLinksView<'_>> {
-        let (header, data) =
-            HeaderCompressed::ref_from_prefix(data).map_err(|_| error_insufficient_size())?;
+        let (header, data) = HeaderCompressed::ref_from_prefix(data).map_err(|_| error_size())?;
         debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED);
         let (level_offsets, data) = read_level_offsets(
             data,
@@ -152,11 +150,7 @@ impl GraphLinksView<'_> {
                 neighbors,
                 offsets,
                 hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
-                bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
-                    u32::try_from(header.point_count.get().saturating_sub(1)).map_err(|_| {
-                        OperationError::service_error("Too many points in GraphLinks file")
-                    })?,
-                )),
+                bits_per_unsorted: bits_per_unsorted(header.point_count.get())?,
             },
             level_offsets,
         })
@@ -165,8 +159,8 @@ impl GraphLinksView<'_> {
     fn load_compressed_with_vectors(data: &[u8]) -> OperationResult<GraphLinksView<'_>> {
         let total_len = data.len();
 
-        let (header, data) = HeaderCompressedWithVectors::ref_from_prefix(data)
-            .map_err(|_| error_insufficient_size())?;
+        let (header, data) =
+            HeaderCompressedWithVectors::ref_from_prefix(data).map_err(|_| error_size())?;
         debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED_WITH_VECTORS);
 
         let base_vector_layout = header.base_vector_layout.try_into_layout()?;
@@ -191,15 +185,9 @@ impl GraphLinksView<'_> {
                 neighbors,
                 offsets,
                 hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
-                bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
-                    u32::try_from(header.point_count.get().saturating_sub(1)).map_err(|_| {
-                        OperationError::service_error("Too many points in GraphLinks file")
-                    })?,
-                )),
+                bits_per_unsorted: bits_per_unsorted(header.point_count.get())?,
                 base_vector_layout,
-                link_vector_size: NonZero::try_from(link_vector_layout.size()).map_err(|_| {
-                    OperationError::service_error("Zero link vector size in GraphLinks file")
-                })?,
+                link_vector_size: link_vector_size(link_vector_layout)?,
                 link_vector_alignment: link_vector_layout.align() as u8,
             },
             level_offsets,
@@ -277,11 +265,7 @@ impl GraphLinksView<'_> {
         &self,
         point_id: PointOffsetType,
         level: usize,
-    ) -> (
-        &[u8],
-        PackedLinksIterator<'_>,
-        std::slice::ChunksExact<'_, u8>,
-    ) {
+    ) -> (&[u8], PackedLinksIterator<'_>, ChunksExact<'_, u8>) {
         let idx = self.offset_idx(point_id, level);
         match self.compression {
             CompressionInfo::Uncompressed { .. } => unimplemented!(),
@@ -297,75 +281,25 @@ impl GraphLinksView<'_> {
             } => {
                 let (start, end) = offsets.read_pair(idx).unwrap();
                 let (start, end) = (start as usize, end as usize);
-
                 common::mmap::advice::will_need_multiple_pages(&neighbors[start..end]);
-
-                let mut pos = start;
-
-                // 1. Base vector (`B` in the doc, only on level 0).
-                let mut base_vector: &[u8] = &[];
-                if level == 0 {
-                    base_vector = &neighbors[pos..pos + base_vector_layout.size()];
-                    debug_assert!(
-                        base_vector
-                            .as_ptr()
-                            .addr()
-                            .is_multiple_of(base_vector_layout.align())
-                    );
-                    pos += base_vector_layout.size();
-                }
-
-                // 2. The varint-encoded length (`#` in the doc).
-                let (neighbors_count, neighbors_count_size) =
-                    u64::decode_var(&neighbors[pos..end]).unwrap();
-                pos += neighbors_count_size;
-
-                // 3. Compressed links (`c` in the doc).
-                let links_size = packed_links_size(
-                    &neighbors[pos..end],
+                parse_links_with_vectors(
+                    &neighbors[start..end],
+                    start,
+                    (level == 0).then_some(base_vector_layout),
                     bits_per_unsorted,
                     hnsw_m.level_m(level),
-                    neighbors_count as usize,
-                );
-                let links = iterate_packed_links(
-                    &neighbors[pos..pos + links_size],
-                    bits_per_unsorted,
-                    hnsw_m.level_m(level),
-                );
-                pos += links_size;
-
-                // 4. Padding to align link vectors (`_` in the doc).
-                pos = pos.next_multiple_of(link_vector_alignment as usize);
-
-                // 5. Link vectors (`L` in the doc).
-                let link_vector_bytes = (neighbors_count as usize) * link_vector_size.get();
-                let link_vectors = &neighbors[pos..pos + link_vector_bytes];
-                debug_assert!(link_vectors.as_ptr().addr() % link_vector_alignment as usize == 0);
-
-                (
-                    base_vector,
-                    links,
-                    link_vectors.chunks_exact(link_vector_size.get()),
+                    link_vector_size,
+                    link_vector_alignment,
                 )
             }
         }
     }
 
     pub(super) fn point_level(&self, point_id: PointOffsetType) -> usize {
-        let reindexed_point_id = u64::from(self.reindex[point_id as usize]);
-        for (level, (&a, &b)) in self
-            .level_offsets
-            .iter()
-            .skip(1)
-            .tuple_windows()
-            .enumerate()
-        {
-            if reindexed_point_id >= b - a {
-                return level;
-            }
-        }
-        // See the doc comment on `level_offsets`.
-        self.level_offsets.len() - 2
+        find_level(
+            u64::from(self.reindex[point_id as usize]),
+            &self.level_offsets,
+        )
     }
 
     #[cfg(test)]
@@ -386,16 +320,10 @@ fn read_level_offsets(
     let (level_offsets, bytes) = get_slice::<u64>(bytes, levels_count)?;
     let mut result = Vec::with_capacity(level_offsets.len() + 1);
     result.extend_from_slice(level_offsets);
-    result.push(total_offset_count.checked_sub(1).ok_or_else(|| {
-        OperationError::service_error("Total offset count should be at least 1 in GraphLinks file")
-    })?);
+    result.push(last_offset_idx(total_offset_count)?);
     Ok((result, bytes))
 }
 
 fn get_slice<T: FromBytes + Immutable>(data: &[u8], length: u64) -> OperationResult<(&[T], &[u8])> {
-    <[T]>::ref_from_prefix_with_elems(data, length as usize).map_err(|_| error_insufficient_size())
-}
-
-fn error_insufficient_size() -> OperationError {
-    OperationError::service_error("Insufficient file size for GraphLinks file")
+    <[T]>::ref_from_prefix_with_elems(data, length as usize).map_err(|_| error_size())
 }

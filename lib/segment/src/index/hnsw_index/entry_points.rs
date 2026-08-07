@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq)]
 pub struct EntryPoint {
     pub point_id: PointOffsetType,
     pub level: usize,
@@ -71,15 +71,15 @@ impl EntryPoints {
                     point_id: new_point,
                     level,
                 });
-                Some(candidate.clone())
+                Some(*candidate)
             } else {
                 // The current point is better than existing
-                let entry = self.entry_points[i].clone();
+                let entry = self.entry_points[i];
                 self.entry_points[i] = EntryPoint {
                     point_id: new_point,
                     level,
                 };
-                self.extra_entry_points.push(entry.clone());
+                self.extra_entry_points.push(entry);
                 Some(entry)
             };
         }
@@ -128,7 +128,7 @@ impl EntryPoints {
 
         if !filtered_entry_points.is_empty() {
             let random_index = rnd.random_range(0..filtered_entry_points.len());
-            return Some(filtered_entry_points[random_index].clone());
+            return Some(filtered_entry_points[random_index]);
         }
 
         let filtered_extra_entry_points: Vec<_> = self
@@ -140,7 +140,7 @@ impl EntryPoints {
 
         if !filtered_extra_entry_points.is_empty() {
             let random_index = rnd.random_range(0..filtered_extra_entry_points.len());
-            return Some(filtered_extra_entry_points[random_index].clone());
+            return Some(filtered_extra_entry_points[random_index]);
         }
 
         None

@@ -8,6 +8,7 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph_layers::{GraphLayersWithVectors, SearchAlgorithm};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
@@ -123,13 +124,21 @@ where
                 return Ok(None);
             };
 
+            let Some(entry_point) = self
+                .graph
+                .get_entry_point(link_scorer_filtered.filters(), custom_entry_points)
+            else {
+                return Ok(Some(Vec::new()));
+            };
             Ok(Some(self.graph.search_with_vectors(
                 top,
                 std::cmp::max(ef, oversampled_top),
-                &link_scorer_filtered,
-                &link_scorer_filtered_bytes,
-                base_scorer_bytes,
-                custom_entry_points,
+                GraphWithVectorsScorers {
+                    links: &link_scorer_filtered,
+                    links_bytes: &link_scorer_filtered_bytes,
+                    base: base_scorer_bytes,
+                },
+                entry_point,
                 &vector_query_context.is_stopped(),
             )?))
         };
@@ -138,7 +147,7 @@ where
             let filter_context = filter
                 .map(|f| self.payload_index.filter_context(f, &hw_counter))
                 .transpose()?;
-            let points_scorer = construct_search_scorer(
+            let mut points_scorer = construct_search_scorer(
                 vector,
                 self.vector_storage,
                 self.quantized_vectors,
@@ -148,14 +157,20 @@ where
                 filter_context,
             )?;
 
-            let search_result = self.graph.search(
-                oversampled_top,
-                ef,
-                algorithm,
-                points_scorer,
-                custom_entry_points,
-                &is_stopped,
-            )?;
+            let entry_point = self
+                .graph
+                .get_entry_point(points_scorer.filters(), custom_entry_points);
+            let search_result = match entry_point {
+                Some(entry_point) => self.graph.search(
+                    oversampled_top,
+                    ef,
+                    algorithm,
+                    &mut points_scorer,
+                    entry_point,
+                    &is_stopped,
+                )?,
+                None => Vec::new(),
+            };
 
             postprocess_search_result(
                 search_result,

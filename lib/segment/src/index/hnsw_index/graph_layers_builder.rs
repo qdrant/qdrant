@@ -772,15 +772,15 @@ mod tests {
             format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
         );
 
-        let scorer = vector_holder.scorer(query);
+        let mut scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
             .search(
                 top,
                 ef,
                 SearchAlgorithm::Hnsw,
-                scorer,
-                None,
+                &mut scorer,
+                graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
@@ -885,15 +885,15 @@ mod tests {
             format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
         );
 
-        let scorer = vector_holder.scorer(query);
+        let mut scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
             .search(
                 top,
                 ef,
                 SearchAlgorithm::Hnsw,
-                scorer,
-                None,
+                &mut scorer,
+                graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
