@@ -88,6 +88,32 @@ impl CollectionTelemetry {
             .sum()
     }
 
+    /// Estimated size of vector storage across all local shards, in bytes.
+    ///
+    /// This is an estimation of raw vector storage and does not include the
+    /// size of vector indices (e.g. the HNSW graph).
+    pub fn count_vectors_size_bytes(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .map(|local_shard| local_shard.vectors_size_bytes.unwrap_or(0))
+            .sum()
+    }
+
+    /// Estimated size of payload storage across all local shards, in bytes.
+    ///
+    /// This is an estimation of raw payload storage and does not include the
+    /// size of payload indices.
+    pub fn count_payloads_size_bytes(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .map(|local_shard| local_shard.payloads_size_bytes.unwrap_or(0))
+            .sum()
+    }
+
     pub fn count_points_per_vector(&self) -> TinyMap<VectorNameBuf, usize> {
         self.shards
             .iter()
