@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use chrono::{DateTime, SubsecRound, Utc};
 use common::flags::FeatureFlags;
@@ -41,6 +42,10 @@ pub struct RunningEnvironmentTelemetry {
     #[anonymize(false)]
     distribution_version: Option<String>,
     is_docker: bool,
+    /// Container runtime Qdrant runs under, or `none` for bare metal / VM.
+    /// Unlike `is_docker` (Docker-only), this also detects Kubernetes, Podman, etc.
+    #[anonymize(false)]
+    container_runtime: ContainerRuntime,
     // Number of CPU cores Qdrant will use (accounting for cgroup/host limits)
     #[anonymize(false)]
     cores: Option<usize>,
@@ -228,10 +233,13 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
     #[cfg(not(feature = "gpu"))]
     let gpu_devices = None;
 
+    let container_runtime = *CONTAINER_RUNTIME;
+
     RunningEnvironmentTelemetry {
         distribution,
         distribution_version,
-        is_docker: cfg!(unix) && Path::new("/.dockerenv").exists(),
+        is_docker: container_runtime.is_docker(),
+        container_runtime,
         cores: Some(common::cpu::get_num_cpus()),
         cpu_cores_used: common::process_cpu_usage::process_cpu_usage_cores(),
         ram_size: Some((segment::utils::mem::total_memory_bytes() / 1024) as usize),
@@ -267,6 +275,66 @@ impl CpuEndian {
             CpuEndian::Other
         }
     }
+}
+
+/// Container runtime Qdrant is running under, detected from well-known markers.
+/// Best-effort: a runtime that leaves no recognizable marker reports `Other`
+/// (overlay root) or, failing that, `None` (assumed bare metal / VM).
+#[derive(Serialize, Clone, Copy, Debug, JsonSchema, Anonymize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContainerRuntime {
+    None,
+    Docker,
+    Kubernetes,
+    /// Some other container (Podman, LXC, systemd-nspawn, plain containerd, …).
+    Other,
+}
+
+/// Detected once: the container runtime cannot change during the process's life.
+static CONTAINER_RUNTIME: LazyLock<ContainerRuntime> = LazyLock::new(ContainerRuntime::detect);
+
+impl ContainerRuntime {
+    /// Detect the runtime, most specific marker first. Non-Linux hosts match no
+    /// marker and report `None`.
+    pub fn detect() -> Self {
+        // Kubernetes injects this into every pod; containerd/CRI-O leave no
+        // `/.dockerenv`, so this is the only reliable signal there.
+        if std::env::var_os("KUBERNETES_SERVICE_HOST").is_some()
+            || Path::new("/var/run/secrets/kubernetes.io").exists()
+        {
+            return ContainerRuntime::Kubernetes;
+        }
+        if Path::new("/.dockerenv").exists() {
+            return ContainerRuntime::Docker;
+        }
+        // Any other container marker — Podman/Buildah (`/run/.containerenv`),
+        // LXC/systemd-nspawn (`/run/systemd/container`), or an overlay root fs
+        // (a container image that left no specific marker).
+        if Path::new("/run/.containerenv").exists()
+            || Path::new("/run/systemd/container").exists()
+            || has_overlay_root()
+        {
+            return ContainerRuntime::Other;
+        }
+        ContainerRuntime::None
+    }
+
+    fn is_docker(self) -> bool {
+        matches!(self, ContainerRuntime::Docker)
+    }
+}
+
+/// Whether `/` is an overlay filesystem (typical of container images).
+fn has_overlay_root() -> bool {
+    // /proc/mounts columns: device mountpoint fstype opts …
+    let Ok(mounts) = fs_err::read_to_string("/proc/mounts") else {
+        return false;
+    };
+    mounts.lines().any(|line| {
+        let mut cols = line.split_whitespace();
+        let (_device, mountpoint, fstype) = (cols.next(), cols.next(), cols.next());
+        mountpoint == Some("/") && fstype == Some("overlay")
+    })
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
