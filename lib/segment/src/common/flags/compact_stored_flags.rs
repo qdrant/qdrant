@@ -9,6 +9,7 @@ use common::universal_io::{
     OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite, UniversalWriteFileOps,
 };
 use parking_lot::Mutex;
+use roaring::RoaringBitmap;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -93,6 +94,11 @@ where
     /// Number of set flags.
     pub fn count_flags(&self) -> usize {
         self.mask.lock().count_ones() as usize
+    }
+
+    /// Snapshot of the set flags as a roaring bitmap.
+    pub fn to_bitmap(&self) -> RoaringBitmap {
+        self.mask.lock().ones().clone()
     }
 
     /// Set the flag at `index`, returning its previous value. Grows the mask
