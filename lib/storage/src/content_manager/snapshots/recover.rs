@@ -34,6 +34,11 @@ struct SnapshotShardKeyMappingEntry {
     shard_ids: HashSet<ShardId>,
 }
 
+struct SnapshotShardKeyPlan {
+    shard_key: ShardKey,
+    placement: Vec<Vec<PeerId>>,
+}
+
 async fn snapshot_shard_placement(
     snapshot_collection_dir: &std::path::Path,
     shard_ids: &[ShardId],
@@ -64,6 +69,46 @@ async fn snapshot_shard_placement(
     }
 
     Ok(placement)
+}
+
+async fn snapshot_shard_key_plan(
+    snapshot_collection_dir: &std::path::Path,
+) -> Result<Vec<SnapshotShardKeyPlan>, StorageError> {
+    let snapshot_mapping_path = snapshot_collection_dir.join(SHARD_KEY_MAPPING_FILE);
+    if !snapshot_mapping_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let snapshot_shard_mapping: Vec<SnapshotShardKeyMappingEntry> =
+        read_json(&snapshot_mapping_path)?;
+
+    let mut shard_keys: Vec<_> = snapshot_shard_mapping
+        .iter()
+        .map(|entry| {
+            let shard_key = entry.key.clone();
+            let mut shard_ids = entry.shard_ids.iter().copied().collect::<Vec<_>>();
+            shard_ids.sort_unstable();
+            (shard_key, shard_ids)
+        })
+        .collect();
+    shard_keys.sort_by_key(|(_, shard_ids)| shard_ids.first().copied().unwrap_or(0));
+
+    let mut plans = Vec::with_capacity(shard_keys.len());
+    for (shard_key, shard_ids) in shard_keys {
+        if shard_ids.is_empty() {
+            return Err(StorageError::service_error(format!(
+                "Snapshot shard mapping for key {shard_key} has no shard ids",
+            )));
+        }
+
+        let placement = snapshot_shard_placement(snapshot_collection_dir, &shard_ids).await?;
+        plans.push(SnapshotShardKeyPlan {
+            shard_key,
+            placement,
+        });
+    }
+
+    Ok(plans)
 }
 
 pub async fn activate_shard(
@@ -221,12 +266,10 @@ async fn _do_recover_from_snapshot(
 
     let schema = payload_schema.read().schema.clone();
 
-    let mut collection_was_created = false;
     let collection = match toc.get_collection(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
             log::debug!("Collection {collection_pass} does not exist, creating it");
-            collection_was_created = true;
             let operation =
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
                     collection_pass.to_string(),
@@ -258,48 +301,39 @@ async fn _do_recover_from_snapshot(
 
     let mut state = collection.state().await;
 
-    // `CreateCollection` with custom sharding starts with empty shard distribution. For fresh
-    // collections this leaves `state.shards` empty, so the restore loop below would skip all
-    // snapshot shards. Materialize custom shard keys from snapshot metadata first.
-    if collection_was_created
-        && state.shards.is_empty()
-        && snapshot_config.params.sharding_method.unwrap_or_default() == ShardingMethod::Custom
-    {
-        let snapshot_mapping_path = tmp_collection_dir.path().join(SHARD_KEY_MAPPING_FILE);
-        if snapshot_mapping_path.exists() {
-            let snapshot_shard_mapping: Vec<SnapshotShardKeyMappingEntry> =
-                read_json(&snapshot_mapping_path)?;
+    // For custom sharding, initialize or reconcile shard keys from snapshot metadata.
+    // The whole plan is validated first (mapping + placements), then missing keys are created.
+    if snapshot_config.params.sharding_method.unwrap_or_default() == ShardingMethod::Custom {
+        let shard_key_plan = snapshot_shard_key_plan(tmp_collection_dir.path()).await?;
+        let snapshot_keys: HashSet<_> = shard_key_plan
+            .iter()
+            .map(|plan| plan.shard_key.clone())
+            .collect();
+        let existing_keys: HashSet<_> = state.shards_key_mapping.keys().cloned().collect();
 
-            let mut shard_keys: Vec<_> = snapshot_shard_mapping
-                .iter()
-                .map(|entry| {
-                    let shard_key = entry.key.clone();
-                    let shard_ids = &entry.shard_ids;
-                    let mut shard_ids = shard_ids.iter().copied().collect::<Vec<_>>();
-                    shard_ids.sort_unstable();
-                    (shard_key, shard_ids)
-                })
-                .collect();
-            shard_keys.sort_by_key(|(_, shard_ids)| shard_ids.first().copied().unwrap_or(0));
+        let unexpected_keys: Vec<_> = existing_keys.difference(&snapshot_keys).cloned().collect();
+        if !unexpected_keys.is_empty() {
+            return Err(StorageError::bad_input(format!(
+                "Snapshot is not compatible with existing collection: extra custom shard keys in target collection: {unexpected_keys:?}",
+            )));
+        }
 
-            for (shard_key, shard_ids) in shard_keys {
-                if shard_ids.is_empty() {
-                    continue;
-                }
+        let missing_keys = shard_key_plan
+            .into_iter()
+            .filter(|plan| !existing_keys.contains(&plan.shard_key))
+            .collect::<Vec<_>>();
 
-                let placement =
-                    snapshot_shard_placement(tmp_collection_dir.path(), &shard_ids).await?;
-                let consensus_op = CollectionMetaOperations::CreateShardKey(CreateShardKey {
-                    collection_name: collection_pass.to_string(),
-                    shard_key,
-                    placement,
-                    initial_state: None,
-                });
+        for plan in missing_keys {
+            let consensus_op = CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name: collection_pass.to_string(),
+                shard_key: plan.shard_key,
+                placement: plan.placement,
+                initial_state: None,
+            });
 
-                dispatcher
-                    .submit_collection_meta_op(consensus_op, auth.clone(), None)
-                    .await?;
-            }
+            dispatcher
+                .submit_collection_meta_op(consensus_op, auth.clone(), None)
+                .await?;
         }
 
         state = collection.state().await;
