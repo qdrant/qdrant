@@ -6766,6 +6766,7 @@
             "description": "Size of a vectors used",
             "type": "integer",
             "format": "uint64",
+            "maximum": 65536,
             "minimum": 1
           },
           "distance": {
