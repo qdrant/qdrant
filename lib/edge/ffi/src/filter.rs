@@ -493,14 +493,10 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         } = c;
         let key = crate::error::parse_json_path(&key)?;
 
-        // Exactly one predicate per field condition. The engine has no
-        // well-defined semantics for multiple predicates in one condition — it
-        // evaluates only one, and which one depends on the field's indexes — so
-        // passing several through would silently diverge from a Qdrant server.
-        // None set matches every point (a silent no-op); >1 is ambiguous. Reject
-        // both; callers AND predicates via separate `must` conditions. (`range`,
+        // A field condition with no predicates matches every point (a silent
+        // no-op), which the FFI rejects to avoid confusion. `range`,
         // `datetime_range`, and `range_integer` share the engine's single range
-        // slot, so they count as one predicate here; setting multiple is caught below.)
+        // slot, so setting multiple is caught below.
         let predicate_count = [
             r#match.is_some(),
             range.is_some() || datetime_range.is_some() || range_integer.is_some(),
@@ -515,20 +511,13 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
 
         if predicate_count == 0 {
             return Err(crate::error::EdgeError::invalid_argument(
-                "field condition has no predicate set: specify exactly one of \
+                "field condition has no predicate set: specify at least one of \
                  match, range, datetime_range, range_integer, geo_bounding_box, geo_radius, \
                  geo_polygon, or values_count",
             ));
         }
-        if predicate_count > 1 {
-            return Err(crate::error::EdgeError::invalid_argument(
-                "field condition has more than one predicate set: a field condition tests \
-                 exactly one predicate. To AND several predicates on the same key, add one \
-                 field condition per predicate to the filter's `must` clause",
-            ));
-        }
 
-        // The engine's `range` slot holds one interface, float or datetime.
+        // The engine's `range` slot holds one interface: float, datetime or integer.
         let range = match (range, datetime_range, range_integer) {
             (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => {
                 return Err(crate::error::EdgeError::invalid_argument(

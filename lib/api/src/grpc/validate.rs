@@ -303,6 +303,24 @@ impl Validate for grpc::FieldCondition {
             );
         }
 
+        let range_count = [
+            self.range.is_some(),
+            self.datetime_range.is_some(),
+            self.integer_range.is_some(),
+        ]
+        .into_iter()
+        .filter(|&set| set)
+        .count();
+
+        if range_count > 1 {
+            errors.add(
+                "range",
+                ValidationError::new(
+                    "Only one of `range`, `datetime_range`, or `integer_range` can be specified",
+                ),
+            );
+        }
+
         let grpc::FieldCondition {
             key: _,
             r#match: _,

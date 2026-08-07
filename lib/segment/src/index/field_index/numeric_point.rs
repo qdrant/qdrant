@@ -220,13 +220,14 @@ impl Numericable for u128 {
                 Some(x) => Some(x as u128),
                 None => None,
             },
-            lt: match range.lt {
-                Some(x) if x <= 0 => Some(0u128),
-                Some(x) => Some(x as u128),
-                None => None,
+            lt: match (range.lt, range.lte) {
+                (Some(x), _) if x <= 0 => Some(0u128),
+                (_, Some(x)) if x < 0 => Some(0u128),
+                (Some(x), _) => Some(x as u128),
+                (None, _) => None,
             },
             lte: match range.lte {
-                Some(x) if x < 0 => Some(0u128),
+                Some(x) if x < 0 => None,
                 Some(x) => Some(x as u128),
                 None => None,
             },

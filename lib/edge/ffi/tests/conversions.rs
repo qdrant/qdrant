@@ -673,13 +673,10 @@ fn field_condition_no_predicate_returns_error() {
     assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
 }
 
-/// Setting MORE than one predicate is rejected: the engine has no well-defined
-/// semantics for multiple predicates in one field condition (it evaluates only
-/// one, and which one depends on the field's indexes), so the FFI fails loud and
-/// steers callers to separate `must` conditions instead of silently diverging
-/// from a Qdrant server.
+/// Setting MORE than one predicate is accepted and correctly converts to the
+/// engine's `SegmentFieldCondition`. The engine will apply all set predicates.
 #[test]
-fn field_condition_multiple_predicates_rejected() {
+fn field_condition_multiple_predicates_accepted() {
     use qdrant_edge_ffi::filter::{RangeFloat, ValuesCount};
     let cond = Condition::Field {
         condition: FieldCondition {
@@ -708,8 +705,9 @@ fn field_condition_multiple_predicates_rejected() {
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(
-        matches!(r, Err(EdgeError::InvalidArgument { .. })),
-        "multiple predicates must be rejected, got: {r:?}"
+        r.is_ok(),
+        "multiple predicates must be accepted, got: {:?}",
+        r.unwrap_err()
     );
 }
 
