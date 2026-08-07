@@ -94,6 +94,10 @@ fn tear_the_log(segment_path: &Path) {
 /// rather than appended after — the point of writing at the end of the *log*
 /// instead of the file. Left in place, it would misframe every entry after.
 #[test]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "heal replaces the file while it is still mmap'd, which Windows denies"
+)]
 fn heals_a_torn_mappings_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = mappings_path(dir.path());
@@ -133,6 +137,10 @@ fn heals_a_torn_mappings_tail() {
 /// itself: the writer never learned the first attempt landed, so it still holds
 /// the same slots and offset, and the retry leaves one copy rather than two.
 #[test]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "heal replaces the file while it is still mmap'd, which Windows denies"
+)]
 fn re_appends_a_batch_that_landed_unacknowledged() {
     let landed = Builder::new().prefix("update_only").tempdir().unwrap();
     let retried = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -407,6 +415,10 @@ fn an_abandoned_update_retires_the_point() {
 /// The next write heals it rather than being stuck with it forever: those bytes
 /// are a slot no reader ever saw, so the new entries take their place.
 #[test]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "heal replaces the file while it is still mmap'd, which Windows denies"
+)]
 fn heals_a_partial_versions_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
@@ -433,6 +445,10 @@ fn heals_a_partial_versions_tail() {
 /// Healing a file that holds nothing but a torn entry leaves it empty, and the
 /// array starts over at slot 0.
 #[test]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "heal replaces the file while it is still mmap'd, which Windows denies"
+)]
 fn heals_a_versions_file_of_only_a_partial_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
