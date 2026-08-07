@@ -17,6 +17,8 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod build;
+#[cfg(test)]
+pub(crate) use build::HnswBuildDebugOptions;
 #[cfg(feature = "gpu")]
 mod gpu_build;
 mod old_index;

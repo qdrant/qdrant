@@ -43,6 +43,17 @@ impl EntryPoints {
         // Do not merge `extra_entry_points` to prevent duplications
     }
 
+    /// Same as [`Self::merge_from_other`], for entry points recorded in the
+    /// local id space of a subgraph. `to_global` maps them back.
+    pub fn merge_translated(&mut self, other: EntryPoints, to_global: &[PointOffsetType]) {
+        self.entry_points
+            .extend(other.entry_points.into_iter().map(|entry| EntryPoint {
+                point_id: to_global[entry.point_id as usize],
+                level: entry.level,
+            }));
+        // Do not merge `extra_entry_points` to prevent duplications
+    }
+
     pub fn new_point<F>(
         &mut self,
         new_point: PointOffsetType,

@@ -110,4 +110,9 @@ where
         self.quantized_data
             .score_bytes(enabled, &self.query, bytes, &self.hardware_counter)
     }
+
+    fn score_internal_bytes(&self, a: &[u8], b: &[u8]) -> Option<ScoreType> {
+        self.quantized_data
+            .score_internal_bytes(a, b, &self.hardware_counter)
+    }
 }

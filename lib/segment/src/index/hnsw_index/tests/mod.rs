@@ -1,5 +1,6 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
+mod test_payload_block_build;
 
 use common::types::PointOffsetType;
 use rand::Rng;

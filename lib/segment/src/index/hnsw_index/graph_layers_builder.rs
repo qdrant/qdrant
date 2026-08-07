@@ -93,6 +93,55 @@ impl GraphLayersBase for GraphLayersBuilder {
 /// Budget of how many checks have to be done at minimum to consider subgraph-connectivity approximation correct.
 const SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET: usize = 64;
 
+/// Samples how many edges to drop before the next kept one, when every edge is
+/// dropped independently with probability `q`.
+#[derive(Clone, Copy)]
+struct DropGapSampler {
+    q: f32,
+    /// `1 / ln(q)`, hoisted so sampling multiplies instead of dividing. Only
+    /// meaningful for `0 < q < 1`, which is the only case that reads it.
+    inv_ln_q: f64,
+}
+
+impl DropGapSampler {
+    fn new(q: f32) -> Self {
+        Self {
+            q,
+            inv_ln_q: f64::from(q).ln().recip(),
+        }
+    }
+
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> usize {
+        if self.q <= 0.0 {
+            // Every edge is kept.
+            return 0;
+        }
+        if self.q >= 1.0 {
+            // No edge is kept: a gap this large steps past any link slice.
+            // Not reachable from the build call site, but `subgraph_connectivity`
+            // is a public method.
+            return usize::MAX;
+        }
+        // `u` must land in `(0, 1]`, `ln(0)` is -inf. `random` yields `[0, 1)`.
+        Self::gap_from_uniform(1.0 - rng.random::<f64>(), self.inv_ln_q)
+    }
+
+    /// `floor(ln(u) / ln(q))`, the inverse CDF of `Geometric(1 - q)`.
+    ///
+    /// Split out from [`Self::sample`] so the boundary values of `u` can be
+    /// injected by tests. Saturates rather than wrapping: `u = 1` gives 0, and
+    /// a small `u` under a `q` near 1 gives a gap that outgrows `usize` and is
+    /// clamped to `usize::MAX`, past the end of any link slice.
+    fn gap_from_uniform(u: f64, inv_ln_q: f64) -> usize {
+        let gap = u.ln() * inv_ln_q;
+        if gap >= usize::MAX as f64 {
+            usize::MAX
+        } else {
+            gap.floor() as usize
+        }
+    }
+}
+
 impl GraphLayersBuilder {
     pub fn get_entry_points(&self) -> MutexGuard<'_, EntryPoints> {
         self.entry_points.lock()
@@ -146,6 +195,8 @@ impl GraphLayersBuilder {
         });
         let entry_layer = self.get_point_level(entry_point);
 
+        let drop_gap = DropGapSampler::new(q);
+
         let mut queue: Vec<u32> = vec![];
 
         // Amount of points reached when searching the graph.
@@ -170,15 +221,14 @@ impl GraphLayersBuilder {
                 // Do BFS through all points on the current layer.
                 while let Some(current_point) = queue.pop() {
                     let links = self.links_layers[current_point as usize][current_layer].read();
+                    let links = links.links();
 
-                    for link in links.iter() {
-                        spent_budget += 1;
+                    // The budget counts enumerated edges, dropped ones included.
+                    spent_budget += links.len();
 
-                        // Flip a coin to decide if the edge is removed or not
-                        let coin_flip = rng.random_range(0.0..1.0);
-                        if coin_flip < q {
-                            continue;
-                        }
+                    let mut i = drop_gap.sample(rng);
+                    while i < links.len() {
+                        let link = links[i];
 
                         let is_selected = point_selection.get_bit(link as usize).unwrap_or(false);
                         let is_visited = visited.get_bit(link as usize).unwrap_or(false);
@@ -189,6 +239,8 @@ impl GraphLayersBuilder {
                             queue.push(link);
                             previous_visited_points.push(link);
                         }
+
+                        i = i.saturating_add(1).saturating_add(drop_gap.sample(rng));
                     }
                 }
             }
@@ -360,6 +412,13 @@ impl GraphLayersBuilder {
                     current_layers.push(other_links);
                 } else {
                     let other_links = other_links.into_inner();
+                    if other_links.links().is_empty() {
+                        // Nothing to append, and seeding the visited list is
+                        // side-effect-free. Skipping avoids taking the write
+                        // lock for the vast majority of points, as a payload
+                        // block only touches a small subset of the segment.
+                        continue;
+                    }
                     visited_list.next_iteration();
                     let mut current_links = current_layers[level].write();
                     current_links.iter().for_each(|x| {
@@ -378,6 +437,61 @@ impl GraphLayersBuilder {
         self.entry_points
             .lock()
             .merge_from_other(other.entry_points.into_inner());
+    }
+
+    /// Merge a payload-block subgraph that was built in its own id space.
+    /// `to_global` maps every point of `block` to its segment-wide id
+    pub fn merge_block(&self, block: GraphLayersBuilder, to_global: &[PointOffsetType]) -> usize {
+        debug_assert_eq!(block.links_layers.len(), to_global.len());
+        #[cfg(debug_assertions)]
+        {
+            // Two local ids mapping to the same point would silently corrupt
+            // the merged links, so make sure the block is a set.
+            let unique: std::collections::HashSet<_> = to_global.iter().copied().collect();
+            debug_assert_eq!(
+                unique.len(),
+                to_global.len(),
+                "payload block points must be unique",
+            );
+            debug_assert!(
+                to_global
+                    .iter()
+                    .all(|&global| (global as usize) < self.links_layers.len()),
+                "payload block points must exist in the target graph",
+            );
+        }
+
+        let mut links_added = 0;
+        for (local_id, levels) in block.links_layers.into_iter().enumerate() {
+            debug_assert_eq!(levels.len(), 1, "payload block points only have level 0");
+            let global_id = to_global[local_id] as usize;
+
+            for (level, block_links) in levels.into_iter().enumerate() {
+                let block_links = block_links.into_inner();
+                if block_links.links().is_empty() {
+                    continue;
+                }
+
+                // Seeding the dedup and appending must not be interleaved with
+                // another block merging into the same point.
+                let mut current_links = self.links_layers[global_id][level].write();
+                for &local_link in block_links.links() {
+                    let global_link = to_global[local_link as usize];
+                    // Containers hold a couple of `m0` links at most, so a scan
+                    // is cheaper than seeding a segment-sized visited list.
+                    if !current_links.links().contains(&global_link) {
+                        current_links.push(global_link);
+                        links_added += 1;
+                    }
+                }
+            }
+        }
+
+        self.entry_points
+            .lock()
+            .merge_translated(block.entry_points.into_inner(), to_global);
+
+        links_added
     }
 
     fn num_points(&self) -> usize {
@@ -575,6 +689,20 @@ impl GraphLayersBuilder {
                 links.connect(point_id, nearest_point.idx, level_m, scorer);
             }
         }
+    }
+
+    /// Every link container, per point and per level.
+    #[cfg(test)]
+    pub(crate) fn links_snapshot(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
+        self.links_layers
+            .iter()
+            .map(|levels| {
+                levels
+                    .iter()
+                    .map(|links| links.read().links().to_vec())
+                    .collect()
+            })
+            .collect()
     }
 
     /// This function returns average number of links per node in HNSW graph
@@ -952,6 +1080,467 @@ mod tests {
             .sum();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {avg_connectivity:#?}");
+    }
+
+    /// Reference implementation of [`GraphLayersBuilder::subgraph_connectivity`]
+    /// that flips an independent coin for every enumerated edge, as the
+    /// production code did before the geometric skip sampler was introduced.
+    fn subgraph_connectivity_per_edge_coin<R: Rng + ?Sized>(
+        builder: &GraphLayersBuilder,
+        rng: &mut R,
+        points: &[PointOffsetType],
+        q: f32,
+    ) -> f32 {
+        if points.is_empty() {
+            return 1.0;
+        }
+
+        let max_point_id = *points.iter().max().unwrap();
+
+        let mut visited: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
+        let mut point_selection: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
+
+        for point_id in points {
+            point_selection.set(*point_id as usize, true);
+        }
+
+        let entry_point = builder
+            .entry_points
+            .lock()
+            .get_random_entry_point(rng, |point_id| {
+                point_selection.get_bit(point_id as usize).unwrap_or(false)
+            })
+            .map(|ep| ep.point_id);
+
+        let entry_point = entry_point.unwrap_or_else(|| {
+            points
+                .iter()
+                .max_by_key(|point_id| builder.links_layers[**point_id as usize].len())
+                .cloned()
+                .unwrap()
+        });
+        let entry_layer = builder.get_point_level(entry_point);
+
+        let mut queue: Vec<u32> = vec![];
+        let mut reached_points = 1;
+        let mut spent_budget = 0;
+
+        loop {
+            let budget_before_iteration = spent_budget;
+            visited.set(entry_point as usize, true);
+
+            let mut previous_visited_points = vec![entry_point];
+
+            for current_layer in (0..=entry_layer).rev() {
+                queue.extend_from_slice(&previous_visited_points);
+
+                while let Some(current_point) = queue.pop() {
+                    let links = builder.links_layers[current_point as usize][current_layer].read();
+
+                    for link in links.iter() {
+                        spent_budget += 1;
+
+                        let coin_flip = rng.random_range(0.0..1.0);
+                        if coin_flip < q {
+                            continue;
+                        }
+
+                        let is_selected = point_selection.get_bit(link as usize).unwrap_or(false);
+                        let is_visited = visited.get_bit(link as usize).unwrap_or(false);
+
+                        if !is_visited && is_selected {
+                            visited.set(link as usize, true);
+                            reached_points += 1;
+                            queue.push(link);
+                            previous_visited_points.push(link);
+                        }
+                    }
+                }
+            }
+
+            if spent_budget > SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET
+                || spent_budget == budget_before_iteration
+            {
+                break;
+            }
+
+            queue.clear();
+            reached_points = 1;
+            visited.fill(false);
+        }
+
+        reached_points as f32 / points.len() as f32
+    }
+
+    /// The gap sampler must keep edges at rate `1 - q`.
+    #[test]
+    fn test_drop_gap_sampler_keep_rate() {
+        const KEPT_SAMPLES: usize = 1_000_000;
+
+        let mut rng = SmallRng::seed_from_u64(0xC0FFEE);
+        for q in [0.5f32, 0.9, 0.95] {
+            let sampler = DropGapSampler::new(q);
+
+            // Each draw stands for `gap` dropped edges plus one kept edge.
+            let mut enumerated = 0usize;
+            for _ in 0..KEPT_SAMPLES {
+                enumerated += sampler.sample(&mut rng) + 1;
+            }
+
+            let keep_rate = KEPT_SAMPLES as f64 / enumerated as f64;
+            let expected = 1.0 - f64::from(q);
+            assert!(
+                (keep_rate - expected).abs() < 0.005,
+                "q={q}: keep rate {keep_rate} too far from {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn test_drop_gap_sampler_degenerate_probabilities() {
+        let mut rng = SmallRng::seed_from_u64(1);
+        for _ in 0..100 {
+            assert_eq!(DropGapSampler::new(0.0).sample(&mut rng), 0);
+            assert_eq!(DropGapSampler::new(-1.0).sample(&mut rng), 0);
+            assert_eq!(DropGapSampler::new(1.0).sample(&mut rng), usize::MAX);
+            assert_eq!(DropGapSampler::new(2.0).sample(&mut rng), usize::MAX);
+        }
+    }
+
+    /// The gap must stay finite and in range at both ends of `u`, for every
+    /// `q` the sampler can be handed.
+    #[test]
+    fn test_drop_gap_sampler_uniform_boundaries() {
+        // `random::<f64>()` has 53 bits of resolution, so `1.0 - u` spans
+        // `[2^-53, 1.0]`.
+        let u_min = 2.0f64.powi(-53);
+
+        // Both ends of the `q` range that reaches the sampling branch, plus the
+        // closest `f32` below 1.
+        for q in [
+            f32::MIN_POSITIVE,
+            0.5,
+            0.999_999_9,
+            1.0 - f32::EPSILON / 2.0,
+        ] {
+            assert!(q > 0.0 && q < 1.0, "q={q} must reach the sampling branch");
+            let inv_ln_q = f64::from(q).ln().recip();
+
+            assert_eq!(
+                DropGapSampler::gap_from_uniform(1.0, inv_ln_q),
+                0,
+                "q={q}: u=1 must keep the very next edge",
+            );
+            let gap = DropGapSampler::gap_from_uniform(u_min, inv_ln_q);
+            assert!(gap < usize::MAX, "q={q}: u={u_min} gave a saturated gap");
+        }
+
+        // On a 64-bit `usize` no `f32` value of `q` can overflow the cast, but a
+        // 32-bit one can, so the guard has to hold rather than wrap.
+        assert_eq!(
+            DropGapSampler::gap_from_uniform(u_min, -1e300),
+            usize::MAX,
+            "an overflowing gap must saturate",
+        );
+    }
+
+    /// The skip sampler must estimate the same connectivity as a per-edge coin.
+    #[test]
+    fn test_subgraph_connectivity_matches_per_edge_coin() {
+        const NUM_VECTORS: usize = 500;
+        const DIM: usize = 8;
+        const RUNS: usize = 200;
+
+        let mut rng = SmallRng::seed_from_u64(42);
+        let (_vector_holder, builder) =
+            create_graph_layer(NUM_VECTORS, DIM, true, false, Distance::Cosine, &mut rng);
+
+        let points: Vec<PointOffsetType> = (0..NUM_VECTORS as PointOffsetType).collect();
+        let mut means = Vec::new();
+
+        for q in [0.5f32, 0.75, 0.875] {
+            let mut rng = SmallRng::seed_from_u64(7);
+            let mean: f64 = (0..RUNS)
+                .map(|_| f64::from(builder.subgraph_connectivity(&mut rng, &points, q)))
+                .sum::<f64>()
+                / RUNS as f64;
+
+            let mut rng = SmallRng::seed_from_u64(7);
+            let reference_mean: f64 = (0..RUNS)
+                .map(|_| {
+                    f64::from(subgraph_connectivity_per_edge_coin(
+                        &builder, &mut rng, &points, q,
+                    ))
+                })
+                .sum::<f64>()
+                / RUNS as f64;
+
+            eprintln!("q={q}: mean={mean} reference_mean={reference_mean}");
+            assert!(
+                (mean - reference_mean).abs() < 0.02,
+                "q={q}: mean connectivity {mean} vs reference {reference_mean}",
+            );
+            means.push(mean);
+        }
+
+        // Sanity check that the estimate actually responds to `q`, otherwise
+        // the comparison above could pass on two degenerate implementations.
+        assert!(
+            means.windows(2).all(|w| w[0] > w[1] + 0.05),
+            "connectivity estimate should fall as more edges are dropped: {means:?}",
+        );
+    }
+
+    /// Merging a builder whose containers are all empty must leave the target
+    /// untouched, link-for-link and in the same order.
+    #[test]
+    fn test_merge_from_other_empty_is_noop() {
+        let distance = Distance::Cosine;
+        let num_vectors = 200;
+        let dim = 8;
+
+        let mut rng = SmallRng::seed_from_u64(42);
+        let (_vector_holder, mut graph_layers_builder) =
+            create_graph_layer(num_vectors, dim, true, false, distance, &mut rng);
+
+        let before = graph_layers_builder.links_snapshot();
+        let entry_points_before = format!("{:?}", *graph_layers_builder.entry_points.lock());
+
+        let empty =
+            GraphLayersBuilder::new_with_params(num_vectors, HnswM::new2(M), 16, 1, true, false);
+        graph_layers_builder.merge_from_other(empty);
+
+        assert_eq!(before, graph_layers_builder.links_snapshot());
+        assert_eq!(
+            entry_points_before,
+            format!("{:?}", *graph_layers_builder.entry_points.lock()),
+        );
+    }
+
+    /// Merging a block built in its own id space must land exactly where the
+    /// legacy segment-sized block lands, links and entry points alike.
+    #[test]
+    fn test_merge_block_matches_merge_from_other() {
+        use rand::seq::SliceRandom as _;
+
+        const NUM_VECTORS: usize = 200;
+        const BLOCK_SIZE: usize = 40;
+        const DIM: usize = 8;
+
+        let mut target_legacy = create_graph_layer(
+            NUM_VECTORS,
+            DIM,
+            true,
+            false,
+            Distance::Cosine,
+            &mut SmallRng::seed_from_u64(42),
+        )
+        .1;
+        let target_compact = create_graph_layer(
+            NUM_VECTORS,
+            DIM,
+            true,
+            false,
+            Distance::Cosine,
+            &mut SmallRng::seed_from_u64(42),
+        )
+        .1;
+        assert_eq!(
+            target_legacy.links_snapshot(),
+            target_compact.links_snapshot(),
+        );
+
+        let mut rng = SmallRng::seed_from_u64(7);
+
+        // The block is a scattered subset of the segment, so local and global
+        // ids share no ordering.
+        let mut to_global: Vec<PointOffsetType> = (0..NUM_VECTORS as PointOffsetType).collect();
+        to_global.shuffle(&mut rng);
+        to_global.truncate(BLOCK_SIZE);
+
+        let legacy_block =
+            GraphLayersBuilder::new_with_params(NUM_VECTORS, HnswM::new2(M), 16, 1, true, false);
+        let compact_block =
+            GraphLayersBuilder::new_with_params(BLOCK_SIZE, HnswM::new2(M), 16, 1, true, false);
+
+        for local_id in 0..BLOCK_SIZE {
+            // Repeats are intentional: both merges have to dedup them.
+            for _ in 0..rng.random_range(0..8) {
+                let local_link = rng.random_range(0..BLOCK_SIZE);
+                legacy_block.links_layers[to_global[local_id] as usize][0]
+                    .write()
+                    .push(to_global[local_link]);
+                compact_block.links_layers[local_id][0]
+                    .write()
+                    .push(local_link as PointOffsetType);
+            }
+
+            // The production checker accepts the same points on both sides, so
+            // mirror it through the id map here too.
+            legacy_block
+                .entry_points
+                .lock()
+                .new_point(to_global[local_id], 0, |point_id| {
+                    point_id.is_multiple_of(3)
+                });
+            compact_block.entry_points.lock().new_point(
+                local_id as PointOffsetType,
+                0,
+                |point_id| to_global[point_id as usize].is_multiple_of(3),
+            );
+        }
+
+        target_legacy.merge_from_other(legacy_block);
+        target_compact.merge_block(compact_block, &to_global);
+
+        assert_eq!(
+            target_legacy.links_snapshot(),
+            target_compact.links_snapshot(),
+        );
+        assert_eq!(
+            format!("{:?}", *target_legacy.get_entry_points()),
+            format!("{:?}", *target_compact.get_entry_points()),
+        );
+    }
+
+    /// Build `count` synthetic blocks over overlapping subsets of a segment of
+    /// `num_vectors` points. Returns each block's builder with its id map.
+    fn random_blocks<R: Rng + ?Sized>(
+        rng: &mut R,
+        num_vectors: usize,
+        block_size: usize,
+        count: usize,
+    ) -> Vec<(GraphLayersBuilder, Vec<PointOffsetType>)> {
+        use rand::seq::SliceRandom as _;
+
+        (0..count)
+            .map(|_| {
+                let mut to_global: Vec<PointOffsetType> =
+                    (0..num_vectors as PointOffsetType).collect();
+                to_global.shuffle(rng);
+                to_global.truncate(block_size);
+
+                let block = GraphLayersBuilder::new_with_params(
+                    block_size,
+                    HnswM::new2(M),
+                    16,
+                    1,
+                    true,
+                    false,
+                );
+                for local_id in 0..block_size {
+                    for _ in 0..rng.random_range(0..8) {
+                        let local_link = rng.random_range(0..block_size) as PointOffsetType;
+                        block.links_layers[local_id][0].write().push(local_link);
+                    }
+                    block
+                        .entry_points
+                        .lock()
+                        .new_point(local_id as PointOffsetType, 0, |_| true);
+                }
+
+                (block, to_global)
+            })
+            .collect()
+    }
+
+    /// Blocks merged concurrently may end up ordered differently inside a
+    /// container, but the set of links must be exactly the sequential one:
+    /// nothing lost, nothing duplicated.
+    #[test]
+    fn test_merge_block_concurrent_matches_sequential() {
+        use rayon::prelude::*;
+
+        const NUM_VECTORS: usize = 120;
+        const BLOCK_SIZE: usize = 100;
+        const BLOCKS: usize = 64;
+        const DIM: usize = 8;
+        const ITERATIONS: usize = 20;
+
+        // Blocks cover almost the whole segment, so nearly every container is
+        // written by nearly every merge and the per-point lock is the only thing
+        // keeping them consistent.
+        let mut rng = SmallRng::seed_from_u64(11);
+        let blocks = random_blocks(&mut rng, NUM_VECTORS, BLOCK_SIZE, BLOCKS);
+
+        let sequential = create_graph_layer(
+            NUM_VECTORS,
+            DIM,
+            true,
+            false,
+            Distance::Cosine,
+            &mut SmallRng::seed_from_u64(42),
+        )
+        .1;
+        for (block, to_global) in &blocks {
+            let copy = clone_block(block);
+            sequential.merge_block(copy, to_global);
+        }
+        let expected = sorted_links(&sequential.links_snapshot());
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+
+        for iteration in 0..ITERATIONS {
+            let concurrent = create_graph_layer(
+                NUM_VECTORS,
+                DIM,
+                true,
+                false,
+                Distance::Cosine,
+                &mut SmallRng::seed_from_u64(42),
+            )
+            .1;
+
+            pool.install(|| {
+                blocks.par_iter().for_each(|(block, to_global)| {
+                    concurrent.merge_block(clone_block(block), to_global);
+                });
+            });
+
+            assert_eq!(
+                sorted_links(&concurrent.links_snapshot()),
+                expected,
+                "iteration {iteration}: concurrent merge changed the link sets",
+            );
+        }
+    }
+
+    /// `merge_block` consumes the block, so each run needs its own copy.
+    fn clone_block(block: &GraphLayersBuilder) -> GraphLayersBuilder {
+        let copy = GraphLayersBuilder::new_with_params(
+            block.links_layers.len(),
+            block.hnsw_m,
+            block.ef_construct,
+            1,
+            block.use_heuristic,
+            false,
+        );
+        for (levels, copy_levels) in block.links_layers.iter().zip(&copy.links_layers) {
+            for (links, copy_links) in levels.iter().zip(copy_levels) {
+                copy_links.write().fill_from(links.read().iter());
+            }
+        }
+        *copy.entry_points.lock() = block.entry_points.lock().clone();
+        copy
+    }
+
+    fn sorted_links(links: &[Vec<Vec<PointOffsetType>>]) -> Vec<Vec<Vec<PointOffsetType>>> {
+        links
+            .iter()
+            .map(|levels| {
+                levels
+                    .iter()
+                    .map(|container| {
+                        let mut container = container.clone();
+                        container.sort_unstable();
+                        container
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// Regression test: `subgraph_connectivity` must not hang when the chosen

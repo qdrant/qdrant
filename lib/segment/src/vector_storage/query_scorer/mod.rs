@@ -31,6 +31,14 @@ pub trait QueryScorer {
 
     type SupportsBytes: TBool;
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
+
+    /// Score two stored vectors given their encoded bytes, bitwise identical
+    /// to [`Self::score_internal`] on the same bytes. `None` - the default -
+    /// means the underlying scorer has no byte-level symmetric kernel and the
+    /// caller must score by id instead.
+    fn score_internal_bytes(&self, _a: &[u8], _b: &[u8]) -> Option<ScoreType> {
+        None
+    }
 }
 
 pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
@@ -47,6 +55,11 @@ pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
 
 pub trait QueryScorerBytes {
     fn score_bytes(&self, bytes: &[u8]) -> ScoreType;
+
+    /// See [`QueryScorer::score_internal_bytes`].
+    fn score_internal_bytes(&self, _a: &[u8], _b: &[u8]) -> Option<ScoreType> {
+        None
+    }
 }
 
 #[derive(TransparentWrapper)]
@@ -64,6 +77,10 @@ impl<TQueryScorer: QueryScorer> QueryScorerBytesImpl<TQueryScorer> {
 impl<TQueryScorer: QueryScorer> QueryScorerBytes for QueryScorerBytesImpl<TQueryScorer> {
     fn score_bytes(&self, bytes: &[u8]) -> ScoreType {
         self.0.get().score_bytes(self.0.is_some(), bytes)
+    }
+
+    fn score_internal_bytes(&self, a: &[u8], b: &[u8]) -> Option<ScoreType> {
+        self.0.get().score_internal_bytes(a, b)
     }
 }
 
