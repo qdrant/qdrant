@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
@@ -27,6 +28,13 @@ use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
+
+/// How long a *streamed* snapshot waits for its turn on the segment holder.
+///
+/// Kept below the 60s inactivity timeout the snapshot download applies on the
+/// receiving side, so the sender reports why it gave up before the receiver gives
+/// up on it.
+const STREAMED_SNAPSHOT_SEGMENT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -344,12 +352,25 @@ pub fn snapshot_all_segments(
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
 
+    // Snapshots of one shard serialize on the segment holder (see
+    // `proxy_all_segments_and_apply`), and a streamed snapshot lives for as long as
+    // its consumer keeps reading. A streamed snapshot has already committed a
+    // `200 OK` by the time it gets here, so waiting silently would hand the consumer
+    // a response that never produces a byte -- indistinguishable from a hung server.
+    // Bound the wait for those and fail with an explanation instead. Snapshots
+    // written to a local file have no waiting consumer, so they still queue.
+    let lock_timeout = match format {
+        SnapshotFormat::Streamable => Some(STREAMED_SNAPSHOT_SEGMENT_LOCK_TIMEOUT),
+        SnapshotFormat::Ancient | SnapshotFormat::Regular => None,
+    };
+
     proxy_all_segments_and_apply(
         segments,
         segments_path,
         segment_config,
         payload_index_schema,
         deferred_internal_id,
+        lock_timeout,
         |segment| {
             let read_segment = segment.read();
             let request_segment_manifest = if let Some(manifest) = manifest {
@@ -395,18 +416,32 @@ pub fn snapshot_all_segments(
 /// sourced from it.
 ///
 /// Before snapshotting all segments are forcefully flushed to ensure all data is persisted.
+///
+/// The segment holder's upgradable read lock admits only one holder at a time, so
+/// concurrent calls for the same shard run one after another. `lock_timeout` bounds
+/// how long this call waits for its turn; `None` waits indefinitely.
 pub fn proxy_all_segments_and_apply<F>(
     segments: LockedSegmentHolder,
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     deferred_internal_id: Option<PointOffsetType>,
+    lock_timeout: Option<Duration>,
     mut operation: F,
 ) -> OperationResult<()>
 where
     F: FnMut(&RwLock<dyn StorageSegmentEntry>) -> OperationResult<()>,
 {
-    let segments_lock = segments.upgradable_read();
+    let segments_lock = match lock_timeout {
+        Some(timeout) => segments.try_upgradable_read_for(timeout).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "Timed out after {}s waiting for exclusive access to the segment holder; \
+                     another snapshot of this shard is still in progress",
+                timeout.as_secs(),
+            ))
+        })?,
+        None => segments.upgradable_read(),
+    };
 
     // Proxy all segments
     // Proxied segments are sorted by flush ordering
