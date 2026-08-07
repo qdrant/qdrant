@@ -16,15 +16,21 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     /// way it can be: the committed prefix is read back and put in its place as
     /// a whole file.
     ///
-    /// `file` is invalidated by that write — callers open a fresh handle.
+    /// Takes ownership of `file` and drops it before the rewrite — Windows
+    /// cannot replace a path that still has an mmap open. Callers open a fresh
+    /// handle afterwards.
     pub(super) fn heal_versions(
         &self,
         path: &Path,
-        file: &S,
+        file: S,
         file_len: u64,
     ) -> OperationResult<VersionsLayout> {
-        heal_versions_tail(path, file_len, |healthy_len| {
-            let committed = file.read_bytes(0..healthy_len, Sequential, align_of::<u8>())?;
+        heal_versions_tail(path, file_len, move |healthy_len| {
+            let committed = file
+                .read_bytes(0..healthy_len, Sequential, align_of::<u8>())?
+                .to_vec();
+            // Release the mmap before replacing the path.
+            drop(file);
             self.fs.atomic_save(path, &committed)?;
             Ok(())
         })
@@ -43,7 +49,9 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     /// Shrinks like [`heal_versions`](Self::heal_versions); what differs is the
     /// boundary, which the log cannot carry and [`new`](Self::new) is handed.
     ///
-    /// Opens its own handle and invalidates it — the caller opens a fresh one.
+    /// The caller must drop any open handle on `path` first — Windows cannot
+    /// replace a path that still has an mmap open. Opens its own handle, drops
+    /// it before the rewrite, and leaves the caller to open a fresh one.
     pub(super) fn heal_mappings(&self, path: &Path) -> OperationResult<()> {
         let file = self.open_append(path)?;
         let file_len = Self::end_of_file(&file)?;
@@ -55,7 +63,11 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                     file_len - self.mappings_end,
                     path.display(),
                 );
-                let log = file.read_bytes(0..self.mappings_end, Sequential, align_of::<u8>())?;
+                let log = file
+                    .read_bytes(0..self.mappings_end, Sequential, align_of::<u8>())?
+                    .to_vec();
+                // Release the mmap before replacing the path.
+                drop(file);
                 self.fs.atomic_save(path, &log)?;
                 Ok(())
             }

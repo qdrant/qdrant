@@ -185,8 +185,8 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         let file_len = Self::end_of_file(&file)?;
         let mut layout = VersionsLayout::of_len(file_len);
         if layout.partial_tail != 0 {
-            layout = self.heal_versions(&path, &file, file_len)?;
-            // Whatever the healed file is, it is not the one this handle holds.
+            // `heal_versions` takes the handle and drops it before rewriting.
+            layout = self.heal_versions(&path, file, file_len)?;
             file = self.open_append(&path)?;
         }
         let covered_slots = layout.committed_slots;
@@ -307,7 +307,10 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                 return Err(err.into());
             }
             // The conflict wrote nothing, so the file can be cut back to the
-            // log's end and the batch appended anew.
+            // log's end and the batch appended anew. Drop this handle first —
+            // healing replaces the path, which Windows refuses while an mmap
+            // is still open.
+            drop(file);
             self.heal_mappings(&path)?;
             file = self.open_append(&path)?;
             file.append_batch(self.mappings_end, batch())?;
