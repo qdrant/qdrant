@@ -297,6 +297,8 @@ pub enum DocumentOptions {
 mod tests {
     use std::assert_matches;
 
+    use validator::Validate;
+
     use super::*;
 
     #[test]
@@ -309,6 +311,32 @@ mod tests {
         let options: DocumentOptions = serde_json::from_str(&valid_bm25_config).unwrap();
         // Bm25 option is used only for schema, actual deserialization will happen in specialized code
         assert_matches!(options, DocumentOptions::Common(_));
+    }
+
+    #[test]
+    fn test_str_dist_query_validation_rejects_empty_query() {
+        let expression = Expression::StrDist(StrDistExpression {
+            str_dist: StrDistParamsExpression {
+                field: "title".parse().unwrap(),
+                query: String::new(),
+                func: StrDistFunc::Levenshtein,
+            },
+        });
+
+        assert!(expression.validate().is_err());
+    }
+
+    #[test]
+    fn test_str_dist_query_validation_accepts_non_empty_query() {
+        let expression = Expression::StrDist(StrDistExpression {
+            str_dist: StrDistParamsExpression {
+                field: "title".parse().unwrap(),
+                query: "hello".to_string(),
+                func: StrDistFunc::JaroWinkler,
+            },
+        });
+
+        assert!(expression.validate().is_ok());
     }
 }
 
@@ -948,6 +976,7 @@ pub enum Expression {
     LinDecay(LinDecayExpression),
     ExpDecay(ExpDecayExpression),
     GaussDecay(GaussDecayExpression),
+    StrDist(StrDistExpression),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -1079,6 +1108,27 @@ pub struct DecayParamsExpression {
     pub scale: Option<f32>,
     /// The midpoint of the decay. Should be between 0 and 1.Defaults to 0.5. Output will be this value when `|x - target| == scale`.
     pub midpoint: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct StrDistExpression {
+    #[validate(nested)]
+    pub str_dist: StrDistParamsExpression,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StrDistFunc {
+    Levenshtein,
+    JaroWinkler,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct StrDistParamsExpression {
+    pub field: JsonPath,
+    #[validate(length(min = 1, max = 1024))]
+    pub query: String,
+    pub func: StrDistFunc,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
