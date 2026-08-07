@@ -967,6 +967,42 @@ mod set_link_shadow_tests {
         assert_eq!(include_all, vec![3, 7, 8]);
     }
 
+    /// `internal_scan_masks` must describe exactly the ids `iter_internal`
+    /// yields: below the total-count cutoff and unset in the deleted
+    /// bitslice, with no deferred or shadowed filtering — the shadowed
+    /// active, its deferred head, and never-linked holes all behave the same
+    /// through both forms.
+    #[test]
+    fn internal_scan_masks_match_iter_internal() {
+        use common::bitvec::BitSliceExt as _;
+
+        use crate::id_tracker::PointMappingsRefEnum;
+
+        // Cutoff = 5: ext 7 has a shadowed active (2) plus a deferred head
+        // (7), ext 9 is deferred-only (8), ext 10 is dropped (tombstoned 4),
+        // and slots 0, 1, 5, 6 are never-linked holes.
+        let mut m = fresh_mapping(Some(5));
+        m.set_link(ext(7), 2);
+        m.set_link(ext(7), 7);
+        m.set_link(ext(8), 3);
+        m.set_link(ext(9), 8);
+        m.set_link(ext(10), 4);
+        m.drop(ext(10));
+
+        let r = PointMappingsRefEnum::<common::universal_io::MmapFile>::Plain(&m);
+        let (cutoff, mapping_deleted) = r.internal_scan_masks();
+
+        let cutoff = cutoff.expect("internal scan is bounded by the mapping length");
+        let from_masks: Vec<PointOffsetType> = (0..cutoff)
+            .filter(|&id| !mapping_deleted.get_bit(id as usize).unwrap_or(false))
+            .collect();
+        let reference: Vec<PointOffsetType> = r.iter_internal().collect();
+        assert_eq!(from_masks, reference);
+        // Both the shadowed active and its deferred head are in the scan.
+        assert!(reference.contains(&2));
+        assert!(reference.contains(&7));
+    }
+
     #[test]
     fn drop_clears_both_tracks_and_shadow() {
         let mut m = fresh_mapping(Some(5));

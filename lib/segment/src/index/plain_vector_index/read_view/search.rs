@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{DeferredBehavior, ScoredPointOffset};
+use common::types::ScoredPointOffset;
 
 use super::PlainVectorIndexReadView;
 use crate::common::BYTES_IN_KB;
@@ -108,14 +108,9 @@ where
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => {
-                let iter = self
-                    .id_tracker
-                    .point_mappings()
-                    .filter_deferred_and_deleted(
-                        batch_searcher.iter_not_deleted(),
-                        DeferredBehavior::VisibleOnly,
-                    );
-                batch_searcher.peek_top_iter(iter, &is_stopped)?
+                let (cutoff, mapping_deleted, shadowed) =
+                    self.id_tracker.point_mappings().visible_scan_masks();
+                batch_searcher.peek_top_visible(cutoff, mapping_deleted, shadowed, &is_stopped)?
             }
         };
 
