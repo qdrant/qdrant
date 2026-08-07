@@ -29,8 +29,8 @@ use super::super::shared::{
     DELETED_DIR_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
 };
 use crate::common::Flusher;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
@@ -135,9 +135,11 @@ pub fn open_appendable_turbo_multi_vector_storage(
         populate,
     )?;
 
-    let deleted = BitvecFlags::new(
+    let deleted = BitvecFlags::open_or_create(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &path.join(DELETED_DIR_PATH), populate)?,
+        &path.join(DELETED_DIR_PATH),
+        FlagsMode::from_feature_flags(),
+        populate,
     )?;
     let deleted_count = deleted.count_trues();
 

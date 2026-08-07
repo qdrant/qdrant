@@ -13,8 +13,8 @@ use fs_err as fs;
 
 use super::buffered_offsets::BufferedOffsets;
 use crate::common::Flusher;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -614,9 +614,11 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     // the durable `vectors` length, which would corrupt points on reload.
     let offsets = BufferedOffsets::new(offsets);
 
-    let deleted = BitvecFlags::new(
+    let deleted = BitvecFlags::open_or_create(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &deleted_path, Populate::from(populate))?,
+        &deleted_path,
+        FlagsMode::from_feature_flags(),
+        Populate::from(populate),
     )?;
     let deleted_count = deleted.count_trues();
 
