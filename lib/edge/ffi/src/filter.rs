@@ -218,6 +218,29 @@ pub struct RangeFloat {
     pub lt: Option<f64>,
 }
 
+// ── RangeInteger ────────────────────────────────────────────────────────────
+
+/// An exact integer range filter with optional inclusive/exclusive bounds.
+///
+/// Any combination of bounds can be set; unset bounds are treated as
+/// unbounded. `gte` (≥) and `gt` (>) should not both be set simultaneously,
+/// likewise for `lte` and `lt`.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct RangeInteger {
+    /// Inclusive lower bound (≥).
+    #[uniffi(default = None)]
+    pub gte: Option<i64>,
+    /// Exclusive lower bound (>).
+    #[uniffi(default = None)]
+    pub gt: Option<i64>,
+    /// Inclusive upper bound (≤).
+    #[uniffi(default = None)]
+    pub lte: Option<i64>,
+    /// Exclusive upper bound (<).
+    #[uniffi(default = None)]
+    pub lt: Option<i64>,
+}
+
 // ── RangeDatetime ───────────────────────────────────────────────────────────
 
 /// A datetime range filter with optional inclusive/exclusive bounds, each an
@@ -255,6 +278,14 @@ fn parse_datetime_bound(
             })
         })
         .transpose()
+}
+impl TryFrom<RangeInteger> for Range<segment::types::IntPayloadType> {
+    type Error = crate::error::EdgeError;
+
+    fn try_from(r: RangeInteger) -> Result<Self, Self::Error> {
+        let RangeInteger { gte, gt, lte, lt } = r;
+        Ok(Range { gte, gt, lte, lt })
+    }
 }
 
 impl TryFrom<RangeDatetime> for Range<DateTimePayloadType> {
@@ -440,6 +471,9 @@ pub struct FieldCondition {
     /// Cardinality filter over array-valued payloads.
     #[uniffi(default = None)]
     pub values_count: Option<ValuesCount>,
+    /// Integer range comparison.
+    #[uniffi(default = None)]
+    pub range_integer: Option<RangeInteger>,
 }
 
 impl TryFrom<FieldCondition> for SegmentFieldCondition {
@@ -455,6 +489,7 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
             geo_radius,
             geo_polygon,
             values_count,
+            range_integer,
         } = c;
         let key = crate::error::parse_json_path(&key)?;
 
@@ -463,12 +498,12 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         // evaluates only one, and which one depends on the field's indexes — so
         // passing several through would silently diverge from a Qdrant server.
         // None set matches every point (a silent no-op); >1 is ambiguous. Reject
-        // both; callers AND predicates via separate `must` conditions. (`range`
-        // and `datetime_range` share the engine's single range slot, so they
-        // count as one predicate here; setting both is caught below.)
+        // both; callers AND predicates via separate `must` conditions. (`range`,
+        // `datetime_range`, and `range_integer` share the engine's single range
+        // slot, so they count as one predicate here; setting multiple is caught below.)
         let predicate_count = [
             r#match.is_some(),
-            range.is_some() || datetime_range.is_some(),
+            range.is_some() || datetime_range.is_some() || range_integer.is_some(),
             geo_bounding_box.is_some(),
             geo_radius.is_some(),
             geo_polygon.is_some(),
@@ -477,11 +512,12 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         .into_iter()
         .filter(|&set| set)
         .count();
+
         if predicate_count == 0 {
             return Err(crate::error::EdgeError::invalid_argument(
                 "field condition has no predicate set: specify exactly one of \
-                 match, range, datetime_range, geo_bounding_box, geo_radius, geo_polygon, \
-                 or values_count",
+                 match, range, datetime_range, range_integer, geo_bounding_box, geo_radius, \
+                 geo_polygon, or values_count",
             ));
         }
         if predicate_count > 1 {
@@ -493,22 +529,27 @@ impl TryFrom<FieldCondition> for SegmentFieldCondition {
         }
 
         // The engine's `range` slot holds one interface, float or datetime.
-        let range = match (range, datetime_range) {
-            (Some(_), Some(_)) => {
+        let range = match (range, datetime_range, range_integer) {
+            (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => {
                 return Err(crate::error::EdgeError::invalid_argument(
-                    "field condition: set either `range` or `datetime_range`, not both",
+                    "field condition: set only one of `range`, `datetime_range`, or `range_integer`",
                 ));
             }
-            (Some(RangeFloat { gte, gt, lte, lt }), None) => Some(RangeInterface::Float(Range {
-                gte: gte.map(ordered_float::OrderedFloat),
-                gt: gt.map(ordered_float::OrderedFloat),
-                lte: lte.map(ordered_float::OrderedFloat),
-                lt: lt.map(ordered_float::OrderedFloat),
-            })),
-            (None, Some(datetime_range)) => {
+            (Some(RangeFloat { gte, gt, lte, lt }), None, None) => {
+                Some(RangeInterface::Float(Range {
+                    gte: gte.map(ordered_float::OrderedFloat),
+                    gt: gt.map(ordered_float::OrderedFloat),
+                    lte: lte.map(ordered_float::OrderedFloat),
+                    lt: lt.map(ordered_float::OrderedFloat),
+                }))
+            }
+            (None, Some(datetime_range), None) => {
                 Some(RangeInterface::DateTime(Range::try_from(datetime_range)?))
             }
-            (None, None) => None,
+            (None, None, Some(range_integer)) => {
+                Some(RangeInterface::Integer(Range::try_from(range_integer)?))
+            }
+            (None, None, None) => None,
         };
 
         Ok(SegmentFieldCondition {
@@ -805,7 +846,7 @@ fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
                     RangeInterface::Float(_) => {}
                     // [`FieldCondition::datetime_range`] ([`RangeDatetime`])
                     RangeInterface::DateTime(_) => {}
-                    // [`FieldCondition::range`] ([`RangeInteger`])
+                    // [`FieldCondition::range_integer`] ([`RangeInteger`])
                     RangeInterface::Integer(_) => {}
                 }
             }

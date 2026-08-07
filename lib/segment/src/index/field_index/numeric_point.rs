@@ -201,7 +201,36 @@ impl Numericable for u128 {
     }
 
     fn from_i64(x: i64) -> Self {
-        x as u128
+        // Saturating cast to prevent two's complement wrapping of negative values.
+        std::cmp::Ord::max(x, 0) as u128
+    }
+
+    fn from_i64_range(range: Range<IntPayloadType>) -> Range<Self> {
+        // Prevent two's complement wrapping of negative i64 bounds to large u128 values.
+        // - Negative lower bounds become unbounded (all u128 values satisfy them)
+        // - Negative upper bounds produce an empty range (signaled by `lt: Some(0)`)
+        Range {
+            gt: match range.gt {
+                Some(x) if x < 0 => None,
+                Some(x) => Some(x as u128),
+                None => None,
+            },
+            gte: match range.gte {
+                Some(x) if x <= 0 => None,
+                Some(x) => Some(x as u128),
+                None => None,
+            },
+            lt: match range.lt {
+                Some(x) if x <= 0 => Some(0u128),
+                Some(x) => Some(x as u128),
+                None => None,
+            },
+            lte: match range.lte {
+                Some(x) if x < 0 => Some(0u128),
+                Some(x) => Some(x as u128),
+                None => None,
+            },
+        }
     }
 
     fn from_u128(x: u128) -> Self {

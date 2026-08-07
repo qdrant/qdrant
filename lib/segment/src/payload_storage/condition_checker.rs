@@ -254,8 +254,18 @@ impl ValueChecker for Range<IntPayloadType> {
         match payload {
             Value::Number(num) => {
                 if let Some(number) = num.as_i64() {
+                    // value fits in i64
                     self.check_range(number)
+                } else if let Some(number) = num.as_u64() {
+                    // Value is > i64::MAX. Compare exactly as u64 to avoid f64 precision loss.
+                    // Negative i64 bounds are always < u64 payload
+                    let Self { lt, gt, gte, lte } = self;
+                    lt.is_none_or(|x| x > 0 && number < x as u64)
+                        && gt.is_none_or(|x| x < 0 || number > x as u64)
+                        && lte.is_none_or(|x| x > 0 && number <= x as u64)
+                        && gte.is_none_or(|x| x < 0 || number >= x as u64)
                 } else if let Some(number) = num.as_f64() {
+                    // non-integer float, fall back to f64 comparison
                     self.map(|x| OrderedFloat(x as f64))
                         .check_range(OrderedFloat(number))
                 } else {

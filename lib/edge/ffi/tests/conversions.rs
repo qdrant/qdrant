@@ -86,6 +86,7 @@ fn bad_payload_key_in_field_condition_returns_error() {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -108,6 +109,7 @@ fn valid_payload_key_in_field_condition_converts() {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -184,6 +186,7 @@ fn field_with_match(m: Match) -> Condition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     }
 }
@@ -419,6 +422,7 @@ fn geo_polygon_field_condition_converts() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -456,6 +460,7 @@ fn geo_polygon_bad_coordinate_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -487,6 +492,7 @@ fn geo_polygon_too_few_points_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -518,6 +524,7 @@ fn geo_polygon_unclosed_ring_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -563,6 +570,7 @@ fn geo_polygon_bad_interior_ring_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -589,6 +597,7 @@ fn field_with_geo_radius(radius: f64) -> Condition {
             }),
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     }
 }
@@ -653,6 +662,7 @@ fn field_condition_no_predicate_returns_error() {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -693,6 +703,7 @@ fn field_condition_multiple_predicates_rejected() {
                 lte: None,
                 lt: None,
             }),
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -809,6 +820,7 @@ fn datetime_range_converts_and_rejects_garbage() {
         geo_radius: None,
         geo_polygon: None,
         values_count: None,
+        range_integer: None,
     };
 
     let ok = base(Some(RangeDatetime {
