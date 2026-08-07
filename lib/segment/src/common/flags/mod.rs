@@ -15,5 +15,8 @@ mod buffered_dynamic_flags;
 pub mod compact_stored_flags;
 pub mod dynamic_stored_flags;
 pub mod in_memory_bitvec_flags;
+mod mode;
 pub mod read_only_roaring_flags;
 pub mod roaring_flags;
+
+pub use mode::FlagsMode;
