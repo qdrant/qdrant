@@ -2,12 +2,17 @@
 //! [on-disk format](on_disk_format)), so resident memory does not scale with
 //! point count. The mapping is immutable once written.
 //!
-//! Two trackers share the [`reader`] core:
+//! [`DiskIdTracker`] and [`ReadOnlyDiskIdTracker`] share the [`reader`] core:
 //!
 //! - [`DiskIdTracker`] — writable but deletion-only (non-appendable, R6);
-//!   `deleted` and `versions` are resident and mutated in place.
+//!   `deleted` and `versions` are resident and mutated in place. Also builds
+//!   the segment (the mapping plus the initial `deleted`/`versions` state).
 //! - [`ReadOnlyDiskIdTracker`] — fully read-only; picks up external deletions
 //!   via live-reload.
+//! - [`UpdateOnlyDiskIdTracker`](update_only::UpdateOnlyDiskIdTracker) — a
+//!   narrower writer over an already-built segment: no mapping lookup, no
+//!   read surface, just batch-marking internal offsets deleted, persisted via
+//!   whole-file rewrites so it only needs an append-only backend.
 
 mod id_tracker;
 mod id_tracker_read;
@@ -16,6 +21,7 @@ pub mod mappings;
 pub mod on_disk_format;
 pub mod read_only;
 mod reader;
+pub mod update_only;
 
 #[cfg(test)]
 mod tests;
