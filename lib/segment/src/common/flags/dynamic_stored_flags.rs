@@ -21,7 +21,7 @@ const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
 pub(super) const FLAGS_FILE: &str = "flags_a.dat";
-const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
+pub(super) const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
 
 pub(super) const STATUS_FILE_NAME: &str = "status.dat";
 

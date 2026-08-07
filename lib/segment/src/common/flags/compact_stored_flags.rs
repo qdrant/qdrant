@@ -14,7 +14,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Name of the single file holding the mask, inside the storage directory.
-const FLAGS_FILE: &str = "compact_flags.dat";
+pub(super) const COMPACT_FLAGS_FILE: &str = "compact_flags.dat";
 
 /// Flags over a single compact stored-bitmask file, rewritten whole on flush.
 ///
@@ -49,7 +49,7 @@ where
     /// missing, so [`Self::files`] always exist on disk.
     pub fn open(fs: S::Fs, directory: &Path, populate: Populate) -> OperationResult<Self> {
         fs.create_dir(directory)?;
-        let path = directory.join(FLAGS_FILE);
+        let path = directory.join(COMPACT_FLAGS_FILE);
 
         let options = OpenOptions {
             writeable: false,
@@ -166,6 +166,7 @@ where
     }
 }
 
+#[allow(clippy::default_constructed_unit_structs)]
 #[duplicate::duplicate_item(
     tests_mod       S               Fs              cfg_predicate;
     [tests_mmap]    [MmapFile]      [MmapFs]        [cfg(all())];
