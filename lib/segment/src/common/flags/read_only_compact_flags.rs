@@ -172,12 +172,14 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyCompactFlags<S> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
     use std::sync::Arc;
 
+    #[cfg(not(windows))]
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, MmapFs,
-        UniversalReadFileOps,
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
     };
+    use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;
 
     use super::*;
@@ -217,6 +219,12 @@ mod tests {
     /// the reader on a caching backend never picks up. `live_reload` opens a
     /// fresh handle instead — this drives it over `DiskCacheFs`, where the
     /// stale-cache failure actually reproduces.
+    ///
+    /// Not run on Windows: the flush renames over a file the reader's disk
+    /// cache keeps mapped, which Windows forbids. That limitation is specific
+    /// to this setup — a local mmap file standing in as the "remote" — and
+    /// the reload logic stays covered on the other targets.
+    #[cfg(not(windows))]
     #[test]
     fn live_reload_over_disk_cache_sees_replaced_file() {
         let tmp = Builder::new().prefix("compact_reload").tempdir().unwrap();
@@ -269,6 +277,10 @@ mod tests {
 
     /// A bitmap that was never materialized needs no resync: the reload just
     /// swaps in the fresh handle, and the eventual first read decodes it.
+    ///
+    /// Not run on Windows: same rename-over-mapped-file limitation as
+    /// `live_reload_over_disk_cache_sees_replaced_file`.
+    #[cfg(not(windows))]
     #[test]
     fn live_reload_before_materialization_reads_fresh_state() {
         let tmp = Builder::new().prefix("compact_reload").tempdir().unwrap();
