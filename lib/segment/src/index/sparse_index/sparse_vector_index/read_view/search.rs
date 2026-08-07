@@ -1,6 +1,6 @@
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
@@ -136,14 +136,9 @@ where
                 searcher.peek_top_iter(filtered_points, &is_stopped)?
             }
             None => {
-                let iter = self
-                    .id_tracker
-                    .point_mappings()
-                    .filter_deferred_and_deleted(
-                        searcher.iter_not_deleted(),
-                        DeferredBehavior::VisibleOnly,
-                    );
-                searcher.peek_top_iter(iter, &is_stopped)?
+                let (cutoff, mapping_deleted, shadowed) =
+                    self.id_tracker.point_mappings().visible_scan_masks();
+                searcher.peek_top_visible(cutoff, mapping_deleted, shadowed, &is_stopped)?
             }
         };
         let res = results.pop().expect("single element results");
