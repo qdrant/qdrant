@@ -40,9 +40,9 @@ use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use super::HnswM;
 use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksResidency};
+use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
@@ -503,7 +503,7 @@ impl GraphLayers {
         self.links.point_level(point_id)
     }
 
-    fn get_entry_point(
+    pub fn get_entry_point(
         &self,
         filters: &ScorerFilters,
         custom_entry_points: Option<&[PointOffsetType]>,
@@ -527,69 +527,61 @@ impl GraphLayers {
             })
     }
 
+    #[cfg(any(test, feature = "testing"))]
+    pub fn unfiltered_entry_point(&self) -> EntryPoint {
+        self.entry_points.get_entry_point(|_| true).unwrap()
+    }
+
     pub fn search(
         &self,
         top: usize,
         ef: usize,
         algorithm: SearchAlgorithm,
-        mut points_scorer: FilteredScorer,
-        custom_entry_points: Option<&[PointOffsetType]>,
+        points_scorer: &mut FilteredScorer,
+        entry_point: EntryPoint,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let Some(entry_point) = self.get_entry_point(points_scorer.filters(), custom_entry_points)
-        else {
-            return Ok(Vec::default());
-        };
-
         let zero_level_entry = self.search_entry(
             entry_point.point_id,
             entry_point.level,
             0,
-            &mut points_scorer,
+            points_scorer,
             is_stopped,
         )?;
         let ef = max(ef, top);
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
-                self.search_on_level(zero_level_entry, 0, ef, &mut points_scorer, is_stopped)
+                self.search_on_level(zero_level_entry, 0, ef, points_scorer, is_stopped)
             }
             SearchAlgorithm::Acorn => {
-                self.search_on_level_acorn(zero_level_entry, 0, ef, &mut points_scorer, is_stopped)
+                self.search_on_level_acorn(zero_level_entry, 0, ef, points_scorer, is_stopped)
             }
         }?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn search_with_vectors(
         &self,
         top: usize,
         ef: usize,
-        links_scorer: &FilteredScorer,
-        links_scorer_bytes: &FilteredBytesScorer,
-        base_scorer: &dyn QueryScorerBytes,
-        custom_entry_points: Option<&[PointOffsetType]>,
+        scorers: GraphWithVectorsScorers,
+        entry_point: EntryPoint,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let Some(entry_point) = self.get_entry_point(links_scorer.filters(), custom_entry_points)
-        else {
-            return Ok(Vec::default());
-        };
-
         let zero_level_entry = self.search_entry_with_vectors(
             entry_point.point_id,
             entry_point.level,
             0,
-            links_scorer.raw_scorer(),
-            links_scorer_bytes,
+            scorers.links.raw_scorer(),
+            scorers.links_bytes,
             is_stopped,
         )?;
         let nearest = self.search_on_level_with_vectors(
             zero_level_entry,
             0,
             max(top, ef),
-            links_scorer_bytes,
-            base_scorer,
+            scorers.links_bytes,
+            scorers.base,
             is_stopped,
         )?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
@@ -650,6 +642,24 @@ impl GraphLayers {
         Self::load_universal(&MmapFs, dir, residency)
     }
 
+    /// Format of the links file present in `dir`, probed in the same order as
+    /// [`Self::load_universal`] reads it.
+    pub(super) fn probe_links_format(
+        fs: &impl UniversalReadFs,
+        dir: &Path,
+    ) -> OperationResult<Option<GraphLinksFormat>> {
+        for format in [
+            GraphLinksFormat::CompressedWithVectors,
+            GraphLinksFormat::Compressed,
+            GraphLinksFormat::Plain,
+        ] {
+            if fs.exists(&Self::get_links_path(dir, format))? {
+                return Ok(Some(format));
+            }
+        }
+        Ok(None)
+    }
+
     /// Schedule background prefetch of the files [`Self::load_universal`] will
     /// read: the graph data plus whichever links format is present, probed in
     /// the same order as the load.
@@ -675,16 +685,8 @@ impl GraphLayers {
         };
 
         // Links
-        for format in [
-            GraphLinksFormat::CompressedWithVectors,
-            GraphLinksFormat::Compressed,
-            GraphLinksFormat::Plain,
-        ] {
-            let path = Self::get_links_path(dir, format);
-            if fs.exists(&path)? {
-                fs.schedule_prefetch(&path, Some(options), None)?;
-                break;
-            }
+        if let Some(format) = Self::probe_links_format(fs, dir)? {
+            fs.schedule_prefetch(&Self::get_links_path(dir, format), Some(options), None)?;
         }
         Ok(())
     }
@@ -722,17 +724,9 @@ impl GraphLayers {
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        for format in [
-            GraphLinksFormat::CompressedWithVectors,
-            GraphLinksFormat::Compressed,
-            GraphLinksFormat::Plain,
-        ] {
-            let path = GraphLayers::get_links_path(dir, format);
-            if fs.exists(&path)? {
-                return GraphLinks::load_universal(fs, &path, format, residency);
-            }
-        }
-        Err(OperationError::service_error("No links file found"))
+        let format = Self::probe_links_format(fs, dir)?
+            .ok_or_else(|| OperationError::service_error("No links file found"))?;
+        GraphLinks::load_universal(fs, &Self::get_links_path(dir, format), format, residency)
     }
 
     /// Convert the "plain" format into the "compressed" format.
@@ -900,7 +894,7 @@ mod tests {
         vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let scorer = vector_storage.scorer(query.to_owned());
+        let mut scorer = vector_storage.scorer(query.to_owned());
 
         let ef = 16;
         graph
@@ -908,8 +902,8 @@ mod tests {
                 top,
                 ef,
                 SearchAlgorithm::Hnsw,
-                scorer,
-                None,
+                &mut scorer,
+                graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap()

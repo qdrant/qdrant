@@ -6,18 +6,19 @@
 //! through the parsed view and never touch the owning storage, so the search
 //! hot path involves no dynamic dispatch even for the `Universal` backend.
 
+use std::borrow::Cow;
+use std::fmt::Debug;
 use std::io::Cursor;
 use std::path::Path;
 
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, UniversalReadFs};
+use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 use super::format::{GraphLinksFormat, GraphLinksFormatParam};
 use super::serializer::serialize_graph_links;
-use super::storage::GraphLinksEnum;
 use super::view::{CompressionInfo, GraphLinksView, LinksIterator, LinksWithVectorsIterator};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
 
 self_cell::self_cell! {
@@ -62,12 +63,6 @@ impl GraphLinks {
         }
     }
 
-    /// Load the links through universal IO with the requested [`GraphLinksResidency`].
-    ///
-    /// `Cold`/`Cached` require a borrowable (mmap-backed) backend to keep the
-    /// handle alive; non-borrowable backends (io_uring, remote object stores, …)
-    /// fall back to `Pinned`-like materialization into RAM; see
-    /// [`GraphLinksEnum::from_storage`](super::storage).
     pub fn load_universal<Fs>(
         fs: &Fs,
         path: &Path,
@@ -79,12 +74,22 @@ impl GraphLinks {
         Fs::File: 'static,
     {
         let storage = fs.open(path, Self::open_options(residency), Default::default())?;
-        let owner = match residency {
-            GraphLinksResidency::Cold | GraphLinksResidency::Cached => {
-                GraphLinksEnum::from_storage(storage)?
-            }
-            GraphLinksResidency::Pinned => GraphLinksEnum::pinned_from_storage(storage)?,
+
+        let is_in_ram_or_mmap = Fs::File::kind().is_in_ram_or_mmap();
+        let read_into_ram = match residency {
+            GraphLinksResidency::Cold | GraphLinksResidency::Cached if is_in_ram_or_mmap => false,
+            GraphLinksResidency::Cold | GraphLinksResidency::Cached => true,
+            GraphLinksResidency::Pinned => true,
         };
+
+        let owner = if read_into_ram {
+            let bytes = storage.read_whole::<u8>()?.into_owned();
+            storage.clear_ram_cache()?;
+            GraphLinksEnum::Ram(bytes)
+        } else {
+            GraphLinksEnum::Universal(Box::new(storage))
+        };
+
         Self::try_new(owner, |x| GraphLinksView::load(x.as_bytes()?, format))
     }
 
@@ -111,10 +116,11 @@ impl GraphLinks {
     }
 
     /// Heap RAM held by the serialized links, in bytes.
-    /// Zero when the links are backed by a live (mmap-backed) file handle;
-    /// see [`GraphLinksEnum::heap_size_bytes`].
     pub fn heap_size_bytes(&self) -> usize {
-        self.borrow_owner().heap_size_bytes()
+        match self.borrow_owner() {
+            GraphLinksEnum::Ram(data) => data.len(),
+            GraphLinksEnum::Universal(_) => 0,
+        }
     }
 
     pub fn format(&self) -> GraphLinksFormat {
@@ -188,11 +194,78 @@ impl GraphLinks {
     /// Populate the disk cache with data, if applicable.
     /// This is a blocking operation.
     pub fn populate(&self) -> OperationResult<()> {
-        self.borrow_owner().populate()
+        match self.borrow_owner() {
+            GraphLinksEnum::Universal(storage) => storage.populate(),
+            GraphLinksEnum::Ram(_) => Ok(()),
+        }
     }
 
     /// Hint to the OS that pages backing this storage can be reclaimed.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.borrow_owner().clear_cache()
+        match self.borrow_owner() {
+            GraphLinksEnum::Universal(storage) => storage.clear_cache(),
+            GraphLinksEnum::Ram(_) => Ok(()),
+        }
+    }
+}
+
+/// Type-erased universal-IO storage backing a [`GraphLinksEnum::Universal`].
+///
+/// [`UniversalRead`] is not object-safe (it is `Sized` and has generic
+/// methods), so the storage handle is kept behind this minimal object-safe
+/// trait. It is blanket-implemented for every [`UniversalRead`], which lets
+/// the links keep an arbitrary universal-IO file handle alive (mirroring the
+/// former mmap-backed variant) without making [`GraphLinks`](super::GraphLinks)
+/// generic.
+pub(super) trait GraphLinksStorage: Debug + Send + Sync {
+    /// Borrow the whole serialized links blob.
+    ///
+    /// The backing storage must be borrowable (i.e. mmap-backed): backends
+    /// that materialize the whole file into an owned buffer on read are not
+    /// supported here.
+    fn bytes(&self) -> OperationResult<&[u8]>;
+
+    /// Populate the OS page cache for the backing file, if applicable.
+    fn populate(&self) -> OperationResult<()>;
+
+    /// Hint to the OS that the backing pages can be reclaimed, if applicable.
+    fn clear_cache(&self) -> OperationResult<()>;
+}
+
+impl<S: UniversalRead> GraphLinksStorage for S {
+    fn bytes(&self) -> OperationResult<&[u8]> {
+        match self.read_whole::<u8>()? {
+            Cow::Borrowed(bytes) => Ok(bytes),
+            Cow::Owned(_) => Err(OperationError::service_error(
+                "Universal graph links storage must be borrowable (mmap-backed)",
+            )),
+        }
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        UniversalRead::populate(self)?;
+        Ok(())
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        self.clear_ram_cache()?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(super) enum GraphLinksEnum {
+    /// Links built in memory (e.g. freshly serialized from edges).
+    Ram(Vec<u8>),
+    /// Links backed by a (type-erased) universal-IO storage handle.
+    Universal(Box<dyn GraphLinksStorage>),
+}
+
+impl GraphLinksEnum {
+    pub(super) fn as_bytes(&self) -> OperationResult<&[u8]> {
+        match self {
+            GraphLinksEnum::Ram(data) => Ok(data.as_slice()),
+            GraphLinksEnum::Universal(storage) => storage.bytes(),
+        }
     }
 }
