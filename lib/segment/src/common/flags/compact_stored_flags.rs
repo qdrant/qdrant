@@ -149,6 +149,8 @@ where
                 ));
             };
 
+            // TODO(serverless): we should not lock here during save
+            // TODO(serverless): currently acceptable because readers and writers are completely separate
             mask_arc.lock().save(&*fs, &path)?;
 
             drop(is_alive_flush_guard);
