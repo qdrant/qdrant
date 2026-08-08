@@ -50,8 +50,8 @@ where
         );
 
         let start_key = start_key.as_();
-        let chunk_idx = self.inner.get_chunk_index(start_key);
-        let chunk_offset = self.inner.get_chunk_offset(start_key);
+        let chunk_idx = self.inner.config.get_chunk_index(start_key);
+        let chunk_offset = self.inner.config.get_chunk_offset(start_key);
 
         // check if the vectors fit in the chunk
         if chunk_offset + vectors.len()
