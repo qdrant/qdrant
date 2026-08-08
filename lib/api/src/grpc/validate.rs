@@ -290,6 +290,7 @@ impl Validate for grpc::FieldCondition {
                 values_count: None,
                 is_empty: None,
                 is_null: None,
+                integer_range: None,
             },
         );
 
@@ -299,6 +300,24 @@ impl Validate for grpc::FieldCondition {
             errors.add(
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
+            );
+        }
+
+        let range_count = [
+            self.range.is_some(),
+            self.datetime_range.is_some(),
+            self.integer_range.is_some(),
+        ]
+        .into_iter()
+        .filter(|&set| set)
+        .count();
+
+        if range_count > 1 {
+            errors.add(
+                "range",
+                ValidationError::new(
+                    "Only one of `range`, `datetime_range`, or `integer_range` can be specified",
+                ),
             );
         }
 
@@ -313,6 +332,7 @@ impl Validate for grpc::FieldCondition {
             values_count: _,
             is_empty: _,
             is_null: _,
+            integer_range: _,
         } = self;
 
         errors.merge_self("geo_bounding_box", geo_bounding_box.validate());

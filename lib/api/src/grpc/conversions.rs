@@ -37,8 +37,8 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads, Memory,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    IntegerRange, KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads,
+    Memory, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, SliceCondition, StartFrom, StrictModeMultivector,
     StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize,
@@ -1993,6 +1993,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             datetime_range,
             is_empty,
             is_null,
+            integer_range,
         } = value;
 
         let geo_bounding_box =
@@ -2005,6 +2006,9 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             range = datetime_range
                 .map(segment::types::RangeInterface::try_from)
                 .transpose()?;
+        }
+        if range.is_none() {
+            range = integer_range.map(IntegerRange::into);
         }
 
         Ok(Self {
@@ -2035,10 +2039,17 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             is_null,
         } = value;
 
-        let (range, datetime_range) = match range {
-            Some(segment::types::RangeInterface::Float(range)) => (Some(Range::from(range)), None),
-            Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
-            None => (None, None),
+        let (range, datetime_range, integer_range) = match range {
+            Some(segment::types::RangeInterface::Float(range)) => {
+                (Some(Range::from(range)), None, None)
+            }
+            Some(segment::types::RangeInterface::DateTime(range)) => {
+                (None, Some(range.into()), None)
+            }
+            Some(segment::types::RangeInterface::Integer(range)) => {
+                (None, None, Some(range.into()))
+            }
+            None => (None, None, None),
         };
 
         Self {
@@ -2052,6 +2063,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             datetime_range,
             is_empty,
             is_null,
+            integer_range,
         }
     }
 }
@@ -2204,6 +2216,26 @@ impl From<segment::types::Range<OrderedFloat<FloatPayloadType>>> for Range {
 impl From<Range> for segment::types::RangeInterface {
     fn from(value: Range) -> Self {
         Self::Float(value.into())
+    }
+}
+
+impl From<IntegerRange> for segment::types::Range<segment::types::IntPayloadType> {
+    fn from(value: IntegerRange) -> Self {
+        let IntegerRange { lt, gt, gte, lte } = value;
+        Self { lt, gt, gte, lte }
+    }
+}
+
+impl From<segment::types::Range<segment::types::IntPayloadType>> for IntegerRange {
+    fn from(value: segment::types::Range<segment::types::IntPayloadType>) -> Self {
+        let segment::types::Range { lt, gt, gte, lte } = value;
+        Self { lt, gt, gte, lte }
+    }
+}
+
+impl From<IntegerRange> for segment::types::RangeInterface {
+    fn from(value: IntegerRange) -> Self {
+        Self::Integer(value.into())
     }
 }
 
