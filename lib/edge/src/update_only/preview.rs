@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::apply::{locate_points, read_stored_points};
 use crate::update_only::batch::UpdateBatchPlan;
-use crate::update_only::holder::UpdateOnlySegmentHolder;
+use crate::update_only::holder::LookupSegmentHolder;
 
 /// A resolved batch: one entry per touched point, in first-touched order.
 pub struct UpdateBatchPreview {
@@ -67,7 +67,7 @@ pub enum PointAction {
 /// both [`UpdateOnlyEdgeShard::preview_batch`] and
 /// [`UpdateOnlyEdgeShard::apply_batch`].
 pub(super) fn resolve_batch<S: UniversalRead + 'static>(
-    segments: &UpdateOnlySegmentHolder<S>,
+    segments: &LookupSegmentHolder<S>,
     plan: UpdateBatchPlan,
     pool: &ThreadPool,
 ) -> OperationResult<Vec<PointPreview>> {

@@ -11,7 +11,7 @@ use common::universal_io::{
 };
 use uuid::Uuid;
 
-use super::{UpdateOnlySegment, UpdateOnlyVectorData};
+use super::{LookupSegment, LookupVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -31,7 +31,7 @@ use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 /// whose opens consume them whole (the configs, the id tracker, the deleted
 /// flags).
 ///
-/// [`preopen`]: UpdateOnlySegment::preopen
+/// [`preopen`]: LookupSegment::preopen
 const WRITER_POPULATE: Populate = Populate::No;
 
 /// Build the per-segment [`CachedFs`] an open runs over: the version and
@@ -57,7 +57,7 @@ fn build_cached_fs<Fs: UniversalReadFs>(
     Ok(cached_fs)
 }
 
-impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
+impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// Open the segment over a per-segment [`CachedFs`]: every file the
     /// components will read is prefetched concurrently
     /// ([`preopen`](Self::preopen)) before the component opens consume it, so
@@ -65,8 +65,7 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
     /// rather than one blocking round-trip per file.
     ///
     /// `fs` is the canonical backend: the caching wrapper lives only for this
-    /// open, and it is `fs` that components keep for later re-opens and the
-    /// segment keeps for its appends.
+    /// open, and it is `fs` that components keep for later re-opens.
     ///
     /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
     /// working the same directory — see [`open_via`](Self::open_via).
@@ -96,9 +95,9 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
     ///
     /// `fs` opens the component files (in production the [`CachedFs`] that
     /// [`open`](Self::open) primed); `raw_fs` is the canonical backend, kept
-    /// by components that re-open files after this call and by the segment
-    /// itself for its appends. `config` is the one [`preopen`](Self::preopen)
-    /// already parsed, so the state file is not read twice.
+    /// by components that re-open files after this call. `config` is the one
+    /// [`preopen`](Self::preopen) already parsed, so the state file is not
+    /// read twice.
     ///
     /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
     /// working the same directory: slots at or above it load into the id
@@ -156,7 +155,7 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
                     })?;
             vector_data.insert(
                 vector_name.clone(),
-                UpdateOnlyVectorData {
+                LookupVectorData {
                     vector_storage: Arc::new(AtomicRefCell::new(storage)),
                 },
             );
@@ -168,7 +167,7 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
             ));
             vector_data.insert(
                 vector_name.clone(),
-                UpdateOnlyVectorData {
+                LookupVectorData {
                     vector_storage: Arc::new(AtomicRefCell::new(storage)),
                 },
             );
@@ -177,7 +176,6 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
         Ok(Self {
             uuid,
             segment_path: segment_path.to_path_buf(),
-            fs: raw_fs.clone(),
             id_tracker,
             payload_storage,
             vector_data,

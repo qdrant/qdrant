@@ -28,7 +28,7 @@ use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollR
 
 const VECTOR_NAME: &str = "edge-ro-test-vector";
 
-fn test_config() -> EdgeConfig {
+pub(crate) fn test_config() -> EdgeConfig {
     EdgeConfig {
         on_disk_payload: Some(false),
         vectors: HashMap::from([(
@@ -53,7 +53,7 @@ fn test_config() -> EdgeConfig {
     }
 }
 
-fn point(id: u64) -> PointStructPersisted {
+pub(crate) fn point(id: u64) -> PointStructPersisted {
     PointStructPersisted {
         id: ExtendedPointId::NumId(id),
         vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
@@ -64,7 +64,7 @@ fn point(id: u64) -> PointStructPersisted {
     }
 }
 
-fn upsert(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
+pub(crate) fn upsert(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
     let points = ids.into_iter().map(point).collect::<Vec<_>>();
     shard
         .update(PointOperation(UpsertPoints(PointsList(points))))
@@ -78,7 +78,7 @@ fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
 
 /// Open a follower that discovers segments by scanning the directory (no manifest required) — used
 /// by the read/refresh tests, whose leaders don't write a manifest.
-fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
+pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
     ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         path,
@@ -89,7 +89,7 @@ fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
     .unwrap()
 }
 
-fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
+pub(crate) fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
     follower.count(CountRequest::new()).unwrap()
 }
 
@@ -98,7 +98,7 @@ fn leader_exact_count(leader: &EdgeShard) -> usize {
 }
 
 /// Scrolled point ids (sorted) visible to the follower.
-fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<ExtendedPointId> {
+pub(crate) fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<ExtendedPointId> {
     let (records, _) = follower
         .scroll(
             ScrollRequestBuilder::new()

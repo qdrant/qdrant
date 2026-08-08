@@ -1,62 +1,69 @@
-//! Update-only segment: the write-side counterpart of
+//! Update-only segments: the write-side counterpart of
 //! [`ReadOnlySegment`](crate::segment::read_only::ReadOnlySegment).
 //!
-//! Its public surface is storing points and tombstoning slots; internally it
-//! still *reads*, because an operation like `set_payload` names a point but
-//! not its vectors. It opens exactly what that requires — the id tracker, the
-//! payload storage and the vector storages. No vector index, no quantized
-//! vectors, no payload index: on a remote backend those files are never
-//! fetched.
+//! Applying a batch of updates runs in two phases, and each has its own type
+//! here because they agree on almost nothing — components, lifetime, backend
+//! capability, and how many segments they touch:
+//!
+//! * [`LookupSegment`] is the read phase. Every segment of a shard is opened
+//!   as one, cold and read-only, and the phase above them aggregates: a point
+//!   is located in whichever segments hold it and read from the newest copy.
+//!   It opens exactly what resolving an update requires — the id tracker, the
+//!   payload storage and the vector storages. No vector index, no quantized
+//!   vectors, no payload index: on a remote backend those files are never
+//!   fetched.
+//! * [`DeleteOnlySegment`] and [`AppendableSegment`] are the write phase, one
+//!   segment each, [`UpdateOnlySegmentEnum`] over the two. They are opened for
+//!   one batch and dropped with it, since the append-only components behind
+//!   them hold nothing across calls.
+//!
+//! The two phases meet at [`SegmentWriterState`]: what a writer must know
+//! about the segment it resumes, taken from the read the lookup phase already
+//! did. See [`LookupSegment::writer_state`].
 
-mod append;
-mod lifecycle;
-mod resolve;
+mod appendable;
+mod delete_only;
+mod lookup;
+mod segment_enum;
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use common::types::PointOffsetType;
 
-use atomic_refcell::AtomicRefCell;
-use common::universal_io::UniversalRead;
-use uuid::Uuid;
+pub use self::appendable::AppendableSegment;
+pub use self::delete_only::DeleteOnlySegment;
+pub use self::lookup::{LookupSegment, LookupVectorData};
+pub use self::segment_enum::UpdateOnlySegmentEnum;
+use crate::types::PointIdType;
 
-use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
-use crate::types::{SegmentConfig, VectorNameBuf};
-use crate::vector_storage::read_only::VectorStorageReadEnum;
-
-/// A segment open for updates: read components to resolve points with,
-/// append-only components to store them through. Generic over the backend `S`,
-/// like `ReadOnlySegment`.
-pub struct UpdateOnlySegment<S: UniversalRead + 'static> {
-    pub uuid: Uuid,
-    /// Path to the segment directory.
-    pub segment_path: PathBuf,
-    /// Backend the segment was opened on. Retained because appends need a
-    /// filesystem handle of their own: the caching wrapper an open may go
-    /// through only lives for that open.
-    pub fs: S::Fs,
-
-    pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
-    pub payload_storage: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
-    pub vector_data: HashMap<VectorNameBuf, UpdateOnlyVectorData<S>>,
-
-    pub segment_config: SegmentConfig,
-    /// Whether this segment can accept appends and therefore be the target of
-    /// a write.
-    appendable: bool,
+/// What a writer needs to know about the segment it is about to resume,
+/// produced by [`LookupSegment::writer_state`] and consumed by
+/// [`UpdateOnlySegmentEnum::open`].
+///
+/// Which variant a segment yields is decided by the id-tracker format it was
+/// loaded with, not by its config: the format is what dictates how a point is
+/// retired.
+pub enum SegmentWriterState {
+    /// An immutable segment: its mappings cannot grow, so the only write it
+    /// accepts is retiring points that are already in it.
+    DeleteOnly,
+    /// An appendable segment, resuming from the state of its mappings log.
+    Appendable(AppendableIdTrackerState),
 }
 
-/// A single named vector of an [`UpdateOnlySegment`]: storage only — no vector
-/// index, no quantized vectors.
-pub struct UpdateOnlyVectorData<S: UniversalRead + 'static> {
-    pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
-}
-
-impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
-    /// Whether this segment accepts appends, and can therefore be the target of
-    /// a write.
-    pub fn is_appendable(&self) -> bool {
-        self.appendable
-    }
+/// The tail of an appendable segment's mappings log, as the read phase saw it.
+///
+/// All three fields must come from one and the same read of that log — see
+/// [`UpdateOnlyAppendableIdTracker::new`], which is why they travel together
+/// rather than being re-read by the writer.
+///
+/// [`UpdateOnlyAppendableIdTracker::new`]:
+///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+pub struct AppendableIdTrackerState {
+    /// Highest slot the log has ever claimed; the writer resumes above it.
+    pub max_claimed_internal_id: Option<PointOffsetType>,
+    /// External ids the log inserted whose versions were never committed. The
+    /// writer retires them before accepting anything new.
+    pub pending_inserts: Vec<PointIdType>,
+    /// Byte offset just past the last complete entry, where the next batch is
+    /// appended.
+    pub mappings_end: u64,
 }

@@ -1,16 +1,17 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use common::universal_io::{MmapFile, MmapFs, UniversalRead, UniversalReadFs};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
-use segment::segment::update_only::UpdateOnlySegment;
+use segment::segment::update_only::LookupSegment;
 use uuid::Uuid;
 
 use crate::read_only::{LocalSegmentEnumerator, SegmentEnumerator};
 use crate::read_view::build_segment_pool;
 use crate::update_only::UpdateOnlyEdgeShard;
-use crate::update_only::holder::UpdateOnlySegmentHolder;
+use crate::update_only::holder::LookupSegmentHolder;
 
 impl UpdateOnlyEdgeShard<MmapFile> {
     /// Open a writer over local memory-mapped files, discovering segments by
@@ -27,7 +28,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     ///
     /// Segments are opened in parallel on the shard's thread pool, each over
     /// its own prefetching [`CachedFs`](common::universal_io::CachedFs) (see
-    /// [`UpdateOnlySegment::open`]) — the same shape as the read-only
+    /// [`LookupSegment::open`]) — the same shape as the read-only
     /// follower's load — and entirely cold: no point data is fetched until a
     /// batch reads a point. A segment that fails to load is an error, not a
     /// skip — a writer that misses a segment would resolve a point against a
@@ -49,20 +50,20 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
         )?;
 
         let segments: Vec<(Uuid, PathBuf)> = enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<(Uuid, UpdateOnlySegment<S>)> = pool.install(|| {
+        let opened: Vec<(Uuid, LookupSegment<S>)> = pool.install(|| {
             segments
                 .into_par_iter()
                 .map(|(uuid, segment_path)| {
                     // No deferred threshold yet: it belongs to the coordination
                     // with an external rebuilder, which does not exist in this
                     // iteration.
-                    let segment = UpdateOnlySegment::<S>::open(&fs, &segment_path, uuid, None)?;
+                    let segment = LookupSegment::<S>::open(&fs, &segment_path, uuid, None)?;
                     Ok((uuid, segment))
                 })
                 .collect::<OperationResult<Vec<_>>>()
         })?;
 
-        let mut holder = UpdateOnlySegmentHolder::default();
+        let mut holder = LookupSegmentHolder::default();
         for (uuid, segment) in opened {
             holder.insert(uuid, segment);
         }
@@ -79,6 +80,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
             fs,
             segments: RwLock::new(holder),
             pool,
+            applied: AtomicBool::new(false),
         })
     }
 }

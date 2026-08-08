@@ -2,21 +2,24 @@
 //! batched pass over the whole point set, so a batch's cost scales with the
 //! points it touches, not the operations in it.
 
+use std::sync::atomic::Ordering;
+
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalAppend, UniversalRead, UniversalWrite};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
+use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::{PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use uuid::Uuid;
 
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
-use crate::update_only::holder::UpdateOnlySegmentHolder;
+use crate::update_only::holder::LookupSegmentHolder;
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
@@ -66,7 +69,7 @@ pub(super) struct PointLocations {
     pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
     /// Apply a batch of update operations, each paired with the operation
     /// number to record as its version. Operations are expected in ascending
     /// operation-number order; see [`UpdateBatchPlan::build`] for what is
@@ -93,17 +96,18 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
-        let mut to_tombstone: AHashMap<Uuid, Vec<PointOffsetType>> = AHashMap::new();
+        let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
+        let write_target_uuid = segments.write_target().ok();
 
         for point in resolved {
             let PointPreview {
-                id: _,
+                id,
                 current: _,
                 slots,
                 action,
             } = point;
 
-            match action {
+            let stored = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
                     continue;
@@ -115,47 +119,101 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
                 PointAction::Store(point) => {
                     to_store.push(*point);
                     outcome.stored += 1;
+                    true
                 }
-                PointAction::Delete => outcome.deleted += 1,
-            }
+                PointAction::Delete => {
+                    outcome.deleted += 1;
+                    false
+                }
+            };
 
-            // Whatever happened to the point, every slot it occupied — in any
-            // segment — is retired: a rewrite left its replacement elsewhere,
-            // a delete left nothing, and an older duplicate must not outlive
-            // either.
             for (segment, internal_id) in slots {
-                to_tombstone.entry(segment).or_default().push(internal_id);
+                // The copy a stored point leaves behind in the write target
+                // needs no retirement: appending the point records a mapping
+                // that supersedes its old slot, and retiring the id on top of
+                // that would take the new slot with it. Every other segment's
+                // copy does have to stop resolving — an older duplicate left
+                // by an interrupted move included — and a delete retires the
+                // point everywhere it sits.
+                if stored && Some(segment) == write_target_uuid {
+                    continue;
+                }
+                to_tombstone
+                    .entry(segment)
+                    .or_default()
+                    .push((id, internal_id));
             }
         }
 
         // 4. Append the resolved points, then retire the slots they replaced.
+        // Writers live for this batch alone: the append-only components behind
+        // them buffer nothing across calls.
+        let writes_anything = !to_store.is_empty() || !to_tombstone.is_empty();
+        if writes_anything && self.applied.swap(true, Ordering::Relaxed) {
+            return Err(OperationError::service_error(
+                "This writer has already applied a batch and its view of the segments is stale; \
+                 open a new writer for the next batch",
+            ));
+        }
+
         if !to_store.is_empty() {
-            let write_target = segments.write_target()?;
-            write_target.write().store_points(&to_store, &hw_counter)?;
+            let uuid = segments.write_target()?;
+            let mut writer = open_writer(&segments, &self.fs, uuid)?;
+
+            writer
+                .as_appendable_mut()
+                .ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "Write target {uuid} was opened as delete-only, it cannot store points",
+                    ))
+                })?
+                .store_points(&to_store, &hw_counter)?;
 
             // The new slots must be durable before the tombstones that retire
             // the old ones: the reverse order can lose a point outright if the
             // process dies in between.
-            write_target.read().flush()?;
+            writer.flush()?;
+
+            // Whatever the write target has to retire goes through the writer
+            // already open: a second one would retire this batch's own
+            // half-written points as it resumed.
+            if let Some(points) = to_tombstone.remove(&uuid) {
+                writer.tombstone_points(&points)?;
+                writer.flush()?;
+            }
         }
 
-        for (uuid, internal_ids) in to_tombstone {
-            let segment = segments.get(&uuid).ok_or_else(|| {
-                OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
-            })?;
-            segment.write().tombstone_points(&internal_ids)?;
-            segment.read().flush()?;
+        for (uuid, points) in to_tombstone {
+            let mut writer = open_writer(&segments, &self.fs, uuid)?;
+            writer.tombstone_points(&points)?;
+            writer.flush()?;
         }
 
         Ok(outcome)
     }
 }
 
+/// Open a writer over one segment of the shard, resuming it from the state its
+/// [`LookupSegment`](segment::segment::update_only::LookupSegment) observed —
+/// which also decides whether the segment accepts appends or deletes only.
+fn open_writer<S: UniversalAppend + UniversalWrite + 'static>(
+    segments: &LookupSegmentHolder<S>,
+    fs: &S::Fs,
+    uuid: Uuid,
+) -> OperationResult<UpdateOnlySegmentEnum<S>> {
+    let segment = segments.get(&uuid).ok_or_else(|| {
+        OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
+    })?;
+    let segment = segment.read();
+
+    UpdateOnlySegmentEnum::open(fs, &segment.segment_path, segment.writer_state())
+}
+
 /// Locate every point the batch touches: every slot it occupies, with the
 /// newest copy marked, when more than one segment holds the point. Segments
 /// are visited in parallel on `pool`.
 pub(super) fn locate_points<S: UniversalRead + 'static>(
-    segments: &UpdateOnlySegmentHolder<S>,
+    segments: &LookupSegmentHolder<S>,
     plan: &UpdateBatchPlan,
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
@@ -221,7 +279,7 @@ pub(super) fn locate_points<S: UniversalRead + 'static>(
 /// Read the stored form of the points whose mutations need it, one batched
 /// pass per segment; segments are read in parallel on `pool`.
 pub(super) fn read_stored_points<S: UniversalRead + 'static>(
-    segments: &UpdateOnlySegmentHolder<S>,
+    segments: &LookupSegmentHolder<S>,
     plan: &UpdateBatchPlan,
     locations: &AHashMap<PointIdType, PointLocations>,
     pool: &ThreadPool,
