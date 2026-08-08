@@ -209,6 +209,65 @@ fn test_set_empty_payload() {
 #[case(IndexType::MutableGridstore)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
+fn test_range_cardinality_exact_for_narrow_range(#[case] index_type: IndexType) {
+    // Single value per point, so matched values == matched points.
+    let (_temp_dir, index) = random_index(1000, 1, index_type);
+    let hw_acc = HwMeasurementAcc::new();
+    let hw_counter = hw_acc.get_counter_cell();
+
+    // Narrow, fully-bounded range inside the [0, 100) value distribution.
+    let range = Range {
+        gte: Some(OrderedFloat(10.0)),
+        lte: Some(OrderedFloat(12.0)),
+        gt: None,
+        lt: None,
+    };
+    let estimation =
+        query::range_cardinality(index.inner(), &RangeInterface::Float(range)).unwrap();
+
+    let actual = index
+        .inner()
+        .filter(
+            &FieldCondition::new_range(JsonPath::new("unused"), range),
+            &hw_counter,
+        )
+        .unwrap()
+        .unwrap()
+        .unique()
+        .count();
+
+    eprintln!("exp = {}, actual = {actual}", estimation.exp);
+    // Exact count is cheap here, so `exp` must be the truth, not the histogram estimate.
+    assert_eq!(
+        estimation.exp, actual,
+        "range exp should be the exact matched count, got {} for {actual} points",
+        estimation.exp
+    );
+}
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_range_cardinality_inverted_range_is_zero(#[case] index_type: IndexType) {
+    // start > end. The BTree range query would panic without the boundary
+    // guard, so this must return an exact-zero estimate, not blow up.
+    let (_temp_dir, index) = random_index(1000, 1, index_type);
+    let range = Range {
+        gte: Some(OrderedFloat(50.0)),
+        lte: Some(OrderedFloat(10.0)),
+        gt: None,
+        lt: None,
+    };
+    let estimation =
+        query::range_cardinality(index.inner(), &RangeInterface::Float(range)).unwrap();
+    assert_eq!(estimation.exp, 0);
+}
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_cardinality_exp(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 1, index_type);
 
