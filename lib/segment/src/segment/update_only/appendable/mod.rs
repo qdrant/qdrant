@@ -10,9 +10,7 @@ use common::universal_io::UniversalAppend;
 use super::AppendableIdTrackerState;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
-use crate::id_tracker::mutable_id_tracker::update_only::{
-    MappingOperation, UpdateOnlyAppendableIdTracker,
-};
+use crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker;
 use crate::types::PointIdType;
 
 /// A segment open for appends: the write target. Every point a batch stores
@@ -63,6 +61,10 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         // The id tracker half is ready (`insert_operations` +
         // `set_internal_versions`); what is missing is everywhere the point's
         // data goes.
+        //
+        // Keep the ids `insert_operations` returns when writing this: with
+        // them, `tombstone_points` can refuse to retire a point this batch
+        // stored, and the caller stops having to know not to ask.
         todo!("needs the append-only vector storages, payload storage and field indexes")
     }
 
@@ -77,23 +79,14 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        let operations: Vec<MappingOperation> = points
-            .iter()
-            .map(|(point_id, _internal_id)| MappingOperation::Delete(*point_id))
-            .collect();
-
-        // Deletes claim no slots, so the returned mappings are empty.
-        self.id_tracker.insert_operations(&operations)?;
-
-        Ok(())
+        self.id_tracker
+            .delete_points(points.iter().map(|(point_id, _internal_id)| *point_id))
     }
 
-    /// Persist everything written since the last flush. There is no WAL:
-    /// writes are durable only once this returns.
+    /// The id tracker persists what it writes before returning, so there is
+    /// nothing of it left to flush. The storages `store_points` needs bring
+    /// their own durability contract.
     pub fn flush(&self) -> OperationResult<()> {
-        // The id tracker persists what it writes before returning, so there is
-        // nothing of it left to flush here. The storages `store_points` needs
-        // bring their own durability contract.
         Ok(())
     }
 }

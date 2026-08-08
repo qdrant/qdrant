@@ -297,10 +297,21 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         &mut self,
         pending_inserts: impl IntoIterator<Item = PointIdType>,
     ) -> OperationResult<()> {
-        let operations: Vec<MappingOperation> = pending_inserts
+        self.delete_points(pending_inserts)
+    }
+
+    /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
+    /// handed out again. Tombstoning that data is the caller's business.
+    pub fn delete_points(
+        &mut self,
+        point_ids: impl IntoIterator<Item = PointIdType>,
+    ) -> OperationResult<()> {
+        let operations: Vec<MappingOperation> = point_ids
             .into_iter()
             .map(MappingOperation::Delete)
             .collect();
+
+        // Deletes claim no slots, so the returned mappings are empty.
         self.insert_operations(&operations)?;
 
         Ok(())

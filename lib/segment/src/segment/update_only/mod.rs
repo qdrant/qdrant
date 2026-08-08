@@ -51,19 +51,15 @@ pub enum SegmentWriterState {
 
 /// The tail of an appendable segment's mappings log, as the read phase saw it.
 ///
-/// All three fields must come from one and the same read of that log — see
-/// [`UpdateOnlyAppendableIdTracker::new`], which is why they travel together
-/// rather than being re-read by the writer.
+/// The fields are the arguments of [`UpdateOnlyAppendableIdTracker::new`],
+/// which documents each and requires that all three come from one and the same
+/// read of that log — which is why they travel together rather than being
+/// re-read by the writer.
 ///
 /// [`UpdateOnlyAppendableIdTracker::new`]:
 ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
 pub struct AppendableIdTrackerState {
-    /// Highest slot the log has ever claimed; the writer resumes above it.
     pub max_claimed_internal_id: Option<PointOffsetType>,
-    /// External ids the log inserted whose versions were never committed. The
-    /// writer retires them before accepting anything new.
     pub pending_inserts: Vec<PointIdType>,
-    /// Byte offset just past the last complete entry, where the next batch is
-    /// appended.
     pub mappings_end: u64,
 }

@@ -10,7 +10,6 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::UniversalRead;
-use uuid::Uuid;
 
 use super::{AppendableIdTrackerState, SegmentWriterState};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
@@ -23,7 +22,6 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 /// than reads — every segment of a shard is opened this way, including those a
 /// batch never writes to.
 pub struct LookupSegment<S: UniversalRead + 'static> {
-    pub uuid: Uuid,
     /// Path to the segment directory.
     pub segment_path: PathBuf,
 

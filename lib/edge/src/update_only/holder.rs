@@ -45,15 +45,16 @@ impl<S: UniversalRead + 'static> LookupSegmentHolder<S> {
         self.by_uuid.iter().map(|(uuid, segment)| (*uuid, segment))
     }
 
-    pub(crate) fn get(&self, uuid: &Uuid) -> Option<&Arc<RwLock<LookupSegment<S>>>> {
-        self.by_uuid.get(uuid)
+    /// The segment `uuid` names; an error when the holder has no such segment,
+    /// which can only mean it changed under a batch in flight.
+    pub(crate) fn get(&self, uuid: Uuid) -> OperationResult<&Arc<RwLock<LookupSegment<S>>>> {
+        self.by_uuid.get(&uuid).ok_or_else(|| {
+            OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
+        })
     }
 
-    /// UUID of the single segment that accepts appends; an error when none
-    /// exists.
-    pub(crate) fn write_target(&self) -> OperationResult<Uuid> {
-        self.write_target.ok_or_else(|| {
-            OperationError::service_error("No appendable segment exists, expected exactly one")
-        })
+    /// UUID of the single segment that accepts appends, if one exists.
+    pub(crate) fn write_target_uuid(&self) -> Option<Uuid> {
+        self.write_target
     }
 }

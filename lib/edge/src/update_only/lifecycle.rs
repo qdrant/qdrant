@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 use common::universal_io::{MmapFile, MmapFs, UniversalRead, UniversalReadFs};
 use parking_lot::RwLock;
@@ -57,7 +56,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
                     // No deferred threshold yet: it belongs to the coordination
                     // with an external rebuilder, which does not exist in this
                     // iteration.
-                    let segment = LookupSegment::<S>::open(&fs, &segment_path, uuid, None)?;
+                    let segment = LookupSegment::<S>::open(&fs, &segment_path, None)?;
                     Ok((uuid, segment))
                 })
                 .collect::<OperationResult<Vec<_>>>()
@@ -80,7 +79,6 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
             fs,
             segments: RwLock::new(holder),
             pool,
-            applied: AtomicBool::new(false),
         })
     }
 }

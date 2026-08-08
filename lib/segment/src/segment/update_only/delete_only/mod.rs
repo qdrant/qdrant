@@ -55,11 +55,9 @@ impl<S: UniversalWrite + 'static> DeleteOnlySegment<S> {
         todo!("needs an appendable deleted-points bitmask (`DynamicStoredFlags`)")
     }
 
-    /// Persist everything written since the last flush. There is no WAL:
-    /// writes are durable only once this returns.
+    /// Nothing is buffered: the only write this segment accepts does not exist
+    /// yet, and lands with its own durability contract.
     pub fn flush(&self) -> OperationResult<()> {
-        // Nothing is buffered: the only write this segment accepts does not
-        // exist yet, and lands with its own durability contract.
         Ok(())
     }
 }

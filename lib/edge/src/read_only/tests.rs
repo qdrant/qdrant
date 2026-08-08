@@ -53,7 +53,7 @@ pub(crate) fn test_config() -> EdgeConfig {
     }
 }
 
-pub(crate) fn point(id: u64) -> PointStructPersisted {
+fn point(id: u64) -> PointStructPersisted {
     PointStructPersisted {
         id: ExtendedPointId::NumId(id),
         vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(

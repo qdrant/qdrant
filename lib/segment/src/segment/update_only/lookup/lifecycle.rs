@@ -9,7 +9,6 @@ use common::universal_io::{
     CachedFs, CachedReadFs, OkNotFound as _, Populate, UniversalRead, UniversalReadFs,
     read_json_via,
 };
-use uuid::Uuid;
 
 use super::{LookupSegment, LookupVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -72,7 +71,6 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
-        uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self>
     where
@@ -80,14 +78,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     {
         let cached_fs = build_cached_fs(fs, segment_path)?;
         let config = Self::preopen(&cached_fs, segment_path)?;
-        Self::open_via(
-            &cached_fs,
-            fs,
-            segment_path,
-            config,
-            uuid,
-            deferred_internal_id,
-        )
+        Self::open_via(&cached_fs, fs, segment_path, config, deferred_internal_id)
     }
 
     /// Open the segment's components: the id tracker, the payload storage and
@@ -112,7 +103,6 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         raw_fs: &S::Fs,
         segment_path: &Path,
         config: SegmentConfig,
-        uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
@@ -174,7 +164,6 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         }
 
         Ok(Self {
-            uuid,
             segment_path: segment_path.to_path_buf(),
             id_tracker,
             payload_storage,

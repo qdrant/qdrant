@@ -16,9 +16,6 @@
 //! a retirement in the appendable segment's mappings log, or marks the
 //! deleted-points bitmask of an immutable one.
 //!
-//! One writer applies one batch: see
-//! [`applied`](UpdateOnlyEdgeShard::applied).
-//!
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
 mod apply;
@@ -31,7 +28,6 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use common::universal_io::UniversalRead;
 use parking_lot::RwLock;
@@ -60,18 +56,6 @@ pub struct UpdateOnlyEdgeShard<S: UniversalRead + 'static> {
     /// backend each segment's reads block on the network, so segments are
     /// visited in parallel.
     pool: Arc<ThreadPool>,
-    /// Whether a batch has already been written through this writer.
-    ///
-    /// The segments were read once, when the writer opened, and that read is
-    /// what every batch resolves against and what its writers resume from. A
-    /// second batch would therefore resume an appendable segment from a log
-    /// position its own first batch has moved past, and appending there cuts
-    /// off everything written since — silently undoing it. So the second
-    /// batch is refused instead.
-    // ponytail: one batch per writer, which is the serverless updater's whole
-    // lifecycle. To lift it, reload the segments after a batch — the read-only
-    // segment's `live_reload` tails exactly the files a batch appended to.
-    applied: AtomicBool,
 }
 
 /// One segment's schema, as reported by
@@ -99,7 +83,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     /// must conform to: the named vectors a point carries, and their shapes.
     pub fn segment_configs(&self) -> Vec<SegmentConfigInfo> {
         let segments = self.segments.read();
-        let write_target = segments.write_target().ok();
+        let write_target = segments.write_target_uuid();
         segments
             .iter()
             .map(|(uuid, segment)| SegmentConfigInfo {

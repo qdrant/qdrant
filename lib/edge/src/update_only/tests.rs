@@ -5,13 +5,35 @@
 //! needs the append-only vector, payload and index storages.
 
 use common::universal_io::MmapFile;
-use segment::types::ExtendedPointId;
+use segment::types::{ExtendedPointId, SeqNumberType};
+use shard::operations::CollectionUpdateOperations;
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointOperations::DeletePoints;
+use tempfile::TempDir;
 
 use crate::EdgeShard;
 use crate::read_only::tests::{exact_count, open_follower, scrolled_ids, test_config, upsert};
 use crate::update_only::UpdateOnlyEdgeShard;
+
+/// A flushed shard directory holding points 1 to 10, with the leader that
+/// wrote it closed — a writer opens a directory, not a running shard.
+fn leader_with_ten_points(prefix: &str) -> TempDir {
+    let dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+
+    dir
+}
+
+fn delete_batch(
+    ids: impl IntoIterator<Item = u64>,
+) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
+    let ids = ids.into_iter().map(ExtendedPointId::NumId).collect();
+
+    [(100, PointOperation(DeletePoints { ids }))]
+}
 
 /// A batch of deletes against the appendable segment: every phase runs for
 /// real — the points are located and resolved through the `LookupSegment`s, a
@@ -19,21 +41,10 @@ use crate::update_only::UpdateOnlyEdgeShard;
 /// land in its mappings log.
 #[test]
 fn delete_batch_retires_points_and_leaves_the_rest() {
-    let dir = tempfile::Builder::new()
-        .prefix("edge-update-delete")
-        .tempdir()
-        .unwrap();
-
-    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
-    upsert(&leader, 1..=10);
-    leader.flush().unwrap();
-    drop(leader);
+    let dir = leader_with_ten_points("edge-update-delete");
 
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    let deleted_ids = vec![ExtendedPointId::NumId(3), ExtendedPointId::NumId(7)];
-    let outcome = writer
-        .apply_batch([(100, PointOperation(DeletePoints { ids: deleted_ids }))])
-        .unwrap();
+    let outcome = writer.apply_batch(delete_batch([3, 7])).unwrap();
 
     assert_eq!(outcome.deleted, 2);
     assert_eq!(outcome.stored, 0);
@@ -55,74 +66,22 @@ fn delete_batch_retires_points_and_leaves_the_rest() {
 /// A retried invocation — a fresh writer over the same directory — replays the
 /// batch harmlessly: the points it deletes are already gone, so they resolve
 /// to nothing.
+///
+/// Replaying through the *same* writer needs no test:
+/// [`apply_batch`](UpdateOnlyEdgeShard::apply_batch) consumes it, so a second
+/// batch does not compile.
 #[test]
 fn replayed_delete_batch_is_a_no_op() {
-    let dir = tempfile::Builder::new()
-        .prefix("edge-update-delete-replay")
-        .tempdir()
-        .unwrap();
-
-    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
-    upsert(&leader, 1..=10);
-    leader.flush().unwrap();
-    drop(leader);
-
-    let batch = || {
-        [(
-            100,
-            PointOperation(DeletePoints {
-                ids: vec![ExtendedPointId::NumId(3)],
-            }),
-        )]
-    };
+    let dir = leader_with_ten_points("edge-update-delete-replay");
 
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    assert_eq!(writer.apply_batch(batch()).unwrap().deleted, 1);
-    drop(writer);
+    assert_eq!(writer.apply_batch(delete_batch([3])).unwrap().deleted, 1);
 
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    let replayed = writer.apply_batch(batch()).unwrap();
+    let replayed = writer.apply_batch(delete_batch([3])).unwrap();
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
 
     let follower = open_follower(dir.path());
     assert_eq!(exact_count(&follower), 9);
-}
-
-/// A second batch through one writer is refused rather than applied: it would
-/// resume the appendable segment from a log position the first batch has moved
-/// past, cutting that batch's writes off.
-#[test]
-fn second_batch_through_one_writer_is_refused() {
-    let dir = tempfile::Builder::new()
-        .prefix("edge-update-second-batch")
-        .tempdir()
-        .unwrap();
-
-    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
-    upsert(&leader, 1..=10);
-    leader.flush().unwrap();
-    drop(leader);
-
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    let delete = |id| {
-        [(
-            100,
-            PointOperation(DeletePoints {
-                ids: vec![ExtendedPointId::NumId(id)],
-            }),
-        )]
-    };
-
-    writer.apply_batch(delete(3)).unwrap();
-    writer.apply_batch(delete(7)).unwrap_err();
-
-    // The refused batch changed nothing, and the first one still stands.
-    let follower = open_follower(dir.path());
-    assert_eq!(
-        scrolled_ids(&follower),
-        [1, 2, 4, 5, 6, 7, 8, 9, 10]
-            .map(ExtendedPointId::NumId)
-            .to_vec(),
-    );
 }

@@ -2,8 +2,6 @@
 //! batched pass over the whole point set, so a batch's cost scales with the
 //! points it touches, not the operations in it.
 
-use std::sync::atomic::Ordering;
-
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -78,8 +76,17 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
     /// Atomic in the sense that matters without a WAL: applied in full or the
     /// error is returned, and re-applying a batch that partially landed skips
     /// the points that already carry its version.
+    ///
+    /// Consumes the writer, because it can serve exactly one batch. The
+    /// segments were read when it opened, and that read is both what a batch
+    /// resolves against and what its writers resume from; a second batch would
+    /// resume an appendable segment from a log position its own first batch
+    /// has moved past, and appending there cuts off everything written since.
+    /// Open another writer for the next batch — or, to lift the restriction,
+    /// reload the segments after a batch, which the read-only segment's
+    /// `live_reload` already does for exactly the files a batch appends to.
     pub fn apply_batch(
-        &self,
+        self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<UpdateBatchOutcome> {
         let plan = UpdateBatchPlan::build(operations)?;
@@ -97,7 +104,7 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
         let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
-        let write_target_uuid = segments.write_target().ok();
+        let write_target_uuid = segments.write_target_uuid();
 
         for point in resolved {
             let PointPreview {
@@ -148,16 +155,10 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
         // 4. Append the resolved points, then retire the slots they replaced.
         // Writers live for this batch alone: the append-only components behind
         // them buffer nothing across calls.
-        let writes_anything = !to_store.is_empty() || !to_tombstone.is_empty();
-        if writes_anything && self.applied.swap(true, Ordering::Relaxed) {
-            return Err(OperationError::service_error(
-                "This writer has already applied a batch and its view of the segments is stale; \
-                 open a new writer for the next batch",
-            ));
-        }
-
         if !to_store.is_empty() {
-            let uuid = segments.write_target()?;
+            let uuid = write_target_uuid.ok_or_else(|| {
+                OperationError::service_error("No appendable segment exists, expected exactly one")
+            })?;
             let mut writer = open_writer(&segments, &self.fs, uuid)?;
 
             writer
@@ -201,10 +202,7 @@ fn open_writer<S: UniversalAppend + UniversalWrite + 'static>(
     fs: &S::Fs,
     uuid: Uuid,
 ) -> OperationResult<UpdateOnlySegmentEnum<S>> {
-    let segment = segments.get(&uuid).ok_or_else(|| {
-        OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
-    })?;
-    let segment = segment.read();
+    let segment = segments.get(uuid)?.read();
 
     UpdateOnlySegmentEnum::open(fs, &segment.segment_path, segment.writer_state())
 }
@@ -303,10 +301,7 @@ pub(super) fn read_stored_points<S: UniversalRead + 'static>(
             .collect::<Vec<_>>()
             .into_par_iter()
             .map(|(uuid, entries)| {
-                let segment = segments.get(&uuid).ok_or_else(|| {
-                    OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
-                })?;
-                let segment = segment.read();
+                let segment = segments.get(uuid)?.read();
 
                 let internal_ids: Vec<PointOffsetType> = entries
                     .iter()
