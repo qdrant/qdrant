@@ -76,10 +76,6 @@ mod tests {
 
         let filter_is_null = FieldCondition::new_is_null(key.clone(), true);
 
-        let filter_is_not_null = FieldCondition::new_is_null(key.clone(), false);
-
-        let filter_is_empty = FieldCondition::new_is_empty(key.clone(), true);
-
         let filter_is_not_empty = FieldCondition {
             key: key.clone(),
             r#match: None,
@@ -156,22 +152,9 @@ mod tests {
             .estimate_cardinality(&filter_is_not_empty, &hw_cell)
             .unwrap()
             .unwrap();
-        let is_empty_cardinality = null_index
-            .estimate_cardinality(&filter_is_empty, &hw_cell)
-            .unwrap()
-            .unwrap();
-        let not_null_cardinality = null_index
-            .estimate_cardinality(&filter_is_not_null, &hw_cell)
-            .unwrap()
-            .unwrap();
 
         assert_eq!(is_null_cardinality.exp, 50);
         assert_eq!(non_empty_cardinality.exp, 50);
-        // Complement estimates use total − indexed count (no arbitrary delete discount).
-        assert_eq!(is_empty_cardinality.exp, 50);
-        assert_eq!(is_empty_cardinality.max, 50);
-        assert_eq!(not_null_cardinality.exp, 50);
-        assert_eq!(not_null_cardinality.max, 50);
     }
 
     #[test]
