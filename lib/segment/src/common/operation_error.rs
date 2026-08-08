@@ -237,6 +237,7 @@ impl From<UniversalIoError> for OperationError {
             | UniversalIoError::OutOfBounds { .. }
             | UniversalIoError::InvalidFileIndex { .. }
             | UniversalIoError::Uninitialized { .. }
+            | UniversalIoError::UnchangedOpen { .. }
             | UniversalIoError::QueueIsFull
             | UniversalIoError::AppendOffsetConflict { .. }
             | UniversalIoError::S3(_)
@@ -361,6 +362,7 @@ impl From<BlobstoreError> for OperationError {
                 | UniversalIoError::OutOfBounds { .. }
                 | UniversalIoError::InvalidFileIndex { .. }
                 | UniversalIoError::Uninitialized { .. }
+                | UniversalIoError::UnchangedOpen { .. }
                 | UniversalIoError::QueueIsFull
                 | UniversalIoError::AppendOffsetConflict { .. }
                 | UniversalIoError::S3(_)
