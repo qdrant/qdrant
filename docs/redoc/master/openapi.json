@@ -11839,6 +11839,11 @@
             "default": true,
             "type": "boolean"
           },
+          "async_hnsw_graph": {
+            "description": "Allow the batched io_uring-based HNSW graph search. When disabled, the HNSW graph is *never* opened on io_uring. When enabled, the graph backend is decided based on `storage.performance.io_uring` option and links placement.",
+            "default": false,
+            "type": "boolean"
+          },
           "write_segment_manifest": {
             "description": "Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory) listing the shard's segments and their state, so out-of-process readers can discover segments without scanning the filesystem.",
             "default": false,

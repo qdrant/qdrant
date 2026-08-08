@@ -11,7 +11,7 @@ use super::HNSWIndex;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::VectorIndexEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersWithVectors};
+use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::types::HnswGlobalConfig;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
@@ -91,7 +91,8 @@ impl<'a> OldIndexCandidate<'a> {
 
         // Rough check whether the point is included in the old graph.
         // If it's included, it almost certainly has at least one outgoing link at level 0.
-        let old_graph_has_point = |id: PointOffsetType| !old_index.graph.links.links_empty(id, 0);
+        let old_graph_has_point =
+            |id: PointOffsetType| !old_index.graph.graph_layers().links.links_empty(id, 0);
 
         // Build old_to_new mapping.
         let mut valid_points = 0;
@@ -211,10 +212,10 @@ impl<'a> OldIndexCandidate<'a> {
 impl OldIndex<'_> {
     pub(super) fn point_level(&self, new_id: PointOffsetType) -> Option<usize> {
         let old_id = self.new_to_old[new_id as usize]?;
-        Some(self.index.graph.links.point_level(old_id))
+        Some(self.index.graph.graph_layers().links.point_level(old_id))
     }
 
     pub(in crate::index::hnsw_index) fn graph(&self) -> &GraphLayers {
-        &self.index.graph
+        self.index.graph.graph_layers()
     }
 }
