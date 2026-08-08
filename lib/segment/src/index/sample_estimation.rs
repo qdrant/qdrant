@@ -4,7 +4,7 @@ use crate::common::operation_error::OperationResult;
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
-/// Returns (expected cardinality ± confidence interval at 0.99)
+/// Returns (expected cardinality ± confidence interval at ~0.95, i.e. z = 2.0)
 /// Based on <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Agresti%E2%80%93Coull_interval>
 fn confidence_agresti_coull_interval(trials: usize, positive: usize, total: usize) -> (i64, i64) {
     let z = 2.; // heuristics
