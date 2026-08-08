@@ -79,7 +79,7 @@ where
     /// Compare every chunk file's length against an external total length.
     ///
     /// Ensures every file is at the expected length by truncating or filling with zeroes.
-    fn ensure_chunk_lengths(&mut self, target_len: usize) -> OperationResult<()> {
+    fn ensure_chunk_lengths(&self, target_len: usize) -> OperationResult<()> {
         let total_bytes = target_len * self.config.dim * size_of::<T>();
         let num_chunks = target_len.div_ceil(self.config.chunk_size_vectors);
 
@@ -158,6 +158,8 @@ where
     /// This method trusts the `start_key` to be the source of truth, so it will
     /// fill with zeroes or truncate chunks if necessary to make chunks' sizes
     /// match the argument
+    // Takes &mut self to enforce the single-writer contract the appends rest on
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn append_many<'a>(
         &mut self,
         start_key: VectorOffsetType,
