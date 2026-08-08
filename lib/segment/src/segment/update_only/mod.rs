@@ -17,9 +17,9 @@
 //!   one batch and dropped with it, since the append-only components behind
 //!   them hold nothing across calls.
 //!
-//! The two phases meet at [`SegmentWriterState`]: what a writer must know
-//! about the segment it resumes, taken from the read the lookup phase already
-//! did. See [`LookupSegment::writer_state`].
+//! The two phases meet at [`AppendableIdTrackerState`]: what a writer must
+//! know about the segment it resumes, taken from the read the lookup phase
+//! already did. See [`LookupSegment::writer_state`].
 
 mod appendable;
 mod delete_only;
@@ -30,24 +30,9 @@ use common::types::PointOffsetType;
 
 pub use self::appendable::AppendableSegment;
 pub use self::delete_only::DeleteOnlySegment;
-pub use self::lookup::{LookupSegment, LookupVectorData};
+pub use self::lookup::LookupSegment;
 pub use self::segment_enum::UpdateOnlySegmentEnum;
 use crate::types::PointIdType;
-
-/// What a writer needs to know about the segment it is about to resume,
-/// produced by [`LookupSegment::writer_state`] and consumed by
-/// [`UpdateOnlySegmentEnum::open`].
-///
-/// Which variant a segment yields is decided by the id-tracker format it was
-/// loaded with, not by its config: the format is what dictates how a point is
-/// retired.
-pub enum SegmentWriterState {
-    /// An immutable segment: its mappings cannot grow, so the only write it
-    /// accepts is retiring points that are already in it.
-    DeleteOnly,
-    /// An appendable segment, resuming from the state of its mappings log.
-    Appendable(AppendableIdTrackerState),
-}
 
 /// The tail of an appendable segment's mappings log, as the read phase saw it.
 ///

@@ -82,11 +82,4 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         self.id_tracker
             .delete_points(points.iter().map(|(point_id, _internal_id)| *point_id))
     }
-
-    /// The id tracker persists what it writes before returning, so there is
-    /// nothing of it left to flush. The storages `store_points` needs bring
-    /// their own durability contract.
-    pub fn flush(&self) -> OperationResult<()> {
-        Ok(())
-    }
 }

@@ -26,7 +26,7 @@ impl<S: UniversalRead + 'static> Default for LookupSegmentHolder<S> {
 
 impl<S: UniversalRead + 'static> LookupSegmentHolder<S> {
     pub(crate) fn insert(&mut self, uuid: Uuid, segment: LookupSegment<S>) {
-        if segment.is_appendable() {
+        if segment.appendable {
             self.write_target = Some(uuid);
         }
         self.by_uuid.insert(uuid, Arc::new(RwLock::new(segment)));

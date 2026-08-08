@@ -10,7 +10,7 @@ use common::universal_io::{
     read_json_via,
 };
 
-use super::{LookupSegment, LookupVectorData};
+use super::LookupSegment;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -143,24 +143,14 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
                             "Dense vector storage '{vector_name}' was not found, or is corrupted.",
                         ))
                     })?;
-            vector_data.insert(
-                vector_name.clone(),
-                LookupVectorData {
-                    vector_storage: Arc::new(AtomicRefCell::new(storage)),
-                },
-            );
+            vector_data.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
             let storage = VectorStorageReadEnum::Sparse(Box::new(
                 ReadOnlySparseVectorStorage::open(fs, &path, WRITER_POPULATE)?,
             ));
-            vector_data.insert(
-                vector_name.clone(),
-                LookupVectorData {
-                    vector_storage: Arc::new(AtomicRefCell::new(storage)),
-                },
-            );
+            vector_data.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
 
         Ok(Self {

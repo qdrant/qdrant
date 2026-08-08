@@ -153,8 +153,9 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
         }
 
         // 4. Append the resolved points, then retire the slots they replaced.
-        // Writers live for this batch alone: the append-only components behind
-        // them buffer nothing across calls.
+        // Writers live for this batch alone, and there is no flush step: the
+        // append-only components behind them buffer nothing across calls, so a
+        // write is durable when it returns.
         if !to_store.is_empty() {
             let uuid = write_target_uuid.ok_or_else(|| {
                 OperationError::service_error("No appendable segment exists, expected exactly one")
@@ -170,24 +171,18 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
                 })?
                 .store_points(&to_store, &hw_counter)?;
 
-            // The new slots must be durable before the tombstones that retire
-            // the old ones: the reverse order can lose a point outright if the
-            // process dies in between.
-            writer.flush()?;
-
             // Whatever the write target has to retire goes through the writer
             // already open: a second one would retire this batch's own
-            // half-written points as it resumed.
+            // half-written points as it resumed. It happens after the store,
+            // since every write is durable when it returns and the reverse
+            // order can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 writer.tombstone_points(&points)?;
-                writer.flush()?;
             }
         }
 
         for (uuid, points) in to_tombstone {
-            let mut writer = open_writer(&segments, &self.fs, uuid)?;
-            writer.tombstone_points(&points)?;
-            writer.flush()?;
+            open_writer(&segments, &self.fs, uuid)?.tombstone_points(&points)?;
         }
 
         Ok(outcome)
@@ -224,7 +219,7 @@ pub(super) fn locate_points<S: UniversalRead + 'static>(
             .into_par_iter()
             .map(|(uuid, segment)| {
                 let segment = segment.read();
-                let appendable = segment.is_appendable();
+                let appendable = segment.appendable;
 
                 let mut found_ids = Vec::new();
                 let mut internal_ids = Vec::new();

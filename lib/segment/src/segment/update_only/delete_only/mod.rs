@@ -54,10 +54,4 @@ impl<S: UniversalWrite + 'static> DeleteOnlySegment<S> {
         // store cannot do.
         todo!("needs an appendable deleted-points bitmask (`DynamicStoredFlags`)")
     }
-
-    /// Nothing is buffered: the only write this segment accepts does not exist
-    /// yet, and lands with its own durability contract.
-    pub fn flush(&self) -> OperationResult<()> {
-        Ok(())
-    }
 }

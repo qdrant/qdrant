@@ -6,7 +6,7 @@ use std::path::Path;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalWrite};
 
-use super::{AppendableSegment, DeleteOnlySegment, SegmentWriterState};
+use super::{AppendableIdTrackerState, AppendableSegment, DeleteOnlySegment};
 use crate::common::operation_error::OperationResult;
 use crate::types::PointIdType;
 
@@ -17,22 +17,20 @@ pub enum UpdateOnlySegmentEnum<S: UniversalAppend + UniversalWrite + 'static> {
 }
 
 impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlySegmentEnum<S> {
-    /// Open the writer `state` calls for, over the segment directory at
-    /// `segment_path`.
+    /// Open a writer over the segment directory at `segment_path`: appendable
+    /// when the read phase handed over a mappings-log state to resume from,
+    /// delete-only when it had none to give.
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
-        state: SegmentWriterState,
+        id_tracker_state: Option<AppendableIdTrackerState>,
     ) -> OperationResult<Self> {
-        match state {
-            SegmentWriterState::DeleteOnly => Ok(Self::DeleteOnly(DeleteOnlySegment::open(
-                fs.clone(),
-                segment_path,
-            ))),
-            SegmentWriterState::Appendable(id_tracker_state) => Ok(Self::Appendable(
-                AppendableSegment::open(fs.clone(), segment_path, id_tracker_state)?,
-            )),
-        }
+        Ok(match id_tracker_state {
+            Some(state) => {
+                Self::Appendable(AppendableSegment::open(fs.clone(), segment_path, state)?)
+            }
+            None => Self::DeleteOnly(DeleteOnlySegment::open(fs.clone(), segment_path)),
+        })
     }
 
     /// The appendable writer, when this segment is one; `None` when it accepts
@@ -55,15 +53,6 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlySegmentEnum<S> {
         match self {
             Self::DeleteOnly(segment) => segment.tombstone_points(points),
             Self::Appendable(segment) => segment.tombstone_points(points),
-        }
-    }
-
-    /// Persist everything written since the last flush. There is no WAL:
-    /// writes are durable only once this returns.
-    pub fn flush(&self) -> OperationResult<()> {
-        match self {
-            Self::DeleteOnly(segment) => segment.flush(),
-            Self::Appendable(segment) => segment.flush(),
         }
     }
 }

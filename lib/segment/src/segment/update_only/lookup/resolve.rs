@@ -90,8 +90,8 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
                 hw_counter,
             )?;
 
-        for (vector_name, vector_data) in &self.vector_data {
-            let vector_storage = vector_data.vector_storage.borrow();
+        for (vector_name, vector_storage) in &self.vector_data {
+            let vector_storage = vector_storage.borrow();
             vector_storage.read_vector_bytes::<Random, usize>(
                 internal_ids.iter().copied().enumerate(),
                 |position, internal_id, bytes| {
