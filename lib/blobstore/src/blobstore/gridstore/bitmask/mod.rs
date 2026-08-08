@@ -213,7 +213,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let current_bit_len = self.bitslice.bit_len() as usize;
 
         // extend the region gaps
-        let current_total_regions = self.regions_gaps.len()?;
+        let current_total_regions = self.regions_gaps.len();
         let expected_total_full_regions =
             current_bit_len.div_euclid(self.config.region_size_blocks);
         debug_assert!(
@@ -226,7 +226,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         self.regions_gaps.extend(new_gaps.into_iter())?;
 
         assert_eq!(
-            self.regions_gaps.len()? * self.config.region_size_blocks,
+            self.regions_gaps.len() * self.config.region_size_blocks,
             current_bit_len,
             "Bitmask length mismatch",
         );
