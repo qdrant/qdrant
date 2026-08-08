@@ -37,6 +37,30 @@ def get_remote_shards(peer_api_uri):
     return r.json()["result"]["remote_shards"]
 
 
+def get_full_cluster_shards(peer_api_uri):
+    """Local + remote shards from a single cluster-info snapshot, so both
+    sets come from the same cluster revision."""
+    r = requests.get(f"{peer_api_uri}/collections/{COLLECTION_NAME}/cluster")
+    assert_http_ok(r)
+    result = r.json()["result"]
+    return result["local_shards"] + result["remote_shards"]
+
+
+def check_full_replica_layout(peer_api_uri, n_shards, n_replicas) -> bool:
+    """Whether `peer_api_uri` sees every shard as Active with exactly
+    `n_replicas` copies across the cluster. A peer can lag behind the actual
+    layout while consensus catches it up (e.g. right after a new peer joins
+    and recovers a snapshot), so this is meant to be polled via `wait_for`."""
+    try:
+        all_shards = get_full_cluster_shards(peer_api_uri)
+    except requests.exceptions.ConnectionError:
+        return False
+    if not all(shard["state"] == "Active" for shard in all_shards):
+        return False
+    replicas_per_shard = Counter(shard["shard_id"] for shard in all_shards)
+    return replicas_per_shard == {shard_id: n_replicas for shard_id in range(n_shards)}
+
+
 def upload_snapshot(peer_api_uri, snapshot_path):
     with open(snapshot_path, "rb") as f:
         print(f"uploading {snapshot_path} to {peer_api_uri}")
@@ -162,16 +186,20 @@ def recover_from_uploaded_snapshot(tmp_path: pathlib.Path, n_replicas):
     # collection through its own local shards plus the remote shards. Asserting
     # a fixed remote count assumes a perfectly balanced placement, which is not
     # guaranteed and makes this test flaky.
-    # Fetch the cluster info once so local and remote shards come from the same
-    # cluster revision (two separate requests could observe placement changing
-    # between them and reintroduce flakiness).
-    res = requests.get(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster")
-    assert_http_ok(res)
-    cluster = res.json()["result"]
-    peer_0_local_shards_new = cluster["local_shards"]
-    peer_0_remote_shards_new = cluster["remote_shards"]
+    #
+    # Peer 0 learns about the new peer's shards through consensus, which can
+    # still be catching up right after the new peer's own view goes green
+    # (checked above via wait_collection_exists_and_active_on_all_peers), so
+    # poll here too instead of asserting on a single snapshot.
+    try:
+        wait_for(check_full_replica_layout, peer_api_uris[0], N_SHARDS, n_replicas)
+    except Exception:
+        print_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+        raise
 
-    all_shards = peer_0_local_shards_new + peer_0_remote_shards_new
+    # Fetched again (rather than reusing the polling loop's last check) so the
+    # assertions below report on the exact layout that satisfied the wait.
+    all_shards = get_full_cluster_shards(peer_api_uris[0])
     for shard in all_shards:
         print("shard", shard)
         assert shard["state"] == "Active"
