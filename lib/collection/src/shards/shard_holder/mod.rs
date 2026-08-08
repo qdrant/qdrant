@@ -19,7 +19,7 @@ use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
-use fs_err::{File, tokio as tokio_fs};
+use fs_err::tokio as tokio_fs;
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::json_path::JsonPath;
@@ -1235,7 +1235,7 @@ impl ShardHolder {
         let snapshots_path = snapshots_path.to_path_buf();
         let snapshot_manager = shard.get_snapshots_storage_manager()?;
 
-        let tar = BuilderExt::new_seekable_owned(File::create(temp_file.path())?);
+        let tar = BuilderExt::new_file(temp_file.path())?;
 
         let snapshot_creator = shard
             .create_snapshot(
