@@ -12,8 +12,9 @@
 //! * there is no WAL: a batch is durable when the storages are flushed.
 //!
 //! Storage is append-only throughout. Updating a point appends it in full and
-//! tombstones its old slot; a deletion writes nothing but the deleted-points
-//! bitmask.
+//! retires its old copy; a deletion writes no point data at all — it records
+//! a retirement in the appendable segment's mappings log, or marks the
+//! deleted-points bitmask of an immutable one.
 //!
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
@@ -22,6 +23,8 @@ mod batch;
 mod holder;
 mod lifecycle;
 mod preview;
+#[cfg(test)]
+mod tests;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,7 +37,7 @@ use uuid::Uuid;
 
 pub use self::apply::UpdateBatchOutcome;
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
-use self::holder::UpdateOnlySegmentHolder;
+use self::holder::LookupSegmentHolder;
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
 
 /// A batch writer over the segments of one shard directory, generic over the
@@ -45,12 +48,10 @@ pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview
 /// the only configuration a write needs.
 pub struct UpdateOnlyEdgeShard<S: UniversalRead + 'static> {
     path: PathBuf,
-    /// Backend the segments were opened on, and the one their appends go
-    /// through. Unread until the writer can create the appendable segment a
-    /// fresh directory needs.
-    #[expect(dead_code)]
+    /// Backend the segments were opened on, and the one a batch's writers go
+    /// through.
     fs: S::Fs,
-    segments: RwLock<UpdateOnlySegmentHolder<S>>,
+    segments: RwLock<LookupSegmentHolder<S>>,
     /// Thread pool the per-segment work of a batch runs on: on a remote
     /// backend each segment's reads block on the network, so segments are
     /// visited in parallel.
