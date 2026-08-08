@@ -1,9 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use common::universal_io::{UniversalIoError, UniversalReadFs, read_json_via, read_whole_via};
+use common::universal_io::{
+    UniversalIoError, UniversalReadFs, UniversalWriteFileOps, read_json_via, read_whole_via,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::common::CHUNK_SIZE;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -12,8 +15,8 @@ pub(super) const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 // TODO: rename for other storages?
 pub(super) const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
-/// Contents of the status file: the number of stored vectors, mapped writable
-/// and updated in place by [`ChunkedVectors`](super::ChunkedVectors).
+/// Contents of the status file: the number of stored vectors, updated in
+/// place by the writers.
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Status {
@@ -29,6 +32,80 @@ pub(super) struct ChunkedVectorsConfig {
     pub(super) dim: usize,
     #[serde(default)]
     pub(super) populate: Option<bool>,
+}
+
+impl ChunkedVectorsConfig {
+    pub fn get_chunk_index(&self, key: usize) -> usize {
+        key / self.chunk_size_vectors
+    }
+
+    pub fn get_chunk_offset(&self, key: usize) -> usize {
+        let chunk_vector_idx = key % self.chunk_size_vectors;
+        chunk_vector_idx * self.dim
+    }
+
+    /// How many vectors still fit in the chunk holding `key`, starting at it.
+    pub fn remaining_chunk_capacity(&self, key: usize) -> usize {
+        self.chunk_size_vectors - key % self.chunk_size_vectors
+    }
+}
+
+/// Load the stored config, or create it (and its file) on first open.
+pub(super) fn ensure_config<T, Fs>(
+    fs: &Fs,
+    directory: &Path,
+    dim: usize,
+    populate: bool,
+) -> OperationResult<ChunkedVectorsConfig>
+where
+    Fs: UniversalReadFs + UniversalWriteFileOps,
+{
+    let config_file = config_file(directory);
+    match load_config(fs, &config_file) {
+        Ok(Some(config)) => {
+            if config.dim == dim {
+                Ok(config)
+            } else {
+                Err(OperationError::service_error(format!(
+                    "Wrong configuration in {}: expected {}, found {dim}",
+                    config_file.display(),
+                    config.dim,
+                )))
+            }
+        }
+        Ok(None) => create_config::<T>(fs, &config_file, dim, populate),
+        Err(e) => {
+            log::error!("Failed to deserialize config file {config_file:?}: {e}");
+            create_config::<T>(fs, &config_file, dim, populate)
+        }
+    }
+}
+
+fn create_config<T>(
+    fs: &impl UniversalWriteFileOps,
+    config_file: &Path,
+    dim: usize,
+    populate: bool,
+) -> OperationResult<ChunkedVectorsConfig> {
+    if dim == 0 {
+        return Err(OperationError::service_error(
+            "The vector's dimension cannot be 0",
+        ));
+    }
+
+    let chunk_size_bytes = CHUNK_SIZE;
+    let vector_size_bytes = dim * std::mem::size_of::<T>();
+    let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
+    let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
+
+    let config = ChunkedVectorsConfig {
+        chunk_size_bytes: corrected_chunk_size_bytes,
+        chunk_size_vectors,
+        dim,
+        populate: Some(populate),
+    };
+    fs.atomic_save(config_file, &serde_json::to_vec(&config)?)?;
+    Ok(config)
 }
 
 pub(super) fn config_file(directory: &Path) -> PathBuf {

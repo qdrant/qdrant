@@ -1,25 +1,29 @@
-//! Fixed-dimension vectors stored flattened across a directory of
-//! equally-sized chunk files.
+//! Fixed-dimension vectors stored flattened across a directory of chunk files.
 //!
 //! The directory holds a config file, a status file carrying the vector count,
-//! and `chunk_<n>.mmap` files preallocated to the configured chunk size. A
-//! vector never straddles a chunk boundary.
+//! and `chunk_<n>.mmap` files. A vector never straddles a chunk boundary.
 //!
-//! Two types share that layout:
+//! Three types share that layout:
 //!
-//! - [`ChunkedVectors`] — the writable storage. Its impls are split across
-//!   [`lifecycle`] (open, config creation, flush) and [`write_ops`] (insert,
-//!   push).
-//! - [`read_only::ReadOnlyChunkedVectors`] — the read-only view, which
-//!   [`ChunkedVectors`] wraps and derefs to for every read.
+//! - [`ChunkedVectors`] — the writable storage, which preallocates chunks to
+//!   the configured size and writes in place. Its impls are split across
+//!   [`lifecycle`] (open, flush) and [`write_ops`] (insert, push).
+//! - [`update_only::UpdateOnlyChunkedVectors`] — a short-lived batch writer
+//!   that grows chunks by appends instead, so chunk files end at the data.
+//! - [`read_only::ReadOnlyChunkedVectors`] — the read-only view over either
+//!   writer's output, which [`ChunkedVectors`] wraps and derefs to for every
+//!   read.
 //!
-//! [`chunks`] and [`config`] hold what both sides need: the chunk files and
+//! [`chunks`] and [`config`] hold what all sides need: the chunk files and
 //! the on-disk metadata files respectively.
 
 mod chunks;
 mod config;
 mod lifecycle;
 pub mod read_only;
+#[cfg(test)]
+mod test_utils;
+pub mod update_only;
 mod write_ops;
 
 use std::ops::Deref;
