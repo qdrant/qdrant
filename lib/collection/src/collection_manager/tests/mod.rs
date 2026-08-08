@@ -76,7 +76,7 @@ fn test_update_proxy_segments() {
                 payload: None,
             },
         ];
-        upsert_points(&segments.read(), 1000 + i, &points, &hw_counter).unwrap();
+        upsert_points(&segments.read(), 1000 + i, &points, None, &hw_counter).unwrap();
     }
 
     let all_ids = segments
@@ -138,7 +138,7 @@ fn test_move_points_to_copy_on_write() {
 
     // Points should be marked as deleted in proxy segment
     // and moved to another appendable segment (segment2)
-    upsert_points(&segments.read(), 1001, &points, &hw_counter).unwrap();
+    upsert_points(&segments.read(), 1001, &points, None, &hw_counter).unwrap();
 
     let points = vec![
         PointStructPersisted {
@@ -153,7 +153,7 @@ fn test_move_points_to_copy_on_write() {
         },
     ];
 
-    upsert_points(&segments.read(), 1002, &points, &hw_counter).unwrap();
+    upsert_points(&segments.read(), 1002, &points, None, &hw_counter).unwrap();
 
     let segments_write = segments.write();
 
@@ -250,7 +250,7 @@ fn test_upsert_points_in_smallest_segment() {
             payload: None,
         })
         .collect();
-    upsert_points(&segments.read(), 1000, &points, &hw_counter).unwrap();
+    upsert_points(&segments.read(), 1000, &points, None, &hw_counter).unwrap();
 
     // Segment 1 and 2 are over capacity, we expect to have the new points in segment 3
     {
@@ -467,7 +467,7 @@ fn test_proxy_shared_updates() {
 
     let ids = vec![idx1, idx2];
 
-    set_payload(&holder, 30, &payload, &ids, &None, &hw_counter).unwrap();
+    set_payload(&holder, 30, &payload, &ids, &None, None, &hw_counter).unwrap();
 
     // Points should still be accessible in both proxies through write segment
     for &point_id in &ids {
@@ -604,7 +604,7 @@ fn test_proxy_shared_updates_same_version() {
 
     let ids = vec![idx1, idx2];
 
-    set_payload(&holder, 20, &payload, &ids, &None, &hw_counter).unwrap();
+    set_payload(&holder, 20, &payload, &ids, &None, None, &hw_counter).unwrap();
 
     // Points should still be accessible in both proxies through write segment
     for &point_id in &ids {

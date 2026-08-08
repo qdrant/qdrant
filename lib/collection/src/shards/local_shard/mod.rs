@@ -876,6 +876,9 @@ impl LocalShard {
                 update.operation,
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
+                // Synchronous replay applies uncapped: these operations were accepted once
+                // already, and steering them now could only shuffle destinations at load time.
+                None,
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
