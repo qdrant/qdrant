@@ -1590,6 +1590,7 @@ async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
                 id: id.into(),
                 vectors: std::iter::once((DEFAULT_VECTOR_NAME.to_owned(), bytes)).collect(),
                 payload: None,
+                payload_raw: None,
             },
         ]))
     };
@@ -1662,6 +1663,7 @@ async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
                 id: 2.into(),
                 vectors: std::iter::once((sparse_name.to_owned(), vec![0_u8, 1, 2])).collect(),
                 payload: None,
+                payload_raw: None,
             },
         ]));
 

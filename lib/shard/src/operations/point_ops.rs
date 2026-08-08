@@ -7,7 +7,7 @@ use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use segment::common::operation_error::OperationError;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::utils::unordered_hash_unique;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
@@ -336,40 +336,28 @@ pub struct PointStructRawPersisted {
     pub vectors: RawVectorsPersisted,
     /// Payload values (optional)
     pub payload: Option<Payload>,
+    /// The whole payload as a single encoded blob, as read from storage.
+    ///
+    /// Mutually exclusive with `payload`: raw payloads are decoded into
+    /// `payload` when the point is received, so this only ever travels from a
+    /// sender to the gRPC boundary. Skipped when `None` so that WAL entries
+    /// without a raw payload stay byte-identical to those written before this
+    /// field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_raw: Option<RawPayload>,
 }
 
-/// Serde helper for [`PointStructRawPersisted::vectors`].
-///
-/// By default serde serializes `Vec<u8>` as a sequence of integers, which in
-/// CBOR (used for the WAL) costs ~2x for high-entropy data such as raw vector
-/// bytes. This module forces each blob through `serialize_bytes` so it is
-/// encoded as a compact byte string (~1x overhead) instead.
+/// Serde helper for [`PointStructRawPersisted::vectors`]: each vector blob in
+/// the `(name, bytes)` pair list goes through [`common::raw_bytes_serde`] so it
+/// is encoded as a compact byte string instead of the serde default of a
+/// sequence of integers, which costs ~2x in CBOR (used for the WAL).
 mod raw_vectors_serde {
-    use std::fmt;
-
+    use common::raw_bytes_serde::{ByteVec, BytesRef};
     use segment::types::VectorNameBuf;
-    use serde::de::{self, Deserializer, SeqAccess, Visitor};
+    use serde::de::Deserializer;
     use serde::ser::{SerializeSeq, Serializer};
 
     use super::RawVectorsPersisted;
-
-    /// Upper bound for the capacity we pre-allocate from an untrusted `size_hint`
-    /// when deserializing a single vector's raw bytes.
-    ///
-    /// Realistic sizes are far below this: a maximum-size dense vector is
-    /// 65536 dims x 4 bytes (f32) = 256 KiB. The 128 MiB headroom comfortably
-    /// covers large multivectors and sparse vectors while staying orders of
-    /// magnitude away from OOM territory.
-    const MAX_RAW_VECTOR_PREALLOC: usize = 128 * 1024 * 1024;
-
-    /// Reference wrapper that serializes a byte slice as a byte string.
-    struct BytesRef<'a>(&'a [u8]);
-
-    impl serde::Serialize for BytesRef<'_> {
-        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            serializer.serialize_bytes(self.0)
-        }
-    }
 
     pub fn serialize<S: Serializer>(
         vectors: &[(VectorNameBuf, Vec<u8>)],
@@ -380,46 +368,6 @@ mod raw_vectors_serde {
             seq.serialize_element(&(name, BytesRef(bytes)))?;
         }
         seq.end()
-    }
-
-    /// Owned wrapper that deserializes a byte string into a `Vec<u8>`.
-    struct ByteVec(Vec<u8>);
-
-    impl<'de> serde::Deserialize<'de> for ByteVec {
-        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            struct ByteVecVisitor;
-
-            impl<'de> Visitor<'de> for ByteVecVisitor {
-                type Value = Vec<u8>;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a byte string")
-                }
-
-                fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
-                    Ok(value.to_vec())
-                }
-
-                fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
-                    Ok(value)
-                }
-
-                /// Formats that lack a native byte-string type (e.g. JSON) fall
-                /// back to a sequence of integers; accept those too.
-                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                    let capacity = seq.size_hint().unwrap_or(0).min(MAX_RAW_VECTOR_PREALLOC);
-                    let mut bytes = Vec::with_capacity(capacity);
-                    while let Some(byte) = seq.next_element()? {
-                        bytes.push(byte);
-                    }
-                    Ok(bytes)
-                }
-            }
-
-            deserializer
-                .deserialize_byte_buf(ByteVecVisitor)
-                .map(ByteVec)
-        }
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
@@ -433,27 +381,46 @@ mod raw_vectors_serde {
     }
 }
 
-impl TryFrom<SegmentRecordRaw> for PointStructRawPersisted {
-    type Error = OperationError;
-
-    /// A raw record carries the payload as stored, so it is decoded here — this
-    /// struct goes into the WAL, which holds parsed payloads.
-    fn try_from(record: SegmentRecordRaw) -> Result<Self, Self::Error> {
+impl From<SegmentRecordRaw> for PointStructRawPersisted {
+    /// A raw read hands out the payload as stored, so the blob travels as-is and
+    /// nothing is parsed or encoded here. A caller that must not carry the blob
+    /// any further decodes it with [`Self::decode_payload_raw`].
+    fn from(record: SegmentRecordRaw) -> Self {
         let SegmentRecordRaw {
             id,
             vectors,
             payload,
         } = record;
 
-        Ok(Self {
+        Self {
             id,
             vectors: vectors.unwrap_or_default(),
-            payload: payload.as_ref().map(RawPayload::decode).transpose()?,
-        })
+            payload: None,
+            payload_raw: payload,
+        }
     }
 }
 
 impl PointStructRawPersisted {
+    /// Move a raw payload blob into the parsed [`Self::payload`], decoding it.
+    ///
+    /// Raw payloads exist to travel between nodes, and are decoded when a point
+    /// is received, so a point reaching the local apply path normally carries
+    /// `payload` already. Decoding here as well keeps either representation
+    /// valid input for applying a point, instead of silently dropping the blob.
+    pub fn decode_payload_raw(&mut self) -> OperationResult<()> {
+        let Some(payload_raw) = self.payload_raw.take() else {
+            return Ok(());
+        };
+
+        // The two fields are mutually exclusive by construction.
+        debug_assert!(self.payload.is_none());
+
+        self.payload = Some(payload_raw.decode()?);
+
+        Ok(())
+    }
+
     /// Whether this point carries the data stored in `segment_record`.
     ///
     /// Vectors are compared as bytes, so logically equal vectors in a different
@@ -488,6 +455,10 @@ impl PointStructRawPersisted {
 
         // Check if payloads are equal, empty and non-existent payloads are considered equal
         let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
+        // An incoming point carries its payload parsed: a blob is decoded at the
+        // gRPC boundary, and `process_point_operation` decodes anything that
+        // reaches a segment without crossing it.
+        debug_assert!(self.payload_raw.is_none());
         let Ok(segment_payload) = payload.as_ref().map(RawPayload::decode).transpose() else {
             // A blob that cannot be parsed is not the data this point carries
             return false;
@@ -504,6 +475,7 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
             id,
             vectors,
             payload,
+            payload_raw,
         } = value;
 
         Self {
@@ -512,7 +484,7 @@ impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
             payload: payload
                 .map(api::conversions::json::payload_to_proto)
                 .unwrap_or_default(),
-            raw_payload: None,
+            raw_payload: payload_raw.map(api::grpc::qdrant::RawPayload::from),
         }
     }
 }
@@ -545,6 +517,7 @@ impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
             id,
             vectors: vectors.into_iter().collect(),
             payload,
+            payload_raw: None,
         })
     }
 }
@@ -568,9 +541,13 @@ impl Debug for PointStructRawPersisted {
             .iter()
             .map(|(name, bytes)| format!("{name}: {} bytes", bytes.len()))
             .join(", ");
+        let payload_raw = self
+            .payload_raw
+            .as_ref()
+            .map(|payload| format!("{} bytes", payload.payload_bytes.len()));
         write!(
             f,
-            "PointStructRawPersisted {{ id: {}, vectors: [{vectors}], payload: {:?} }}",
+            "PointStructRawPersisted {{ id: {}, vectors: [{vectors}], payload: {:?}, payload_raw: {payload_raw:?} }}",
             self.id, self.payload,
         )
     }
@@ -1144,6 +1121,7 @@ mod tests {
             id: 1.into(),
             vectors: vec![("dense".to_string(), blob.clone())].into(),
             payload: None,
+            payload_raw: None,
         };
 
         let encoded = serde_cbor::to_vec(&point).unwrap();
@@ -1159,6 +1137,182 @@ mod tests {
         // Round-trips losslessly.
         let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
         assert!(decoded == point, "round-trip mismatch");
+    }
+
+    #[test]
+    fn raw_persisted_payload_uses_compact_byte_string() {
+        // High-entropy blob: byte value == (index % 256), most bytes >= 24.
+        let blob: Vec<u8> = (0..4096u32).map(|i| i as u8).collect();
+        let point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(blob.clone())),
+        };
+
+        let encoded = serde_cbor::to_vec(&point).unwrap();
+        // A byte string is ~1x; an integer array would be ~1.9x for this data.
+        assert!(
+            encoded.len() < blob.len() + 128,
+            "expected compact byte-string encoding, got {} bytes for a {}-byte blob",
+            encoded.len(),
+            blob.len(),
+        );
+
+        // Round-trips losslessly.
+        let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
+        assert!(decoded == point, "round-trip mismatch");
+    }
+
+    /// A point without a raw payload must encode exactly as it did before the
+    /// field existed, so WAL entries stay compatible in both directions.
+    #[test]
+    fn raw_persisted_without_payload_blob_keeps_wal_encoding() {
+        /// Mirror of [`PointStructRawPersisted`] without `payload_raw`.
+        #[derive(Serialize)]
+        #[serde(rename_all = "snake_case")]
+        struct LegacyPointStructRawPersisted {
+            id: PointIdType,
+            #[serde(with = "raw_vectors_serde")]
+            vectors: RawVectorsPersisted,
+            payload: Option<Payload>,
+        }
+
+        let vectors: RawVectorsPersisted = vec![("dense".to_string(), vec![0_u8, 1, 2, 3])].into();
+        let legacy = LegacyPointStructRawPersisted {
+            id: 1.into(),
+            vectors: vectors.clone(),
+            payload: None,
+        };
+        let point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors,
+            payload: None,
+            payload_raw: None,
+        };
+
+        assert_eq!(
+            serde_cbor::to_vec(&point).unwrap(),
+            serde_cbor::to_vec(&legacy).unwrap(),
+        );
+    }
+
+    /// Sync compares an incoming point, whose payload is parsed, against a stored
+    /// record that carries the payload as a blob — the blob is decoded for the
+    /// comparison rather than counting as a difference.
+    #[test]
+    fn raw_point_is_equal_to_decodes_stored_blob() {
+        let record = SegmentRecordRaw {
+            id: 1.into(),
+            vectors: None,
+            payload: Some(RawPayload::from_storage_bytes(br#"{"a":1}"#.to_vec())),
+        };
+
+        let mut point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+            payload_raw: None,
+        };
+        assert!(point.is_equal_to(&record));
+
+        // A different payload value is unequal.
+        point.payload = Some(serde_json::from_str(r#"{"a":2}"#).unwrap());
+        assert!(!point.is_equal_to(&record));
+
+        // So is a payload the incoming point does not carry at all.
+        point.payload = None;
+        assert!(!point.is_equal_to(&record));
+    }
+
+    /// A stored blob that does not parse cannot be judged equal to anything: the
+    /// point is upserted rather than silently skipped.
+    #[test]
+    fn raw_point_is_equal_to_rejects_malformed_blob() {
+        let record = SegmentRecordRaw {
+            id: 1.into(),
+            vectors: None,
+            payload: Some(RawPayload::from_storage_bytes(b"not json".to_vec())),
+        };
+        let point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+            payload_raw: None,
+        };
+
+        assert!(!point.is_equal_to(&record));
+    }
+
+    /// The send side of a raw payload: a blob read from storage travels through
+    /// the wire types and arrives as the payload it was read from, without
+    /// either side building a protobuf value tree for it.
+    #[cfg(feature = "api")]
+    #[test]
+    fn raw_payload_round_trips_over_the_wire_types() {
+        let payload: Payload =
+            serde_json::from_str(r#"{"city": "Berlin", "count": 3, "nested": {"a": [1, 2]}}"#)
+                .unwrap();
+        let stored_bytes = serde_json::to_vec(&payload).unwrap();
+
+        let point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: vec![("dense".to_string(), vec![0_u8, 1, 2, 3])].into(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(stored_bytes.clone())),
+        };
+
+        let sent = api::grpc::qdrant::PointStructRaw::from(point);
+        assert!(
+            sent.payload.is_empty(),
+            "a raw payload must not also be sent as a value tree",
+        );
+        let raw_payload = sent.raw_payload.as_ref().expect("blob must be sent");
+        assert_eq!(raw_payload.payload_bytes, stored_bytes);
+        assert_eq!(
+            raw_payload.encoding(),
+            api::grpc::RawPayloadEncoding::JsonBytes,
+        );
+
+        let received = PointStructRawPersisted::try_from(sent).unwrap();
+        assert_eq!(received.payload, Some(payload));
+        assert!(
+            received.payload_raw.is_none(),
+            "a received point carries the decoded payload",
+        );
+    }
+
+    #[test]
+    fn decode_payload_raw_moves_blob_into_payload() {
+        let mut point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(br#"{"a":1}"#.to_vec())),
+        };
+
+        point.decode_payload_raw().unwrap();
+        assert_eq!(
+            point.payload,
+            Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+        );
+        assert!(point.payload_raw.is_none());
+
+        // Decoding is idempotent, and a point without a blob is untouched.
+        point.decode_payload_raw().unwrap();
+        assert_eq!(
+            point.payload,
+            Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+        );
+
+        // A malformed blob surfaces as an error instead of a dropped payload.
+        let mut point = PointStructRawPersisted {
+            id: 1.into(),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(b"not json".to_vec())),
+        };
+        assert!(point.decode_payload_raw().is_err());
     }
 
     fn dense(v: f32) -> VectorPersisted {
