@@ -1,13 +1,13 @@
 use std::hint::black_box;
 use std::iter;
 
-use common::mmap::create_and_ensure_length;
-use common::stored_bitslice::MmapBitSlice;
-use common::universal_io::{MmapFs, OpenOptions};
+use common::universal_io::{MmapFile, MmapFs, OpenOptions};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::*;
 use rand::rngs::SmallRng;
-use segment::common::buffered_update_bitslice::BufferedUpdateBitSlice;
+use segment::common::buffered_update_bitslice::{
+    BitmaskFormat, BitmaskPaths, BufferedUpdateBitSlice,
+};
 use tempfile::tempdir;
 
 const SIZE: usize = 4 * 1024 * 1024;
@@ -17,18 +17,20 @@ const LOOKUP_COUNT: usize = 1_000_000;
 fn buffered_update_bitslice(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(42);
     let dir = tempdir().unwrap();
-    let path = dir.path().join("bitslice.bin");
+    let paths = BitmaskPaths::new(
+        dir.path().join("bitslice.bin"),
+        dir.path().join("bitslice.mask"),
+    );
 
-    let _ = create_and_ensure_length(
-        &path,
-        SIZE.div_ceil(u8::BITS as usize)
-            .next_multiple_of(size_of::<u64>()),
+    let buffered_update_bitslice = BufferedUpdateBitSlice::<MmapFile>::create(
+        &MmapFs,
+        &paths,
+        OpenOptions::new_for_test(),
+        BitmaskFormat::Raw,
+        SIZE,
+        [],
     )
     .unwrap();
-
-    let bitslice_storage =
-        MmapBitSlice::open(&MmapFs, &path, OpenOptions::new_for_test(), ()).unwrap();
-    let buffered_update_bitslice = BufferedUpdateBitSlice::new(bitslice_storage);
 
     // Set random flags and persist
     for _ in 0..FLAG_COUNT {
