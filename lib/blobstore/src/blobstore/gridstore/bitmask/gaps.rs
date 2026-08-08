@@ -83,6 +83,8 @@ fn gaps_file_path(dir: &Path) -> PathBuf {
 pub(super) struct BitmaskGaps<S> {
     path: PathBuf,
     config: GridstoreConfig,
+    /// Primary in-memory copy
+    data: Vec<RegionGaps>,
     slice_store: TypedStorage<S, RegionGaps>,
 }
 
@@ -118,6 +120,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         Ok(Self {
             path,
             config,
+            data,
             slice_store,
         })
     }
@@ -127,14 +130,17 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            populate: Populate::No,
+            // Read the entire file upfront
+            populate: Populate::Blocking,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
         let slice_store = TypedStorage::open(fs, &path, options, Default::default())?;
+        let data = slice_store.read_whole()?.into_owned();
 
         Ok(Self {
             path,
             config,
+            data,
             slice_store,
         })
     }
@@ -154,7 +160,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         self.slice_store.flusher()()?;
 
         // reopen the file with a larger size
-        let prev_len = self.len()?;
+        let prev_len = self.len();
         let new_slice_len = prev_len + data.len();
         let new_length_in_bytes = new_slice_len * size_of::<RegionGaps>();
 
@@ -162,10 +168,13 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         self.slice_store.reopen()?;
 
-        debug_assert_eq!(self.len()? - prev_len, data.len());
+        debug_assert_eq!(self.slice_store.len()? as usize - prev_len, data.len());
 
         let byte_offset = (prev_len * size_of::<RegionGaps>()) as u64;
         self.slice_store.write(byte_offset, &data)?;
+
+        // Keep in memory copy in sync
+        self.data.extend_from_slice(&data);
 
         Ok(())
     }
@@ -180,24 +189,29 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
             .sum())
     }
 
-    pub fn len(&self) -> Result<usize> {
-        Ok(self.slice_store.len()? as usize)
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 
     #[cfg(test)]
     pub fn get(&self, idx: usize) -> Result<Option<RegionGaps>> {
-        let slice = self.read_all()?;
-        Ok(slice.get(idx).copied())
+        Ok(self.data.get(idx).copied())
     }
 
     pub fn set(&mut self, idx: usize, value: RegionGaps) -> Result<()> {
+        if idx >= self.data.len() {
+            return Err(crate::error::BlobstoreError::ServiceError {
+                description: format!("Bitmask index {idx} out of bounds"),
+            });
+        }
         let byte_offset = (idx * size_of::<RegionGaps>()) as u64;
         self.slice_store.write(byte_offset, &[value])?;
+        self.data[idx] = value;
         Ok(())
     }
 
     pub fn read_all(&self) -> Result<Cow<'_, [RegionGaps]>> {
-        Ok(self.slice_store.read_whole()?)
+        Ok(Cow::Borrowed(&self.data))
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
@@ -243,13 +257,13 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> Result<()> {
-        self.slice_store.populate()?;
+        // Data is always in RAM, no-op
         Ok(())
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> Result<()> {
-        self.slice_store.clear_ram_cache()?;
+        // Data is always in RAM, no-op
         Ok(())
     }
 
@@ -383,8 +397,8 @@ mod tests {
 
             if let Some(range) = bitmask_gaps.find_fitting_gap(num_blocks).unwrap() {
                 // Range should be within bounds
-                prop_assert!(range.start <= bitmask_gaps.len().unwrap() as u32);
-                prop_assert!(range.end <= bitmask_gaps.len().unwrap() as u32);
+                prop_assert!(range.start <= bitmask_gaps.len() as u32);
+                prop_assert!(range.end <= bitmask_gaps.len() as u32);
                 prop_assert!(range.start <= range.end);
 
                 // check that range is as constrained as possible
@@ -430,7 +444,7 @@ mod tests {
         let config = GridstoreConfig::DEFAULT;
         let bitmask_gaps: MmapBitmaskGaps =
             BitmaskGaps::create(&MmapFs, temp_dir.path(), gaps.into_iter(), config).unwrap();
-        assert!(bitmask_gaps.len().unwrap() >= 3);
+        assert!(bitmask_gaps.len() >= 3);
 
         assert!(
             bitmask_gaps
@@ -681,7 +695,7 @@ mod tests {
             let config = GridstoreConfig::DEFAULT;
             let region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::create(&MmapFs, dir_path, gaps.clone().into_iter(), config).unwrap();
-            assert_eq!(region_gaps.len().unwrap(), gaps.len());
+            assert_eq!(region_gaps.len(), gaps.len());
             for (i, gap) in gaps.iter().enumerate() {
                 assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
@@ -692,7 +706,7 @@ mod tests {
             let config = GridstoreConfig::DEFAULT;
             let region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
-            assert_eq!(region_gaps.len().unwrap(), gaps.len());
+            assert_eq!(region_gaps.len(), gaps.len());
             for (i, gap) in gaps.iter().enumerate() {
                 assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
@@ -709,7 +723,7 @@ mod tests {
             let mut region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
             region_gaps.extend(more_gaps.clone().into_iter()).unwrap();
-            assert_eq!(region_gaps.len().unwrap(), gaps.len() + more_gaps.len());
+            assert_eq!(region_gaps.len(), gaps.len() + more_gaps.len());
             for (i, gap) in gaps.iter().chain(more_gaps.iter()).enumerate() {
                 assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
@@ -720,7 +734,7 @@ mod tests {
             let config = GridstoreConfig::DEFAULT;
             let region_gaps: MmapBitmaskGaps =
                 BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
-            assert_eq!(region_gaps.len().unwrap(), gaps.len() + more_gaps.len());
+            assert_eq!(region_gaps.len(), gaps.len() + more_gaps.len());
             for (i, gap) in gaps.iter().chain(more_gaps.iter()).enumerate() {
                 assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
