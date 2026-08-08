@@ -180,12 +180,11 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
     let estimation = if let Some(is_empty) = is_empty {
         if *is_empty {
             let has_values_count = has_values_flags.count_trues()?;
-            // Upper bound: may include soft-deleted offsets (index has no deleted bitslice).
             let estimated = total_point_count.saturating_sub(has_values_count);
 
             CardinalityEstimation {
                 min: 0,
-                exp: estimated,
+                exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
                 max: estimated,
                 primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_empty(
                     key.clone(),
@@ -206,12 +205,11 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
             ))
         } else {
             let is_null_count = is_null_flags.count_trues()?;
-            // Upper bound: may include soft-deleted offsets (index has no deleted bitslice).
             let estimated = total_point_count.saturating_sub(is_null_count);
 
             CardinalityEstimation {
                 min: 0,
-                exp: estimated,
+                exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
                 max: estimated,
                 primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_null(
                     key.clone(),
