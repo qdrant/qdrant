@@ -227,43 +227,52 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     if let Some(geo_bounding_box) = &condition.geo_bounding_box {
         let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_bounding_box;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(filter_geo_points(
+            geo,
+            geo.iterator(geo_hashes)?,
+            hw_counter,
+            &|geo_point| geo_condition_copy.check_point(geo_point),
+        )?));
     }
 
     if let Some(geo_radius) = &condition.geo_radius {
         let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_radius;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(filter_geo_points(
+            geo,
+            geo.iterator(geo_hashes)?,
+            hw_counter,
+            &|geo_point| geo_condition_copy.check_point(geo_point),
+        )?));
     }
 
     if let Some(geo_polygon) = &condition.geo_polygon {
         let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = geo_polygon.convert();
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(filter_geo_points(
+            geo,
+            geo.iterator(geo_hashes)?,
+            hw_counter,
+            &|geo_point| geo_condition_copy.check_point(geo_point),
+        )?));
     }
 
     Ok(None)
+}
+
+fn filter_geo_points<'a, G: GeoIndexRead + ?Sized>(
+    geo: &'a G,
+    points: Box<dyn Iterator<Item = PointOffsetType> + 'a>,
+    hw_counter: &'a HardwareCounterCell,
+    check_fn: &dyn Fn(&GeoPoint) -> bool,
+) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    let mut matching_points = Vec::new();
+    for point in points {
+        if geo.check_values_any(point, hw_counter, check_fn)? {
+            matching_points.push(point);
+        }
+    }
+    Ok(Box::new(matching_points.into_iter()))
 }
 
 pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(

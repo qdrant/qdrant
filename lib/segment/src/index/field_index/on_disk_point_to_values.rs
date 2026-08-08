@@ -10,8 +10,8 @@ use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalRead,
-    UniversalReadFs, UserData,
+    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalIoError,
+    UniversalRead, UniversalReadFs, UserData,
 };
 use zerocopy::IntoBytes;
 
@@ -251,16 +251,26 @@ where
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
         // first, get range of values for point
-        let Some(bytes_range) = self.get_bytes_range(point_id)?.map(|range| {
-            let range = universal_io::ReadRange {
-                byte_offset: range.start,
-                length: range.end - range.start,
-            };
-            // Measure IO overhead of `self.get_bytes_range()` and the length of the values
-            hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
+        let Some(bytes_range) = self
+            .get_bytes_range(point_id)?
+            .map(|range| -> OperationResult<ReadRange> {
+                let length = range.end.checked_sub(range.start).ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "Invalid value range for point {point_id}: start {} exceeds end {}",
+                        range.start, range.end
+                    ))
+                })?;
+                let range = universal_io::ReadRange {
+                    byte_offset: range.start,
+                    length,
+                };
+                // Measure IO overhead of `self.get_bytes_range()` and the length of the values
+                hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
 
-            range
-        }) else {
+                Ok(range)
+            })
+            .transpose()?
+        else {
             return Ok(None);
         };
 
@@ -309,7 +319,13 @@ where
 
                 // Use next point's start as end offset for this one.
                 let end = ranges.get(1).map_or(file_len, |next| next.start);
-                let length = end - start;
+                let Some(length) = end.checked_sub(start) else {
+                    return Err(UniversalIoError::OutOfBounds {
+                        start,
+                        end,
+                        elements: file_len as usize,
+                    });
+                };
 
                 // Mirror `values_iter`: account the per-point access overhead
                 // plus the length of the values.
@@ -494,6 +510,39 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
     }
 }
 
+/// Test-only helper: overwrite the ranges table of `point_to_values.bin` so
+/// every range points past EOF. For non-last points the values read fails the
+/// mmap bounds check with `OutOfBounds`.
+///
+/// For the last point, `end` is the file length (see
+/// [`OnDiskPointToValues::get_bytes_range`]); a start past EOF makes
+/// `start > end`, which both read paths guard with `checked_sub` and report as
+/// an error. Corruption therefore surfaces as an error, never as an underflow.
+#[cfg(test)]
+pub(crate) fn corrupt_ranges_table(dir: &Path, points_count: u64) {
+    use std::io::{Seek, SeekFrom, Write};
+
+    let path = dir.join(POINT_TO_VALUES_PATH);
+    let file_len = fs_err::metadata(&path).unwrap().len();
+    let ranges_start = PADDING_SIZE as u64;
+
+    let mut bytes = Vec::with_capacity((points_count as usize) * size_of::<MmapRange>());
+    for i in 0..points_count {
+        // Start each corrupted range past EOF; the `PADDING_SIZE` spacing keeps
+        // starts strictly increasing, so only the last point hits `checked_sub`.
+        let start = file_len + (i + 1) * PADDING_SIZE as u64;
+        bytes.extend_from_slice(&start.to_le_bytes());
+        bytes.extend_from_slice(&1u64.to_le_bytes());
+    }
+
+    let mut file = fs_err::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap();
+    file.seek(SeekFrom::Start(ranges_start)).unwrap();
+    file.write_all(&bytes).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use std::borrow::Borrow;
@@ -608,5 +657,54 @@ mod tests {
             expected.push((large_id, vec![]));
             assert_eq!(reported, expected);
         }
+    }
+
+    #[test]
+    fn test_corrupt_last_point_ranges_error_instead_of_underflow() {
+        let dir = Builder::new().prefix("corrupt_last_point").tempdir().unwrap();
+        let values: &[&[i64]] = &[&[1, 2], &[3], &[4, 5, 6]];
+        OnDiskPointToValues::<i64, <MmapFs as UniversalReadFs>::File>::build_from_iter(
+            dir.path(),
+            values
+                .iter()
+                .enumerate()
+                .map(|(id, vals)| (id as PointOffsetType, vals.iter())),
+        )
+        .unwrap();
+        let open = || {
+            OnDiskPointToValues::<i64, <MmapFs as UniversalReadFs>::File>::open(
+                &MmapFs,
+                dir.path(),
+                Populate::No,
+            )
+            .unwrap()
+        };
+
+        let last_point = values.len() - 1;
+        // Healthy index: the last point reads normally.
+        assert_eq!(
+            open()
+                .values_iter(last_point as PointOffsetType, ConditionedCounter::never())
+                .unwrap()
+                .unwrap()
+                .map(Cow::into_owned)
+                .collect_vec(),
+            values[last_point]
+        );
+
+        // Corrupted ranges: visiting the last point must error, not underflow.
+        corrupt_ranges_table(dir.path(), values.len() as u64);
+        let ppv = open();
+        assert!(ppv
+            .values_iter(last_point as PointOffsetType, ConditionedCounter::never())
+            .is_err());
+        assert!(ppv
+            .values_iter_batch(
+                std::iter::once(((), last_point as PointOffsetType)),
+                &DeletedBitVec::new(BitVec::repeat(false, values.len())),
+                ConditionedCounter::never(),
+                |_, _| {},
+            )
+            .is_err());
     }
 }
