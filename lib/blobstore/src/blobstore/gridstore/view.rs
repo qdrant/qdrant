@@ -78,7 +78,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         let bytes = self.get_value_bytes::<P>(point_offset, hw_counter)?;
-        Ok(bytes.map(|bytes| V::from_bytes(&bytes)))
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
     }
 
     /// Get the serialized value for a given point offset.
@@ -113,7 +113,8 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T
         self.read_values_bytes::<P, _, _>(
             point_offsets,
             |user_data, point_offset, bytes| {
-                callback(user_data, point_offset, bytes.map(V::from_bytes))
+                let value = bytes.map(V::from_bytes).transpose().map_err(E::from)?;
+                callback(user_data, point_offset, value)
             },
             hw_counter_cell,
         )

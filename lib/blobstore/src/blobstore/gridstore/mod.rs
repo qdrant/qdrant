@@ -217,7 +217,7 @@ where
 
     /// Write value into a new cell, considering that it can span more than one page.
     #[allow(clippy::needless_pass_by_ref_mut)]
-    fn write_into_pages(
+    pub(super) fn write_into_pages(
         &mut self,
         value: &[u8],
         start_page_id: PageId,
@@ -332,16 +332,22 @@ where
     /// Returns the deleted value otherwise.
     #[allow(clippy::needless_pass_by_ref_mut)]
     pub(super) fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
-        let Some(pointer) = self.tracker.write().unset(point_offset)? else {
+        let Some(pointer) = self.tracker.read().get(point_offset)? else {
             return Ok(None);
         };
 
-        self.with_view(|view| {
+        // Deserialize before unsetting the tracker pointer: if the blob is corrupt and
+        // `from_bytes` errors, the value must stay tracked as present rather than being
+        // silently dropped out from under an error return.
+        let value = self.with_view(|view| {
             let raw = view.read_from_pages::<Random>(pointer)?;
             let decompressed = view.decompress(raw);
-            let value = V::from_bytes(&decompressed);
-            Ok(Some(value))
-        })
+            V::from_bytes(&decompressed)
+        })?;
+
+        self.tracker.write().unset(point_offset)?;
+
+        Ok(Some(value))
     }
 
     /// Clear the storage, going back to the initial state.

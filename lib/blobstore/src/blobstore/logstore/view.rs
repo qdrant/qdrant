@@ -67,7 +67,7 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         let bytes = self.get_value_bytes::<P>(point_offset, hw_counter)?;
-        Ok(bytes.map(|bytes| V::from_bytes(&bytes)))
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
     }
 
     /// Get the serialized value for a given point offset.
@@ -109,7 +109,8 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         self.read_values_bytes::<P, _, _>(
             point_offsets,
             |user_data, point_offset, bytes| {
-                callback(user_data, point_offset, bytes.map(V::from_bytes))
+                let value = bytes.map(V::from_bytes).transpose().map_err(E::from)?;
+                callback(user_data, point_offset, value)
             },
             hw_counter_cell,
         )
@@ -197,7 +198,7 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
                 hw_counter.incr_delta(bytes.len());
 
                 let decompressed = self.config.compression.decompress(bytes);
-                let value = V::from_bytes(&decompressed);
+                let value = V::from_bytes(&decompressed).map_err(E::from)?;
 
                 callback(point_offset, value)
             })
