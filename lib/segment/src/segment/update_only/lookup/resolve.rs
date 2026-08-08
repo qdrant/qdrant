@@ -9,7 +9,7 @@ use common::generic_consts::Random;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::UniversalRead;
 
-use super::UpdateOnlySegment;
+use super::LookupSegment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::StoredPoint;
 use crate::data_types::segment_record::NamedVectorBytesOwned;
@@ -18,7 +18,7 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Payload, PointIdType, SeqNumberType};
 use crate::vector_storage::VectorStorageRead;
 
-impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
+impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// Locate `point_ids` in this segment, streaming each `(point_id,
     /// internal_id)` pair that resolves; ids the segment does not hold are
     /// skipped. Deferred heads are included, so a point shadowed by an
@@ -90,8 +90,8 @@ impl<S: UniversalRead + 'static> UpdateOnlySegment<S> {
                 hw_counter,
             )?;
 
-        for (vector_name, vector_data) in &self.vector_data {
-            let vector_storage = vector_data.vector_storage.borrow();
+        for (vector_name, vector_storage) in &self.vector_data {
+            let vector_storage = vector_storage.borrow();
             vector_storage.read_vector_bytes::<Random, usize>(
                 internal_ids.iter().copied().enumerate(),
                 |position, internal_id, bytes| {

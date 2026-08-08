@@ -5,18 +5,19 @@
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalAppend, UniversalRead, UniversalWrite};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
+use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::{PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use uuid::Uuid;
 
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
-use crate::update_only::holder::UpdateOnlySegmentHolder;
+use crate::update_only::holder::LookupSegmentHolder;
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
@@ -66,7 +67,7 @@ pub(super) struct PointLocations {
     pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
     /// Apply a batch of update operations, each paired with the operation
     /// number to record as its version. Operations are expected in ascending
     /// operation-number order; see [`UpdateBatchPlan::build`] for what is
@@ -75,8 +76,17 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
     /// Atomic in the sense that matters without a WAL: applied in full or the
     /// error is returned, and re-applying a batch that partially landed skips
     /// the points that already carry its version.
+    ///
+    /// Consumes the writer, because it can serve exactly one batch. The
+    /// segments were read when it opened, and that read is both what a batch
+    /// resolves against and what its writers resume from; a second batch would
+    /// resume an appendable segment from a log position its own first batch
+    /// has moved past, and appending there cuts off everything written since.
+    /// Open another writer for the next batch — or, to lift the restriction,
+    /// reload the segments after a batch, which the read-only segment's
+    /// `live_reload` already does for exactly the files a batch appends to.
     pub fn apply_batch(
-        &self,
+        self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<UpdateBatchOutcome> {
         let plan = UpdateBatchPlan::build(operations)?;
@@ -93,17 +103,18 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
-        let mut to_tombstone: AHashMap<Uuid, Vec<PointOffsetType>> = AHashMap::new();
+        let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
+        let write_target_uuid = segments.write_target_uuid();
 
         for point in resolved {
             let PointPreview {
-                id: _,
+                id,
                 current: _,
                 slots,
                 action,
             } = point;
 
-            match action {
+            let stored = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
                     continue;
@@ -115,47 +126,87 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
                 PointAction::Store(point) => {
                     to_store.push(*point);
                     outcome.stored += 1;
+                    true
                 }
-                PointAction::Delete => outcome.deleted += 1,
-            }
+                PointAction::Delete => {
+                    outcome.deleted += 1;
+                    false
+                }
+            };
 
-            // Whatever happened to the point, every slot it occupied — in any
-            // segment — is retired: a rewrite left its replacement elsewhere,
-            // a delete left nothing, and an older duplicate must not outlive
-            // either.
             for (segment, internal_id) in slots {
-                to_tombstone.entry(segment).or_default().push(internal_id);
+                // The copy a stored point leaves behind in the write target
+                // needs no retirement: appending the point records a mapping
+                // that supersedes its old slot, and retiring the id on top of
+                // that would take the new slot with it. Every other segment's
+                // copy does have to stop resolving — an older duplicate left
+                // by an interrupted move included — and a delete retires the
+                // point everywhere it sits.
+                if stored && Some(segment) == write_target_uuid {
+                    continue;
+                }
+                to_tombstone
+                    .entry(segment)
+                    .or_default()
+                    .push((id, internal_id));
             }
         }
 
         // 4. Append the resolved points, then retire the slots they replaced.
+        // Writers live for this batch alone, and there is no flush step: the
+        // append-only components behind them buffer nothing across calls, so a
+        // write is durable when it returns.
         if !to_store.is_empty() {
-            let write_target = segments.write_target()?;
-            write_target.write().store_points(&to_store, &hw_counter)?;
+            let uuid = write_target_uuid.ok_or_else(|| {
+                OperationError::service_error("No appendable segment exists, expected exactly one")
+            })?;
+            let mut writer = open_writer(&segments, &self.fs, uuid)?;
 
-            // The new slots must be durable before the tombstones that retire
-            // the old ones: the reverse order can lose a point outright if the
-            // process dies in between.
-            write_target.read().flush()?;
+            writer
+                .as_appendable_mut()
+                .ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "Write target {uuid} was opened as delete-only, it cannot store points",
+                    ))
+                })?
+                .store_points(&to_store, &hw_counter)?;
+
+            // Whatever the write target has to retire goes through the writer
+            // already open: a second one would retire this batch's own
+            // half-written points as it resumed. It happens after the store,
+            // since every write is durable when it returns and the reverse
+            // order can lose a point outright if the process dies in between.
+            if let Some(points) = to_tombstone.remove(&uuid) {
+                writer.tombstone_points(&points)?;
+            }
         }
 
-        for (uuid, internal_ids) in to_tombstone {
-            let segment = segments.get(&uuid).ok_or_else(|| {
-                OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
-            })?;
-            segment.write().tombstone_points(&internal_ids)?;
-            segment.read().flush()?;
+        for (uuid, points) in to_tombstone {
+            open_writer(&segments, &self.fs, uuid)?.tombstone_points(&points)?;
         }
 
         Ok(outcome)
     }
 }
 
+/// Open a writer over one segment of the shard, resuming it from the state its
+/// [`LookupSegment`](segment::segment::update_only::LookupSegment) observed —
+/// which also decides whether the segment accepts appends or deletes only.
+fn open_writer<S: UniversalAppend + UniversalWrite + 'static>(
+    segments: &LookupSegmentHolder<S>,
+    fs: &S::Fs,
+    uuid: Uuid,
+) -> OperationResult<UpdateOnlySegmentEnum<S>> {
+    let segment = segments.get(uuid)?.read();
+
+    UpdateOnlySegmentEnum::open(fs, &segment.segment_path, segment.writer_state())
+}
+
 /// Locate every point the batch touches: every slot it occupies, with the
 /// newest copy marked, when more than one segment holds the point. Segments
 /// are visited in parallel on `pool`.
 pub(super) fn locate_points<S: UniversalRead + 'static>(
-    segments: &UpdateOnlySegmentHolder<S>,
+    segments: &LookupSegmentHolder<S>,
     plan: &UpdateBatchPlan,
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
@@ -168,7 +219,7 @@ pub(super) fn locate_points<S: UniversalRead + 'static>(
             .into_par_iter()
             .map(|(uuid, segment)| {
                 let segment = segment.read();
-                let appendable = segment.is_appendable();
+                let appendable = segment.appendable;
 
                 let mut found_ids = Vec::new();
                 let mut internal_ids = Vec::new();
@@ -221,7 +272,7 @@ pub(super) fn locate_points<S: UniversalRead + 'static>(
 /// Read the stored form of the points whose mutations need it, one batched
 /// pass per segment; segments are read in parallel on `pool`.
 pub(super) fn read_stored_points<S: UniversalRead + 'static>(
-    segments: &UpdateOnlySegmentHolder<S>,
+    segments: &LookupSegmentHolder<S>,
     plan: &UpdateBatchPlan,
     locations: &AHashMap<PointIdType, PointLocations>,
     pool: &ThreadPool,
@@ -245,10 +296,7 @@ pub(super) fn read_stored_points<S: UniversalRead + 'static>(
             .collect::<Vec<_>>()
             .into_par_iter()
             .map(|(uuid, entries)| {
-                let segment = segments.get(&uuid).ok_or_else(|| {
-                    OperationError::service_error(format!("Segment {uuid} disappeared mid-batch"))
-                })?;
-                let segment = segment.read();
+                let segment = segments.get(uuid)?.read();
 
                 let internal_ids: Vec<PointOffsetType> = entries
                     .iter()
