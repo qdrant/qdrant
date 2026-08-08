@@ -27,7 +27,7 @@ where
         // this UniversalMapIndex is not mutable.
         // We only patch in-memory deleted bitslice representation.
         for deleted_point in deleted_points {
-            self.remove_point(*deleted_point)
+            self.remove_point(*deleted_point)?;
         }
 
         Ok(())

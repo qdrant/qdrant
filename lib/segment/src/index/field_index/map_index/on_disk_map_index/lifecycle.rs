@@ -122,6 +122,17 @@ where
             &mut deleted,
         )?;
 
+        // `config.total_key_value_pairs` counts every point, including ones
+        // already deleted at build/open time. Subtract their contributions so
+        // `total_key_value_pairs` stays consistent with `get_indexed_points()`
+        // (both used together to derive average values-per-point elsewhere).
+        let mut total_key_value_pairs = config.total_key_value_pairs;
+        for idx in deleted.iter_ones() {
+            if let Some(count) = point_to_values.get_values_count(idx as PointOffsetType)? {
+                total_key_value_pairs = total_key_value_pairs.saturating_sub(count);
+            }
+        }
+
         Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Storage {
@@ -130,7 +141,7 @@ where
                 deleted: DeletedBitVec::new(deleted),
                 prefix_index,
             },
-            total_key_value_pairs: config.total_key_value_pairs,
+            total_key_value_pairs,
             compact_deleted_mask,
         }))
     }
@@ -139,8 +150,13 @@ where
     ///
     /// Not persisted: on reopen, deletions must be re-supplied via the
     /// `deleted_points` argument to [`Self::open`].
-    pub fn remove_point(&mut self, idx: PointOffsetType) {
-        self.storage.deleted.mark_deleted(idx);
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        if self.storage.deleted.mark_deleted(idx)
+            && let Some(count) = self.storage.point_to_values.get_values_count(idx)?
+        {
+            self.total_key_value_pairs = self.total_key_value_pairs.saturating_sub(count);
+        }
+        Ok(())
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
