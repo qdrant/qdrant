@@ -11903,6 +11903,7 @@
       "RunningEnvironmentTelemetry": {
         "type": "object",
         "required": [
+          "container_runtime",
           "cpu_flags",
           "is_docker"
         ],
@@ -11917,6 +11918,9 @@
           },
           "is_docker": {
             "type": "boolean"
+          },
+          "container_runtime": {
+            "$ref": "#/components/schemas/ContainerRuntime"
           },
           "cores": {
             "type": "integer",
@@ -11965,6 +11969,26 @@
             "nullable": true
           }
         }
+      },
+      "ContainerRuntime": {
+        "description": "Container runtime Qdrant is running under, detected from well-known markers. Best-effort: a runtime that leaves no recognizable marker reports `Other` (overlay root) or, failing that, `None` (assumed bare metal / VM).",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "none",
+              "docker",
+              "kubernetes"
+            ]
+          },
+          {
+            "description": "Some other container (Podman, LXC, systemd-nspawn, plain containerd, …).",
+            "type": "string",
+            "enum": [
+              "other"
+            ]
+          }
+        ]
       },
       "CpuEndian": {
         "type": "string",
