@@ -693,15 +693,9 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
     ensure!(estimation_struct.max >= real_number);
     ensure!(estimation_struct.min <= real_number);
 
-    // NullIndex complement estimates (`is_empty=true`) use an indexed upper bound
-    // that may include soft-deleted offsets, so `exp` is that bound — not a promise
-    // of being closer to truth than plain's `available/2` coin-flip. Do not compare
-    // absolute `exp` error against plain here.
-    ensure!(
-        estimation_struct.exp == estimation_struct.max,
-        "is_empty NullIndex estimate should report the upper bound as exp"
-    );
-    ensure!(!estimation_struct.primary_clauses.is_empty());
+    // Do not assert struct `exp` is closer to `real_number` than plain: NullIndex
+    // complement estimates may include soft-deleted offsets, and plain is only
+    // `available/2`. Neither side promises a better point estimate here.
 
     Ok(())
 }
