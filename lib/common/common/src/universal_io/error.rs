@@ -115,10 +115,6 @@ pub enum UniversalIoError {
 }
 
 impl UniversalIoError {
-    /// Whether this is an [`AppendOffsetConflict`](Self::AppendOffsetConflict):
-    /// the file does not end where the append said, and *nothing was written*.
-    /// Lets a caller that knows where the file should end tell the one error it
-    /// can act on from the ones it cannot.
     pub fn is_append_offset_conflict(&self) -> bool {
         match self {
             Self::AppendOffsetConflict { .. } => true,

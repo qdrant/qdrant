@@ -29,15 +29,14 @@ fn uuid(id: u128) -> PointIdType {
     PointIdType::Uuid(Uuid::from_u128(id))
 }
 
-/// The end of the mappings log as the view a writer shares would report it.
-/// Sound only for a log with no torn tail, which every caller here has.
+/// The end of the mappings log as the view a writer shares would report it. Sound only for a log
+/// with no torn tail, which every caller here has.
 fn log_end(segment_path: &Path) -> u64 {
     fs_err::metadata(mappings_path(segment_path)).unwrap().len()
 }
 
-/// Slots are handed out consecutively above the highest one in use — across
-/// calls, across tracker instances resuming from a known maximum, and skipping
-/// deletes, which claim nothing.
+/// Slots are handed out consecutively above the highest one in use: across calls, across tracker
+/// instances resuming from a known maximum, and skipping deletes, which claim nothing.
 #[test]
 fn allocates_consecutive_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -60,15 +59,14 @@ fn allocates_consecutive_slots() {
         Ok(vec![(num(12), 2)]),
     );
 
-    // Re-inserting a live id moves it to a fresh slot rather than rewriting its
-    // mapping — the update-only shape of an update.
+    // Re-inserting a live id moves it to a fresh slot rather than rewriting its mapping.
     assert_eq!(
         tracker.insert_operations(&[Insert(uuid(11))]),
         Ok(vec![(uuid(11), 3)]),
     );
 
-    // A fresh tracker resuming from slot 3, and from the end of the log that
-    // handed it out, continues above both.
+    // A fresh tracker resuming from slot 3, and from the end of the log that handed it out,
+    // continues above both.
     let mut resumed = Tracker::new(MmapFs, dir.path(), Some(3), [], log_end(dir.path())).unwrap();
     assert_eq!(
         resumed.insert_operations(&[Insert(num(13))]),
@@ -79,8 +77,8 @@ fn allocates_consecutive_slots() {
     assert_eq!(tracker.insert_operations(&[]), Ok(Vec::new()));
 }
 
-/// Append a torn entry to the mappings log: a valid entry header and part of
-/// the payload it promises, which is what a write that died mid-entry leaves.
+/// Append a torn entry to the mappings log: a valid entry header and part of the payload it
+/// promises, which is what a write that died mid-entry leaves.
 fn tear_the_log(segment_path: &Path) {
     let mut file = fs_err::OpenOptions::new()
         .append(true)
@@ -90,9 +88,9 @@ fn tear_the_log(segment_path: &Path) {
     file.write_all(&[1, 0xAA, 0xBB, 0xCC]).unwrap();
 }
 
-/// A torn entry at the end of the mappings log is cut off by the next write
-/// rather than appended after — the point of writing at the end of the *log*
-/// instead of the file. Left in place, it would misframe every entry after.
+/// A torn entry at the end of the mappings log is cut off by the next write rather than appended
+/// after, which is the point of writing at the end of the *log* instead of the file. Left in place,
+/// it would misframe every entry after.
 #[test]
 fn heals_a_torn_mappings_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -112,8 +110,8 @@ fn heals_a_torn_mappings_tail() {
         Ok(vec![(num(11), 1)]),
     );
 
-    // The entries before the tear are untouched, and the new one took the place
-    // of the torn bytes instead of following them.
+    // The entries before the tear are untouched, and the new one took the place of the torn bytes
+    // instead of following them.
     let healed = fs_err::read(&path).unwrap();
     assert_eq!(healed[..committed.len()], committed);
 
@@ -129,9 +127,9 @@ fn heals_a_torn_mappings_tail() {
     );
 }
 
-/// A batch that landed unacknowledged is rewritten over itself, not after
-/// itself: the writer never learned the first attempt landed, so it still holds
-/// the same slots and offset, and the retry leaves one copy rather than two.
+/// A batch that landed unacknowledged is rewritten over itself, not after itself: the writer never
+/// learned the first attempt landed, so it still holds the same slots and offset, and the retry
+/// leaves one copy rather than two.
 #[test]
 fn re_appends_a_batch_that_landed_unacknowledged() {
     let landed = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -139,16 +137,16 @@ fn re_appends_a_batch_that_landed_unacknowledged() {
 
     let batch = [Insert(num(10)), Delete(num(20)), Insert(uuid(11))];
 
-    // One writer gets through the batch; another is left believing it did not,
-    // and runs the same batch against the file the first one wrote.
+    // One writer gets through the batch; another is left believing it did not, and runs the same
+    // batch against the file the first one wrote.
     let mut writer = Tracker::new(MmapFs, landed.path(), None, [], 0).unwrap();
     let inserted = writer.insert_operations(&batch).unwrap();
 
     fs_err::copy(mappings_path(landed.path()), mappings_path(retried.path())).unwrap();
     let mut retry = Tracker::new(MmapFs, retried.path(), None, [], 0).unwrap();
 
-    // Same slots, and the same bytes in the log: the second attempt is the
-    // first one, not a duplicate of it.
+    // Same slots, and the same bytes in the log: the second attempt is the first one, not a
+    // duplicate of it.
     assert_eq!(retry.insert_operations(&batch), Ok(inserted));
     assert_eq!(
         fs_err::read(mappings_path(retried.path())).unwrap(),
@@ -156,8 +154,8 @@ fn re_appends_a_batch_that_landed_unacknowledged() {
     );
 }
 
-/// A log the file cannot hold is refused, not healed: healing only drops bytes
-/// past the log's end, and a file stopping short of it has none to drop.
+/// A log the file cannot hold is refused, not healed: healing only drops bytes past the log's end,
+/// and a file stopping short of it has none to drop.
 #[test]
 fn rejects_a_mappings_file_shorter_than_the_log() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -170,10 +168,9 @@ fn rejects_a_mappings_file_shorter_than_the_log() {
     assert_eq!(log_end(dir.path()), 0, "nothing may be appended");
 }
 
-/// The array can only grow at its end, and only over slots the log handed out:
-/// a covered slot cannot be rewritten through an append, a slot cannot be given
-/// two versions, and a slot nobody claimed cannot be published at all. None of
-/// the rejections leaves anything behind.
+/// The array can only grow at its end, and only over slots the log handed out: a covered slot
+/// cannot be rewritten through an append, a slot cannot be given two versions, and a slot nobody
+/// claimed cannot be published at all. None of the rejections leaves anything behind.
 #[test]
 fn versions_reject_rewrites_duplicates_and_unclaimed_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -206,8 +203,8 @@ fn versions_reject_rewrites_duplicates_and_unclaimed_slots() {
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102]);
 }
 
-/// Resume a writer from what a reader makes of the segment on disk, the way a
-/// caller reopening the segment has to.
+/// Resume a writer from what a reader makes of the segment on disk, the way a caller reopening the
+/// segment has to.
 fn resume(segment_path: &Path) -> Tracker {
     let reader = ReadOnlyTracker::open(&MmapFs, segment_path, None).unwrap();
     Tracker::new(
@@ -220,9 +217,8 @@ fn resume(segment_path: &Path) -> Tracker {
     .unwrap()
 }
 
-/// A claimed slot the call skips over is covered with [`DELETED_POINT_VERSION`]
-/// rather than refused. The array is dense, so the slots above it cannot be
-/// published any other way.
+/// A claimed slot the call skips over is covered with [`DELETED_POINT_VERSION`] rather than
+/// refused. The array is dense, so the slots above it cannot be published any other way.
 ///
 /// [`DELETED_POINT_VERSION`]: crate::id_tracker::DELETED_POINT_VERSION
 #[test]
@@ -249,10 +245,9 @@ fn fills_skipped_slots() {
     );
 }
 
-/// A slot is spoken for from the moment the log claims it, whatever becomes of
-/// the point: a writer that claimed it may have written data at it under any
-/// component, so the next writer allocates above it even once its external id
-/// is gone from the mapping and from the pending inserts alike.
+/// A slot is spoken for from the moment the log claims it, whatever becomes of the point: a writer
+/// that claimed it may have written data at it under any component, so the next writer allocates
+/// above it even once its external id is gone from the mapping and from the pending inserts alike.
 #[test]
 fn resumes_above_a_slot_claimed_and_then_deleted() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -284,10 +279,10 @@ fn resumes_above_a_slot_claimed_and_then_deleted() {
     );
 }
 
-/// A point on a slot the log claimed but no writer ever versioned is retired by
-/// the writer that inherits it, before anything of its own reaches the log. Its
-/// data was left half-written, so it is in no state to be adopted, and the slot
-/// has to be covered for the slots above it to be published at all.
+/// A point on a slot the log claimed but no writer ever versioned is retired by the writer that
+/// inherits it, before anything of its own reaches the log. Its data was left half-written, so it
+/// is in no state to be adopted, and the slot has to be covered for the slots above it to be
+/// published at all.
 #[test]
 fn retires_inherited_pending_inserts() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -331,9 +326,8 @@ fn retires_inherited_pending_inserts() {
     assert_eq!(reader.available_point_count(), 2);
 }
 
-/// Retiring is done by the time the writer exists, so no write path can reach
-/// the versions file without it — not even one that commits versions and never
-/// touches the mappings log itself. Opening the writer is enough.
+/// Retiring is done by the time the writer exists, so no write path can reach the versions file
+/// without it, not even one that commits versions and never touches the mappings log itself.
 #[test]
 fn retires_inherited_pending_inserts_at_construction() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -346,8 +340,7 @@ fn retires_inherited_pending_inserts_at_construction() {
     crashed.set_internal_versions(&[0], &[100]).unwrap();
 
     let mut resumed = resume(dir.path());
-    // Construction alone retired it: the log already says so, before this writer
-    // has been asked to do anything.
+    // Construction alone retired it, before this writer has been asked to do anything.
     assert_eq!(
         ReadOnlyTracker::open(&MmapFs, dir.path(), None)
             .unwrap()
@@ -367,10 +360,9 @@ fn retires_inherited_pending_inserts_at_construction() {
     assert_eq!(reader.available_point_count(), 1);
 }
 
-/// An update whose new slot is abandoned costs the point, not just the
-/// unacknowledged update: the same partial write that abandoned the new slot
-/// has likely tombstoned the old one in the components already, so there is no
-/// earlier state to fall back to.
+/// An update whose new slot is abandoned costs the point, not just the unacknowledged update: the
+/// same partial write that abandoned the new slot has likely tombstoned the old one in the
+/// components already, so there is no earlier state to fall back to.
 #[test]
 fn an_abandoned_update_retires_the_point() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -378,8 +370,8 @@ fn an_abandoned_update_retires_the_point() {
     let mut crashed = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
     crashed.insert_operations(&[Insert(num(10))]).unwrap();
     crashed.set_internal_versions(&[0], &[100]).unwrap();
-    // Re-inserting moves the id to a fresh slot; the writer stops before the
-    // version that would publish it.
+    // Re-inserting moves the id to a fresh slot; the writer stops before the version that would
+    // publish it.
     assert_eq!(
         crashed.insert_operations(&[Insert(num(10))]),
         Ok(vec![(num(10), 1)]),
@@ -403,9 +395,8 @@ fn an_abandoned_update_retires_the_point() {
     );
 }
 
-/// A write that dies mid-entry leaves the versions file ending inside a slot.
-/// The next write heals it rather than being stuck with it forever: those bytes
-/// are a slot no reader ever saw, so the new entries take their place.
+/// A write that dies mid-entry leaves the versions file ending inside a slot. The next write heals
+/// it: those bytes are a slot no reader ever saw, so the new entries take their place.
 #[test]
 fn heals_a_partial_versions_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -421,8 +412,8 @@ fn heals_a_partial_versions_tail() {
 
     tracker.set_internal_versions(&[2, 3], &[102, 103]).unwrap();
 
-    // The committed slots survived, and the appended ones landed where the
-    // stray bytes were rather than after them.
+    // The committed slots survived, and the appended ones landed where the stray bytes were rather
+    // than after them.
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102, 103]);
     assert_eq!(
         fs_err::metadata(&path).unwrap().len(),
@@ -430,8 +421,8 @@ fn heals_a_partial_versions_tail() {
     );
 }
 
-/// Healing a file that holds nothing but a torn entry leaves it empty, and the
-/// array starts over at slot 0.
+/// Healing a file that holds nothing but a torn entry leaves it empty, and the array starts over at
+/// slot 0.
 #[test]
 fn heals_a_versions_file_of_only_a_partial_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -445,9 +436,8 @@ fn heals_a_versions_file_of_only_a_partial_tail() {
     assert_eq!(load_versions(&path).unwrap(), vec![100]);
 }
 
-/// The append-only writer and the in-place one lay the versions file out
-/// identically, byte for byte. This is what keeps the two write paths from
-/// drifting apart: a change to either one's layout has to be made in both.
+/// The append-only writer and the in-place one lay the versions file out identically, byte for
+/// byte, so a change to either one's layout has to be made in both.
 #[test]
 fn both_writers_produce_the_same_versions_file() {
     let appended = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -473,7 +463,6 @@ fn both_writers_produce_the_same_versions_file() {
         appended_bytes,
         fs_err::read(versions_path(stored.path())).unwrap(),
     );
-    // Not vacuous: both hold the versions, one entry per slot.
     assert_eq!(
         appended_bytes.len(),
         versions.len() * size_of::<SeqNumberType>()
@@ -484,14 +473,12 @@ fn both_writers_produce_the_same_versions_file() {
     );
 }
 
-/// Everything the two readers must agree on for the segments to be
-/// interchangeable.
+/// Everything the two readers must agree on for the segments to be interchangeable.
 ///
-/// Versions are compared for live points only. A deleted point's version is
-/// gone as far as readers are concerned, and the two writers leave different
-/// things behind: [`MutableIdTracker::drop`] overwrites the slot with
-/// [`DELETED_POINT_VERSION`], while the append-only writer cannot rewrite a
-/// committed slot and leaves the point's original version there.
+/// Versions are compared for live points only. A deleted point's version is gone as far as readers
+/// are concerned, and the two writers leave different things behind: [`MutableIdTracker::drop`]
+/// overwrites the slot with [`DELETED_POINT_VERSION`], while the append-only writer cannot rewrite
+/// a committed slot and leaves the point's original version there.
 ///
 /// [`DELETED_POINT_VERSION`]: crate::id_tracker::DELETED_POINT_VERSION
 fn assert_trackers_agree(appended: &ReadOnlyTracker, mutated: &ReadOnlyTracker) {
@@ -526,10 +513,9 @@ fn assert_trackers_agree(appended: &ReadOnlyTracker, mutated: &ReadOnlyTracker) 
     }
 }
 
-/// The append-only writer and [`MutableIdTracker`] are two ways of producing
-/// the same segment files. Drive both with the same points, versions and
-/// deletes, then read each back through [`ReadOnlyAppendableIdTracker`]: the
-/// two views must be indistinguishable.
+/// The append-only writer and [`MutableIdTracker`] are two ways of producing the same segment
+/// files. Drive both with the same points, versions and deletes, then read each back through
+/// [`ReadOnlyAppendableIdTracker`]: the two views must be indistinguishable.
 #[test]
 fn matches_the_mutable_tracker() {
     let appended_dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -538,9 +524,9 @@ fn matches_the_mutable_tracker() {
     let mut writer = Tracker::new(MmapFs, appended_dir.path(), None, [], 0).unwrap();
     let mut mutable = MutableIdTracker::open(mutated_dir.path(), None).unwrap();
 
-    // The append-only writer hands out the slots; the mutable tracker is told
-    // to use exactly the ones it handed out. A delete of an id that was never
-    // inserted is recorded by both and must change nothing.
+    // The append-only writer hands out the slots; the mutable tracker is told to use exactly the
+    // ones it handed out. A delete of an id that was never inserted is recorded by both and must
+    // change nothing.
     let inserted = writer
         .insert_operations(&[
             Insert(num(10)),
@@ -579,7 +565,7 @@ fn matches_the_mutable_tracker() {
         );
     }
 
-    // Not vacuous: three points were committed, one of them since retired.
+    // Three points were committed, one of them since retired.
     assert_eq!(from_appended.total_point_count(), 3);
     assert_eq!(from_appended.available_point_count(), 2);
     assert_eq!(

@@ -1,20 +1,11 @@
-//! The point versions file: a dense array of one [`SeqNumberType`] per internal
-//! id, the entry for id `n` sitting at `n * VERSION_ELEMENT_SIZE`.
+//! The point versions file: a dense array of one [`SeqNumberType`] per internal id, the entry for
+//! id `n` sitting at `n * VERSION_ELEMENT_SIZE`.
 //!
-//! Two writers produce it — [`store_version_changes`] here, which seeks and
-//! overwrites in place, and [`UpdateOnlyAppendableIdTracker::set_internal_versions`],
-//! which can only append — and two readers consume it, [`load_versions`] and the
-//! read-only tracker's live reload. Everything that defines the format for all
-//! four lives in this module: the entry codec, the offset of an entry,
-//! [`VersionsLayout`], which says how many whole entries a file of a given
-//! length holds, and [`heal_versions_tail`], which both writers run over a file
-//! that ends mid-entry.
-//!
-//! [`UpdateOnlyAppendableIdTracker::set_internal_versions`]:
-//!     super::update_only::UpdateOnlyAppendableIdTracker::set_internal_versions
+//! Both write paths, [`store_version_changes`] here and the append-only writer in
+//! [`super::update_only`], go through the format definitions in this module.
 
 use std::collections::BTreeMap;
-use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
+use std::io::{self, BufReader, BufWriter, Seek, Write};
 use std::path::{Path, PathBuf};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -30,9 +21,7 @@ const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
 pub(super) const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
-/// The entry codec below is written in terms of `u64`, so a change to
-/// [`SeqNumberType`] has to be made there too rather than silently shrinking
-/// every offset.
+// Entries are written as `u64`, a change to `SeqNumberType` has to be made there too.
 const _: () = assert!(VERSION_ELEMENT_SIZE == size_of::<u64>() as u64);
 
 pub(super) fn versions_path(segment_path: &Path) -> PathBuf {
@@ -49,24 +38,19 @@ pub(super) fn version_offset(internal_id: PointOffsetType) -> u64 {
     versions_byte_len(u64::from(internal_id))
 }
 
-/// Write one entry at the writer's current position.
+/// Write one version entry at the writer's current position.
 pub(super) fn write_version<W: Write>(mut writer: W, version: SeqNumberType) -> io::Result<()> {
     writer.write_u64::<FileEndianess>(version)
-}
-
-/// Read one entry from the reader's current position.
-pub(super) fn read_version<R: Read>(mut reader: R) -> io::Result<SeqNumberType> {
-    reader.read_u64::<FileEndianess>()
 }
 
 /// How a versions file of a given byte length divides into entries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct VersionsLayout {
-    /// Whole entries the file holds. This is the commit signal: a point's
-    /// version counts as persisted exactly when the array covers its slot.
+    /// Whole entries the file holds. This is the commit signal: a point's version counts as
+    /// persisted exactly when the array covers its slot.
     pub committed_slots: u64,
-    /// Trailing bytes that do not make up a whole entry, left behind by a
-    /// writer that crashed mid-write. Zero for an intact file.
+    /// Trailing bytes that do not make up a whole entry, left behind by a writer that crashed
+    /// mid-write. Zero for an intact file.
     pub partial_tail: u64,
 }
 
@@ -78,24 +62,20 @@ impl VersionsLayout {
         }
     }
 
-    /// Byte length of the committed entries, which is where the next one
-    /// belongs — the partial tail, if any, is overwritten or refused.
+    /// Byte length of the committed entries, which is where the next one belongs.
     pub fn committed_len(self) -> u64 {
         versions_byte_len(self.committed_slots)
     }
 }
 
-/// Cut a partial trailing entry off a versions file of `file_len` bytes and
-/// return the layout it is left with; a file already ending on an entry
-/// boundary is not touched.
+/// Cut a partial trailing entry off a versions file of `file_len` bytes and return the layout it is
+/// left with. A file already ending on an entry boundary is not touched.
 ///
-/// Dropping those bytes loses nothing: the array covers a slot only once its
-/// whole entry is there, so a torn entry is a slot nobody counted as committed.
-/// Leaving them would misplace every entry written after them.
+/// Dropping those bytes loses nothing: a torn entry is a slot nobody counted as committed. Leaving
+/// them would misplace every entry written after them.
 ///
-/// `shrink_to` cuts the file down however its backend can: in place for
-/// [`store_version_changes`], by rewriting the file for the append-only writer,
-/// which has no truncate.
+/// `shrink_to` cuts the file down however its backend can: in place for [`store_version_changes`],
+/// by rewriting the file for the append-only writer, which has no truncate.
 pub(super) fn heal_versions_tail(
     versions_path: &Path,
     file_len: u64,
@@ -133,7 +113,7 @@ pub(super) fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumb
     let mut reader = BufReader::new(file);
 
     Ok((0..layout.committed_slots)
-        .map(|_| read_version(&mut reader))
+        .map(|_| reader.read_u64::<FileEndianess>())
         .collect::<Result<_, _>>()?)
 }
 

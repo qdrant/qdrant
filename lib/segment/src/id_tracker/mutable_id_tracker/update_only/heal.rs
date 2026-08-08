@@ -9,16 +9,14 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::mutable_id_tracker::versions_storage::{VersionsLayout, heal_versions_tail};
 
 impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
-    /// Heal a versions file that ends mid-entry, per [`heal_versions_tail`],
-    /// and return the layout it is left with.
+    /// Heal a versions file that ends mid-entry, per [`heal_versions_tail`], and return the layout
+    /// it is left with.
     ///
-    /// An append-only backend cannot truncate, so the file is shrunk the only
-    /// way it can be: the committed prefix is read back and put in its place as
-    /// a whole file.
+    /// An append-only backend cannot truncate, so the file is shrunk the only way it can be: the
+    /// committed prefix is read back and put in its place as a whole file.
     ///
-    /// Takes ownership of `file` and drops it before the rewrite — Windows
-    /// cannot replace a path that still has an mmap open. Callers open a fresh
-    /// handle afterwards.
+    /// Takes ownership of `file` and drops it before the rewrite, Windows cannot replace a path
+    /// that still has an mmap open. Callers open a fresh handle afterwards.
     pub(super) fn heal_versions(
         &self,
         path: &Path,
@@ -36,22 +34,21 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         })
     }
 
-    /// Cut whatever sits past the end of the log off the mappings file, so the
-    /// next append lands on an entry boundary.
+    /// Cut whatever sits past the end of the log off the mappings file, so the next append lands on
+    /// an entry boundary.
     ///
-    /// Reached only from a conflicted append. The excess is either a torn entry
-    /// or a batch that landed unacknowledged; the two cannot be told apart
-    /// without parsing the log, and need not be. Nothing the caller asked for is
-    /// written yet and its slots are still unclaimed — `max_claimed_internal_id` and
-    /// `mappings_end` only move on a durable append — so both are answered by
-    /// cutting back and writing the batch again where it belonged.
+    /// Reached only from a conflicted append. The excess is either a torn entry or a batch that
+    /// landed unacknowledged; the two cannot be told apart without parsing the log, and need not
+    /// be. Nothing the caller asked for is written yet and its slots are still unclaimed, since
+    /// `max_claimed_internal_id` and `mappings_end` only move on a durable append, so both are
+    /// answered by cutting back and writing the batch again where it belonged.
     ///
-    /// Shrinks like [`heal_versions`](Self::heal_versions); what differs is the
-    /// boundary, which the log cannot carry and [`new`](Self::new) is handed.
+    /// Shrinks like [`heal_versions`](Self::heal_versions); what differs is the boundary, which the
+    /// log cannot carry and [`new`](Self::new) is handed.
     ///
-    /// The caller must drop any open handle on `path` first — Windows cannot
-    /// replace a path that still has an mmap open. Opens its own handle, drops
-    /// it before the rewrite, and leaves the caller to open a fresh one.
+    /// The caller must drop any open handle on `path` first, Windows cannot replace a path that
+    /// still has an mmap open. Opens its own handle, drops it before the rewrite, and leaves the
+    /// caller to open a fresh one.
     pub(super) fn heal_mappings(&self, path: &Path) -> OperationResult<()> {
         let file = self.open_append(path)?;
         let file_len = Self::end_of_file(&file)?;
@@ -71,18 +68,16 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                 self.fs.atomic_save(path, &log)?;
                 Ok(())
             }
-            // Entries the log counts on are not in the file: it was truncated
-            // under us, or this writer was handed an end that never existed.
-            // Either way the log is not what this writer thinks it is, and
-            // appending to it would frame the next entry off whatever is there.
+            // Entries the log counts on are not in the file: it was truncated under us, or this
+            // writer was handed an end that never existed. Either way appending to it would frame
+            // the next entry off whatever is there.
             Ordering::Less => Err(OperationError::service_error(format!(
                 "ID tracker mappings file is shorter than the log it should hold ({file_len} < {} bytes), cannot append mappings to {}",
                 self.mappings_end,
                 path.display(),
             ))),
-            // Rejected at an offset the file does end at: someone else appended
-            // between the append and this check, which the single-writer
-            // contract rules out.
+            // Rejected at an offset the file does end at: someone else appended between the append
+            // and this check, which the single-writer contract rules out.
             Ordering::Equal => Err(OperationError::service_error(format!(
                 "ID tracker mappings file ends at the end of its log ({} bytes) yet rejected an append there, another writer is appending to {}",
                 self.mappings_end,

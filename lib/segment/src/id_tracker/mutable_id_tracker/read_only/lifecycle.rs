@@ -93,41 +93,29 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         Ok(tracker)
     }
 
-    /// Byte offset just past the last complete entry consumed from the mappings
-    /// log — where the next appended entry belongs.
+    /// Byte offset just past the last complete entry consumed from the mappings log, where the next
+    /// appended entry belongs.
     ///
-    /// A writer resumes from this and cannot recover it from the file, whose
-    /// entries vary in length. A torn tail is below it, which is what lets a
-    /// writer cut it off. See [`UpdateOnlyAppendableIdTracker::new`].
-    ///
-    /// [`UpdateOnlyAppendableIdTracker::new`]:
-    ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+    /// Entries vary in length, so a writer cannot recover this from the file and has to resume from
+    /// here. A torn tail sits above it and is cut off by the next append.
     pub fn mappings_read_to(&self) -> u64 {
         self.mappings_read_to
     }
 
-    /// Highest slot the mappings log has claimed, `None` while it has claimed
-    /// none — the slot a writer resumes above.
+    /// Highest slot the mappings log has claimed, `None` while it has claimed none: the slot a
+    /// writer resumes above.
     ///
-    /// Counts every slot the log ever handed out, including those no longer
-    /// reachable by external id and those whose version was never committed.
-    /// See [`UpdateOnlyAppendableIdTracker::new`].
-    ///
-    /// [`UpdateOnlyAppendableIdTracker::new`]:
-    ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+    /// Counts every slot the log ever handed out, including those no longer reachable by external
+    /// id and those whose version was never committed.
     pub fn max_claimed_internal_id(&self) -> Option<PointOffsetType> {
         self.max_claimed_internal_id
     }
 
-    /// External ids the mappings log has inserted whose slots the versions array
-    /// does not cover, in arbitrary order.
+    /// External ids the mappings log has inserted whose slots the versions array does not cover, in
+    /// arbitrary order.
     ///
-    /// Each is a point this view withholds because its data may be half-written.
-    /// A writer resuming from this view retires them, see
-    /// [`UpdateOnlyAppendableIdTracker::new`].
-    ///
-    /// [`UpdateOnlyAppendableIdTracker::new`]:
-    ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
+    /// Each is a point this view withholds because its data may be half-written. A writer resuming
+    /// from this view retires them.
     pub fn pending_inserts(&self) -> impl Iterator<Item = PointIdType> + '_ {
         self.pending_inserts.keys().copied()
     }
