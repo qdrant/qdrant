@@ -31,6 +31,9 @@ fn delete_batch_is_visible_to_disk_id_tracker_readers() {
     let (to_delete, to_keep) = live.split_at(50);
     let to_delete_offsets: Vec<u32> = to_delete.iter().map(|&(_, offset)| offset).collect();
 
+    // Windows cannot replace a file that is still memory-mapped.
+    drop(disk);
+
     let mut update_only = UpdateOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
     update_only.delete_batch(&to_delete_offsets).unwrap();
 
@@ -71,7 +74,9 @@ fn delete_batch_is_visible_to_disk_id_tracker_readers() {
 fn delete_batch_is_idempotent() {
     let (versions, mappings) = make_data(2);
     let dir = Builder::new().prefix("disk").tempdir().unwrap();
-    let _disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+    let disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+    // Windows cannot replace a file that is still memory-mapped.
+    drop(disk);
 
     let mut update_only = UpdateOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
     update_only.delete_batch(&[3, 7, 7, 3]).unwrap();
@@ -88,7 +93,7 @@ fn delete_batch_is_idempotent() {
 fn empty_batch_is_a_noop() {
     let (versions, mappings) = make_data(3);
     let dir = Builder::new().prefix("disk").tempdir().unwrap();
-    let _disk = DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+    DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
 
     let before = fs_err::read(dir.path().join("id_tracker.deleted")).unwrap();
 
