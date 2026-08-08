@@ -14,9 +14,7 @@ use common::universal_io::{
 
 use super::change::{MappingChange, write_entry};
 use super::mappings_storage::mappings_path;
-use super::versions_storage::{
-    VERSION_ELEMENT_SIZE, VersionsLayout, versions_byte_len, versions_path, write_version,
-};
+use super::versions_storage::{VERSION_ELEMENT_SIZE, versions_path, write_version};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::DELETED_POINT_VERSION;
 use crate::types::{PointIdType, SeqNumberType};
@@ -107,12 +105,6 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         Ok(tracker)
     }
 
-    /// Highest slot the mappings log has claimed, `None` while it has claimed none, including slots
-    /// this writer claimed but has not versioned.
-    pub fn max_claimed_internal_id(&self) -> Option<PointOffsetType> {
-        self.max_claimed_internal_id
-    }
-
     /// Commit `versions` for `internal_ids`, extending the dense versions array and publishing
     /// those slots to readers.
     ///
@@ -151,12 +143,12 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         // A torn tail is healed rather than refused: those bytes are a slot no reader ever saw, and
         // the entries below take their place. `heal_versions` drops the handle before rewriting.
         let file_len = Self::end_of_file(&file)?;
-        let mut layout = VersionsLayout::of_len(file_len);
-        if layout.partial_tail != 0 {
-            layout = self.heal_versions(&path, file, file_len)?;
+        let committed_len = file_len - file_len % VERSION_ELEMENT_SIZE;
+        if committed_len != file_len {
+            self.heal_versions(&path, file, file_len)?;
             file = self.open_append(&path)?;
         }
-        let covered_slots = layout.committed_slots;
+        let covered_slots = committed_len / VERSION_ELEMENT_SIZE;
 
         // The run to write, which the array can only take as a whole: from where it ends through
         // the highest id given.
@@ -190,7 +182,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             }
         }
 
-        let mut versions_buffer = Vec::with_capacity(versions_byte_len(slot_count) as usize);
+        let mut versions_buffer = Vec::with_capacity((slot_count * VERSION_ELEMENT_SIZE) as usize);
         for version in run {
             write_version(
                 &mut versions_buffer,
@@ -201,7 +193,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         // One entry per buffer: the backend places the whole run in a single operation, and the
         // entry boundaries stay visible to it.
         file.append_batch(
-            layout.committed_len(),
+            committed_len,
             versions_buffer.chunks_exact(VERSION_ELEMENT_SIZE as usize),
         )?;
         (file.flusher())()?;

@@ -9,7 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::change::MappingChange;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, read_mappings_iter};
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
-    VersionsLayout, versions_byte_len, versions_path,
+    VERSION_ELEMENT_SIZE, versions_path,
 };
 use crate::types::SeqNumberType;
 
@@ -212,13 +212,13 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let Some(versions_bytes) = versions_file.len::<u8>().ok_not_found()? else {
             return Ok(internal_to_version.len());
         };
-        let versions_len = VersionsLayout::of_len(versions_bytes).committed_slots;
+        let versions_len = versions_bytes / VERSION_ELEMENT_SIZE;
 
         // Append the newly flushed tail. Anything beyond `versions_len` is not flushed yet and
         // stays absent until a later reload (the mapped-but-versionless case).
         if versions_len > loaded_len {
             let tail = versions_file.read::<_, SeqNumberType>(
-                ReadRange::new(versions_byte_len(loaded_len), versions_len - loaded_len),
+                ReadRange::new(loaded_len * VERSION_ELEMENT_SIZE, versions_len - loaded_len),
                 Sequential,
             )?;
             internal_to_version.extend_from_slice(&tail);

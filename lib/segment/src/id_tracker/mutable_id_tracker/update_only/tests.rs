@@ -280,9 +280,12 @@ fn resumes_above_a_slot_claimed_and_then_deleted() {
 }
 
 /// A point on a slot the log claimed but no writer ever versioned is retired by the writer that
-/// inherits it, before anything of its own reaches the log. Its data was left half-written, so it
-/// is in no state to be adopted, and the slot has to be covered for the slots above it to be
-/// published at all.
+/// inherits it. Its data was left half-written, so it is in no state to be adopted, and the slot
+/// has to be covered for the slots above it to be published at all.
+///
+/// Retiring is done by the time the writer exists, so no write path can reach the versions file
+/// without it. And it is the retirement that keeps the point from surfacing, not the version its
+/// slot ends up with: the slot is committed here with an ordinary version and the point stays gone.
 #[test]
 fn retires_inherited_pending_inserts() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
@@ -299,13 +302,22 @@ fn retires_inherited_pending_inserts() {
         vec![num(11)],
     );
 
-    // The next writer has to cover slot 1 to publish slot 2.
+    // Construction alone retired it, before this writer has been asked to do anything.
     let mut resumed = resume(dir.path());
+    assert_eq!(
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None)
+            .unwrap()
+            .pending_inserts()
+            .count(),
+        0,
+    );
+
+    // Slot 1 has to be covered for slot 2 to be published, and gets a version of its own here.
     assert_eq!(
         resumed.insert_operations(&[Insert(num(12))]),
         Ok(vec![(num(12), 2)]),
     );
-    resumed.set_internal_versions(&[2], &[102]).unwrap();
+    resumed.set_internal_versions(&[1, 2], &[101, 102]).unwrap();
 
     let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
     assert_eq!(
@@ -313,7 +325,6 @@ fn retires_inherited_pending_inserts() {
         None,
         "an abandoned point must not surface once its slot is covered",
     );
-    assert_eq!(reader.pending_inserts().count(), 0);
     assert!(reader.is_deleted_point(1));
     assert_eq!(
         reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
@@ -323,41 +334,8 @@ fn retires_inherited_pending_inserts() {
         reader.internal_id_with_behavior(num(12), DeferredBehavior::VisibleOnly),
         Some(2),
     );
+    assert_eq!(reader.total_point_count(), 3);
     assert_eq!(reader.available_point_count(), 2);
-}
-
-/// Retiring is done by the time the writer exists, so no write path can reach the versions file
-/// without it, not even one that commits versions and never touches the mappings log itself.
-#[test]
-fn retires_inherited_pending_inserts_at_construction() {
-    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
-
-    let mut crashed = Tracker::new(MmapFs, dir.path(), None, [], 0).unwrap();
-    crashed
-        .insert_operations(&[Insert(num(10)), Insert(num(11))])
-        .unwrap();
-    // Slot 0 is versioned below; slot 1 is left abandoned.
-    crashed.set_internal_versions(&[0], &[100]).unwrap();
-
-    let mut resumed = resume(dir.path());
-    // Construction alone retired it, before this writer has been asked to do anything.
-    assert_eq!(
-        ReadOnlyTracker::open(&MmapFs, dir.path(), None)
-            .unwrap()
-            .pending_inserts()
-            .count(),
-        0,
-    );
-
-    resumed.set_internal_versions(&[1], &[101]).unwrap();
-
-    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
-    assert_eq!(
-        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
-        None,
-    );
-    assert!(reader.is_deleted_point(1));
-    assert_eq!(reader.available_point_count(), 1);
 }
 
 /// An update whose new slot is abandoned costs the point, not just the unacknowledged update: the

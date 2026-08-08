@@ -28,48 +28,13 @@ pub(super) fn versions_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_VERSIONS)
 }
 
-/// Byte length of `slots` whole entries.
-pub(super) fn versions_byte_len(slots: u64) -> u64 {
-    slots * VERSION_ELEMENT_SIZE
-}
-
-/// Byte offset of the entry holding `internal_id`'s version.
-pub(super) fn version_offset(internal_id: PointOffsetType) -> u64 {
-    versions_byte_len(u64::from(internal_id))
-}
-
 /// Write one version entry at the writer's current position.
 pub(super) fn write_version<W: Write>(mut writer: W, version: SeqNumberType) -> io::Result<()> {
     writer.write_u64::<FileEndianess>(version)
 }
 
-/// How a versions file of a given byte length divides into entries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct VersionsLayout {
-    /// Whole entries the file holds. This is the commit signal: a point's version counts as
-    /// persisted exactly when the array covers its slot.
-    pub committed_slots: u64,
-    /// Trailing bytes that do not make up a whole entry, left behind by a writer that crashed
-    /// mid-write. Zero for an intact file.
-    pub partial_tail: u64,
-}
-
-impl VersionsLayout {
-    pub fn of_len(file_len: u64) -> Self {
-        Self {
-            committed_slots: file_len / VERSION_ELEMENT_SIZE,
-            partial_tail: file_len % VERSION_ELEMENT_SIZE,
-        }
-    }
-
-    /// Byte length of the committed entries, which is where the next one belongs.
-    pub fn committed_len(self) -> u64 {
-        versions_byte_len(self.committed_slots)
-    }
-}
-
-/// Cut a partial trailing entry off a versions file of `file_len` bytes and return the layout it is
-/// left with. A file already ending on an entry boundary is not touched.
+/// Cut a partial trailing entry off a versions file of `file_len` bytes, leaving it ending on an
+/// entry boundary. A file already ending on one is not touched.
 ///
 /// Dropping those bytes loses nothing: a torn entry is a slot nobody counted as committed. Leaving
 /// them would misplace every entry written after them.
@@ -80,39 +45,35 @@ pub(super) fn heal_versions_tail(
     versions_path: &Path,
     file_len: u64,
     shrink_to: impl FnOnce(u64) -> OperationResult<()>,
-) -> OperationResult<VersionsLayout> {
-    let layout = VersionsLayout::of_len(file_len);
-    if layout.partial_tail == 0 {
-        return Ok(layout);
+) -> OperationResult<()> {
+    let partial_tail = file_len % VERSION_ELEMENT_SIZE;
+    if partial_tail == 0 {
+        return Ok(());
     }
 
     log::warn!(
-        "Mutable ID tracker versions file ends with a partial entry ({} bytes into a {VERSION_ELEMENT_SIZE}-byte slot), dropping it because the slot it belongs to was never committed: {}",
-        layout.partial_tail,
+        "Mutable ID tracker versions file ends with a partial entry ({partial_tail} bytes into a {VERSION_ELEMENT_SIZE}-byte slot), dropping it because the slot it belongs to was never committed: {}",
         versions_path.display(),
     );
-    shrink_to(layout.committed_len())?;
+    shrink_to(file_len - partial_tail)?;
 
-    Ok(VersionsLayout {
-        committed_slots: layout.committed_slots,
-        partial_tail: 0,
-    })
+    Ok(())
 }
 
 pub(super) fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let file = File::open(versions_path)?;
 
-    let layout = VersionsLayout::of_len(file.metadata()?.len());
-    if layout.partial_tail != 0 {
+    let file_len = file.metadata()?.len();
+    let partial_tail = file_len % VERSION_ELEMENT_SIZE;
+    if partial_tail != 0 {
         log::warn!(
-            "Mutable ID tracker versions file has partial trailing entry, ignoring last {} bytes (will be cleaned up on next flush)",
-            layout.partial_tail,
+            "Mutable ID tracker versions file has partial trailing entry, ignoring last {partial_tail} bytes (will be cleaned up on next flush)",
         );
     }
 
     let mut reader = BufReader::new(file);
 
-    Ok((0..layout.committed_slots)
+    Ok((0..file_len / VERSION_ELEMENT_SIZE)
         .map(|_| reader.read_u64::<FileEndianess>())
         .collect::<Result<_, _>>()?)
 }
@@ -175,7 +136,7 @@ where
 
     // Write all changes, must be ordered by internal ID, see optimization note below
     for (&internal_id, &version) in changes {
-        let offset = version_offset(internal_id);
+        let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE;
 
         // Seek to correct position if not already at it
         //

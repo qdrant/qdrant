@@ -6,23 +6,17 @@ use common::universal_io::{UniversalAppend, UniversalWriteFileOps as _};
 
 use super::UpdateOnlyAppendableIdTracker;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::mutable_id_tracker::versions_storage::{VersionsLayout, heal_versions_tail};
+use crate::id_tracker::mutable_id_tracker::versions_storage::heal_versions_tail;
 
 impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
-    /// Heal a versions file that ends mid-entry, per [`heal_versions_tail`], and return the layout
-    /// it is left with.
+    /// Heal a versions file that ends mid-entry, per [`heal_versions_tail`].
     ///
     /// An append-only backend cannot truncate, so the file is shrunk the only way it can be: the
     /// committed prefix is read back and put in its place as a whole file.
     ///
     /// Takes ownership of `file` and drops it before the rewrite, Windows cannot replace a path
     /// that still has an mmap open. Callers open a fresh handle afterwards.
-    pub(super) fn heal_versions(
-        &self,
-        path: &Path,
-        file: S,
-        file_len: u64,
-    ) -> OperationResult<VersionsLayout> {
+    pub(super) fn heal_versions(&self, path: &Path, file: S, file_len: u64) -> OperationResult<()> {
         heal_versions_tail(path, file_len, move |healthy_len| {
             let committed = file
                 .read_bytes(0..healthy_len, Sequential, align_of::<u8>())?
