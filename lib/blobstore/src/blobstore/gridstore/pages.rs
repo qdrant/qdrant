@@ -452,6 +452,33 @@ impl<S: UniversalRead> Pages<S> {
         Ok(())
     }
 
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+        populate: Populate,
+    ) -> Result<()> {
+        let num_pages = self.pages.len();
+        let next_page_id = num_pages as PageId;
+
+        if num_pages > 0 {
+            let page_id = (num_pages - 1) as PageId;
+            let page_path = self.page_path(page_id);
+
+            // Re-schedule so that unchanged files don't re-fetch.
+            fs.reschedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+
+        for page_id in next_page_id.. {
+            let page_path = self.page_path(page_id);
+            if !fs.exists(&page_path)? {
+                break;
+            }
+            fs.schedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+
+        Ok(())
+    }
+
     /// This method reloads the pages storage from "disk", so that
     /// it should make newly written data is readable.
     ///
