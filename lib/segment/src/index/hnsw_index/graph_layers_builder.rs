@@ -391,8 +391,18 @@ impl GraphLayersBuilder {
     {
         let distribution = Uniform::new(0.0, 1.0).unwrap();
         let sample: f64 = rng.sample(distribution);
-        let picked_level = -sample.ln() * self.level_factor;
-        picked_level.round() as usize
+        Self::level_from_sample(sample, self.level_factor)
+    }
+
+    /// Map a uniform `[0, 1)` sample to a geometric level.
+    ///
+    /// `Uniform::new(0.0, 1.0)` is half-open, so `sample` can be exactly `0.0`.
+    /// `ln(0.0)` is `-inf`, and `(-(-inf) * factor).round() as usize` saturates
+    /// to `usize::MAX`, which then makes `set_levels` allocate unboundedly.
+    /// Clamp to the smallest positive `f64` so the level stays bounded.
+    fn level_from_sample(sample: f64, level_factor: f64) -> usize {
+        let sample = sample.max(f64::MIN_POSITIVE);
+        (-sample.ln() * level_factor).round() as usize
     }
 
     pub(crate) fn get_point_level(&self, point_id: PointOffsetType) -> usize {
@@ -617,6 +627,17 @@ mod tests {
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead as _};
 
     const M: usize = 8;
+
+    #[test]
+    fn get_random_layer_handles_zero_sample() {
+        // A zero uniform sample used to make ln(0) = -inf and saturate the
+        // level to usize::MAX; the clamp must keep it bounded.
+        let level_factor = 1.0 / (M as f64).ln();
+        let level = GraphLayersBuilder::level_from_sample(0.0, level_factor);
+        assert!(level < 1024, "zero sample produced an unbounded level: {level}");
+        // A normal mid-range sample still yields a small level.
+        assert!(GraphLayersBuilder::level_from_sample(0.5, level_factor) < 1024);
+    }
 
     #[cfg(not(windows))]
     fn parallel_graph_build<R>(
