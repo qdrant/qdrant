@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::super::read_ops::NullIndexRead;
 use super::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME, MutableNullIndex, Storage};
 use crate::common::Flusher;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex};
@@ -76,13 +76,19 @@ impl MutableNullIndex {
             ))
         })?;
 
-        let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let has_values_mmap = DynamicStoredFlags::open(&MmapFs, &has_values_path, Populate::No)?;
-        let has_values_flags = RoaringFlags::new(MmapFs, has_values_mmap)?;
+        let has_values_flags = RoaringFlags::open_or_create(
+            MmapFs,
+            &path.join(HAS_VALUES_DIRNAME),
+            FlagsMode::from_feature_flags(),
+            Populate::No,
+        )?;
 
-        let is_null_path = path.join(IS_NULL_DIRNAME);
-        let is_null_mmap = DynamicStoredFlags::open(&MmapFs, &is_null_path, Populate::No)?;
-        let is_null_flags = RoaringFlags::new(MmapFs, is_null_mmap)?;
+        let is_null_flags = RoaringFlags::open_or_create(
+            MmapFs,
+            &path.join(IS_NULL_DIRNAME),
+            FlagsMode::from_feature_flags(),
+            Populate::No,
+        )?;
 
         let storage = Storage {
             has_values_flags,

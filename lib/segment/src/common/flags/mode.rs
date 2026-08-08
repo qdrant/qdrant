@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::flags::feature_flags;
 use common::universal_io::UniversalReadFileOps;
 
 use super::compact_stored_flags::COMPACT_FLAGS_FILE;
@@ -26,6 +27,19 @@ pub enum FlagsMode {
 }
 
 impl FlagsMode {
+    /// Mode for newly created flags, per the deployment's feature flags:
+    /// compact in serverless-compatible deployments, dynamic otherwise.
+    ///
+    /// Only relevant when creating flags; opening existing flags detects
+    /// their mode from disk regardless of this value.
+    pub fn from_feature_flags() -> Self {
+        if feature_flags().serverless_compatible() {
+            Self::Compact
+        } else {
+            Self::Dynamic
+        }
+    }
+
     /// Detect the mode of the flags in `directory` from the files present,
     /// `None` when no flags exist there yet.
     ///

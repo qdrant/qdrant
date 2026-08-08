@@ -12,8 +12,8 @@ use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
 
 use crate::common::Flusher;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -318,9 +318,11 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
         Populate::from(populate),
     )?;
 
-    let deleted = BitvecFlags::new(
+    let deleted = BitvecFlags::open_or_create(
         MmapFs,
-        DynamicStoredFlags::open(&MmapFs, &deleted_path, Populate::from(populate))?,
+        &deleted_path,
+        FlagsMode::from_feature_flags(),
+        Populate::from(populate),
     )?;
     let deleted_count = deleted.count_trues();
 
