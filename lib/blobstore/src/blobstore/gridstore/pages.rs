@@ -9,7 +9,7 @@ use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     CachedReadFs, FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWrite, UserData,
+    UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
 
@@ -460,7 +460,11 @@ impl<S: UniversalRead> Pages<S> {
     /// - Should only be called on read-only instances of the Pages.
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
-    pub fn live_reload(&mut self, fs: &S::Fs, populate: Populate) -> Result<()> {
+    pub fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        populate: Populate,
+    ) -> Result<()> {
         let num_pages = self.pages.len();
         let next_page_id = num_pages as PageId;
 
