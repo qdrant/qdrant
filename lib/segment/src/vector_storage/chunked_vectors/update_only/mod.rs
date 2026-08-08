@@ -15,7 +15,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::chunks::{chunk_name, list_chunk_files};
 use crate::vector_storage::chunked_vectors::config::{
-    ChunkedVectorsConfig, Status, ensure_config, read_status_len, status_file,
+    ChunkedVectorsConfig, Status, ensure_config, status_file,
 };
 
 /// Short-lived append-only writer for chunked vectors storage.
@@ -28,7 +28,6 @@ use crate::vector_storage::chunked_vectors::config::{
 pub struct UpdateOnlyChunkedVectors<T, S: UniversalAppend> {
     directory: PathBuf,
     config: ChunkedVectorsConfig,
-    status: Status,
     fs: S::Fs,
     _t: PhantomData<T>,
 }
@@ -52,25 +51,29 @@ where
     /// Open a chunked-vectors directory for appending, creating it if missing.
     pub fn open(fs: S::Fs, directory: &Path, dim: usize) -> OperationResult<Self> {
         let status_path = status_file(directory);
-        // An absent status file marks the first open
+        // An absent status file marks the first open. Writing it eagerly keeps
+        // the directory readable even if no batch ever lands.
         if !fs.exists(&status_path)? {
             fs.create_dir(directory)?;
             fs.atomic_save(&status_path, bytemuck::bytes_of(&Status { len: 0 }))?;
         }
-        let status = Status {
-            len: read_status_len(&fs, &status_path)?,
-        };
         let config = ensure_config::<T, _>(&fs, directory, dim, false)?;
 
-        let writer = Self {
+        Ok(Self {
             directory: directory.to_owned(),
             config,
-            status,
             fs,
             _t: PhantomData,
-        };
+        })
+    }
 
-        Ok(writer)
+    /// Replace the stored vector count.
+    fn save_len(&self, len: usize) -> OperationResult<()> {
+        self.fs.atomic_save(
+            &status_file(&self.directory),
+            bytemuck::bytes_of(&Status { len }),
+        )?;
+        Ok(())
     }
 
     /// Compare every chunk file's length against an external total length.
@@ -144,11 +147,7 @@ where
             self.fs.remove(&file.path)?;
         }
 
-        self.status.len = target_len;
-        self.fs.atomic_save(
-            &status_file(&self.directory),
-            bytemuck::bytes_of(&self.status),
-        )?;
+        self.save_len(target_len)?;
 
         Ok(())
     }
@@ -194,11 +193,7 @@ where
         }
 
         // Persist the watermark only after the data landed
-        self.status.len = len;
-        self.fs.atomic_save(
-            &status_file(&self.directory),
-            bytemuck::bytes_of(&self.status),
-        )?;
+        self.save_len(len)?;
 
         Ok(())
     }
