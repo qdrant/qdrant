@@ -77,7 +77,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         )
         .unwrap();
 
-    // A multi-step write within one operation, which may not reuse the slot.
+    // A multi-step write within one operation: a slot per step.
     segment
         .upsert_point(3, 6.into(), only_default_vector(&[6.0; DIM]), &hw_counter)
         .unwrap();
