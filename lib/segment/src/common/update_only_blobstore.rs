@@ -16,19 +16,15 @@ use crate::common::operation_error::OperationResult;
 /// Always the append-only ([`Logstore`]) mode of the storage: a directory
 /// created in mutable mode holds an incompatible file format and is refused
 /// rather than opened. What it writes is read back through the ordinary
-/// [`BlobstoreReader`], which selects the mode from the persisted config, so
-/// nothing on the read side has to know which writer produced the files.
+/// [`BlobstoreReader`], which selects the mode from the persisted config.
 ///
-/// A slot is written once. Values must be put at increasing slots, all above
-/// every slot the storage already holds a value for; a slot skipped in between
-/// stays empty for good and reads back as no value at all — which is what lets
-/// a caller store nothing for a point that has no value to index.
+/// Values must be put at increasing slots, all above every slot the storage
+/// already holds a value for; a slot skipped in between stays empty for good
+/// and reads back as no value at all.
 ///
 /// [`BlobstoreReader`]: blobstore::BlobstoreReader
 pub struct UpdateOnlyBlobstore<V, S: UniversalAppend + 'static> {
     storage: Logstore<V, S>,
-    /// Whether anything was put since the last flush, so that a flush with
-    /// nothing to persist can be skipped entirely — see [`Self::flush`].
     buffered: bool,
 }
 
@@ -53,8 +49,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     }
 
     /// Buffer `value` at `slot`. Nothing reaches the files until
-    /// [`flush`](Self::flush), so a batch that fails partway persists none of
-    /// what it wrote.
+    /// [`flush`](Self::flush).
     pub fn put(
         &mut self,
         slot: PointOffsetType,
@@ -66,13 +61,11 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
         Ok(())
     }
 
-    /// Persist everything buffered since the last flush: one append per touched
-    /// page file plus one to the tracker, however many values were put.
+    /// Persist everything buffered since the last flush.
     ///
-    /// Call this once per batch rather than per value — it also syncs every page
-    /// file of the storage, whether or not that page gained anything. A flush
-    /// with nothing buffered is skipped for the same reason: it would write
-    /// nothing and still sync every one of those files.
+    /// Call this once per batch rather than per value: it syncs every page file
+    /// of the storage, whether or not that page gained anything. A flush with
+    /// nothing buffered is skipped for the same reason.
     pub fn flush(&mut self) -> OperationResult<()> {
         if !self.buffered {
             return Ok(());

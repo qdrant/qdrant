@@ -6,10 +6,8 @@ use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 use crate::types::RawGeoPoint;
 
 /// Writes what [`MutableGeoIndex`] persists: the point's coordinates, in the
-/// packed form the index stores.
-///
-/// The geo hash structure the index answers queries from is derived from these
-/// coordinates and rebuilt on open, so it plays no part here.
+/// packed form the index stores. The geo hash structure is rebuilt from them on
+/// open, so it plays no part here.
 ///
 /// [`MutableGeoIndex`]: super::MutableGeoIndex
 pub struct UpdateOnlyGeoKind;

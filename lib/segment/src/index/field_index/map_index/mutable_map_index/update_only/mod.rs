@@ -7,11 +7,8 @@ use super::super::{MapIndex, MapIndexKey};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 
-/// Writes what [`MutableMapIndex`] persists: the point's keys, owned.
-///
-/// The prefix index the keyword variant can also keep is not written here. It
-/// is derived from these same keys and rebuilt on open, like every other
-/// in-memory part of an appendable index.
+/// Writes what [`MutableMapIndex`] persists: the point's keys, owned. The
+/// prefix index the keyword variant can also keep is rebuilt from them on open.
 ///
 /// [`MutableMapIndex`]: super::MutableMapIndex
 pub struct UpdateOnlyMapKind<N: MapIndexKey + ?Sized>(PhantomData<&'static N>);
@@ -26,9 +23,7 @@ impl<N> UpdateOnlyIndexKind for UpdateOnlyMapKind<N>
 where
     N: MapIndexKey + ?Sized,
     MapIndex<N>: ValueIndexer,
-    // The keyword index reads `String` out of the payload and stores the
-    // compact `EcoString`, so the two are converted here exactly as the
-    // mutable side converts them.
+    // The keyword index reads `String` out of the payload and stores the compact `EcoString`
     <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {

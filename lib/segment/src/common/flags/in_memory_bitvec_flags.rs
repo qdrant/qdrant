@@ -141,8 +141,7 @@ impl InMemoryBitvecFlags {
         self.bitvec.as_bitslice()
     }
 
-    /// The materialized flags themselves, for a caller that goes on to mutate
-    /// them and has no use for the count this type keeps.
+    /// Set flags as an owned `BitVec`, dropping the count.
     pub fn into_bitvec(self) -> BitVec {
         self.bitvec
     }

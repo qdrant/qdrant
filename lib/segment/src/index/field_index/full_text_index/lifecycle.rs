@@ -95,10 +95,6 @@ impl FullTextIndex {
     ///
     /// With phrase matching on, a sentinel separates the values of an array, so
     /// that no phrase matches across two of them.
-    ///
-    /// Shared with the update-only writer, which persists the tokens without
-    /// building an index: the two must tokenize identically, or a document
-    /// written by one and read by the other would not match the same phrases.
     pub(super) fn tokenize_document<'a>(
         tokenizer: &'a Tokenizer,
         phrase_matching: bool,

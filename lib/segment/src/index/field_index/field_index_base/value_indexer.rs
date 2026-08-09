@@ -34,11 +34,6 @@ pub trait ValueIndexer {
     /// All the index-able values a point's payload holds for this index's field,
     /// flattened: an array contributes its elements, and a value this index
     /// cannot accept contributes nothing.
-    ///
-    /// This is what a point is indexed by, so anything that has to derive the
-    /// same set — [`add_point`](Self::add_point), and the update-only writers
-    /// that persist it without building an index — takes it from here rather
-    /// than restating it.
     fn flatten_values(payload: &[&Value]) -> Vec<Self::ValueType> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {

@@ -14,9 +14,6 @@ use crate::index::field_index::ValueIndexer;
 /// Writes what [`MutableBoolIndex`] persists: the two masks saying, per point,
 /// whether its field holds a true and whether it holds a false. A point whose
 /// field holds both is set in both.
-///
-/// The counts the mutable index also keeps are derived from these masks when it
-/// opens them, so there is nothing else to write.
 pub struct UpdateOnlyBoolIndex<S: UniversalAppend + 'static> {
     trues: UpdateOnlyStoredFlags<S>,
     falses: UpdateOnlyStoredFlags<S>,
@@ -32,16 +29,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyBoolIndex<S> {
     }
 
     /// Record `values`, the point's values for this index's field, at the slot
-    /// the ID tracker claimed for it.
-    ///
-    /// Called for every point of the batch: a point whose field holds no boolean
-    /// is set in neither mask, which is how this index says it does not cover
-    /// that point.
+    /// the ID tracker claimed for it. A point whose field holds no boolean is
+    /// set in neither mask.
     pub fn add_point(&mut self, slot: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
         let values = <MutableBoolIndex as ValueIndexer>::flatten_values(values);
 
-        self.trues.set(slot, values.iter().any(|value| *value));
-        self.falses.set(slot, values.iter().any(|value| !*value));
+        self.trues.set(slot, values.contains(&true));
+        self.falses.set(slot, values.contains(&false));
 
         Ok(())
     }

@@ -41,8 +41,7 @@ pub struct DynamicFlagsStatus {
 }
 
 impl DynamicFlagsStatus {
-    /// The status of a storage holding `len` flags, in the only file-id the
-    /// current format uses.
+    /// The status of a storage holding `len` flags.
     pub(super) fn new(len: usize) -> Self {
         Self {
             len,

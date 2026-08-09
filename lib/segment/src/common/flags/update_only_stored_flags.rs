@@ -9,20 +9,13 @@ use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, file_size_for,
 use super::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 
-/// The write half of the persisted flags for an update-only segment: a
-/// short-lived writer opened for one batch and dropped with it.
+/// Short-lived writer for the persisted flags of an update-only segment,
+/// opened for one batch and dropped with it.
 ///
-/// Writes the same two files [`DynamicStoredFlags`][1] does, so a reader cannot
-/// tell which side produced them — but writes them whole. That is what makes
-/// this usable on a backend that only appends: the flags are a bitmask over all
-/// points, so keeping one current means changing bytes in the middle of it,
-/// which such a backend cannot do. Replacing the file outright it can.
-///
-/// The cost is that a batch rewrites the entire mask, however few bits it
-/// touched: one bit per point, so a segment of ten million points writes about
-/// 1.2 MiB per flag set per batch. That is the trade the append-only backend
-/// forces, and it is why only the two bitmask-backed indexes use this — every
-/// other appendable index stores values per point and appends them.
+/// Writes the same two files [`DynamicStoredFlags`][1] does, but rewrites the
+/// mask whole: a bitmask over all points cannot be kept current by appending.
+/// The cost is one bit per point of the segment per batch, which is why only
+/// the bitmask-backed indexes use this.
 ///
 /// [1]: super::dynamic_stored_flags::DynamicStoredFlags
 pub struct UpdateOnlyStoredFlags<S: UniversalAppend + 'static> {
@@ -31,15 +24,13 @@ pub struct UpdateOnlyStoredFlags<S: UniversalAppend + 'static> {
     /// Every flag the storage holds, materialized on open. Its length is the
     /// logical flag count, which the status file publishes.
     flags: BitVec,
-    /// Whether anything changed since the last flush, so that a flush with
-    /// nothing to persist does not rewrite both files.
     dirty: bool,
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
     /// Read the flags at `directory` into memory, ready to be extended. A
-    /// directory that holds none yet — a field indexed for the first time —
-    /// opens empty; nothing is created until the first [`flush`](Self::flush).
+    /// directory that holds none yet opens empty; nothing is created until the
+    /// first [`flush`](Self::flush).
     pub fn open(fs: S::Fs, directory: &Path) -> OperationResult<Self> {
         let flags = InMemoryBitvecFlags::open::<S>(&fs, directory)
             .ok_not_found()?
@@ -57,8 +48,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
     /// Set the flag of the point at `slot`, extending the mask to cover it.
     ///
     /// Extends for a `false` as much as for a `true`: the mask's length is what
-    /// says which points it has an answer for, and a point flagged false is a
-    /// point it answers "no" about, not one it has never seen.
+    /// says which points it has an answer for.
     pub fn set(&mut self, slot: PointOffsetType, value: bool) {
         let slot = slot as usize;
         if slot >= self.flags.len() {
@@ -68,11 +58,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
         self.dirty = true;
     }
 
-    /// Write both files, the mask before the length that publishes it.
-    ///
-    /// That order is what a torn batch falls back to safely: a mask longer than
-    /// the length is read as the shorter one, while a length past the mask
-    /// would read flags that were never written.
+    /// Write both files, the mask before the length that publishes it, so that
+    /// a torn batch never leaves a length pointing past the written flags.
     pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         if !self.dirty {
             return Ok(());
@@ -92,7 +79,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
         self.fs
             .atomic_save(&status_file(&self.directory), bytemuck::bytes_of(&status))?;
 
-        // The whole mask went out, not the handful of bits the batch touched.
         hw_counter
             .payload_index_io_write_counter()
             .incr_delta(bytes.len() + size_of::<DynamicFlagsStatus>());

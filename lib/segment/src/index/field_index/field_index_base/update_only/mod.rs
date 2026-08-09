@@ -1,13 +1,11 @@
 //! The write half of the appendable payload indexes, for update-only segments.
 //!
-//! An appendable field index keeps two things: the values it persists per point,
-//! and the in-memory structure it answers queries from. Only the first is state
-//! — the second is rebuilt from it on every open, by the mutable index and by
-//! its read-only counterpart alike. So a writer that never answers a query has
-//! nothing to hold: it turns a point's payload into the values its index would
-//! persist, appends them at the point's slot, and is done.
+//! Only the values an index persists per point are state: the structure it
+//! answers queries from is rebuilt from them on every open. So a writer that
+//! never answers a query holds nothing — it turns a point's payload into the
+//! values its index would persist and appends them at the point's slot.
 //!
-//! What differs between index types is only that translation, which is what
+//! That translation is all the index types differ by, which is what
 //! [`UpdateOnlyIndexKind`] captures; [`UpdateOnlyValueIndex`] is the storage
 //! around it, the same for all of them. Each kind lives under the appendable
 //! index it writes for, next to that index's read-only counterpart.
@@ -38,10 +36,8 @@ use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, PayloadFieldSchema, UuidIntType,
 };
 
-/// The write half of one appendable field index, over the backend `S`.
-///
-/// The update-only counterpart of [`ReadOnlyFieldIndex`][1], covering the same
-/// index types.
+/// The write half of one appendable field index, over the backend `S` — the
+/// update-only counterpart of [`ReadOnlyFieldIndex`][1].
 ///
 /// Most store values per point and append them. The boolean and null indexes
 /// instead keep a bitmask over all points, which cannot be appended to — they
@@ -93,8 +89,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             PayloadIndexType::KeywordIndex => {
                 Self::KeywordIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
-            // The `UuidIndex` discriminant is historically map-backed, like the
-            // writable selector and the read-only mirror treat it.
+            // The `UuidIndex` discriminant is historically map-backed
             PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => {
                 Self::UuidMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }

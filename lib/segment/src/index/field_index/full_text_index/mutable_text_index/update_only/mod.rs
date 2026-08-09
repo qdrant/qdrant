@@ -7,13 +7,8 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 
 /// Writes what [`MutableFullTextIndex`] persists: the point's tokenized
-/// document, in the same encoding, so that whoever opens the index next
-/// rebuilds the same inverted index from it.
-///
-/// Tokenizing is all this does — the token ids and postings the mutable side
-/// also maintains live only in that in-memory index. Both go through the same
-/// [`FullTextIndex::tokenize_document`], so the two cannot encode a document
-/// differently.
+/// document, through the same [`FullTextIndex::tokenize_document`], so that
+/// whoever opens the index next rebuilds the same inverted index from it.
 ///
 /// [`MutableFullTextIndex`]: super::MutableFullTextIndex
 pub struct UpdateOnlyTextKind {
@@ -65,9 +60,6 @@ mod tests {
     use crate::json_path::JsonPath;
     use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
-    /// The document a point is tokenized into survives the append-only writer
-    /// and is picked up by the appendable index that rebuilds the inverted
-    /// index from it.
     #[test]
     fn full_text_index_round_trip() {
         let dir = TempDir::with_prefix("update_only_text").unwrap();

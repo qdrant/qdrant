@@ -213,9 +213,6 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
 ///
 /// An array counts as holding values when it is non-empty, and as null when any
 /// of its elements is; both can be true at once.
-///
-/// Shared with the update-only writer, which records the same two bits without
-/// building an index.
 pub(super) fn classify_payload(payload: &[&Value]) -> (bool, bool) {
     let mut is_null = false;
     let mut has_values = false;

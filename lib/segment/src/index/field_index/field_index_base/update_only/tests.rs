@@ -1,10 +1,7 @@
-//! Every test here writes through the update-only writer and reads back
-//! through the ordinary appendable index, opened on the very directory the
-//! writer produced. That is the contract that matters: the writer emits the
-//! append-only mode of the same storage, and the index that rebuilds its
-//! in-memory state from it neither knows nor cares which mode wrote it.
+//! Every test here writes through the update-only writer and reads back through
+//! the ordinary appendable index, opened on the directory the writer produced.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -51,7 +48,7 @@ fn write(
     kind: PayloadIndexType,
     schema: &PayloadFieldSchema,
     points: &[(PointOffsetType, Value)],
-) -> std::path::PathBuf {
+) -> PathBuf {
     let hw_counter = HardwareCounterCell::new();
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
@@ -76,8 +73,7 @@ fn int_index_round_trip() {
         dir.path(),
         PayloadIndexType::IntIndex,
         &schema(PayloadSchemaType::Integer),
-        // A scalar, an array contributing both its elements, and a value of the
-        // wrong type, which contributes nothing and stores nothing.
+        // A scalar, an array contributing both its elements, and a value of the wrong type
         &[
             (0, json!(7)),
             (1, json!([1, 2])),
@@ -132,8 +128,7 @@ fn datetime_index_round_trip() {
         .unwrap()
         .into_in_memory_index();
 
-    // Taken from the payload type's own encoding rather than restated: the
-    // index stores microseconds, not the seconds `chrono` would hand out.
+    // Taken from the payload type's own encoding: the index stores microseconds
     let expected = DateTimePayloadType::from_str("2026-08-09T12:00:00Z")
         .unwrap()
         .timestamp();
@@ -209,8 +204,8 @@ fn geo_index_round_trip() {
     assert_eq!(stored[0].lat, 52.5);
 }
 
-/// A field's index types must be written in the order the ID tracker hands out
-/// slots; nothing may go back and rewrite a slot that was already indexed.
+/// Slots must be written in increasing order, nothing may go back and rewrite a
+/// slot that was already indexed.
 #[test]
 fn rewriting_a_slot_is_rejected() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
@@ -230,9 +225,8 @@ fn rewriting_a_slot_is_rejected() {
     assert!(writer.add_point(0, &[&json!(0)], &hw_counter).is_err());
 }
 
-/// The boolean index keeps a bitmask over all points rather than values per
-/// point, so its writer rewrites the mask whole. What it leaves behind is the
-/// same two files the mutable index writes, and that index picks them up.
+/// The boolean index is mask-backed: its writer rewrites both masks whole, and
+/// leaves behind the same two files the mutable index writes.
 #[test]
 fn bool_index_round_trip() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
@@ -240,7 +234,7 @@ fn bool_index_round_trip() {
         dir.path(),
         PayloadIndexType::BoolIndex,
         &schema(PayloadSchemaType::Bool),
-        // True, both at once, neither — and a value the index cannot read.
+        // True, both at once, false — and a value the index cannot read
         &[
             (0, json!(true)),
             (1, json!([true, false])),
@@ -258,8 +252,8 @@ fn bool_index_round_trip() {
     assert_eq!(index.indexed_count().unwrap(), 3);
 }
 
-/// The null index records two bits per point, and does so for every point of
-/// the batch: "this point has no value here" is what it is asked.
+/// The null index records two bits for every point of the batch, including the
+/// points whose field holds nothing.
 #[test]
 fn null_index_round_trip() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
@@ -270,7 +264,7 @@ fn null_index_round_trip() {
         &[
             (0, json!("a value")),
             (1, json!(null)),
-            // An array holding a null holds both a value and a null.
+            // An array holding a null holds both a value and a null
             (2, json!(["a value", null])),
             (3, json!([])),
         ],
@@ -287,14 +281,14 @@ fn null_index_round_trip() {
     assert!(!index.values_is_empty(2).unwrap());
     assert!(index.values_is_null(2).unwrap());
 
-    // An empty array is neither, and a point past the batch was never seen.
+    // An empty array is neither, and a point past the batch was never seen
     assert!(index.values_is_empty(3).unwrap());
     assert!(!index.values_is_null(3).unwrap());
     assert!(index.values_is_empty(9).unwrap());
 }
 
 /// A second writer picks the mask up where the first left it, rather than
-/// starting from an empty one and dropping every flag already there.
+/// starting from an empty one.
 #[test]
 fn bitmask_writers_resume() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();

@@ -14,9 +14,7 @@ use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 ///
 /// `P` is the type read out of the payload and `T` the type stored, which are
 /// the same for the integer and float indexes and differ for the datetime and
-/// UUID ones. Both the extraction and the encoding are taken from
-/// [`NumericIndex`] itself, so a new numeric index type is writable here as
-/// soon as it implements them.
+/// UUID ones.
 ///
 /// [`MutableNumericIndex`]: super::MutableNumericIndex
 pub struct UpdateOnlyNumericKind<T, P>(PhantomData<(T, P)>);
