@@ -47,8 +47,18 @@ pub struct FeatureFlags {
     /// bitslices. Only gates writing: both formats are always readable.
     pub compact_bitmask: bool,
 
+    /// Create Blobstore-backed storages — the payload storage, the appendable field indexes and
+    /// the sparse vector storage — in the append-only Logstore mode instead of the mutable
+    /// Gridstore mode. Only gates creation: an existing storage keeps the mode it was created
+    /// with, and both modes are always readable.
+    ///
+    /// A segment holding append-only storages forces append-only mutation semantics on itself
+    /// when it is opened, whatever the flags say then: those storages cannot rewrite a slot.
+    pub append_only_storages: bool,
+
     /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
-    /// [`Self::append_only_mutations`] and [`Self::compact_bitmask`].
+    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`] and
+    /// [`Self::append_only_storages`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     serverless_compatible: bool,
@@ -65,6 +75,7 @@ impl Default for FeatureFlags {
             write_segment_manifest: false,
             append_only_mutations: false,
             compact_bitmask: false,
+            append_only_storages: false,
             serverless_compatible: false,
         }
     }
@@ -90,9 +101,10 @@ impl FeatureFlags {
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
             write_segment_manifest: true,
-            // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
-            // mutation semantics, and `all` is enabled in dev and e2e configs.
+            // Deliberately not enabled by `all`: these change mutation semantics and the
+            // persisted storage format, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
+            append_only_storages: false,
             compact_bitmask: true,
             serverless_compatible: false,
         }
@@ -110,6 +122,7 @@ impl FeatureFlags {
             self.write_segment_manifest = true;
             self.append_only_mutations = true;
             self.compact_bitmask = true;
+            self.append_only_storages = true;
         }
 
         self
@@ -163,6 +176,7 @@ mod tests {
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
     }
 
     #[test]
@@ -177,5 +191,6 @@ mod tests {
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
     }
 }

@@ -12,10 +12,10 @@ pub mod read_only;
 mod read_ops;
 pub mod update_only;
 
-/// Default options for Gridstore storage
-pub(super) const fn default_gridstore_options<T: Sized>() -> StorageConfig {
+/// Default options for Blobstore storage
+pub(super) fn default_gridstore_options<T: Sized>() -> StorageConfig {
     let block_size = size_of::<T>();
-    StorageConfig::Mutable(GridstoreConfig {
+    crate::common::blobstore_config::blobstore_config(GridstoreConfig {
         // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
         page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size of numeric values in index

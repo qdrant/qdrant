@@ -176,7 +176,9 @@ where
     /// Returns None if the point_offset, page, or value was not found.
     /// Returns the deleted value otherwise.
     ///
-    /// Not supported in append-only mode, returns an error.
+    /// Deleting a *stored* value is not supported in append-only mode and
+    /// returns an error there; deleting where nothing is stored succeeds as
+    /// `None` in both modes.
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
         match self {
             Blobstore::Gridstore(storage) => storage.delete_value(point_offset),
@@ -202,6 +204,17 @@ where
         match self {
             Blobstore::Gridstore(storage) => storage.wipe(),
             Blobstore::Logstore(storage) => storage.wipe(),
+        }
+    }
+
+    /// Whether this storage operates in the append-only ([`Logstore`]) mode.
+    ///
+    /// Decided when the storage is created and persisted with it; a slot in an
+    /// append-only storage is written once and never rewritten or deleted.
+    pub fn is_append_only(&self) -> bool {
+        match self {
+            Blobstore::Gridstore(_) => false,
+            Blobstore::Logstore(_) => true,
         }
     }
 

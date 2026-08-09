@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use blobstore::config::{GridstoreConfig, StorageConfig};
+use blobstore::config::GridstoreConfig;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
@@ -65,7 +65,7 @@ where
         let storage = Blobstore::new(
             S::Fs::default(),
             path,
-            StorageConfig::Mutable(GridstoreConfig::DEFAULT),
+            crate::common::blobstore_config::blobstore_config(GridstoreConfig::DEFAULT),
         )?;
 
         if populate {
@@ -73,6 +73,13 @@ where
         }
 
         Ok(Self { storage, populate })
+    }
+
+    /// Whether the backing storage operates in the append-only mode, which
+    /// cannot rewrite or delete a stored slot. Decided when the storage was
+    /// created and persisted with it, so it survives restarts and flag flips.
+    pub fn is_append_only(&self) -> bool {
+        self.storage.is_append_only()
     }
 
     /// Populate all pages in the mmap.

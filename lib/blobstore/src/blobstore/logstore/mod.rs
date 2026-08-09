@@ -12,7 +12,7 @@ use std::sync::Arc;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::{AccessPattern, Sequential};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
     OkNotFound as _, Populate, UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData,
@@ -261,11 +261,20 @@ where
         Ok(false)
     }
 
-    /// Deleting values is not supported in append-only mode.
+    /// Deleting a stored value is not supported in append-only mode; deleting
+    /// where nothing is stored trivially succeeds, as it does in mutable mode.
+    ///
+    /// The distinction is what lets append-only storages back the ordinary
+    /// write paths, which delete defensively — an index clears a slot before
+    /// filling it, an empty value is stored as a deletion — and only ever hit
+    /// occupied slots when something is genuinely being mutated in place.
     // Takes &mut self for signature parity with the mutable variant
-    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    pub(super) fn delete_value(&mut self, _point_offset: PointOffset) -> Result<Option<V>> {
-        Err(BlobstoreError::unsupported_operation("deleting values"))
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    pub(super) fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
+        match self.get_value::<Random>(point_offset, &HardwareCounterCell::disposable())? {
+            Some(_) => Err(BlobstoreError::unsupported_operation("deleting values")),
+            None => Ok(None),
+        }
     }
 
     /// Clear the storage, going back to the initial state.

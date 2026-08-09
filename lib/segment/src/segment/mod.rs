@@ -94,6 +94,16 @@ pub struct Segment {
     /// tombstone-only regardless of appendability (see
     /// [`Segment::is_append_only_delete`]).
     pub append_only_mutations: bool,
+    /// Whether the Blobstore-backed storages (payload storage, appendable
+    /// field indexes, sparse vectors) were created in the append-only mode,
+    /// which cannot rewrite or delete a stored slot.
+    ///
+    /// Derived from the persisted payload storage mode on open — not from the
+    /// feature flags, which may have changed since the segment was created.
+    /// When set, [`Self::append_only_mutations`] is forced on, and the
+    /// same-operation slot-reuse shortcut is disabled: both would rewrite
+    /// slots these storages cannot rewrite.
+    pub append_only_storages: bool,
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,

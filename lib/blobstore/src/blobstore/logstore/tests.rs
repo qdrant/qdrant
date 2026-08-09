@@ -229,14 +229,26 @@ fn test_put_rejects_out_of_order_point_offsets() {
     );
 }
 
+/// Deleting a stored value is rejected; deleting where nothing is stored — a
+/// skipped point offset, or one past the end — trivially succeeds, as it does
+/// in mutable mode. The ordinary write paths delete defensively before
+/// filling a slot, and only the genuine mutation must be refused.
 #[test]
-fn test_delete_is_rejected() {
+fn test_delete_is_rejected_only_for_stored_values() {
     let (_dir, mut storage) = empty_storage_append_only();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage
         .put_value(0, &Payload::default(), hw_counter_ref)
+        .unwrap();
+    // Point offset 1 is skipped, so nothing is stored at it.
+    storage
+        .put_value(
+            2,
+            &Payload::default(),
+            hw_counter.ref_payload_io_write_counter(),
+        )
         .unwrap();
 
     let err = storage.delete_value(0).unwrap_err();
@@ -247,6 +259,10 @@ fn test_delete_is_rejected() {
         storage.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(Payload::default()),
     );
+
+    // Nothing stored, nothing to refuse
+    assert_eq!(storage.delete_value(1).unwrap(), None);
+    assert_eq!(storage.delete_value(100).unwrap(), None);
 }
 
 #[test]

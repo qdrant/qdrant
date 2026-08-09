@@ -461,11 +461,16 @@ impl Segment {
         // WAL replay re-applies the whole operation). Mutating it in place
         // is therefore invisible to readers and avoids cloning the point
         // once per step.
-        let same_op_slot = self
-            .id_tracker
-            .borrow()
-            .internal_version(existing_internal_id)
-            .is_some_and(|slot_version| slot_version == op_num);
+        // Append-only storages disable the reuse outright: the second step
+        // would rewrite the slot's payload row and index values, which those
+        // storages cannot do. Every step of a multi-step write then clones to
+        // a fresh slot instead.
+        let same_op_slot = !self.append_only_storages
+            && self
+                .id_tracker
+                .borrow()
+                .internal_version(existing_internal_id)
+                .is_some_and(|slot_version| slot_version == op_num);
         let append_only = self.is_append_only() && !same_op_slot;
         self.handle_point_version_and_failure(
             op_num,
