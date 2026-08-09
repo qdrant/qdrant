@@ -5,15 +5,11 @@ use common::flags::feature_flags;
 
 /// The creation config for a Blobstore-backed storage: the given mutable
 /// (Gridstore) layout, or its append-only (Logstore) counterpart when the
-/// [`append_only_storages`] feature flag asks for one.
+/// [`append_only_storages`] feature flag is set.
 ///
-/// Only creation consults the flag. An existing storage keeps the mode it was
-/// created with — the mode is persisted in the storage's own config — and both
-/// modes are always readable, so flipping the flag never strands data.
-///
-/// The append-only layout carries over what it can express: the page size and
-/// the compression. Blocks and regions are Gridstore concepts with no
-/// append-only equivalent — Logstore packs values back to back.
+/// Consulted at creation only — an existing storage keeps its persisted mode.
+/// Page size and compression carry over; blocks and regions have no
+/// append-only equivalent.
 ///
 /// [`append_only_storages`]: common::flags::FeatureFlags::append_only_storages
 pub fn blobstore_config(config_if_mutable: GridstoreConfig) -> StorageConfig {

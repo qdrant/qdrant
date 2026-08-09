@@ -50,8 +50,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     // The segment lives in a uuid subdirectory of `dir`.
     let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
     let segment_path = segment.data_path();
-    assert!(segment.append_only_storages);
-    assert!(segment.append_only_mutations);
+    assert!(segment.append_only_mutations, "forced by the storages flag");
 
     // The payload storage was created in the append-only mode.
     assert_eq!(
@@ -59,8 +58,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         "append_only"
     );
 
-    // Inserts, and an update of an existing point — the latter clones to a
-    // fresh slot rather than rewriting one.
+    // Inserts, and an update of an existing point.
     for id in 1..=5u64 {
         let vector: Vec<f32> = vec![id as f32; DIM];
         segment
@@ -76,9 +74,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         )
         .unwrap();
 
-    // A multi-step write within one operation: the upsert claims a slot, the
-    // payload step may not reuse it — append-only storages cannot rewrite —
-    // so it clones to yet another slot.
+    // A multi-step write within one operation, which may not reuse the slot.
     segment
         .upsert_point(3, 6.into(), only_default_vector(&[6.0; DIM]), &hw_counter)
         .unwrap();
@@ -91,11 +87,10 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         )
         .unwrap();
 
-    // A delete is a tombstone; nothing is removed from the storages.
+    // A delete is a tombstone.
     segment.delete_point(4, 5.into(), &hw_counter).unwrap();
 
-    // Building a payload index goes through the same creation path, so the
-    // index storage comes out append-only too.
+    // The index storage comes out append-only too.
     let key = "kind".parse().unwrap();
     segment
         .create_field_index(
@@ -119,11 +114,8 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     segment.flush(true).unwrap();
     drop(segment);
 
-    // Everything written survives a reload through the ordinary loader, which
-    // detects the mode from the storages themselves — and the reloaded segment
-    // knows it must keep appending.
+    // Everything survives a reload through the ordinary loader.
     let segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
-    assert!(segment.append_only_storages);
     assert!(segment.append_only_mutations);
 
     assert_eq!(segment.available_point_count(), 5);

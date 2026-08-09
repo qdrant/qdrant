@@ -51,7 +51,6 @@ impl Segment {
             payload_storage,
             appendable_flag: _,
             append_only_mutations: _,
-            append_only_storages: _,
             segment_type: _,
             segment_config,
             error_status: _,

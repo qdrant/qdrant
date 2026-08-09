@@ -75,13 +75,6 @@ where
         Ok(Self { storage, populate })
     }
 
-    /// Whether the backing storage operates in the append-only mode, which
-    /// cannot rewrite or delete a stored slot. Decided when the storage was
-    /// created and persisted with it, so it survives restarts and flag flips.
-    pub fn is_append_only(&self) -> bool {
-        self.storage.is_append_only()
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

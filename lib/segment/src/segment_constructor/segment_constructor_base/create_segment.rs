@@ -144,11 +144,6 @@ pub(super) fn create_segment(
         SegmentType::Plain
     };
 
-    // The persisted storage mode, not the current flags: a segment created
-    // with append-only storages cannot rewrite slots, whatever the flags say
-    // by the time it is opened again.
-    let append_only_storages = payload_storage.borrow().is_append_only();
-
     Ok(Segment {
         uuid,
         initial_version,
@@ -161,9 +156,7 @@ pub(super) fn create_segment(
         vector_data,
         segment_type,
         appendable_flag,
-        append_only_mutations: common::flags::feature_flags().append_only_mutations
-            || append_only_storages,
-        append_only_storages,
+        append_only_mutations: common::flags::feature_flags().append_only_mutations,
         payload_index,
         payload_storage,
         segment_config: config.clone(),

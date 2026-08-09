@@ -229,10 +229,8 @@ fn test_put_rejects_out_of_order_point_offsets() {
     );
 }
 
-/// Deleting a stored value is rejected; deleting where nothing is stored — a
-/// skipped point offset, or one past the end — trivially succeeds, as it does
-/// in mutable mode. The ordinary write paths delete defensively before
-/// filling a slot, and only the genuine mutation must be refused.
+/// Deleting a stored value is rejected; deleting where nothing is stored
+/// succeeds, as in mutable mode.
 #[test]
 fn test_delete_is_rejected_only_for_stored_values() {
     let (_dir, mut storage) = empty_storage_append_only();

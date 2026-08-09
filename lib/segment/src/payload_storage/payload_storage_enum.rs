@@ -296,19 +296,6 @@ impl PayloadStorage for PayloadStorageEnum {
 }
 
 impl PayloadStorageEnum {
-    /// Whether the backing storage operates in the append-only mode; see
-    /// [`PayloadStorageImpl::is_append_only`]. The testing in-memory storage
-    /// rewrites freely.
-    pub fn is_append_only(&self) -> bool {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(_) => false,
-            PayloadStorageEnum::Mmap(storage) => storage.is_append_only(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(storage) => storage.is_append_only(),
-        }
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

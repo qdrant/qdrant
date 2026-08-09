@@ -207,17 +207,6 @@ where
         }
     }
 
-    /// Whether this storage operates in the append-only ([`Logstore`]) mode.
-    ///
-    /// Decided when the storage is created and persisted with it; a slot in an
-    /// append-only storage is written once and never rewritten or deleted.
-    pub fn is_append_only(&self) -> bool {
-        match self {
-            Blobstore::Gridstore(_) => false,
-            Blobstore::Logstore(_) => true,
-        }
-    }
-
     /// Return the storage size in bytes.
     pub fn get_storage_size_bytes(&self) -> Result<usize> {
         match self {

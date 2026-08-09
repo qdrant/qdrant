@@ -47,13 +47,11 @@ pub struct FeatureFlags {
     /// bitslices. Only gates writing: both formats are always readable.
     pub compact_bitmask: bool,
 
-    /// Create Blobstore-backed storages — the payload storage, the appendable field indexes and
-    /// the sparse vector storage — in the append-only Logstore mode instead of the mutable
-    /// Gridstore mode. Only gates creation: an existing storage keeps the mode it was created
-    /// with, and both modes are always readable.
+    /// Create Blobstore-backed storages (payload storage, appendable field indexes, sparse
+    /// vectors) in the append-only Logstore mode. Gates creation only: an existing storage
+    /// keeps its persisted mode, and both modes are always readable.
     ///
-    /// A segment holding append-only storages forces append-only mutation semantics on itself
-    /// when it is opened, whatever the flags say then: those storages cannot rewrite a slot.
+    /// Implies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].
     pub append_only_storages: bool,
 
     /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
@@ -125,6 +123,11 @@ impl FeatureFlags {
             self.append_only_storages = true;
         }
 
+        // Append-only storages cannot rewrite slots.
+        if self.append_only_storages {
+            self.append_only_mutations = true;
+        }
+
         self
     }
 }
@@ -192,5 +195,16 @@ mod tests {
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
+    }
+
+    #[test]
+    fn test_append_only_storages_forces_append_only_mutations() {
+        let flags = FeatureFlags {
+            append_only_storages: true,
+            ..Default::default()
+        }
+        .normalize();
+
+        assert!(flags.append_only_mutations);
     }
 }

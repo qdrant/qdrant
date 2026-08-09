@@ -262,12 +262,7 @@ where
     }
 
     /// Deleting a stored value is not supported in append-only mode; deleting
-    /// where nothing is stored trivially succeeds, as it does in mutable mode.
-    ///
-    /// The distinction is what lets append-only storages back the ordinary
-    /// write paths, which delete defensively — an index clears a slot before
-    /// filling it, an empty value is stored as a deletion — and only ever hit
-    /// occupied slots when something is genuinely being mutated in place.
+    /// where nothing is stored trivially succeeds, as in mutable mode.
     // Takes &mut self for signature parity with the mutable variant
     #[allow(clippy::needless_pass_by_ref_mut)]
     pub(super) fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
