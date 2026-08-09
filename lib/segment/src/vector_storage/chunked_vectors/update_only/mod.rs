@@ -24,7 +24,6 @@ use crate::vector_storage::chunked_vectors::config::{
 /// touched chunks, appends, and persists the vector count, so a batch is
 /// durable when it returns and there is nothing to flush.
 #[derive(Debug)]
-#[cfg_attr(not(test), expect(dead_code))]
 pub struct UpdateOnlyChunkedVectors<T, S: UniversalAppend> {
     directory: PathBuf,
     config: ChunkedVectorsConfig,
@@ -42,7 +41,6 @@ fn append_options() -> OpenOptions {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code))]
 impl<T, S> UpdateOnlyChunkedVectors<T, S>
 where
     T: bytemuck::Pod + Send,

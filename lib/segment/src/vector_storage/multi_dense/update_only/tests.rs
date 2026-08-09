@@ -8,9 +8,7 @@ use common::universal_io::{MmapFile, MmapFs};
 use tempfile::TempDir;
 
 use super::UpdateOnlyMultiDenseVectorStorage;
-use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
-};
+use crate::data_types::vectors::{MultiDenseVectorInternal, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use crate::vector_storage::update_only::VectorToStore;
@@ -45,7 +43,7 @@ fn stored(storage: &crate::vector_storage::VectorStorageEnum, slot: u32) -> Vec<
         panic!("expected an appendable multi-dense storage");
     };
     let multi = storage.get_multi::<Random>(slot);
-    let multi = TypedMultiDenseVectorRef::from(multi.as_vec_ref());
+    let multi = multi.as_vec_ref();
     multi
         .flattened_vectors
         .chunks_exact(multi.dim)

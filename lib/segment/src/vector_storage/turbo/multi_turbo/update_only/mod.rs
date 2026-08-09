@@ -169,7 +169,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
     /// Storage-native bytes are the encoded inner vectors, already packed.
     fn encode_raw(&self, bytes: &[u8]) -> OperationResult<Vec<u8>> {
         let encoded_size = self.quantizer.quantized_size();
-        if bytes.len() % encoded_size != 0 {
+        if !bytes.len().is_multiple_of(encoded_size) {
             return Err(OperationError::malformed_vector_blob(format!(
                 "Malformed multi TQ blob of {} bytes, not a whole number of {encoded_size}-byte \
                  encoded inner vectors",

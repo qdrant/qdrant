@@ -162,7 +162,7 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
     /// Storage-native bytes are the flattened inner vectors packed as `[T]`.
     fn flatten_raw(&self, bytes: &[u8]) -> OperationResult<Vec<T>> {
         let row_size = self.dim * size_of::<T>();
-        if bytes.len() % row_size != 0 {
+        if !bytes.len().is_multiple_of(row_size) {
             return Err(OperationError::malformed_vector_blob(format!(
                 "Malformed multi vector blob of {} bytes, not a whole number of {row_size}-byte \
                  inner vectors",
