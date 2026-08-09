@@ -36,10 +36,17 @@ use crate::types::{
     RangeInterface, UuidIntType, ValueVariants,
 };
 
-/// Histogram-driven cardinality estimation for a range condition.
+/// Cardinality estimation for a range condition.
+///
+/// Counts the `(value, point)` pairs in the range directly from the index
+/// (an `O(log n)` boundary search on the immutable / mmap variants) instead
+/// of extrapolating from the histogram. A single-value-per-point field gets
+/// an exact count; a multi-value field gets the histogram-independent
+/// estimate from [`estimate_multi_value_selection_cardinality`].
 pub(super) fn range_cardinality<T, I>(
     index: &I,
     range: &RangeInterface,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<CardinalityEstimation>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -57,43 +64,32 @@ where
         }
     };
 
-    let lbound = if let Some(lte) = range.lte {
-        Included(lte)
-    } else if let Some(lt) = range.lt {
-        Excluded(lt)
-    } else {
-        Unbounded
-    };
+    let (start_bound, end_bound) = range.as_index_key_bounds();
 
-    let gbound = if let Some(gte) = range.gte {
-        Included(gte)
-    } else if let Some(gt) = range.gt {
-        Excluded(gt)
-    } else {
-        Unbounded
-    };
-
-    let histogram_estimation = index.get_histogram().estimate(gbound, lbound);
-    let min_estimation = histogram_estimation.0;
-    let max_estimation = histogram_estimation.2;
+    // `map.range` panics when the start bound is greater than the end bound;
+    // an inverted range matches no points.
+    if !check_boundaries(&start_bound, &end_bound) {
+        return Ok(CardinalityEstimation::exact(0));
+    }
 
     let total_values = index.total_unique_values_count()?;
-    // Note: max_values_per_point is never zero here because we check it above
-    let expected_min = max(
-        min_estimation / max_values_per_point,
-        max(
-            min(1, min_estimation),
-            min_estimation.saturating_sub(total_values - index.get_points_count()),
-        ),
-    );
-    let expected_max = min(index.get_points_count(), max_estimation);
 
-    let estimation = estimate_multi_value_selection_cardinality(
-        index.get_points_count(),
-        total_values,
-        histogram_estimation.1,
-    )
-    .round() as usize;
+    hw_counter
+        .payload_index_io_read_counter()
+        // Two binary searches (lower and upper bound) in mmap and immutable storage.
+        .incr_delta(2 * ((total_values as f32).log2().ceil() as usize));
+
+    let range_size = index.values_range_size(start_bound, end_bound, hw_counter)?;
+    let points_count = index.get_points_count();
+
+    // At least `ceil(range_size / max_values_per_point)` distinct points are
+    // needed to cover the matched pairs, at most one point per pair.
+    let expected_min = range_size.div_ceil(max_values_per_point);
+    let expected_max = min(range_size, points_count);
+
+    let estimation =
+        estimate_multi_value_selection_cardinality(points_count, total_values, range_size).round()
+            as usize;
 
     Ok(CardinalityEstimation {
         primary_clauses: vec![],
@@ -212,7 +208,7 @@ where
         .range
         .as_ref()
         .map(|range| {
-            let mut cardinality = range_cardinality(index, range)?;
+            let mut cardinality = range_cardinality(index, range, hw_counter)?;
             cardinality
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -233,6 +229,7 @@ where
     I: NumericIndexRead<T>,
 {
     let collect_blocks = || -> OperationResult<Vec<PayloadBlockCondition>> {
+        let hw_counter = HardwareCounterCell::new();
         let mut lower_bound = Unbounded;
         let mut pre_lower_bound: Option<Bound<T>> = None;
         let mut payload_conditions = Vec::new();
@@ -265,7 +262,8 @@ where
                         Excluded(_) | Unbounded => None,
                     },
                 };
-                let cardinality = range_cardinality(index, &RangeInterface::Float(range))?;
+                let cardinality =
+                    range_cardinality(index, &RangeInterface::Float(range), &hw_counter)?;
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,

@@ -160,8 +160,12 @@ fn cardinality_request(
         lte: query.lte.map(OrderedFloat::from),
     };
 
-    let estimation =
-        query::range_cardinality(index.inner(), &RangeInterface::Float(ordered_range)).unwrap();
+    let estimation = query::range_cardinality(
+        index.inner(),
+        &RangeInterface::Float(ordered_range),
+        &hw_counter,
+    )
+    .unwrap();
 
     let result = index
         .inner()
@@ -276,6 +280,72 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
         },
         HwMeasurementAcc::new(),
     );
+}
+
+/// Regression test for #10124: `count exact=false` on a numeric `range`
+/// filter must not extrapolate from the histogram. On a single-value field
+/// the estimator has to be exact, including for clustered value
+/// distributions where the histogram's uniform-in-bucket interpolation is
+/// systematically wrong.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_range_cardinality_single_value_exact(#[case] index_type: IndexType) {
+    let mut rng = StdRng::seed_from_u64(7);
+    let (_temp_dir, mut builder) = get_index_builder(index_type);
+    let hw_counter = HardwareCounterCell::new();
+
+    // Values clustered in two narrow bands far apart. The histogram's linear
+    // interpolation inside each bucket is badly wrong for such a
+    // distribution, so the exact index count is the only reliable answer.
+    for i in 0..1000 {
+        let value = if rng.random_bool(0.5) {
+            10i64 + i64::from(rng.random_range(0..10)) // band [10, 20)
+        } else {
+            500i64 + i64::from(rng.random_range(0..10)) // band [500, 510)
+        };
+        builder
+            .add_point(i as PointOffsetType, &[&Value::from(value)], &hw_counter)
+            .unwrap();
+    }
+    let index = builder.finalize().unwrap();
+
+    let cases = [
+        (10.0, 20.0),
+        (500.0, 510.0),
+        (0.0, 30.0),
+        (490.0, 520.0),
+        (0.0, 1000.0),
+        (100.0, 400.0), // empty range in the gap between the bands
+    ];
+    for (gte, lt) in cases {
+        let range = Range {
+            lt: Some(OrderedFloat(lt)),
+            gt: None,
+            gte: Some(OrderedFloat(gte)),
+            lte: None,
+        };
+        let estimation =
+            query::range_cardinality(index.inner(), &RangeInterface::Float(range), &hw_counter)
+                .unwrap();
+        let exact = index
+            .inner()
+            .filter(
+                &FieldCondition::new_range(JsonPath::new("unused"), range),
+                &hw_counter,
+            )
+            .unwrap()
+            .unwrap()
+            .count();
+
+        assert_eq!(
+            estimation.exp, exact,
+            "range [{gte}, {lt}) estimate must match the exact filtered count"
+        );
+        assert_eq!(estimation.min, exact, "range [{gte}, {lt}) min");
+        assert_eq!(estimation.max, exact, "range [{gte}, {lt}) max");
+    }
 }
 
 #[rstest]
@@ -1071,9 +1141,12 @@ fn test_block_index_fallback_equivalence() {
         queries
             .iter()
             .map(|query| {
-                let estimation =
-                    query::range_cardinality(index.inner(), &RangeInterface::Float(*query))
-                        .unwrap();
+                let estimation = query::range_cardinality(
+                    index.inner(),
+                    &RangeInterface::Float(*query),
+                    &hw_counter,
+                )
+                .unwrap();
                 let points = index
                     .inner()
                     .filter(
