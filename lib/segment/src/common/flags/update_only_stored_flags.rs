@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound as _, UniversalAppend, UniversalWriteFileOps as _};
+use common::universal_io::{
+    OkNotFound as _, UniversalAppend, UniversalReadFileOps as _, UniversalWriteFileOps as _,
+};
 
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, file_size_for, status_file};
 use super::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -32,6 +34,18 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
     /// directory that holds none yet opens empty; nothing is created until the
     /// first [`flush`](Self::flush).
     pub fn open(fs: S::Fs, directory: &Path) -> OperationResult<Self> {
+        // Materialize the directory on the first open rather than on the first
+        // flag. Storages use it as the marker that they exist at all — the
+        // sparse one takes its absence for "not created yet" and starts over —
+        // so a batch that flags nothing must still leave it behind.
+        if !fs.exists(&status_file(directory))? {
+            fs.create_dir(directory)?;
+            fs.atomic_save(
+                &status_file(directory),
+                bytemuck::bytes_of(&DynamicFlagsStatus::new(0)),
+            )?;
+        }
+
         let flags = InMemoryBitvecFlags::open::<S>(&fs, directory)
             .ok_not_found()?
             .map(InMemoryBitvecFlags::into_bitvec)

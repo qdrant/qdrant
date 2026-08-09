@@ -2,6 +2,7 @@ pub mod empty_sparse_vector_storage;
 pub mod mmap_sparse_vector_storage;
 pub mod read_only;
 mod stored_sparse_vectors;
+pub mod update_only;
 pub mod volatile_sparse_vector_storage;
 
 pub(crate) use stored_sparse_vectors::StoredSparseVector;
