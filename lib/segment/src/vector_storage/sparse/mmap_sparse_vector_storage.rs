@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use blobstore::config::{
-    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    GridstoreConfig,
+    Compression, CreateOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES,
 };
 use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
@@ -99,10 +98,9 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         fs::create_dir_all(&storage_dir)?;
-        let storage_options = crate::common::blobstore_config::blobstore_config(GridstoreConfig {
+        let storage_options = crate::common::blobstore_config::storage_config(CreateOptions {
             page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
             block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
-            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
             // Don't use built-in compression, as we will use bitpacking instead
             compression: Compression::None,
         });

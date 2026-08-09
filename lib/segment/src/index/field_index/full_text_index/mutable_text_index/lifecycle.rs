@@ -10,7 +10,7 @@ use super::super::inverted_index::mutable_inverted_index_builder::MutableInverte
 use super::super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
 use super::inner::MutableFullTextIndexInner;
-use super::{MutableFullTextIndex, gridstore_options};
+use super::{MutableFullTextIndex, storage_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
@@ -28,12 +28,13 @@ impl MutableFullTextIndex {
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Blobstore::open_or_create(MmapFs, path, gridstore_options(), Populate::Blocking)
-                .map_err(|err| {
+            Blobstore::open_or_create(MmapFs, path, storage_options(), Populate::Blocking).map_err(
+                |err| {
                     OperationError::service_error(format!(
                         "failed to open mutable full text index on gridstore: {err}"
                     ))
-                })?
+                },
+            )?
         } else if path.exists() {
             Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(

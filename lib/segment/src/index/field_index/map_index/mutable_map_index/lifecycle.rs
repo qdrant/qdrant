@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig, StorageConfig};
+use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -13,13 +13,12 @@ use super::in_memory::InMemoryMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-/// Default options for Blobstore storage
-fn default_gridstore_options(block_size: usize) -> StorageConfig {
-    crate::common::blobstore_config::blobstore_config(GridstoreConfig {
+/// Default options for the backing storage
+fn storage_options(block_size: usize) -> StorageConfig {
+    crate::common::blobstore_config::storage_config(CreateOptions {
         page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size dependent on map value type
         block_size_bytes: block_size,
-        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         compression: blobstore::config::Compression::None,
     })
 }
@@ -43,7 +42,7 @@ where
         prefix_index: bool,
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            let options = default_gridstore_options(N::gridstore_block_size());
+            let options = storage_options(N::gridstore_block_size());
             Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"

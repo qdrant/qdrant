@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use blobstore::Blobstore;
-use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig, StorageConfig};
+use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
@@ -12,14 +12,13 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoPoint, RawGeoPoint};
 
-/// Default options for Blobstore storage
-fn gridstore_options() -> StorageConfig {
-    crate::common::blobstore_config::blobstore_config(GridstoreConfig {
+/// Default options for the backing storage
+fn storage_options() -> StorageConfig {
+    crate::common::blobstore_config::storage_config(CreateOptions {
         // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
         page_size_bytes: size_of::<RawGeoPoint>() * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size of geo point values in index
         block_size_bytes: size_of::<RawGeoPoint>(),
-        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         // Compressing geo point values is unreasonable
         compression: blobstore::config::Compression::None,
     })
@@ -33,12 +32,13 @@ impl MutableGeoIndex {
     /// loaded.
     pub fn open(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Blobstore::open_or_create(MmapFs, path, gridstore_options(), Populate::Blocking)
-                .map_err(|err| {
+            Blobstore::open_or_create(MmapFs, path, storage_options(), Populate::Blocking).map_err(
+                |err| {
                     OperationError::service_error(format!(
                         "failed to open mutable geo index on gridstore: {err}"
                     ))
-                })?
+                },
+            )?
         } else if path.exists() {
             Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(

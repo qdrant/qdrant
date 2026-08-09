@@ -12,7 +12,7 @@ use super::super::Encodable;
 use super::super::lifecycle::{HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use super::super::numeric_index_read::NumericIndexRead;
 use super::super::on_disk_numeric_index::OnDiskNumericIndex;
-use super::{InMemoryNumericIndex, MutableNumericIndex, default_gridstore_options};
+use super::{InMemoryNumericIndex, MutableNumericIndex, storage_options};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::Histogram;
@@ -156,7 +156,7 @@ where
     /// could be loaded.
     pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            let options = default_gridstore_options::<T>();
+            let options = storage_options::<T>();
             Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable numeric index on gridstore: {err}"
