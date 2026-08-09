@@ -94,17 +94,22 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         self.point_to_values[idx as usize] = values;
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) {
-        if let Some(values) = self.point_to_values.get_mut(idx as usize) {
-            if !values.is_empty() {
-                self.points_count = self.points_count.saturating_sub(1);
-            }
-            for value in values.iter() {
-                let key = Point::new(*value, idx);
-                Self::remove_from_map(&mut self.map, &mut self.histogram, key);
-            }
-            *values = Default::default();
+    /// Returns whether the point held any values.
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> bool {
+        let Some(values) = self.point_to_values.get_mut(idx as usize) else {
+            return false;
+        };
+        if values.is_empty() {
+            return false;
         }
+
+        self.points_count = self.points_count.saturating_sub(1);
+        for value in values.iter() {
+            let key = Point::new(*value, idx);
+            Self::remove_from_map(&mut self.map, &mut self.histogram, key);
+        }
+        *values = Default::default();
+        true
     }
 
     pub(super) fn add_to_map(
@@ -243,8 +248,8 @@ where
     ) -> OperationResult<()> {
         // Update persisted storage
         if values.is_empty() {
-            // We cannot store empty value, then delete instead
-            self.storage.delete_value(idx)?;
+            // An empty value cannot be stored; drop whatever the slot holds
+            self.remove_point(idx)?;
         } else {
             let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
             self.storage
@@ -261,10 +266,13 @@ where
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        // Update persisted storage
-        self.storage.delete_value(idx)?;
+        if !self.in_memory_index.remove_point(idx) {
+            // The slot holds nothing, and there is nothing to delete in the
+            // storage either: the two are written in lockstep.
+            return Ok(());
+        }
 
-        self.in_memory_index.remove_point(idx);
+        self.storage.delete_value(idx)?;
         Ok(())
     }
 }

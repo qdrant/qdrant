@@ -113,8 +113,8 @@ impl MutableGeoIndex {
     ) -> OperationResult<()> {
         // Update persisted storage
         if values.is_empty() {
-            // We cannot store empty value, then delete instead
-            self.storage.delete_value(idx)?;
+            // An empty value cannot be stored; drop whatever the slot holds
+            self.remove_point(idx)?;
         } else {
             let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
             let raw_values = values
@@ -136,10 +136,14 @@ impl MutableGeoIndex {
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        // Update persisted storage
-        self.storage.delete_value(idx)?;
+        if !self.in_memory_index.remove_point(idx)? {
+            // The slot holds nothing, and there is nothing to delete in the
+            // storage either: the two are written in lockstep.
+            return Ok(());
+        }
 
-        self.in_memory_index.remove_point(idx)
+        self.storage.delete_value(idx)?;
+        Ok(())
     }
 
     pub fn into_in_memory_index(self) -> InMemoryGeoIndex {

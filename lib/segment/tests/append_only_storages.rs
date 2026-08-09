@@ -13,7 +13,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::types::DeferredBehavior;
-use segment::data_types::vectors::only_default_vector;
+use segment::data_types::vectors::{VectorRef, only_default_vector};
 use segment::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
     StorageSegmentEntry as _,
@@ -22,6 +22,9 @@ use segment::payload_json;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+use segment::vector_storage::VectorStorage as _;
+use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -111,6 +114,22 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         .expect("keyword index directory exists");
     assert_eq!(storage_mode(&index_dir), "append_only");
 
+    // An integer index over a field only some points hold: indexing points
+    // without the field, then giving one the field, drives the numeric index's
+    // remove-before-add and empty-value paths against the append-only storage.
+    let num_key = "num".parse().unwrap();
+    segment
+        .create_field_index(
+            6,
+            &num_key,
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+            &hw_counter,
+        )
+        .unwrap();
+    segment
+        .set_payload(7, 4.into(), &payload_json! { "num": 7 }, &None, &hw_counter)
+        .unwrap();
+
     segment.flush(true).unwrap();
     drop(segment);
 
@@ -124,4 +143,32 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     let payload = segment.payload(6.into(), &hw_counter).unwrap();
     assert_eq!(payload, payload_json! { "kind": "multi-step" });
     assert!(!segment.has_point(5.into(), DeferredBehavior::WithDeferred));
+}
+
+/// The sparse vector storage created under the flag is append-only, deleting
+/// where nothing was stored is a no-op, and deleting a stored vector fails.
+#[test]
+fn sparse_storage_is_append_only() {
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+
+    let dir = Builder::new()
+        .prefix("append_only_sparse")
+        .tempdir()
+        .unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+    assert_eq!(storage_mode(&dir.path().join("store")), "append_only");
+
+    let vector = SparseVector::new(vec![1, 3], vec![1.0, 2.0]).unwrap();
+    storage
+        .insert_vector(0, VectorRef::from(&vector), &hw_counter)
+        .unwrap();
+
+    // Nothing was ever stored at key 5.
+    storage.delete_vector(5).unwrap();
+
+    // Key 0 holds a vector; an append-only storage cannot remove it.
+    assert!(storage.delete_vector(0).is_err());
 }

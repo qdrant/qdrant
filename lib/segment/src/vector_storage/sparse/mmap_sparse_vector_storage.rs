@@ -161,10 +161,11 @@ impl MmapSparseVectorStorage {
                 &StoredSparseVector::from(vector),
                 hw_counter.ref_vector_io_write_counter(),
             )?;
-        } else {
+        } else if (key as usize) < self.next_point_offset {
             // delete vector
             self.storage.delete_value(key)?;
         }
+        // else: nothing was ever stored at this key, nothing to delete
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
 

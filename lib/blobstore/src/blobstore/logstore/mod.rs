@@ -12,7 +12,7 @@ use std::sync::Arc;
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::generic_consts::{AccessPattern, Random, Sequential};
+use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
     OkNotFound as _, Populate, UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData,
@@ -261,15 +261,11 @@ where
         Ok(false)
     }
 
-    /// Deleting a stored value is not supported in append-only mode; deleting
-    /// where nothing is stored trivially succeeds, as in mutable mode.
+    /// Deleting values is not supported in append-only mode.
     // Takes &mut self for signature parity with the mutable variant
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub(super) fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
-        match self.get_value::<Random>(point_offset, &HardwareCounterCell::disposable())? {
-            Some(_) => Err(BlobstoreError::unsupported_operation("deleting values")),
-            None => Ok(None),
-        }
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
+    pub(super) fn delete_value(&mut self, _point_offset: PointOffset) -> Result<Option<V>> {
+        Err(BlobstoreError::unsupported_operation("deleting values"))
     }
 
     /// Clear the storage, going back to the initial state.
