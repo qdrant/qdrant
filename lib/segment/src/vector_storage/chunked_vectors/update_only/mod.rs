@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    OpenOptions, Populate, UniversalAppend, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
+    OpenOptions, Populate, UniversalAppend, UniversalReadFileOps, UniversalReadFs,
     UniversalWriteFileOps,
 };
 
@@ -46,7 +46,7 @@ fn append_options() -> OpenOptions {
 impl<T, S> UpdateOnlyChunkedVectors<T, S>
 where
     T: bytemuck::Pod + Send,
-    S: UniversalAppend + UniversalWrite + 'static,
+    S: UniversalAppend + 'static,
 {
     /// Open a chunked-vectors directory for appending, creating it if missing.
     pub fn open(fs: S::Fs, directory: &Path, dim: usize) -> OperationResult<Self> {
