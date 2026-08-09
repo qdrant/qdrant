@@ -23,7 +23,6 @@ mod tests;
 mod value_indexer_impl;
 
 pub mod read_only;
-pub mod update_only;
 
 /// Block size in Gridstore for keyword map index.
 /// Keyword(s) are stored as cbor vector.

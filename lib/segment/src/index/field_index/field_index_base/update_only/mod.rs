@@ -9,8 +9,8 @@
 //!
 //! What differs between index types is only that translation, which is what
 //! [`UpdateOnlyIndexKind`] captures; [`UpdateOnlyValueIndex`] is the storage
-//! around it, the same for all of them. Each kind lives next to the index it
-//! writes for, as the read-only counterparts do.
+//! around it, the same for all of them. Each kind lives under the appendable
+//! index it writes for, next to that index's read-only counterpart.
 
 #[cfg(test)]
 mod tests;
@@ -26,10 +26,10 @@ use serde_json::Value;
 pub use self::writer::{UpdateOnlyIndexKind, UpdateOnlyValueIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::update_only::UpdateOnlyTextKind;
-use crate::index::field_index::geo_index::update_only::UpdateOnlyGeoKind;
-use crate::index::field_index::map_index::update_only::UpdateOnlyMapKind;
-use crate::index::field_index::numeric_index::update_only::UpdateOnlyNumericKind;
+use crate::index::field_index::full_text_index::UpdateOnlyTextKind;
+use crate::index::field_index::geo_index::mutable_geo_index::update_only::UpdateOnlyGeoKind;
+use crate::index::field_index::map_index::mutable_map_index::update_only::UpdateOnlyMapKind;
+use crate::index::field_index::numeric_index::mutable_numeric_index::update_only::UpdateOnlyNumericKind;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use blobstore::Blob;
 use serde_json::Value;
 
-use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
+use super::super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
@@ -18,7 +18,7 @@ use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 /// [`NumericIndex`] itself, so a new numeric index type is writable here as
 /// soon as it implements them.
 ///
-/// [`MutableNumericIndex`]: super::mutable_numeric_index::MutableNumericIndex
+/// [`MutableNumericIndex`]: super::MutableNumericIndex
 pub struct UpdateOnlyNumericKind<T, P>(PhantomData<(T, P)>);
 
 impl<T, P> Default for UpdateOnlyNumericKind<T, P> {

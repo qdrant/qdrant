@@ -12,12 +12,12 @@ mod immutable_text_index;
 mod inverted_index;
 mod lifecycle;
 mod mutable_text_index;
+pub use mutable_text_index::update_only::UpdateOnlyTextKind;
 pub mod on_disk_text_index;
 pub mod read_only;
 mod read_ops;
 pub mod stop_words;
 pub mod tokenizers;
-pub mod update_only;
 
 pub use read_only::ReadOnlyFullTextIndex;
 pub use read_ops::FullTextConditionChecker;

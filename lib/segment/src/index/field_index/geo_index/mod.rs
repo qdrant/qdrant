@@ -7,7 +7,6 @@ pub mod read_only;
 pub mod read_ops;
 #[cfg(test)]
 mod tests;
-pub mod update_only;
 
 use std::path::{Path, PathBuf};
 

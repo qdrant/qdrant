@@ -7,6 +7,7 @@ pub(super) mod in_memory;
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
+pub mod update_only;
 
 pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
 where

@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::GeoIndex;
+use super::super::GeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 use crate::types::RawGeoPoint;
@@ -11,7 +11,7 @@ use crate::types::RawGeoPoint;
 /// The geo hash structure the index answers queries from is derived from these
 /// coordinates and rebuilt on open, so it plays no part here.
 ///
-/// [`MutableGeoIndex`]: super::mutable_geo_index::MutableGeoIndex
+/// [`MutableGeoIndex`]: super::MutableGeoIndex
 pub struct UpdateOnlyGeoKind;
 
 impl UpdateOnlyIndexKind for UpdateOnlyGeoKind {

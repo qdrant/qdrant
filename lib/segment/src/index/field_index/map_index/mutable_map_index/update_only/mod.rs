@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use blobstore::Blob;
 use serde_json::Value;
 
-use super::{MapIndex, MapIndexKey};
+use super::super::{MapIndex, MapIndexKey};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 
@@ -13,7 +13,7 @@ use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 /// is derived from these same keys and rebuilt on open, like every other
 /// in-memory part of an appendable index.
 ///
-/// [`MutableMapIndex`]: super::mutable_map_index::MutableMapIndex
+/// [`MutableMapIndex`]: super::MutableMapIndex
 pub struct UpdateOnlyMapKind<N: MapIndexKey + ?Sized>(PhantomData<&'static N>);
 
 impl<N: MapIndexKey + ?Sized> Default for UpdateOnlyMapKind<N> {

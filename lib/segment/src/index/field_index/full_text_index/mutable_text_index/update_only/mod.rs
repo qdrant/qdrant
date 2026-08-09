@@ -1,7 +1,7 @@
 use serde_json::Value;
 
-use super::FullTextIndex;
-use super::tokenizers::Tokenizer;
+use super::super::FullTextIndex;
+use super::super::tokenizers::Tokenizer;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
@@ -15,7 +15,7 @@ use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 /// [`FullTextIndex::tokenize_document`], so the two cannot encode a document
 /// differently.
 ///
-/// [`MutableFullTextIndex`]: super::mutable_text_index::MutableFullTextIndex
+/// [`MutableFullTextIndex`]: super::MutableFullTextIndex
 pub struct UpdateOnlyTextKind {
     phrase_matching: bool,
     tokenizer: Tokenizer,
@@ -56,7 +56,7 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::super::mutable_text_index::MutableFullTextIndex;
+    use super::super::MutableFullTextIndex;
     use crate::data_types::index::{TextIndexParams, TextIndexType};
     use crate::index::field_index::UpdateOnlyFieldIndex;
     use crate::index::payload_config::{
