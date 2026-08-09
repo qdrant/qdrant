@@ -271,6 +271,7 @@ fn read_only_segment_with_load_profile_matches_mutable() {
 ///
 /// Ignored by default; run with a server up:
 /// `S3_INTEGRATION_TEST=1 cargo test -p segment read_only_segment_over_s3 -- --ignored`
+#[cfg(feature = "object-storage")]
 #[test]
 #[ignore = "requires a running S3-compatible server (set S3_INTEGRATION_TEST=1)"]
 fn read_only_segment_over_s3() {

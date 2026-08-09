@@ -14,6 +14,10 @@ path = "src/main.rs"
 [dependencies]
 edge = { path = "../.." }
 common = { path = "../../../common/common" }
+# The tools read shards through the object-store blob backend, which needs
+# segment's `UniversalReadExt for BlobFile` impl -- feature-gated so that
+# plain edge builds don't resolve the object-store stack.
+segment = { path = "../../../segment", default-features = false, features = ["object-storage"] }
 io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
 
 fs-err = { workspace = true }

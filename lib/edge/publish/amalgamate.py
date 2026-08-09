@@ -197,13 +197,10 @@ def main() -> None:
         # otherwise cargo fmt will fail to resolve deleted module
         (r"^#\[cfg\(feature = \"gpu\"\)]\npub mod gpu;\n", ""),
     )
-    # io_bridge_object_store is a path dependency excluded from the amalgamation
-    # (the embedded edge build has no object storage), so drop the BlobFile
-    # UniversalReadExt impl that references it.
-    substitute(
-        AMALGAMATION / "src/segment/index/universal_io.rs",
-        (r"(?s)^#\[rustfmt::skip]\nimpl<A: io_bridge_object_store.*?\n\}\n", ""),
-    )
+    # The BlobFile UniversalReadExt impl that references io_bridge_object_store
+    # (a path dependency excluded from the amalgamation) is gated behind
+    # segment's `object-storage` feature, which the amalgamated crate never
+    # defines, so it compiles out without source stripping.
 
     # Ast-grep-based fixups.
     RULES_TEMPLATE = (Path(__file__).parent / "ast-grep-rules.yaml").read_text(
