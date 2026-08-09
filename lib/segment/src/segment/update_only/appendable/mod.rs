@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppend;
@@ -32,10 +31,6 @@ pub struct AppendableSegment<S: UniversalAppend + 'static> {
     /// [`store_points`](Self::store_points). A batch that only deletes writes
     /// nothing but the mappings log, so it never pays for these opens.
     store: Option<StoreComponents<S>>,
-    /// External ids this writer has stored, so that
-    /// [`tombstone_points`](Self::tombstone_points) never retires a point this
-    /// very batch wrote.
-    stored_ids: AHashSet<PointIdType>,
 }
 
 /// Everywhere a stored point's data goes. The mappings log that publishes the
@@ -107,7 +102,6 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
             segment_path: segment_path.to_path_buf(),
             config: config.clone(),
             store: None,
-            stored_ids: AHashSet::new(),
         })
     }
 
@@ -191,8 +185,6 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
         self.id_tracker.set_internal_versions(&slots, &versions)?;
 
-        self.stored_ids.extend(points.iter().map(|point| point.id));
-
         Ok(())
     }
 
@@ -200,20 +192,15 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
     /// they occupy play no part here, since a retired mapping is what makes a
     /// point unreachable. The data on those slots is left where it is.
     ///
-    /// A point this writer has stored is skipped rather than retired: its new
-    /// mapping already supersedes every old slot, and a delete recorded on top
-    /// would take the new slot with it. The caller can hand over every slot a
-    /// stored point used to occupy without holding that rule itself.
+    /// Only call this for points the batch *deletes*. A point the batch stores
+    /// again needs no retirement — its new mapping supersedes the old slot —
+    /// and asking for one here retires the point outright: a delete addresses
+    /// the external id, so it takes the fresh slot along with the stale one.
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        let stored_ids = &self.stored_ids;
-        self.id_tracker.delete_points(
-            points
-                .iter()
-                .map(|(point_id, _internal_id)| *point_id)
-                .filter(|point_id| !stored_ids.contains(point_id)),
-        )
+        self.id_tracker
+            .delete_points(points.iter().map(|(point_id, _internal_id)| *point_id))
     }
 }
