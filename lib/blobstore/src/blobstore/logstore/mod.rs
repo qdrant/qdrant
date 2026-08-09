@@ -142,23 +142,17 @@ where
     }
 
     /// Opens an existing append-only storage, or initializes a new one, creating `base_path` if
-    /// it is not there yet.
+    /// it is not there yet. Depends on the existence of the config file, like
+    /// [`Blobstore::open_or_create`](super::Blobstore::open_or_create).
     ///
-    /// Which one it is depends on the existence of the config file, like
-    /// [`Blobstore::open_or_create`](super::Blobstore::open_or_create). An existing storage keeps
-    /// the config it was created with and `config_if_create` is ignored — the persisted
-    /// compression setting is what the value data in the pages is encoded with.
-    ///
-    /// A storage created in mutable mode is rejected rather than opened: the two modes persist
-    /// incompatible file formats.
+    /// In case of opening, it ignores the `config_if_create` parameter. A storage created in
+    /// mutable mode is rejected, the two modes persist incompatible file formats.
     pub fn open_or_create(
         fs: S::Fs,
         base_path: PathBuf,
         config_if_create: LogstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
-        // Read the config rather than probe for it first: an absent one is what says there is no
-        // storage here yet, and asking twice costs a second round-trip on a remote backend.
         match super::reader::read_config(&fs, &base_path).ok_not_found()? {
             Some(StorageConfig::AppendOnly(config)) => Self::open(fs, base_path, config, populate),
             Some(StorageConfig::Mutable(_)) => Err(BlobstoreError::unsupported_operation(format!(

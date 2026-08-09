@@ -20,9 +20,8 @@ fn payload(n: u64) -> Payload {
     payload_json! { "n": n, "text": format!("payload {n}") }
 }
 
-/// Read the segment's payload storage back through the read-only side, over the
-/// write-enforced backend, so what the writer produced is checked against a
-/// reader that cannot have written any of it.
+/// Read the segment's payload storage back through the read-only side, over a
+/// backend that cannot write.
 fn read_back(
     segment_path: &Path,
     slots: impl IntoIterator<Item = PointOffsetType>,
@@ -40,7 +39,7 @@ fn read_back(
 }
 
 /// A batch is durable once `append_many` returns, and a second writer resumes
-/// where the first one left off — the state lives in the files, not the writer.
+/// where the first one left off.
 #[test]
 fn batches_are_durable_and_resume() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
@@ -74,7 +73,7 @@ fn batches_are_durable_and_resume() {
     );
 }
 
-/// Slots with an empty payload are not written at all, and read back empty —
+/// Slots with an empty payload are not written at all, and read back empty,
 /// including a gap the batch skips entirely.
 #[test]
 fn empty_payloads_and_gaps_read_back_empty() {
@@ -105,8 +104,7 @@ fn empty_payloads_and_gaps_read_back_empty() {
 }
 
 /// A slot far above everything the storage holds is written where it belongs,
-/// including on a storage that holds nothing at all — the case of a segment
-/// whose points had no payloads until now.
+/// including on a storage that holds nothing at all.
 #[test]
 fn first_payload_may_land_on_a_high_slot() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
@@ -149,8 +147,7 @@ fn rewriting_a_slot_is_rejected() {
     assert!(writer.append_many([(0, &payload(0))], &hw_counter).is_err());
 }
 
-/// A payload storage created in mutable mode is not something this writer can
-/// append to, and is refused rather than opened.
+/// A payload storage created in mutable mode is refused rather than opened.
 #[test]
 fn mutable_storage_is_refused() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();

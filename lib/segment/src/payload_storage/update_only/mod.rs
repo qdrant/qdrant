@@ -54,9 +54,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     ///
     /// The slots must come in increasing order and must all be above every slot
     /// this storage already holds a payload for: it is append-only, so a slot
-    /// that was written cannot be written again. Slots skipped in between —
-    /// those of another segment's points, or of points this call has nothing to
-    /// store for — stay empty for good.
+    /// that was written cannot be written again. Slots skipped in between stay
+    /// empty for good.
     ///
     /// A point with an empty payload is not stored at all, its slot is skipped:
     /// an unwritten slot already reads back as an empty payload.
