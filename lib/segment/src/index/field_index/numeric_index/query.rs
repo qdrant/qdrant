@@ -130,6 +130,35 @@ where
     Ok((range_size as f32 / avg_values_per_point).max(1.0).round() as usize)
 }
 
+/// Exact matched-value count for a range, charging the binary-search IO
+/// upfront on the real counter. Same metering shape as `estimate_points`.
+pub(super) fn range_matched_values<T, I>(
+    index: &I,
+    range: &RangeInterface,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize>
+where
+    T: Encodable + Numericable + StoredValue + Send + Sync + Default,
+    I: NumericIndexRead<T>,
+{
+    let range = match range {
+        RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
+        RangeInterface::DateTime(datetime_range) => {
+            datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
+        }
+    };
+    let (start, end) = range.as_index_key_bounds();
+    // Inverted / empty range would panic `values_range_size`; treat as 0.
+    if !check_boundaries(&start, &end) {
+        return Ok(0);
+    }
+    hw_counter
+        .payload_index_io_read_counter()
+        // Two binary searches (mmap + immutable storage), same as estimate_points.
+        .incr_delta(2 * ((index.total_unique_values_count()? as f32).log2().ceil() as usize));
+    index.values_range_size(start, end, hw_counter)
+}
+
 /// Point iterator for a `match`/`range` field condition.
 ///
 /// Returns `Ok(None)` when the condition is not one a numeric index can
@@ -213,6 +242,18 @@ where
         .as_ref()
         .map(|range| {
             let mut cardinality = range_cardinality(index, range)?;
+            // Recompute `exp` using an exact value count rather than the
+            // histogram estimate, so that selective ranges don't get pushed
+            // over `full_scan_threshold` by histogram over-counting.
+            let exact_values = range_matched_values(index, range, hw_counter)?;
+            let total_values = index.total_unique_values_count()?;
+            let exact_estimate = estimate_multi_value_selection_cardinality(
+                index.get_points_count(),
+                total_values,
+                exact_values,
+            )
+            .round() as usize;
+            cardinality.exp = min(cardinality.max, max(exact_estimate, cardinality.min));
             cardinality
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
