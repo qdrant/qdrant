@@ -20,9 +20,8 @@ use crate::types::{Payload, PayloadContainer as _, PayloadKeyType};
 /// with it — the update-only counterpart of [`ReadOnlyStructPayloadIndex`][1].
 ///
 /// Holds no payload storage, no id tracker and no vector storages, unlike both
-/// the writable index and the read-only one. Those are there to answer queries
-/// and to resolve what an update means; by the time a batch reaches here it is
-/// resolved, and every point arrives with the payload it will be stored with.
+/// the writable index and the read-only one: by the time a batch reaches here
+/// every point arrives with the payload it will be stored with.
 ///
 /// [1]: crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex
 pub struct UpdateOnlyStructPayloadIndex<S: UniversalAppend + 'static> {
@@ -37,11 +36,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// yet. A segment with no payload config has no indexed fields, and opens
     /// with nothing.
     ///
-    /// A field whose index types the config does not spell out is refused. That
-    /// is a config from before those types were recorded, which the writable
-    /// index repairs by deriving them from the schema on its next open — this
-    /// writer builds no indexes, so it cannot, and it must not carry on leaving
-    /// whatever is on disk to rot.
+    /// A field whose index types the config does not spell out is refused: that
+    /// is a config from before those types were recorded, which only the
+    /// writable index can repair, by deriving them from the schema on its next
+    /// open.
     pub fn open(fs: S::Fs, segment_path: &Path) -> OperationResult<Self> {
         let path = get_payload_index_path(segment_path);
         let config = PayloadConfig::load_universal(&fs, &PayloadConfig::get_config_path(&path))?
@@ -84,9 +82,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// indexed cannot be indexed again.
     ///
     /// Every field is offered every point, including the points whose payload
-    /// has nothing under that field. An index that stores values per point
-    /// stores none for those and leaves the slot empty; the null index records
-    /// that the point has no value there, which is exactly what it is for.
+    /// has nothing under that field: an index that stores values per point
+    /// leaves the slot empty, the null index records that the point has no
+    /// value there.
     pub fn append_many<'a>(
         &mut self,
         points: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
@@ -101,8 +99,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
             }
         }
 
-        // Once per index per batch: a flush is what reaches the files, and for
-        // the bitmask-backed indexes it rewrites a whole mask.
+        // Once per index per batch: for the bitmask-backed indexes a flush
+        // rewrites a whole mask
         for index in self.field_indexes.values_mut().flatten() {
             index.flush(hw_counter)?;
         }

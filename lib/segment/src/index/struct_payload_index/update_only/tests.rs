@@ -1,6 +1,5 @@
 //! Writes a batch through the whole fan-out, then reads each field index back
-//! through the ordinary appendable index that owns it — the same contract the
-//! per-index writers are tested against, one level up.
+//! through the ordinary appendable index that owns it.
 
 use std::path::Path;
 
@@ -36,9 +35,8 @@ fn index_type(index_type: PayloadIndexType) -> FullPayloadIndexType {
     }
 }
 
-/// Declare `f` as a keyword index, plus the null index that complements every
-/// indexed field — the shape [`StructPayloadIndex::build_field_indexes`] leaves
-/// behind.
+/// Declare `f` with the given index types, the shape
+/// [`StructPayloadIndex::build_field_indexes`] leaves behind.
 fn write_config(segment_path: &Path, types: Vec<FullPayloadIndexType>) {
     let path = get_payload_index_path(segment_path);
     fs_err::create_dir_all(&path).unwrap();
@@ -70,8 +68,7 @@ fn batch_reaches_every_index_of_a_field() {
 
     let payloads: Vec<Payload> = vec![
         payload_json! { "f": "alpha" },
-        // No value under `f` at all — the keyword index stores nothing for it,
-        // the null index still has to record that.
+        // No value under `f` at all, only the null index records anything for it
         payload_json! { "other": 1 },
         payload_json! { "f": null },
     ];
@@ -177,8 +174,7 @@ fn segment_without_indexes_opens_empty() {
 }
 
 /// A config that does not say which indexes a field has is refused: this writer
-/// builds no indexes, so it cannot derive them the way the writable index does,
-/// and carrying on would leave whatever is on disk to rot.
+/// builds no indexes, so it cannot derive them the way the writable index does.
 #[test]
 fn undeclared_index_types_are_refused() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
