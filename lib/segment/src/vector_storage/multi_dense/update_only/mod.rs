@@ -71,11 +71,12 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // Rows are placed as we go, and a run that would straddle a chunk skips
-        // to the next one — so the rows of a batch are not necessarily one
-        // contiguous span. Each contiguous span is appended on its own; the gap
-        // a skip leaves is zero-filled by the append that follows it.
-        let mut spans: Vec<(usize, Vec<T>)> = Vec::new();
+        // Rows are placed as we go, and a run that would straddle a chunk
+        // skips to the next one — the rows of a batch are therefore not
+        // gapless. The gaps become explicit zero rows, so a single append
+        // lands every run exactly where its offset entry points.
+        let batch_start = self.next_row;
+        let mut rows: Vec<T> = Vec::new();
         let mut offsets = Vec::new();
         let mut missing = Vec::new();
 
@@ -94,30 +95,21 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
 
             let count = flattened.len() / self.dim;
             let row = self.place(count)?;
+            rows.resize(rows.len() + (row - self.next_row) * self.dim, T::default());
+            rows.extend_from_slice(&flattened);
             offsets.push(MultivectorMmapOffset {
                 offset: row as PointOffsetType,
                 count: count as PointOffsetType,
                 capacity: count as PointOffsetType,
             });
-
-            match spans.last_mut() {
-                // Contiguous with the span being built.
-                Some((start, rows)) if *start + rows.len() / self.dim == row => {
-                    rows.extend_from_slice(&flattened);
-                }
-                _ if flattened.is_empty() => {}
-                _ => spans.push((row, flattened)),
-            }
             self.next_row = row + count;
         }
 
-        for (start, rows) in &spans {
-            self.vectors.append_many(
-                *start as VectorOffsetType,
-                rows.chunks_exact(self.dim),
-                hw_counter,
-            )?;
-        }
+        self.vectors.append_many(
+            batch_start as VectorOffsetType,
+            rows.chunks_exact(self.dim),
+            hw_counter,
+        )?;
 
         self.offsets.append_many(
             start_slot as VectorOffsetType,

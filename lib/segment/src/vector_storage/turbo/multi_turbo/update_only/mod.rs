@@ -73,9 +73,11 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let encoded_size = self.quantizer.quantized_size();
-        // As in the plain multivector storage, a run that would straddle a chunk
-        // skips to the next one, so a batch's rows are not always one span.
-        let mut spans: Vec<(usize, Vec<u8>)> = Vec::new();
+        // As in the plain multivector storage, a run that would straddle a
+        // chunk skips to the next one; the gaps become explicit zero rows, so
+        // a single append lands every run where its offset entry points.
+        let batch_start = self.next_row;
+        let mut rows: Vec<u8> = Vec::new();
         let mut offsets = Vec::new();
         let mut missing = Vec::new();
 
@@ -91,29 +93,21 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
 
             let count = encoded.len() / encoded_size;
             let row = self.place(count)?;
+            rows.resize(rows.len() + (row - self.next_row) * encoded_size, 0);
+            rows.extend_from_slice(&encoded);
             offsets.push(MultivectorMmapOffset {
                 offset: row as PointOffsetType,
                 count: count as PointOffsetType,
                 capacity: count as PointOffsetType,
             });
-
-            match spans.last_mut() {
-                Some((start, rows)) if *start + rows.len() / encoded_size == row => {
-                    rows.extend_from_slice(&encoded);
-                }
-                _ if encoded.is_empty() => {}
-                _ => spans.push((row, encoded)),
-            }
             self.next_row = row + count;
         }
 
-        for (start, rows) in &spans {
-            self.vectors.append_many(
-                *start as VectorOffsetType,
-                rows.chunks_exact(encoded_size),
-                hw_counter,
-            )?;
-        }
+        self.vectors.append_many(
+            batch_start as VectorOffsetType,
+            rows.chunks_exact(encoded_size),
+            hw_counter,
+        )?;
 
         self.offsets.append_many(
             start_slot as VectorOffsetType,
