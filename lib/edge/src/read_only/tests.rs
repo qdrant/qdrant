@@ -26,7 +26,7 @@ use crate::read_only::{
 use crate::read_view::EdgeShardRead;
 use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
 
-const VECTOR_NAME: &str = "edge-ro-test-vector";
+pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
 
 pub(crate) fn test_config() -> EdgeConfig {
     EdgeConfig {
@@ -53,7 +53,7 @@ pub(crate) fn test_config() -> EdgeConfig {
     }
 }
 
-fn point(id: u64) -> PointStructPersisted {
+pub(crate) fn point(id: u64) -> PointStructPersisted {
     PointStructPersisted {
         id: ExtendedPointId::NumId(id),
         vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
@@ -113,7 +113,7 @@ pub(crate) fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<Extend
 }
 
 /// Assert each id is retrievable from the follower with its expected vector `[id as f32]`.
-fn assert_follower_vectors(follower: &ReadOnlyEdgeShard<MmapFile>, ids: &[u64]) {
+pub(crate) fn assert_follower_vectors(follower: &ReadOnlyEdgeShard<MmapFile>, ids: &[u64]) {
     let point_ids = ids
         .iter()
         .map(|id| ExtendedPointId::NumId(*id))

@@ -8,12 +8,12 @@ use common::universal_io::{UniversalAppend, UniversalWrite};
 
 use super::{AppendableIdTrackerState, AppendableSegment, DeleteOnlySegment};
 use crate::common::operation_error::OperationResult;
-use crate::types::PointIdType;
+use crate::types::{PointIdType, SegmentConfig};
 
 /// A segment opened for writing: appendable, or accepting deletes only.
 pub enum UpdateOnlySegmentEnum<S: UniversalAppend + UniversalWrite + 'static> {
     DeleteOnly(DeleteOnlySegment<S>),
-    Appendable(AppendableSegment<S>),
+    Appendable(Box<AppendableSegment<S>>),
 }
 
 impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlySegmentEnum<S> {
@@ -23,12 +23,16 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlySegmentEnum<S> {
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
+        config: &SegmentConfig,
         id_tracker_state: Option<AppendableIdTrackerState>,
     ) -> OperationResult<Self> {
         Ok(match id_tracker_state {
-            Some(state) => {
-                Self::Appendable(AppendableSegment::open(fs.clone(), segment_path, state)?)
-            }
+            Some(state) => Self::Appendable(Box::new(AppendableSegment::open(
+                fs.clone(),
+                segment_path,
+                config,
+                state,
+            )?)),
             None => Self::DeleteOnly(DeleteOnlySegment::open(fs.clone(), segment_path)),
         })
     }

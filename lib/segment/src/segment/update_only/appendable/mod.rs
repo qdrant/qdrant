@@ -1,8 +1,9 @@
 //! The write phase for the appendable segment: the one segment of a shard a
 //! batch appends its points to.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppend;
@@ -10,13 +11,67 @@ use common::universal_io::UniversalAppend;
 use super::AppendableIdTrackerState;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
-use crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker;
-use crate::types::PointIdType;
+use crate::id_tracker::mutable_id_tracker::update_only::{
+    MappingOperation, UpdateOnlyAppendableIdTracker,
+};
+use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
+use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
+use crate::segment_constructor::get_vector_storage_path;
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
+use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore};
 
 /// A segment open for appends: the write target. Every point a batch stores
 /// lands here, in a fresh slot — nothing is ever rewritten in place.
 pub struct AppendableSegment<S: UniversalAppend + 'static> {
     id_tracker: UpdateOnlyAppendableIdTracker<S>,
+    /// What [`store_components`](Self::store_components) opens with.
+    fs: S::Fs,
+    segment_path: PathBuf,
+    config: SegmentConfig,
+    /// The components a stored point's data goes into, opened on the first
+    /// [`store_points`](Self::store_points). A batch that only deletes writes
+    /// nothing but the mappings log, so it never pays for these opens.
+    store: Option<StoreComponents<S>>,
+    /// External ids this writer has stored, so that
+    /// [`tombstone_points`](Self::tombstone_points) never retires a point this
+    /// very batch wrote.
+    stored_ids: AHashSet<PointIdType>,
+}
+
+/// Everywhere a stored point's data goes. The mappings log that publishes the
+/// point is not here: it belongs to the segment itself, since deletes need it
+/// too.
+struct StoreComponents<S: UniversalAppend + 'static> {
+    payload_storage: UpdateOnlyPayloadStorage<S>,
+    payload_indexes: UpdateOnlyStructPayloadIndex<S>,
+    /// One writer per named vector, dense and sparse alike.
+    vector_storages: Vec<(VectorNameBuf, UpdateOnlyVectorStorage<S>)>,
+}
+
+impl<S: UniversalAppend + 'static> StoreComponents<S> {
+    fn open(fs: &S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
+        let payload_storage = UpdateOnlyPayloadStorage::open(fs.clone(), segment_path)?;
+        let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs.clone(), segment_path)?;
+
+        let mut vector_storages =
+            Vec::with_capacity(config.vector_data.len() + config.sparse_vector_data.len());
+        for (vector_name, vector_config) in &config.vector_data {
+            let path = get_vector_storage_path(segment_path, vector_name);
+            let storage = UpdateOnlyVectorStorage::open(fs.clone(), &path, vector_config)?;
+            vector_storages.push((vector_name.clone(), storage));
+        }
+        for vector_name in config.sparse_vector_data.keys() {
+            let path = get_vector_storage_path(segment_path, vector_name);
+            let storage = UpdateOnlyVectorStorage::open_sparse(fs.clone(), &path)?;
+            vector_storages.push((vector_name.clone(), storage));
+        }
+
+        Ok(Self {
+            payload_storage,
+            payload_indexes,
+            vector_storages,
+        })
+    }
 }
 
 impl<S: UniversalAppend + 'static> AppendableSegment<S> {
@@ -29,6 +84,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
     pub fn open(
         fs: S::Fs,
         segment_path: &Path,
+        config: &SegmentConfig,
         state: AppendableIdTrackerState,
     ) -> OperationResult<Self> {
         let AppendableIdTrackerState {
@@ -38,48 +94,126 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         } = state;
 
         let id_tracker = UpdateOnlyAppendableIdTracker::new(
-            fs,
+            fs.clone(),
             segment_path,
             max_claimed_internal_id,
             pending_inserts,
             mappings_end,
         )?;
 
-        Ok(Self { id_tracker })
+        Ok(Self {
+            id_tracker,
+            fs,
+            segment_path: segment_path.to_path_buf(),
+            config: config.clone(),
+            store: None,
+            stored_ids: AHashSet::new(),
+        })
+    }
+
+    fn store_components(&mut self) -> OperationResult<&mut StoreComponents<S>> {
+        if self.store.is_none() {
+            self.store = Some(StoreComponents::open(
+                &self.fs,
+                &self.segment_path,
+                &self.config,
+            )?);
+        }
+        Ok(self.store.as_mut().expect("just opened"))
     }
 
     /// Append `points` to this segment, each into a fresh slot, and repoint
     /// the id tracker at those slots. A point that already exists here is
     /// never rewritten in place: it is written anew, and the mappings log
     /// retires its previous slot on its own.
+    ///
+    /// The order of writes is what makes a crash safe anywhere in between:
+    /// the slots are claimed first, every component then writes its data at
+    /// them, and only after all of that do the versions cover them — the step
+    /// that makes the points visible to readers. A batch cut short leaves
+    /// claimed, unpublished slots, which the next writer to open this segment
+    /// retires.
     pub fn store_points(
         &mut self,
         points: &[FullyQualifiedPoint],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let _ = (points, hw_counter);
-        // The id tracker half is ready (`insert_operations` +
-        // `set_internal_versions`); what is missing is everywhere the point's
-        // data goes.
-        //
-        // Keep the ids `insert_operations` returns when writing this: with
-        // them, `tombstone_points` can refuse to retire a point this batch
-        // stored, and the caller stops having to know not to ask.
-        todo!("needs the append-only vector storages, payload storage and field indexes")
+        if points.is_empty() {
+            return Ok(());
+        }
+
+        let operations: Vec<MappingOperation> = points
+            .iter()
+            .map(|point| MappingOperation::Insert(point.id))
+            .collect();
+        let inserted = self.id_tracker.insert_operations(&operations)?;
+        let (_, start_slot) = *inserted.first().expect("one slot per insert");
+
+        let store = self.store_components()?;
+
+        // Each named vector, from whichever half of the point holds it: the
+        // batch's own decoded vectors win over the bytes carried from the
+        // point's previous slot, and a name in neither still takes its slot —
+        // the storage records it as a vector the point does not have.
+        for (vector_name, storage) in &mut store.vector_storages {
+            let vectors = points.iter().map(|point| {
+                if let Some(vector) = point.updated_vectors.get(vector_name) {
+                    VectorToStore::Decoded(vector)
+                } else if let Some((_, bytes)) = point
+                    .stored_vectors
+                    .iter()
+                    .find(|(name, _)| name == vector_name)
+                {
+                    VectorToStore::Raw(bytes)
+                } else {
+                    VectorToStore::Missing
+                }
+            });
+            storage.append_many(start_slot, vectors, hw_counter)?;
+        }
+
+        let slot_payloads = || {
+            inserted
+                .iter()
+                .zip(points)
+                .map(|((_, slot), point)| (*slot, &point.payload))
+        };
+        store
+            .payload_storage
+            .append_many(slot_payloads(), hw_counter)?;
+        store
+            .payload_indexes
+            .append_many(slot_payloads(), hw_counter)?;
+
+        // Publish: covering the slots with their versions is what makes the
+        // points visible, so everything above must already be durable.
+        let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
+        let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
+        self.id_tracker.set_internal_versions(&slots, &versions)?;
+
+        self.stored_ids.extend(points.iter().map(|point| point.id));
+
+        Ok(())
     }
 
     /// Retire the given points, addressed by their external ids — the slots
     /// they occupy play no part here, since a retired mapping is what makes a
     /// point unreachable. The data on those slots is left where it is.
     ///
-    /// Only call this for points the batch *deletes*. A point the batch stores
-    /// again needs no retirement: its new mapping supersedes the old slot, and
-    /// a delete recorded afterwards would retire the new slot along with it.
+    /// A point this writer has stored is skipped rather than retired: its new
+    /// mapping already supersedes every old slot, and a delete recorded on top
+    /// would take the new slot with it. The caller can hand over every slot a
+    /// stored point used to occupy without holding that rule itself.
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        self.id_tracker
-            .delete_points(points.iter().map(|(point_id, _internal_id)| *point_id))
+        let stored_ids = &self.stored_ids;
+        self.id_tracker.delete_points(
+            points
+                .iter()
+                .map(|(point_id, _internal_id)| *point_id)
+                .filter(|point_id| !stored_ids.contains(point_id)),
+        )
     }
 }

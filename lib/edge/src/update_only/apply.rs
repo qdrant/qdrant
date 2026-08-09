@@ -199,7 +199,12 @@ fn open_writer<S: UniversalAppend + UniversalWrite + 'static>(
 ) -> OperationResult<UpdateOnlySegmentEnum<S>> {
     let segment = segments.get(uuid)?.read();
 
-    UpdateOnlySegmentEnum::open(fs, &segment.segment_path, segment.writer_state())
+    UpdateOnlySegmentEnum::open(
+        fs,
+        &segment.segment_path,
+        &segment.segment_config,
+        segment.writer_state(),
+    )
 }
 
 /// Locate every point the batch touches: every slot it occupies, with the
