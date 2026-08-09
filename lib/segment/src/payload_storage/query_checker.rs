@@ -500,6 +500,33 @@ mod tests {
             )));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
+        // An explicitly stored `null` is a non-array value, so its value count
+        // is 1 ("if stored value is not an array, the amount of values is
+        // assumed to be 1"), unlike an absent field, whose count is 0.
+        let null_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("packaging"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(1),
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &null_value_count_condition));
+
+        let absent_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("something_new"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(1),
+                    lte: None,
+                },
+            )));
+        assert!(!payload_checker.check(0, &absent_value_count_condition));
+
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             JsonPath::new("location"),
             GeoBoundingBox {

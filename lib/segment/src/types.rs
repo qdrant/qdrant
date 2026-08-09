@@ -3392,9 +3392,16 @@ impl ValuesCount {
 
     pub fn check_count_from(&self, value: &Value) -> bool {
         let count = match value {
-            Value::Null => 0,
+            // An explicit `null` is a stored non-array value, so it counts as 1
+            // per the documented contract ("if stored value is not an array, the
+            // amount of values is assumed to be 1"). Only an *absent* field has
+            // a count of 0, which is handled by `check_empty`, not here.
             Value::Array(array) => array.len(),
-            Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => 1,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Object(_) => 1,
         };
 
         self.check_count(count)
