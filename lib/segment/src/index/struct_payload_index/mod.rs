@@ -7,6 +7,7 @@ pub use read_view::{IdsConditionChecker, StructPayloadIndexReadView};
 pub mod read_only;
 #[cfg(test)]
 mod tests;
+pub mod update_only;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
