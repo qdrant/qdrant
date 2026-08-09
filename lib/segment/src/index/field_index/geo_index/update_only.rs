@@ -1,0 +1,28 @@
+use serde_json::Value;
+
+use super::GeoIndex;
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_values};
+use crate::types::RawGeoPoint;
+
+/// Writes what [`MutableGeoIndex`] persists: the point's coordinates, in the
+/// packed form the index stores.
+///
+/// The geo hash structure the index answers queries from is derived from these
+/// coordinates and rebuilt on open, so it plays no part here.
+///
+/// [`MutableGeoIndex`]: super::mutable_geo_index::MutableGeoIndex
+pub struct UpdateOnlyGeoKind;
+
+impl UpdateOnlyIndexKind for UpdateOnlyGeoKind {
+    type Stored = Vec<RawGeoPoint>;
+
+    fn extract(&self, values: &[&Value]) -> OperationResult<Option<Self::Stored>> {
+        let stored: Vec<RawGeoPoint> = extracted_values::<GeoIndex>(values)
+            .into_iter()
+            .map(RawGeoPoint::from)
+            .collect();
+
+        Ok((!stored.is_empty()).then_some(stored))
+    }
+}

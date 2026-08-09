@@ -10,6 +10,7 @@ mod query;
 mod read_only;
 mod read_ops;
 mod storage;
+pub mod update_only;
 mod value_indexer;
 
 use std::marker::PhantomData;

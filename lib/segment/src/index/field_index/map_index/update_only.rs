@@ -1,0 +1,52 @@
+use std::marker::PhantomData;
+
+use blobstore::Blob;
+use serde_json::Value;
+
+use super::{MapIndex, MapIndexKey};
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::ValueIndexer;
+use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_values};
+
+/// Writes what [`MutableMapIndex`] persists: the point's keys, owned.
+///
+/// The prefix index the keyword variant can also keep is not written here. It
+/// is derived from these same keys and rebuilt on open, like every other
+/// in-memory part of an appendable index.
+///
+/// [`MutableMapIndex`]: super::mutable_map_index::MutableMapIndex
+pub struct UpdateOnlyMapKind<N: MapIndexKey + ?Sized>(PhantomData<&'static N>);
+
+impl<N: MapIndexKey + ?Sized> UpdateOnlyMapKind<N> {
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<N: MapIndexKey + ?Sized> Default for UpdateOnlyMapKind<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<N> UpdateOnlyIndexKind for UpdateOnlyMapKind<N>
+where
+    N: MapIndexKey + ?Sized,
+    MapIndex<N>: ValueIndexer,
+    // The keyword index reads `String` out of the payload and stores the
+    // compact `EcoString`, so the two are converted here exactly as the
+    // mutable side converts them.
+    <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
+    type Stored = Vec<<N as MapIndexKey>::Owned>;
+
+    fn extract(&self, values: &[&Value]) -> OperationResult<Option<Self::Stored>> {
+        let stored: Self::Stored = extracted_values::<MapIndex<N>>(values)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        Ok((!stored.is_empty()).then_some(stored))
+    }
+}

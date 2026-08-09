@@ -17,6 +17,7 @@ pub mod read_only;
 mod read_ops;
 pub mod stop_words;
 pub mod tokenizers;
+pub mod update_only;
 
 pub use read_only::ReadOnlyFullTextIndex;
 pub use read_ops::FullTextConditionChecker;
