@@ -1,16 +1,5 @@
-//! The write half of the appendable payload indexes, for update-only segments.
-//!
-//! An appendable field index keeps two things: the values it persists per point,
-//! and the in-memory structure it answers queries from. Only the first is state
-//! — the second is rebuilt from it on every open, by the mutable index and by
-//! its read-only counterpart alike. So a writer that never answers a query has
-//! nothing to hold: it turns a point's payload into the values its index would
-//! persist, appends them at the point's slot, and is done.
-//!
-//! What differs between index types is only that translation, which is what
-//! [`UpdateOnlyIndexKind`] captures; [`UpdateOnlyValueIndex`] is the storage
-//! around it, the same for all of them. Each kind lives next to the index it
-//! writes for, as the read-only counterparts do.
+//! The storage every appendable field index writer shares, and the seam that
+//! is all they differ by.
 
 use std::path::Path;
 
@@ -23,7 +12,6 @@ use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::update_only_blobstore::UpdateOnlyBlobstore;
-use crate::index::field_index::ValueIndexer;
 
 /// Storage layout for an appendable field index this writer creates.
 ///
@@ -32,7 +20,7 @@ use crate::index::field_index::ValueIndexer;
 /// costs. The mutable side additionally scales its page size down with its
 /// block size, to bound the overhead of preallocating the first page; an
 /// append-only page starts empty and grows, so there is nothing to bound.
-pub const INDEX_LOGSTORE_CONFIG: LogstoreConfig = LogstoreConfig {
+const INDEX_LOGSTORE_CONFIG: LogstoreConfig = LogstoreConfig {
     page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
     compression: Compression::None,
 };
@@ -47,19 +35,6 @@ pub trait UpdateOnlyIndexKind {
     /// when there is nothing to index — no value of the type this index accepts,
     /// or no value at all.
     fn extract(&self, values: &[&Value]) -> OperationResult<Option<Self::Stored>>;
-}
-
-/// The values a batch indexes, flattened the way [`ValueIndexer::add_point`]
-/// flattens them: arrays contribute their elements, and a value the index
-/// cannot accept contributes nothing.
-///
-/// Takes the extraction from the index type `I` itself rather than restating
-/// it, so the two sides cannot drift apart.
-pub fn extracted_values<I: ValueIndexer>(values: &[&Value]) -> Vec<I::ValueType> {
-    values
-        .iter()
-        .flat_map(|value| I::get_values(value))
-        .collect()
 }
 
 /// The write half of one appendable field index of an update-only segment: a
@@ -108,8 +83,9 @@ impl<K: UpdateOnlyIndexKind, S: UniversalAppend + 'static> UpdateOnlyValueIndex<
         )
     }
 
-    /// Persist everything buffered since the last flush.
-    pub fn flush(&self) -> OperationResult<()> {
+    /// Persist everything buffered since the last flush. A batch that indexed
+    /// nothing here costs no I/O at all.
+    pub fn flush(&mut self) -> OperationResult<()> {
         self.storage.flush()
     }
 }

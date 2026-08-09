@@ -5,10 +5,9 @@ use serde_json::Value;
 
 use super::{Encodable, NumericIndex, NumericIndexIntoInnerValue};
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::ValueIndexer;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
-use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_values};
+use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 
 /// Writes what [`MutableNumericIndex`] persists: the point's values, encoded to
 /// the index's own numeric type.
@@ -22,15 +21,9 @@ use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_valu
 /// [`MutableNumericIndex`]: super::mutable_numeric_index::MutableNumericIndex
 pub struct UpdateOnlyNumericKind<T, P>(PhantomData<(T, P)>);
 
-impl<T, P> UpdateOnlyNumericKind<T, P> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
 impl<T, P> Default for UpdateOnlyNumericKind<T, P> {
     fn default() -> Self {
-        Self::new()
+        Self(PhantomData)
     }
 }
 
@@ -43,7 +36,7 @@ where
     type Stored = Vec<T>;
 
     fn extract(&self, values: &[&Value]) -> OperationResult<Option<Vec<T>>> {
-        let stored: Vec<T> = extracted_values::<NumericIndex<T, P>>(values)
+        let stored: Vec<T> = <NumericIndex<T, P> as ValueIndexer>::flatten_values(values)
             .into_iter()
             .map(<NumericIndex<T, P>>::into_inner_value)
             .collect();

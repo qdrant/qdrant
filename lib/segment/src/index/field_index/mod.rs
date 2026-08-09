@@ -25,7 +25,6 @@ pub mod schema_transition;
 mod stat_tools;
 #[cfg(test)]
 mod tests;
-pub mod update_only;
 mod utils;
 
 pub use facet_index::FacetIndex;

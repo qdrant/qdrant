@@ -57,7 +57,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
         payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let mut stored_any = false;
         for (internal_id, payload) in payloads {
             if payload.is_empty() {
                 continue;
@@ -68,16 +67,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
                 payload,
                 hw_counter.ref_payload_io_write_counter(),
             )?;
-            stored_any = true;
         }
 
-        // Puts only buffer, the flush is what makes them durable. A batch that
-        // stored nothing skips it: the flush writes nothing, but still syncs
-        // every page file of the storage.
-        if stored_any {
-            self.storage.flush()?;
-        }
-
-        Ok(())
+        // Puts only buffer, the flush is what makes them durable.
+        self.storage.flush()
     }
 }

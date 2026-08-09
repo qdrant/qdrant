@@ -54,9 +54,7 @@ fn write(
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
 
-    let mut writer = Writer::open(MmapFs, dir, &field(), schema, &index_type)
-        .unwrap()
-        .expect("schema and index type agree");
+    let mut writer = Writer::open(MmapFs, dir, &field(), schema, &index_type).unwrap();
     for (slot, value) in points {
         writer.add_point(*slot, &[value], &hw_counter).unwrap();
     }
@@ -224,50 +222,28 @@ fn rewriting_a_slot_is_rejected() {
         &schema,
         &index_type(PayloadIndexType::IntIndex),
     )
-    .unwrap()
     .unwrap();
 
     writer.add_point(1, &[&json!(1)], &hw_counter).unwrap();
     assert!(writer.add_point(0, &[&json!(0)], &hw_counter).is_err());
 }
 
-/// The boolean and null indexes keep a bitmask over all points, which an
-/// append-only backend cannot rewrite. Opening one has to fail loudly: the null
-/// index complements every indexed field, so a caller that took a silent skip
-/// for "nothing to do" would leave every field it touched stale.
+/// The bitmask-backed indexes are refused rather than silently skipped, see
+/// [`PayloadIndexType::is_append_only_writable`].
 #[test]
 fn bitmask_backed_indexes_are_refused() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
 
     for kind in [PayloadIndexType::BoolIndex, PayloadIndexType::NullIndex] {
-        let refused = kind.clone();
         let Err(err) = Writer::open(
             MmapFs,
             dir.path(),
             &field(),
             &schema(PayloadSchemaType::Bool),
-            &index_type(refused),
+            &index_type(kind.clone()),
         ) else {
             panic!("{kind:?} must be refused");
         };
         assert!(format!("{err}").contains("bitmask"), "{err}");
     }
-}
-
-/// A stored index type that the schema does not describe is a corrupt config,
-/// reported as "nothing to open" rather than diagnosed here.
-#[test]
-fn schema_mismatch_opens_nothing() {
-    let dir = TempDir::with_prefix("update_only_index").unwrap();
-
-    let opened = Writer::open(
-        MmapFs,
-        dir.path(),
-        &field(),
-        &schema(PayloadSchemaType::Keyword),
-        &index_type(PayloadIndexType::IntIndex),
-    )
-    .unwrap();
-
-    assert!(opened.is_none());
 }

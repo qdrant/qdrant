@@ -1,21 +1,19 @@
-use std::borrow::Cow;
-
-use itertools::Itertools as _;
 use serde_json::Value;
 
 use super::FullTextIndex;
-use super::inverted_index::ARRAY_BOUNDARY_SENTINEL;
 use super::tokenizers::Tokenizer;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_values};
+use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 
 /// Writes what [`MutableFullTextIndex`] persists: the point's tokenized
 /// document, in the same encoding, so that whoever opens the index next
 /// rebuilds the same inverted index from it.
 ///
 /// Tokenizing is all this does — the token ids and postings the mutable side
-/// also maintains live only in that in-memory index.
+/// also maintains live only in that in-memory index. Both go through the same
+/// [`FullTextIndex::tokenize_document`], so the two cannot encode a document
+/// differently.
 ///
 /// [`MutableFullTextIndex`]: super::mutable_text_index::MutableFullTextIndex
 pub struct UpdateOnlyTextKind {
@@ -36,36 +34,18 @@ impl UpdateOnlyIndexKind for UpdateOnlyTextKind {
     type Stored = Vec<u8>;
 
     fn extract(&self, values: &[&Value]) -> OperationResult<Option<Vec<u8>>> {
-        let values = extracted_values::<FullTextIndex>(values);
+        let values = <FullTextIndex as ValueIndexer>::flatten_values(values);
         if values.is_empty() {
             return Ok(None);
         }
 
-        // A sentinel between the values of an array keeps a phrase from
-        // matching across two of them.
-        let insert_boundaries = self.phrase_matching && values.len() > 1;
+        let str_tokens =
+            FullTextIndex::tokenize_document(&self.tokenizer, self.phrase_matching, &values);
 
-        let mut str_tokens: Vec<Cow<str>> =
-            Vec::with_capacity((values.len() * 2).saturating_sub(1));
-        for (i, value) in values.iter().enumerate() {
-            if insert_boundaries && i > 0 {
-                str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
-            }
-            self.tokenizer.tokenize_doc(value, |token| {
-                str_tokens.push(token);
-            });
-        }
-
-        // Phrase matching needs the tokens in the order they were written;
-        // without it only membership matters, so they are stored sorted and
-        // deduplicated.
-        let tokens_to_store = if self.phrase_matching {
-            str_tokens
-        } else {
-            str_tokens.into_iter().sorted().dedup().collect()
-        };
-
-        Ok(Some(FullTextIndex::serialize_document(tokens_to_store)?))
+        Ok(Some(FullTextIndex::serialize_stored_document(
+            str_tokens,
+            self.phrase_matching,
+        )?))
     }
 }
 
@@ -112,7 +92,6 @@ mod tests {
             &PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params.clone())),
             &index_type,
         )
-        .unwrap()
         .unwrap();
 
         writer

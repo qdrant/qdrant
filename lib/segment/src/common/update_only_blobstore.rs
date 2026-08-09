@@ -27,6 +27,9 @@ use crate::common::operation_error::OperationResult;
 /// [`BlobstoreReader`]: blobstore::BlobstoreReader
 pub struct UpdateOnlyBlobstore<V, S: UniversalAppend + 'static> {
     storage: Logstore<V, S>,
+    /// Whether anything was put since the last flush, so that a flush with
+    /// nothing to persist can be skipped entirely — see [`Self::flush`].
+    buffered: bool,
 }
 
 impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
@@ -43,7 +46,10 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
             Populate::No,
         )?;
 
-        Ok(Self { storage })
+        Ok(Self {
+            storage,
+            buffered: false,
+        })
     }
 
     /// Buffer `value` at `slot`. Nothing reaches the files until
@@ -56,6 +62,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
         hw_counter: HwMetricRefCounter,
     ) -> OperationResult<()> {
         self.storage.put_value(slot, value, hw_counter)?;
+        self.buffered = true;
         Ok(())
     }
 
@@ -63,9 +70,16 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     /// page file plus one to the tracker, however many values were put.
     ///
     /// Call this once per batch rather than per value — it also syncs every page
-    /// file of the storage, whether or not that page gained anything.
-    pub fn flush(&self) -> OperationResult<()> {
+    /// file of the storage, whether or not that page gained anything. A flush
+    /// with nothing buffered is skipped for the same reason: it would write
+    /// nothing and still sync every one of those files.
+    pub fn flush(&mut self) -> OperationResult<()> {
+        if !self.buffered {
+            return Ok(());
+        }
+
         self.storage.flusher()()?;
+        self.buffered = false;
         Ok(())
     }
 }

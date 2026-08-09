@@ -5,8 +5,7 @@ use serde_json::Value;
 
 use super::{MapIndex, MapIndexKey};
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::ValueIndexer;
-use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_values};
+use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 
 /// Writes what [`MutableMapIndex`] persists: the point's keys, owned.
 ///
@@ -17,15 +16,9 @@ use crate::index::field_index::update_only::{UpdateOnlyIndexKind, extracted_valu
 /// [`MutableMapIndex`]: super::mutable_map_index::MutableMapIndex
 pub struct UpdateOnlyMapKind<N: MapIndexKey + ?Sized>(PhantomData<&'static N>);
 
-impl<N: MapIndexKey + ?Sized> UpdateOnlyMapKind<N> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
 impl<N: MapIndexKey + ?Sized> Default for UpdateOnlyMapKind<N> {
     fn default() -> Self {
-        Self::new()
+        Self(PhantomData)
     }
 }
 
@@ -42,7 +35,7 @@ where
     type Stored = Vec<<N as MapIndexKey>::Owned>;
 
     fn extract(&self, values: &[&Value]) -> OperationResult<Option<Self::Stored>> {
-        let stored: Self::Stored = extracted_values::<MapIndex<N>>(values)
+        let stored: Self::Stored = <MapIndex<N> as ValueIndexer>::flatten_values(values)
             .into_iter()
             .map(Into::into)
             .collect();
