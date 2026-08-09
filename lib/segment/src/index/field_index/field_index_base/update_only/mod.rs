@@ -24,11 +24,13 @@ use common::universal_io::UniversalAppend;
 use serde_json::Value;
 
 pub use self::writer::{UpdateOnlyIndexKind, UpdateOnlyValueIndex};
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::bool_index::mutable_bool_index::update_only::UpdateOnlyBoolIndex;
 use crate::index::field_index::full_text_index::UpdateOnlyTextKind;
 use crate::index::field_index::geo_index::mutable_geo_index::update_only::UpdateOnlyGeoKind;
 use crate::index::field_index::map_index::mutable_map_index::update_only::UpdateOnlyMapKind;
+use crate::index::field_index::null_index::mutable_null_index::update_only::UpdateOnlyNullIndex;
 use crate::index::field_index::numeric_index::mutable_numeric_index::update_only::UpdateOnlyNumericKind;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
@@ -38,11 +40,15 @@ use crate::types::{
 
 /// The write half of one appendable field index, over the backend `S`.
 ///
-/// The update-only counterpart of [`ReadOnlyFieldIndex`][1], and it covers the
-/// same index types minus the two whose state is a bitmask rather than a value
-/// per point — see [`open`](Self::open).
+/// The update-only counterpart of [`ReadOnlyFieldIndex`][1], covering the same
+/// index types.
+///
+/// Most store values per point and append them. The boolean and null indexes
+/// instead keep a bitmask over all points, which cannot be appended to — they
+/// rewrite it whole, see [`UpdateOnlyStoredFlags`][2].
 ///
 /// [1]: crate::index::field_index::ReadOnlyFieldIndex
+/// [2]: crate::common::flags::update_only_stored_flags::UpdateOnlyStoredFlags
 pub enum UpdateOnlyFieldIndex<S: UniversalAppend + 'static> {
     IntIndex(UpdateOnlyValueIndex<UpdateOnlyNumericKind<IntPayloadType, IntPayloadType>, S>),
     DatetimeIndex(
@@ -54,17 +60,13 @@ pub enum UpdateOnlyFieldIndex<S: UniversalAppend + 'static> {
     UuidMapIndex(UpdateOnlyValueIndex<UpdateOnlyMapKind<UuidIntType>, S>),
     GeoIndex(UpdateOnlyValueIndex<UpdateOnlyGeoKind, S>),
     FullTextIndex(UpdateOnlyValueIndex<UpdateOnlyTextKind, S>),
+    BoolIndex(UpdateOnlyBoolIndex<S>),
+    NullIndex(UpdateOnlyNullIndex<S>),
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// Open the writer for `field`'s index of type `index_type`, under the
     /// payload index root `dir`, creating its storage if it is not there yet.
-    ///
-    /// Fails for an index type that is not
-    /// [`is_append_only_writable`](PayloadIndexType::is_append_only_writable),
-    /// which documents why. Deciding *whether* a field can be updated this way
-    /// belongs to whoever reads the payload config; this is the backstop that
-    /// keeps such an index from being opened by mistake.
     pub fn open(
         fs: S::Fs,
         dir: &Path,
@@ -73,13 +75,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
         index_type: &FullPayloadIndexType,
     ) -> OperationResult<Self> {
         let index_type = &index_type.index_type;
-        if !index_type.is_append_only_writable() {
-            return Err(OperationError::service_error(format!(
-                "Cannot open {index_type:?} of field {field} for appending: it keeps a bitmask \
-                 over all points, which an append-only backend cannot rewrite",
-            )));
-        }
-
         let dir = &index_type.storage_dir(dir, field);
 
         let index = match index_type {
@@ -114,10 +109,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
                     UpdateOnlyTextKind::new(&config),
                 )?)
             }
-            // Refused above.
-            PayloadIndexType::BoolIndex | PayloadIndexType::NullIndex => {
-                unreachable!("not append-only writable")
-            }
+            PayloadIndexType::BoolIndex => Self::BoolIndex(UpdateOnlyBoolIndex::open(fs, dir)?),
+            PayloadIndexType::NullIndex => Self::NullIndex(UpdateOnlyNullIndex::open(fs, dir)?),
         };
 
         Ok(index)
@@ -141,11 +134,16 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::UuidMapIndex(index) => index.add_point(slot, values, hw_counter),
             Self::GeoIndex(index) => index.add_point(slot, values, hw_counter),
             Self::FullTextIndex(index) => index.add_point(slot, values, hw_counter),
+            Self::BoolIndex(index) => index.add_point(slot, values),
+            Self::NullIndex(index) => index.add_point(slot, values),
         }
     }
 
     /// Persist everything buffered since the last flush.
-    pub fn flush(&mut self) -> OperationResult<()> {
+    ///
+    /// `hw_counter` is charged only by the bitmask-backed indexes, which do
+    /// their writing here; the rest charge each value as it is put.
+    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             Self::IntIndex(index) => index.flush(),
             Self::DatetimeIndex(index) => index.flush(),
@@ -155,6 +153,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::UuidMapIndex(index) => index.flush(),
             Self::GeoIndex(index) => index.flush(),
             Self::FullTextIndex(index) => index.flush(),
+            Self::BoolIndex(index) => index.flush(hw_counter),
+            Self::NullIndex(index) => index.flush(hw_counter),
         }
     }
 }

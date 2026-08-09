@@ -14,10 +14,12 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use super::UpdateOnlyFieldIndex;
+use crate::index::field_index::bool_index::{BoolIndexRead as _, MutableBoolIndex};
 use crate::index::field_index::geo_index::mutable_geo_index::MutableGeoIndex;
 use crate::index::field_index::geo_index::read_ops::GeoIndexRead as _;
 use crate::index::field_index::map_index::mutable_map_index::MutableMapIndex;
 use crate::index::field_index::map_index::read_ops::MapIndexRead as _;
+use crate::index::field_index::null_index::{MutableNullIndex, NullIndexRead as _};
 use crate::index::field_index::numeric_index::mutable_numeric_index::MutableNumericIndex;
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
@@ -58,7 +60,7 @@ fn write(
     for (slot, value) in points {
         writer.add_point(*slot, &[value], &hw_counter).unwrap();
     }
-    writer.flush().unwrap();
+    writer.flush(&hw_counter).unwrap();
 
     storage
 }
@@ -228,22 +230,90 @@ fn rewriting_a_slot_is_rejected() {
     assert!(writer.add_point(0, &[&json!(0)], &hw_counter).is_err());
 }
 
-/// The bitmask-backed indexes are refused rather than silently skipped, see
-/// [`PayloadIndexType::is_append_only_writable`].
+/// The boolean index keeps a bitmask over all points rather than values per
+/// point, so its writer rewrites the mask whole. What it leaves behind is the
+/// same two files the mutable index writes, and that index picks them up.
 #[test]
-fn bitmask_backed_indexes_are_refused() {
+fn bool_index_round_trip() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
+    let storage = write(
+        dir.path(),
+        PayloadIndexType::BoolIndex,
+        &schema(PayloadSchemaType::Bool),
+        // True, both at once, neither — and a value the index cannot read.
+        &[
+            (0, json!(true)),
+            (1, json!([true, false])),
+            (2, json!(false)),
+            (3, json!("not a bool")),
+        ],
+    );
 
-    for kind in [PayloadIndexType::BoolIndex, PayloadIndexType::NullIndex] {
-        let Err(err) = Writer::open(
-            MmapFs,
-            dir.path(),
-            &field(),
-            &schema(PayloadSchemaType::Bool),
-            &index_type(kind.clone()),
-        ) else {
-            panic!("{kind:?} must be refused");
-        };
-        assert!(format!("{err}").contains("bitmask"), "{err}");
-    }
+    let index = MutableBoolIndex::open(&storage, false).unwrap().unwrap();
+
+    assert_eq!(index.get_point_values(0).unwrap(), vec![true]);
+    assert_eq!(index.get_point_values(1).unwrap(), vec![true, false]);
+    assert_eq!(index.get_point_values(2).unwrap(), vec![false]);
+    assert!(index.values_is_empty(3).unwrap());
+    assert_eq!(index.indexed_count().unwrap(), 3);
+}
+
+/// The null index records two bits per point, and does so for every point of
+/// the batch: "this point has no value here" is what it is asked.
+#[test]
+fn null_index_round_trip() {
+    let dir = TempDir::with_prefix("update_only_index").unwrap();
+    let storage = write(
+        dir.path(),
+        PayloadIndexType::NullIndex,
+        &schema(PayloadSchemaType::Keyword),
+        &[
+            (0, json!("a value")),
+            (1, json!(null)),
+            // An array holding a null holds both a value and a null.
+            (2, json!(["a value", null])),
+            (3, json!([])),
+        ],
+    );
+
+    let index = MutableNullIndex::open(&storage, 4, false).unwrap().unwrap();
+
+    assert!(!index.values_is_empty(0).unwrap());
+    assert!(!index.values_is_null(0).unwrap());
+
+    assert!(index.values_is_empty(1).unwrap());
+    assert!(index.values_is_null(1).unwrap());
+
+    assert!(!index.values_is_empty(2).unwrap());
+    assert!(index.values_is_null(2).unwrap());
+
+    // An empty array is neither, and a point past the batch was never seen.
+    assert!(index.values_is_empty(3).unwrap());
+    assert!(!index.values_is_null(3).unwrap());
+    assert!(index.values_is_empty(9).unwrap());
+}
+
+/// A second writer picks the mask up where the first left it, rather than
+/// starting from an empty one and dropping every flag already there.
+#[test]
+fn bitmask_writers_resume() {
+    let dir = TempDir::with_prefix("update_only_index").unwrap();
+    let schema = schema(PayloadSchemaType::Bool);
+
+    let storage = write(
+        dir.path(),
+        PayloadIndexType::BoolIndex,
+        &schema,
+        &[(0, json!(true))],
+    );
+    write(
+        dir.path(),
+        PayloadIndexType::BoolIndex,
+        &schema,
+        &[(1, json!(false))],
+    );
+
+    let index = MutableBoolIndex::open(&storage, false).unwrap().unwrap();
+    assert_eq!(index.get_point_values(0).unwrap(), vec![true]);
+    assert_eq!(index.get_point_values(1).unwrap(), vec![false]);
 }

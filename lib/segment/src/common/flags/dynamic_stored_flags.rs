@@ -41,6 +41,15 @@ pub struct DynamicFlagsStatus {
 }
 
 impl DynamicFlagsStatus {
+    /// The status of a storage holding `len` flags, in the only file-id the
+    /// current format uses.
+    pub(super) fn new(len: usize) -> Self {
+        Self {
+            len,
+            current_file_id: 0,
+        }
+    }
+
     /// Number of logical flags (bits) stored.
     pub fn len(&self) -> usize {
         self.len
@@ -84,7 +93,7 @@ impl<S: fmt::Debug> fmt::Debug for DynamicStoredFlags<S> {
 }
 
 /// Based on the number of flags determines the size in bytes for the storage file.
-fn file_size_for(num_flags: usize) -> usize {
+pub(super) fn file_size_for(num_flags: usize) -> usize {
     let number_of_bytes = num_flags.div_ceil(u8::BITS as usize);
 
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())

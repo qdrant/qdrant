@@ -102,39 +102,7 @@ impl MutableNullIndex {
         payload: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let mut is_null = false;
-        let mut has_values = false;
-
-        for value in payload {
-            match value {
-                Value::Null => {
-                    is_null = true;
-                }
-                Value::Bool(_) => {
-                    has_values = true;
-                }
-                Value::Number(_) => {
-                    has_values = true;
-                }
-                Value::String(_) => {
-                    has_values = true;
-                }
-                Value::Array(array) => {
-                    if array.iter().any(|v| v.is_null()) {
-                        is_null = true;
-                    }
-                    if !array.is_empty() {
-                        has_values = true;
-                    }
-                }
-                Value::Object(_) => {
-                    has_values = true;
-                }
-            }
-            if is_null && has_values {
-                break;
-            }
-        }
+        let (has_values, is_null) = classify_payload(payload);
 
         self.storage.has_values_flags.set(id, has_values);
         self.storage.is_null_flags.set(id, is_null);
@@ -238,4 +206,50 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
         self.0.flusher()()?;
         Ok(self.0)
     }
+}
+
+/// What the null index records about a point: whether its field holds any
+/// value at all, and whether any of those values is null.
+///
+/// An array counts as holding values when it is non-empty, and as null when any
+/// of its elements is; both can be true at once.
+///
+/// Shared with the update-only writer, which records the same two bits without
+/// building an index.
+pub(super) fn classify_payload(payload: &[&Value]) -> (bool, bool) {
+    let mut is_null = false;
+    let mut has_values = false;
+
+    for value in payload {
+        match value {
+            Value::Null => {
+                is_null = true;
+            }
+            Value::Bool(_) => {
+                has_values = true;
+            }
+            Value::Number(_) => {
+                has_values = true;
+            }
+            Value::String(_) => {
+                has_values = true;
+            }
+            Value::Array(array) => {
+                if array.iter().any(|v| v.is_null()) {
+                    is_null = true;
+                }
+                if !array.is_empty() {
+                    has_values = true;
+                }
+            }
+            Value::Object(_) => {
+                has_values = true;
+            }
+        }
+        if is_null && has_values {
+            break;
+        }
+    }
+
+    (has_values, is_null)
 }

@@ -99,7 +99,7 @@ mod tests {
             .unwrap();
         // A value the text index cannot read stores nothing.
         writer.add_point(1, &[&json!(42)], &hw_counter).unwrap();
-        writer.flush().unwrap();
+        writer.flush(&hw_counter).unwrap();
 
         let index = MutableFullTextIndex::open_gridstore(storage, params, false)
             .unwrap()

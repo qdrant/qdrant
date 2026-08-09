@@ -169,38 +169,6 @@ impl FullPayloadIndexType {
     }
 }
 
-impl PayloadIndexType {
-    /// Whether an index of this type can be maintained on a backend that only
-    /// appends, as an update-only segment's is.
-    ///
-    /// False for the two whose state is a bitmask over all points rather than
-    /// values per point: keeping one current means rewriting bytes in place,
-    /// which such a backend does not offer.
-    ///
-    /// Consult this before deciding a field, or a whole segment, can be updated
-    /// that way — not to filter indexes out of the update. A skipped index goes
-    /// stale, and a stale index answers queries wrongly; the null index in
-    /// particular complements *every* other index of every indexed field (see
-    /// [`StructPayloadIndex::build_field_indexes`][1]), so skipping it would
-    /// leave every field touched wrong.
-    ///
-    /// [1]: crate::index::struct_payload_index::StructPayloadIndex::build_field_indexes
-    pub fn is_append_only_writable(&self) -> bool {
-        match self {
-            PayloadIndexType::BoolIndex | PayloadIndexType::NullIndex => false,
-            PayloadIndexType::IntIndex
-            | PayloadIndexType::IntMapIndex
-            | PayloadIndexType::DatetimeIndex
-            | PayloadIndexType::KeywordIndex
-            | PayloadIndexType::FloatIndex
-            | PayloadIndexType::GeoIndex
-            | PayloadIndexType::FullTextIndex
-            | PayloadIndexType::UuidIndex
-            | PayloadIndexType::UuidMapIndex => true,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexMutability {

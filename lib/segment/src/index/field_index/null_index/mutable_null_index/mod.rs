@@ -6,6 +6,7 @@ use crate::common::flags::roaring_flags::RoaringFlags;
 
 mod lifecycle;
 mod read_ops;
+pub mod update_only;
 
 pub use self::lifecycle::MutableNullIndexBuilder;
 
