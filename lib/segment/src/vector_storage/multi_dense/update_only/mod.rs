@@ -102,7 +102,7 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
 
             match spans.last_mut() {
                 // Contiguous with the span being built.
-                Some((start, rows)) if *start + rows.len() / self.dim.max(1) == row => {
+                Some((start, rows)) if *start + rows.len() / self.dim == row => {
                     rows.extend_from_slice(&flattened);
                 }
                 _ if flattened.is_empty() => {}

@@ -31,8 +31,8 @@ pub struct UpdateOnlyStoredFlags<S: UniversalAppend + 'static> {
 
 impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
     /// Read the flags at `directory` into memory, ready to be extended. A
-    /// directory that holds none yet opens empty; nothing is created until the
-    /// first [`flush`](Self::flush).
+    /// directory that holds none yet opens empty, and is created — status file
+    /// included — right away.
     pub fn open(fs: S::Fs, directory: &Path) -> OperationResult<Self> {
         // Materialize the directory on the first open rather than on the first
         // flag. Storages use it as the marker that they exist at all — the
