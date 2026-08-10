@@ -72,10 +72,6 @@ pub struct CreateArgs {
     )]
     pub payload_index: Vec<String>,
 
-    /// Target number of segments for the optimizer (omit to derive from CPU count).
-    #[arg(long)]
-    pub segments: Option<usize>,
-
     /// Store payload on disk (mmap) instead of RAM.
     #[arg(long, default_value_t = false)]
     pub on_disk_payload: bool,

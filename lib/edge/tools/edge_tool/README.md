@@ -39,7 +39,6 @@ edge-tool create [OPTIONS] <PATH>
 - `--payload-index NAME:TYPE` — create a payload index. `TYPE` is one of `keyword`, `integer`,
   `float`, `text`, `geo`. Comma-separated and/or repeatable, e.g. `--payload-index
   city:keyword,age:integer`.
-- `--segments <N>` — target number of segments for the optimizer (omit to derive from CPU count).
 - `--on-disk-payload` — store payload on disk (mmap) instead of RAM.
 
 `PATH` must not already contain segment data.
