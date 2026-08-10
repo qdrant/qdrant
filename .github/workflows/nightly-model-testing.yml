@@ -50,7 +50,7 @@ jobs:
           # ref (e.g. the PR merge ref). github.ref_name would be "<pr>/merge" here,
           # which checkout wrongly resolves as a branch and fails to fetch.
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           # Save only on the nightly run (scheduled events run in the default-branch
           # context, so its cache is restorable by all branches). dispatch/PR runs
