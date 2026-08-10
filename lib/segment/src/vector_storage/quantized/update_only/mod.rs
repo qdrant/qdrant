@@ -32,10 +32,6 @@
 //! [`EncodedStorage`]: quantization::EncodedStorage
 //! [`EncodedStorageWrite`]: quantization::EncodedStorageWrite
 
-// Not wired into a segment yet — that lands in a later PR in this stack, so nothing outside
-// this module's own tests constructs `UpdateOnlyQuantizedVectors` today.
-#![expect(dead_code)]
-
 #[cfg(test)]
 mod tests;
 
@@ -47,7 +43,6 @@ use common::universal_io::{UniversalAppend, UniversalReadFileOps as _, read_json
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::VectorRef;
 use crate::types::QuantizationConfig;
@@ -68,6 +63,7 @@ enum UpdateOnlyQuantizedVectorStorage<S: UniversalAppend + 'static> {
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
 pub struct UpdateOnlyQuantizedVectors<S: UniversalAppend + 'static> {
     storage: UpdateOnlyQuantizedVectorStorage<S>,
+    config: QuantizedVectorsConfig,
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
@@ -133,7 +129,22 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
             }
         };
 
-        Ok(Self { storage })
+        Ok(Self { storage, config })
+    }
+
+    /// The quantization method actually persisted for this overlay — the source of truth for a
+    /// caller deciding how to reconstruct an `f32` vector from storage-native bytes carried over
+    /// from a point's previous slot, since a reopened overlay's config is read from disk, not
+    /// necessarily identical to whatever live config the caller has to hand.
+    pub fn quantization_config(&self) -> &QuantizationConfig {
+        &self.config.quantization_config
+    }
+
+    /// The dimensionality of the (dense, unrotated) vector this overlay quantizes — the length
+    /// a caller must give [`Self::upsert_vector`], including for a placeholder vector standing
+    /// in for a point with no vector under this name.
+    pub fn dim(&self) -> usize {
+        self.config.vector_parameters.dim
     }
 
     /// Encode and persist `vector` for `id`. `id` must be the current end of the overlay: like
@@ -155,13 +166,5 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
                 Ok(q.upsert_vector(id, vector, hw_counter)?)
             }
         }
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        let flusher = match &self.storage {
-            UpdateOnlyQuantizedVectorStorage::Binary(q) => q.flusher(),
-            UpdateOnlyQuantizedVectorStorage::Turbo(q) => q.flusher(),
-        };
-        Box::new(move || flusher().map_err(OperationError::from))
     }
 }
