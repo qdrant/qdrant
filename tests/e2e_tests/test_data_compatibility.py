@@ -104,7 +104,16 @@ class TestStorageCompatibility:
                     for chunk in response.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             f.write(chunk)
+        except requests.exceptions.HTTPError as e:
+            # A missing archive means the version was never published, which no
+            # amount of retrying fixes. Skipping it would report the version as
+            # covered while nothing ran, so fail loudly instead.
+            if e.response is not None and e.response.status_code == 404:
+                pytest.fail(f"No published compatibility archive for {version}: {url}")
+            pytest.skip(f"Could not download compatibility data for {version}: {e}")
         except requests.exceptions.RequestException as e:
+            # Connection resets, timeouts and the like are transient, do not turn
+            # unrelated pull requests red over them
             pytest.skip(f"Could not download compatibility data for {version}: {e}")
 
         return compatibility_file
