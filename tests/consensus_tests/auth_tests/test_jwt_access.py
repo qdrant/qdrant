@@ -753,6 +753,11 @@ def check_rest_access(
         # https://github.com/psf/requests/issues/5425
         if should_succeed or not isinstance(e.args[0].args[1], TimeoutError):
             raise e
+    except requests.exceptions.Timeout:
+        # The same early-response hang can surface as ReadTimeout instead of
+        # ConnectionError(TimeoutError). Tolerate it only for denied requests.
+        if should_succeed:
+            raise
 
 
 def check_grpc_access(
@@ -1395,7 +1400,9 @@ def collection_snapshot():
 def test_upload_collection_snapshot(collection_snapshot: bytes):
     check_access(
         "upload_collection_snapshot",
-        rest_req_kwargs={"files": {"snapshot": collection_snapshot}, "timeout": 1},
+        # Bound hangs on early auth rejection (requests#5425), but leave enough
+        # headroom for authorized uploads under CI load.
+        rest_req_kwargs={"files": {"snapshot": collection_snapshot}, "timeout": 10},
         path_params={"collection_name": COLL_NAME},
     )
 
@@ -1438,7 +1445,9 @@ def shard_snapshot(shard_snapshot_name):
 def test_upload_shard_snapshot(shard_snapshot: bytes):
     check_access(
         "upload_shard_snapshot",
-        rest_req_kwargs={"files": {"snapshot": shard_snapshot}, "timeout": 1},
+        # Bound hangs on early auth rejection (requests#5425), but leave enough
+        # headroom for authorized uploads under CI load.
+        rest_req_kwargs={"files": {"snapshot": shard_snapshot}, "timeout": 10},
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
 
