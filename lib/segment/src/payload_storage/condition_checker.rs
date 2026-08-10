@@ -479,6 +479,55 @@ mod tests {
     }
 
     #[test]
+    fn test_value_count_explicit_null_is_one_value() {
+        // An explicit JSON `null` is a stored, non-array value. According to
+        // the documented contract for `values_count` ("if stored value is not
+        // an array, the amount of values is assumed to be 1") it must count
+        // as a single value, not as zero. Regression for
+        // https://github.com/qdrant/qdrant/issues/10113.
+        let key = JsonPath::new("state");
+
+        let field_condition = |values_count: ValuesCount| FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: Some(values_count),
+            key: key.clone(),
+            is_empty: None,
+            is_null: None,
+        };
+
+        let gte_one = field_condition(ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(1),
+            lte: None,
+        });
+        // Explicit `null` has one value, so `gte: 1` must match.
+        assert!(gte_one.check(&json!(null)));
+
+        let lt_one = field_condition(ValuesCount {
+            lt: Some(1),
+            gt: None,
+            gte: None,
+            lte: None,
+        });
+        // One value is not `< 1`, so `lt: 1` must not match.
+        assert!(!lt_one.check(&json!(null)));
+
+        let gte_two = field_condition(ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(2),
+            lte: None,
+        });
+        // One value is not `>= 2`, so `gte: 2` must not match.
+        assert!(!gte_two.check(&json!(null)));
+    }
+
+    #[test]
     fn test_value_checker_for_null_or_empty() {
         let array = json!([]);
         let array_with_null = json!([null]);

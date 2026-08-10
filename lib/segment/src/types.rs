@@ -3392,7 +3392,12 @@ impl ValuesCount {
 
     pub fn check_count_from(&self, value: &Value) -> bool {
         let count = match value {
-            Value::Null => 0,
+            // An explicit `null` is a stored, non-array value. It must be
+            // counted as a single value, consistent with the documented rule
+            // "if stored value is not an array, the amount of values is
+            // assumed to be 1". A *missing* field is handled separately via
+            // `check_empty` -> `check_count(0)`.
+            Value::Null => 1,
             Value::Array(array) => array.len(),
             Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => 1,
         };

@@ -500,6 +500,57 @@ mod tests {
             )));
         assert!(payload_checker.check(0, &few_value_count_condition));
 
+        // An explicit `null` is a stored, non-array value, so it counts as one
+        // value. Regression for https://github.com/qdrant/qdrant/issues/10113.
+        let null_field_has_one_value =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("packaging"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(1),
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &null_field_has_one_value));
+
+        let null_field_has_lt_one_value =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("packaging"),
+                ValuesCount {
+                    lt: Some(1),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
+        assert!(!payload_checker.check(0, &null_field_has_lt_one_value));
+
+        // A genuinely missing field must still count as zero values.
+        let missing_field_has_lt_one_value =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("something_new"),
+                ValuesCount {
+                    lt: Some(1),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
+        assert!(payload_checker.check(0, &missing_field_has_lt_one_value));
+
+        let missing_field_has_one_value =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                JsonPath::new("something_new"),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(1),
+                    lte: None,
+                },
+            )));
+        assert!(!payload_checker.check(0, &missing_field_has_one_value));
+
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             JsonPath::new("location"),
             GeoBoundingBox {
