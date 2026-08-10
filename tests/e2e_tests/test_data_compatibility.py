@@ -21,6 +21,7 @@ class TestStorageCompatibility:
     """
 
     VERSIONS = [
+        "v1.19.0",
         "v1.18.1",
         "v1.18.0",
         "v1.17.1",
@@ -31,7 +32,8 @@ class TestStorageCompatibility:
         "v1.16.0",
     ]
 
-    EXPECTED_COLLECTIONS = [
+    # Collections present in every published compatibility archive
+    BASE_COLLECTIONS = [
         "test_collection_vector_memory",
         "test_collection_vector_on_disk",
         "test_collection_vector_on_disk_threshold",
@@ -45,6 +47,36 @@ class TestStorageCompatibility:
         "test_collection_vector_datatype_u8",
         "test_collection_vector_datatype_f16"
     ]
+
+    # Collections added to `populate_db.py` later on, keyed by the oldest release
+    # whose published archive contains them. Archives are generated once per
+    # release, so older ones keep the collection set of their own generation.
+    #
+    # TurboQuant quantization is supported since v1.18.0 and the `turbo4` datatype
+    # since v1.18.3, but the generator only started creating these collections for
+    # v1.19.0. Lower the key if an older archive is regenerated.
+    VERSIONED_COLLECTIONS = {
+        (1, 19, 0): [
+            "test_collection_turbo_bits1_5",
+            "test_collection_turbo_bits4",
+            "test_collection_vector_datatype_turbo4",
+        ],
+    }
+
+    @staticmethod
+    def _parse_version(version: str) -> tuple[int, ...]:
+        """Turn a version tag such as "v1.19.1" into a comparable tuple."""
+        return tuple(int(part) for part in version.lstrip("v").split("."))
+
+    @classmethod
+    def _expected_collections(cls, version: str) -> list[str]:
+        """Collections the archive of `version` is expected to contain."""
+        parsed = cls._parse_version(version)
+        collections = list(cls.BASE_COLLECTIONS)
+        for min_version, names in cls.VERSIONED_COLLECTIONS.items():
+            if parsed >= min_version:
+                collections.extend(names)
+        return collections
 
     @staticmethod
     def _download_compatibility_data(version: str, storage_test_dir: Path) -> Path:
@@ -103,7 +135,7 @@ class TestStorageCompatibility:
     DENSE_DIM = 256
     MULTI_DENSE_DIM = 128
 
-    def _check_collections(self, host: str, port: int) -> tuple[bool, str]:
+    def _check_collections(self, host: str, port: int, version: str) -> tuple[bool, str]:
         """Check that all collections are loaded properly.
 
         Returns:
@@ -116,7 +148,7 @@ class TestStorageCompatibility:
         except Exception as e:
             return False, f"Error listing collections: {e}"
 
-        expected = set(self.EXPECTED_COLLECTIONS)
+        expected = set(self._expected_collections(version))
         found = set(collections)
         missing = expected - found
         if missing:
@@ -132,7 +164,7 @@ class TestStorageCompatibility:
 
         return True, ""
 
-    def _query_collections(self, host: str, port: int) -> tuple[bool, str]:
+    def _query_collections(self, host: str, port: int, version: str) -> tuple[bool, str]:
         """Run queries against all collections to verify data is actually accessible.
 
         Sends one query of each kind per collection: dense, sparse, and multivector
@@ -140,7 +172,7 @@ class TestStorageCompatibility:
         """
         base_url = f"http://{host}:{port}"
 
-        for collection in self.EXPECTED_COLLECTIONS:
+        for collection in self._expected_collections(version):
             try:
                 # Dense vector search
                 resp = requests.post(
@@ -184,6 +216,18 @@ class TestStorageCompatibility:
                 )
                 if not resp.ok:
                     return False, f"Keyword filter scroll failed on {collection}: {resp.status_code} {resp.text}"
+
+                # Scroll with keyword prefix filter, archives without the `prefix`
+                # index option answer it by scanning
+                resp = requests.post(
+                    f"{base_url}/collections/{collection}/points/scroll",
+                    json={
+                        "filter": {"must": [{"key": "keyword_field", "match": {"prefix": "hel"}}]},
+                        "limit": 3,
+                    },
+                )
+                if not resp.ok:
+                    return False, f"Keyword prefix filter scroll failed on {collection}: {resp.status_code} {resp.text}"
 
                 # Scroll with float range filter
                 resp = requests.post(
@@ -303,11 +347,11 @@ class TestStorageCompatibility:
             if not client.wait_for_server():
                 return False, f"Server failed to start for {test_name} test ({version})"
 
-            success, error_msg = self._check_collections(container_info.host, container_info.http_port)
+            success, error_msg = self._check_collections(container_info.host, container_info.http_port, version)
             if not success:
                 return False, f"{test_name.capitalize()} compatibility failed for {version}: {error_msg}"
 
-            success, error_msg = self._query_collections(container_info.host, container_info.http_port)
+            success, error_msg = self._query_collections(container_info.host, container_info.http_port, version)
             if not success:
                 return False, f"{test_name.capitalize()} query verification failed for {version}: {error_msg}"
 
