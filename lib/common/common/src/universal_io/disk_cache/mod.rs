@@ -17,8 +17,15 @@ mod pipeline;
 #[cfg(test)]
 mod tests;
 
+#[cfg(any(test, feature = "testing"))]
 pub use cached_slice::CachedSlice;
-use controller::{CacheController, CacheRead};
+#[cfg(not(any(test, feature = "testing")))]
+use cached_slice::CachedSlice;
+#[cfg(any(test, feature = "testing"))]
+pub use controller::CacheController;
+#[cfg(not(any(test, feature = "testing")))]
+use controller::CacheController;
+use controller::CacheRead;
 use pipeline::DiskCacheReadPipeline;
 
 use super::UniversalKind;
