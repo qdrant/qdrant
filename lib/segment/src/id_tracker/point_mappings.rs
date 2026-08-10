@@ -992,7 +992,6 @@ mod set_link_shadow_tests {
         let r = PointMappingsRefEnum::<common::universal_io::MmapFile>::Plain(&m);
         let (cutoff, mapping_deleted) = r.internal_scan_masks();
 
-        let cutoff = cutoff.expect("internal scan is bounded by the mapping length");
         let from_masks: Vec<PointOffsetType> = (0..cutoff)
             .filter(|&id| !mapping_deleted.get_bit(id as usize).unwrap_or(false))
             .collect();
