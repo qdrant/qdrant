@@ -5,11 +5,11 @@
 //!
 //! The reference is built the same way, vector by vector, rather than via a single batch
 //! `encode()` call over the whole dataset: TurboQuant's quantizer is calibrated from whatever
-//! data it has *at creation time* (empty, for a fresh appendable segment — the same as this
-//! module's `create`), so a quantizer fit from the full dataset up front would legitimately
-//! encode differently. That calibration gap is an existing, documented property of appendable
-//! quantization in general (see `quantized_vectors/load.rs`'s auto-create comment), not
-//! something this test should be asserting away — what it must prove is that this module's
+//! data it has *at creation time* (empty, for a fresh appendable segment — the same as
+//! `create_empty_overlay` below), so a quantizer fit from the full dataset up front would
+//! legitimately encode differently. That calibration gap is an existing, documented property of
+//! appendable quantization in general (see `quantized_vectors/load.rs`'s auto-create comment),
+//! not something this test should be asserting away — what it must prove is that this module's
 //! storage adapter places bytes identically to the reference *given the same quantizer state*.
 #![allow(
     deprecated,
@@ -19,23 +19,25 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, UniversalWriteFileOps as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
 use quantization::turboquant::{TQMode, TQRotation};
 use quantization::{EncodedStorage as _, EncodedVectors as _};
 use tempfile::TempDir;
 
-use super::UpdateOnlyQuantizedVectors;
+use super::{UpdateOnlyQuantizedVectorStorage, UpdateOnlyQuantizedVectors};
 use crate::data_types::vectors::VectorRef;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, Distance, QuantizationConfig, TurboQuantBitSize,
     TurboQuantQuantizationConfig, TurboQuantization,
 };
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
+    QuantizedChunkedStorage, UpdateOnlyQuantizedChunkedStorageBuilder,
+};
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorageBuilder;
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectors, QuantizedVectorsStorageType,
+    QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
 };
 
 const DIM: usize = 8;
@@ -71,23 +73,106 @@ fn some_vectors(n: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
-/// First writer: half the batch, then dropped, then reopened — proving a second writer resumes
-/// correctly, mirroring `dense/update_only/tests.rs::batches_resume`. Reopening goes through
+/// Build the empty overlay a fresh appendable segment's vector would start from — there is no
+/// production code that does this yet (nothing in this stack constructs the first appendable
+/// segment of a collection today), so this test fixture goes straight through the `quantization`
+/// crate's `encode` the same way that future caller eventually will, rather than through
+/// `UpdateOnlyQuantizedVectors`, which only ever reopens what already exists on disk.
+fn create_empty_overlay(
+    config: &QuantizationConfig,
+    path: &std::path::Path,
+) -> UpdateOnlyQuantizedVectors<MmapFile> {
+    let storage_type = QuantizedVectorsStorageType::Mutable;
+    let vector_parameters =
+        QuantizedVectors::construct_vector_parameters(config, Distance::Dot, DIM, 0, storage_type);
+    let meta_path = QuantizedVectors::get_meta_path(path);
+    let data_path = QuantizedVectors::get_data_path(path, storage_type);
+    let stopped = AtomicBool::new(false);
+    let no_vectors = std::iter::empty::<&[f32]>();
+
+    let storage = match config {
+        QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+            let encoding = QuantizedVectors::convert_binary_encoding(binary.encoding);
+            let query_encoding =
+                QuantizedVectors::convert_binary_query_encoding(binary.query_encoding);
+            let quantized_vector_size =
+                encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
+                    vector_parameters.dim,
+                    encoding,
+                );
+            let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
+                MmapFs,
+                data_path.as_path(),
+                quantized_vector_size,
+            )
+            .unwrap();
+            let encoded = EncodedVectorsBin::encode(
+                no_vectors,
+                storage_builder,
+                &vector_parameters,
+                encoding,
+                query_encoding,
+                Some(meta_path.as_path()),
+                &stopped,
+            )
+            .unwrap();
+            UpdateOnlyQuantizedVectorStorage::Binary(Box::new(encoded))
+        }
+        QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+            let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
+            let mode = TQMode::Plus;
+            let quantized_vector_size =
+                encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
+            let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
+                MmapFs,
+                data_path.as_path(),
+                quantized_vector_size,
+            )
+            .unwrap();
+            let encoded = EncodedVectorsTQ::encode(
+                no_vectors,
+                storage_builder,
+                &vector_parameters,
+                0,
+                bits,
+                mode,
+                TQRotation::Padded,
+                false,
+                1,
+                Some(meta_path.as_path()),
+                &stopped,
+            )
+            .unwrap();
+            UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(encoded))
+        }
+        QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
+            panic!("test fixture only builds Binary/Turbo overlays")
+        }
+    };
+
+    let overlay_config = QuantizedVectorsConfig {
+        quantization_config: config.clone(),
+        vector_parameters,
+        storage_type,
+    };
+    let bytes = serde_json::to_vec(&overlay_config).unwrap();
+    MmapFs
+        .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
+        .unwrap();
+
+    UpdateOnlyQuantizedVectors { storage }
+}
+
+/// First writer: created fresh (as whatever builds a new segment would), writes half the batch,
+/// then dropped, then reopened through `open` — proving a second writer resumes correctly,
+/// mirroring `dense/update_only/tests.rs::batches_resume`. Reopening goes through
 /// `EncodedVectorsBin`/`TQ::reopen_for_write`, not `load`: a resuming writer only needs the
 /// fitted metadata, not a validating read of already-stored data.
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
     let hw_counter = HardwareCounterCell::new();
 
     let split = vectors.len() / 2;
-    let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(
-        MmapFs,
-        Some(config),
-        Distance::Dot,
-        DIM,
-        path,
-    )
-    .unwrap()
-    .expect("Binary/Turbo quantization supports appendable storage");
+    let mut writer = create_empty_overlay(config, path);
     for (id, vector) in vectors[..split].iter().enumerate() {
         writer
             .upsert_vector(id as u32, VectorRef::from(vector.as_slice()), &hw_counter)
@@ -95,15 +180,9 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
     }
     drop(writer);
 
-    let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(
-        MmapFs,
-        Some(config),
-        Distance::Dot,
-        DIM,
-        path,
-    )
-    .unwrap()
-    .expect("overlay was already created by the first writer");
+    let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, path)
+        .unwrap()
+        .expect("overlay was already created by the first writer");
     for (offset, vector) in vectors[split..].iter().enumerate() {
         let id = (split + offset) as u32;
         writer
@@ -264,39 +343,12 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
     }
 }
 
-/// Scalar/Product quantization do not support appendable storage — `open` must report that by
-/// returning `None`, the same as [`QuantizedVectors::load`]'s auto-create path, not error.
+/// Nothing persisted yet: `open` returns `None` rather than creating anything — it only reopens
+/// what a prior write already persisted.
 #[test]
-fn non_appendable_methods_return_none() {
-    let dir = TempDir::with_prefix("update_only_quantized_unsupported").unwrap();
-    let config = QuantizationConfig::Scalar(crate::types::ScalarQuantization {
-        scalar: crate::types::ScalarQuantizationConfig {
-            r#type: crate::types::ScalarType::Int8,
-            quantile: None,
-            always_ram: None,
-            memory: None,
-        },
-    });
-
-    let overlay = UpdateOnlyQuantizedVectors::<MmapFile>::open(
-        MmapFs,
-        Some(&config),
-        Distance::Dot,
-        DIM,
-        dir.path(),
-    )
-    .unwrap();
-    assert!(overlay.is_none());
-}
-
-/// No `quantization_config` and nothing persisted yet: `open` returns `None` rather than
-/// creating anything.
-#[test]
-fn no_config_returns_none() {
+fn open_returns_none_when_nothing_persisted() {
     let dir = TempDir::with_prefix("update_only_quantized_no_config").unwrap();
-    let overlay =
-        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, None, Distance::Dot, DIM, dir.path())
-            .unwrap();
+    let overlay = UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path()).unwrap();
     assert!(overlay.is_none());
 }
 
@@ -310,28 +362,13 @@ fn reopening_a_nonempty_overlay_works() {
     let config = binary_config();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(
-        MmapFs,
-        Some(&config),
-        Distance::Dot,
-        DIM,
-        dir.path(),
-    )
-    .unwrap()
-    .expect("binary quantization supports appendable storage");
+    let mut writer = create_empty_overlay(&config, dir.path());
     let vector = some_vectors(1).remove(0);
     writer
         .upsert_vector(0, VectorRef::from(vector.as_slice()), &hw_counter)
         .unwrap();
     drop(writer);
 
-    let reopened = UpdateOnlyQuantizedVectors::<MmapFile>::open(
-        MmapFs,
-        Some(&config),
-        Distance::Dot,
-        DIM,
-        dir.path(),
-    )
-    .unwrap();
+    let reopened = UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path()).unwrap();
     assert!(reopened.is_some());
 }

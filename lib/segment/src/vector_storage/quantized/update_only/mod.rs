@@ -1,12 +1,16 @@
 //! The write half of quantized vectors, for update-only appendable segments.
 //!
-//! Mirrors [`QuantizedVectors`]'s auto-create-on-appendable-segment path (see
-//! [`QuantizedVectors::load`]), but scoped to what an update-only segment needs: dense
-//! (single-vector) Binary and TurboQuant quantization only — the two methods
-//! [`QuantizationConfig::supports_appendable`] allows, and the two this stack currently
-//! wires up (multivector support is a follow-up: it needs its own append-only offsets
-//! storage, mirroring [`MultivectorOffsetsStorageChunked`] the same way this mirrors
-//! [`QuantizedChunkedStorage`]).
+//! Scoped to what an update-only segment needs: dense (single-vector) Binary and TurboQuant
+//! quantization only — the two methods [`QuantizationConfig::supports_appendable`] allows, and
+//! the two this stack currently wires up (multivector support is a follow-up: it needs its own
+//! append-only offsets storage, mirroring [`MultivectorOffsetsStorageChunked`] the same way this
+//! mirrors [`QuantizedChunkedStorage`]).
+//!
+//! [`Self::open`] only reopens an overlay that already exists on disk (unlike
+//! [`QuantizedVectors::load`]'s `count == 0` auto-create, which this otherwise mirrors) — it
+//! never guesses from file absence whether one should be created. Building a fresh overlay for a
+//! genuinely new segment is out of scope here: nothing in this stack constructs the first
+//! appendable segment of a collection yet, so there is no real caller for that path today.
 //!
 //! Reuses the `quantization` crate's encoding logic — `EncodedVectorsBin`/`EncodedVectorsTQ` —
 //! almost entirely unchanged: creation goes through their existing `encode`, already generic
@@ -32,26 +36,20 @@
 mod tests;
 
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    UniversalAppend, UniversalReadFileOps as _, UniversalWriteFileOps as _, read_json_via,
-};
-use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
-use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
-use quantization::turboquant::{TQMode, TQRotation};
+use common::universal_io::{UniversalAppend, UniversalReadFileOps as _, read_json_via};
+use quantization::encoded_vectors_binary::EncodedVectorsBin;
+use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{VectorElementType, VectorRef};
-use crate::types::{BinaryQuantization, Distance, QuantizationConfig, TurboQuantization};
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
-    UpdateOnlyQuantizedChunkedStorage, UpdateOnlyQuantizedChunkedStorageBuilder,
-};
+use crate::data_types::vectors::VectorRef;
+use crate::types::QuantizationConfig;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::UpdateOnlyQuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
+    QuantizedVectors, QuantizedVectorsConfig,
 };
 
 enum UpdateOnlyQuantizedVectorStorage<S: UniversalAppend + 'static> {
@@ -69,135 +67,20 @@ pub struct UpdateOnlyQuantizedVectors<S: UniversalAppend + 'static> {
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
-    /// Open the quantized overlay at `path`, creating an empty one if it is not there yet and
-    /// `quantization_config` is given.
+    /// Reopen the quantized overlay persisted at `path`, if one is there.
     ///
-    /// Returns `None` — same as [`QuantizedVectors::load`] — when: no overlay is persisted yet
-    /// and either the `appendable_quantization` feature flag is off, no `quantization_config` is
-    /// configured, or the configured method does not support incremental appends (Scalar,
-    /// Product — see [`QuantizationConfig::supports_appendable`]).
-    pub fn open(
-        fs: S::Fs,
-        quantization_config: Option<&QuantizationConfig>,
-        distance: Distance,
-        dim: usize,
-        path: &Path,
-    ) -> OperationResult<Option<Self>> {
+    /// This never creates anything: whether a vector gets a quantized overlay is a decision made
+    /// once, by whatever builds a fresh segment — not something `open` should infer from file
+    /// absence. Returns `None` when nothing was persisted, e.g. quantization was never configured
+    /// for this vector, or the configured method didn't support incremental appends (Scalar,
+    /// Product — see [`QuantizationConfig::supports_appendable`]) at creation time.
+    pub fn open(fs: S::Fs, path: &Path) -> OperationResult<Option<Self>> {
         let config_path = QuantizedVectors::get_config_path(path);
-        if fs.exists(&config_path)? {
-            let config: QuantizedVectorsConfig = read_json_via(&fs, &config_path)?;
-            return Ok(Some(Self::open_existing(fs, config, path)?));
-        }
-
-        if !common::flags::feature_flags().appendable_quantization {
+        if !fs.exists(&config_path)? {
             return Ok(None);
         }
-        let Some(quantization_config) = quantization_config else {
-            return Ok(None);
-        };
-        if !quantization_config.supports_appendable() {
-            return Ok(None);
-        }
-
-        Self::create(fs, quantization_config, distance, dim, path).map(Some)
-    }
-
-    /// Auto-create an empty overlay for a fresh appendable segment. An update-only segment
-    /// always starts with zero points, so there is nothing to fit stats from — matching
-    /// [`QuantizedVectors::load`]'s `count == 0` auto-create short-circuit.
-    fn create(
-        fs: S::Fs,
-        quantization_config: &QuantizationConfig,
-        distance: Distance,
-        dim: usize,
-        path: &Path,
-    ) -> OperationResult<Self> {
-        let storage_type = QuantizedVectorsStorageType::Mutable;
-        let vector_parameters = QuantizedVectors::construct_vector_parameters(
-            quantization_config,
-            distance,
-            dim,
-            0,
-            storage_type,
-        );
-        let meta_path = QuantizedVectors::get_meta_path(path);
-        let data_path = QuantizedVectors::get_data_path(path, storage_type);
-        let stopped = AtomicBool::new(false);
-        let no_vectors = std::iter::empty::<&[VectorElementType]>();
-        let config_fs = fs.clone();
-
-        let storage = match quantization_config {
-            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                let encoding = QuantizedVectors::convert_binary_encoding(binary.encoding);
-                let query_encoding =
-                    QuantizedVectors::convert_binary_query_encoding(binary.query_encoding);
-                let quantized_vector_size =
-                    encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
-                        vector_parameters.dim,
-                        encoding,
-                    );
-                let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
-                    fs,
-                    data_path.as_path(),
-                    quantized_vector_size,
-                )?;
-                let encoded = EncodedVectorsBin::encode(
-                    no_vectors,
-                    storage_builder,
-                    &vector_parameters,
-                    encoding,
-                    query_encoding,
-                    Some(meta_path.as_path()),
-                    &stopped,
-                )?;
-                UpdateOnlyQuantizedVectorStorage::Binary(Box::new(encoded))
-            }
-            QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
-                let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
-                let mode = TQMode::Plus;
-                let quantized_vector_size =
-                    encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
-                let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
-                    fs,
-                    data_path.as_path(),
-                    quantized_vector_size,
-                )?;
-                let encoded = EncodedVectorsTQ::encode(
-                    no_vectors,
-                    storage_builder,
-                    &vector_parameters,
-                    0,
-                    bits,
-                    mode,
-                    TQRotation::Padded,
-                    false,
-                    1,
-                    Some(meta_path.as_path()),
-                    &stopped,
-                )?;
-                UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(encoded))
-            }
-            QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
-                return Err(OperationError::service_error(
-                    "Scalar/Product quantization do not support appendable storage; this must \
-                     be filtered out by `supports_appendable()` before reaching here",
-                ));
-            }
-        };
-
-        let config = QuantizedVectorsConfig {
-            quantization_config: quantization_config.clone(),
-            vector_parameters,
-            storage_type,
-        };
-        let bytes = serde_json::to_vec(&config).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to serialize quantized vectors config: {err}"
-            ))
-        })?;
-        config_fs.atomic_save(&QuantizedVectors::get_config_path(path), &bytes)?;
-
-        Ok(Self { storage })
+        let config: QuantizedVectorsConfig = read_json_via(&fs, &config_path)?;
+        Self::open_existing(fs, config, path).map(Some)
     }
 
     /// Reopen a previously-persisted overlay to resume appending: reads the fitted metadata
