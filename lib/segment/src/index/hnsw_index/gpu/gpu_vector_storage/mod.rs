@@ -14,9 +14,7 @@ use common::types::PointOffsetType;
 use gpu_multivectors::GpuMultivectors;
 use gpu_quantization::GpuQuantization;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
-use quantization::{
-    EncodedStorage, EncodedStorageWrite, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,
-};
+use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use zerocopy::IntoBytes;
 
 use super::shader_builder::ShaderBuilderParameters;
