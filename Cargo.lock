@@ -313,7 +313,7 @@ dependencies = [
  "serde_qs",
  "serde_urlencoded",
  "thiserror 2.0.19",
- "validator",
+ "validator 0.20.0",
 ]
 
 [[package]]
@@ -507,7 +507,7 @@ dependencies = [
  "tonic-prost-build",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.21.0",
 ]
 
 [[package]]
@@ -1479,7 +1479,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
- "validator",
+ "validator 0.21.0",
  "wal",
 ]
 
@@ -1565,7 +1565,7 @@ dependencies = [
  "thiserror 2.0.19",
  "thread-priority",
  "tokio",
- "validator",
+ "validator 0.21.0",
  "walkdir",
  "zerocopy",
 ]
@@ -5980,7 +5980,7 @@ dependencies = [
  "tracing-tracy",
  "urlencoding",
  "uuid",
- "validator",
+ "validator 0.21.0",
  "wal",
 ]
 
@@ -7155,7 +7155,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.21.0",
  "vaporetto",
  "walkdir",
  "zerocopy",
@@ -7471,7 +7471,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tonic",
  "uuid",
- "validator",
+ "validator 0.21.0",
  "wal",
 ]
 
@@ -7676,7 +7676,7 @@ dependencies = [
  "sha2 0.11.0",
  "sparse",
  "tempfile",
- "validator",
+ "validator 0.21.0",
  "zerocopy",
 ]
 
@@ -7774,7 +7774,7 @@ dependencies = [
  "tracing-appender",
  "url",
  "uuid",
- "validator",
+ "validator 0.21.0",
  "wal",
 ]
 
@@ -8942,6 +8942,20 @@ checksum = "43fb22e1a008ece370ce08a3e9e4447a910e92621bb49b85d6e48a45397e7cfa"
 dependencies = [
  "idna",
  "once_cell",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "validator"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d68c6633c483df6780cc5277a417c7c2d1bceee2649d06c8ab6b0fd2dd3c81"
+dependencies = [
+ "idna",
  "regex",
  "serde",
  "serde_derive",
