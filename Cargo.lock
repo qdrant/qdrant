@@ -2305,6 +2305,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "edge-tool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "edge",
+ "env_logger",
+ "fs-err",
+ "futures",
+ "io_bridge_object_store",
+ "log",
+ "object_store",
+ "rand 0.10.2",
+ "segment",
+ "serde_json",
+ "walkdir",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

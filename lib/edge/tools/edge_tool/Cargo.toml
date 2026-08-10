@@ -1,0 +1,28 @@
+[package]
+name = "edge-tool"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "edge-tool"
+path = "src/main.rs"
+
+[dependencies]
+edge = { path = "../.." }
+segment = { path = "../../../segment", default-features = false }
+io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
+serde_json = { workspace = true }
+fs-err = { workspace = true }
+object_store = { workspace = true }
+futures = { workspace = true }
+walkdir = { workspace = true }
