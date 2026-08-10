@@ -111,7 +111,18 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
+            // The gathered `vectors` are borrowed straight from the mmap, so
+            // nothing has touched the bytes yet; without prefetch the scorer
+            // stalls on DRAM at the start of every cold vector.
+            const PREFETCH_AHEAD: usize = 2;
+            for vector in vectors.iter().take(PREFETCH_AHEAD) {
+                prefetch_read(vector);
+            }
+
             for (vector_idx, vector) in vectors.iter().enumerate() {
+                if let Some(upcoming) = vectors.get(vector_idx + PREFETCH_AHEAD) {
+                    prefetch_read(upcoming);
+                }
                 f(batch_offset + vector_idx, vector);
             }
         }
@@ -123,6 +134,24 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 /// Open a file shortly for appending.
 fn open_append(path: &Path) -> std::io::Result<fs::File> {
     fs::OpenOptions::new().append(true).open(path)
+}
+
+/// Software-prefetch every cache line of `bytes` into L1.
+#[inline(always)]
+fn prefetch_read(bytes: &[u8]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use core::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+        const CACHE_LINE_SIZE: usize = 64;
+        let mut offset = 0;
+        while offset < bytes.len() {
+            // SAFETY: the pointer stays inside `bytes`; prefetch never faults.
+            unsafe { _mm_prefetch::<_MM_HINT_T0>(bytes.as_ptr().add(offset).cast()) };
+            offset += CACHE_LINE_SIZE;
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = bytes;
 }
 
 pub struct QuantizedStorageBuilder<S> {
