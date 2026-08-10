@@ -34,7 +34,7 @@
 
 // Not wired into a segment yet — that lands in a later PR in this stack, so nothing outside
 // this module's own tests constructs `UpdateOnlyQuantizedVectors` today.
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 #[cfg(test)]
 mod tests;
