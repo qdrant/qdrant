@@ -72,6 +72,11 @@ pub struct CreateArgs {
     )]
     pub payload_index: Vec<String>,
 
+    /// Indexing threshold in KB: segments larger than this get an HNSW index built
+    /// for them by `optimize`. Omit to use the built-in default.
+    #[arg(long)]
+    pub indexing_threshold_kb: Option<usize>,
+
     /// Store payload on disk (mmap) instead of RAM.
     #[arg(long, default_value_t = false)]
     pub on_disk_payload: bool,

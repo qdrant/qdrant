@@ -2,8 +2,9 @@ use std::collections::HashSet;
 
 use anyhow::{Context, Result, anyhow, bail};
 use edge::{
-    CreateIndex, Distance, EdgeConfigBuilder, EdgeShard, EdgeSparseVectorParams, EdgeVectorParams,
-    FieldIndexOperations, JsonPath, PayloadFieldSchema, PayloadSchemaType, UpdateOperation,
+    CreateIndex, Distance, EdgeConfigBuilder, EdgeOptimizersConfig, EdgeShard,
+    EdgeSparseVectorParams, EdgeVectorParams, FieldIndexOperations, JsonPath, PayloadFieldSchema,
+    PayloadSchemaType, UpdateOperation,
 };
 
 use crate::args::CreateArgs;
@@ -43,6 +44,12 @@ pub fn run(args: CreateArgs) -> Result<()> {
     }
     if let Some(preset) = args.quantization {
         builder = builder.quantization_config(preset.to_config());
+    }
+    if let Some(indexing_threshold) = args.indexing_threshold_kb {
+        builder = builder.optimizers(EdgeOptimizersConfig {
+            indexing_threshold: Some(indexing_threshold),
+            ..Default::default()
+        });
     }
 
     fs_err::create_dir_all(&args.path)

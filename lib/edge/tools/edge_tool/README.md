@@ -39,6 +39,8 @@ edge-tool create [OPTIONS] <PATH>
 - `--payload-index NAME:TYPE` — create a payload index. `TYPE` is one of `keyword`, `integer`,
   `float`, `text`, `geo`. Comma-separated and/or repeatable, e.g. `--payload-index
   city:keyword,age:integer`.
+- `--indexing-threshold-kb <N>` — indexing threshold in KB: segments larger than this get an HNSW
+  index built for them by `optimize` (omit to use the built-in default).
 - `--on-disk-payload` — store payload on disk (mmap) instead of RAM.
 
 `PATH` must not already contain segment data.
