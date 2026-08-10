@@ -8,9 +8,13 @@
 //! storage, mirroring [`MultivectorOffsetsStorageChunked`] the same way this mirrors
 //! [`QuantizedChunkedStorage`]).
 //!
-//! Reuses the `quantization` crate's encoding/scoring logic completely unchanged —
-//! [`EncodedVectorsBin::encode`]/`load` and [`EncodedVectorsTQ::encode`]/`load` are already
-//! generic over the storage backend. The only new code is
+//! Reuses the `quantization` crate's encoding logic — `EncodedVectorsBin`/`EncodedVectorsTQ` —
+//! almost entirely unchanged: creation goes through their existing `encode`, already generic
+//! over the storage backend; reopening to resume appending goes through the new
+//! `reopen_for_write` (added alongside `load`, which additionally validates a stored vector by
+//! reading it back — a read this write-only storage cannot serve, and a guarantee a resuming
+//! writer doesn't need: every vector it writes is sized from the same metadata `load` and
+//! `reopen_for_write` both read). The only new storage-layer code is
 //! [`UpdateOnlyQuantizedChunkedStorage`], an [`EncodedStorage`] backed by
 //! [`UpdateOnlyChunkedVectors`] instead of positional [`ChunkedVectors`] writes, writing files
 //! in the exact layout [`QuantizedChunkedStorage`] reads — so a promoted segment's quantized
@@ -194,8 +198,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
         Ok(Self { storage })
     }
 
-    /// Reopen a previously-persisted overlay: load its fixed metadata (encoding, fitted stats)
-    /// and resume appending through the same on-disk chunk layout.
+    /// Reopen a previously-persisted overlay to resume appending: reads the fitted metadata
+    /// (encoding, stats) needed to keep encoding consistently, through
+    /// [`EncodedVectorsBin::reopen_for_write`]/[`EncodedVectorsTQ::reopen_for_write`] — not
+    /// `load`, which additionally reads back a stored vector to validate it, a read this
+    /// write-only storage cannot serve. A writer resuming appends doesn't need that guarantee:
+    /// every vector it writes is sized from this same metadata, so the invariant `load`'s check
+    /// protects holds by construction here, not by verification.
     fn open_existing(
         fs: S::Fs,
         config: QuantizedVectorsConfig,
@@ -213,9 +222,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
                     data_path.as_path(),
                     quantized_vector_size,
                 )?;
-                UpdateOnlyQuantizedVectorStorage::Binary(Box::new(EncodedVectorsBin::load(
-                    &meta_fs, backend, &meta_path,
-                )?))
+                UpdateOnlyQuantizedVectorStorage::Binary(Box::new(
+                    EncodedVectorsBin::reopen_for_write(&meta_fs, backend, &meta_path)?,
+                ))
             }
             QuantizationConfig::Turbo(_) => {
                 let backend = UpdateOnlyQuantizedChunkedStorage::open(
@@ -223,9 +232,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
                     data_path.as_path(),
                     quantized_vector_size,
                 )?;
-                UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(EncodedVectorsTQ::load(
-                    &meta_fs, backend, &meta_path,
-                )?))
+                UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(
+                    EncodedVectorsTQ::reopen_for_write(&meta_fs, backend, &meta_path)?,
+                ))
             }
             QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
                 return Err(OperationError::service_error(

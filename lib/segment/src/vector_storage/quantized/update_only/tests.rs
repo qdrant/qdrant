@@ -71,11 +71,13 @@ fn some_vectors(n: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
+/// First writer: half the batch, then dropped, then reopened — proving a second writer resumes
+/// correctly, mirroring `dense/update_only/tests.rs::batches_resume`. Reopening goes through
+/// `EncodedVectorsBin`/`TQ::reopen_for_write`, not `load`: a resuming writer only needs the
+/// fitted metadata, not a validating read of already-stored data.
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
     let hw_counter = HardwareCounterCell::new();
 
-    // First writer: half the batch, then dropped, then reopened — proving a second writer
-    // resumes correctly, mirroring `dense/update_only/tests.rs::batches_resume`.
     let split = vectors.len() / 2;
     let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(
         MmapFs,
@@ -296,4 +298,40 @@ fn no_config_returns_none() {
         UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, None, Distance::Dot, DIM, dir.path())
             .unwrap();
     assert!(overlay.is_none());
+}
+
+/// Reopening an overlay that already has data works, through `reopen_for_write` rather than
+/// `load` — covered end to end by `write_all`'s two-writer split (used by both byte-comparison
+/// tests above). This test isolates just the `open` call: it must return `Some`, not error or
+/// panic, once a prior writer already stored vectors.
+#[test]
+fn reopening_a_nonempty_overlay_works() {
+    let dir = TempDir::with_prefix("update_only_quantized_reopen_nonempty").unwrap();
+    let config = binary_config();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(
+        MmapFs,
+        Some(&config),
+        Distance::Dot,
+        DIM,
+        dir.path(),
+    )
+    .unwrap()
+    .expect("binary quantization supports appendable storage");
+    let vector = some_vectors(1).remove(0);
+    writer
+        .upsert_vector(0, VectorRef::from(vector.as_slice()), &hw_counter)
+        .unwrap();
+    drop(writer);
+
+    let reopened = UpdateOnlyQuantizedVectors::<MmapFile>::open(
+        MmapFs,
+        Some(&config),
+        Distance::Dot,
+        DIM,
+        dir.path(),
+    )
+    .unwrap();
+    assert!(reopened.is_some());
 }

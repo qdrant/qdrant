@@ -329,6 +329,31 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         Ok(result)
     }
 
+    /// Resume appending to a previously-persisted storage: reads the fitted metadata (quantizer,
+    /// rotation) a writer needs to keep encoding consistently, but — unlike [`Self::load`] —
+    /// never reads a vector back from `encoded_vectors` to validate it. A pure appender doesn't
+    /// need that guarantee: every vector it will ever write is sized from this same metadata, so
+    /// the invariant `load`'s check protects (every stored vector has the size the scoring hot
+    /// path assumes) holds by construction, not by verification. Intended for storage backends
+    /// that can only append and cannot serve that read at all (see `EncodedStorage` implementors
+    /// that are write-only).
+    pub fn reopen_for_write<Fs: UniversalReadFs>(
+        fs: &Fs,
+        encoded_vectors: TStorage,
+        meta_path: &Path,
+    ) -> UioResult<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+
+        Ok(Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        })
+    }
+
     fn encode_vector(
         vector_data: &[f32],
         turbo_quantizer: &TurboQuantizer,

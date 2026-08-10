@@ -11,17 +11,22 @@ use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors;
 
-/// Not the hot read path — that goes through the promoted read-only segment, opened as a
+/// Write-only, deliberately: reads go through the promoted read-only segment, opened as a
 /// [`QuantizedChunkedStorage`](super::QuantizedChunkedStorage) over the same on-disk files (the
-/// two share the chunk/status file layout). The only read this storage itself needs to serve is
-/// [`EncodedVectorsBin::load`]/[`EncodedVectorsTQ::load`]'s one-vector size validation on reopen
-/// — `for_each_batch`, `files`, and `immutable_files` are never called on the write path.
+/// two share the chunk/status file layout) — never through this handle. This is *not* wired to
+/// satisfy [`EncodedVectorsBin::load`]/[`EncodedVectorsTQ::load`]'s single-vector size validation
+/// on reopen, which needs `get_vector_data(0)` for a non-empty store: giving it a real answer
+/// would mean adding read capability to this append-only writer just to appease that check, so
+/// reopening a *non-empty* overlay is not supported yet (see
+/// [`UpdateOnlyQuantizedVectors::open_existing`][open_existing], which refuses it explicitly
+/// instead of routing through here). Reopening an *empty* overlay is fine: the check short-circuits
+/// on an empty store without ever calling this.
 ///
 /// [`EncodedVectorsBin::load`]: quantization::encoded_vectors_binary::EncodedVectorsBin::load
 /// [`EncodedVectorsTQ::load`]: quantization::encoded_vectors_tq::EncodedVectorsTQ::load
-const NOT_READABLE: &str = "UpdateOnlyQuantizedChunkedStorage only supports reading back a \
-                             single vector by index (needed to reopen); batch/file reads go \
-                             through the promoted read-only segment, never through this handle";
+/// [open_existing]: crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors
+const NOT_READABLE: &str = "UpdateOnlyQuantizedChunkedStorage is write-only: reads go through \
+                             the promoted read-only segment, never through this handle";
 
 /// Append-only counterpart of [`QuantizedChunkedStorage`](super::QuantizedChunkedStorage), for
 /// the update-only write path.
@@ -46,19 +51,12 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedChunkedStorage<S> {
 }
 
 impl<S: UniversalAppend + 'static> EncodedStorage for UpdateOnlyQuantizedChunkedStorage<S> {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index).unwrap_or_default()
+    fn get_vector_data(&self, _index: PointOffsetType) -> Cow<'_, [u8]> {
+        unreachable!("{NOT_READABLE}")
     }
 
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        if index as usize >= self.vectors_count() {
-            return None;
-        }
-        let vector = self
-            .vectors
-            .get(index as VectorOffsetType)
-            .expect("index is within vectors_count(), so its chunk must exist and be readable");
-        Some(Cow::Owned(vector))
+    fn get_vector_data_opt(&self, _index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        unreachable!("{NOT_READABLE}")
     }
 
     fn for_each_batch(

@@ -532,6 +532,28 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Ok(result)
     }
 
+    /// Resume appending to a previously-persisted storage: reads the fitted metadata a writer
+    /// needs to keep encoding consistently, but — unlike [`Self::load`] — never reads a vector
+    /// back from `encoded_vectors` to validate it. A pure appender doesn't need that guarantee:
+    /// every vector it will ever write is sized from this same metadata, so the invariant
+    /// `load`'s check protects (every stored vector has the size the scoring hot path assumes)
+    /// holds by construction, not by verification. Intended for storage backends that can only
+    /// append and cannot serve that read at all (see `EncodedStorage` implementors that are
+    /// write-only).
+    pub fn reopen_for_write<Fs: UniversalReadFs>(
+        fs: &Fs,
+        encoded_vectors: TStorage,
+        meta_path: &Path,
+    ) -> UioResult<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        Ok(Self {
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+            encoded_vectors,
+            bits_store_type: PhantomData,
+        })
+    }
+
     fn encode_vector(
         vector: &[f32],
         vector_stats: &Option<VectorStats>,
