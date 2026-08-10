@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{ArgAction, Args as ClapArgs, Parser, Subcommand, ValueEnum};
+use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use edge::Distance;
 
 use crate::quantization::QuantizationPreset;
@@ -45,16 +45,14 @@ pub struct CreateArgs {
     #[arg(long, value_enum, default_value_t = DistanceArg::Cosine)]
     pub distance: DistanceArg,
 
-    /// Add a sparse vector. Bare `--sparse` creates one unnamed sparse vector;
-    /// `--sparse NAME` names it. Repeatable for multiple sparse vectors.
-    #[arg(
-        long = "sparse",
-        value_name = "NAME",
-        num_args = 0..=1,
-        default_missing_value = "",
-        action = ArgAction::Append
-    )]
-    pub sparse: Vec<String>,
+    /// Add a sparse vector named `sparse`.
+    #[arg(long, default_value_t = false)]
+    pub sparse: bool,
+
+    /// Add a named sparse vector. Repeatable for multiple sparse vectors; combines
+    /// with the bare `--sparse` flag.
+    #[arg(long = "sparse-name", value_name = "NAME")]
+    pub sparse_name: Vec<String>,
 
     /// Quantize every dense vector with this preset.
     #[arg(long, value_enum)]

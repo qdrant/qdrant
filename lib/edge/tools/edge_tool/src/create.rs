@@ -16,7 +16,7 @@ const DEFAULT_SPARSE_NAME: &str = "sparse";
 
 pub fn run(args: CreateArgs) -> Result<()> {
     let dense = parse_dense_specs(&args.dense)?;
-    let sparse = parse_sparse_specs(&args.sparse);
+    let sparse = parse_sparse_specs(args.sparse, &args.sparse_name);
     check_no_duplicate_names(&dense, &sparse)?;
     if dense.is_empty() && sparse.is_empty() {
         bail!("collection needs at least one vector: pass --dense <SIZE> and/or --sparse");
@@ -126,18 +126,12 @@ fn parse_dense_specs(specs: &[String]) -> Result<Vec<(String, usize)>> {
         .collect()
 }
 
-/// Parse `--sparse` specs: `default_missing_value = ""` turns a bare
-/// `--sparse` into [`DEFAULT_SPARSE_NAME`].
-fn parse_sparse_specs(specs: &[String]) -> Vec<String> {
-    specs
-        .iter()
-        .map(|name| {
-            if name.is_empty() {
-                DEFAULT_SPARSE_NAME.to_string()
-            } else {
-                name.trim().to_string()
-            }
-        })
+/// Combine the bare `--sparse` flag (named [`DEFAULT_SPARSE_NAME`]) with any
+/// `--sparse-name NAME` occurrences.
+fn parse_sparse_specs(bare: bool, named: &[String]) -> Vec<String> {
+    bare.then(|| DEFAULT_SPARSE_NAME.to_string())
+        .into_iter()
+        .chain(named.iter().map(|name| name.trim().to_string()))
         .collect()
 }
 

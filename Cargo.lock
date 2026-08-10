@@ -2310,6 +2310,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "common",
  "edge",
  "env_logger",
  "fs-err",

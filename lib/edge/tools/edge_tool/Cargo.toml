@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 edge = { path = "../.." }
+common = { path = "../../../common/common" }
 segment = { path = "../../../segment", default-features = false }
 io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
 
