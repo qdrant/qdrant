@@ -256,9 +256,10 @@ where
         // Scan candidates by combining the deletion bitmaps word by word
         // instead of feeding `iter_internal()` into `peek_top_iter` — the
         // per-id enumeration dominates unfiltered full scans.
-        let (cutoff, mapping_deleted) = self.id_tracker.point_mappings().internal_scan_masks();
+        let (total_points, mapping_deleted) =
+            self.id_tracker.point_mappings().internal_scan_masks();
         let search_results = batch_filtered_searcher.peek_top_visible(
-            cutoff,
+            Some(total_points),
             mapping_deleted,
             BitSlice::empty(),
             &is_stopped,
