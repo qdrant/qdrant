@@ -13,7 +13,7 @@ pub mod vector_stats;
 use std::fmt::Display;
 use std::sync::{Arc, Condvar, Mutex};
 
-pub use encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+pub use encoded_storage::{EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite};
 pub use encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 pub use encoded_vectors_pq::{EncodedQueryPQ, EncodedVectorsPQ};
 pub use encoded_vectors_u8::{EncodedQueryU8, EncodedVectorsU8};

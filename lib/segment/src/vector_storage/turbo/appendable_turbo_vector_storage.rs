@@ -16,9 +16,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
-use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use crate::common::Flusher;

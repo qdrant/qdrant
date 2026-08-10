@@ -9,7 +9,7 @@
 //! deletions).
 
 use common::universal_io::UniversalRead;
-use quantization::EncodedStorage;
+use quantization::EncodedStorageWrite;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;

@@ -17,17 +17,11 @@ use fs_err as fs;
 #[cfg(feature = "testing")]
 use fs_err::File;
 
-pub trait EncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
-
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>>;
-
-    fn for_each_batch(
-        &self,
-        offsets: &[PointOffsetType],
-        callback: impl FnMut(usize, Cow<'_, [u8]>),
-    );
-
+/// The subset of [`EncodedStorage`] an append-only writer can implement without ever reading a
+/// vector back — the write-only counterparts of a storage (e.g. an update-only segment's
+/// quantized overlay, which never reads: scoring always goes through the promoted read-only
+/// segment) implement only this, instead of faking the read methods on [`EncodedStorage`].
+pub trait EncodedStorageWrite {
     fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
 
@@ -42,13 +36,25 @@ pub trait EncodedStorage {
 
     fn flusher(&self) -> MmapFlusher;
 
-    fn files(&self) -> Vec<PathBuf>;
-
-    fn immutable_files(&self) -> Vec<PathBuf>;
-
     /// Additional heap memory used by this storage beyond what's tracked in files.
     /// RAM-based storages should report their in-memory data size here.
     fn heap_size_bytes(&self) -> usize;
+}
+
+pub trait EncodedStorage: EncodedStorageWrite {
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>>;
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    );
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }
 
 pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
@@ -62,7 +68,7 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
 }
 
 pub trait EncodedStorageBuilder {
-    type Storage: EncodedStorage;
+    type Storage: EncodedStorageWrite;
     type Error: std::fmt::Display;
 
     fn build(self) -> Result<Self::Storage, Self::Error>;
@@ -142,33 +148,7 @@ impl TestEncodedStorage {
 }
 
 #[cfg(feature = "testing")]
-impl EncodedStorage for TestEncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index)
-            .unwrap_or(Cow::Borrowed(&[]))
-    }
-
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        let start = self
-            .quantized_vector_size
-            .get()
-            .saturating_mul(index as usize);
-        let end = self
-            .quantized_vector_size
-            .get()
-            .saturating_mul(index as usize + 1);
-
-        Some(Cow::Borrowed(self.data.get(start..end)?))
-    }
-
-    fn for_each_batch(
-        &self,
-        offsets: &[PointOffsetType],
-        callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        default_for_each_batch(self, offsets, callback);
-    }
-
+impl EncodedStorageWrite for TestEncodedStorage {
     fn upsert_vector(
         &mut self,
         id: PointOffsetType,
@@ -211,6 +191,45 @@ impl EncodedStorage for TestEncodedStorage {
         Box::new(|| Ok(()))
     }
 
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            data,
+            quantized_vector_size: _,
+            path: _,
+        } = self;
+
+        data.capacity()
+    }
+}
+
+#[cfg(feature = "testing")]
+impl EncodedStorage for TestEncodedStorage {
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index)
+            .unwrap_or(Cow::Borrowed(&[]))
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        let start = self
+            .quantized_vector_size
+            .get()
+            .saturating_mul(index as usize);
+        let end = self
+            .quantized_vector_size
+            .get()
+            .saturating_mul(index as usize + 1);
+
+        Some(Cow::Borrowed(self.data.get(start..end)?))
+    }
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        default_for_each_batch(self, offsets, callback);
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         if let Some(ref path) = self.path {
             vec![path.clone()]
@@ -221,16 +240,6 @@ impl EncodedStorage for TestEncodedStorage {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.files()
-    }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self {
-            data,
-            quantized_vector_size: _,
-            path: _,
-        } = self;
-
-        data.capacity()
     }
 }
 

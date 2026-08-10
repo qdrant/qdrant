@@ -14,8 +14,10 @@
 //! `reopen_for_write` (added alongside `load`, which additionally validates a stored vector by
 //! reading it back — a read this write-only storage cannot serve, and a guarantee a resuming
 //! writer doesn't need: every vector it writes is sized from the same metadata `load` and
-//! `reopen_for_write` both read). The only new storage-layer code is
-//! [`UpdateOnlyQuantizedChunkedStorage`], an [`EncodedStorage`] backed by
+//! `reopen_for_write` both read). Both `reopen_for_write` and `upsert_vector`/`flusher` only
+//! require [`EncodedStorageWrite`] — the write-only half of [`EncodedStorage`], split out so a
+//! storage that can never serve a read doesn't have to fake one. The only new storage-layer code
+//! is [`UpdateOnlyQuantizedChunkedStorage`], an [`EncodedStorageWrite`] backed by
 //! [`UpdateOnlyChunkedVectors`] instead of positional [`ChunkedVectors`] writes, writing files
 //! in the exact layout [`QuantizedChunkedStorage`] reads — so a promoted segment's quantized
 //! data reads through the existing, unmodified reader.
@@ -24,6 +26,7 @@
 //! [`ChunkedVectors`]: crate::vector_storage::chunked_vectors::ChunkedVectors
 //! [`UpdateOnlyChunkedVectors`]: crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors
 //! [`EncodedStorage`]: quantization::EncodedStorage
+//! [`EncodedStorageWrite`]: quantization::EncodedStorageWrite
 
 #[cfg(test)]
 mod tests;
@@ -36,7 +39,6 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     UniversalAppend, UniversalReadFileOps as _, UniversalWriteFileOps as _, read_json_via,
 };
-use quantization::EncodedVectors as _;
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
 use quantization::turboquant::{TQMode, TQRotation};

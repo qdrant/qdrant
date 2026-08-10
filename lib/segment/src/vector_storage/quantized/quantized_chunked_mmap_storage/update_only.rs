@@ -1,32 +1,14 @@
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppend;
-use quantization::{EncodedStorage, EncodedStorageBuilder};
+use quantization::{EncodedStorageBuilder, EncodedStorageWrite};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors;
-
-/// Write-only, deliberately: reads go through the promoted read-only segment, opened as a
-/// [`QuantizedChunkedStorage`](super::QuantizedChunkedStorage) over the same on-disk files (the
-/// two share the chunk/status file layout) — never through this handle. This is *not* wired to
-/// satisfy [`EncodedVectorsBin::load`]/[`EncodedVectorsTQ::load`]'s single-vector size validation
-/// on reopen, which needs `get_vector_data(0)` for a non-empty store: giving it a real answer
-/// would mean adding read capability to this append-only writer just to appease that check, so
-/// reopening a *non-empty* overlay is not supported yet (see
-/// [`UpdateOnlyQuantizedVectors::open_existing`][open_existing], which refuses it explicitly
-/// instead of routing through here). Reopening an *empty* overlay is fine: the check short-circuits
-/// on an empty store without ever calling this.
-///
-/// [`EncodedVectorsBin::load`]: quantization::encoded_vectors_binary::EncodedVectorsBin::load
-/// [`EncodedVectorsTQ::load`]: quantization::encoded_vectors_tq::EncodedVectorsTQ::load
-/// [open_existing]: crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors
-const NOT_READABLE: &str = "UpdateOnlyQuantizedChunkedStorage is write-only: reads go through \
-                             the promoted read-only segment, never through this handle";
 
 /// Append-only counterpart of [`QuantizedChunkedStorage`](super::QuantizedChunkedStorage), for
 /// the update-only write path.
@@ -36,6 +18,13 @@ const NOT_READABLE: &str = "UpdateOnlyQuantizedChunkedStorage is write-only: rea
 /// of the positional writes `ChunkedVectors::insert` needs, so this only requires
 /// `S: UniversalAppend`, not `UniversalWrite`. It writes files in the exact layout
 /// `QuantizedChunkedStorage` reads, so no new reading code is needed once a segment is promoted.
+///
+/// Implements [`EncodedStorageWrite`], not the full [`EncodedStorage`](quantization::EncodedStorage):
+/// reads always go through the promoted read-only segment (opened as a
+/// [`QuantizedChunkedStorageRead`](super::QuantizedChunkedStorageRead) over the same on-disk
+/// files), never through this handle, so there is no read half to implement — write-only is
+/// enforced by the trait this implements, not by panicking stand-ins for methods that don't
+/// exist.
 ///
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
 pub struct UpdateOnlyQuantizedChunkedStorage<S: UniversalAppend + 'static> {
@@ -50,23 +39,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedChunkedStorage<S> {
     }
 }
 
-impl<S: UniversalAppend + 'static> EncodedStorage for UpdateOnlyQuantizedChunkedStorage<S> {
-    fn get_vector_data(&self, _index: PointOffsetType) -> Cow<'_, [u8]> {
-        unreachable!("{NOT_READABLE}")
-    }
-
-    fn get_vector_data_opt(&self, _index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        unreachable!("{NOT_READABLE}")
-    }
-
-    fn for_each_batch(
-        &self,
-        _offsets: &[PointOffsetType],
-        _callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        unreachable!("{NOT_READABLE}")
-    }
-
+impl<S: UniversalAppend + 'static> EncodedStorageWrite for UpdateOnlyQuantizedChunkedStorage<S> {
     fn is_in_ram_or_mmap() -> bool {
         false
     }
@@ -97,14 +70,6 @@ impl<S: UniversalAppend + 'static> EncodedStorage for UpdateOnlyQuantizedChunked
         // `append_many` persists synchronously before returning, so there is nothing left to
         // flush — the same contract `UpdateOnlyDenseVectorStorage` relies on for raw vectors.
         Box::new(|| Ok(()))
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        unreachable!("{NOT_READABLE}")
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        unreachable!("{NOT_READABLE}")
     }
 
     fn heap_size_bytes(&self) -> usize {
