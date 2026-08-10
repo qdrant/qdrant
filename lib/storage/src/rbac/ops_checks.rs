@@ -799,6 +799,7 @@ mod tests_ops {
                         id: ExtendedPointId::NumId(12345),
                         vectors: vec![("dense".to_string(), vec![0, 1, 2, 3])].into(),
                         payload: None,
+                        payload_raw: None,
                     }]),
                 );
                 assert_requires_whole_write_access(&op);

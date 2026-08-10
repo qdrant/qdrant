@@ -45,6 +45,7 @@ pub fn sync_points_raw(
     points: &[PointStructRawPersisted],
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)> {
+    super::upsert::ensure_payloads_decoded(points)?;
     sync_points_impl(segments, op_num, from_id, to_id, points, hw_counter)
 }
 

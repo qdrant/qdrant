@@ -1138,6 +1138,9 @@ impl From<OperationError> for CollectionError {
             OperationError::MalformedVectorBlob { .. } => Self::BadInput {
                 description: err.to_string(),
             },
+            OperationError::MalformedPayloadBlob { .. } => Self::BadInput {
+                description: err.to_string(),
+            },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {
                 description: err.to_string(),
             },

@@ -38,16 +38,26 @@ where
 }
 
 /// Same as [`upsert_points`], but for points carrying raw vector bytes verbatim.
-pub fn upsert_points_raw<'a, T>(
+pub fn upsert_points_raw(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
-    points: T,
+    points: &[PointStructRawPersisted],
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<usize>
-where
-    T: IntoIterator<Item = &'a PointStructRawPersisted>,
-{
+) -> OperationResult<usize> {
+    ensure_payloads_decoded(points)?;
     upsert_points_impl(segments, op_num, points, hw_counter)
+}
+
+/// Applying a point writes [`PointStructRawPersisted::payload`], so one still holding a
+/// blob would be stored with no payload at all. Blobs are decoded where the operation is
+/// unpacked (`process_point_operation`); this refuses a point that skipped that.
+pub(super) fn ensure_payloads_decoded(points: &[PointStructRawPersisted]) -> OperationResult<()> {
+    if points.iter().any(|point| point.payload_raw.is_some()) {
+        return Err(OperationError::service_error(
+            "Raw point reached the apply path with an undecoded payload blob",
+        ));
+    }
+    Ok(())
 }
 
 /// Drop from `points_op` every point that the conditional-upsert

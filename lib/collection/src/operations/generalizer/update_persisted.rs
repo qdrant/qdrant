@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use segment::types::{Payload, PointIdType};
+use segment::types::{Payload, PointIdType, RawPayload};
 use serde_json::Value;
 use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use shard::operations::point_ops::{
@@ -22,6 +22,18 @@ impl Generalizer for Payload {
             Value::Array(self.keys().cloned().sorted().map(Value::String).collect()),
         );
         stripped_payload
+    }
+}
+
+impl Generalizer for RawPayload {
+    fn remove_details(&self) -> Self {
+        let Self { payload_bytes } = self;
+
+        // The blob is opaque here, so there are no keys to keep as the parsed-payload
+        // generalizer above does; retain only the byte length, like raw vectors below.
+        Self {
+            payload_bytes: (payload_bytes.len() as u64).to_le_bytes().to_vec(),
+        }
     }
 }
 
@@ -103,6 +115,7 @@ impl Generalizer for PointStructRawPersisted {
             id: _, // ignore actual id for generalization
             vectors,
             payload,
+            payload_raw,
         } = self;
 
         Self {
@@ -113,6 +126,7 @@ impl Generalizer for PointStructRawPersisted {
                 .map(|(name, bytes)| (name.clone(), (bytes.len() as u64).to_le_bytes().to_vec()))
                 .collect(),
             payload: payload.as_ref().map(|p| p.remove_details()),
+            payload_raw: payload_raw.as_ref().map(|p| p.remove_details()),
         }
     }
 }

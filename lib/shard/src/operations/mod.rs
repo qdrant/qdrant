@@ -432,11 +432,15 @@ mod tests {
                 points: Vec::new(),
             });
 
-            // Use a non-empty raw point so the byte-blob path is actually exercised
+            // Use a non-empty raw point, with a payload blob, so both byte-blob paths
+            // are actually exercised
             let raw_point = PointStructRawPersisted {
                 id: 1.into(),
                 vectors: vec![("dense".to_string(), vec![0, 1, 2, 3, 255])].into(),
                 payload: None,
+                payload_raw: Some(segment::types::RawPayload::from_storage_bytes(
+                    br#"{"city":"Berlin"}"#.to_vec(),
+                )),
             };
 
             let upsert_raw = Self::UpsertPointsRaw(vec![raw_point.clone()]);

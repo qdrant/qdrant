@@ -33,6 +33,11 @@ pub enum OperationError {
     /// crash-looping recovery.
     #[error("{description}")]
     MalformedVectorBlob { description: String },
+    /// A stored-encoding payload blob that does not parse. User error for the same reason
+    /// as [`Self::MalformedVectorBlob`]: it arrives from a peer and is parsed on apply, so
+    /// a bad one has to be skipped on replay instead of crash-looping recovery.
+    #[error("{description}")]
+    MalformedPayloadBlob { description: String },
     #[error("Not existing vector name error: {received_name}")]
     VectorNameNotExists { received_name: VectorNameBuf },
     #[error("No point with id {missed_point_id}")]
@@ -167,6 +172,7 @@ impl IsNotFound for OperationError {
             Self::FileNotFound { .. } => true,
             Self::WrongVectorDimension { .. }
             | Self::MalformedVectorBlob { .. }
+            | Self::MalformedPayloadBlob { .. }
             | Self::VectorNameNotExists { .. }
             | Self::PointIdError { .. }
             | Self::TypeError { .. }

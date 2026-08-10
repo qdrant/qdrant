@@ -54,6 +54,22 @@ pub struct FeatureFlags {
     /// Implies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].
     pub append_only_storages: bool,
 
+    /// Transfer points as storage-native bytes (raw points), for every collection rather than
+    /// only those whose vector storage would lose precision in a decode-encode round-trip
+    /// (TurboQuant).
+    ///
+    /// Read on the sending side only, where the transfer batch is prepared: nodes accept
+    /// raw points regardless.
+    pub transfer_raw_points: bool,
+
+    /// Send the payload of a raw point as the byte blob it is stored as, so the sending
+    /// node does not parse it and neither node builds a protobuf value tree for it. The
+    /// receiving node still parses the blob, once, when the operation is applied. Only has
+    /// an effect on points transferred raw, see [`Self::transfer_raw_points`].
+    ///
+    /// Read on the sending side only: nodes accept raw payloads regardless.
+    pub transfer_raw_payloads: bool,
+
     /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`] and
     /// [`Self::append_only_storages`].
@@ -74,6 +90,8 @@ impl Default for FeatureFlags {
             append_only_mutations: false,
             compact_bitmask: false,
             append_only_storages: false,
+            transfer_raw_points: false,
+            transfer_raw_payloads: false,
             serverless_compatible: false,
         }
     }
@@ -104,6 +122,10 @@ impl FeatureFlags {
             append_only_mutations: false,
             append_only_storages: false,
             compact_bitmask: true,
+            // Deliberately not enabled by `all`: a node only accepts these once it runs a
+            // version that understands them, so they can only be switched on a release later.
+            transfer_raw_points: false,
+            transfer_raw_payloads: false,
             serverless_compatible: false,
         }
     }
