@@ -517,7 +517,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
     /// every vector it will ever write is sized from this same metadata, so the invariant
     /// `load`'s check protects (every stored vector has the size the scoring hot path assumes)
     /// holds by construction, not by verification. Intended for storage backends that can only
-    /// append and cannot serve that read at all (see `EncodedStorage` implementors that are
+    /// append and cannot serve that read at all (see `EncodedStorage` implementers that are
     /// write-only).
     pub fn reopen_for_write<Fs: UniversalReadFs>(
         fs: &Fs,

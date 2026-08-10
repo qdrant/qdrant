@@ -1,3 +1,7 @@
+// Not wired into a segment yet — that lands in a later PR in this stack, so nothing outside
+// this module's own tests constructs these types today.
+#![allow(dead_code)]
+
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
