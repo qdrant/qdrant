@@ -96,6 +96,15 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
+    /// Iterate over the internal IDs at or above the mapping's deferred
+    /// threshold, excluding soft-deleted points — the tail complement of
+    /// [`Self::iter_internal_visible`]. Empty when the mapping has no deferred threshold.
+    pub fn iter_deferred(self) -> impl Iterator<Item = PointOffsetType> + 'a {
+        let (total, deleted) = self.internal_scan_masks();
+        let start = self.deferred_internal_id().unwrap_or(total);
+        (start..total).filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false))
+    }
+
     /// Iterate over all internal IDs, with deferred filtering selected by
     /// `deferred_behavior`. See [`PointMappings::iter_internal_with_behavior`]
     /// for the per-mode contract.
@@ -181,18 +190,17 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
-    /// Word-scan form of [`Self::iter_internal`]: it yields an id iff the id
-    /// is below the returned cutoff (the mapping's total point count) and its
-    /// bit is unset in the returned deleted bitslice. Unlike
-    /// [`Self::visible_scan_masks`], no deferred or shadowed-active filtering
-    /// applies.
-    pub fn internal_scan_masks(self) -> (Option<PointOffsetType>, &'a BitSlice) {
+    /// Mask form of [`Self::iter_internal`]: an id is in the iteration iff it
+    /// is below the returned total point count and unset in the deleted
+    /// bitslice. Unlike [`Self::visible_scan_masks`], no deferred or
+    /// shadowed-active filtering applies.
+    pub fn internal_scan_masks(self) -> (PointOffsetType, &'a BitSlice) {
         let total = match self {
             PointMappingsRefEnum::Plain(m) => m.total_point_count(),
             PointMappingsRefEnum::Compressed(m) => m.total_point_count(),
             PointMappingsRefEnum::Disk(m) => m.total_point_count(),
         };
-        (Some(total as PointOffsetType), self.deleted())
+        (total as PointOffsetType, self.deleted())
     }
 
     /// Iterate starting from a given ID, with deferred filtering selected by
