@@ -25,16 +25,10 @@ pub fn run(args: UploadArgs) -> Result<()> {
     }
 
     let files = collect_files(&args.source)?;
-    if files.is_empty() {
+    if files.is_empty() && !args.clean {
         log::warn!("{} has no files to upload", args.source.display());
         return Ok(());
     }
-    log::info!(
-        "uploading {} file(s) from {} to {}",
-        files.len(),
-        args.source.display(),
-        args.destination,
-    );
 
     let runtime = BridgeRuntime::new().context("failed to start the upload runtime")?;
     let concurrency = args.concurrency.max(1);
@@ -43,27 +37,59 @@ pub fn run(args: UploadArgs) -> Result<()> {
         let config = build_gcs_config(&args)?;
         let store =
             GoogleCloudStorage::build_store(&config).context("failed to build the GCS client")?;
-        runtime.block_on(upload_all(
-            &store,
-            &args.source,
-            &args.destination,
-            &files,
-            concurrency,
-        ))?;
+        runtime.block_on(clean_and_upload(&store, &args, &files, concurrency))?;
     } else {
         let config = build_aws_config(&args)?;
         let store = AmazonS3::build_store(&config).context("failed to build the S3 client")?;
-        runtime.block_on(upload_all(
-            &store,
-            &args.source,
-            &args.destination,
-            &files,
-            concurrency,
-        ))?;
+        runtime.block_on(clean_and_upload(&store, &args, &files, concurrency))?;
     }
 
     log::info!("uploaded {} file(s) to {}", files.len(), args.destination);
     Ok(())
+}
+
+async fn clean_and_upload<O: ObjectStore>(
+    store: &O,
+    args: &UploadArgs,
+    files: &[PathBuf],
+    concurrency: usize,
+) -> Result<()> {
+    if args.clean {
+        let removed = clean_destination(store, &destination_prefix(&args.destination)).await?;
+        log::info!(
+            "removed {removed} existing object(s) under {}",
+            args.destination
+        );
+    }
+
+    log::info!(
+        "uploading {} file(s) from {} to {}",
+        files.len(),
+        args.source.display(),
+        args.destination,
+    );
+    upload_all(store, &args.source, &args.destination, files, concurrency).await
+}
+
+/// Delete every object already under `prefix`, so a re-upload doesn't leave
+/// stale files behind from a previous run with a different shape (e.g.
+/// different segment UUIDs).
+async fn clean_destination<O: ObjectStore>(
+    store: &O,
+    prefix: &object_store::path::Path,
+) -> Result<usize> {
+    let locations = store
+        .list(Some(prefix))
+        .map(|meta| meta.map(|meta| meta.location))
+        .boxed();
+
+    let mut removed = 0usize;
+    let mut results = store.delete_stream(locations);
+    while let Some(result) = results.next().await {
+        result.context("failed to delete an existing object under the destination prefix")?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
@@ -135,6 +161,10 @@ async fn upload_file<O: ObjectStore>(
 
     log::debug!("uploaded {} -> {key}", file.display());
     Ok(())
+}
+
+fn destination_prefix(destination: &str) -> object_store::path::Path {
+    object_store::path::Path::from(destination.trim_matches('/'))
 }
 
 fn object_key(destination: &str, relative: &Path) -> Result<object_store::path::Path> {

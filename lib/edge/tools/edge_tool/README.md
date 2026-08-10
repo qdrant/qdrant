@@ -79,6 +79,9 @@ result is byte-for-byte the same layout `edge-shard-query`/`edge-shard-update` e
 `--prefix`. Every file is streamed through `object_store`'s multipart upload API (even small ones,
 as a single final part), so upload memory use stays bounded regardless of segment size.
 
+- `--clean` — delete every existing object under `DESTINATION` before uploading, so a re-upload
+  doesn't leave stale files behind from a previous run with a different shape (e.g. a collection
+  re-created with a different segment UUID).
 - `--aws` (default) — AWS S3 or an S3-compatible store (MinIO, RustFS, ...).
 - `--gcs` — Google Cloud Storage.
 - `--bucket` [`BLOB_BUCKET`] — required.

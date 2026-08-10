@@ -134,6 +134,12 @@ pub struct UploadArgs {
     /// Destination key prefix inside the bucket (e.g. `my_collection/0`).
     pub destination: String,
 
+    /// Delete every existing object under the destination prefix before uploading, so a
+    /// re-upload doesn't leave stale files behind from a previous run with a different
+    /// shape (e.g. different segment UUIDs).
+    #[arg(long, default_value_t = false)]
+    pub clean: bool,
+
     /// Upload to AWS S3 or an S3-compatible store (MinIO, RustFS, ...). Default backend.
     #[arg(long, conflicts_with = "gcs")]
     pub aws: bool,
