@@ -29,9 +29,10 @@ edge-tool create [OPTIONS] <PATH>
   image:512`. Repeatable.
 - `--distance <cosine|euclid|dot|manhattan>` — distance metric for every dense vector (default
   `cosine`).
-- `--sparse` — add a sparse vector named `sparse`.
-- `--sparse-name <NAME>` — add a named sparse vector. Repeatable for multiple sparse vectors;
-  combines with the bare `--sparse` flag.
+- `--sparse` — add a sparse vector. Bare `--sparse` creates one vector named `sparse`;
+  `--sparse=NAME` names it. The `=` is required — `--sparse NAME` (space-separated) is rejected,
+  since it would be ambiguous with the trailing `PATH` positional. Repeatable for multiple sparse
+  vectors.
 - `--quantization <PRESET>` — quantize every dense vector. One of `scalar`, `binary`,
   `product-x4`, `product-x8`, `product-x16`, `product-x32`, `product-x64`, `turbo1`, `turbo1.5`,
   `turbo2`, `turbo4`.
