@@ -17,7 +17,7 @@ dependencies = [
     "docker>=7.1.0,<8",
     "pytest-xdist>=3.8.0,<4",
     "pytest-subtests>=0.14.1,<0.15",
-    "qdrant-client>=1.16.1,<2",
+    "qdrant-client>=1.19.0,<2",
     "tqdm>=4.67.1,<5",
 ]
 
