@@ -83,6 +83,29 @@ where
         self.config.remaining_chunk_capacity(key)
     }
 
+    /// Read a single vector back. Not the hot read path — that goes through the promoted
+    /// read-only segment once one exists — but some writers occasionally need to read back
+    /// what they wrote (e.g. quantized-vector reload validation), so this stays available
+    /// rather than pushing every caller to duplicate the chunk lookup.
+    pub fn get(&self, key: VectorOffsetType) -> OperationResult<Vec<T>> {
+        let chunk_idx = self.config.get_chunk_index(key);
+        let chunk_offset = self.config.get_chunk_offset(key);
+        let path = chunk_name(&self.directory, chunk_idx);
+
+        let file = self.fs.open(&path, append_options(), Default::default())?;
+        let bytes = file.read_whole::<u8>()?;
+
+        let start = chunk_offset * size_of::<T>();
+        let end = start + self.config.dim * size_of::<T>();
+        let slice = bytes.get(start..end).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "chunk {chunk_idx} is {} bytes, too short to hold vector at offset {chunk_offset}",
+                bytes.len(),
+            ))
+        })?;
+        Ok(bytemuck::cast_slice(slice).to_vec())
+    }
+
     /// Replace the stored vector count.
     fn save_len(&self, len: usize) -> OperationResult<()> {
         self.fs.atomic_save(
