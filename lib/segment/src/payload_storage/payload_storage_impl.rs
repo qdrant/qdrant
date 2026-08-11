@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use blobstore::config::{GridstoreConfig, StorageConfig};
+use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
@@ -22,8 +23,10 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
+        serde_json::from_slice(data).map_err(|err| {
+            BlobstoreError::service_error(format!("Failed to deserialize Payload: {err}"))
+        })
     }
 }
 
