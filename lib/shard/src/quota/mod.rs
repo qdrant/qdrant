@@ -36,15 +36,16 @@ static GLOBAL: OnceLock<Arc<QuotaManager>> = OnceLock::new();
 /// Install the node's quota manager, once at startup before anything measures a
 /// resource. `storage` does it while building the table of contents.
 ///
-/// A second call is a startup-order bug — the quota it configures would silently
-/// not be the one enforced — so it is loud rather than ignored.
+/// In a node, a second call is a startup-order bug: the quota it configures
+/// would silently not be the one enforced, so it is logged loudly. It is not
+/// fatal, because test harnesses legitimately build several tables of contents
+/// in one process, and the first one installed is as good as any there.
 pub fn set_global(manager: Arc<QuotaManager>) {
     if GLOBAL.set(manager).is_err() {
         log::error!(
             "Global quota manager was already initialized; \
              the quota configured for this node is not the one being enforced",
         );
-        debug_assert!(false, "global quota manager initialized twice");
     }
 }
 
