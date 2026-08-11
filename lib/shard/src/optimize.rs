@@ -632,6 +632,25 @@ fn finish_optimization(
     // membership, snapshotting each proxy's final `persistent_version` as `ack_pin`.
     for proxy in proxies {
         let ack_pin = proxy.get().read().persistent_version();
+        // The pin is released once the waterline covers `optimized_segment_version`, so a proxy
+        // whose version sits above that is the case to watch: whatever those operations touched is
+        // not represented by the destination, and after the release nothing pins them either.
+        // Splitting the proxy's version into its wrapped and propagated halves says which side
+        // carries them, which decides whether that gap is benign bookkeeping or lost data.
+        let proxy_version = proxy.get().read().version();
+        let wrapped_version = match &proxy {
+            LockedSegment::Proxy(p) => p.read().wrapped_segment.get().read().version(),
+            LockedSegment::Original(_) => proxy_version,
+        };
+        log::info!(
+            "segment drop pin: ack_pin={ack_pin} ready_at={optimized_segment_version} \
+             proxy_version={proxy_version} wrapped_version={wrapped_version}{}",
+            if proxy_version > optimized_segment_version {
+                " ABOVE_DESTINATION"
+            } else {
+                ""
+            },
+        );
         read_segment_holder.register_segment_drop(optimized_segment_version, ack_pin, proxy);
     }
 

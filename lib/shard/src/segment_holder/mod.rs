@@ -605,6 +605,17 @@ impl SegmentHolder {
         // until they complete on a later flush, so a transient failure never advances the WAL
         // acknowledge past data that is still on disk.
         ready.sort_by_key(|action| action.ready_at);
+        // Releasing a pin is the moment the WAL acknowledge is allowed past `ack_pin`, so it is the
+        // other half of the reload-divergence question: the pin is released once the waterline
+        // covers the optimized segment's version, which does not by itself prove that operations
+        // above that version, still held by the dropped source, live anywhere durable.
+        for action in &ready {
+            log::info!(
+                "post-flush pin released: ready_at={} ack_pin={} at waterline={waterline}",
+                action.ready_at,
+                action.ack_pin,
+            );
+        }
         let mut first_error = None;
         let mut blocked = false;
         ready.retain_mut(|action| {
