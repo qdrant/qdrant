@@ -110,6 +110,11 @@ pub struct UpsertArgs {
     #[arg(short = 'n', long, default_value_t = 100)]
     pub num: usize,
 
+    /// Points per update operation. Each batch is generated, written and dropped before the
+    /// next one starts, so peak memory follows the batch rather than `--num`.
+    #[arg(long, default_value_t = 1000)]
+    pub batch_size: usize,
+
     /// First point id to use. Defaults to the collection's current (approximate)
     /// point count, so repeated `upsert` calls append rather than overwrite.
     #[arg(long)]
@@ -136,9 +141,14 @@ pub struct UploadArgs {
 
     /// Delete every existing object under the destination prefix before uploading, so a
     /// re-upload doesn't leave stale files behind from a previous run with a different
-    /// shape (e.g. different segment UUIDs).
+    /// shape (e.g. different segment UUIDs). Refuses an empty destination.
     #[arg(long, default_value_t = false)]
     pub clean: bool,
+
+    /// Upload the `wal/` directory too. Skipped by default: the read paths never open it,
+    /// and its segments are preallocated to their full capacity and never truncated.
+    #[arg(long, default_value_t = false)]
+    pub include_wal: bool,
 
     /// Upload to AWS S3 or an S3-compatible store (MinIO, RustFS, ...). Default backend.
     #[arg(long, conflicts_with = "gcs")]

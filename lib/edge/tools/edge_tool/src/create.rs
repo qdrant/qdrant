@@ -98,13 +98,14 @@ pub fn run(args: CreateArgs) -> Result<()> {
 /// [`DEFAULT_DENSE_NAME`]; with more than one `--dense`, every one must be
 /// `NAME:SIZE`.
 fn parse_dense_specs(specs: &[String]) -> Result<Vec<(String, usize)>> {
-    if let [size] = specs
-        && !size.contains(':')
+    if let [spec] = specs
+        && !spec.contains(':')
     {
-        let size: usize = size
+        let size: usize = spec
             .trim()
             .parse()
-            .with_context(|| format!("invalid --dense size: {size:?}"))?;
+            .with_context(|| format!("invalid --dense size: {spec:?}"))?;
+        check_dense_size(size, spec)?;
         return Ok(vec![(DEFAULT_DENSE_NAME.to_string(), size)]);
     }
 
@@ -121,9 +122,17 @@ fn parse_dense_specs(specs: &[String]) -> Result<Vec<(String, usize)>> {
                 .trim()
                 .parse()
                 .with_context(|| format!("invalid dense vector size in {spec:?}"))?;
+            check_dense_size(size, spec)?;
             Ok((name.trim().to_string(), size))
         })
         .collect()
+}
+
+fn check_dense_size(size: usize, spec: &str) -> Result<()> {
+    if size == 0 {
+        bail!("dense vector size must be greater than zero (got {spec:?})");
+    }
+    Ok(())
 }
 
 /// Parse `--sparse` specs: `default_missing_value = ""` turns a bare
