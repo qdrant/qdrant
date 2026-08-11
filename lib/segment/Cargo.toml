@@ -92,6 +92,7 @@ siphasher = "1.0.3"
 smallvec = { workspace = true }
 strum = { workspace = true }
 byteorder = { workspace = true }
+stumpalo = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
