@@ -172,8 +172,6 @@ pub trait CachedReadFs: UniversalReadFs {
 
     /// Schedule a prefetch for a file that has been opened already.
     ///
-    /// Checks if the modified time has changed since the last file listing snapshot.
-    ///
     /// This will force `Self::open` to return `UnchangedOpen` error if the file
     /// did not change its `FileInfo` in between snapshots.
     fn reschedule_prefetch(

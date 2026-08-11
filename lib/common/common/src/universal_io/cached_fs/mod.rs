@@ -12,12 +12,27 @@ use crate::universal_io::{
     UniversalReadFileOps, UniversalReadFs,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FileInfo {
     /// Length in bytes of the entire file
     pub size: u64,
     /// Last modification time, when the listing backend exposes one
     pub last_modified: Option<std::time::SystemTime>,
+}
+
+impl FileInfo {
+    /// Return true if both `FileInfo` have all data and it's equal.
+    pub fn full_eq(&self, other: &FileInfo) -> bool {
+        let Self {
+            size,
+            last_modified,
+        } = self;
+
+        size == &other.size
+            && last_modified
+                .zip(other.last_modified)
+                .is_some_and(|(this, other)| this == other)
+    }
 }
 
 /// Read-only filesystem wrapper that snapshots the file listing and serves
@@ -218,10 +233,11 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
                 return Ok(());
             }
 
-            // Check if contents changed
-            if let Some((previous, current)) =
-                self.previous_file_info(path).zip(self.file_info(path))
-                && previous == current
+            // Check if their file info is complete and didn't change.
+            if self
+                .previous_file_info(path)
+                .zip(self.file_info(path))
+                .is_some_and(|(previous, current)| previous.full_eq(current))
             {
                 files_prefetched.insert(path.to_path_buf(), None);
                 return Ok(());
