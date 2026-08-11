@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    OpenOptions, Populate, UniversalAppend, UniversalReadFileOps, UniversalReadFs, UniversalWrite,
+    OpenOptions, Populate, UniversalAppend, UniversalReadFileOps, UniversalReadFs,
     UniversalWriteFileOps,
 };
 
@@ -15,7 +15,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::chunks::{chunk_name, list_chunk_files};
 use crate::vector_storage::chunked_vectors::config::{
-    ChunkedVectorsConfig, Status, ensure_config, status_file,
+    ChunkedVectorsConfig, Status, ensure_config, read_status_len, status_file,
 };
 
 /// Short-lived append-only writer for chunked vectors storage.
@@ -24,7 +24,6 @@ use crate::vector_storage::chunked_vectors::config::{
 /// touched chunks, appends, and persists the vector count, so a batch is
 /// durable when it returns and there is nothing to flush.
 #[derive(Debug)]
-#[cfg_attr(not(test), expect(dead_code))]
 pub struct UpdateOnlyChunkedVectors<T, S: UniversalAppend> {
     directory: PathBuf,
     config: ChunkedVectorsConfig,
@@ -42,11 +41,10 @@ fn append_options() -> OpenOptions {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code))]
 impl<T, S> UpdateOnlyChunkedVectors<T, S>
 where
     T: bytemuck::Pod + Send,
-    S: UniversalAppend + UniversalWrite + 'static,
+    S: UniversalAppend + 'static,
 {
     /// Open a chunked-vectors directory for appending, creating it if missing.
     pub fn open(fs: S::Fs, directory: &Path, dim: usize) -> OperationResult<Self> {
@@ -65,6 +63,24 @@ where
             fs,
             _t: PhantomData,
         })
+    }
+
+    /// The vector count the directory records, read from storage every time so
+    /// that it reflects what a previous writer left rather than anything this
+    /// handle remembers.
+    ///
+    /// Needed where a storage's rows are not indexed by point slot — the
+    /// multivector ones — so a batch knows where the row space ends.
+    pub fn stored_len(&self) -> OperationResult<usize> {
+        read_status_len(&self.fs, &status_file(&self.directory))
+    }
+
+    /// How many more vectors fit in the chunk that `key` falls in.
+    ///
+    /// A vector never straddles a chunk, so a caller placing a run of rows has
+    /// to skip to the next chunk when the run does not fit in this one.
+    pub fn remaining_chunk_keys(&self, key: usize) -> usize {
+        self.config.remaining_chunk_capacity(key)
     }
 
     /// Replace the stored vector count.
