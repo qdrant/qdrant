@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
