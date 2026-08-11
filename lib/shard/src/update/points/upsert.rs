@@ -2,7 +2,6 @@
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::feature_flags;
 use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -213,13 +212,7 @@ where
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
             ids_chunk,
-            |id, write_segment| {
-                debug_assert!(
-                    !feature_flags().append_only_storages,
-                    "This should never be called in append-only mode"
-                );
-                points_map[&id].upsert_into(write_segment, op_num, hw_counter)
-            },
+            |id, write_segment| points_map[&id].upsert_into(write_segment, op_num, hw_counter),
             |id, raw_vectors, updated_vectors, old_payload| {
                 points_map[&id].write_moved(raw_vectors, updated_vectors, old_payload)
             },

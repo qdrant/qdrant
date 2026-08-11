@@ -765,6 +765,16 @@ impl Segment {
         // Get rid of mappingless points.
         let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
 
+        // A mappingless slot is the normal resting state here, not a leftover to
+        // clean: an append-only delete tombstones in the id tracker and leaves
+        // the payload row and field indexes in place, and every mutation clones
+        // the point to a fresh slot. Deleting them is what those storages
+        // refuse, and it would fail every load of the segment from here on.
+        // They stay unreachable until the next optimization reclaims them.
+        if self.is_append_only_delete() {
+            return Ok(());
+        }
+
         // There are some leftovers to clean from segment.
         // After that we need to set internal version to 0, so that
         // we won't need to clean them again.
