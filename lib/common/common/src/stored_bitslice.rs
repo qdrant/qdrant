@@ -445,11 +445,12 @@ mod tests {
 
     #[test]
     fn atomic_update_reads_applies_and_replaces_the_file() {
-        let f = create_temp_file(&[0b0000_0001]);
+        // Handle closed: Windows cannot replace a file that is held open.
+        let path = create_temp_file(&[0b0000_0001]).into_temp_path();
 
         MmapBitSlice::atomic_update(
             &MmapFs,
-            f.path(),
+            &path,
             OpenOptions::new_for_test(),
             (),
             None,
@@ -461,12 +462,13 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(stored_ones(f.path()), vec![0, 3]);
+        assert_eq!(stored_ones(&path), vec![0, 3]);
     }
 
     #[test]
     fn atomic_update_starts_from_the_seed_without_reading() {
-        let f = create_temp_file(&[0b0000_0001]);
+        // Handle closed: Windows cannot replace a file that is held open.
+        let path = create_temp_file(&[0b0000_0001]).into_temp_path();
 
         let mut seed = BitVec::new();
         seed.resize(64, false);
@@ -474,7 +476,7 @@ mod tests {
 
         MmapBitSlice::atomic_update(
             &MmapFs,
-            f.path(),
+            &path,
             OpenOptions::new_for_test(),
             (),
             Some(seed),
@@ -487,7 +489,7 @@ mod tests {
         .unwrap();
 
         // The seed replaces the stored bits: bit 0 from the file is gone.
-        assert_eq!(stored_ones(f.path()), vec![3, 5]);
+        assert_eq!(stored_ones(&path), vec![3, 5]);
     }
 
     #[test]
