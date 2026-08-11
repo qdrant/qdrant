@@ -364,7 +364,14 @@ impl Validate for grpc::Vector {
 impl Validate for grpc::vector::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            grpc::vector::Vector::Dense(_dense) => Ok(()),
+            grpc::vector::Vector::Dense(dense) => {
+                if dense.data.is_empty() {
+                    let mut errors = ValidationErrors::new();
+                    errors.add("data", ValidationError::new("empty_vector"));
+                    return Err(errors);
+                }
+                Ok(())
+            }
             grpc::vector::Vector::Sparse(sparse) => sparse.validate(),
             grpc::vector::Vector::MultiDense(multi) => multi.validate(),
             grpc::vector::Vector::Document(_document) => Ok(()),
@@ -601,7 +608,7 @@ mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
+        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
         GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request,
     };
@@ -957,5 +964,22 @@ mod tests {
             ..Default::default()
         };
         assert!(good_request.validate().is_ok());
+    }
+
+    #[test]
+    fn test_dense_vector_validation() {
+        let empty = crate::grpc::qdrant::vector::Vector::Dense(DenseVector { data: vec![] });
+        assert!(
+            empty.validate().is_err(),
+            "empty dense vector should error on validation"
+        );
+
+        let populated = crate::grpc::qdrant::vector::Vector::Dense(DenseVector {
+            data: vec![1.0, 2.0],
+        });
+        assert!(
+            populated.validate().is_ok(),
+            "populated dense vector should pass validation"
+        );
     }
 }
