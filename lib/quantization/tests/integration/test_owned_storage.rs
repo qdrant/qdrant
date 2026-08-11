@@ -17,8 +17,8 @@ mod tests {
     use common::mmap::MmapFlusher;
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
-        EncodedStorage, EncodedStorageBuilder, TestEncodedStorage, TestEncodedStorageBuilder,
-        default_for_each_batch,
+        EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, TestEncodedStorage,
+        TestEncodedStorageBuilder, default_for_each_batch,
     };
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
@@ -28,25 +28,7 @@ mod tests {
     /// Wraps a storage so every read returns a freshly allocated `Cow::Owned` buffer.
     struct OwnedStorage(TestEncodedStorage);
 
-    impl EncodedStorage for OwnedStorage {
-        fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-            let Self(inner) = self;
-            Cow::Owned(inner.get_vector_data(index).into_owned())
-        }
-
-        fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-            let Self(inner) = self;
-            Some(Cow::Owned(inner.get_vector_data_opt(index)?.into_owned()))
-        }
-
-        fn for_each_batch(
-            &self,
-            offsets: &[PointOffsetType],
-            callback: impl FnMut(usize, Cow<'_, [u8]>),
-        ) {
-            default_for_each_batch(self, offsets, callback);
-        }
-
+    impl EncodedStorageWrite for OwnedStorage {
         fn is_in_ram_or_mmap() -> bool {
             TestEncodedStorage::is_in_ram_or_mmap()
         }
@@ -76,6 +58,31 @@ mod tests {
             inner.flusher()
         }
 
+        fn heap_size_bytes(&self) -> usize {
+            let Self(inner) = self;
+            inner.heap_size_bytes()
+        }
+    }
+
+    impl EncodedStorage for OwnedStorage {
+        fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+            let Self(inner) = self;
+            Cow::Owned(inner.get_vector_data(index).into_owned())
+        }
+
+        fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+            let Self(inner) = self;
+            Some(Cow::Owned(inner.get_vector_data_opt(index)?.into_owned()))
+        }
+
+        fn for_each_batch(
+            &self,
+            offsets: &[PointOffsetType],
+            callback: impl FnMut(usize, Cow<'_, [u8]>),
+        ) {
+            default_for_each_batch(self, offsets, callback);
+        }
+
         fn files(&self) -> Vec<PathBuf> {
             let Self(inner) = self;
             inner.files()
@@ -84,11 +91,6 @@ mod tests {
         fn immutable_files(&self) -> Vec<PathBuf> {
             let Self(inner) = self;
             inner.immutable_files()
-        }
-
-        fn heap_size_bytes(&self) -> usize {
-            let Self(inner) = self;
-            inner.heap_size_bytes()
         }
     }
 

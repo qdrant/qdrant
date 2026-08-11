@@ -78,25 +78,7 @@ impl QuantizedRamStorage {
     }
 }
 
-impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
-    }
-
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        Some(Cow::Borrowed(
-            self.vectors.get_opt(index as VectorOffsetType)?,
-        ))
-    }
-
-    fn for_each_batch(
-        &self,
-        offsets: &[PointOffsetType],
-        callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        default_for_each_batch(self, offsets, callback);
-    }
-
+impl quantization::EncodedStorageWrite for QuantizedRamStorage {
     fn upsert_vector(
         &mut self,
         id: PointOffsetType,
@@ -126,17 +108,37 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Box::new(|| Ok(()))
     }
 
+    fn heap_size_bytes(&self) -> usize {
+        let Self { vectors, path: _ } = self;
+        vectors.heap_size_bytes()
+    }
+}
+
+impl quantization::EncodedStorage for QuantizedRamStorage {
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        Some(Cow::Borrowed(
+            self.vectors.get_opt(index as VectorOffsetType)?,
+        ))
+    }
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        default_for_each_batch(self, offsets, callback);
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
-    }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self { vectors, path: _ } = self;
-        vectors.heap_size_bytes()
     }
 }
 
@@ -226,7 +228,7 @@ mod tests {
 
     #[test]
     fn loads_complete_vectors() {
-        use quantization::EncodedStorage;
+        use quantization::{EncodedStorage, EncodedStorageWrite};
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("quantized.bin");
