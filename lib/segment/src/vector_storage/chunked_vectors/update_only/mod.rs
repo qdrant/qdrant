@@ -72,7 +72,7 @@ where
     /// Needed where a storage's rows are not indexed by point slot — the
     /// multivector ones — so a batch knows where the row space ends.
     pub fn stored_len(&self) -> OperationResult<usize> {
-        read_status_len(&self.fs, &status_file(&self.directory))
+        Ok(read_status_len(&self.fs, &status_file(&self.directory))?)
     }
 
     /// How many more vectors fit in the chunk that `key` falls in.
