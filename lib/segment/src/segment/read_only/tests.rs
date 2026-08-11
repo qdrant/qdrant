@@ -480,15 +480,23 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     mutable.flush(true).unwrap();
 
     // A live reload folds the delta into the rebuilt sparse index.
-    read_only
-        .live_reload(&MmapFs, &hw)
-        .expect("read-only live reload");
+    preload_then_reload(&mut read_only, &hw).expect("read-only live reload");
     assert_eq!(read_only.available_point_count(), NUM_POINTS + 20 - 2);
 
     assert_sparse_search_matches(&mutable, &read_only, &query);
     // A query on the fresh dimension only reaches points added after the open.
     let fresh_dim_query = SparseVector::new(vec![64], vec![1.0]).unwrap();
     assert_sparse_search_matches(&mutable, &read_only, &fresh_dim_query);
+}
+
+/// Full refresh cycle as the edge shard drives it: staged preload (shared
+/// access), then the exclusive apply.
+fn preload_then_reload(
+    segment: &mut ReadOnlySegment<MmapFile>,
+    hw_counter: &HardwareCounterCell,
+) -> crate::common::operation_error::OperationResult<()> {
+    segment.live_preload()?;
+    segment.live_reload(hw_counter)
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
@@ -595,15 +603,17 @@ fn vanished_segment_classifies_not_found() {
     assert!(err.is_not_found(), "expected not-found, got: {err}");
 
     // Live-reload of a segment whose directory vanished after open (the leader
-    // removed it): the first component reopen hits the missing file.
+    // removed it): the first component reopen hits the missing file. The failed
+    // preload mutates nothing — the segment keeps serving its pre-refresh state.
     let mut read_only =
         ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
             .expect("read-only open");
+    let points_before = read_only.available_point_count();
     fs_err::remove_dir_all(&segment_path).unwrap();
-    let err = read_only
-        .live_reload(&MmapFs, &HardwareCounterCell::disposable())
+    let err = preload_then_reload(&mut read_only, &HardwareCounterCell::disposable())
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
+    assert_eq!(read_only.available_point_count(), points_before);
 }
 
 /// A load profile that never scores a vector defers its HNSW graph load: the

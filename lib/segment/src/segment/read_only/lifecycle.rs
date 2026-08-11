@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedFs, CachedReadFs, OkNotFound, Populate, UniversalReadFs, read_json_via,
 };
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -106,7 +107,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         let (segment_config, payload_config) =
             Self::first_preopen(&cached_fs, segment_path, load_profile)?;
         Self::open_via(
-            &cached_fs,
+            cached_fs,
             fs,
             segment_path,
             segment_config,
@@ -195,12 +196,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Read-only mirror of `load_segment`: assembles every read-only component
     /// from `fs` (id tracker, payload storage+index, per-vector storage/index). No writes.
     ///
-    /// `fs` is any filesystem producing `S`-typed handles — in production the
-    /// per-segment [`CachedReadFs`], whose opens are served from its prefetch
-    /// pool. `raw_fs` is the canonical backend, for the components that store
-    /// a filesystem handle to read files after this open (the appendable id
-    /// tracker's re-opens, the HNSW index's deferred graph load): a caching
-    /// wrapper's snapshot would go stale.
+    /// `fs` is the per-segment caching filesystem, whose opens are served from
+    /// its prefetch pool; the segment retains it for live reloads (see
+    /// [`ReadOnlySegment::reload_fs`]). `raw_fs` is the canonical backend, for
+    /// the components that store a filesystem handle to read files after this
+    /// open (the appendable id tracker's re-opens, the HNSW index's deferred
+    /// graph load): a caching wrapper's snapshot would go stale.
     ///
     /// `config` and `payload_config` are the ones
     /// [`first_preopen`](Self::first_preopen) already parsed off `fs`, and
@@ -208,7 +209,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// here must make the same placement decisions the prefetches did.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_via(
-        fs: &impl CachedReadFs<File = S>,
+        fs: CachedFs<S::Fs>,
         raw_fs: &S::Fs,
         segment_path: &Path,
         config: SegmentConfig,
@@ -217,7 +218,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
-        if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
+        if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written last, so
             // its absence means the segment vanished mid-open (or was never completed) —
             // a follower resolves that against the segment manifest.
@@ -233,7 +234,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             .and_then(|profile| profile.payload_storage_placement())
             .unwrap_or_else(|| payload_populate(&config));
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
-            fs,
+            &fs,
             segment_path.to_path_buf(),
             payload_storage_populate,
         )?));
@@ -241,7 +242,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         // Detect the persisted format by attempting each format's open (no
         // per-file `exists` round-trips — important for object-storage backends).
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
-            fs,
+            &fs,
             raw_fs,
             segment_path,
             deferred_internal_id,
@@ -256,7 +257,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             let path = get_vector_storage_path(segment_path, vector_name);
             let storage_populate =
                 load_profile.and_then(|profile| profile.vector_storage_placement(vector_name));
-            let storage = VectorStorageReadEnum::open(fs, vector_config, &path, storage_populate)?
+            let storage = VectorStorageReadEnum::open(&fs, vector_config, &path, storage_populate)?
                 .ok_or_else(|| {
                     OperationError::service_error(format!(
                         "Read-only dense vector storage '{vector_name}' was not found, or is corrupted.",
@@ -268,7 +269,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             let path = get_vector_storage_path(segment_path, vector_name);
             let storage =
                 VectorStorageReadEnum::Sparse(Box::new(ReadOnlySparseVectorStorage::open(
-                    fs,
+                    &fs,
                     &path,
                     sparse_storage_populate(sparse_vector_config),
                 )?));
@@ -276,7 +277,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         }
 
         let payload_index = Arc::new(AtomicRefCell::new(ReadOnlyStructPayloadIndex::open(
-            fs,
+            &fs,
             payload_storage.clone(),
             id_tracker.clone(),
             vector_storages.clone(),
@@ -289,7 +290,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         for (vector_name, vector_config) in &config.vector_data {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_dense(
-                fs,
+                &fs,
                 raw_fs,
                 segment_path,
                 vector_name,
@@ -305,7 +306,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             let vector_storage = vector_storages.remove(vector_name).unwrap();
             let data = ReadOnlyVectorData::open_sparse(
-                fs,
+                &fs,
                 segment_path,
                 vector_name,
                 sparse_vector_config,
@@ -331,6 +332,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_index,
             payload_storage,
             pending_reload: AtomicRefCell::new(Default::default()),
+            reload_fs: Mutex::new(fs),
             segment_type,
             segment_config: config,
         })
