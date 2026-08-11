@@ -209,18 +209,21 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
     ) -> UioResult<()> {
-        let mut files_prefetched = self.files_prefetched.lock();
-
-        if files_prefetched.contains_key(path) {
-            return Ok(());
-        }
-
-        // Check if contents changed
-        if let Some((previous, current)) = self.previous_file_info(path).zip(self.file_info(path))
-            && previous == current
         {
-            files_prefetched.insert(path.to_path_buf(), None);
-            return Ok(());
+            let mut files_prefetched = self.files_prefetched.lock();
+
+            if files_prefetched.contains_key(path) {
+                return Ok(());
+            }
+
+            // Check if contents changed
+            if let Some((previous, current)) =
+                self.previous_file_info(path).zip(self.file_info(path))
+                && previous == current
+            {
+                files_prefetched.insert(path.to_path_buf(), None);
+                return Ok(());
+            }
         }
 
         // Otherwise schedule normally
