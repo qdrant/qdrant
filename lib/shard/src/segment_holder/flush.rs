@@ -250,8 +250,11 @@ impl SegmentHolder {
             .max_persisted_segment_version_overwrite
             .load(Ordering::Relaxed);
 
+        let overwrite_floor = max_persisted_version;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
+        // Per-segment state behind the decision, for the diagnostic below.
+        let mut segment_states = Vec::with_capacity(lock_order.len());
 
         for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order) {
             let segment_version = read_segment.version();
@@ -261,6 +264,10 @@ impl SegmentHolder {
                 "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}",
                 read_segment.data_path(),
             );
+
+            segment_states.push(format!(
+                "{segment_id}:{segment_version}/{segment_persisted_version}"
+            ));
 
             if segment_version > segment_persisted_version {
                 has_unsaved = true;
@@ -272,17 +279,33 @@ impl SegmentHolder {
             drop(read_segment);
         }
 
-        if has_unsaved {
-            log::trace!(
-                "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
-            );
-            min_unsaved_version
+        let (result, source) = if has_unsaved {
+            (min_unsaved_version, "min_unsaved")
+        } else if max_persisted_version == overwrite_floor && overwrite_floor > 0 {
+            // Everything looks saved and the no-op overwrite floor is what carries the result:
+            // the acknowledge point then rests on operations that hit no segment at all.
+            (max_persisted_version, "overwrite_floor")
         } else {
-            log::trace!(
-                "All segments flushed successfully, max persisted version: {max_persisted_version}"
-            );
-            max_persisted_version
-        }
+            (max_persisted_version, "max_segment_persisted")
+        };
+
+        // The whole reload-divergence class is "the WAL was acknowledged past a write that never
+        // reached disk", and this is the function that picks that acknowledge point. One line per
+        // flush pass (5s interval by default) records what it decided and from which input, so a
+        // later postmortem can walk back to the pass that acked past a lost point's write.
+        log::info!(
+            "flush ack decision: version={result} from={source} \
+             (overwrite_floor={overwrite_floor}, max_segment_persisted={max_persisted_version}, \
+             min_unsaved={}, segments=[{}])",
+            if has_unsaved {
+                min_unsaved_version.to_string()
+            } else {
+                "none".to_string()
+            },
+            segment_states.join(", "),
+        );
+
+        result
     }
 
     /// Grab the RwLock's for all the given segment IDs.

@@ -93,6 +93,14 @@ impl UpdateWorkers {
             segments.write().report_optimizer_error(err);
         }
 
+        // Pairs with the "flush ack decision" line in `get_max_persisted_version`: that one says
+        // what the segments justified, this one says what the WAL was actually told, after the
+        // `keep_from` cap. Everything below `ack` stops being replayable.
+        log::info!(
+            "WAL ack: shard={} ack={ack} (confirmed={confirmed_version}, keep_from={keep_from})",
+            shard_path.display(),
+        );
+
         if let Err(err) = wal.blocking_lock().ack(ack) {
             log::warn!("Failed to acknowledge WAL version: {err}");
             segments.write().report_optimizer_error(err);
