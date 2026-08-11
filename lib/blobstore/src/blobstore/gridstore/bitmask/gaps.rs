@@ -19,6 +19,7 @@ pub struct RegionGaps {
 }
 
 impl RegionGaps {
+    /// Create a new RegionGaps instance
     pub fn new(
         leading: u16,
         trailing: u16,
@@ -53,6 +54,7 @@ impl RegionGaps {
         }
     }
 
+    /// Create a RegionGaps instance where all blocks are free.
     pub fn all_free(blocks: u16) -> Self {
         Self {
             max: blocks,
@@ -90,10 +92,12 @@ pub(super) struct BitmaskGaps<S> {
 }
 
 impl<S: UniversalWrite> BitmaskGaps<S> {
+    /// Return the path to the gaps file.
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
 
+    /// Create a new BitmaskGaps file from an iterator of RegionGaps.
     pub fn create(
         fs: &S::Fs,
         dir: &Path,
@@ -126,6 +130,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         })
     }
 
+    /// Open an existing BitmaskGaps file.
     pub fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
         let path = gaps_file_path(dir);
         let options = OpenOptions {
@@ -146,6 +151,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         })
     }
 
+    /// Return a flusher for the underlying slice store.
     pub fn flusher(&self) -> Flusher {
         self.slice_store.flusher()
     }
@@ -180,25 +186,29 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         Ok(())
     }
 
-    pub fn trailing_free_blocks(&self) -> Result<u32> {
+    /// Count the total number of trailing free blocks across all regions.
+    pub fn trailing_free_blocks(&self) -> u32 {
         let slice = self.read_all();
-        Ok(slice
+        slice
             .iter()
             .rev()
             .take_while_inclusive(|gap| gap.trailing == self.config.region_size_blocks as u16)
             .map(|gap| u32::from(gap.trailing))
-            .sum())
+            .sum()
     }
 
+    /// Return the number of regions in the bitmask gaps.
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
+    /// Get the RegionGaps at the specified index.
     #[cfg(test)]
     pub fn get(&self, idx: usize) -> Result<Option<RegionGaps>> {
         Ok(self.data.get(idx).copied())
     }
 
+    /// Set the RegionGaps at the specified index.
     pub fn set(&mut self, idx: usize, value: RegionGaps) -> Result<()> {
         if idx >= self.data.len() {
             return Err(crate::error::BlobstoreError::ServiceError {
@@ -211,21 +221,22 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         Ok(())
     }
 
+    /// Read all RegionGaps from memory.
     pub fn read_all(&self) -> Cow<'_, [RegionGaps]> {
         Cow::Borrowed(&self.data)
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
-    pub fn find_fitting_gap(&self, num_blocks: u32) -> Result<Option<Range<RegionId>>> {
+    pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
         let slice = self.read_all();
 
         if slice.len() == 1 {
-            return Ok(if slice[0].max as usize >= num_blocks as usize {
+            return if slice[0].max as usize >= num_blocks as usize {
                 Some(0..1)
             } else {
                 None
-            });
+            };
         }
 
         // try to find gap in the minimum regions needed
@@ -246,13 +257,13 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         };
 
         if fits_in_min_regions.is_some() {
-            return Ok(fits_in_min_regions);
+            return fits_in_min_regions;
         }
 
         // try to find gap by merging one more region (which is the maximum regions we may need for the value)
         let window_size = regions_needed + 1;
 
-        Ok(self.find_merged_gap(&slice, window_size, num_blocks))
+        self.find_merged_gap(&slice, window_size, num_blocks)
     }
 
     /// Populate all pages in the mmap.

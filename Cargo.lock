@@ -9947,3 +9947,7 @@ dependencies = [
  "syn 2.0.119",
  "winnow 0.7.15",
 ]
+
+[[patch.unused]]
+name = "boa_string"
+version = "1.0.0-dev"

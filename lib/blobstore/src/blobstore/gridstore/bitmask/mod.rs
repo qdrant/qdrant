@@ -53,7 +53,7 @@ impl<S: UniversalWrite> Bitmask<S> {
 
     /// Calculate the amount of trailing free blocks in the bitmask.
     pub fn trailing_free_blocks(&self) -> Result<u32> {
-        let trailing_gap = self.regions_gaps.trailing_free_blocks()?;
+        let trailing_gap = self.regions_gaps.trailing_free_blocks();
         #[cfg(debug_assertions)]
         {
             let all_bits = self.bitslice.read_all()?;
@@ -253,7 +253,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         &self,
         num_blocks: u32,
     ) -> Result<Option<(PageId, BlockOffset)>> {
-        let Some(region_id_range) = self.regions_gaps.find_fitting_gap(num_blocks)? else {
+        let Some(region_id_range) = self.regions_gaps.find_fitting_gap(num_blocks) else {
             return Ok(None);
         };
         let regions_start_offset = region_id_range.start as usize * self.config.region_size_blocks;
