@@ -90,6 +90,102 @@ mod tests {
         assert_eq!(got.as_ref(), make_vec(100, DIM).as_slice());
     }
 
+    /// Preload must stage every file the reload opens: after the preload the
+    /// backing files are deleted, so the reload can only succeed from the
+    /// prefetch pool (parked mmap handles keep reading deleted files on unix).
+    #[test]
+    fn live_preload_then_reload_sees_appended_vectors() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_preload").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+
+        append_range(&mut writer, 100, 100..250, DIM, &hw);
+        drop(writer);
+
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+
+        for file in fs_err::read_dir(dir.path()).unwrap() {
+            fs_err::remove_file(file.unwrap().path()).unwrap();
+        }
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 250);
+        let got = reader.get::<Random>(100).unwrap();
+        assert_eq!(got.as_ref(), make_vec(100, DIM).as_slice());
+    }
+
+    /// Growth starting exactly at a chunk boundary leaves the last held chunk
+    /// untouched while the length changed: the rescheduled prefetch reports it
+    /// unchanged and the reload must keep the current handle, adopting only
+    /// the new chunk.
+    #[test]
+    fn live_preload_unchanged_last_chunk_keeps_handle() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        const DIM: usize = 32; // 4096 vectors per test chunk
+        let dir = Builder::new().prefix("chunked_boundary").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..4096, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 4096);
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+
+        // First cycle: no previous snapshot, staging parks fresh handles.
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        // Growth lands entirely in a new chunk; chunk 0 stays untouched.
+        append_range(&mut writer, 4096, 4096..4196, DIM, &hw);
+
+        // Second cycle: chunk 0 is rescheduled and unchanged -> sentinel.
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 4196);
+        for offset in [0, 4095, 4096, 4195] {
+            assert_eq!(
+                reader.get::<Random>(offset).unwrap().as_ref(),
+                make_vec(offset, DIM).as_slice(),
+                "vector {offset} mismatch after reload",
+            );
+        }
+    }
+
     /// Case-5 regression of the live-reload staleness audit: a reader over a
     /// caching backend that fetched a block straddling the old tail (any read
     /// near the tail pulls a 16KiB block covering space appended into later)

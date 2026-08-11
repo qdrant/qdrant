@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::universal_io::{
-    UniversalIoError, UniversalReadFs, UniversalWriteFileOps, read_json_via, read_whole_via,
+    UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFileOps, read_json_via, read_whole_via
 };
 use serde::{Deserialize, Serialize};
 
@@ -133,7 +133,7 @@ pub(super) fn load_config<Fs: UniversalReadFs>(
 pub(super) fn read_status_len<Fs: UniversalReadFs>(
     fs: &Fs,
     status_file: &Path,
-) -> OperationResult<usize> {
+) -> UioResult<usize> {
     let needed = std::mem::size_of::<usize>();
     let len = read_whole_via(fs, status_file, |bytes| {
         let head = bytes.get(..needed).ok_or_else(|| {
