@@ -69,11 +69,17 @@ where
 mod tests {
     use std::time::Duration;
 
-    use tokio::time::sleep;
+    use tokio::time::{sleep, timeout};
 
     use super::*;
 
     const STEP_MILLIS: u64 = 5;
+
+    /// Upper bound on how long a cancelled task may take to report that it
+    /// stopped. Deliberately far longer than it can plausibly need: it is only
+    /// reached when the task never stops at all, which is the failure the test
+    /// is here to catch.
+    const STOP_TIMEOUT: Duration = Duration::from_secs(30);
 
     async fn long_task(cancel: CancellationToken) -> i32 {
         let mut n = 0;
@@ -94,11 +100,20 @@ mod tests {
         sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
         assert!(!handle.is_finished());
         handle.ask_to_cancel();
-        sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
-        // If windows, we need to wait a bit more
-        #[cfg(windows)]
-        sleep(Duration::from_millis(STEP_MILLIS * 10)).await;
-        assert!(handle.is_finished());
+
+        // Wait until the task reports that it stopped, rather than sleeping for a
+        // fixed budget and assuming that was long enough. The flag is set by the
+        // task itself once it observes the cancellation, so any scheduling delay
+        // past the budget failed the assertion even though nothing was wrong --
+        // which is why the Windows arm kept being padded, and why this still
+        // flaked on macOS.
+        timeout(STOP_TIMEOUT, async {
+            while !handle.is_finished() {
+                sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("cancelled task never reported that it finished");
 
         let res = handle.cancel().await.unwrap();
         assert!(res < 10);
