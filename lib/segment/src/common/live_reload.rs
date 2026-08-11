@@ -31,14 +31,13 @@ use crate::common::operation_error::OperationResult;
 pub(crate) trait LiveReload {
     type File: UniversalRead;
 
+    /// Stage everything the next [`Self::live_reload`] needs: schedule
+    /// reopens on kept handles, (re)schedule prefetches for swapped and new
+    /// files. Shared access; must not wait on any fetch.
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
-    ) -> OperationResult<()> {
-        let _ = cached_fs;
-        // todo(uio): don't provide default implementation
-        Ok(())
-    }
+    ) -> OperationResult<()>;
 
     fn live_reload<Fs: UniversalReadFs<File = Self::File>>(
         &mut self,
