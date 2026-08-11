@@ -63,7 +63,7 @@ where
     }
 
     fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
-        &mut self,
+        &self,
         get_file_info: F,
     ) -> UioResult<()> {
         self.schedule_reopen_impl(get_file_info)
