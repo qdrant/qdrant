@@ -1,7 +1,6 @@
 use blobstore::Blobstore;
 use blobstore::config::{
-    DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig,
-    StorageConfig,
+    CreateOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, StorageConfig,
 };
 
 use self::inner::MutableFullTextIndexInner;
@@ -14,12 +13,13 @@ mod read_ops;
 mod tests;
 pub mod update_only;
 
-pub(super) const GRIDSTORE_OPTIONS: StorageConfig = StorageConfig::Mutable(GridstoreConfig {
-    page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
-    block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
-    region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
-    compression: blobstore::config::Compression::None,
-});
+pub(super) fn storage_options() -> StorageConfig {
+    crate::common::blobstore_config::storage_config(CreateOptions {
+        page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+        compression: blobstore::config::Compression::None,
+    })
+}
 
 pub struct MutableFullTextIndex {
     pub(super) inner: MutableFullTextIndexInner,

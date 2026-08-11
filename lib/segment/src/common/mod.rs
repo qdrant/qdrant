@@ -1,4 +1,5 @@
 pub mod anonymize;
+pub mod blobstore_config;
 pub mod buffered_update_bitslice;
 pub mod error_logging;
 pub mod flags;

@@ -1149,12 +1149,12 @@ fn test_upsert_moved_point_single_slot() {
     assert_eq!(dst.version_tracker.get_payload(), Some(102));
 }
 
-/// On an append-only segment, the follow-up steps of a multi-step point
-/// write (e.g. the `set_full_payload` after an `upsert_point`, sharing its
-/// `op_num`) must mutate the slot written by the same operation in place
-/// instead of cloning it: one operation allocates exactly one slot.
+/// On an append-only segment a slot is never mutated once written: every
+/// mutating step clones the point to a fresh slot, including steps of the same
+/// operation. Whole points are written in one step by `upsert_moved_point`,
+/// which is what the shard's upsert path uses.
 #[test]
-fn test_append_only_same_op_multi_step_single_slot() {
+fn test_append_only_every_step_clones() {
     use crate::id_tracker::IdTrackerRead as _;
 
     init_logger();
@@ -1165,19 +1165,22 @@ fn test_append_only_same_op_multi_step_single_slot() {
     segment.append_only_mutations = true;
     let hw_counter = HardwareCounterCell::new();
 
-    // New point: insert + payload at the same op_num — one slot.
+    // A whole point in one operation: one slot.
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
     segment
-        .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
-        .unwrap();
-    segment
-        .set_full_payload(100, 7.into(), &payload, &hw_counter)
+        .upsert_moved_point(
+            100,
+            7.into(),
+            &[],
+            only_default_vector(&vec),
+            &payload,
+            &hw_counter,
+        )
         .unwrap();
     assert_eq!(segment.id_tracker.borrow().total_point_count(), 1);
 
-    // Update of a committed point: the first step clones to a fresh slot,
-    // the second step mutates that same-op slot in place — one new slot.
+    // The same as two steps of one operation: a slot per step.
     let vec2 = vec![0.1_f32, 0.2, 0.3, 0.4];
     let payload2: Payload = serde_json::from_str(r#"{"color": "blue"}"#).unwrap();
     segment
@@ -1186,7 +1189,7 @@ fn test_append_only_same_op_multi_step_single_slot() {
     segment
         .set_full_payload(101, 7.into(), &payload2, &hw_counter)
         .unwrap();
-    assert_eq!(segment.id_tracker.borrow().total_point_count(), 2);
+    assert_eq!(segment.id_tracker.borrow().total_point_count(), 3);
     assert_eq!(
         segment
             .vector(DEFAULT_VECTOR_NAME, 7.into(), &hw_counter)
@@ -1194,19 +1197,8 @@ fn test_append_only_same_op_multi_step_single_slot() {
         Some(VectorInternal::Dense(vec2)),
     );
     assert_eq!(segment.payload(7.into(), &hw_counter).unwrap(), payload2);
-
-    // A later operation still clones: committed slots are never mutated.
-    let payload3: Payload = serde_json::from_str(r#"{"color": "green"}"#).unwrap();
-    segment
-        .set_full_payload(102, 7.into(), &payload3, &hw_counter)
-        .unwrap();
-    assert_eq!(segment.id_tracker.borrow().total_point_count(), 3);
-    assert_eq!(segment.payload(7.into(), &hw_counter).unwrap(), payload3);
 }
 
-/// Multi-dense raw round-trip: the flattened inner-vector blob must survive
-/// `retrieve_raw` → `upsert_point_raw` byte-identically and decode to the
-/// original multivector.
 #[test]
 fn test_upsert_raw_multivec_roundtrip() {
     init_logger();
@@ -1521,9 +1513,8 @@ fn test_upsert_raw_multivec_turbo_bytes() {
 /// TurboQuant-as-datatype vectors must survive append-only mutations that
 /// don't touch them — e.g. payload-only ops — without degrading.
 ///
-/// On an append-only segment every mutating op (except same-operation
-/// follow-up steps, which mutate the just-written slot in place) routes
-/// through `Segment::clone_and_mutate_point`, which rewrites the point at a
+/// On an append-only segment every mutating op routes through
+/// `Segment::clone_and_mutate_point`, which rewrites the point at a
 /// fresh internal id. It used to snapshot the point's vectors decoded to `f32`,
 /// dequantizing and requantizing a TQ-datatype vector on every mutation,
 /// even one that only touched the payload. TurboQuant requantization is not
