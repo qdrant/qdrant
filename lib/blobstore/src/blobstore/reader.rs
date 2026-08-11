@@ -217,7 +217,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
         match self {
             Self::Gridstore(reader) => reader.live_preload(fs),
             Self::Logstore(reader) => reader.live_preload(fs),

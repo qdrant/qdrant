@@ -267,7 +267,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
     }
 
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
-        &mut self,
+        &self,
         fs: &Fs,
         populate: Populate,
     ) -> Result<()> {
@@ -278,7 +278,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             .collect();
 
         // Reload pages
-        for page in &mut self.pages {
+        for page in &self.pages {
             page.live_preload(fs)?;
         }
 
@@ -494,7 +494,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             })
     }
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
         self.file
             .schedule_reopen(|path| fs.cached_file_info(path))?;
         Ok(())
