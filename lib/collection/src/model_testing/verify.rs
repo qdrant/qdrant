@@ -76,6 +76,60 @@ pub(super) fn id_diff(actual: &Model, expected: &Model) -> (Vec<PointIdType>, Ve
     (extra, missing)
 }
 
+/// Engine-side postmortem for points a reload lost, logged before the panic that reports them.
+///
+/// Says, per point, whether any segment still knows the id and in what state. The two answers
+/// separate the candidate mechanisms:
+///
+/// - **unknown to every segment**: nothing on disk ever recorded the point, so the WAL was
+///   acknowledged past a write that only ever existed in an in-memory pending buffer.
+/// - **known but soft-deleted, or known at an older version**: the point did reach disk and a
+///   later durable write (a copy-on-write move's source-side delete, typically) removed or
+///   reverted it without its counterpart surviving.
+///
+/// The distinction matters because the restart is an in-process close+reopen, not a crash: the page
+/// cache keeps every byte ever written whether or not it was fsynced, so anything genuinely absent
+/// was never written at all.
+pub(super) async fn describe_missing_points(
+    collection: &Collection,
+    missing: &[PointIdType],
+) -> String {
+    use common::types::DeferredBehavior;
+
+    let holder = collection.shards_holder.read().await;
+    let mut out = String::new();
+    for (shard_id, replica_set) in holder.get_shards() {
+        let Some(segments) = replica_set.segments_for_testing().await else {
+            continue;
+        };
+        let segments = segments.read();
+        for id in missing {
+            let mut sightings = Vec::new();
+            for (segment_id, locked) in segments.iter() {
+                let segment = locked.get();
+                let segment = segment.read();
+                let visible = segment.has_point(*id, DeferredBehavior::WithDeferred);
+                let version = segment.point_version(*id);
+                if visible || version.is_some() {
+                    sightings.push(format!(
+                        "segment {segment_id}: visible={visible} version={version:?} \
+                         (segment version={}, persisted={})",
+                        segment.version(),
+                        segment.persistent_version(),
+                    ));
+                }
+            }
+            let verdict = if sightings.is_empty() {
+                "unknown to every segment (never written to disk)".to_string()
+            } else {
+                sightings.join("; ")
+            };
+            out.push_str(&format!("\n  shard {shard_id} id {id:?}: {verdict}"));
+        }
+    }
+    out
+}
+
 pub(super) fn assert_matches_model(actual: &Model, expected: &Model, ctx: &str) {
     if actual.len() != expected.len() {
         let (extra, missing) = id_diff(actual, expected);

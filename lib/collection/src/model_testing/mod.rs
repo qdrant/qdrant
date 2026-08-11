@@ -754,6 +754,17 @@ pub async fn run(
             verify::wait_for_pending_updates(&collection).await;
             log::info!("op:{i} restart: scroll + verify");
             let live = verify::collect_model_from_collection(&collection).await;
+            // Probe the engine for every id the reload lost, while the reopened collection is
+            // still around: the panic message alone cannot say whether the point never reached
+            // disk or reached it and was removed again. See `describe_missing_points`.
+            if live.len() != model.len() {
+                let (_, missing) = verify::id_diff(&live, &model);
+                log::error!(
+                    "op:{i} reload lost {} point(s):{}",
+                    missing.len(),
+                    verify::describe_missing_points(&collection, &missing).await,
+                );
+            }
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
             // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
             // (extra/missing ids) is the established postmortem signature for that class, so it

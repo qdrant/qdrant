@@ -802,7 +802,10 @@ impl LocalShard {
             .expect("Failed to create progress style");
         bar.set_style(progress_style);
 
-        log::debug!(
+        // Info, not debug: the replay window is the first thing a reload-divergence postmortem
+        // needs (a point missing after restart whose write index falls below `from` was
+        // acknowledged as durable without ever reaching disk), and it is one line per shard load.
+        log::info!(
             "Recovering shard {} starting reading WAL from {} up to {} (last_applied_seq:{:?})",
             self.path.display(),
             from,

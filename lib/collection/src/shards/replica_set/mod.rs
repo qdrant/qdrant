@@ -407,6 +407,18 @@ impl ShardReplicaSet {
         self.local.read().await.is_some()
     }
 
+    /// Segment holder of the plain local shard, for the model testing postmortem only (see
+    /// `model_testing::verify::describe_missing_points`). `None` for proxies and remotes.
+    #[cfg(feature = "testing")]
+    pub(crate) async fn segments_for_testing(
+        &self,
+    ) -> Option<shard::segment_holder::locked::LockedSegmentHolder> {
+        match &*self.local.read().await {
+            Some(Shard::Local(local)) => Some(local.segments_for_testing()),
+            _ => None,
+        }
+    }
+
     /// Checks if the shard exists locally and not a proxy.
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
