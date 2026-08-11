@@ -2,7 +2,7 @@ use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::{Encodable, ReadOnlyNumericIndex};
 use crate::common::operation_error::OperationResult;
@@ -19,6 +19,10 @@ where
     Vec<T>: Blob,
 {
     type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+        self.inner.live_preload(fs)
+    }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
