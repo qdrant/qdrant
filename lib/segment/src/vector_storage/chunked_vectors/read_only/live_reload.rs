@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use super::super::chunks::read_chunks_from;
 use super::super::config::{read_status_len, status_file};
@@ -10,7 +10,7 @@ use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVectors<T, S> {
-    type Fs = S::Fs;
+    type File = S;
 
     /// Refresh the chunks that can have gained vectors since the last load; a
     /// no-op when the length is unchanged (the status file is read fresh, so
@@ -24,9 +24,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
     /// that can have gained vectors — is dropped and re-opened fresh,
     /// alongside adopting newly created chunk files. Deletions/new points are
     /// tracked by callers, so they are unused here.
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,

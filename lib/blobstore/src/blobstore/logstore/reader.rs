@@ -207,7 +207,7 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     /// - Data is append-only, existing mappings and value data never change.
     /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
     ///   counted.
-    pub(crate) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
         // A writer always updates the pages before the tracker, and it is not synchronized with
         // readers. Observe the tracker first, so that the mappings counted here are backed by
         // page data that the page reload below is guaranteed to see. Observing the pages first

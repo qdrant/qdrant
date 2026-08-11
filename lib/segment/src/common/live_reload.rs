@@ -1,6 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 
@@ -28,15 +29,21 @@ use crate::common::operation_error::OperationResult;
 ///
 /// [`UniversalRead`]: common::universal_io::UniversalRead
 pub(crate) trait LiveReload {
-    /// Filesystem context (`S::Fs` of the backing [`UniversalRead`]) used to
-    /// re-read on-disk state during a reload.
-    ///
-    /// [`UniversalRead`]: common::universal_io::UniversalRead
-    type Fs;
+    type File: UniversalRead;
 
-    fn live_reload(
+    #[expect(dead_code)]
+    fn live_preload<Fs: CachedReadFs<File = Self::File>>(
+        &self,
+        cached_fs: &Fs,
+    ) -> OperationResult<()> {
+        let _ = cached_fs;
+        // todo(uio): don't provide default implementation
+        Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = Self::File>>(
         &mut self,
-        fs: &Self::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,

@@ -6,8 +6,7 @@ use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
-    UniversalIoError, UniversalRead, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
-    UserData,
+    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFileOps, UserData,
 };
 
 use crate::Result;
@@ -210,7 +209,11 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
 
     /// Reload the pages from "disk", making newly appended value data visible to reads and the
     /// reported storage size.
-    pub(super) fn live_reload(&mut self, fs: &S::Fs, populate: Populate) -> Result<()> {
+    pub(super) fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        populate: Populate,
+    ) -> Result<()> {
         let page_list: HashMap<_, _> = fs
             .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
