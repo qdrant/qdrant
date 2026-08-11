@@ -308,7 +308,7 @@ pub struct Tracker<S> {
 impl<S> Tracker<S> {
     const FILE_NAME: &'static str = "tracker.dat";
 
-    fn tracker_file_name(path: &Path) -> PathBuf {
+    pub fn tracker_file_name(path: &Path) -> PathBuf {
         path.join(Self::FILE_NAME)
     }
 
@@ -325,13 +325,16 @@ impl<S> Tracker<S> {
 impl<S: UniversalRead> Tracker<S> {
     pub fn preopen<Fs: CachedReadFs<File = S>>(
         fs: &Fs,
-        path: &Path,
+        tracker_path: &Path,
         populate: Populate,
     ) -> Result<()> {
-        let path = Self::tracker_file_name(path);
         // Default a lazy open to partially populating the header.
         let populate = populate.or_partial(0..size_of::<TrackerHeader>() as u64);
-        fs.schedule_prefetch(&path, Some(tracker_open_options(populate, false)), None)?;
+        fs.schedule_prefetch(
+            tracker_path,
+            Some(tracker_open_options(populate, false)),
+            None,
+        )?;
         Ok(())
     }
 
@@ -339,11 +342,11 @@ impl<S: UniversalRead> Tracker<S> {
     /// If the file does not exist, return an error
     pub fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
-        path: &Path,
+        dir: &Path,
         populate: Populate,
         writeable: bool,
     ) -> Result<Self> {
-        let path = Self::tracker_file_name(path);
+        let path = Self::tracker_file_name(dir);
 
         let storage = Self::open_storage(fs, &path, populate, writeable)?;
 

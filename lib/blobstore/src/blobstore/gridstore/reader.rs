@@ -71,7 +71,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         populate: Populate,
     ) -> Result<()> {
         // schedule tracker
-        Tracker::<S>::preopen(fs, base_path, populate)?;
+        let tracker_path = Tracker::<S>::tracker_file_name(base_path);
+        Tracker::<S>::preopen(fs, &tracker_path, populate)?;
 
         // schedule pages
         Pages::preopen(fs, base_path, populate)
@@ -216,6 +217,12 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// For the precise used-space calculation, use [`crate::Blobstore::get_storage_size_bytes`].
     pub(crate) fn get_storage_size_bytes(&self) -> usize {
         self.view().get_storage_size_bytes()
+    }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+        self.tracker.live_preload(fs)?;
+        self.pages.live_preload(fs, self.populate)?;
+        Ok(())
     }
 
     /// This method reloads the Gridstore data from "disk", so that

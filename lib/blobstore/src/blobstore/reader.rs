@@ -217,6 +217,13 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+        match self {
+            Self::Gridstore(reader) => reader.live_preload(fs),
+            Self::Logstore(reader) => reader.live_preload(fs),
+        }
+    }
+
     /// This method reloads the Blobstore data from "disk", so that
     /// it should make newly written data is readable.
     ///

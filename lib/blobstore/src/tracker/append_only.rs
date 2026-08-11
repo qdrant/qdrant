@@ -277,6 +277,12 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         );
         self.persisted_count = count;
     }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+        self.file
+            .schedule_reopen(|path| fs.cached_file_info(path))?;
+        Ok(())
+    }
 }
 
 /// A mapping count read from the tracker file that is not visible to reads yet.
