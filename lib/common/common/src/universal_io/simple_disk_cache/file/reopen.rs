@@ -89,7 +89,7 @@ where
     }
 
     pub(super) fn schedule_reopen_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
-        &mut self,
+        &self,
         get_file_info: F,
     ) -> UioResult<()> {
         let Some(file_info) = get_file_info(&self.remote_path) else {
@@ -109,18 +109,19 @@ where
     /// apply.
     ///
     /// [`UniversalRead::schedule_reopen`]: crate::universal_io::UniversalRead::schedule_reopen
-    pub(super) fn schedule_reopen_with_len(&mut self, known_len: Option<u64>) -> UioResult<()> {
+    pub(super) fn schedule_reopen_with_len(&self, known_len: Option<u64>) -> UioResult<()> {
         // Wait for scheduled prefill, if any.
         //
         // warn: this will do a length request if uninit, but when using a
         // cached fs to create the file it should never be uninit.
         self.init_state()?;
 
+        let mut state = self.state.lock();
         let State::Ready {
             remote,
             local,
             scheduled_reopen,
-        } = self.state.get_mut()
+        } = &mut *state
         else {
             unreachable!("init_state drives state to Ready");
         };
@@ -186,15 +187,6 @@ where
             }
         };
 
-        // Re-borrow the state: `open_remote` above needs `&self`.
-        let State::Ready {
-            remote: _,
-            local: _,
-            scheduled_reopen,
-        } = self.state.get_mut()
-        else {
-            unreachable!("state was Ready above");
-        };
         *scheduled_reopen = Some(new_scheduled_reopen);
 
         Ok(())

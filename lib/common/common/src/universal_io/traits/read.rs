@@ -78,7 +78,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// [`CachedReadFs`]: crate::universal_io::CachedReadFs
     /// [`DiskCache`]: crate::universal_io::DiskCache
     fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
-        &mut self,
+        &self,
         get_file_info: F,
     ) -> UioResult<()> {
         let _ = get_file_info;
