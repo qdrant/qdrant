@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::live_reload::LiveReload;
@@ -12,6 +12,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
     for ReadOnlyChunkedDenseVectorStorage<T, S>
 {
     type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+        self.vectors.live_preload(fs)?;
+        // TODO(uio): use upcoming bitmap structure
+        self.deleted.live_preload(fs)?;
+        Ok(())
+    }
 
     /// Reload the chunked vectors, apply `deleted_points`, and fold in the
     /// persisted deletion of each appended offset — a live point may have a
