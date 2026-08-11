@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, ReadRange, UniversalRead};
+use common::universal_io::{OkNotFound, ReadRange, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -62,7 +62,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Consume mapping and version changes appended to storage since the last reload.
     ///
     /// File handles are refreshed via [`UniversalRead::reopen`] so data appended by the writer
-    /// becomes visible. Both result lists are sorted ascending.
+    /// becomes visible; not-yet-opened files are opened lazily through `fs` (a caching wrapper's
+    /// prefetch pool serves these opens when staged). Both result lists are sorted ascending.
     ///
     /// The writer flushes mappings before data before versions, so a point's version appears last
     /// and marks it as fully committed. Inserts are therefore driven by the versions file: an
@@ -71,14 +72,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// withheld (its data may be partial) and reported on a later reload once its version lands.
     /// Deletes are driven by the mapping and need no version, a deleted point's version is
     /// considered gone.
-    pub fn live_reload(&mut self) -> OperationResult<LiveReloadResult> {
+    pub fn live_reload(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+    ) -> OperationResult<LiveReloadResult> {
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
-        let committed = self.reload_versions()? as PointOffsetType;
+        let committed = self.reload_versions(fs)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
-        let changes = self.read_new_mapping_changes()?;
+        let changes = self.read_new_mapping_changes(fs)?;
 
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
@@ -131,11 +135,14 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     ///
     /// The read stops at the last fully-readable entry; a partial trailing entry is left in place
     /// so it can be consumed on a later reload once the writer flushed it completely.
-    fn read_new_mapping_changes(&mut self) -> OperationResult<Vec<MappingChange>> {
+    fn read_new_mapping_changes(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+    ) -> OperationResult<Vec<MappingChange>> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
         if self.mappings_file.is_none() {
-            self.mappings_file = Self::try_open(&self.fs, &mappings_path(&self.segment_path))?;
+            self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
         }
         let Some(file) = self.mappings_file.as_mut() else {
             return Ok(Vec::new());
@@ -185,11 +192,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// slot, so [`internal_version`](crate::id_tracker::IdTrackerRead::internal_version) returns
     /// `None` for it (it is never given a fake version) until its version is appended here. We do
     /// not read versions for deleted points, a deleted point's version is considered gone.
-    fn reload_versions(&mut self) -> OperationResult<usize> {
+    fn reload_versions(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
         if self.versions_file.is_none() {
-            self.versions_file = Self::try_open(&self.fs, &versions_path(&self.segment_path))?;
+            self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
         }
         let Some(versions_file) = self.versions_file.as_mut() else {
             return Ok(self.internal_to_version.len());

@@ -1,6 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalReadFs;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
@@ -16,9 +17,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// every component has reloaded successfully. If a component fails mid-way the
     /// delta is retained, and a later reload folds in the tracker's new changes and
     /// replays the union — no component is left drifting on a partial reload.
-    pub fn live_reload(
+    pub fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {
@@ -75,9 +76,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// `Self` is destructured so that every component is covered: adding a field
     /// without reloading it won't compile. Each component mutates through its own
     /// `Arc<AtomicRefCell<_>>`, so `&self` is enough — no `&mut` is needed.
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted: &SortedSlice<'_, PointOffsetType>,
         inserted: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
