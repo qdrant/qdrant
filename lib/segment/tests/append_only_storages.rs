@@ -138,10 +138,8 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
     assert!(segment.append_only_mutations);
 
-    // The mappingless slots the tombstone-only delete and the mutation clones
-    // leave behind must not read as corruption: the repair every shard loader
-    // runs would try to delete them, which these storages refuse, leaving the
-    // segment permanently unopenable.
+    // The repair every shard loader runs; deleting the leftovers it finds would
+    // fail here, leaving the segment permanently unopenable.
     segment
         .check_consistency_and_repair()
         .expect("append-only leftovers must not be reported as inconsistencies");
