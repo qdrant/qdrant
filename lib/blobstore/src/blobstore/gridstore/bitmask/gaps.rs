@@ -181,7 +181,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
     }
 
     pub fn trailing_free_blocks(&self) -> Result<u32> {
-        let slice = self.read_all()?;
+        let slice = self.read_all();
         Ok(slice
             .iter()
             .rev()
@@ -211,14 +211,14 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         Ok(())
     }
 
-    pub fn read_all(&self) -> Result<Cow<'_, [RegionGaps]>> {
-        Ok(Cow::Borrowed(&self.data))
+    pub fn read_all(&self) -> Cow<'_, [RegionGaps]> {
+        Cow::Borrowed(&self.data)
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Result<Option<Range<RegionId>>> {
-        let slice = self.read_all()?;
+        let slice = self.read_all();
 
         if slice.len() == 1 {
             return Ok(if slice[0].max as usize >= num_blocks as usize {
@@ -257,15 +257,15 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> Result<()> {
+    #[allow(clippy::unused_self)]
+    pub fn populate(&self) {
         // Data is always in RAM, no-op
-        Ok(())
     }
 
     /// Drop disk cache.
-    pub fn clear_cache(&self) -> Result<()> {
+    #[allow(clippy::unused_self)]
+    pub fn clear_cache(&self) {
         // Data is always in RAM, no-op
-        Ok(())
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks, in a merged window of regions.
