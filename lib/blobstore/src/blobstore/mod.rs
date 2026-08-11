@@ -17,7 +17,7 @@ use common::universal_io::{
     UniversalWriteFileOps, UserData,
 };
 use gridstore::Gridstore;
-use logstore::Logstore;
+pub use logstore::Logstore;
 pub use reader::BlobstoreReader;
 use reader::CONFIG_FILENAME;
 pub use view::BlobstoreView;
