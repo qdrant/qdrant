@@ -20,11 +20,11 @@ use crate::encoded_storage::validate_storage_vector_size;
 use crate::encoded_vectors::validate_vector_parameters;
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
-    DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
-    VectorParameters,
+    DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
+    EncodingError, VectorParameters,
 };
 
-pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
+pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
@@ -419,7 +419,7 @@ impl BitsStoreType for u128 {
     }
 }
 
-impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
     EncodedVectorsBin<TBitsStoreType, TStorage>
 {
     pub fn storage(&self) -> &TStorage {
@@ -511,25 +511,26 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         })
     }
 
-    pub fn load<Fs: UniversalReadFs>(
+    /// Resume appending to a previously-persisted storage: reads the fitted metadata a writer
+    /// needs to keep encoding consistently, but — unlike [`Self::load`] — never reads a vector
+    /// back from `encoded_vectors` to validate it. A pure appender doesn't need that guarantee:
+    /// every vector it will ever write is sized from this same metadata, so the invariant
+    /// `load`'s check protects (every stored vector has the size the scoring hot path assumes)
+    /// holds by construction, not by verification. Intended for storage backends that can only
+    /// append and cannot serve that read at all (see `EncodedStorage` implementers that are
+    /// write-only).
+    pub fn reopen_for_write<Fs: UniversalReadFs>(
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
     ) -> UioResult<Self> {
         let metadata: Metadata = read_json_via(fs, meta_path)?;
-        let result = Self {
+        Ok(Self {
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
             encoded_vectors,
             bits_store_type: PhantomData,
-        };
-
-        // Validate the storage's vector size against the metadata once here, so the size
-        // invariant the scoring hot path relies on (it XORs the stored vector against an
-        // equally-sized query) also holds in release builds without a per-score check.
-        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
-
-        Ok(result)
+        })
     }
 
     fn encode_vector(
@@ -670,6 +671,63 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
+    /// Encode and persist `vector` at `id`, sized and encoded from this instance's already-fitted
+    /// metadata. A true inherent method (not the [`EncodedVectors`] trait's `upsert_vector`) so
+    /// it only needs [`EncodedStorageWrite`] — a storage that can only append, never read, e.g.
+    /// an update-only segment's overlay, can still call this.
+    pub fn upsert_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        let encoded_vector =
+            Self::encode_vector(vector, &self.metadata.vector_stats, self.metadata.encoding);
+        self.encoded_vectors.upsert_vector(
+            id,
+            bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
+            hw_counter,
+        )
+    }
+
+    /// See [`Self::upsert_vector`]: an inherent counterpart of the [`EncodedVectors`] trait's
+    /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
+    pub fn flusher(&self) -> MmapFlusher {
+        self.encoded_vectors.flusher()
+    }
+}
+
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
+    EncodedVectorsBin<TBitsStoreType, TStorage>
+{
+    pub fn load<Fs: UniversalReadFs>(
+        fs: &Fs,
+        encoded_vectors: TStorage,
+        meta_path: &Path,
+    ) -> UioResult<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let result = Self {
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+            encoded_vectors,
+            bits_store_type: PhantomData,
+        };
+
+        // Validate the storage's vector size against the metadata once here, so the size
+        // invariant the scoring hot path relies on (it XORs the stored vector against an
+        // equally-sized query) also holds in release builds without a per-score check.
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+
+        Ok(result)
+    }
+
+    fn get_quantized_vector_size(&self) -> usize {
+        get_quantized_vector_size_from_params::<TBitsStoreType>(
+            self.metadata.vector_parameters.dim,
+            self.metadata.encoding,
+        )
+    }
+
     fn encode_query_vector(
         query: &[f32],
         vector_stats: &Option<VectorStats>,
@@ -754,13 +812,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         EncodedScalarVector {
             encoded_vector: encoded_query,
         }
-    }
-
-    fn get_quantized_vector_size(&self) -> usize {
-        get_quantized_vector_size_from_params::<TBitsStoreType>(
-            self.metadata.vector_parameters.dim,
-            self.metadata.encoding,
-        )
     }
 
     fn calculate_metric(

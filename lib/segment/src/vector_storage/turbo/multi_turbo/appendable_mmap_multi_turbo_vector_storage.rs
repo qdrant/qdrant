@@ -20,9 +20,9 @@ use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
-use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::{EncodedStorage, EncodedStorageWrite};
 use smallvec::{SmallVec, smallvec};
 
 use super::super::shared::{

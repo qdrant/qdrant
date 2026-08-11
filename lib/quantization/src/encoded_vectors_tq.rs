@@ -13,14 +13,16 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
-use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
+use crate::encoded_storage::{
+    EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
+};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
-pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
+pub struct EncodedVectorsTQ<TStorage: EncodedStorageWrite> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
@@ -97,7 +99,7 @@ pub struct ErrorCorrectionMetadata {
     pub scale: Vec<f32>,
 }
 
-impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
+impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
     }
@@ -303,6 +305,70 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         })
     }
 
+    /// Resume appending to a previously-persisted storage: reads the fitted metadata (quantizer,
+    /// rotation) a writer needs to keep encoding consistently, but — unlike [`Self::load`] —
+    /// never reads a vector back from `encoded_vectors` to validate it. A pure appender doesn't
+    /// need that guarantee: every vector it will ever write is sized from this same metadata, so
+    /// the invariant `load`'s check protects (every stored vector has the size the scoring hot
+    /// path assumes) holds by construction, not by verification. Intended for storage backends
+    /// that can only append and cannot serve that read at all (see `EncodedStorage` implementers
+    /// that are write-only).
+    pub fn reopen_for_write<Fs: UniversalReadFs>(
+        fs: &Fs,
+        encoded_vectors: TStorage,
+        meta_path: &Path,
+    ) -> UioResult<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+
+        Ok(Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        })
+    }
+
+    fn encode_vector(
+        vector_data: &[f32],
+        turbo_quantizer: &TurboQuantizer,
+        buf: &mut [f64],
+    ) -> Vec<u8> {
+        turbo_quantizer.quantize(vector_data, buf)
+    }
+
+    pub fn get_metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    /// Encode and persist `vector` at `id`, using this instance's already-fitted quantizer. A
+    /// true inherent method (not the [`EncodedVectors`] trait's `upsert_vector`) so it only needs
+    /// [`EncodedStorageWrite`] — a storage that can only append, never read, e.g. an
+    /// update-only segment's overlay, can still call this.
+    pub fn upsert_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        let encoded_vector =
+            Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
+        self.encoded_vectors.upsert_vector(
+            id,
+            bytemuck::cast_slice(encoded_vector.as_slice()),
+            hw_counter,
+        )
+    }
+
+    /// See [`Self::upsert_vector`]: an inherent counterpart of the [`EncodedVectors`] trait's
+    /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
+    pub fn flusher(&self) -> MmapFlusher {
+        self.encoded_vectors.flusher()
+    }
+}
+
+impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn load<Fs: UniversalReadFs>(
         fs: &Fs,
         encoded_vectors: TStorage,
@@ -329,24 +395,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         Ok(result)
     }
 
-    fn encode_vector(
-        vector_data: &[f32],
-        turbo_quantizer: &TurboQuantizer,
-        buf: &mut [f64],
-    ) -> Vec<u8> {
-        turbo_quantizer.quantize(vector_data, buf)
-    }
-
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
         self.encoded_vectors.get_vector_data(i)
     }
 
     pub fn layout(&self) -> Layout {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
-    }
-
-    pub fn get_metadata(&self) -> &Metadata {
-        &self.metadata
     }
 }
 

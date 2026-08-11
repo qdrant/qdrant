@@ -216,28 +216,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 }
 
-impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index).expect("vector exists")
-    }
-
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        let start = (self.quantized_vector_size.get() * index as usize) as u64;
-        let length = self.quantized_vector_size.get() as u64;
-        self.storage
-            .read(ReadRange::new(start, length), Random)
-            .ok()
-    }
-
-    fn for_each_batch(
-        &self,
-        offsets: &[PointOffsetType],
-        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        self.for_each_in_batch(offsets, |idx, data| callback(idx, Cow::Borrowed(data)))
-            .expect("vectors exist and are read correctly");
-    }
-
+impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S> {
     fn upsert_vector(
         &mut self,
         _id: PointOffsetType,
@@ -267,14 +246,6 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         Box::new(|| Ok(()))
     }
 
-    fn files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
-    }
-
     fn heap_size_bytes(&self) -> usize {
         let Self {
             storage: _,
@@ -283,6 +254,37 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         } = self;
 
         0
+    }
+}
+
+impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index).expect("vector exists")
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        let start = (self.quantized_vector_size.get() * index as usize) as u64;
+        let length = self.quantized_vector_size.get() as u64;
+        self.storage
+            .read(ReadRange::new(start, length), Random)
+            .ok()
+    }
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        self.for_each_in_batch(offsets, |idx, data| callback(idx, Cow::Borrowed(data)))
+            .expect("vectors exist and are read correctly");
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
     }
 }
 

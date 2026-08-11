@@ -83,35 +83,9 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
     }
 }
 
-impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
+impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
     for QuantizedChunkedStorage<S>
 {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index).unwrap_or_default()
-    }
-
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        self.data.get::<Random>(index as VectorOffsetType)
-    }
-
-    fn for_each_batch(
-        &self,
-        offsets: &[PointOffsetType],
-        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        let offsets = offsets
-            .iter()
-            .enumerate()
-            .map(|(index, &offset)| (index, offset, 1));
-
-        self.data
-            .for_each_vector::<Random, _>(offsets, |index, vector| {
-                callback(index, vector);
-                Ok(())
-            })
-            .expect("vectors read");
-    }
-
     fn upsert_vector(
         &mut self,
         id: PointOffsetType,
@@ -144,17 +118,47 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
         })
     }
 
+    fn heap_size_bytes(&self) -> usize {
+        let Self { data } = self;
+        data.heap_size_bytes()
+    }
+}
+
+impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
+    for QuantizedChunkedStorage<S>
+{
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index).unwrap_or_default()
+    }
+
+    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        self.data.get::<Random>(index as VectorOffsetType)
+    }
+
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) {
+        let offsets = offsets
+            .iter()
+            .enumerate()
+            .map(|(index, &offset)| (index, offset, 1));
+
+        self.data
+            .for_each_vector::<Random, _>(offsets, |index, vector| {
+                callback(index, vector);
+                Ok(())
+            })
+            .expect("vectors read");
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         self.data.files()
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.data.immutable_files()
-    }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self { data } = self;
-        data.heap_size_bytes()
     }
 }
 

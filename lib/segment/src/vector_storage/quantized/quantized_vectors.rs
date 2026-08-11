@@ -160,7 +160,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn convert_binary_query_encoding(
+    pub(in crate::vector_storage::quantized) fn convert_binary_query_encoding(
         query_encoding: Option<BinaryQuantizationQueryEncoding>,
     ) -> quantization::encoded_vectors_binary::QueryEncoding {
         match query_encoding {

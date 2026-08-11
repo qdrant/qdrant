@@ -21,9 +21,9 @@ use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
-use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 use crate::common::Flusher;
