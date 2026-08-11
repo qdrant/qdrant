@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::ReadSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
-use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH, segment_manifest_path};
+use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::segment_holder::{FlushMode, SegmentHolder};
@@ -44,7 +44,6 @@ pub struct EdgeShard {
     search_pool: Arc<rayon::ThreadPool>,
 }
 
-const WAL_PATH: &str = "wal";
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
