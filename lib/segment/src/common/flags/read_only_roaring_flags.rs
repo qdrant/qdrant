@@ -106,6 +106,31 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         Ok(true)
     }
 
+    /// Stage the fresh handles [`Self::live_reload`] swaps in.
+    pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+        // The status length is always re-read at apply; keep its fetch in flight.
+        fs.schedule_prefetch(
+            &status_file(&self.directory),
+            Some(open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        // The flags data is only read wholesale when the bitmap is
+        // materialized; put it in flight only then.
+        let populate = if self.bitmap.get().is_some() {
+            Populate::PreferBackground
+        } else {
+            Populate::No
+        };
+        fs.schedule_prefetch(
+            &self.directory.join(FLAGS_FILE),
+            Some(open_options(populate)),
+            None,
+        )?;
+
+        Ok(())
+    }
+
     /// Open persisted flags read-only, retaining the bitslice handle for
     /// [`Self::bitmap`].
     ///
@@ -261,7 +286,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, MmapFs,
+        CachedFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, MmapFs,
         UniversalReadFileOps,
     };
     use tempfile::Builder;
@@ -277,6 +302,18 @@ mod tests {
     /// actually reproduces (mmap readers are read-through and can't catch it).
     #[test]
     fn live_reload_over_disk_cache_sees_in_place_bit_writes() {
+        reload_sees_in_place_bit_writes(false);
+    }
+
+    /// Preload stages the two fresh handles the reload swaps in; the reload
+    /// must behave identically when its opens are served from the prefetch
+    /// pool.
+    #[test]
+    fn live_preload_then_reload_sees_in_place_bit_writes() {
+        reload_sees_in_place_bit_writes(true);
+    }
+
+    fn reload_sees_in_place_bit_writes(preload: bool) {
         let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
@@ -312,7 +349,16 @@ mod tests {
         writer.set_len(&MmapFs, 120).unwrap();
         writer.flusher()().unwrap();
 
-        flags.live_reload(&cache_fs).unwrap();
+        if preload {
+            // Preload cycle: snapshot the listing, stage, then reload through
+            // the same caching fs so its opens consume the parked handles.
+            let mut cached_fs = CachedFs::new(cache_fs.clone(), &dir).unwrap();
+            cached_fs.cache_file_info().unwrap();
+            flags.live_preload(&cached_fs).unwrap();
+            flags.live_reload(&cached_fs).unwrap();
+        } else {
+            flags.live_reload(&cache_fs).unwrap();
+        }
 
         let bitmap = flags.get_bitmap().unwrap();
         assert!(bitmap.contains(6));
