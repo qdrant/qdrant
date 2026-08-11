@@ -147,6 +147,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
 }
 
 impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
+    /// Take a LIST snapshot of the filesystem and replace existing cached data.
     fn cache_file_info(&mut self) -> UioResult<()> {
         // List all files
         let list = self.fs.list_files(&self.prefix_path)?;
@@ -169,6 +170,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             .collect();
 
         self.previous_files_info = self.files_info.replace(files_info);
+        self.files_prefetched.lock().clear();
 
         Ok(())
     }
