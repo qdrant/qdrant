@@ -565,6 +565,28 @@ fn finish_optimization(
             .unwrap();
     }
 
+    // Completeness audit, still under the update lock so the state is frozen: every point still
+    // visible through a proxy (wrapped minus proxied deletes) was untouched during this
+    // optimization, so the build must have carried it into the optimized segment. One that the
+    // destination has no version for is about to leave the holder with the source and, once the
+    // source's ack pin releases, be acknowledged out of the WAL: the exact reload-divergence loss.
+    // The version arithmetic the flush relies on cannot see this (a segment's version is "highest
+    // op seen", not "contains everything below it"), so containment is checked directly here.
+    for (proxy, proxy_id) in locked_proxies.iter().zip(proxy_ids) {
+        let proxy_guard = proxy.get();
+        let proxy_read = proxy_guard.read();
+        for point_id in proxy_read.read_range(None, None) {
+            if optimized_segment.point_version(point_id).is_none() {
+                log::error!(
+                    "optimizer build dropped point {point_id:?}: visible in source proxy \
+                     {proxy_id} at version {:?}, absent from optimized segment (version {})",
+                    proxy_read.point_version(point_id),
+                    optimized_segment.version(),
+                );
+            }
+        }
+    }
+
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
     let optimized_segment_version = optimized_segment.version();
