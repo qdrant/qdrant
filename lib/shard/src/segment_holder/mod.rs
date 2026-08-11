@@ -1165,6 +1165,14 @@ impl SegmentHolder {
                             hw_counter,
                         )?;
 
+                        // A lost point's last engine event is either a CoW move or a proxied
+                        // delete (a plain delete the model also applies cannot lose a point the
+                        // model keeps), so ledger both: together with the proxy's delete line this
+                        // makes the full life of any lost id greppable in a failing run.
+                        log::info!(
+                            "cow move: point {point_id:?} op {op_num} segment {idx} -> {appendable_idx}"
+                        );
+
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
                             write_segment.delete_point(op_num, point_id, hw_counter)?;

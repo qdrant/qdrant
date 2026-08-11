@@ -955,6 +955,9 @@ impl NonAppendableSegmentEntry for ProxySegment {
                         },
                     );
                     was_deleted = prev.is_none();
+                    // Ledger for lost-point postmortems, see the "cow move" line in
+                    // `apply_points_with_conditional_move`.
+                    log::info!("proxy delete: point {point_id:?} op {op_num} (wrapped original)");
                     if let Some(prev) = prev {
                         debug_assert!(
                             prev.operation_version < op_num,
@@ -983,6 +986,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                         },
                     );
                     was_deleted = prev.is_none();
+                    log::info!("proxy delete: point {point_id:?} op {op_num} (wrapped proxy)");
                     if let Some(prev) = prev {
                         debug_assert!(
                             prev.operation_version < op_num,
