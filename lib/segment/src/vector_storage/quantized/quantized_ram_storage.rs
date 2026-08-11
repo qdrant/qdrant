@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
+use common::prefetch::prefetch_slice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
 use fs_err as fs;
@@ -13,7 +14,6 @@ use quantization::encoded_storage::default_for_each_batch;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::quantized::quantized_storage::prefetch_read;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 
@@ -133,8 +133,11 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) {
         // Dense-ascending batches stream; the hardware prefetcher already
-        // covers them and software prefetch is pure overhead.
-        if is_read_with_prefetch_efficient(offsets) {
+        // covers them and software prefetch is pure overhead. Batches no
+        // longer than the window would only be prefetched right before use,
+        // too late to hide anything.
+        const PREFETCH_AHEAD: usize = 2;
+        if offsets.len() <= PREFETCH_AHEAD || is_read_with_prefetch_efficient(offsets) {
             default_for_each_batch(self, offsets, callback);
             return;
         }
@@ -142,14 +145,13 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         // Heap-resident vectors have the same random-access DRAM latency as
         // the mmap-backed storage; prefetch a couple of vectors ahead of the
         // scorer to hide it.
-        const PREFETCH_AHEAD: usize = 2;
         for &offset in offsets.iter().take(PREFETCH_AHEAD) {
-            prefetch_read(self.vectors.get(offset as VectorOffsetType));
+            prefetch_slice(self.vectors.get(offset as VectorOffsetType));
         }
 
         for (index, &offset) in offsets.iter().enumerate() {
             if let Some(&upcoming) = offsets.get(index + PREFETCH_AHEAD) {
-                prefetch_read(self.vectors.get(upcoming as VectorOffsetType));
+                prefetch_slice(self.vectors.get(upcoming as VectorOffsetType));
             }
             callback(
                 index,
