@@ -1,20 +1,20 @@
 //! Point upserts: plain, conditional and raw.
 
-use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLockWriteGuard;
-use segment::common::operation_error::{OperationError, OperationResult};
-use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::SegmentEntry;
-use segment::types::{Filter, Payload, PointIdType, SeqNumberType, VectorNameBuf};
-use smallvec::SmallVec;
-
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointStructPersisted,
     PointStructRawPersisted, UpdateMode,
 };
 use crate::segment_holder::SegmentHolder;
 use crate::update::helpers::select_excluded_by_filter_ids;
+use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
+use parking_lot::RwLockWriteGuard;
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::entry::entry_point::SegmentEntry;
+use segment::types::{Filter, Payload, PointIdType, SeqNumberType, VectorNameBuf};
+use smallvec::SmallVec;
 
 /// Do not insert more than this number of points in a single update operation chunk
 /// This is needed to avoid locking segments for too long, so that
@@ -212,7 +212,13 @@ where
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
             ids_chunk,
-            |id, write_segment| points_map[&id].upsert_into(write_segment, op_num, hw_counter),
+            |id, write_segment| {
+                debug_assert!(
+                    !feature_flags().append_only_storages,
+                    "This should never be called in append-only mode"
+                );
+                points_map[&id].upsert_into(write_segment, op_num, hw_counter)
+            },
             |id, raw_vectors, updated_vectors, old_payload| {
                 points_map[&id].write_moved(raw_vectors, updated_vectors, old_payload)
             },
