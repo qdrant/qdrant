@@ -25,7 +25,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         }
     }
 
-    fn deleted_open_options() -> OpenOptions {
+    pub(super) fn deleted_open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
