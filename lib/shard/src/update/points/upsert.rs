@@ -1,11 +1,5 @@
 //! Point upserts: plain, conditional and raw.
 
-use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointStructPersisted,
-    PointStructRawPersisted, UpdateMode,
-};
-use crate::segment_holder::SegmentHolder;
-use crate::update::helpers::select_excluded_by_filter_ids;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
@@ -15,6 +9,13 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{Filter, Payload, PointIdType, SeqNumberType, VectorNameBuf};
 use smallvec::SmallVec;
+
+use crate::operations::point_ops::{
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointStructPersisted,
+    PointStructRawPersisted, UpdateMode,
+};
+use crate::segment_holder::SegmentHolder;
+use crate::update::helpers::select_excluded_by_filter_ids;
 
 /// Do not insert more than this number of points in a single update operation chunk
 /// This is needed to avoid locking segments for too long, so that
