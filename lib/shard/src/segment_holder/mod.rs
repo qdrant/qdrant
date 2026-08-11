@@ -330,6 +330,15 @@ impl SegmentHolder {
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
         let mut removed_segments = vec![];
+        // State of every departing segment, captured while it is still reachable.
+        //
+        // A segment that leaves the holder while its version is ahead of its persisted version
+        // takes those operations with it, and `get_max_persisted_version` cannot see them: it maxes
+        // over the segments that remain. If the replacement does not carry those points, the WAL is
+        // acknowledged past writes that exist nowhere, which is the reload-divergence signature.
+        // This line is the un-stale version of that observation, taken at the removal itself rather
+        // than inferred from the previous flush pass.
+        let mut departing = Vec::with_capacity(remove_ids.len());
         for remove_id in remove_ids {
             let removed_segment = self.appendable_segments.remove(remove_id);
             if let Some(segment) = removed_segment {
@@ -339,6 +348,22 @@ impl SegmentHolder {
             if let Some(segment) = removed_segment {
                 removed_segments.push(segment);
             }
+            if let Some(segment) = removed_segments.last() {
+                let guard = segment.get();
+                let guard = guard.read();
+                let (version, persisted) = (guard.version(), guard.persistent_version());
+                departing.push(if version > persisted {
+                    format!(
+                        "{remove_id}:{version}/{persisted} DIRTY(ops {}..{version})",
+                        persisted + 1
+                    )
+                } else {
+                    format!("{remove_id}:{version}/{persisted}")
+                });
+            }
+        }
+        if !departing.is_empty() {
+            log::info!("segments leaving holder: [{}]", departing.join(", "));
         }
         removed_segments
     }
@@ -364,6 +389,18 @@ impl SegmentHolder {
         T: Into<LockedSegment>,
     {
         let new_id = self.add_new(segment);
+        // Pairs with the "segments leaving holder" line logged by `remove` just below: this says
+        // what the replacement carries, so a source departing with operations the destination's
+        // version does not cover is visible as such, with no inference across flush passes.
+        if let Some(new_segment) = self.get(new_id) {
+            let guard = new_segment.get();
+            let guard = guard.read();
+            log::info!(
+                "segment swap: destination {new_id}:{}/{} replaces {remove_ids:?}",
+                guard.version(),
+                guard.persistent_version(),
+            );
+        }
         (new_id, self.remove(remove_ids))
     }
 
