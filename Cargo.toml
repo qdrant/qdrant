@@ -362,6 +362,7 @@ members = [
     "lib/edge/python/codegen",
     "lib/edge/ffi",
     "lib/edge/ffi/bindgen",
+    "lib/edge/tools/edge_tool",
     "lib/edge/tools/shard_query",
     "lib/edge/tools/shard_update",
     "lib/blobstore",
