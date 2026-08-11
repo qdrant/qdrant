@@ -16,7 +16,7 @@ use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
 use crate::universal_io::{
     Flusher, OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
-    UniversalReadFs, UniversalWrite,
+    UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
 };
 
 /// `IterOnes` view over a `BitSlice<u64, Lsb0>` — type alias so `self_cell`
@@ -83,6 +83,45 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         self.storage.reopen()?;
         self.element_len = self.storage.len()?;
         Ok(())
+    }
+
+    /// Read the stored bits at `path` — or start from `seed` when the caller
+    /// already holds them, sound only with a single writer — apply `update`
+    /// (which may resize the bits), and replace the file whole via
+    /// [`atomic_save`]: the one mutation that works on backends without
+    /// random-offset writes. When `update` errors, nothing is written.
+    ///
+    /// [`atomic_save`]: UniversalWriteFileOps::atomic_save
+    pub fn atomic_update<Fs, R, E>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Fs::OpenExtra,
+        seed: Option<BitVec>,
+        update: impl FnOnce(&mut BitVec) -> Result<R, E>,
+    ) -> UioResult<Result<R, E>>
+    where
+        Fs: UniversalReadFs<File = S> + UniversalWriteFileOps,
+    {
+        let path = path.as_ref();
+
+        let mut bits = match seed {
+            Some(bits) => bits,
+            None => {
+                // Dropped before the save: Windows cannot replace a mapped file.
+                let stored = Self::open(fs, path, options, extra)?;
+                stored.read_all()?.into_owned()
+            }
+        };
+
+        let result = match update(&mut bits) {
+            Ok(result) => result,
+            Err(err) => return Ok(Err(err)),
+        };
+
+        fs.atomic_save(path, bytemuck::cast_slice(bits.as_raw_slice()))?;
+
+        Ok(Ok(result))
     }
 
     /// Total number of bits available.
@@ -394,6 +433,82 @@ mod tests {
         f.write_all(&buf).unwrap();
         f.flush().unwrap();
         f
+    }
+
+    // ---- Atomic update tests ----
+
+    fn stored_ones(path: &Path) -> Vec<u64> {
+        let stored: MmapBitSlice =
+            StoredBitSlice::open(&MmapFs, path, OpenOptions::new_for_test(), ()).unwrap();
+        stored.iter_ones().unwrap().collect()
+    }
+
+    #[test]
+    fn atomic_update_reads_applies_and_replaces_the_file() {
+        let f = create_temp_file(&[0b0000_0001]);
+
+        MmapBitSlice::atomic_update(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            None,
+            |bits| {
+                bits.set(3, true);
+                Ok::<_, ()>(())
+            },
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(stored_ones(f.path()), vec![0, 3]);
+    }
+
+    #[test]
+    fn atomic_update_starts_from_the_seed_without_reading() {
+        let f = create_temp_file(&[0b0000_0001]);
+
+        let mut seed = BitVec::new();
+        seed.resize(64, false);
+        seed.set(5, true);
+
+        MmapBitSlice::atomic_update(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            Some(seed),
+            |bits| {
+                bits.set(3, true);
+                Ok::<_, ()>(())
+            },
+        )
+        .unwrap()
+        .unwrap();
+
+        // The seed replaces the stored bits: bit 0 from the file is gone.
+        assert_eq!(stored_ones(f.path()), vec![3, 5]);
+    }
+
+    #[test]
+    fn atomic_update_saves_nothing_when_the_closure_errors() {
+        let f = create_temp_file(&[0b0000_0001]);
+
+        let result = MmapBitSlice::atomic_update(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            None,
+            |bits| {
+                bits.set(3, true);
+                Err::<(), _>("rejected")
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result, Err("rejected"));
+        assert_eq!(stored_ones(f.path()), vec![0]);
     }
 
     // ---- Read tests ----

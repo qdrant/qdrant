@@ -71,7 +71,7 @@ pub(crate) fn upsert(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
         .unwrap();
 }
 
-fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
+pub(crate) fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
     let ids = ids.into_iter().map(ExtendedPointId::NumId).collect();
     shard.update(PointOperation(DeletePoints { ids })).unwrap();
 }
