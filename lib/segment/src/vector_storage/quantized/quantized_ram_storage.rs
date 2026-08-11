@@ -13,6 +13,8 @@ use quantization::encoded_storage::default_for_each_batch;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::vector_storage::VectorOffsetType;
+use crate::vector_storage::quantized::quantized_storage::prefetch_read;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 
 #[derive(Debug)]
@@ -128,9 +130,32 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
     fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-        callback: impl FnMut(usize, Cow<'_, [u8]>),
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) {
-        default_for_each_batch(self, offsets, callback);
+        // Dense-ascending batches stream; the hardware prefetcher already
+        // covers them and software prefetch is pure overhead.
+        if is_read_with_prefetch_efficient(offsets) {
+            default_for_each_batch(self, offsets, callback);
+            return;
+        }
+
+        // Heap-resident vectors have the same random-access DRAM latency as
+        // the mmap-backed storage; prefetch a couple of vectors ahead of the
+        // scorer to hide it.
+        const PREFETCH_AHEAD: usize = 2;
+        for &offset in offsets.iter().take(PREFETCH_AHEAD) {
+            prefetch_read(self.vectors.get(offset as VectorOffsetType));
+        }
+
+        for (index, &offset) in offsets.iter().enumerate() {
+            if let Some(&upcoming) = offsets.get(index + PREFETCH_AHEAD) {
+                prefetch_read(self.vectors.get(upcoming as VectorOffsetType));
+            }
+            callback(
+                index,
+                Cow::Borrowed(self.vectors.get(offset as VectorOffsetType)),
+            );
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {

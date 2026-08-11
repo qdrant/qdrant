@@ -101,7 +101,8 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
 
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
-            let vectors = if is_read_with_prefetch_efficient(keys) {
+            let sequential = is_read_with_prefetch_efficient(keys);
+            let vectors = if sequential {
                 let iter = keys.iter().map(|&key| self.read_vector::<Sequential>(key));
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             } else {
@@ -111,19 +112,27 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
-            // The gathered `vectors` are borrowed straight from the mmap, so
-            // nothing has touched the bytes yet; without prefetch the scorer
-            // stalls on DRAM at the start of every cold vector.
-            const PREFETCH_AHEAD: usize = 2;
-            for vector in vectors.iter().take(PREFETCH_AHEAD) {
-                prefetch_read(vector);
-            }
-
-            for (vector_idx, vector) in vectors.iter().enumerate() {
-                if let Some(upcoming) = vectors.get(vector_idx + PREFETCH_AHEAD) {
-                    prefetch_read(upcoming);
+            if sequential {
+                // Dense-ascending batches stream; the hardware prefetcher
+                // already covers them and software prefetch is pure overhead.
+                for (vector_idx, vector) in vectors.iter().enumerate() {
+                    f(batch_offset + vector_idx, vector);
                 }
-                f(batch_offset + vector_idx, vector);
+            } else {
+                // The gathered `vectors` are borrowed straight from the mmap,
+                // so nothing has touched the bytes yet; without prefetch the
+                // scorer stalls on DRAM at the start of every cold vector.
+                const PREFETCH_AHEAD: usize = 2;
+                for vector in vectors.iter().take(PREFETCH_AHEAD) {
+                    prefetch_read(vector);
+                }
+
+                for (vector_idx, vector) in vectors.iter().enumerate() {
+                    if let Some(upcoming) = vectors.get(vector_idx + PREFETCH_AHEAD) {
+                        prefetch_read(upcoming);
+                    }
+                    f(batch_offset + vector_idx, vector);
+                }
             }
         }
 
@@ -138,7 +147,7 @@ fn open_append(path: &Path) -> std::io::Result<fs::File> {
 
 /// Software-prefetch every cache line of `bytes` into L1.
 #[inline(always)]
-fn prefetch_read(bytes: &[u8]) {
+pub(super) fn prefetch_read(bytes: &[u8]) {
     #[cfg(target_arch = "x86_64")]
     {
         use core::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
