@@ -4,6 +4,7 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::IsNotFound as _;
 use parking_lot::RwLock;
+use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
@@ -51,6 +52,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: Send + Sync + Clone + 'static,
     {
+        let _refresh_guard = self.refresh_lock.lock();
+
         // A benign mid-attempt segment removal re-runs the attempt against the fresh manifest;
         // bound the re-runs so a leader churning segments faster than the follower converges
         // cannot spin this loop forever.
@@ -129,7 +132,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
             survivor_uuids
                 .into_iter()
-                .filter_map(|uuid| holder.segment_arc(&uuid).map(|segment| (uuid, segment)))
+                .filter_map(|uuid| Some((uuid, holder.segment_arc(&uuid)?)))
                 .collect()
         };
 
@@ -156,15 +159,25 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             *self.config.write() = Arc::new(derived);
         }
 
-        // 4. Live-reload survivors to fold in the leader's flushed in-place appends and deletes.
-        //    Newly-added segments are already current, so they are skipped. Survivors are
-        //    independent, so a failure does not stop the others from reloading; a failed segment
-        //    keeps serving its pre-refresh state and its unapplied delta is retained in
-        //    `pending_reload`, so a later reload replays the union and nothing is lost.
+        // 4. Live-reload survivors to assimilate new appends and deletes from data.
+        // Done in 2 steps: preload -> reload, so that we can avoid locking when prefetching.
+        self.search_pool.install(|| {
+            survivors.par_iter().for_each(|(uuid, segment)| {
+                let _ = segment.read().live_preload().inspect_err(|err| {
+                    log::warn!("live_preload of segment {uuid} failed: {err}");
+                });
+            });
+        });
+
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;
+
+        // TODO(uio): currently this locks each segment one at a time. Once we
+        // do `live_preload` async we'll have a clear signal of finishing
+        // prefetches to start locking. By then, we can also make this section a
+        // rayon par_iter, and take care of hw_counter not being thread-safe.
         for (uuid, segment) in survivors {
-            match segment.write().live_reload(&self.fs, hw_counter) {
+            match segment.write().live_reload(hw_counter) {
                 Ok(()) => {}
                 // An essential file is gone; whether that is benign (the leader removed the
                 // segment while we reloaded it) is decided against a re-read manifest below.
