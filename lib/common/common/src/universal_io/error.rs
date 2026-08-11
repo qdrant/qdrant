@@ -47,11 +47,32 @@ impl IsNotFound for UniversalIoError {
             | Self::OutOfBounds { .. }
             | Self::InvalidFileIndex { .. }
             | Self::Uninitialized { .. }
+            | Self::UnchangedOpen { .. }
             | Self::QueueIsFull
             | Self::AppendOffsetConflict { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::TaskPanicked(_) => false,
+        }
+    }
+}
+
+pub trait OkUnchanged {
+    type Ok;
+    type Error;
+
+    fn ok_unchanged(self) -> Result<Option<Self::Ok>, Self::Error>;
+}
+
+impl<T> OkUnchanged for Result<T, UniversalIoError> {
+    type Ok = T;
+    type Error = UniversalIoError;
+
+    fn ok_unchanged(self) -> Result<Option<T>, UniversalIoError> {
+        match self {
+            Ok(t) => Ok(Some(t)),
+            Err(UniversalIoError::UnchangedOpen { .. }) => Ok(None),
+            Err(err) => Err(err),
         }
     }
 }
@@ -80,6 +101,12 @@ pub enum UniversalIoError {
     /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
     #[error("path {path} not found")]
     NotFound { path: PathBuf },
+
+    #[error("Did not open a new instance of {path} because it didn't change since {since:?}")]
+    UnchangedOpen {
+        path: PathBuf,
+        since: Option<std::time::SystemTime>,
+    },
 
     #[error("elements range {start}..{end} is out of bounds, file contains {elements} elements")]
     OutOfBounds {
@@ -131,6 +158,7 @@ impl UniversalIoError {
             | Self::QueueIsFull
             | Self::S3(_)
             | Self::S3Config { .. }
+            | Self::UnchangedOpen { .. }
             | Self::TaskPanicked(_) => false,
         }
     }

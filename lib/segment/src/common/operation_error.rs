@@ -229,6 +229,9 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::Mmap(err) => Self::from(err),
 
             UniversalIoError::NotFound { path } => Self::FileNotFound { path },
+            UniversalIoError::UnchangedOpen { .. } => Self::Cancelled {
+                description: err.to_string(),
+            },
 
             UniversalIoError::Bincode(_)
             | UniversalIoError::BytemuckCast(_)
@@ -361,6 +364,7 @@ impl From<BlobstoreError> for OperationError {
                 | UniversalIoError::OutOfBounds { .. }
                 | UniversalIoError::InvalidFileIndex { .. }
                 | UniversalIoError::Uninitialized { .. }
+                | UniversalIoError::UnchangedOpen { .. }
                 | UniversalIoError::QueueIsFull
                 | UniversalIoError::AppendOffsetConflict { .. }
                 | UniversalIoError::S3(_)
