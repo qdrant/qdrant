@@ -31,7 +31,7 @@ use segment::entry::{
 };
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{PointIdType, VectorNameBuf};
+use segment::types::{PointIdType, SeqNumberType, VectorNameBuf};
 use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
@@ -565,34 +565,39 @@ fn finish_optimization(
             .unwrap();
     }
 
-    // Completeness audit, still under the update lock so the state is frozen: every point still
-    // visible through a proxy (wrapped minus proxied deletes) was untouched during this
-    // optimization, so the build must have carried it into the optimized segment. One that the
-    // destination has no version for is about to leave the holder with the source and, once the
-    // source's ack pin releases, be acknowledged out of the WAL: the exact reload-divergence loss.
-    // The version arithmetic the flush relies on cannot see this (a segment's version is "highest
-    // op seen", not "contains everything below it"), so containment is checked directly here.
-    for (proxy, proxy_id) in locked_proxies.iter().zip(proxy_ids) {
-        let proxy_guard = proxy.get();
-        let proxy_read = proxy_guard.read();
-        for point_id in proxy_read.read_range(None, None) {
-            if optimized_segment.point_version(point_id).is_none() {
-                log::error!(
-                    "optimizer build dropped point {point_id:?}: visible in source proxy \
-                     {proxy_id} at version {:?}, absent from optimized segment (version {})",
-                    proxy_read.point_version(point_id),
-                    optimized_segment.version(),
-                );
-            }
-        }
-    }
+    // Containment audit, phase 1 of 2: snapshot each source's visible ids while the update lock
+    // freezes the state, but defer the (comparatively slow) destination probing to after the swap,
+    // outside the critical section. Nine instrumented CI passes with the probing inside the lock
+    // produced zero reproductions against a historical one-in-three run failure rate, consistent
+    // with the added lock time suppressing the race under investigation; keeping only the cheap id
+    // snapshot here minimizes that distortion. The proxies stay alive (moved into the post-flush
+    // drop actions below) and the destination is immutable after the swap, so probing later loses
+    // nothing: every point still visible through a proxy was untouched during the optimization and
+    // the build must have carried it into the optimized segment. The flush's version arithmetic
+    // cannot see a violation (a segment's version is "highest op seen", not "contains everything
+    // below it"), which is why containment is checked directly.
+    type AuditSnapshot = Vec<(SegmentId, Vec<(PointIdType, Option<SeqNumberType>)>)>;
+    let audit_visible: AuditSnapshot = locked_proxies
+        .iter()
+        .zip(proxy_ids)
+        .map(|(proxy, proxy_id)| {
+            let guard = proxy.get();
+            let read = guard.read();
+            let ids = read
+                .read_range(None, None)
+                .into_iter()
+                .map(|id| (id, read.point_version(id)))
+                .collect();
+            (*proxy_id, ids)
+        })
+        .collect();
 
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
     let optimized_segment_version = optimized_segment.version();
     let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
-    let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
+    let (destination_id, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
     debug_assert_eq!(
         proxies.len(),
         proxy_ids.len(),
@@ -679,6 +684,44 @@ fn finish_optimization(
     drop(read_segment_holder);
     // Allow updates again
     drop(update_guard);
+
+    // Containment audit, phase 2: probe the destination for every id snapshotted under the update
+    // lock, now outside the critical section. The destination only grows after the swap (it is in
+    // the holder as an ordinary segment), so an id it has no version for now was already absent at
+    // swap time: the build dropped it, and once its source's ack pin releases nothing represents
+    // it anywhere durable.
+    {
+        let holder_read = segment_holder.read();
+        if let Some(destination) = holder_read.get(destination_id) {
+            let destination = destination.get();
+            let destination_read = destination.read();
+            for (source_id, ids) in &audit_visible {
+                for (point_id, source_version) in ids {
+                    if destination_read.point_version(*point_id).is_some() {
+                        continue;
+                    }
+                    // Absent from the destination. A CoW move between the swap and this probe
+                    // legitimately deletes the point here while a newer copy lives in an
+                    // appendable segment, so only a point that no holder segment knows at the
+                    // snapshot version or above is a genuine drop.
+                    let survives_elsewhere = holder_read.iter().any(|(_, locked)| {
+                        let guard = locked.get();
+                        let read = guard.read();
+                        read.point_version(*point_id) >= *source_version
+                            && read.point_version(*point_id).is_some()
+                    });
+                    if !survives_elsewhere {
+                        log::error!(
+                            "optimizer build dropped point {point_id:?}: visible in source proxy \
+                             {source_id} at swap time (version {source_version:?}), absent from \
+                             optimized segment {destination_id} (version \
+                             {optimized_segment_version}) and from every other holder segment",
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // Drop all pointers to proxies, so we can de-arc them
     drop(locked_proxies);
