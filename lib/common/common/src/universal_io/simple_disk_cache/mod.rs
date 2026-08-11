@@ -51,12 +51,14 @@ const REMOTE_OPEN_OPTIONS: OpenOptions = OpenOptions {
 };
 
 fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
-    let start = (byte_range.start / BLOCK_SIZE as u64) as u32;
+    let start = u32::try_from(byte_range.start / BLOCK_SIZE as u64)
+        .expect("file too large for block cache (>70 TiB)");
     if byte_range.start >= byte_range.end {
         // empty byte range returns empty block range
         return start..start;
     }
-    let end = byte_range.end.div_ceil(BLOCK_SIZE as u64) as u32;
+    let end = u32::try_from(byte_range.end.div_ceil(BLOCK_SIZE as u64))
+        .expect("file too large for block cache (>70 TiB)");
     start..end
 }
 
