@@ -160,7 +160,10 @@ fn create_empty_overlay(
         .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
         .unwrap();
 
-    UpdateOnlyQuantizedVectors { storage }
+    UpdateOnlyQuantizedVectors {
+        storage,
+        config: overlay_config,
+    }
 }
 
 /// First writer: created fresh (as whatever builds a new segment would), writes half the batch,
