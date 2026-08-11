@@ -216,11 +216,13 @@ async fn list_files() {
                 path: PathBuf::from("data/a.bin"),
                 size: 10,
                 last_modified: Some(mock_modified_time()),
+                etag: None,
             },
             ListedFile {
                 path: PathBuf::from("data/b.bin"),
                 size: 10,
                 last_modified: Some(mock_modified_time()),
+                etag: None,
             },
         ]
     );

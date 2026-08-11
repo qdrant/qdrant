@@ -199,6 +199,7 @@ fn test_list_files() {
         path,
         size,
         last_modified: _,
+        etag: _,
     } in &files
     {
         assert!(path.to_string_lossy().starts_with("listed/"));
