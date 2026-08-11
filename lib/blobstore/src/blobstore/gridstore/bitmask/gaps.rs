@@ -266,14 +266,13 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         self.find_merged_gap(&slice, window_size, num_blocks)
     }
 
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
+    /// No-op since gaps read from the in-memory data vector.
     #[allow(clippy::unused_self)]
     pub fn populate(&self) {
         // Data is always in RAM, no-op
     }
 
-    /// Drop disk cache.
+    /// No-op since gaps read from the in-memory data vector.
     #[allow(clippy::unused_self)]
     pub fn clear_cache(&self) {
         // Data is always in RAM, no-op
@@ -407,7 +406,7 @@ mod tests {
 
             let bitvec = regions_gaps_to_bitvec(&gaps, DEFAULT_REGION_SIZE_BLOCKS);
 
-            if let Some(range) = bitmask_gaps.find_fitting_gap(num_blocks).unwrap() {
+            if let Some(range) = bitmask_gaps.find_fitting_gap(num_blocks) {
                 // Range should be within bounds
                 prop_assert!(range.start <= bitmask_gaps.len() as u32);
                 prop_assert!(range.end <= bitmask_gaps.len() as u32);
@@ -461,7 +460,6 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(large_value_blocks as u32)
-                .unwrap()
                 .is_some(),
         );
     }
@@ -488,17 +486,11 @@ mod tests {
         .unwrap();
 
         // Find space for blocks covering up to 2 regions
-        assert!(bitmask_gaps.find_fitting_gap(1).unwrap().is_some());
-        assert!(
-            bitmask_gaps
-                .find_fitting_gap(REGION_SIZE_BLOCKS)
-                .unwrap()
-                .is_some()
-        );
+        assert!(bitmask_gaps.find_fitting_gap(1).is_some());
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
-                .unwrap()
                 .is_some(),
         );
 
@@ -506,13 +498,11 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
-                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 3)
-                .unwrap()
                 .is_some(),
         );
 
@@ -520,7 +510,6 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 4)
-                .unwrap()
                 .is_none(),
         );
 
@@ -543,16 +532,10 @@ mod tests {
         .unwrap();
 
         // Find space for blocks covering up to 2 regions
-        assert!(
-            bitmask_gaps
-                .find_fitting_gap(REGION_SIZE_BLOCKS)
-                .unwrap()
-                .is_some()
-        );
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
-                .unwrap()
                 .is_some(),
         );
 
@@ -560,13 +543,11 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
-                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2))
-                .unwrap()
                 .is_some(),
         );
 
@@ -574,7 +555,6 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2) + 1)
-                .unwrap()
                 .is_none(),
         );
 
@@ -597,22 +577,15 @@ mod tests {
                 .unwrap();
 
         // Find space for blocks covering more than 1 to 1.5 regions
-        assert!(
-            bitmask_gaps
-                .find_fitting_gap(REGION_SIZE_BLOCKS)
-                .unwrap()
-                .is_some()
-        );
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
-                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2))
-                .unwrap()
                 .is_some(),
         );
 
@@ -620,7 +593,6 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
-                .unwrap()
                 .is_none(),
         );
     }
@@ -658,22 +630,15 @@ mod tests {
                 .unwrap();
 
         // Find space for blocks covering up to 1.5 region
-        assert!(
-            bitmask_gaps
-                .find_fitting_gap(REGION_SIZE_BLOCKS)
-                .unwrap()
-                .is_some()
-        );
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
-                .unwrap()
                 .is_some(),
         );
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
-                .unwrap()
                 .is_some(),
         );
 
@@ -681,7 +646,6 @@ mod tests {
         assert!(
             bitmask_gaps
                 .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
-                .unwrap()
                 .is_none(),
         );
     }
@@ -750,6 +714,31 @@ mod tests {
             for (i, gap) in gaps.iter().chain(more_gaps.iter()).enumerate() {
                 assert_eq!(region_gaps.get(i).unwrap(), Some(*gap));
             }
+        }
+
+        // Test updating an existing gap
+        let update_idx = 1;
+        let updated_gap = RegionGaps::new(100, 100, 100, region_size_blocks);
+        {
+            let config = GridstoreConfig::DEFAULT;
+            let mut region_gaps: MmapBitmaskGaps =
+                BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
+
+            // Set the gap and verify it's updated in memory
+            region_gaps.set(update_idx, updated_gap).unwrap();
+            assert_eq!(region_gaps.get(update_idx).unwrap(), Some(updated_gap));
+
+            // Verify out of bounds set fails properly
+            let out_of_bounds_idx = region_gaps.len();
+            assert!(region_gaps.set(out_of_bounds_idx, updated_gap).is_err());
+        }
+
+        // Reopen RegionGaps and verify the updated gap persisted
+        {
+            let config = GridstoreConfig::DEFAULT;
+            let region_gaps: MmapBitmaskGaps =
+                BitmaskGaps::open(&MmapFs, dir_path, config).unwrap();
+            assert_eq!(region_gaps.get(update_idx).unwrap(), Some(updated_gap));
         }
 
         // Clean up
