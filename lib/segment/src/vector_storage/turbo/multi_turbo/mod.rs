@@ -8,6 +8,7 @@
 
 pub mod appendable_mmap_multi_turbo_vector_storage;
 pub mod read_only;
+pub mod update_only;
 
 pub(crate) use self::appendable_mmap_multi_turbo_vector_storage::OFFSETS_DIR_PATH;
 pub use self::appendable_mmap_multi_turbo_vector_storage::{
