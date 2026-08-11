@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
-use common::universal_io::{OkNotFound, ReadRange, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -59,6 +59,27 @@ impl LiveReloadResult {
 }
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
+    /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
+    /// reopen for held handles, a prefetch for files it opens lazily. Absence
+    /// is tolerated the same way the reload tolerates it.
+    pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+        let options = Self::open_options();
+        for (file, path) in [
+            (&self.versions_file, versions_path(&self.segment_path)),
+            (&self.mappings_file, mappings_path(&self.segment_path)),
+        ] {
+            match file {
+                Some(file) => file
+                    .schedule_reopen(|p| fs.cached_file_info(p))
+                    .ok_not_found()?,
+                None => fs
+                    .schedule_prefetch(&path, Some(options), None)
+                    .ok_not_found()?,
+            };
+        }
+        Ok(())
+    }
+
     /// Consume mapping and version changes appended to storage since the last reload.
     ///
     /// File handles are refreshed via [`UniversalRead::reopen`] so data appended by the writer

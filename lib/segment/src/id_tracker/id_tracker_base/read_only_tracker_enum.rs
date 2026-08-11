@@ -69,9 +69,11 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
 
     /// Stage everything the next [`Self::live_reload`] needs. Shared access.
     pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
-        // todo(uio): dispatch per variant as the trackers gain live_preload
-        let _ = fs;
-        Ok(())
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.live_preload(fs),
+            Self::Immutable(id_tracker) => id_tracker.live_preload(fs),
+            Self::DiskResident(id_tracker) => id_tracker.live_preload(fs),
+        }
     }
 
     /// Reload externally-applied changes, dispatching to the active variant.

@@ -15,7 +15,7 @@ use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::PointIdType;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
-    fn open_options() -> OpenOptions {
+    pub(super) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
