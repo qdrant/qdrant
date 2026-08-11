@@ -1,9 +1,11 @@
 //! Recursively upload a local collection directory to S3/GCS object storage.
 
-use std::io::{BufReader, Read as _};
+use std::ffi::OsStr;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
+use edge::WAL_PATH;
 use futures::StreamExt as _;
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
@@ -19,12 +21,20 @@ use crate::args::UploadArgs;
 /// 5 MiB on S3/GCS, so this stays comfortably above that.
 const MULTIPART_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
+/// Parts of one file in flight at once. `WriteMultipart::write` starts an
+/// upload the moment a chunk fills, however many are already running, so
+/// without this a whole file is resident as spawned parts.
+const MAX_PARTS_IN_FLIGHT: usize = 4;
+
 pub fn run(args: UploadArgs) -> Result<()> {
     if !args.source.is_dir() {
         bail!("source {} is not a directory", args.source.display());
     }
+    if args.clean && args.destination.trim_matches('/').is_empty() {
+        bail!("--clean with an empty destination would delete every object in the bucket");
+    }
 
-    let files = collect_files(&args.source)?;
+    let files = collect_files(&args.source, args.include_wal)?;
     if files.is_empty() && !args.clean {
         log::warn!("{} has no files to upload", args.source.display());
         return Ok(());
@@ -92,16 +102,36 @@ async fn clean_destination<O: ObjectStore>(
     Ok(removed)
 }
 
-fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
+/// The WAL is write-path state: the read paths open segments and the config
+/// only, and an [`edge::EdgeShard`] recreates an empty one. Its segments are
+/// preallocated to their full capacity and never truncated, so it dwarfs a
+/// freshly seeded collection.
+fn collect_files(root: &Path, include_wal: bool) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
+    let mut skipped_wal = 0usize;
     for entry in WalkDir::new(root) {
         let entry = entry.with_context(|| format!("failed to walk {}", root.display()))?;
-        if entry.file_type().is_file() {
-            files.push(entry.into_path());
+        if !entry.file_type().is_file() {
+            continue;
         }
+        if !include_wal && entry.path().strip_prefix(root).is_ok_and(is_wal_path) {
+            skipped_wal += 1;
+            continue;
+        }
+        files.push(entry.into_path());
+    }
+    if skipped_wal > 0 {
+        log::info!("skipped {skipped_wal} WAL file(s); pass --include-wal to upload them");
     }
     files.sort();
     Ok(files)
+}
+
+fn is_wal_path(relative: &Path) -> bool {
+    relative
+        .components()
+        .next()
+        .is_some_and(|first| first.as_os_str() == OsStr::new(WAL_PATH))
 }
 
 async fn upload_all<O: ObjectStore>(
@@ -140,9 +170,8 @@ async fn upload_file<O: ObjectStore>(
         .with_context(|| format!("failed to start upload of {}", file.display()))?;
     let mut write = WriteMultipart::new_with_chunk_size(upload, MULTIPART_CHUNK_SIZE);
 
-    let handle =
+    let mut reader =
         fs_err::File::open(file).with_context(|| format!("failed to open {}", file.display()))?;
-    let mut reader = BufReader::new(handle);
     let mut buffer = vec![0u8; MULTIPART_CHUNK_SIZE];
     loop {
         let bytes_read = reader
@@ -151,7 +180,10 @@ async fn upload_file<O: ObjectStore>(
         if bytes_read == 0 {
             break;
         }
-        // Sync but spawns an internal worker thread; `finish` waits for it.
+        write
+            .wait_for_capacity(MAX_PARTS_IN_FLIGHT)
+            .await
+            .with_context(|| format!("failed to upload a part of {}", file.display()))?;
         write.write(&buffer[..bytes_read]);
     }
     write

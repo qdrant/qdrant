@@ -10,13 +10,14 @@ use edge::{
 };
 use rand::RngExt as _;
 use rand::rngs::StdRng;
+use segment::json_path::JsonPathItem;
 
 /// The shard's write-facing schema: every named vector a point must carry,
 /// and every payload field worth generating a value for.
 pub struct Schema {
     pub dense: Vec<(String, usize)>,
     pub sparse: Vec<String>,
-    pub payload: Vec<(String, PayloadSchemaType)>,
+    pub payload: Vec<(JsonPath, PayloadSchemaType)>,
 }
 
 impl Schema {
@@ -31,9 +32,9 @@ impl Schema {
         let mut sparse: Vec<String> = sparse.into_iter().collect();
         sparse.sort();
 
-        let mut payload: Vec<(String, PayloadSchemaType)> = payload_schema
+        let mut payload: Vec<(JsonPath, PayloadSchemaType)> = payload_schema
             .iter()
-            .map(|(key, info)| (key.to_string(), info.data_type))
+            .map(|(key, info)| (key.clone(), info.data_type))
             .collect();
         payload.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -76,13 +77,70 @@ pub fn random_point(id: PointId, schema: &Schema, rng: &mut StdRng) -> PointStru
 
     let mut payload = serde_json::Map::new();
     for (field, schema_type) in &schema.payload {
-        payload.insert(field.clone(), random_payload_value(*schema_type, rng));
+        set_at_path(&mut payload, field, random_payload_value(*schema_type, rng));
     }
 
     PointStructPersisted {
         id,
         vector: VectorStructPersisted::Named(vectors),
         payload: Some(Payload::from(payload)),
+    }
+}
+
+/// Wrap `value` in the objects and arrays `path` walks through, so an index on
+/// a nested or array field actually sees it — a flat `"a.b"` key leaves that
+/// index empty. Paths sharing a prefix merge rather than overwrite.
+fn set_at_path(
+    payload: &mut serde_json::Map<String, serde_json::Value>,
+    path: &JsonPath,
+    value: serde_json::Value,
+) {
+    let nested = path
+        .rest
+        .iter()
+        .rev()
+        .fold(value, |value, item| match item {
+            JsonPathItem::Key(key) => serde_json::json!({ key.clone(): value }),
+            JsonPathItem::WildcardIndex => serde_json::json!([value]),
+            JsonPathItem::Index(index) => {
+                let mut array = vec![serde_json::Value::Null; *index];
+                array.push(value);
+                array.into()
+            }
+        });
+
+    match payload.get_mut(&path.first_key) {
+        Some(existing) => merge_value(existing, nested),
+        None => {
+            payload.insert(path.first_key.clone(), nested);
+        }
+    }
+}
+
+/// Deep-merge objects and arrays so sibling paths under one prefix coexist
+/// (`tags[].name` and `tags[].score` land on the same element); anything else
+/// is replaced.
+fn merge_value(dest: &mut serde_json::Value, source: serde_json::Value) {
+    match (dest, source) {
+        (serde_json::Value::Object(dest), serde_json::Value::Object(source)) => {
+            for (key, value) in source {
+                match dest.get_mut(&key) {
+                    Some(existing) => merge_value(existing, value),
+                    None => {
+                        dest.insert(key, value);
+                    }
+                }
+            }
+        }
+        (serde_json::Value::Array(dest), serde_json::Value::Array(source)) => {
+            for (index, value) in source.into_iter().enumerate() {
+                match dest.get_mut(index) {
+                    Some(existing) => merge_value(existing, value),
+                    None => dest.push(value),
+                }
+            }
+        }
+        (dest, source) => *dest = source,
     }
 }
 
@@ -110,5 +168,66 @@ fn random_payload_value(schema_type: PayloadSchemaType, rng: &mut StdRng) -> ser
         PayloadSchemaType::Uuid => edge::external::uuid::Uuid::from_u128(rng.random())
             .to_string()
             .into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::SeedableRng as _;
+
+    use super::*;
+
+    fn schema(paths: &[(&str, PayloadSchemaType)]) -> Schema {
+        Schema {
+            dense: Vec::new(),
+            sparse: Vec::new(),
+            payload: paths
+                .iter()
+                .map(|(path, kind)| (path.parse().unwrap(), *kind))
+                .collect(),
+        }
+    }
+
+    fn payload_of(schema: &Schema) -> serde_json::Map<String, serde_json::Value> {
+        let mut rng = StdRng::seed_from_u64(1);
+        let point = random_point(PointId::NumId(0), schema, &mut rng);
+        point.payload.unwrap().0
+    }
+
+    #[test]
+    fn nested_paths_are_reachable_by_the_index_they_were_generated_for() {
+        let schema = schema(&[
+            ("meta.city", PayloadSchemaType::Keyword),
+            ("meta.age", PayloadSchemaType::Integer),
+            ("flat", PayloadSchemaType::Float),
+        ]);
+        let payload = payload_of(&schema);
+
+        for (path, _) in &schema.payload {
+            assert!(
+                !path.value_get(&payload).is_empty(),
+                "index on {path} sees no value in {payload:?}",
+            );
+        }
+        assert!(
+            payload["meta"].is_object(),
+            "a nested path must not become a flat key: {payload:?}",
+        );
+    }
+
+    #[test]
+    fn array_paths_are_reachable_too() {
+        let schema = schema(&[
+            ("tags[].name", PayloadSchemaType::Keyword),
+            ("tags[].score", PayloadSchemaType::Float),
+        ]);
+        let payload = payload_of(&schema);
+
+        for (path, _) in &schema.payload {
+            assert!(
+                !path.value_get(&payload).is_empty(),
+                "index on {path} sees no value in {payload:?}",
+            );
+        }
     }
 }

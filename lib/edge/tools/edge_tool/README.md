@@ -58,6 +58,11 @@ this tool). Point ids are sequential and default to starting at the collection's
 (approximate) point count, so repeated `upsert` calls append rather than overwrite; override with
 `--start-id`. `--seed` controls the RNG (default `42`).
 
+Points are written `--batch-size` at a time (default `1000`), one update operation per batch. Each
+batch is generated, written and dropped before the next one starts, so seeding a million points
+costs a batch of memory rather than a million points — the whole operation is also serialized into
+a single WAL record, so an unbatched write pays for the points twice.
+
 ### `optimize` — run the shard optimizers
 
 ```sh
@@ -77,11 +82,18 @@ Recursively uploads every file under the local `SOURCE` directory to `DESTINATIO
 inside the bucket, e.g. `my_collection/0`), preserving the relative directory structure — so the
 result is byte-for-byte the same layout `edge-shard-query`/`edge-shard-update` expect via
 `--prefix`. Every file is streamed through `object_store`'s multipart upload API (even small ones,
-as a single final part), so upload memory use stays bounded regardless of segment size.
+as a single final part), at most four parts of a file in flight at a time, so upload memory use
+stays bounded regardless of segment size.
+
+The `wal/` directory is skipped: the read paths open segments and the config only, `EdgeShard`
+recreates an empty WAL, and WAL segments are preallocated to their full capacity and never
+truncated — a freshly created collection is 72 KB of segments next to 64 MB of WAL.
 
 - `--clean` — delete every existing object under `DESTINATION` before uploading, so a re-upload
   doesn't leave stale files behind from a previous run with a different shape (e.g. a collection
-  re-created with a different segment UUID).
+  re-created with a different segment UUID). Refused for an empty `DESTINATION`, which would match
+  every object in the bucket.
+- `--include-wal` — upload `wal/` as well.
 - `--aws` (default) — AWS S3 or an S3-compatible store (MinIO, RustFS, ...).
 - `--gcs` — Google Cloud Storage.
 - `--bucket` [`BLOB_BUCKET`] — required.

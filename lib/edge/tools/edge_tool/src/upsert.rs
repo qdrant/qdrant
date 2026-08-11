@@ -42,15 +42,31 @@ pub fn run(args: UpsertArgs) -> Result<()> {
     );
 
     let mut rng = StdRng::seed_from_u64(args.seed);
-    let points = (0..args.num as u64)
-        .map(|offset| random_point(PointId::NumId(start_id + offset), &schema, &mut rng))
-        .collect::<Vec<_>>();
+    let batch_size = args.batch_size.max(1);
+    let mut written = 0usize;
+    while written < args.num {
+        let batch = batch_size.min(args.num - written);
+        let points = (0..batch as u64)
+            .map(|offset| {
+                random_point(
+                    PointId::NumId(start_id + written as u64 + offset),
+                    &schema,
+                    &mut rng,
+                )
+            })
+            .collect::<Vec<_>>();
 
-    shard
-        .update(UpdateOperation::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
-        ))
-        .context("failed to upsert points")?;
+        shard
+            .update(UpdateOperation::PointOperation(
+                PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
+            ))
+            .context("failed to upsert points")?;
+
+        written += batch;
+        if written < args.num {
+            log::debug!("upserted {written}/{} point(s)", args.num);
+        }
+    }
 
     shard.flush().context("failed to flush the collection")?;
     log::info!(
