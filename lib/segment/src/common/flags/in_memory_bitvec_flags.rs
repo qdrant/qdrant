@@ -141,6 +141,11 @@ impl InMemoryBitvecFlags {
         self.bitvec.as_bitslice()
     }
 
+    /// Set flags as an owned `BitVec`, dropping the count.
+    pub fn into_bitvec(self) -> BitVec {
+        self.bitvec
+    }
+
     /// Set `points`, growing as needed and keeping `count` in sync. Folds a
     /// live-reload deletion delta; live offsets aren't passed (they read unset).
     pub fn insert_all(&mut self, points: &[PointOffsetType]) {

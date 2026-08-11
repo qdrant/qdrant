@@ -3,28 +3,27 @@ mod tests;
 
 use std::path::Path;
 
-use blobstore::Logstore;
 use blobstore::config::LogstoreConfig;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalAppend};
+use common::universal_io::UniversalAppend;
 
 use crate::common::operation_error::OperationResult;
+use crate::common::update_only_blobstore::UpdateOnlyBlobstore;
 use crate::payload_storage::payload_storage_impl::storage_dir;
 use crate::types::Payload;
 
 /// The write half of the payload storage for an update-only segment: a
 /// short-lived writer opened for one batch and dropped with it.
 ///
-/// Backed by a [`Logstore`], the append-only mode of the same storage
-/// [`PayloadStorageImpl`][1] uses, so a slot's payload is written once and
-/// never rewritten. [`append_many`](Self::append_many) flushes what it wrote,
-/// so a batch is durable when it returns and there is nothing to flush across
-/// calls.
+/// The payload half of the same storage [`PayloadStorageImpl`][1] writes, in
+/// its append-only mode, so a slot's payload is written once and never
+/// rewritten. [`append_many`](Self::append_many) flushes what it wrote, so a
+/// batch is durable when it returns and there is nothing to flush across calls.
 ///
 /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl
 pub struct UpdateOnlyPayloadStorage<S: UniversalAppend + 'static> {
-    storage: Logstore<Payload, S>,
+    storage: UpdateOnlyBlobstore<Payload, S>,
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
@@ -37,14 +36,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     ///
     /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl::open_or_create
     pub fn open(fs: S::Fs, segment_path: &Path) -> OperationResult<Self> {
-        let storage = Logstore::open_or_create(
-            fs,
-            storage_dir(segment_path),
-            LogstoreConfig::DEFAULT,
-            // Appends never read back, and on a remote backend populating would
-            // fetch every page of the storage per batch.
-            Populate::No,
-        )?;
+        let storage =
+            UpdateOnlyBlobstore::open(fs, &storage_dir(segment_path), LogstoreConfig::DEFAULT)?;
 
         Ok(Self { storage })
     }
@@ -64,27 +57,19 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
         payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let mut stored_any = false;
         for (internal_id, payload) in payloads {
             if payload.is_empty() {
                 continue;
             }
 
-            self.storage.put_value(
+            self.storage.put(
                 internal_id,
                 payload,
                 hw_counter.ref_payload_io_write_counter(),
             )?;
-            stored_any = true;
         }
 
-        // Puts only buffer, the flush is what makes them durable. A batch that
-        // stored nothing skips it: the flush writes nothing, but still syncs
-        // every page file of the storage.
-        if stored_any {
-            self.storage.flusher()()?;
-        }
-
-        Ok(())
+        // Puts only buffer, the flush is what makes them durable.
+        self.storage.flush()
     }
 }

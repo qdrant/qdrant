@@ -1,15 +1,13 @@
-use std::borrow::Cow;
 use std::path::PathBuf;
 
 use blobstore::Blobstore;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use itertools::Itertools;
 
 use super::super::FullTextIndex;
 use super::super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
-use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
+use super::super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
 use super::inner::MutableFullTextIndexInner;
 use super::{GRIDSTORE_OPTIONS, MutableFullTextIndex};
@@ -126,18 +124,8 @@ impl MutableFullTextIndex {
         }
 
         let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
-        let insert_boundaries = phrase_matching && values.len() > 1;
-
-        let mut str_tokens: Vec<Cow<str>> =
-            Vec::with_capacity((values.len() * 2).saturating_sub(1));
-        for (i, value) in values.iter().enumerate() {
-            if insert_boundaries && i > 0 {
-                str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
-            }
-            self.inner.tokenizer.tokenize_doc(value, |token| {
-                str_tokens.push(token);
-            });
-        }
+        let str_tokens =
+            FullTextIndex::tokenize_document(&self.inner.tokenizer, phrase_matching, &values);
 
         let tokens = self.inner.inverted_index.register_tokens(&str_tokens);
 
@@ -153,15 +141,7 @@ impl MutableFullTextIndex {
             .inverted_index
             .index_tokens(idx, token_set, hw_counter)?;
 
-        let tokens_to_store = if phrase_matching {
-            // store ordered tokens
-            str_tokens
-        } else {
-            // store sorted, unique tokens
-            str_tokens.into_iter().sorted().dedup().collect()
-        };
-
-        let db_document = FullTextIndex::serialize_document(tokens_to_store)?;
+        let db_document = FullTextIndex::serialize_stored_document(str_tokens, phrase_matching)?;
 
         // Update persisted storage
         self.storage

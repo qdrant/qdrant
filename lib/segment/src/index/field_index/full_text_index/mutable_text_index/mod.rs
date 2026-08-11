@@ -12,6 +12,7 @@ pub mod read_only;
 mod read_ops;
 #[cfg(test)]
 mod tests;
+pub mod update_only;
 
 pub(super) const GRIDSTORE_OPTIONS: StorageConfig = StorageConfig::Mutable(GridstoreConfig {
     page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
