@@ -10,6 +10,14 @@ use crate::common::operation_error::OperationResult;
 impl<S: UniversalRead> LiveReload for ReadOnlyPayloadStorage<S> {
     type File = S;
 
+    fn live_preload<Fs: common::universal_io::CachedReadFs<File = Self::File>>(
+        &self,
+        cached_fs: &Fs,
+    ) -> OperationResult<()> {
+        self.storage.live_preload(cached_fs)?;
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
