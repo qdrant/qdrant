@@ -13,6 +13,11 @@ on:
         description: 'RNG seed (leave empty for a random seed)'
         required: false
         default: ''
+      disable_optimizer:
+        description: 'Pass --disable-optimizer to both passes (isolates optimizer-dependent bugs)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -73,6 +78,7 @@ jobs:
         env:
           INPUT_OP_NUM: ${{ inputs.op_num }}
           INPUT_SEED: ${{ inputs.seed }}
+          INPUT_DISABLE_OPTIMIZER: ${{ inputs.disable_optimizer }}
         run: |
           # The commit actually under test. `github.sha` is the default branch (master) on a
           # scheduled run, but the checkout above forces `dev`, so reporting `github.sha` points
@@ -86,6 +92,12 @@ jobs:
           else
             echo "SEED=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')" >> "$GITHUB_ENV"
           fi
+          # Empty unless requested, so it expands to nothing in the run commands below.
+          if [ "$INPUT_DISABLE_OPTIMIZER" = "true" ]; then
+            echo "OPTIMIZER_FLAG=--disable-optimizer" >> "$GITHUB_ENV"
+          else
+            echo "OPTIMIZER_FLAG=" >> "$GITHUB_ENV"
+          fi
         shell: bash
       # Both runs reuse the single binary built above and share the same seed.
       - name: Run model testing (async scorer)
@@ -98,6 +110,7 @@ jobs:
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
             --on-disk \
+            $OPTIMIZER_FLAG \
             --async-scorer
         shell: bash
         timeout-minutes: 300
@@ -112,7 +125,8 @@ jobs:
             --shard-count "$SHARD_COUNT" \
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
-            --on-disk
+            --on-disk \
+            $OPTIMIZER_FLAG
         shell: bash
         timeout-minutes: 300
       # Which of the two passes broke is the first thing triage needs: one failing while the
