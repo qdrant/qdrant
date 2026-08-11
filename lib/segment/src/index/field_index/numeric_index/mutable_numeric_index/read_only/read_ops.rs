@@ -24,8 +24,8 @@ where
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         _hw_counter: &HardwareCounterCell,
-    ) -> bool {
-        self.in_memory_index.check_values_any(idx, check_fn)
+    ) -> OperationResult<bool> {
+        Ok(self.in_memory_index.check_values_any(idx, check_fn))
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
