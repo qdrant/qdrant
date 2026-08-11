@@ -59,9 +59,13 @@ this tool). Point ids are sequential and default to starting at the collection's
 `--start-id`. `--seed` controls the RNG (default `42`).
 
 Points are written `--batch-size` at a time (default `1000`), one update operation per batch. Each
-batch is generated, written and dropped before the next one starts, so seeding a million points
-costs a batch of memory rather than a million points — the whole operation is also serialized into
-a single WAL record, so an unbatched write pays for the points twice.
+batch is generated, written and dropped before the next one starts, so peak memory follows the
+batch rather than `--num`. Batching pays off twice, because an update operation is also
+CBOR-serialized into one WAL record: writing everything in one operation holds the points once as
+structs and again as that record.
+
+The batches are not one transaction. A failure partway through leaves the batches before it
+applied — re-run to continue, since `--start-id` defaults to the collection's current point count.
 
 ### `optimize` — run the shard optimizers
 

@@ -134,9 +134,21 @@ fn merge_value(dest: &mut serde_json::Value, source: serde_json::Value) {
         }
         (serde_json::Value::Array(dest), serde_json::Value::Array(source)) => {
             for (index, value) in source.into_iter().enumerate() {
+                // Null is only ever the padding `set_at_path` puts ahead of an
+                // explicit index — no generated value is null — so it must not
+                // overwrite an element a sibling path already placed.
+                if value.is_null() {
+                    if dest.len() <= index {
+                        dest.resize(index + 1, serde_json::Value::Null);
+                    }
+                    continue;
+                }
                 match dest.get_mut(index) {
                     Some(existing) => merge_value(existing, value),
-                    None => dest.push(value),
+                    None => {
+                        dest.resize(index, serde_json::Value::Null);
+                        dest.push(value);
+                    }
                 }
             }
         }
@@ -213,6 +225,21 @@ mod tests {
             payload["meta"].is_object(),
             "a nested path must not become a flat key: {payload:?}",
         );
+    }
+
+    #[test]
+    fn sibling_paths_at_different_explicit_indexes_both_survive() {
+        let schema = schema(&[
+            ("tags[0].name", PayloadSchemaType::Keyword),
+            ("tags[1].score", PayloadSchemaType::Float),
+        ]);
+        let payload = payload_of(&schema);
+        for (path, _) in &schema.payload {
+            assert!(
+                !path.value_get(&payload).is_empty(),
+                "index on {path} sees no value in {payload:?}",
+            );
+        }
     }
 
     #[test]
