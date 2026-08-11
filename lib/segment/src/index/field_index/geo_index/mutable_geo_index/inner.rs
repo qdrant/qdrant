@@ -66,15 +66,16 @@ impl InMemoryGeoIndex {
         }
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    /// Returns whether the point held any values.
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<bool> {
         if self.point_to_values.len() <= idx as usize {
-            return Ok(()); // Already removed or never actually existed
+            return Ok(false); // Already removed or never actually existed
         }
 
         let removed_geo_points = std::mem::take(&mut self.point_to_values[idx as usize]);
 
         if removed_geo_points.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         self.points_count -= 1;
@@ -112,7 +113,7 @@ impl InMemoryGeoIndex {
         }
 
         self.decrement_hash_point_counts(removed_geo_hashes);
-        Ok(())
+        Ok(true)
     }
 
     /// Assign these geo points to the point offset.

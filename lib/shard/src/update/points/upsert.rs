@@ -2,7 +2,7 @@
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::DeferredBehavior;
+use common::flags::feature_flags;
 use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -126,7 +126,14 @@ pub fn conditional_upsert(
 pub(super) trait PointToUpsert {
     fn id(&self) -> PointIdType;
 
-    /// Upsert in place into a writable segment: vectors plus full payload.
+    /// The parts of the whole point this upsert writes.
+    fn parts(&self) -> PointParts<'_>;
+
+    /// Upsert into a writable segment, as one segment operation.
+    ///
+    /// One operation and not an upsert followed by a payload step: on an
+    /// append-only segment every step clones the point to a fresh slot, so a
+    /// second step is a second slot.
     ///
     /// Returns
     /// - Ok(true) if the operation was successful and point replaced existing value
@@ -137,23 +144,51 @@ pub(super) trait PointToUpsert {
         segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
         op_num: SeqNumberType,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
+    ) -> OperationResult<bool> {
+        let PointParts {
+            raw_vectors,
+            updated_vectors,
+            payload,
+        } = self.parts();
 
-    /// This function should transform components of the CoW Record according to
-    /// current update operation.
-    ///
-    /// - `raw_vectors`: vectors in storage-native (byte) form; pre-filled with
-    ///   the existing vectors
-    /// - `updated_vectors`: newly modified vectors in decoded form should go here.
-    ///   Takes priority over `raw_vectors` in case of conflict.
-    /// - `payload`: mutate payload of the point; whatever it holds on return
-    ///   is what gets stored
+        let empty = Payload::default();
+        segment.upsert_moved_point(
+            op_num,
+            self.id(),
+            raw_vectors,
+            updated_vectors,
+            payload.unwrap_or(&empty),
+            hw_counter,
+        )
+    }
+
+    /// Adapter for the copy-on-write move callback, which hands over buffers
+    /// pre-filled with the point's existing data. An upsert replaces the
+    /// whole point, so the pre-filled content is discarded.
     fn write_moved<'op>(
         &'op self,
         raw_vectors: &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
         updated_vectors: &mut NamedVectors<'op>,
         payload: &mut Payload,
-    );
+    ) {
+        let parts = self.parts();
+
+        raw_vectors.clear();
+        raw_vectors.extend(parts.raw_vectors.iter().cloned());
+        *updated_vectors = parts.updated_vectors;
+        *payload = parts.payload.cloned().unwrap_or_default();
+    }
+}
+
+/// The parts of a whole point, as one upsert writes them.
+pub(super) struct PointParts<'a> {
+    /// Vectors in storage-native bytes; `updated_vectors` overrides them by
+    /// name.
+    raw_vectors: &'a [(VectorNameBuf, Vec<u8>)],
+    /// Vectors supplied decoded.
+    updated_vectors: NamedVectors<'a>,
+    /// The point's full payload; `None` stores none.
+    payload: Option<&'a Payload>,
 }
 
 /// Checks point id in each segment, update point if found.
@@ -178,7 +213,13 @@ where
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
             ids_chunk,
-            |id, write_segment| points_map[&id].upsert_into(write_segment, op_num, hw_counter),
+            |id, write_segment| {
+                debug_assert!(
+                    !feature_flags().append_only_storages,
+                    "This should never be called in append-only mode"
+                );
+                points_map[&id].upsert_into(write_segment, op_num, hw_counter)
+            },
             |id, raw_vectors, updated_vectors, old_payload| {
                 points_map[&id].write_moved(raw_vectors, updated_vectors, old_payload)
             },
@@ -221,27 +262,12 @@ impl PointToUpsert for PointStructPersisted {
         self.id
     }
 
-    fn upsert_into(
-        &self,
-        segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
-        op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let mut res = segment.upsert_point(op_num, self.id, self.get_vectors(), hw_counter)?;
-        res &=
-            set_full_or_clear_payload(segment, op_num, self.id, self.payload.as_ref(), hw_counter)?;
-        Ok(res)
-    }
-
-    fn write_moved<'op>(
-        &'op self,
-        raw_vectors: &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
-        updated_vectors: &mut NamedVectors<'op>,
-        payload: &mut Payload,
-    ) {
-        raw_vectors.clear();
-        *updated_vectors = self.get_vectors();
-        *payload = self.payload.clone().unwrap_or_default();
+    fn parts(&self) -> PointParts<'_> {
+        PointParts {
+            raw_vectors: &[],
+            updated_vectors: self.get_vectors(),
+            payload: self.payload.as_ref(),
+        }
     }
 }
 
@@ -250,49 +276,12 @@ impl PointToUpsert for PointStructRawPersisted {
         self.id
     }
 
-    fn upsert_into(
-        &self,
-        segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
-        op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let mut res = segment.upsert_point_raw(op_num, self.id, &self.vectors, hw_counter)?;
-        res &=
-            set_full_or_clear_payload(segment, op_num, self.id, self.payload.as_ref(), hw_counter)?;
-        Ok(res)
+    fn parts(&self) -> PointParts<'_> {
+        PointParts {
+            // The incoming bytes travel verbatim.
+            raw_vectors: &self.vectors,
+            updated_vectors: NamedVectors::default(),
+            payload: self.payload.as_ref(),
+        }
     }
-
-    fn write_moved<'op>(
-        &'op self,
-        raw_vectors: &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
-        _updated_vectors: &mut NamedVectors<'op>,
-        payload: &mut Payload,
-    ) {
-        // Carry the incoming bytes verbatim.
-        raw_vectors.clear();
-        raw_vectors.extend(self.vectors.iter().cloned());
-        *payload = self.payload.clone().unwrap_or_default();
-    }
-}
-
-/// Set the given full payload on the point, or clear the stored payload if `None`.
-///
-/// Finishes a whole-point upsert; the point itself must have just been written.
-fn set_full_or_clear_payload(
-    segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
-    op_num: SeqNumberType,
-    point_id: PointIdType,
-    payload: Option<&Payload>,
-    hw_counter: &HardwareCounterCell,
-) -> OperationResult<bool> {
-    let res = if let Some(full_payload) = payload {
-        segment.set_full_payload(op_num, point_id, full_payload, hw_counter)?
-    } else {
-        segment.clear_payload(op_num, point_id, hw_counter)?
-    };
-    debug_assert!(
-        segment.has_point(point_id, DeferredBehavior::WithDeferred),
-        "the point {point_id} should be present immediately after the upsert"
-    );
-    Ok(res)
 }

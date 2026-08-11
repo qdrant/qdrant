@@ -47,8 +47,16 @@ pub struct FeatureFlags {
     /// bitslices. Only gates writing: both formats are always readable.
     pub compact_bitmask: bool,
 
+    /// Create Blobstore-backed storages (payload storage, appendable field indexes, sparse
+    /// vectors) in the append-only Logstore mode. Gates creation only: an existing storage
+    /// keeps its persisted mode, and both modes are always readable.
+    ///
+    /// Implies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].
+    pub append_only_storages: bool,
+
     /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
-    /// [`Self::append_only_mutations`] and [`Self::compact_bitmask`].
+    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`] and
+    /// [`Self::append_only_storages`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     serverless_compatible: bool,
@@ -65,6 +73,7 @@ impl Default for FeatureFlags {
             write_segment_manifest: false,
             append_only_mutations: false,
             compact_bitmask: false,
+            append_only_storages: false,
             serverless_compatible: false,
         }
     }
@@ -90,9 +99,10 @@ impl FeatureFlags {
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
             write_segment_manifest: true,
-            // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
-            // mutation semantics, and `all` is enabled in dev and e2e configs.
+            // Deliberately not enabled by `all`: these change mutation semantics and the
+            // persisted storage format, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
+            append_only_storages: false,
             compact_bitmask: true,
             serverless_compatible: false,
         }
@@ -110,6 +120,12 @@ impl FeatureFlags {
             self.write_segment_manifest = true;
             self.append_only_mutations = true;
             self.compact_bitmask = true;
+            self.append_only_storages = true;
+        }
+
+        // Append-only storages cannot rewrite slots.
+        if self.append_only_storages {
+            self.append_only_mutations = true;
         }
 
         self
@@ -163,6 +179,7 @@ mod tests {
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
     }
 
     #[test]
@@ -177,5 +194,17 @@ mod tests {
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
+    }
+
+    #[test]
+    fn test_append_only_storages_forces_append_only_mutations() {
+        let flags = FeatureFlags {
+            append_only_storages: true,
+            ..Default::default()
+        }
+        .normalize();
+
+        assert!(flags.append_only_mutations);
     }
 }

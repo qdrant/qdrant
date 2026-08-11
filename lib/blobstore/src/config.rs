@@ -47,6 +47,56 @@ pub(crate) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
     lz4_flex::decompress_size_prepended(value).unwrap()
 }
 
+/// Mode-neutral options a storage can be created with.
+///
+/// [`Self::into_config`] turns them into the config of either mode; each mode
+/// takes the fields it can express.
+#[derive(Debug, Copy, Clone)]
+pub struct CreateOptions {
+    /// Page size of the mutable mode; page rollover capacity of the
+    /// append-only mode.
+    pub page_size_bytes: usize,
+
+    /// Allocation granularity of the mutable mode. The append-only mode packs
+    /// values back to back and ignores it.
+    pub block_size_bytes: usize,
+
+    /// Use compression
+    pub compression: Compression,
+}
+
+impl CreateOptions {
+    /// Default options, matching [`GridstoreConfig::DEFAULT`].
+    pub const DEFAULT: Self = Self {
+        page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+        compression: Compression::LZ4,
+    };
+
+    /// The config of the chosen mode.
+    pub fn into_config(self, append_only: bool) -> StorageConfig {
+        let Self {
+            page_size_bytes,
+            block_size_bytes,
+            compression,
+        } = self;
+
+        if append_only {
+            StorageConfig::AppendOnly(LogstoreConfig {
+                page_capacity_bytes: page_size_bytes,
+                compression,
+            })
+        } else {
+            StorageConfig::Mutable(GridstoreConfig {
+                page_size_bytes,
+                block_size_bytes,
+                region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+                compression,
+            })
+        }
+    }
+}
+
 /// Operating mode of the storage
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, EnumIter)]
 #[serde(rename_all = "snake_case")]
