@@ -29,13 +29,20 @@ fn main() {
             builder.flag("-march=haswell");
         }
 
-        // O3 optimization level
-        builder.flag("-O3");
-        // Use popcnt instruction
-        builder.flag("-mpopcnt");
+        if builder.get_compiler().is_like_msvc() {
+            builder.flag("/O2");
+        } else {
+            builder.flag("-O3");
+            builder.flag("-mpopcnt");
+        }
     } else if target_arch == "aarch64" && target_feature.split(',').any(|feat| feat == "neon") {
         builder.file("cpp/neon.c");
-        builder.flag("-O3");
+
+        if builder.get_compiler().is_like_msvc() {
+            builder.flag("/O2");
+        } else {
+            builder.flag("-O3");
+        }
     }
 
     builder.compile("simd_utils");

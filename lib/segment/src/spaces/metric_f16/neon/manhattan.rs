@@ -1,5 +1,6 @@
 #[cfg(target_feature = "neon")]
 use common::types::ScoreType;
+#[cfg(all(target_feature = "neon", not(target_env = "msvc")))]
 use half::f16;
 
 #[cfg(target_feature = "neon")]
@@ -7,6 +8,10 @@ use crate::data_types::vectors::VectorElementTypeHalf;
 
 #[cfg(target_feature = "neon")]
 unsafe extern "C" {
+    #[cfg(target_env = "msvc")]
+    fn manhattanDist_half_4x4(v1: *const u16, v2: *const u16, n: i32) -> f32;
+
+    #[cfg(not(target_env = "msvc"))]
     fn manhattanDist_half_4x4(v1: *const f16, v2: *const f16, n: i32) -> f32;
 }
 
@@ -17,6 +22,16 @@ pub unsafe fn neon_manhattan_similarity_half(
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
     let n = v1.len();
+    #[cfg(target_env = "msvc")]
+    unsafe {
+        -manhattanDist_half_4x4(
+            v1.as_ptr().cast::<u16>(),
+            v2.as_ptr().cast::<u16>(),
+            n.try_into().unwrap(),
+        )
+    }
+
+    #[cfg(not(target_env = "msvc"))]
     unsafe { -manhattanDist_half_4x4(v1.as_ptr(), v2.as_ptr(), n.try_into().unwrap()) }
 }
 
