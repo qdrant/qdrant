@@ -8,7 +8,7 @@ use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, FileIndex, Flusher, OpenOptions, Populate, ReadPipeline, ReadRange,
+    CachedReadFs, FileIndex, Flusher, OkUnchanged, OpenOptions, Populate, ReadPipeline, ReadRange,
     UniversalRead, UniversalReadFs, UniversalWrite, UserData,
 };
 use itertools::Either;
@@ -452,6 +452,33 @@ impl<S: UniversalRead> Pages<S> {
         Ok(())
     }
 
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+        populate: Populate,
+    ) -> Result<()> {
+        let num_pages = self.pages.len();
+        let next_page_id = num_pages as PageId;
+
+        if num_pages > 0 {
+            let page_id = (num_pages - 1) as PageId;
+            let page_path = self.page_path(page_id);
+
+            // Re-schedule so that unchanged files don't re-fetch.
+            fs.reschedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+
+        for page_id in next_page_id.. {
+            let page_path = self.page_path(page_id);
+            if !fs.exists(&page_path)? {
+                break;
+            }
+            fs.schedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+        }
+
+        Ok(())
+    }
+
     /// This method reloads the pages storage from "disk", so that
     /// it should make newly written data is readable.
     ///
@@ -469,10 +496,20 @@ impl<S: UniversalRead> Pages<S> {
         let next_page_id = num_pages as PageId;
 
         if num_pages > 0 {
-            // Re-attach the last page, which should have the latest data.
-            self.pages.pop();
-            let page_path = self.page_path((num_pages - 1) as PageId);
-            self.attach_page(fs, &page_path, populate)?;
+            // Refresh the last page, which should have the latest data.
+            let last_page_id = num_pages - 1;
+            let page_path = self.page_path(last_page_id as PageId);
+            let changed = fs
+                .open(
+                    &page_path,
+                    page_open_options(populate, self.writeable),
+                    Default::default(),
+                )
+                // data might have not changed.
+                .ok_unchanged()?;
+            if let Some(page) = changed {
+                self.pages[last_page_id] = page;
+            }
         }
 
         for page_id in next_page_id.. {
