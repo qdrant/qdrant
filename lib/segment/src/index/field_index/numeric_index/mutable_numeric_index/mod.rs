@@ -10,6 +10,7 @@ use crate::index::field_index::numeric_point::{Numericable, Point};
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
+pub mod update_only;
 
 /// Default options for Gridstore storage
 pub(super) const fn default_gridstore_options<T: Sized>() -> StorageConfig {

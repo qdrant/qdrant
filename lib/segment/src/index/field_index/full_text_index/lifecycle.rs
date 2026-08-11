@@ -5,12 +5,15 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
+use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
+use super::inverted_index::ARRAY_BOUNDARY_SENTINEL;
 use super::mutable_text_index::MutableFullTextIndex;
 use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
+use super::tokenizers::Tokenizer;
 use super::{FullTextGridstoreIndexBuilder, FullTextIndex};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -85,6 +88,49 @@ impl FullTextIndex {
         config: TextIndexParams,
     ) -> FullTextGridstoreIndexBuilder {
         FullTextGridstoreIndexBuilder::new(dir, config)
+    }
+
+    /// Tokenize a point's text values into the token stream the index is built
+    /// from, in document order.
+    ///
+    /// With phrase matching on, a sentinel separates the values of an array, so
+    /// that no phrase matches across two of them.
+    pub(super) fn tokenize_document<'a>(
+        tokenizer: &'a Tokenizer,
+        phrase_matching: bool,
+        values: &'a [String],
+    ) -> Vec<Cow<'a, str>> {
+        let insert_boundaries = phrase_matching && values.len() > 1;
+
+        let mut str_tokens: Vec<Cow<str>> =
+            Vec::with_capacity((values.len() * 2).saturating_sub(1));
+        for (i, value) in values.iter().enumerate() {
+            if insert_boundaries && i > 0 {
+                str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+            }
+            tokenizer.tokenize_doc(value, |token| {
+                str_tokens.push(token);
+            });
+        }
+
+        str_tokens
+    }
+
+    /// Encode a point's tokens as the document the storage holds.
+    ///
+    /// Phrase matching needs them in the order they were written; without it
+    /// only membership matters, so they are stored sorted and deduplicated.
+    pub(super) fn serialize_stored_document(
+        str_tokens: Vec<Cow<str>>,
+        phrase_matching: bool,
+    ) -> OperationResult<Vec<u8>> {
+        let tokens = if phrase_matching {
+            str_tokens
+        } else {
+            str_tokens.into_iter().sorted().dedup().collect()
+        };
+
+        Self::serialize_document(tokens)
     }
 
     pub(super) fn serialize_document(tokens: Vec<Cow<str>>) -> OperationResult<Vec<u8>> {

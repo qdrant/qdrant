@@ -14,3 +14,4 @@ pub mod dynamic_stored_flags;
 pub mod in_memory_bitvec_flags;
 pub mod read_only_roaring_flags;
 pub mod roaring_flags;
+pub mod update_only_stored_flags;
