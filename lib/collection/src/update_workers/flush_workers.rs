@@ -23,14 +23,7 @@ impl UpdateWorkers {
     /// Returns an error on flush failure
     fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
         let read_segments = segments.read();
-        // DIAGNOSTIC EXPERIMENT, not the intended fix: the reload divergence is now pinned to a
-        // flush pass that durably persisted a CoW source's deletes while leaving the destination
-        // of the same moves unflushed (segment 11 at 36930/36930 vs segment 7 at 36808/36808 in
-        // run 31570040346), the exact hazard flush_all's locking exists to prevent. A synchronous
-        // flush holds every segment lock through execution, so capture and execution cannot be
-        // interleaved by copy-on-write moves. If this zeroes the failures, the background flush's
-        // capture/execute split is confirmed as the final layer.
-        let flushed_version = read_segments.flush_all(FlushMode::Sync, false)?;
+        let flushed_version = read_segments.flush_all(FlushMode::Background, false)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
