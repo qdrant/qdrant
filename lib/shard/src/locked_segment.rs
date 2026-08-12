@@ -113,6 +113,20 @@ impl LockedSegment {
     }
 
     fn drop_data_with_timeout(self, timeout: Duration) -> Result<(), DropDataOutcome> {
+        // Every path that destroys segment files funnels through here. A lost point's last
+        // durable directory has now been observed missing at reload with no pin release and no
+        // load-time reclaim logged, so the deleting path is one this line will finally name.
+        log::info!(
+            "drop_data: dir {:?} version={} persisted={}",
+            self.get()
+                .read()
+                .data_path()
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            self.get().read().version(),
+            self.get().read().persistent_version(),
+        );
         match self {
             LockedSegment::Original(segment) => {
                 match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, timeout) {

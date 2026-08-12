@@ -134,6 +134,11 @@ fn cleanup_cancelled_optimized_segment(segments_path: &Path, output_segment_uuid
     if !orphan_path.exists() {
         return;
     }
+    // Deliberately loud: this deletes a segment directory outside the drop_data funnel, on the
+    // assumption that a cancellation can never arrive after the swap published the segment. A
+    // live segment's directory has been observed missing at reload with every other deletion
+    // path exonerated, so every deletion here must be attributable.
+    log::warn!("removing cancelled optimized segment dir {output_segment_uuid}");
     if let Err(err) = safe_delete_with_suffix(&orphan_path) {
         log::warn!(
             "Failed to remove cancelled optimized segment at {}: {err}",

@@ -352,13 +352,18 @@ impl SegmentHolder {
                 let guard = segment.get();
                 let guard = guard.read();
                 let (version, persisted) = (guard.version(), guard.persistent_version());
+                let dir = guard
+                    .data_path()
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 departing.push(if version > persisted {
                     format!(
-                        "{remove_id}:{version}/{persisted} DIRTY(ops {}..{version})",
+                        "{remove_id}@{dir}:{version}/{persisted} DIRTY(ops {}..{version})",
                         persisted + 1
                     )
                 } else {
-                    format!("{remove_id}:{version}/{persisted}")
+                    format!("{remove_id}@{dir}:{version}/{persisted}")
                 });
             }
         }
@@ -396,7 +401,12 @@ impl SegmentHolder {
             let guard = new_segment.get();
             let guard = guard.read();
             log::info!(
-                "segment swap: destination {new_id}:{}/{} replaces {remove_ids:?}",
+                "segment swap: destination {new_id}@{}:{}/{} replaces {remove_ids:?}",
+                guard
+                    .data_path()
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
                 guard.version(),
                 guard.persistent_version(),
             );
