@@ -902,6 +902,35 @@ impl LocalShard {
                     return Err(err.clone());
                 }
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
+                Err(err @ CollectionError::PointNotFound { missed_point_id }) => {
+                    log::error!("{err}");
+                    // Replay just declined an operation because its point has no pre-image: the
+                    // reload-divergence signature. Say what each loaded segment knows about the id
+                    // at this exact moment, so the postmortem does not have to reconstruct it from
+                    // acknowledge arithmetic. `WithDeferred` so a deferred-only copy still counts.
+                    let segments = self.segments.read();
+                    let mut sightings = Vec::new();
+                    for (segment_id, locked) in segments.iter() {
+                        let guard = locked.get();
+                        let read = guard.read();
+                        let version = read.point_version(*missed_point_id);
+                        let visible =
+                            read.has_point(*missed_point_id, DeferredBehavior::WithDeferred);
+                        if version.is_some() || visible {
+                            sightings.push(format!(
+                                "segment {segment_id}: visible={visible} version={version:?}"
+                            ));
+                        }
+                    }
+                    log::error!(
+                        "replay decline postmortem: op_num={op_num} id={missed_point_id:?}: {}",
+                        if sightings.is_empty() {
+                            "no loaded segment knows the id".to_string()
+                        } else {
+                            sightings.join("; ")
+                        },
+                    );
+                }
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
             }
