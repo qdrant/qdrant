@@ -130,6 +130,48 @@ pub(super) async fn describe_missing_points(
     out
 }
 
+/// Where every point lives, captured from the live engine: id -> per-segment sightings with the
+/// segment's directory, the point's version there, and the segment's version/persisted pair.
+///
+/// Captured immediately before a restart's `stop_gracefully` and printed for any id the reload
+/// loses, this pins the pre-close side of the custody question: the reload postmortem says which
+/// reloaded directories lack the point, and this says which directory's in-memory state held it,
+/// at what claimed durability. A segment that appears here as clean (version == persisted) but
+/// whose reloaded directory lacks the point is a flush whose content does not match its claim.
+pub(super) async fn capture_placement(
+    collection: &Collection,
+) -> HashMap<PointIdType, Vec<String>> {
+    use common::types::DeferredBehavior;
+
+    let holder = collection.shards_holder.read().await;
+    let mut out: HashMap<PointIdType, Vec<String>> = HashMap::new();
+    for (shard_id, replica_set) in holder.get_shards() {
+        let Some(segments) = replica_set.segments_for_testing().await else {
+            continue;
+        };
+        let segments = segments.read();
+        for (segment_id, locked) in segments.iter() {
+            let guard = locked.get();
+            let read = guard.read();
+            let dir = read
+                .data_path()
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let (seg_version, seg_persisted) = (read.version(), read.persistent_version());
+            for point_id in read.read_range(None, None) {
+                let version = read.point_version(point_id);
+                let deferred = read.point_is_deferred(point_id);
+                out.entry(point_id).or_default().push(format!(
+                    "shard {shard_id} segment {segment_id} dir {dir} point_version={version:?} \
+                     deferred={deferred} segment={seg_version}/{seg_persisted}",
+                ));
+            }
+        }
+    }
+    out
+}
+
 pub(super) fn assert_matches_model(actual: &Model, expected: &Model, ctx: &str) {
     if actual.len() != expected.len() {
         let (extra, missing) = id_diff(actual, expected);

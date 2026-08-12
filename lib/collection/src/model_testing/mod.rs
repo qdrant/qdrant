@@ -734,6 +734,11 @@ pub async fn run(
             // [`verify::assert_clocks_match`] for why both mismatch directions are bugs.
             log::info!("op:{i} restart: collect_clock_ticks");
             let pre_clocks = verify::collect_clock_ticks(&collection).await;
+            // Pre-close placement of every live point (segment, dir, versions), printed for any
+            // id the reload loses. Together with the reload postmortem this makes both sides of
+            // the custody question observable: which directory's memory held the point at close,
+            // and which reloaded directory lacks it. See `verify::capture_placement`.
+            let pre_close_placement = verify::capture_placement(&collection).await;
             log::info!("op:{i} restart: stop_gracefully");
             collection.stop_gracefully().await;
             // `into_inner` makes the invariant checked, not assumed: if any background task still
@@ -764,6 +769,16 @@ pub async fn run(
                     missing.len(),
                     verify::describe_missing_points(&collection, &missing).await,
                 );
+                for id in &missing {
+                    match pre_close_placement.get(id) {
+                        Some(sightings) => {
+                            log::error!("pre-close placement of {id:?}: {}", sightings.join("; "),)
+                        }
+                        None => log::error!(
+                            "pre-close placement of {id:?}: not visible in any segment before close",
+                        ),
+                    }
+                }
             }
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
             // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
