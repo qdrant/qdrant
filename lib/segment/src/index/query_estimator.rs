@@ -4,12 +4,13 @@
 //! - use vector index or payload index first
 
 use std::cmp::{max, min};
+use std::collections::HashSet;
 
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::types::{Condition, Filter, MinShould};
+use crate::types::{Condition, Filter, MinShould, PayloadKeyType};
 
 /// Re-estimate cardinality based on number of available vectors
 /// Assuming that deleted vectors are not correlated with the filter
@@ -188,27 +189,81 @@ pub fn combine_must_estimations(
     estimations: &[CardinalityEstimation],
     total: usize,
 ) -> CardinalityEstimation {
+    let estimations_with_keys = estimations
+        .iter()
+        .cloned()
+        .map(|estimation| (estimation, HashSet::new()))
+        .collect_vec();
+    combine_must_estimations_with_keys(&estimations_with_keys, total)
+}
+
+type EstimationWithKeys = (CardinalityEstimation, HashSet<PayloadKeyType>);
+
+fn combine_must_estimations_with_keys(
+    estimations: &[EstimationWithKeys],
+    total: usize,
+) -> CardinalityEstimation {
     let min_estimation = estimations
         .iter()
-        .map(|x| x.min)
+        .map(|x| x.0.min)
         .fold(total as i64, |acc, x| {
             max(0, acc + (x as i64) - (total as i64))
         }) as usize;
 
-    let max_estimation = estimations.iter().map(|x| x.max).min().unwrap_or(total);
+    let max_estimation = estimations.iter().map(|x| x.0.max).min().unwrap_or(total);
 
-    let exp_estimation_prob: f64 = estimations
+    // Conditions on the same payload key are correlated. Combining their
+    // probabilities independently can under-estimate a filter such as
+    // `color = red AND color != blue`; use the most selective estimate for
+    // each correlated component and keep independent components
+    // multiplicative.
+    let mut correlated_components: Vec<(HashSet<PayloadKeyType>, Vec<CardinalityEstimation>)> =
+        vec![];
+    let mut independent_estimations = vec![];
+    for (estimation, keys) in estimations {
+        if keys.is_empty() {
+            independent_estimations.push(estimation.clone());
+            continue;
+        }
+
+        let mut component_keys = keys.clone();
+        let mut component_estimations = vec![estimation.clone()];
+        let mut component_index = 0;
+        while component_index < correlated_components.len() {
+            if component_keys.is_disjoint(&correlated_components[component_index].0) {
+                component_index += 1;
+                continue;
+            }
+
+            let (keys, estimations) = correlated_components.swap_remove(component_index);
+            component_keys.extend(keys);
+            component_estimations.extend(estimations);
+        }
+        correlated_components.push((component_keys, component_estimations));
+    }
+
+    let mut exp_estimation_prob = independent_estimations
         .iter()
-        .map(|x| (x.exp as f64) / (total as f64))
-        .product();
+        .map(|x| x.exp)
+        .chain(
+            correlated_components
+                .iter()
+                .map(|(_, estimations)| estimations.iter().map(|x| x.exp).min().unwrap_or(total)),
+        )
+        .map(|exp| (exp as f64) / (total as f64))
+        .product::<f64>();
+
+    if total == 0 {
+        exp_estimation_prob = 0.0;
+    }
 
     let exp_estimation = (exp_estimation_prob * (total as f64)).round() as usize;
 
     let clauses = estimations
         .iter()
-        .filter(|x| !x.primary_clauses.is_empty())
-        .min_by_key(|x| x.exp)
-        .map(|x| x.primary_clauses.clone())
+        .filter(|x| !x.0.primary_clauses.is_empty())
+        .min_by_key(|x| x.0.exp)
+        .map(|x| x.0.primary_clauses.clone())
         .unwrap_or_default();
 
     CardinalityEstimation {
@@ -217,6 +272,10 @@ pub fn combine_must_estimations(
         exp: exp_estimation,
         max: max_estimation,
     }
+}
+
+fn condition_keys<'a>(conditions: impl Iterator<Item = &'a Condition>) -> HashSet<PayloadKeyType> {
+    conditions.filter_map(Condition::targeted_key).collect()
 }
 
 fn estimate_condition<F>(
@@ -248,17 +307,23 @@ pub fn estimate_filter<F>(
 where
     F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
-    let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
+    let mut filter_estimations: Vec<EstimationWithKeys> = vec![];
 
     match &filter.must {
         Some(conditions) if !conditions.is_empty() => {
-            filter_estimations.push(estimate_must(estimator, conditions, total)?);
+            filter_estimations.push((
+                estimate_must(estimator, conditions, total)?,
+                condition_keys(conditions.iter()),
+            ));
         }
         Some(_) | None => {}
     }
     match &filter.should {
         Some(conditions) if !conditions.is_empty() => {
-            filter_estimations.push(estimate_should(estimator, conditions, total)?);
+            filter_estimations.push((
+                estimate_should(estimator, conditions, total)?,
+                condition_keys(conditions.iter()),
+            ));
         }
         Some(_) | None => {}
     }
@@ -267,18 +332,23 @@ where
         min_count,
     }) = &filter.min_should
     {
-        filter_estimations.push(estimate_min_should(
-            estimator, conditions, *min_count, total,
-        )?)
+        filter_estimations.push((
+            estimate_min_should(estimator, conditions, *min_count, total)?,
+            condition_keys(conditions.iter()),
+        ))
     }
     match &filter.must_not {
-        Some(conditions) if !conditions.is_empty() => {
-            filter_estimations.push(estimate_must_not(estimator, conditions, total)?)
-        }
+        Some(conditions) if !conditions.is_empty() => filter_estimations.push((
+            estimate_must_not(estimator, conditions, total)?,
+            condition_keys(conditions.iter()),
+        )),
         Some(_) | None => {}
     }
 
-    Ok(combine_must_estimations(&filter_estimations, total))
+    Ok(combine_must_estimations_with_keys(
+        &filter_estimations,
+        total,
+    ))
 }
 
 fn estimate_should<F>(
@@ -321,8 +391,19 @@ where
     F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let estimate = |x| estimate_condition(estimator, x, total);
-    let must_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
-    Ok(combine_must_estimations(&must_estimations?, total))
+    let must_estimations: OperationResult<Vec<_>> = conditions
+        .iter()
+        .map(|condition| {
+            Ok((
+                estimate(condition)?,
+                condition_keys(std::iter::once(condition)),
+            ))
+        })
+        .collect();
+    Ok(combine_must_estimations_with_keys(
+        &must_estimations?,
+        total,
+    ))
 }
 
 pub fn invert_estimation(
@@ -347,10 +428,16 @@ where
 {
     let estimate = |x| -> OperationResult<_> {
         let estimation = estimate_condition(estimator, x, total)?;
-        Ok(invert_estimation(&estimation, total))
+        Ok((
+            invert_estimation(&estimation, total),
+            condition_keys(std::iter::once(x)),
+        ))
     };
     let must_not_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
-    Ok(combine_must_estimations(&must_not_estimations?, total))
+    Ok(combine_must_estimations_with_keys(
+        &must_not_estimations?,
+        total,
+    ))
 }
 
 #[cfg(test)]
@@ -360,7 +447,7 @@ mod tests {
     use super::*;
     use crate::index::field_index::ResolvedHasId;
     use crate::json_path::JsonPath;
-    use crate::types::{FieldCondition, HasIdCondition};
+    use crate::types::{FieldCondition, HasIdCondition, Match};
 
     const TOTAL: usize = 1000;
 
@@ -376,6 +463,13 @@ mod tests {
             geo_polygon: None,
             is_null: None,
         })
+    }
+
+    fn test_match_condition(key: &str, value: &str) -> Condition {
+        Condition::Field(FieldCondition::new_match(
+            JsonPath::new(key),
+            Match::from(value.to_owned()),
+        ))
     }
 
     #[expect(
@@ -670,6 +764,54 @@ mod tests {
 
         let res = combine_must_estimations(&estimations, 10_000);
         eprintln!("res = {res:#?}");
+    }
+
+    #[test]
+    fn same_field_conditions_do_not_assume_independence() {
+        let query = Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![test_match_condition("color", "red")]),
+            must_not: Some(vec![test_match_condition("color", "blue")]),
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
+
+        assert_eq!(estimation.exp, 200);
+    }
+
+    #[test]
+    fn same_field_must_conditions_do_not_multiply_independently() {
+        let query = Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![
+                test_match_condition("color", "red"),
+                test_match_condition("color", "blue"),
+            ]),
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
+
+        assert_eq!(estimation.exp, 200);
+    }
+
+    #[test]
+    fn same_field_conditions_remain_multiplicative_with_independent_fields() {
+        let query = Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![
+                test_match_condition("color", "red"),
+                test_condition("price"),
+            ]),
+            must_not: Some(vec![test_match_condition("color", "blue")]),
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
+
+        assert_eq!(estimation.exp, 3);
     }
 
     #[test]
