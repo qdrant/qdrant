@@ -34,6 +34,11 @@ impl SegmentHolder {
             FlushMode::Sync => true,
             FlushMode::Background => false,
         };
+        // Pass boundary marker: flusher executions have been observed from passes that neither
+        // reach their decision line nor log an error, advancing CoW sources past operations whose
+        // destinations never flushed. Pairing every pass start with the decision at its end makes
+        // a mid-list death visible and, together with the callers' own logs, attributable.
+        log::info!("flush_all start: mode={mode:?} force={force}");
         let lock_order: Vec<_> = self.non_appendable_then_appendable_segments_ids().collect();
 
         // Grab and keep to segment RwLock's until the end of this function
