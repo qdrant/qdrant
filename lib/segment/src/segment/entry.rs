@@ -600,7 +600,6 @@ impl NonAppendableSegmentEntry for Segment {
             .id_tracker
             .borrow()
             .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
-        let append_only = self.is_append_only_delete();
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
@@ -609,17 +608,7 @@ impl NonAppendableSegmentEntry for Segment {
                 point_id,
                 Some(internal_id),
                 |segment| {
-                    if append_only {
-                        // Tombstone-only: leave payload row and field
-                        // indexes at `internal_id` untouched so the on-disk
-                        // structures stay append-only. Readers filter via
-                        // the id tracker's deleted bitslice.
-                        segment.delete_point_tombstone_only(internal_id)?;
-                    } else {
-                        segment.delete_point_internal(internal_id, hw_counter)?;
-                        segment.version_tracker.set_payload(Some(op_num));
-                    }
-
+                    segment.delete_point_internal(internal_id, Some(op_num), hw_counter)?;
                     Ok((true, Some(internal_id)))
                 },
             ),

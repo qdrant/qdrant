@@ -2709,7 +2709,7 @@ fn test_deleted_deferred_point_count() {
         for d in 0..n_deferred {
             let delete_id = segment.id_tracker.borrow().deferred_internal_id().unwrap() + d as u32;
             segment
-                .delete_point_internal(delete_id, &hw_counter)
+                .delete_point_internal(delete_id, None, &hw_counter)
                 .unwrap();
 
             let deleted_count = d + 1; // The first index is 0 but this point is deleted, so count must be 1.
@@ -2724,7 +2724,7 @@ fn test_deleted_deferred_point_count() {
 
             // Do the operation twice to test that we don't double count the same point.
             segment
-                .delete_point_internal(delete_id, &hw_counter)
+                .delete_point_internal(delete_id, None, &hw_counter)
                 .unwrap();
 
             assert_eq!(
