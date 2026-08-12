@@ -15,6 +15,11 @@ pub enum UniversalKind {
     IoUring,
     DiskCache,
     SimpleDiskCache,
+    /// Combined remote-blob + local-mirror handle with locally-buffered
+    /// appends (`io_bridge`'s `CachedBlobFile`). Reads are served like
+    /// [`SimpleDiskCache`](Self::SimpleDiskCache); appends become remotely
+    /// durable only when the flusher runs.
+    CachedBlob,
     S3,
     Gcs,
     Azure,
@@ -29,7 +34,9 @@ impl UniversalKind {
     /// or a remote object store.
     pub fn is_in_ram_or_mmap(self) -> bool {
         match self {
-            UniversalKind::Mmap | UniversalKind::SimpleDiskCache => true,
+            UniversalKind::Mmap | UniversalKind::SimpleDiskCache | UniversalKind::CachedBlob => {
+                true
+            }
             UniversalKind::IoUring
             | UniversalKind::DiskCache
             | UniversalKind::S3
@@ -45,6 +52,7 @@ impl UniversalKind {
             UniversalKind::IoUring
             | UniversalKind::DiskCache
             | UniversalKind::SimpleDiskCache
+            | UniversalKind::CachedBlob
             | UniversalKind::S3
             | UniversalKind::Gcs
             | UniversalKind::Azure

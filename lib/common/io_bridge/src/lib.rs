@@ -99,6 +99,7 @@
 //!   the buffer back as a plain `AVec<u8>`. This removes the two redundant
 //!   copies that an "aggregate to `Bytes`, then copy out" path would do.
 
+mod cached;
 mod file;
 mod fs;
 mod pipeline;
@@ -116,6 +117,9 @@ pub(crate) const LATENCY_LOG_TARGET: &str = "io_bridge::latency";
 #[cfg(test)]
 mod tests;
 
+pub use cached::{
+    AppendMode, CachedBlobFile, CachedBlobFs, CachedBlobFsContext, CachedBlobReadPipeline,
+};
 pub use file::BlobFile;
 pub use fs::BlobFs;
 pub use pipeline::BlobReadPipeline;
