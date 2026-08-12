@@ -16,6 +16,7 @@ pub mod mappings;
 pub mod on_disk_format;
 pub mod read_only;
 mod reader;
+pub mod update_only;
 
 #[cfg(test)]
 mod tests;
