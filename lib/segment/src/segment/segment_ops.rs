@@ -655,11 +655,25 @@ impl Segment {
         Ok(applied)
     }
 
+    /// `op_num` is only used to bump the payload-storage entry in
+    /// `Segment::version_tracker`, so pass `None` when there is no
+    /// associated operation (e.g. repair on load).
     pub fn delete_point_internal(
         &mut self,
         internal_id: PointOffsetType,
+        op_num: Option<SeqNumberType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        if self.is_append_only_delete() {
+            // Tombstone-only: leave the payload row and field-index postings
+            // at `internal_id` in place so the on-disk structures stay
+            // append-only. Readers filter the tombstone via the id tracker's
+            // deleted bitslice (see
+            // `PointMappingsRefEnum::filter_deferred_and_deleted`). Payload
+            // storage is untouched, so the version tracker is not bumped.
+            return self.id_tracker.borrow_mut().drop_internal(internal_id);
+        }
+
         // Mark point as deleted, drop mapping
         self.payload_index
             .borrow_mut()
@@ -671,6 +685,9 @@ impl Segment {
         // the point sits at or above the deferred threshold, with double-delete
         // protection inside `PointMappings::drop`.
         id_tracker.drop_internal(internal_id)?;
+        drop(id_tracker);
+
+        self.version_tracker.set_payload(op_num);
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data
@@ -685,18 +702,6 @@ impl Segment {
         // }
 
         Ok(())
-    }
-
-    /// Append-only counterpart to [`Segment::delete_point_internal`]: only
-    /// touches the id tracker, leaving the payload row and field-index
-    /// postings at `internal_id` in place. Readers filter the tombstone
-    /// via the id tracker's deleted bitslice (see
-    /// `PointMappingsRefEnum::filter_deferred_and_deleted`).
-    pub fn delete_point_tombstone_only(
-        &mut self,
-        internal_id: PointOffsetType,
-    ) -> OperationResult<()> {
-        self.id_tracker.borrow_mut().drop_internal(internal_id)
     }
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
@@ -779,7 +784,7 @@ impl Segment {
             );
 
             for internal_id in ids_to_clean {
-                self.delete_point_internal(internal_id, &disposable_hw_counter)?;
+                self.delete_point_internal(internal_id, None, &disposable_hw_counter)?;
             }
 
             self.flush(true)?;
