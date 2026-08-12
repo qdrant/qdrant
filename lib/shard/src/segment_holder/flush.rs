@@ -232,6 +232,26 @@ impl SegmentHolder {
         }
     }
 
+    /// Segment ids holding not-yet-flushed copy-on-write destinations of `segment_id`'s moves.
+    ///
+    /// Every copy-on-write move out of `segment_id` records an edge here (see
+    /// `apply_points_with_conditional_move`); until the destination is durable at or beyond the
+    /// move, flushing `segment_id` durably bakes in the delete half while the only remaining copy
+    /// is memory-only, and the move's WAL entry stops being replayable (its pre-image is gone).
+    /// Any flush of a single segment outside `flush_all`'s dependency-ordered pass must therefore
+    /// flush these destinations first.
+    ///
+    /// Sorted so callers lock destinations in `flush_all`'s in-group order.
+    pub fn cow_flush_destinations(&self, segment_id: SegmentId) -> Vec<SegmentId> {
+        let flush_dependency = self.flush_dependency.lock();
+        let mut destinations: Vec<SegmentId> = flush_dependency
+            .dependencies_of(&segment_id)
+            .map(|(destination, _version)| *destination)
+            .collect();
+        destinations.sort_unstable();
+        destinations
+    }
+
     /// Calculates the version of the segments that is safe to acknowledge in WAL
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
