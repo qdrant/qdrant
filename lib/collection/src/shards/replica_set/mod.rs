@@ -1008,6 +1008,7 @@ impl ShardReplicaSet {
         hw_measurement_acc: HwMeasurementAcc,
         force: bool,
         deferred_behavior: DeferredBehavior,
+        wait: WaitUntil,
     ) -> CollectionResult<UpdateResult> {
         let local_shard_guard = self.local.read().await;
 
@@ -1065,13 +1066,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(
-                op.into(),
-                WaitUntil::Visible,
-                None,
-                hw_measurement_acc,
-                force,
-            )
+            .update_local(op.into(), wait, None, hw_measurement_acc, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(
