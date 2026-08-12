@@ -116,7 +116,10 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             // Dense-ascending batches stream; the hardware prefetcher already
             // covers them and software prefetch is pure overhead. Batches no
             // longer than the window would only be prefetched right before
-            // use, too late to hide anything.
+            // use, too late to hide anything. Scoring two vectors takes about
+            // as long as a memory fetch (~80 ns), so a prefetch issued two
+            // vectors ahead arrives just in time; deeper windows benched
+            // neutral.
             const PREFETCH_AHEAD: usize = 2;
             if sequential || vectors.len() <= PREFETCH_AHEAD {
                 for (vector_idx, vector) in vectors.iter().enumerate() {

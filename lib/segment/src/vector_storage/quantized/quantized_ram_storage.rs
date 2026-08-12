@@ -135,7 +135,9 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         // Dense-ascending batches stream; the hardware prefetcher already
         // covers them and software prefetch is pure overhead. Batches no
         // longer than the window would only be prefetched right before use,
-        // too late to hide anything.
+        // too late to hide anything. Scoring two vectors takes about as long
+        // as a memory fetch (~80 ns), so a prefetch issued two vectors ahead
+        // arrives just in time; deeper windows benched neutral.
         const PREFETCH_AHEAD: usize = 2;
         if offsets.len() <= PREFETCH_AHEAD || is_read_with_prefetch_efficient(offsets) {
             default_for_each_batch(self, offsets, callback);

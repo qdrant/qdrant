@@ -18,8 +18,8 @@ const MAX_PREFETCH_LINES: usize = 16;
 /// Best-effort software prefetch (temporal, all cache levels) of the cache
 /// lines spanning `bytes`, capped at [`MAX_PREFETCH_LINES`].
 ///
-/// Experimental: used to overlap the scattered-load latency of HNSW batch
-/// scoring. A prefetch is only a hint and never faults, so this is always safe.
+/// Used to overlap the scattered-load latency of batch scoring. A prefetch is
+/// only a hint and never faults, so this is always safe.
 /// No-op on targets other than x86_64 and aarch64.
 #[inline(always)]
 pub fn prefetch_slice(bytes: &[u8]) {
