@@ -39,9 +39,7 @@ use crate::types::PointIdType;
 /// decides the writer's kind.
 pub enum WriterIdTrackerState {
     Appendable(AppendableIdTrackerState),
-    /// `None` when the read phase did not hold the deleted mask in memory;
-    /// the writer then reads it itself.
-    DeleteOnly(Option<DeleteOnlyIdTrackerState>),
+    DeleteOnly(DeleteOnlyIdTrackerState),
 }
 
 /// The tail of an appendable segment's mappings log, as the read phase saw it.
@@ -59,8 +57,11 @@ pub struct AppendableIdTrackerState {
     pub mappings_end: u64,
 }
 
-/// An immutable segment's deleted-points mask as the read phase held it in
-/// memory, sparing the writer the read of the mask file.
-pub struct DeleteOnlyIdTrackerState {
-    pub deleted: BitVec,
+/// Which immutable id tracker the read phase found — deciding which
+/// update-only tracker the writer resumes with — carrying the deleted-points
+/// mask when the read phase held it in memory, sparing the writer the read of
+/// the mask file. `None` means the writer's tracker reads it itself.
+pub enum DeleteOnlyIdTrackerState {
+    Immutable(Option<BitVec>),
+    DiskResident(Option<BitVec>),
 }
