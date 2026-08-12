@@ -33,6 +33,7 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
+use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -52,7 +53,7 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
         open_args: HnswIndexOpenArgs<'_>,
-        build_args: VectorIndexBuildArgs<'_, R>,
+        build_args: VectorIndexBuildArgs<'_, '_, R>,
     ) -> OperationResult<Self> {
         if HnswGraphConfig::get_config_path(open_args.path).exists()
             || GraphLayers::get_path(open_args.path).exists()
@@ -76,7 +77,7 @@ impl HNSWIndex {
         let VectorIndexBuildArgs {
             permit,
             old_indices,
-            gpu_device,
+            mut gpu_device,
             rng,
             stopped,
             hnsw_global_config,
@@ -167,7 +168,7 @@ impl HNSWIndex {
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
         #[cfg(feature = "gpu")]
-        let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
+        let gpu_name_postfix = if let Some(gpu_device) = gpu_device.as_deref() {
             format!(" and GPU {}", gpu_device.device().name())
         } else {
             Default::default()
@@ -251,7 +252,7 @@ impl HNSWIndex {
         let gpu_vectors = if needs_gpu_vectors {
             let timer = std::time::Instant::now();
             let gpu_vectors = super::gpu_build::create_gpu_vectors(
-                gpu_device,
+                gpu_device.as_deref_mut(),
                 &vector_storage_ref,
                 &quantized_vectors_ref,
                 stopped,
@@ -262,6 +263,7 @@ impl HNSWIndex {
                     &vector_storage_ref,
                     &quantized_vectors_ref,
                     gpu_vectors.as_ref(),
+                    gpu_device.as_deref_mut(),
                     &graph_layers_builder,
                     deleted_bitslice,
                     num_entries,
@@ -512,6 +514,7 @@ impl HNSWIndex {
                         &vector_storage_ref,
                         &quantized_vectors_ref,
                         &mut gpu_insert_context,
+                        gpu_device.as_deref_mut(),
                         &payload_index_ref,
                         &pool,
                         stopped,
@@ -633,6 +636,10 @@ fn build_filtered_graph(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     #[allow(unused_variables)] gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
+    // See build_main_graph_on_gpu's identical parameter (hnsw/gpu_build.rs) for why this is
+    // threaded through — lets a DEVICE_LOST during THIS (additional-links) GPU dispatch also
+    // recreate the device in place, not just the main-graph dispatch above.
+    #[allow(unused_variables)] gpu_device: Option<&mut LockedGpuDevice>,
     payload_index: &StructPayloadIndex,
     pool: &ThreadPool,
     stopped: &AtomicBool,
@@ -656,6 +663,7 @@ fn build_filtered_graph(
         id_tracker,
         vector_storage,
         quantized_vectors,
+        gpu_device,
         gpu_insert_context.as_mut(),
         graph_layers_builder,
         block_filter_list,
