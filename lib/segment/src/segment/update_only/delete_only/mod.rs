@@ -3,55 +3,85 @@
 
 use std::path::{Path, PathBuf};
 
+use common::mmap::AdviceSetting;
+use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalWrite;
+use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalWriteFileOps};
 
-use crate::common::operation_error::OperationResult;
+use super::DeleteOnlyIdTrackerState;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::types::PointIdType;
 
-/// A segment open for deletes: its mappings, payloads, vectors and indexes
-/// cannot grow, so the only thing a batch can do to it is retire points that
-/// are already there.
+/// A segment open for deletes: nothing in it can grow, so the only thing a
+/// batch can do here is retire points that are already there. Needs only
+/// reads plus [`atomic_save`] from the backend, so object stores qualify.
 ///
-/// This is what every immutable segment of a shard becomes when a batch
-/// touches it — including the segments a point is *moved out of*, whose old
-/// copy has to stop resolving.
-pub struct DeleteOnlySegment<S: UniversalWrite + 'static> {
-    /// Backend the writes go through.
-    // Unread until the deleted-points bitmask can be written, see
-    // `tombstone_points`.
-    #[expect(dead_code)]
+/// [`atomic_save`]: UniversalWriteFileOps::atomic_save
+pub struct DeleteOnlySegment<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> {
     fs: S::Fs,
-    /// Path to the segment directory.
-    #[expect(dead_code)]
     segment_path: PathBuf,
+    /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
+    /// place of reading the mask file.
+    id_tracker_state: Option<DeleteOnlyIdTrackerState>,
 }
 
-impl<S: UniversalWrite + 'static> DeleteOnlySegment<S> {
-    /// Open the segment directory at `segment_path` for deletes. Nothing is
-    /// read: an immutable segment's deleted-points bitmask covers slots that
-    /// already exist, so a writer resuming it needs no state from the read
-    /// phase.
-    pub fn open(fs: S::Fs, segment_path: &Path) -> Self {
+impl<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> DeleteOnlySegment<S> {
+    /// Open the segment directory at `segment_path` for deletes; nothing is
+    /// read.
+    pub fn open(
+        fs: S::Fs,
+        segment_path: &Path,
+        id_tracker_state: Option<DeleteOnlyIdTrackerState>,
+    ) -> Self {
         Self {
             fs,
             segment_path: segment_path.to_path_buf(),
+            id_tracker_state,
         }
     }
 
-    /// Retire the given points, addressed by the slots they occupy — their
-    /// external ids play no part here, an immutable mapping cannot record a
-    /// deletion.
-    ///
-    /// Nothing but the deleted-points bitmask is written: the payload row, the
-    /// vectors and the field indexes at those slots are left untouched.
+    /// Retire the given points by marking the slots they occupy in the
+    /// deleted-points bitmask (`id_tracker.deleted`) — the only thing
+    /// written, the data on those slots stays. The mask is replaced whole,
+    /// see [`StoredBitSlice::atomic_update`].
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        let _ = points;
-        // Today's bitmask is mutated in place at an offset, which an object
-        // store cannot do.
-        todo!("needs an appendable deleted-points bitmask (`DynamicStoredFlags`)")
+        if points.is_empty() {
+            return Ok(());
+        }
+
+        let seed = self.id_tracker_state.take().map(|state| state.deleted);
+
+        StoredBitSlice::<S>::atomic_update(
+            &self.fs,
+            deleted_path(&self.segment_path),
+            OpenOptions {
+                writeable: false,
+                need_sequential: false,
+                populate: Populate::No,
+                advice: AdviceSetting::Global,
+            },
+            Default::default(),
+            seed,
+            |mask| {
+                for &(point_id, internal_id) in points {
+                    let slot = internal_id as usize;
+                    // A slot beyond the mask names a point this segment cannot hold.
+                    if slot >= mask.len() {
+                        return Err(OperationError::service_error(format!(
+                            "cannot tombstone point {point_id} of segment {}: slot {internal_id} \
+                             is beyond its deleted mask ({} slots)",
+                            self.segment_path.display(),
+                            mask.len(),
+                        )));
+                    }
+                    mask.set(slot, true);
+                }
+                Ok(())
+            },
+        )?
     }
 }

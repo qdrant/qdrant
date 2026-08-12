@@ -13,9 +13,11 @@ use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointOperations::DeletePoints;
 use tempfile::TempDir;
 
-use crate::EdgeShard;
-use crate::read_only::tests::{exact_count, open_follower, scrolled_ids, test_config, upsert};
+use crate::read_only::tests::{
+    delete as leader_delete, exact_count, open_follower, scrolled_ids, test_config, upsert,
+};
 use crate::update_only::UpdateOnlyEdgeShard;
+use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
 /// wrote it closed — a writer opens a directory, not a running shard.
@@ -86,6 +88,74 @@ fn replayed_delete_batch_is_a_no_op() {
 
     let follower = open_follower(dir.path());
     assert_eq!(exact_count(&follower), 9);
+}
+
+/// A flushed shard directory whose points 301 to 1000 live in an immutable
+/// segment: deleting 30% triggers a vacuum, and the lowered indexing
+/// threshold makes the rebuild non-appendable.
+fn vacuumed_leader(prefix: &str) -> TempDir {
+    let dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+
+    let config = EdgeConfig {
+        optimizers: Some(EdgeOptimizersConfig {
+            deleted_threshold: Some(0.2),
+            vacuum_min_vector_number: Some(1),
+            indexing_threshold: Some(1),
+            ..EdgeOptimizersConfig::default()
+        }),
+        ..test_config()
+    };
+    let leader = EdgeShard::new(dir.path(), config).unwrap();
+    upsert(&leader, 1..=1000);
+    leader_delete(&leader, 1..=300);
+    leader.flush().unwrap();
+    assert!(leader.optimize().unwrap(), "expected a vacuum to run");
+    leader.flush().unwrap();
+
+    dir
+}
+
+/// A delete against an immutable segment rewrites its deleted-points bitmask,
+/// visibly to a fresh writer and to an ordinary follower alike.
+#[cfg_attr(
+    windows,
+    ignore = "the tombstone rewrite replaces id_tracker.deleted while the writer's own \
+              LookupSegment holds it memory-mapped, which Windows refuses"
+)]
+#[test]
+fn delete_batch_tombstones_points_in_immutable_segments() {
+    let dir = vacuumed_leader("edge-update-delete-immutable");
+
+    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+
+    // The segment holding point 500 must not be the write target, or the
+    // test dodges the delete-only path.
+    let preview = writer.preview_batch(delete_batch([500])).unwrap();
+    let holder = preview.points[0].current.as_ref().unwrap().segment;
+    assert!(
+        !writer
+            .segment_configs()
+            .iter()
+            .any(|info| info.uuid == holder && info.is_write_target),
+        "point 500 should live in a non-appendable segment",
+    );
+
+    let outcome = writer.apply_batch(delete_batch([500])).unwrap();
+    assert_eq!(outcome.deleted, 1);
+
+    // A fresh writer resolves against the rewritten mask.
+    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let replayed = writer.apply_batch(delete_batch([500])).unwrap();
+    assert_eq!(replayed.deleted, 0);
+    assert_eq!(replayed.missing, 1);
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 699);
+    let ids = scrolled_ids(&follower);
+    assert_eq!(ids.len(), 699);
+    assert!(!ids.contains(&ExtendedPointId::NumId(500)));
+    assert!(ids.contains(&ExtendedPointId::NumId(499)));
+    assert!(ids.contains(&ExtendedPointId::NumId(501)));
 }
 
 /// The store tests cannot run on Windows: the leader's writable storage

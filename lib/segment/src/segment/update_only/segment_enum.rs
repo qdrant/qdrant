@@ -6,7 +6,7 @@ use std::path::Path;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalWrite};
 
-use super::{AppendableIdTrackerState, AppendableSegment, DeleteOnlySegment};
+use super::{AppendableSegment, DeleteOnlySegment, WriterIdTrackerState};
 use crate::common::operation_error::OperationResult;
 use crate::types::{PointIdType, SegmentConfig};
 
@@ -17,23 +17,21 @@ pub enum UpdateOnlySegmentEnum<S: UniversalAppend + UniversalWrite + 'static> {
 }
 
 impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlySegmentEnum<S> {
-    /// Open a writer over the segment directory at `segment_path`: appendable
-    /// when the read phase handed over a mappings-log state to resume from,
-    /// delete-only when it had none to give.
+    /// Open a writer over the segment directory at `segment_path`, of the
+    /// kind the read phase's `id_tracker_state` dictates.
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
         config: &SegmentConfig,
-        id_tracker_state: Option<AppendableIdTrackerState>,
+        id_tracker_state: WriterIdTrackerState,
     ) -> OperationResult<Self> {
         Ok(match id_tracker_state {
-            Some(state) => Self::Appendable(Box::new(AppendableSegment::open(
-                fs.clone(),
-                segment_path,
-                config,
-                state,
-            )?)),
-            None => Self::DeleteOnly(DeleteOnlySegment::open(fs.clone(), segment_path)),
+            WriterIdTrackerState::Appendable(state) => Self::Appendable(Box::new(
+                AppendableSegment::open(fs.clone(), segment_path, config, state)?,
+            )),
+            WriterIdTrackerState::DeleteOnly(state) => {
+                Self::DeleteOnly(DeleteOnlySegment::open(fs.clone(), segment_path, state))
+            }
         })
     }
 
