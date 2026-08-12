@@ -489,6 +489,19 @@ impl StorageSegmentEntry for Segment {
                 return Ok(());
             };
 
+            // Every durable-state write for a segment funnels through this closure, whichever
+            // caller captured it (flush worker, snapshot force-flush, testing helpers). A source
+            // segment's on-disk version has been observed advancing past a CoW operation with no
+            // flush-pass decision logged in the window, so flush executions must be individually
+            // attributable, not only pass-level decisions.
+            log::info!(
+                "segment flush exec: dir {:?} captured_version={:?}",
+                segment_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned()),
+                state.version,
+            );
+
             let flush_components = || {
                 // Flush mapping first to prevent having orphan internal ids.
 
