@@ -812,8 +812,6 @@ fn check_segments_size(
 }
 
 /// Performs optimization of segments (merge / reindex / vacuum, etc.)
-#[allow(clippy::too_many_arguments)]
-
 /// Test-only seam: a callback invoked after the sources are wrapped in proxies and before the
 /// optimized segment is built, so a deterministic test can inject operations into exactly the
 /// window a concurrent workload occupies in production. Thread-local: the callback fires on the
@@ -843,6 +841,7 @@ pub mod test_hooks {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     optimizer_name: &'static str,
     segment_holder: LockedSegmentHolder,
