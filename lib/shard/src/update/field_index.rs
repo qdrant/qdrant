@@ -20,7 +20,7 @@ pub fn create_field_index(
         });
     };
 
-    segments.apply_segments(|write_segment| {
+    segments.apply_segments_with_id(|segment_id, write_segment| {
         write_segment.with_upgraded(|segment| {
             segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)
         })?;
@@ -42,7 +42,33 @@ pub fn create_field_index(
         let already_indexed =
             write_segment.get_indexed_fields().get(field_name) == Some(field_schema);
         if !already_indexed {
-            segments.with_flush_serialized(|| write_segment.flush(true))?;
+            // This flush durably advances the segment PAST the delete halves of any pending
+            // copy-on-write moves out of it. Those moves are only replayable while a durable
+            // pre-image exists, so their destinations must be durable at or beyond the move
+            // BEFORE the source flushes: flush them first, mirroring `flush_all`'s dependency
+            // ordering. Destinations absent from the holder already left through the optimizer's
+            // pinned swap path, which caps the WAL acknowledge until they are durable.
+            //
+            // Destination guards are taken before entering the flush lock to keep the
+            // [segment locks -> flush lock] ordering documented on `with_flush_serialized`.
+            // Lock order within segments also matches `apply_points_to_appendable`
+            // (copy-on-write source first, then the appendable destination).
+            let cow_destinations: Vec<_> = segments
+                .cow_flush_destinations(segment_id)
+                .into_iter()
+                .filter_map(|destination_id| segments.get(destination_id))
+                .map(|destination| destination.get())
+                .collect();
+            let destination_guards: Vec<_> = cow_destinations
+                .iter()
+                .map(|destination| destination.read())
+                .collect();
+            segments.with_flush_serialized(|| {
+                for destination in &destination_guards {
+                    destination.flush(true)?;
+                }
+                write_segment.flush(true)
+            })?;
         }
 
         let (schema, indexes) =

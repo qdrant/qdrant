@@ -851,9 +851,19 @@ impl SegmentHolder {
             &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
+        self.apply_segments_with_id(|_id, segment| f(segment))
+    }
+
+    pub fn apply_segments_with_id<F>(&self, mut f: F) -> OperationResult<usize>
+    where
+        F: FnMut(
+            SegmentId,
+            &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
+        ) -> OperationResult<bool>,
+    {
         let mut processed_segments = 0;
-        for (_id, segment) in self.iter() {
-            let is_applied = f(&mut segment.get().upgradable_read())?;
+        for (id, segment) in self.iter() {
+            let is_applied = f(id, &mut segment.get().upgradable_read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
