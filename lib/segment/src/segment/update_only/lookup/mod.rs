@@ -56,15 +56,13 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
                 })
             }
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
-                WriterIdTrackerState::DeleteOnly(Some(DeleteOnlyIdTrackerState {
-                    deleted: id_tracker.deleted_point_bitslice().to_bitvec(),
-                }))
+                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::Immutable(Some(
+                    id_tracker.deleted_point_bitslice().to_bitvec(),
+                )))
             }
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                WriterIdTrackerState::DeleteOnly(id_tracker.deleted_full_if_materialized().map(
-                    |deleted| DeleteOnlyIdTrackerState {
-                        deleted: deleted.clone(),
-                    },
+                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::DiskResident(
+                    id_tracker.deleted_full_if_materialized().cloned(),
                 ))
             }
         }

@@ -6,6 +6,7 @@ mod versions_storage;
 pub(super) mod tests;
 
 pub mod read_only;
+pub mod update_only;
 
 use std::fmt::Debug;
 use std::io::{BufReader, BufWriter, Write};
@@ -23,7 +24,7 @@ use common::universal_io::{
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
-pub(crate) use self::deleted_storage::deleted_path;
+pub(crate) use self::deleted_storage::{deleted_path, tombstone_points_in_stored_mask};
 pub use self::mappings_storage::{MAPPINGS_FILE_NAME, mappings_path};
 use self::mappings_storage::{load_mapping, store_mapping};
 pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
