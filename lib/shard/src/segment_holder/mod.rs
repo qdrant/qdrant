@@ -1291,8 +1291,32 @@ impl SegmentHolder {
             self.add_existing_locked(segment_id, tmp_segment);
             Ok(false)
         } else {
-            log::trace!("Dropping temporary segment with no changes");
-            tmp_segment.drop_data()?;
+            let (version, persisted) = {
+                let read = tmp_segment.get();
+                let read = read.read();
+                (read.version(), read.persistent_version())
+            };
+            if version > persisted {
+                // Empty, but dirty: points transited through this segment (copy-on-write moved in,
+                // then on) without any of it flushing. The segment's own files hold nothing worth
+                // keeping, but while it was a holder member its unsaved range capped the durable
+                // waterline, and dropping it here would lift that cap: upstream source-retirement
+                // pins could then release while the transit operations are neither durable
+                // anywhere nor re-derivable (their pre-images go down with the retired sources),
+                // which loses the points on the next restart. Leave the same pin a swap eviction
+                // leaves: the WAL acknowledge stays at `persisted` until the waterline covers
+                // `version`, i.e. until every segment holding the moved copies has flushed past
+                // the transit range.
+                log::trace!(
+                    "Dropping empty temporary segment with unflushed transit ops \
+                     {}..{version} behind a post-flush pin",
+                    persisted + 1,
+                );
+                self.register_segment_drop(version, persisted, tmp_segment);
+            } else {
+                log::trace!("Dropping temporary segment with no changes");
+                tmp_segment.drop_data()?;
+            }
             Ok(true)
         }
     }
