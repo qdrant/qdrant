@@ -1,0 +1,30 @@
+name: qdrant_edge
+description: >-
+  On-device vector search for Dart and Flutter, powered by the qdrant-edge Rust
+  engine through UniFFI — the same shared FFI crate as the Swift and Kotlin SDKs.
+version: 0.8.0
+repository: https://github.com/qdrant/qdrant
+homepage: https://qdrant.tech/documentation/edge/
+issue_tracker: https://github.com/qdrant/qdrant/issues
+topics:
+  - vector-search
+  - embeddings
+  - database
+  - ffi
+  - on-device
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+
+# `hooks` + `code_assets` drive the Native Assets build hook (hook/build.dart);
+# `ffi` backs the generated `@Native` bindings; `crypto` SHA256-verifies the
+# prebuilt cdylibs the hook downloads from the release (see README "Distribution").
+dependencies:
+  ffi: ^2.1.0
+  hooks: ^2.0.0
+  code_assets: ^1.2.0
+  crypto: ^3.0.0
+
+dev_dependencies:
+  test: ^1.24.0
+  lints: ^5.0.0
