@@ -1615,6 +1615,7 @@ message PointsIdsList {
 // ---------------------------------------------
 
 message PointStruct {
+  // Must be set: the server rejects a point without an id
   PointId id = 1;
   // deprecated "vector" field
   reserved 2;
