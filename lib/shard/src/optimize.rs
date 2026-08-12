@@ -4,10 +4,10 @@
 //! The collection layer provides the strategy via `OptimizationStrategy`.
 
 use std::collections::HashSet;
-use std::debug_assert_matches;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::{cmp, debug_assert_matches};
 
 use ahash::AHashSet;
 use common::budget::{ResourceBudget, ResourcePermit};
@@ -615,11 +615,10 @@ fn finish_optimization(
     // (and out of the optimized segment's in-memory state, which the next optimization bakes into
     // its build output) while their new copies may still sit unflushed in appendable segments. WAL
     // replay can only re-derive those moves from the on-disk pre-images, so the files must survive
-    // until a flush proves this optimization durable. Register the destruction as a post-flush
-    // action: it runs once the durable waterline covers `optimized_segment_version`, and until then
-    // the WAL acknowledge stays capped at each source's persisted version (the same pin the proxy
-    // imposed while the optimization ran), so every operation the files contradict, deletions in
-    // particular, is replayed and re-applied on a restart. See
+    // until a flush proves the moved copies durable. Register the destruction as a post-flush
+    // action; until it runs, the WAL acknowledge stays capped at each source's persisted version
+    // (the same pin the proxy imposed while the optimization ran), so every operation the files
+    // contradict, deletions in particular, is replayed and re-applied on a restart. See
     // `SegmentHolder::register_post_flush_action`.
     //
     // This cap has to be tracked at the holder level because the proxy can no longer
@@ -630,28 +629,31 @@ fn finish_optimization(
     // gone from the holder's flush accounting even though the source files it protected are
     // still on disk. `register_segment_drop` re-expresses the same pin independently of segment
     // membership, snapshotting each proxy's final `persistent_version` as `ack_pin`.
+    //
+    // The release threshold is `max(optimized_segment_version, proxy version)`, and the second
+    // half is what makes the re-expression faithful. A copy-on-write move during the optimization
+    // put the point's new copy in the shared appendable write segment and recorded a delete in the
+    // proxy; that delete is baked into the optimized segment as a durable tombstone, so after this
+    // source is dropped the pre-image survives nowhere else, while the write segment may not flush
+    // for a long time. Releasing at `optimized_segment_version` alone destroyed the pre-image as
+    // soon as the destination was durable: a restart then discarded the write segment's unflushed
+    // copy, and replaying the still-acknowledged CoW operation failed for want of the pre-image,
+    // losing the point (the nightly model-testing reload divergence). The proxy's version covers
+    // every such CoW operation (its delete half bumped it), and the durable waterline cannot reach
+    // it until the write segment holding the copies has flushed past it, or has itself been
+    // optimized into a built (hence on-disk) destination whose own pin extends the chain.
     for proxy in proxies {
-        let ack_pin = proxy.get().read().persistent_version();
-        // The pin is released once the waterline covers `optimized_segment_version`, so a proxy
-        // whose version sits above that is the case to watch: whatever those operations touched is
-        // not represented by the destination, and after the release nothing pins them either.
-        // Splitting the proxy's version into its wrapped and propagated halves says which side
-        // carries them, which decides whether that gap is benign bookkeeping or lost data.
-        let proxy_version = proxy.get().read().version();
-        let wrapped_version = match &proxy {
-            LockedSegment::Proxy(p) => p.read().wrapped_segment.get().read().version(),
-            LockedSegment::Original(_) => proxy_version,
+        let (ack_pin, proxy_version) = {
+            let guard = proxy.get();
+            let read = guard.read();
+            (read.persistent_version(), read.version())
         };
+        let ready_at = cmp::max(optimized_segment_version, proxy_version);
         log::info!(
-            "segment drop pin: ack_pin={ack_pin} ready_at={optimized_segment_version} \
-             proxy_version={proxy_version} wrapped_version={wrapped_version}{}",
-            if proxy_version > optimized_segment_version {
-                " ABOVE_DESTINATION"
-            } else {
-                ""
-            },
+            "segment drop pin: ack_pin={ack_pin} ready_at={ready_at} \
+             proxy_version={proxy_version} destination_version={optimized_segment_version}",
         );
-        read_segment_holder.register_segment_drop(optimized_segment_version, ack_pin, proxy);
+        read_segment_holder.register_segment_drop(ready_at, ack_pin, proxy);
     }
 
     drop(read_segment_holder);
