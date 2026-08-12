@@ -1620,6 +1620,8 @@ message PointStruct {
   // deprecated "vector" field
   reserved 2;
   map<string, Value> payload = 3;
+  // Optional on the wire, but required in practice: the server rejects a point
+  // without vectors
   optional Vectors vectors = 4;
 }
 
