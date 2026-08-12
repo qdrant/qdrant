@@ -77,7 +77,7 @@ message Image {
 }
 
 message InferenceObject {
-  // Object to infer
+  // Object to infer. Must be set: the server rejects a request without it
   Value object = 1;
   // Model name
   string model = 2;
