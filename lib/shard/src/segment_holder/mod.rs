@@ -1169,8 +1169,16 @@ impl SegmentHolder {
                         // delete (a plain delete the model also applies cannot lose a point the
                         // model keeps), so ledger both: together with the proxy's delete line this
                         // makes the full life of any lost id greppable in a failing run.
+                        // The source's persisted version against the point's version says whether
+                        // the pre-image this move consumes was durable at this moment: replay can
+                        // only re-derive the move if it still is at reopen. Recording it per hop
+                        // turns a lost id's ledger into a custody chain with numbers.
                         log::info!(
-                            "cow move: point {point_id:?} op {op_num} segment {idx} -> {appendable_idx}"
+                            "cow move: point {point_id:?} op {op_num} segment {idx} -> {appendable_idx} \
+                             (source version={}/persisted={}, point pre-version={:?})",
+                            write_segment.version(),
+                            write_segment.persistent_version(),
+                            write_segment.point_version(point_id),
                         );
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
