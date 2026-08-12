@@ -634,13 +634,13 @@ impl SegmentBuilder {
             #[cfg(feature = "gpu")]
             let gpu_devices_manager = crate::index::hnsw_index::gpu::GPU_DEVICES_MANAGER.read();
             #[cfg(feature = "gpu")]
-            let gpu_device = gpu_devices_manager
+            let mut gpu_device = gpu_devices_manager
                 .as_ref()
                 .map(|devices_manager| devices_manager.lock_device(stopped))
                 .transpose()?
                 .flatten();
             #[cfg(not(feature = "gpu"))]
-            let gpu_device = None;
+            let mut gpu_device = None;
 
             // Arc permit to share it with each vector store
             let permit = Arc::new(permit);
@@ -663,7 +663,7 @@ impl SegmentBuilder {
                     VectorIndexBuildArgs {
                         permit: permit.clone(),
                         old_indices: &old_indices.remove(vector_name).unwrap(),
-                        gpu_device: gpu_device.as_ref(),
+                        gpu_device: gpu_device.as_mut(),
                         stopped,
                         rng,
                         hnsw_global_config: &hnsw_global_config,
