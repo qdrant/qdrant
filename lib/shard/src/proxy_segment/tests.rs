@@ -665,7 +665,7 @@ fn test_proxy_deferred() {
     let initial_deferred_point_count = wrapped_segment.size_info().num_deferred_points.unwrap();
 
     wrapped_segment
-        .delete_point_internal(3, &hw_counter)
+        .delete_point_internal(3, None, &hw_counter)
         .unwrap();
 
     assert_eq!(

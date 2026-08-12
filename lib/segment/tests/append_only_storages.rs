@@ -134,8 +134,15 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     drop(segment);
 
     // Everything survives a reload through the ordinary loader.
-    let segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let mut segment =
+        load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
     assert!(segment.append_only_mutations);
+
+    // The repair every shard loader runs; deleting the leftovers it finds would
+    // fail here, leaving the segment permanently unopenable.
+    segment
+        .check_consistency_and_repair()
+        .expect("append-only leftovers must not be reported as inconsistencies");
 
     assert_eq!(segment.available_point_count(), 5);
     let payload = segment.payload(3.into(), &hw_counter).unwrap();
