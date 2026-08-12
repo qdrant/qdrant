@@ -141,8 +141,6 @@ pub(super) async fn describe_missing_points(
 pub(super) async fn capture_placement(
     collection: &Collection,
 ) -> HashMap<PointIdType, Vec<String>> {
-    use common::types::DeferredBehavior;
-
     let holder = collection.shards_holder.read().await;
     let mut out: HashMap<PointIdType, Vec<String>> = HashMap::new();
     for (shard_id, replica_set) in holder.get_shards() {
