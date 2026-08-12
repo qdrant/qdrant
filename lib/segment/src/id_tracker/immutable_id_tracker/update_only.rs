@@ -44,10 +44,11 @@ impl<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> UpdateOnlyImmutableI
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        if points.is_empty() {
-            return Ok(());
-        }
-        let seed = self.deleted.take();
-        tombstone_points_in_stored_mask::<S>(&self.fs, &self.segment_path, seed, points)
+        tombstone_points_in_stored_mask::<S>(
+            &self.fs,
+            &self.segment_path,
+            &mut self.deleted,
+            points,
+        )
     }
 }

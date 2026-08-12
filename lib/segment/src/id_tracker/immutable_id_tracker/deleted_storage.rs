@@ -17,14 +17,18 @@ pub(crate) fn deleted_path(base: &Path) -> PathBuf {
 
 /// Retire `points` by setting the slots they occupy in the stored deleted
 /// mask of the segment at `segment_path`. The mask is replaced whole, see
-/// [`StoredBitSlice::atomic_update`]; `seed` stands in for reading the mask
-/// file when the caller already holds it in memory.
+/// [`StoredBitSlice::atomic_update`]; `seed` is consumed in place of reading
+/// the mask file when the caller held it in memory — and kept for a later
+/// call when `points` is empty and nothing is written.
 pub(crate) fn tombstone_points_in_stored_mask<S: UniversalRead<Fs: UniversalWriteFileOps>>(
     fs: &S::Fs,
     segment_path: &Path,
-    seed: Option<BitVec>,
+    seed: &mut Option<BitVec>,
     points: &[(PointIdType, PointOffsetType)],
 ) -> OperationResult<()> {
+    if points.is_empty() {
+        return Ok(());
+    }
     StoredBitSlice::<S>::atomic_update(
         fs,
         deleted_path(segment_path),
@@ -35,7 +39,7 @@ pub(crate) fn tombstone_points_in_stored_mask<S: UniversalRead<Fs: UniversalWrit
             advice: AdviceSetting::Global,
         },
         Default::default(),
-        seed,
+        seed.take(),
         |mask| {
             for &(point_id, internal_id) in points {
                 let slot = internal_id as usize;
