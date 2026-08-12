@@ -18,6 +18,8 @@ pub struct FileInfo {
     pub size: u64,
     /// Last modification time, when the listing backend exposes one
     pub last_modified: Option<std::time::SystemTime>,
+    /// Entity tag, when the listing backend exposes one (object stores)
+    pub etag: Option<String>,
 }
 
 impl FileInfo {
@@ -25,13 +27,23 @@ impl FileInfo {
     pub fn full_eq(&self, other: &FileInfo) -> bool {
         let Self {
             size,
-            last_modified,
-        } = self;
+            last_modified: Some(last_modified),
+            etag: Some(etag),
+        } = self
+        else {
+            return false;
+        };
 
-        size == &other.size
-            && last_modified
-                .zip(other.last_modified)
-                .is_some_and(|(this, other)| this == other)
+        let Self {
+            size: other_size,
+            last_modified: Some(other_last_modified),
+            etag: Some(other_etag),
+        } = other
+        else {
+            return false;
+        };
+
+        size == other_size && last_modified == other_last_modified && etag == other_etag
     }
 }
 
@@ -156,6 +168,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
                 path: path.clone(),
                 size: info.size,
                 last_modified: info.last_modified,
+                etag: info.etag.clone(),
             })
             .collect()
     }
@@ -174,10 +187,12 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
                      path,
                      size,
                      last_modified,
+                     etag,
                  }| {
                     let info = FileInfo {
                         size,
                         last_modified,
+                        etag,
                     };
                     (path, info)
                 },

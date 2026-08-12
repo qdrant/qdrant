@@ -148,6 +148,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                             path: PathBuf::from(location),
                             size: e.size,
                             last_modified: Some(SystemTime::from(e.last_modified)),
+                            etag: e.e_tag,
                         })
                     })
                     .collect()),
@@ -699,7 +700,11 @@ mod tests {
                      path,
                      size,
                      last_modified: _,
-                 }| (path.to_string_lossy().into_owned(), size),
+                     etag,
+                 }| {
+                    assert!(etag.is_some(), "object store listings must carry etags");
+                    (path.to_string_lossy().into_owned(), size)
+                },
             )
             .collect();
         files.sort();

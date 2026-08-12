@@ -239,6 +239,9 @@ pub struct ListedFile {
     /// Last modification time, when the backend exposes one (local
     /// filesystems, object stores); `None` otherwise.
     pub last_modified: Option<std::time::SystemTime>,
+    /// Entity tag, when the backend exposes one (object stores); `None`
+    /// otherwise.
+    pub etag: Option<String>,
 }
 
 pub type ByteOffset = u64;

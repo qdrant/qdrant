@@ -150,6 +150,8 @@ impl Client {
                 last_modified: entry
                     .last_modified
                     .and_then(|ts| std::time::SystemTime::try_from(ts).ok()),
+                // The ListFiles proto doesn't carry etags
+                etag: None,
             })
             .collect())
     }
