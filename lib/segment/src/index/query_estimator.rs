@@ -275,7 +275,40 @@ fn combine_must_estimations_with_keys(
 }
 
 fn condition_keys<'a>(conditions: impl Iterator<Item = &'a Condition>) -> HashSet<PayloadKeyType> {
-    conditions.filter_map(Condition::targeted_key).collect()
+    let mut keys = HashSet::new();
+
+    for condition in conditions {
+        add_condition_keys(&mut keys, condition);
+    }
+
+    keys
+}
+
+fn add_condition_keys(keys: &mut HashSet<PayloadKeyType>, condition: &Condition) {
+    match condition {
+        Condition::Filter(filter) => {
+            for nested_condition in filter
+                .must
+                .iter()
+                .flatten()
+                .chain(filter.should.iter().flatten())
+                .chain(filter.must_not.iter().flatten())
+                .chain(
+                    filter
+                        .min_should
+                        .iter()
+                        .flat_map(|min_should| min_should.conditions.iter()),
+                )
+            {
+                add_condition_keys(keys, nested_condition);
+            }
+        }
+        _ => {
+            if let Some(key) = condition.targeted_key() {
+                keys.insert(key);
+            }
+        }
+    }
 }
 
 fn estimate_condition<F>(
@@ -807,6 +840,31 @@ mod tests {
                 test_condition("price"),
             ]),
             must_not: Some(vec![test_match_condition("color", "blue")]),
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
+
+        assert_eq!(estimation.exp, 3);
+    }
+
+    #[test]
+    fn nested_filter_keys_are_all_correlated_with_outer_conditions() {
+        let query = Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
+                    must: Some(vec![
+                        test_match_condition("color", "red"),
+                        test_condition("price"),
+                    ]),
+                    must_not: None,
+                }),
+                test_match_condition("price", "expensive"),
+            ]),
+            must_not: None,
         };
 
         let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
