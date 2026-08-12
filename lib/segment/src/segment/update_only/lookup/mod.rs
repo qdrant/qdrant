@@ -11,7 +11,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::UniversalRead;
 
-use super::AppendableIdTrackerState;
+use super::{AppendableIdTrackerState, DeleteOnlyIdTrackerState, WriterIdTrackerState};
+use crate::id_tracker::IdTrackerRead as _;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::{SegmentConfig, VectorNameBuf};
@@ -37,28 +38,35 @@ pub struct LookupSegment<S: UniversalRead + 'static> {
 }
 
 impl<S: UniversalRead + 'static> LookupSegment<S> {
-    /// The mappings-log state a writer resuming this segment picks up from,
-    /// for [`UpdateOnlySegmentEnum::open`](super::UpdateOnlySegmentEnum::open);
-    /// `None` when the segment has no log to resume, which makes its writer a
-    /// delete-only one.
+    /// The id-tracker state a writer resuming this segment picks up from, for
+    /// [`UpdateOnlySegmentEnum::open`](super::UpdateOnlySegmentEnum::open).
     ///
-    /// The writer kind therefore follows the id-tracker format that was
-    /// actually loaded, which is what decides how a point is retired here — an
-    /// immutable segment marks its deleted-points bitmask, an appendable one
-    /// records a delete in its mappings log.
-    ///
-    /// Taken from this segment's own read of that log rather than left to the
-    /// writer to re-read: a second read costs another round-trip on a remote
-    /// backend, and may land on a different state than the batch resolved
-    /// against.
-    pub fn writer_state(&self) -> Option<AppendableIdTrackerState> {
+    /// Taken from this segment's own reads rather than re-read by the writer:
+    /// a second read costs another round-trip on a remote backend and may
+    /// land on a different state than the batch resolved against. The deleted
+    /// mask is handed over only when already in memory — the disk-resident
+    /// tracker deliberately avoids materializing it.
+    pub fn writer_state(&self) -> WriterIdTrackerState {
         match &*self.id_tracker.borrow() {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => Some(AppendableIdTrackerState {
-                max_claimed_internal_id: id_tracker.max_claimed_internal_id(),
-                pending_inserts: id_tracker.pending_inserts().collect(),
-                mappings_end: id_tracker.mappings_read_to(),
-            }),
-            ReadOnlyIdTrackerEnum::Immutable(_) | ReadOnlyIdTrackerEnum::DiskResident(_) => None,
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                WriterIdTrackerState::Appendable(AppendableIdTrackerState {
+                    max_claimed_internal_id: id_tracker.max_claimed_internal_id(),
+                    pending_inserts: id_tracker.pending_inserts().collect(),
+                    mappings_end: id_tracker.mappings_read_to(),
+                })
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                WriterIdTrackerState::DeleteOnly(Some(DeleteOnlyIdTrackerState {
+                    deleted: id_tracker.deleted_point_bitslice().to_bitvec(),
+                }))
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                WriterIdTrackerState::DeleteOnly(id_tracker.deleted_full_if_materialized().map(
+                    |deleted| DeleteOnlyIdTrackerState {
+                        deleted: deleted.clone(),
+                    },
+                ))
+            }
         }
     }
 }

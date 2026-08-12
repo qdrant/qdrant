@@ -338,13 +338,13 @@ fn read_by_id_does_not_materialize_deleted_set() {
         .unwrap();
 
     assert!(
-        !read_only.deleted_full_materialized(),
+        read_only.deleted_full_if_materialized().is_none(),
         "read-by-id lookups must not materialize the full deleted set",
     );
 
     // A search-style call (whole-slice access) does materialize it.
     let _ = read_only.deleted_point_bitslice();
-    assert!(read_only.deleted_full_materialized());
+    assert!(read_only.deleted_full_if_materialized().is_some());
 }
 
 #[test]

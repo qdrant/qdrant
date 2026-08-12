@@ -17,15 +17,16 @@
 //!   one batch and dropped with it, since the append-only components behind
 //!   them hold nothing across calls.
 //!
-//! The two phases meet at [`AppendableIdTrackerState`]: what a writer must
-//! know about the segment it resumes, taken from the read the lookup phase
-//! already did. See [`LookupSegment::writer_state`].
+//! The two phases meet at [`WriterIdTrackerState`]: what a writer must know
+//! about the segment it resumes, taken from the read the lookup phase already
+//! did. See [`LookupSegment::writer_state`].
 
 mod appendable;
 mod delete_only;
 mod lookup;
 mod segment_enum;
 
+use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 
 pub use self::appendable::AppendableSegment;
@@ -33,6 +34,15 @@ pub use self::delete_only::DeleteOnlySegment;
 pub use self::lookup::LookupSegment;
 pub use self::segment_enum::UpdateOnlySegmentEnum;
 use crate::types::PointIdType;
+
+/// Id-tracker state the read phase hands to a segment's writer; the variant
+/// decides the writer's kind.
+pub enum WriterIdTrackerState {
+    Appendable(AppendableIdTrackerState),
+    /// `None` when the read phase did not hold the deleted mask in memory;
+    /// the writer then reads it itself.
+    DeleteOnly(Option<DeleteOnlyIdTrackerState>),
+}
 
 /// The tail of an appendable segment's mappings log, as the read phase saw it.
 ///
@@ -47,4 +57,10 @@ pub struct AppendableIdTrackerState {
     pub max_claimed_internal_id: Option<PointOffsetType>,
     pub pending_inserts: Vec<PointIdType>,
     pub mappings_end: u64,
+}
+
+/// An immutable segment's deleted-points mask as the read phase held it in
+/// memory, sparing the writer the read of the mask file.
+pub struct DeleteOnlyIdTrackerState {
+    pub deleted: BitVec,
 }
