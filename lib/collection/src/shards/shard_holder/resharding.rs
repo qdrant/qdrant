@@ -18,6 +18,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_trait::WaitUntil;
 
 /// Outcome of a resharding pre-check: whether caller should run the operation,
 /// or treat it as already-applied no-op.
@@ -453,6 +454,7 @@ impl ShardHolder {
                     HwMeasurementAcc::disposable(),
                     true,
                     DeferredBehavior::WithDeferred,
+                    WaitUntil::Wal,
                 )
                 .await?;
         }

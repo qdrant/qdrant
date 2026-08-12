@@ -2,6 +2,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::types::CollectionResult;
@@ -12,6 +13,11 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+use collection::shards::resharding::ReshardKey;
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::{
+    ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
+};
 use common::budget::ResourceBudget;
 use segment::types::Distance;
 
@@ -37,6 +43,21 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 
 #[cfg(test)]
 pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
+    collection_fixture(
+        collection_path,
+        shard_number,
+        TEST_OPTIMIZERS_CONFIG.clone(),
+    )
+    .await
+}
+
+/// Like [`simple_collection_fixture`], but with a custom optimizers config.
+#[cfg(test)]
+pub async fn collection_fixture(
+    collection_path: &Path,
+    shard_number: u32,
+    optimizer_config: OptimizersConfig,
+) -> Collection {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -51,7 +72,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
 
     let collection_config = CollectionConfigInternal {
         params: collection_params,
-        optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+        optimizer_config,
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
@@ -71,6 +92,86 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     )
     .await
     .unwrap()
+}
+
+/// `Collection::start_resharding` never touches its `ShardTransferConsensus`
+/// argument (the resharding driver is disabled), so every method can be a stub.
+pub struct NoopReshardingConsensus;
+
+#[async_trait]
+impl ShardTransferConsensus for NoopReshardingConsensus {
+    fn this_peer_id(&self) -> PeerId {
+        0
+    }
+
+    fn peers(&self) -> Vec<PeerId> {
+        vec![0]
+    }
+
+    fn consensus_commit_term(&self) -> (u64, u64) {
+        (0, 0)
+    }
+
+    fn recovered_switch_to_partial(
+        &self,
+        _transfer_config: &ShardTransfer,
+        _collection_id: CollectionId,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
+
+    async fn start_shard_transfer(
+        &self,
+        _transfer_config: ShardTransfer,
+        _collection_id: CollectionId,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
+
+    async fn restart_shard_transfer(
+        &self,
+        _transfer_config: ShardTransfer,
+        _collection_id: CollectionId,
+        _default_method: ShardTransferMethod,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
+
+    async fn abort_shard_transfer(
+        &self,
+        _transfer: ShardTransferKey,
+        _collection_id: CollectionId,
+        _reason: &str,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
+
+    async fn set_shard_replica_set_state(
+        &self,
+        _peer_id: Option<PeerId>,
+        _collection_id: CollectionId,
+        _shard_id: ShardId,
+        _state: ReplicaState,
+        _from_state: Option<ReplicaState>,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
+
+    async fn commit_read_hashring(
+        &self,
+        _collection_id: CollectionId,
+        _reshard_key: ReshardKey,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
+
+    async fn commit_write_hashring(
+        &self,
+        _collection_id: CollectionId,
+        _reshard_key: ReshardKey,
+    ) -> CollectionResult<()> {
+        unimplemented!("not exercised by start_resharding")
+    }
 }
 
 pub fn dummy_on_replica_failure() -> ChangePeerFromState {
