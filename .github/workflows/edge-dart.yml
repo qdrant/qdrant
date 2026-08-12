@@ -1,0 +1,128 @@
+name: Qdrant Edge Dart SDK
+
+# Consistency gate for the Dart/Flutter SDK. The Dart binding is generated from
+# the `qdrant-edge-ffi` crate, so a change to the FFI can silently change or
+# break the SDK. This workflow regenerates the binding from the current FFI,
+# fails if the committed binding drifted, enforces the mobile-safety invariants,
+# runs the Dart test suite against the freshly-built engine, and checks the
+# version is in sync.
+
+on:
+  push:
+    branches: [ master, dev ]
+    paths:
+      - 'lib/edge/ffi/**'
+      - 'lib/edge/src/**'
+      - 'lib/edge/dart/**'
+      - 'lib/edge/VERSION'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/edge-dart.yml'
+  pull_request:
+    branches: [ '**' ]
+    paths:
+      - 'lib/edge/ffi/**'
+      - 'lib/edge/src/**'
+      - 'lib/edge/dart/**'
+      - 'lib/edge/VERSION'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/edge-dart.yml'
+
+permissions:
+  contents: read
+
+env:
+  # The uniffi-bindgen-dart fork carrying uniffi-0.32 + the library-mode CLI +
+  # the enum-collision fix (upstream lacks them; PRs pending — #149/#151/#152).
+  # Pinned to a REVIEWED COMMIT, not the mutable `library-mode-cli` branch, so a
+  # branch update can't silently change the generated binding this CI builds.
+  UNIFFI_DART_REPO: https://github.com/DenisovAV/uniffi-dart.git
+  # library-mode-cli @ 8b63861 (bump when intentionally adopting fork changes)
+  UNIFFI_DART_REF: 8b63861b9a10ac0fc8f25047a4f79bcde955731d
+
+jobs:
+  edge-dart:
+    name: Build & test Dart SDK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      # Pure text check, no build — run first so a version skew fails in seconds.
+      - name: Version sync
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < lib/edge/VERSION)"
+          crate="$(grep -m1 '^version = ' lib/edge/ffi/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          pubspec="$(grep -m1 '^version:' lib/edge/dart/pubspec.yaml | sed -E 's/version:[[:space:]]*//' | tr -d '[:space:]')"
+          if [ "$version" != "$crate" ] || [ "$version" != "$pubspec" ]; then
+            echo "::error::version skew — VERSION=$version crate=$crate pubspec=$pubspec"
+            exit 1
+          fi
+          echo "OK: version $version in sync (VERSION == crate == pubspec)"
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7
+        with:
+          toolchain: nightly
+
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+
+      - name: Install Dart
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+
+      # Build the bindgen from the fork (upstream lacks the required PRs).
+      - name: Build uniffi-bindgen-dart (fork)
+        run: |
+          set -euo pipefail
+          git clone "$UNIFFI_DART_REPO" /tmp/uniffi-dart
+          git -C /tmp/uniffi-dart checkout --detach "$UNIFFI_DART_REF"
+          ( cd /tmp/uniffi-dart && cargo +nightly build --release --features binary --bin uniffi_bindgen_dart )
+          echo "UNIFFI_BINDGEN_DART=/tmp/uniffi-dart/target/release/uniffi_bindgen_dart" >> "$GITHUB_ENV"
+
+      # Regenerate the binding (gitignored — ~17k lines of machine output, shipped
+      # inside the pub.dev archive, not committed) plus the curated public facade.
+      # The binding needs no drift gate: it is regenerated here and at publish, so
+      # it cannot go stale. The committed facade IS the reviewed public surface, so
+      # fail if it drifted from the freshly regenerated binding.
+      - name: Regenerate binding + facade; check public surface in sync
+        working-directory: lib/edge/dart
+        run: |
+          set -euo pipefail
+          ./build.sh
+          if ! git diff --quiet -- lib/qdrant_edge.dart; then
+            echo "::error::lib/qdrant_edge.dart (public facade) is stale — run ./build.sh and commit"
+            git --no-pager diff -- lib/qdrant_edge.dart | head -80
+            exit 1
+          fi
+          echo "OK: public facade matches the regenerated binding"
+
+      # Fail-closed mobile-safety gate: --no-default-features must drop search_matrix.
+      - name: Enforce search_matrix exclusion
+        working-directory: lib/edge/dart
+        run: |
+          set -euo pipefail
+          f=lib/src/qdrant_edge_ffi.dart
+          if grep -qiE 'search_?matrix|searchMatrix' "$f"; then
+            echo "::error::search_matrix present in $f (expected --no-default-features to drop it)"
+            exit 1
+          fi
+          # Canary: the gate must see a symbol that is definitely present.
+          if ! grep -q 'edgeshard_search' "$f"; then
+            echo "::error::canary failed — 'edgeshard_search' absent; scanning the wrong file"
+            exit 1
+          fi
+          echo "OK: search_matrix absent from the surface (canary present)"
+
+      # `dart test` runs hook/build.dart (builds the host cdylib) then the suite.
+      - name: Dart analyze + test
+        working-directory: lib/edge/dart
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze lib test hook example
+          dart test
