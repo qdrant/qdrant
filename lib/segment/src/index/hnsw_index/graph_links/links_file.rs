@@ -234,7 +234,7 @@ impl<S: UniversalRead> GraphLinksFile<S> {
     /// Read links for a batch of points at the given level.
     pub fn links(
         &self,
-        arena: &mut stumpalo::Arena,
+        arena: &stumpalo::Arena,
         point_ids: &[PointOffsetType],
         level: usize,
         mut callback: impl FnMut(usize, PackedLinksIterator<'_>),
@@ -265,7 +265,7 @@ impl<S: UniversalRead> GraphLinksFile<S> {
     /// See [`super::view::GraphLinksView::links_with_vectors`].
     pub fn links_with_vectors(
         &self,
-        arena: &mut stumpalo::Arena,
+        arena: &stumpalo::Arena,
         point_ids: &[PointOffsetType],
         level: usize,
         mut callback: impl FnMut(
