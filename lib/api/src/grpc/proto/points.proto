@@ -67,7 +67,8 @@ message Document {
 }
 
 message Image {
-  // Image data, either base64 encoded or URL
+  // Image data, either base64 encoded or URL. Must be set: the server rejects a
+  // request without it
   Value image = 1;
   // Model name
   string model = 2;
