@@ -813,6 +813,36 @@ fn check_segments_size(
 
 /// Performs optimization of segments (merge / reindex / vacuum, etc.)
 #[allow(clippy::too_many_arguments)]
+
+/// Test-only seam: a callback invoked after the sources are wrapped in proxies and before the
+/// optimized segment is built, so a deterministic test can inject operations into exactly the
+/// window a concurrent workload occupies in production. Thread-local: the callback fires on the
+/// thread driving [`execute_optimization`].
+#[cfg(any(test, feature = "testing"))]
+pub mod test_hooks {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static AFTER_PROXY_WRAP: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };
+    }
+
+    pub fn set_after_proxy_wrap(f: impl Fn() + 'static) {
+        AFTER_PROXY_WRAP.with(|h| *h.borrow_mut() = Some(Box::new(f)));
+    }
+
+    pub fn clear_after_proxy_wrap() {
+        AFTER_PROXY_WRAP.with(|h| *h.borrow_mut() = None);
+    }
+
+    pub(super) fn fire_after_proxy_wrap() {
+        AFTER_PROXY_WRAP.with(|h| {
+            if let Some(f) = h.borrow().as_ref() {
+                f();
+            }
+        });
+    }
+}
+
 pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     optimizer_name: &'static str,
     segment_holder: LockedSegmentHolder,
@@ -954,6 +984,9 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         (proxy_ids, cow_segment_id_opt, counter_handler)
     };
 
+    #[cfg(any(test, feature = "testing"))]
+    test_hooks::fire_after_proxy_wrap();
+
     // SLOW PART: create single optimized segment and propagate all new changes to it
     let build_result = optimize_segment_propagate_changes(
         factory,
@@ -1018,4 +1051,181 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     timer.set_success(true);
 
     Ok(OptimizationResult { points_count })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicBool;
+
+    use common::budget::ResourceBudget;
+    use common::progress_tracker::new_progress_tracker;
+    use segment::common::operation_time_statistics::OperationDurationsAggregator;
+    use segment::data_types::vectors::only_default_vector;
+    use segment::entry::SegmentEntry as _;
+    use segment::segment_constructor::build_segment;
+    use segment::segment_constructor::segment_builder::SegmentBuilder;
+    use segment::types::HnswGlobalConfig;
+    use tempfile::Builder;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::fixtures::empty_segment;
+    use crate::segment_holder::locked::LockedSegmentHolder;
+    use crate::segment_holder::{FlushMode, SegmentHolder};
+
+    struct PlainStrategy {
+        segments_path: std::path::PathBuf,
+        temp_path: std::path::PathBuf,
+        config: segment::types::SegmentConfig,
+    }
+
+    impl OptimizationStrategy for PlainStrategy {
+        fn create_segment_builder(
+            &self,
+            _input_segments: &[LockedSegment],
+        ) -> OperationResult<SegmentBuilder> {
+            SegmentBuilder::new(&self.temp_path, &self.config, &HnswGlobalConfig::default())
+        }
+
+        fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)> {
+            let (segment, token) = build_segment(&self.segments_path, &self.config, None, false)?;
+            Ok((LockedSegment::new(segment), token))
+        }
+
+        fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
+            None
+        }
+    }
+
+    /// Pin-arithmetic regression test for the source-retirement fix: a retiring source's drop pin
+    /// must release only once the durable waterline covers the proxy's version, not merely the
+    /// optimized segment's. Operations can bump the proxy's version without any propagated effect
+    /// reaching the destination (observed in production pin logs as
+    /// `proxy_version > destination_version`), and releasing at the destination's version alone
+    /// frees the source's files while the WAL acknowledge, capped by the same pin, still owes
+    /// replayability to operations up to the proxy's version.
+    ///
+    /// The test drives a real optimization over a real segment holder and uses the
+    /// `after_proxy_wrap` test hook to inject, into the mid-optimization window:
+    /// - a propagated change (a delete of a live point at op 50), raising the destination to 50;
+    /// - a gap operation (a delete of an id the wrapped segment does not hold, at op 99), raising
+    ///   the proxy to 99 with no destination effect.
+    ///
+    /// Pre-fix, the pin's release threshold was the destination's version (50): the first flush
+    /// below releases it, dropping the source's files. With the fix it is the proxy's version
+    /// (99): the flush at waterline 50 must keep the pin, and only a waterline covering 99 may
+    /// release it.
+    #[test]
+    fn test_source_drop_pin_covers_proxy_version() {
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        // Source segment: two live points, fully flushed (persisted == version == 10).
+        let mut source = empty_segment(segments_dir.path());
+        source
+            .upsert_point(
+                10,
+                1.into(),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+        source
+            .upsert_point(
+                10,
+                2.into(),
+                only_default_vector(&[0.0, 1.0, 0.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+        source.flush(true).unwrap();
+        let config = source.config().clone();
+        let source_path = source.data_path();
+
+        let mut holder = SegmentHolder::default();
+        // A second appendable so the holder is never left without one.
+        holder.add_new(empty_segment(segments_dir.path()));
+        let source_id = holder.add_new(source);
+        let holder = LockedSegmentHolder::new(holder);
+
+        // Mid-optimization injection, through the holder's own handle to the proxy.
+        let hook_holder = holder.clone();
+        test_hooks::set_after_proxy_wrap(move || {
+            let guard = hook_holder.read();
+            let proxy = guard
+                .get(source_id)
+                .expect("source proxied in place")
+                .clone();
+            let hw_counter = HardwareCounterCell::new();
+            // Propagated change: point 2 lives in the wrapped segment, so this lands in the
+            // proxy's delete ledger and reaches the destination at version 50.
+            proxy
+                .get()
+                .write()
+                .delete_point(50, 2.into(), &hw_counter)
+                .unwrap();
+            // Gap operation: id 999 is nowhere, so only the proxy's version moves, to 99.
+            proxy
+                .get()
+                .write()
+                .delete_point(99, 999.into(), &hw_counter)
+                .unwrap();
+        });
+
+        let strategy = PlainStrategy {
+            segments_path: segments_dir.path().to_path_buf(),
+            temp_path: temp_dir.path().to_path_buf(),
+            config,
+        };
+        let stopped = AtomicBool::new(false);
+        let telemetry = OperationDurationsAggregator::new();
+        let budget = ResourceBudget::new(2, 2);
+        let permit = budget.try_acquire(1, 1).expect("test budget permit");
+        execute_optimization(
+            "test",
+            holder.clone(),
+            vec![source_id],
+            Uuid::new_v4(),
+            None,
+            &OptimizationPaths {
+                segments_path: segments_dir.path().to_path_buf(),
+                temp_path: temp_dir.path().to_path_buf(),
+            },
+            permit,
+            budget,
+            &stopped,
+            new_progress_tracker().1,
+            &telemetry,
+            &strategy,
+            Box::new(|| {}),
+        )
+        .unwrap();
+        test_hooks::clear_after_proxy_wrap();
+
+        // A flush whose waterline covers the destination's version (50) but not the proxy's (99)
+        // must keep the pin: the acknowledge stays at the source's persisted version and the
+        // source's files survive. Pre-fix the pin released here.
+        let holder_read = holder.read();
+        holder_read.bump_max_segment_version_overwrite(50);
+        let ack = holder_read.flush_all(FlushMode::Sync, true).unwrap();
+        assert_eq!(
+            ack, 10,
+            "acknowledge must stay at the source's persisted version while \
+             operations up to the proxy's version are uncovered",
+        );
+        assert!(
+            source_path.exists(),
+            "source files must survive a waterline that covers only the destination",
+        );
+
+        // Covering the proxy's version releases the pin: files drop, acknowledge follows.
+        holder_read.bump_max_segment_version_overwrite(99);
+        let ack = holder_read.flush_all(FlushMode::Sync, true).unwrap();
+        assert_eq!(ack, 99, "cap lifts once the proxy's version is durable");
+        assert!(
+            !source_path.exists(),
+            "source files drop once the pin releases",
+        );
+    }
 }
