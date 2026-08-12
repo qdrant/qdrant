@@ -491,6 +491,32 @@ impl LocalShard {
             log::debug!("Deduplicated {res} points for {collection_id}/{shard_id}");
         }
 
+        // One line per reload naming every segment that made it back: directory, version,
+        // persisted version, live point count. The custody-chain analysis of a lost point ends at
+        // a fork this inventory resolves: a pre-image holder that was durable when its hop ran can
+        // fail replay either because its directory was never loaded here, or because its loaded
+        // content lacks the point. Without the inventory those two read identically.
+        {
+            let inventory = segment_holder
+                .iter()
+                .map(|(segment_id, locked)| {
+                    let guard = locked.get();
+                    let read = guard.read();
+                    format!(
+                        "{segment_id}:{}:{}/{}:{}pts",
+                        read.data_path()
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        read.version(),
+                        read.persistent_version(),
+                        read.available_point_count(),
+                    )
+                })
+                .join(", ");
+            log::info!("reloaded segment inventory {shard_id}: [{inventory}]");
+        }
+
         clear_temp_segments(shard_path);
         let optimizers = build_optimizers(
             shard_path,
