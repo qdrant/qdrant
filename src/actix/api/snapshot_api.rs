@@ -547,7 +547,7 @@ async fn upload_shard_snapshot(
         wait,
         priority,
         checksum,
-        ..
+        delete_after_restore: _,
     } = query.into_inner();
 
     // - `recover_shard_snapshot_impl` is *not* cancel safe
@@ -714,7 +714,7 @@ async fn recover_partial_snapshot(
         wait,
         priority,
         checksum,
-        ..
+        delete_after_restore: _,
     } = query.into_inner();
 
     // nothing to verify.

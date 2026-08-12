@@ -200,12 +200,16 @@ def test_upload_snapshot_delete_after_restore_failure_keeps_snapshot(tmp_path: p
     wait_collection_exists_and_active_on_all_peers(source_collection, peer_api_uris)
     upsert_random_points(peer_api_uri, 5, collection_name=source_collection)
 
-    # Incompatible target (different vector size) to force recovery failure after upload is persisted.
+    source_info = requests.get(f"{peer_api_uri}/collections/{source_collection}")
+    assert_http_ok(source_info)
+    source_vector_size = source_info.json()["result"]["config"]["params"]["vectors"]["size"]
+    incompatible_vector_size = source_vector_size + 1
+
     # Create incompatible target (different vector size) so recovery fails after upload is saved.
     requests.put(
         f"{peer_api_uri}/collections/{target_collection}",
         json={
-            "vectors": {"size": 8, "distance": "Dot"},
+            "vectors": {"size": incompatible_vector_size, "distance": "Dot"},
             "shard_number": 1,
             "replication_factor": 1,
             "write_consistency_factor": 1,
