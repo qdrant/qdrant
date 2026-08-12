@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use rand::RngExt;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal, only_default_vector};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -2031,6 +2031,74 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
     assert!(
         non_app.point_version(100.into()).is_some(),
         "Point 100 should still exist in the source (delete skipped for deferred destination)"
+    );
+}
+
+/// Regression test for the empty-but-dirty temp drop (nightly reload divergence, #10095 family).
+///
+/// A temporary segment that copy-on-write traffic filled and then emptied again carries an
+/// unsaved range: operations transited through it without any of them flushing. While it is a
+/// holder member that range caps the durable waterline. Dropping it inline on
+/// `remove_segment_if_not_needed` (the pre-fix behavior) lifted that cap, so the WAL acknowledge
+/// jumped past the transit operations even though their effects were not durable anywhere,
+/// and a restart then lost the moved points: replay had neither the operations (acknowledged
+/// away) nor the pre-images. The fix parks the drop behind a post-flush pin: the acknowledge
+/// stays at the temp's persisted version until the waterline covers its last transit operation.
+#[test]
+fn test_empty_dirty_temp_drop_keeps_waterline_cap() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    // A neutral appendable segment so the temp is not the last one (a kept-temp guard).
+    holder.add_new(empty_segment(dir.path()));
+
+    // The temp: never held a point (a temp that copy-on-write traffic transited is kept, not
+    // dropped, because soft-deleted points keep `is_empty()` false), but schema operations bumped
+    // its version, leaving it empty AND dirty: version 12 with nothing ever flushed.
+    let mut temp = empty_segment(dir.path());
+    let hw_counter = HardwareCounterCell::new();
+    temp.create_field_index(
+        12,
+        &JsonPath::from_str("number").unwrap(),
+        Some(&segment::types::PayloadSchemaType::Integer.into()),
+        &hw_counter,
+    )
+    .unwrap();
+    assert!(temp.is_empty());
+    assert!(temp.version() > temp.persistent_version());
+    let temp_path = temp.data_path();
+    let temp_id = holder.add_new(temp);
+
+    // The rest of the shard has durably progressed past the temp's persisted point but not past
+    // its unsaved range: the waterline the surviving segments justify is 11.
+    holder.bump_max_segment_version_overwrite(11);
+
+    // The temp is empty, so it is eligible for removal.
+    assert!(holder.remove_segment_if_not_needed(temp_id).unwrap());
+
+    // The acknowledge must not advance past the temp's persisted version while its transit
+    // operations (up to 12) are uncovered. Pre-fix this returned 11: the inline drop erased the
+    // unsaved range from the accounting and the WAL acknowledged operations whose effects were
+    // not durable anywhere.
+    let ack = holder.flush_all(FlushMode::Sync, true).unwrap();
+    assert_eq!(
+        ack, 0,
+        "acknowledge must stay at the dropped temp's persisted version \
+         while its transit range is uncovered",
+    );
+    assert!(
+        temp_path.exists(),
+        "files must survive until the pin releases"
+    );
+
+    // Once the surviving segments durably cover the transit range, the pin releases, the files
+    // drop, and the acknowledge follows the waterline again.
+    holder.bump_max_segment_version_overwrite(12);
+    let ack = holder.flush_all(FlushMode::Sync, true).unwrap();
+    assert_eq!(ack, 12, "cap lifts once the transit range is durable");
+    assert!(
+        !temp_path.exists(),
+        "temp files are dropped once the pin releases",
     );
 }
 
