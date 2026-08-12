@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      disable_snapshots:
+        description: 'Pass --disable-snapshots to both passes (isolates snapshot-dependent bugs)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -79,6 +84,7 @@ jobs:
           INPUT_OP_NUM: ${{ inputs.op_num }}
           INPUT_SEED: ${{ inputs.seed }}
           INPUT_DISABLE_OPTIMIZER: ${{ inputs.disable_optimizer }}
+          INPUT_DISABLE_SNAPSHOTS: ${{ inputs.disable_snapshots }}
         run: |
           # The commit actually under test. `github.sha` is the default branch (master) on a
           # scheduled run, but the checkout above forces `dev`, so reporting `github.sha` points
@@ -98,6 +104,11 @@ jobs:
           else
             echo "OPTIMIZER_FLAG=" >> "$GITHUB_ENV"
           fi
+          if [ "$INPUT_DISABLE_SNAPSHOTS" = "true" ]; then
+            echo "SNAPSHOTS_FLAG=--disable-snapshots" >> "$GITHUB_ENV"
+          else
+            echo "SNAPSHOTS_FLAG=" >> "$GITHUB_ENV"
+          fi
         shell: bash
       # Both runs reuse the single binary built above and share the same seed.
       - name: Run model testing (async scorer)
@@ -111,6 +122,7 @@ jobs:
             --id-pool "$ID_POOL" \
             --on-disk \
             $OPTIMIZER_FLAG \
+            $SNAPSHOTS_FLAG \
             --async-scorer
         shell: bash
         timeout-minutes: 300
@@ -126,7 +138,8 @@ jobs:
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
             --on-disk \
-            $OPTIMIZER_FLAG
+            $OPTIMIZER_FLAG \
+            $SNAPSHOTS_FLAG
         shell: bash
         timeout-minutes: 300
       # Which of the two passes broke is the first thing triage needs: one failing while the
