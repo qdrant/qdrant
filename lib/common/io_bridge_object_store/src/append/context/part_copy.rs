@@ -218,7 +218,6 @@ async fn multipart_rewrite(
 
 /// The part copies and completion of [`multipart_rewrite`], separated so a
 /// failure of any step aborts the multipart upload.
-#[expect(clippy::too_many_arguments, reason = "internal helper")]
 async fn rewrite_parts(
     client: &SignedObjectClient<'_>,
     context: &SignedRequestContext,
