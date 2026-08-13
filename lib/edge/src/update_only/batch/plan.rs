@@ -104,11 +104,14 @@ impl UpdateBatchPlan {
                 }
             }
             PointOperations::UpsertPointsRaw(points) => {
-                for point in points {
+                for mut point in points {
+                    // Decode, so this path cannot drop the payload of a local operation.
+                    point.decode_payload_raw()?;
                     let PointStructRawPersisted {
                         id,
                         vectors,
                         payload,
+                        payload_raw: _,
                     } = point;
                     self.push(
                         id,

@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
@@ -2945,10 +2946,16 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
 /// Byte-blob analogue of [`Payload`]: the whole payload object as a single
 /// encoded blob, tagged with its encoding.
 ///
-/// Read from storage by `retrieve_raw` and shipped to another node as-is, so
-/// neither side has to parse the payload on the way.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+/// Read from storage by `retrieve_raw` and shipped as-is, so it is parsed once: when the
+/// receiving node applies the point.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
 pub struct RawPayload {
+    /// A compact byte string rather than the serde default of an integer sequence, which
+    /// is what the WAL would otherwise store.
+    ///
+    /// The helper is named through a `use` import rather than a full path: Qdrant Edge's
+    /// amalgamation rewrites paths in code but cannot see into attribute strings.
+    #[serde(with = "raw_bytes_serde")]
     pub payload_bytes: Vec<u8>,
 }
 
@@ -2960,9 +2967,14 @@ impl RawPayload {
     }
 
     /// Parse the blob into a [`Payload`].
+    ///
+    /// Reported as user error, so an operation carrying a bad blob is skipped on WAL
+    /// replay rather than failing recovery.
     pub fn decode(&self) -> OperationResult<Payload> {
         serde_json::from_slice(&self.payload_bytes).map_err(|err| {
-            OperationError::service_error(format!("Malformed raw payload blob: {err}"))
+            OperationError::MalformedPayloadBlob {
+                description: format!("Malformed raw payload blob: {err}"),
+            }
         })
     }
 }

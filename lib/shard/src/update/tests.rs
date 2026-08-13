@@ -7,14 +7,15 @@ use segment::entry::ReadSegmentEntry as _;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::payload_json;
 use segment::types::{
-    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, ValueVariants,
+    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, PointIdType,
+    ValueVariants,
 };
 use tempfile::Builder;
 
 use crate::fixtures::{
     build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
 };
-use crate::operations::point_ops::PointStructRawPersisted;
+use crate::operations::point_ops::{PointStructRawPersisted, RawVectorsPersisted};
 use crate::segment_holder::{FlushMode, SegmentHolder};
 use crate::update::{
     clear_payload_by_filter, create_field_index, delete_payload_by_filter, delete_points_by_filter,
@@ -94,6 +95,15 @@ fn retrieve_raw_record(
         .remove(&point_id.into())
 }
 
+/// A stored record turned into a point ready to apply, with the blob already decoded.
+fn incoming_raw_point(
+    record: segment::data_types::segment_record::SegmentRecordRaw,
+) -> PointStructRawPersisted {
+    let mut point = PointStructRawPersisted::from(record);
+    point.decode_payload_raw().unwrap();
+    point
+}
+
 /// The payload a raw record carries, parsed; `None` when the point has none
 /// stored or stores an empty one.
 fn stored_payload(
@@ -125,15 +135,17 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
             id: 1.into(),
             vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
             payload: Some(payload.clone()),
+            payload_raw: None,
         },
         PointStructRawPersisted {
             id: 100.into(),
             vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
             payload: None,
+            payload_raw: None,
         },
     ];
 
-    let updated = upsert_points_raw(&holder, 100, points.iter(), &hw_counter).unwrap();
+    let updated = upsert_points_raw(&holder, 100, &points, &hw_counter).unwrap();
     assert_eq!(updated, 1);
 
     {
@@ -159,6 +171,40 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
     assert_eq!(stored_payload(&record), None);
 }
 
+/// Applying reads the parsed payload, so a point that still holds a blob would be
+/// stored with no payload at all. Both raw entry points refuse it instead.
+#[test]
+fn test_apply_refuses_an_undecoded_payload_blob() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+
+    let points = [PointStructRawPersisted {
+        id: PointIdType::from(1),
+        vectors: RawVectorsPersisted::from(vec![(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            [1.0f32, 2.0, 3.0, 4.0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect(),
+        )]),
+        payload: None,
+        payload_raw: Some(segment::types::RawPayload::from_storage_bytes(
+            br#"{"city":"Berlin"}"#.to_vec(),
+        )),
+    }];
+
+    assert!(upsert_points_raw(&holder, 100, &points, &hw_counter).is_err());
+    assert!(sync_points_raw(&holder, 101, None, None, &points, &hw_counter).is_err());
+
+    assert!(
+        retrieve_raw_record(&holder, holder.iter().next().unwrap().0, 1).is_none(),
+        "a refused point must not be stored at all",
+    );
+}
+
 #[test]
 fn test_sync_points_raw() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -168,8 +214,7 @@ fn test_sync_points_raw() {
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(segment);
 
-    let point_2 =
-        PointStructRawPersisted::try_from(retrieve_raw_record(&holder, sid, 2).unwrap()).unwrap();
+    let point_2 = incoming_raw_point(retrieve_raw_record(&holder, sid, 2).unwrap());
     let point_2_version_before = holder
         .get(sid)
         .unwrap()
@@ -177,8 +222,7 @@ fn test_sync_points_raw() {
         .read()
         .point_version(2.into());
 
-    let mut point_3 =
-        PointStructRawPersisted::try_from(retrieve_raw_record(&holder, sid, 3).unwrap()).unwrap();
+    let mut point_3 = incoming_raw_point(retrieve_raw_record(&holder, sid, 3).unwrap());
     let changed_bytes: Vec<u8> = [9.0f32, 8.0, 7.0, 6.0]
         .iter()
         .flat_map(|v| v.to_le_bytes())
@@ -189,6 +233,7 @@ fn test_sync_points_raw() {
         id: 100.into(),
         vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into(),
         payload: None,
+        payload_raw: None,
     };
 
     let (deleted, new, updated) = sync_points_raw(

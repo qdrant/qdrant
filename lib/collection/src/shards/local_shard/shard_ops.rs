@@ -652,8 +652,8 @@ impl LocalShard {
             .iter()
             // Use remove to avoid cloning, we take each point ID only once
             .filter_map(|id| records_map.remove(id))
-            .map(PointStructRawPersisted::try_from)
-            .collect::<Result<_, _>>()?;
+            .map(PointStructRawPersisted::from)
+            .collect();
 
         Ok(ordered_records)
     }
