@@ -7,6 +7,8 @@
 
 mod context;
 
+use std::path::PathBuf;
+
 use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
 pub use context::{
@@ -15,6 +17,7 @@ pub use context::{
 use io_bridge::{AppendSupport, AsyncAppend};
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
+use object_store::{ObjectStoreExt as _, PutPayload};
 
 use crate::source::ObjectStoreSource;
 
@@ -56,10 +59,22 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
                 AppendContext::Native(native) => {
                     match native.append(&store, &key, offset, data.clone()).await {
                         // The object hit the store's appended-block cap;
-                        // rebuilding it as a single blob via the part-copy
-                        // strategy resets the cap.
+                        // rebuilding it as a single blob resets the cap.
                         Err(err) if err.is_append_rewrite_required() => {
-                            native.part_copy().append(&store, &key, offset, data).await
+                            let rewrite = native
+                                .part_copy()
+                                .append(&store, &key, offset, data.clone())
+                                .await;
+                            match rewrite {
+                                // The store also rejected the server-side
+                                // rebuild: the prefix is below its minimum
+                                // multipart part size. Download it and
+                                // rewrite the whole object.
+                                Err(err) if err.is_append_entity_too_small() => {
+                                    download_rewrite(&store, &key, offset, data).await
+                                }
+                                result => result,
+                            }
                         }
                         result => result,
                     }
@@ -77,6 +92,47 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
             }
         }
     }
+}
+
+/// Last-resort appended-block cap recovery, for when the store rejects even
+/// the server-side rebuild because the object is below its minimum multipart
+/// part size: download the existing prefix and atomically PUT the whole
+/// object back as `[0, offset) + data`. That same rejection bounds the
+/// download — the object is smaller than one minimum part (5 MiB on AWS).
+async fn download_rewrite(
+    store: &AmazonS3,
+    key: &object_store::path::Path,
+    offset: u64,
+    data: Bytes,
+) -> UioResult<u64> {
+    let existing = store
+        .get(key)
+        .await
+        .map_err(UniversalIoError::s3)?
+        .bytes()
+        .await
+        .map_err(UniversalIoError::s3)?;
+
+    // The same compare-and-swap token as a direct append: a prefix of a
+    // different length means `offset` is not the current object size.
+    if existing.len() as u64 != offset {
+        return Err(UniversalIoError::AppendOffsetConflict {
+            path: PathBuf::from(key.to_string()),
+            offset,
+        });
+    }
+
+    let mut whole = Vec::with_capacity(existing.len() + data.len());
+    whole.extend_from_slice(&existing);
+    whole.extend_from_slice(&data);
+    let new_len = whole.len() as u64;
+
+    store
+        .put(key, PutPayload::from(whole))
+        .await
+        .map_err(UniversalIoError::s3)?;
+
+    Ok(new_len)
 }
 
 impl AsyncAppend for ObjectStoreSource<GoogleCloudStorage> {
@@ -165,5 +221,89 @@ mod tests {
             seen[2].copy_source.as_deref(),
             Some("/bucket/dir/append.dat")
         );
+    }
+
+    /// The responses of a part-copy rewrite attempt that the store rejects
+    /// at the complete step because the object is below its minimum part
+    /// size — followed by the abort of the orphaned multipart upload.
+    fn rejected_part_copy_attempt() -> Vec<StubResponse> {
+        vec![
+            // Native write-offset PUT: rejected with the appended-block cap.
+            StubResponse::new(400).body("<Error><Code>TooManyParts</Code></Error>"),
+            // The part-copy rewrite attempt: initiate, prefix copy, data
+            // part — then the complete is rejected and the upload aborted.
+            StubResponse::new(200).body(
+                "<InitiateMultipartUploadResult><UploadId>upload-1</UploadId>\
+                 </InitiateMultipartUploadResult>",
+            ),
+            StubResponse::new(200)
+                .body("<CopyPartResult><ETag>\"etag-copy\"</ETag></CopyPartResult>"),
+            StubResponse::new(200).header("etag", "\"etag-data\""),
+            StubResponse::new(400).body("<Error><Code>EntityTooSmall</Code></Error>"),
+            StubResponse::new(204),
+        ]
+    }
+
+    /// A capped object the store also refuses to rewrite server-side
+    /// (`EntityTooSmall`) is recovered by downloading the prefix and
+    /// PUTting the whole object back.
+    #[test]
+    fn entity_too_small_rewrite_downloads_and_puts_the_whole_object() {
+        let mut responses = rejected_part_copy_attempt();
+        responses.extend([
+            // Download of the existing 5-byte prefix.
+            StubResponse::new(200)
+                .header("last-modified", "Tue, 14 Jul 2026 12:00:00 GMT")
+                .header("etag", "\"stub\"")
+                .body("abcde"),
+            // Whole-object PUT of prefix + appended data.
+            StubResponse::new(200).header("etag", "\"stub-2\""),
+        ]);
+        let (endpoint, seen) = stub_server(responses);
+        let (store, context) = stub_store_and_context(&endpoint);
+        let source = ObjectStoreSource::new(store)
+            .with_append_context(AppendContext::Native(NativeAppend::new(context)));
+
+        let new_len = io_bridge::BridgeRuntime::global()
+            .block_on(source.append(Path::new("dir/append.dat"), 5, Bytes::from_static(b"data")))
+            .unwrap();
+        assert_eq!(new_len, 9);
+
+        let seen = seen.lock().unwrap();
+        let methods: Vec<&str> = seen.iter().map(|request| request.method.as_str()).collect();
+        assert_eq!(
+            methods,
+            ["PUT", "POST", "PUT", "PUT", "POST", "DELETE", "GET", "PUT"]
+        );
+        assert_eq!(seen[7].body, b"abcdedata");
+        assert!(seen[7].write_offset.is_none());
+    }
+
+    /// The download-rewrite must not rebuild the object from a stale view:
+    /// a downloaded prefix whose length disagrees with `offset` is an
+    /// offset conflict, and no PUT is issued.
+    #[test]
+    fn download_rewrite_with_a_stale_offset_is_a_conflict() {
+        let mut responses = rejected_part_copy_attempt();
+        responses.extend([
+            // The object is 6 bytes, not the expected 5.
+            StubResponse::new(200)
+                .header("last-modified", "Tue, 14 Jul 2026 12:00:00 GMT")
+                .header("etag", "\"stub\"")
+                .body("abcdef"),
+        ]);
+        let (endpoint, seen) = stub_server(responses);
+        let (store, context) = stub_store_and_context(&endpoint);
+        let source = ObjectStoreSource::new(store)
+            .with_append_context(AppendContext::Native(NativeAppend::new(context)));
+
+        let err = io_bridge::BridgeRuntime::global()
+            .block_on(source.append(Path::new("dir/append.dat"), 5, Bytes::from_static(b"data")))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        ));
+        assert_eq!(seen.lock().unwrap().len(), 7);
     }
 }

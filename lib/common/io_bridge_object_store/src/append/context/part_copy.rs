@@ -8,6 +8,7 @@
 //! `UploadPartCopy` out of its portable surface (its internal part-copy is
 //! crate-private and range-less).
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -21,6 +22,11 @@ use super::signed::SignedRequestContext;
 /// Max bytes per `UploadPartCopy` part: the S3 5 GiB part-size ceiling.
 const MAX_COPY_PART_SIZE: u64 = 5 * 1024 * 1024 * 1024;
 
+/// S3 error code returned when a non-last multipart part is below the
+/// store's minimum part size (5 MiB on AWS): the rewrite is impossible
+/// server-side, the caller must rebuild the object by uploading it whole.
+const ENTITY_TOO_SMALL_CODE: &str = "EntityTooSmall";
+
 /// Minimum existing-object size this strategy can append to: the copied
 /// prefix lands as non-last multipart parts, which S3 requires to be at
 /// least 5 MiB. Below this, callers must write the whole object themselves.
@@ -28,12 +34,15 @@ pub(crate) const MIN_DIRECT_OFFSET: u64 = 5 * 1024 * 1024;
 
 /// One signed S3 request against a fixed object URL. Returns the response
 /// headers and body text; non-2xx statuses become errors carrying `step`
-/// and a body excerpt.
+/// and a body excerpt, with [`ENTITY_TOO_SMALL_CODE`] mapped to the typed
+/// [`UniversalIoError::AppendEntityTooSmall`].
 struct SignedObjectClient<'a> {
     client: HttpClient,
     credential: Arc<AwsCredential>,
     region: &'a str,
     url: Url,
+    /// The object's path, for error reporting.
+    path: PathBuf,
 }
 
 impl SignedObjectClient<'_> {
@@ -73,6 +82,11 @@ impl SignedObjectClient<'_> {
         let body_text = String::from_utf8_lossy(&body).into_owned();
 
         if !status.is_success() {
+            if extract_xml_tag(&body_text, "Code") == Some(ENTITY_TOO_SMALL_CODE) {
+                return Err(UniversalIoError::AppendEntityTooSmall {
+                    path: self.path.clone(),
+                });
+            }
             let excerpt: String = body_text.chars().take(512).collect();
             return Err(UniversalIoError::s3(std::io::Error::other(format!(
                 "{step} failed with status {status}: {excerpt}",
@@ -133,6 +147,7 @@ async fn multipart_rewrite(
         credential,
         region: &context.region,
         url: context.object_url(key)?,
+        path: PathBuf::from(key.to_string()),
     };
 
     let (_, body) = client
@@ -261,6 +276,11 @@ async fn rewrite_parts(
     // `CompleteMultipartUpload` also reports failures after 200 OK inside
     // the body.
     if body.contains("<Error") {
+        if extract_xml_tag(&body, "Code") == Some(ENTITY_TOO_SMALL_CODE) {
+            return Err(UniversalIoError::AppendEntityTooSmall {
+                path: PathBuf::from(key.to_string()),
+            });
+        }
         let excerpt: String = body.chars().take(512).collect();
         return Err(UniversalIoError::s3(std::io::Error::other(format!(
             "complete multipart rewrite for {key} failed: {excerpt}",
