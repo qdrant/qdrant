@@ -64,12 +64,23 @@ impl<'a> LockedGpuDevice<'a> {
     /// etc) — those are already handled correctly by the existing fall-back-to-CPU-for-this-
     /// build behavior and don't imply the device itself is unusable going forward.
     ///
+    /// Returns whether THIS error was a DEVICE_LOST (regardless of whether the recreation
+    /// itself then succeeded or failed) — callers use this to discard any other GPU resource
+    /// still bound to the now-dead device (e.g. `GpuVectorStorage`/`GpuInsertContext` built
+    /// earlier in the same segment build), rather than reusing it and failing again against
+    /// stale buffers. Confirmed live 2026-08-13 (CodeRabbit review, PR #10213): before this
+    /// return value existed, `hnsw/build.rs` had no way to know a DEVICE_LOST happened during
+    /// the main-graph GPU dispatch, and kept reusing that same (now stale) `gpu_vectors` for
+    /// the additional-links dispatch right after — a second guaranteed failure plus another
+    /// pointless recreation cycle, and the dead device's VRAM stayed allocated until that
+    /// stale `Arc` eventually dropped.
+    ///
     /// Takes `&mut self`: recreation replaces the `Arc<Device>` behind this guard in place.
     /// Callers thread `Option<&mut LockedGpuDevice>` through instead of `Option<&LockedGpuDevice>`
     /// (see `VectorIndexBuildArgs::gpu_device`) — a plain, ordinary Rust mutability requirement,
     /// not RefCell/interior-mutability, since this guard is only ever used by one thread at a
     /// time (whichever thread is building a given segment) anyway.
-    pub fn recreate_if_device_lost(&mut self, err: &crate::common::operation_error::OperationError) {
+    pub fn recreate_if_device_lost(&mut self, err: &crate::common::operation_error::OperationError) -> bool {
         // By the time a GPU failure reaches call sites like `create_gpu_vectors()`, it has
         // already been converted from `gpu::GpuError` into `OperationError` (see
         // `impl From<gpu::GpuError> for OperationError` in `common/operation_error.rs`), which
@@ -83,6 +94,9 @@ impl<'a> LockedGpuDevice<'a> {
         // upstream follow-up, but is out of scope for this fix.
         if err.to_string().contains("DEVICE_LOST") {
             self.recreate_after_device_lost();
+            true
+        } else {
+            false
         }
     }
 

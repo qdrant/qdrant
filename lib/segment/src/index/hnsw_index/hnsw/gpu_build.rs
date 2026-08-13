@@ -41,7 +41,7 @@ pub(super) fn build_main_graph_on_gpu(
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
     stopped: &AtomicBool,
-) -> OperationResult<Option<GraphLayersBuilder>> {
+) -> OperationResult<(Option<GraphLayersBuilder>, bool)> {
     let points_scorer_builder = |vector_id| {
         let hardware_counter = HardwareCounterCell::disposable();
         FilteredScorer::new_internal(
@@ -92,7 +92,7 @@ pub(super) fn build_filtered_graph_on_gpu(
     block_filter_list: &VisitedListHandle,
     points_to_index: &[PointOffsetType],
     stopped: &AtomicBool,
-) -> OperationResult<Option<GraphLayersBuilder>> {
+) -> OperationResult<(Option<GraphLayersBuilder>, bool)> {
     build_graph_on_gpu(
         gpu_device,
         gpu_insert_context,
@@ -119,6 +119,12 @@ pub(super) fn build_filtered_graph_on_gpu(
     )
 }
 
+/// Returns `(constructed graph if GPU succeeded, whether a DEVICE_LOST was hit)`. The second
+/// field lets callers holding other GPU resources built earlier against the SAME device (e.g.
+/// `GpuVectorStorage`/`GpuInsertContext` in `hnsw/build.rs`) know to discard them instead of
+/// reusing them against what is now a different, freshly recreated device — see
+/// `LockedGpuDevice::recreate_if_device_lost()`'s own doc comment for the production incident
+/// this closes.
 #[allow(clippy::too_many_arguments)]
 fn build_graph_on_gpu<'a, 'b>(
     gpu_device: Option<&mut LockedGpuDevice>,
@@ -128,7 +134,7 @@ fn build_graph_on_gpu<'a, 'b>(
     entry_points_num: usize,
     points_scorer_builder: impl Fn(PointOffsetType) -> OperationResult<FilteredScorer<'a>> + Send + Sync,
     stopped: &AtomicBool,
-) -> OperationResult<Option<GraphLayersBuilder>> {
+) -> OperationResult<(Option<GraphLayersBuilder>, bool)> {
     if let Some(gpu_insert_context) = gpu_insert_context {
         let gpu_constructed_graph = build_hnsw_on_gpu(
             gpu_insert_context,
@@ -146,32 +152,36 @@ fn build_graph_on_gpu<'a, 'b>(
         check_process_stopped(stopped)?;
 
         match gpu_constructed_graph {
-            Ok(gpu_constructed_graph) => Ok(Some(gpu_constructed_graph)),
+            Ok(gpu_constructed_graph) => Ok((Some(gpu_constructed_graph), false)),
             Err(gpu_error) => {
                 log::warn!("Failed to build HNSW on GPU: {gpu_error}. Falling back to CPU.");
                 // Same DEVICE_LOST recreate-in-place logic as create_gpu_vectors() — confirmed
                 // live 2026-08-11 this call site hits DEVICE_LOST just as often (see
                 // build_main_graph_on_gpu's doc comment on the gpu_device parameter above).
-                if let Some(gpu_device) = gpu_device {
-                    gpu_device.recreate_if_device_lost(&gpu_error);
-                }
-                Ok(None)
+                let device_lost = if let Some(gpu_device) = gpu_device {
+                    gpu_device.recreate_if_device_lost(&gpu_error)
+                } else {
+                    false
+                };
+                Ok((None, device_lost))
             }
         }
     } else {
-        Ok(None)
+        Ok((None, false))
     }
 }
 
+/// Returns `(created storage if GPU succeeded, whether a DEVICE_LOST was hit)` — see
+/// `build_graph_on_gpu`'s own doc comment for why the second field matters to callers.
 pub(super) fn create_gpu_vectors(
     gpu_device: Option<&mut LockedGpuDevice>,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     stopped: &AtomicBool,
-) -> OperationResult<Option<GpuVectorStorage>> {
+) -> OperationResult<(Option<GpuVectorStorage>, bool)> {
     use crate::index::hnsw_index::gpu::get_gpu_force_half_precision;
     if vector_storage.total_vector_count() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
-        return Ok(None);
+        return Ok((None, false));
     }
 
     if let Some(gpu_device) = gpu_device {
@@ -188,18 +198,18 @@ pub(super) fn create_gpu_vectors(
         check_process_stopped(stopped)?;
 
         match gpu_vectors {
-            Ok(gpu_vectors) => Ok(Some(gpu_vectors)),
+            Ok(gpu_vectors) => Ok((Some(gpu_vectors), false)),
             Err(err) => {
                 log::error!("Failed to create GPU vectors, use CPU instead. Error: {err}.");
                 // If this specific error is DEVICE_LOST, the Vulkan device itself is now
                 // permanently dead (per spec) and would otherwise stay dead in the shared pool
                 // for the rest of the process's life — see recreate_if_device_lost()'s doc
                 // comment. No-op for any other error (timeout, OOM, ...).
-                gpu_device.recreate_if_device_lost(&err);
-                Ok(None)
+                let device_lost = gpu_device.recreate_if_device_lost(&err);
+                Ok((None, device_lost))
             }
         }
     } else {
-        Ok(None)
+        Ok((None, false))
     }
 }

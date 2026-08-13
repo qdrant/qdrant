@@ -251,28 +251,45 @@ impl HNSWIndex {
         #[cfg(feature = "gpu")]
         let gpu_vectors = if needs_gpu_vectors {
             let timer = std::time::Instant::now();
-            let gpu_vectors = super::gpu_build::create_gpu_vectors(
+            let (mut gpu_vectors, vectors_device_lost) = super::gpu_build::create_gpu_vectors(
                 gpu_device.as_deref_mut(),
                 &vector_storage_ref,
                 &quantized_vectors_ref,
                 stopped,
             )?;
-            if build_main_graph
-                && let Some(gpu_constructed_graph) = super::gpu_build::build_main_graph_on_gpu(
-                    id_tracker_ref.deref(),
-                    &vector_storage_ref,
-                    &quantized_vectors_ref,
-                    gpu_vectors.as_ref(),
-                    gpu_device.as_deref_mut(),
-                    &graph_layers_builder,
-                    deleted_bitslice,
-                    num_entries,
-                    stopped,
-                )?
-            {
-                graph_layers_builder = gpu_constructed_graph;
-                build_main_graph = false;
-                debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+            if build_main_graph {
+                let (main_graph_result, graph_device_lost) =
+                    super::gpu_build::build_main_graph_on_gpu(
+                        id_tracker_ref.deref(),
+                        &vector_storage_ref,
+                        &quantized_vectors_ref,
+                        gpu_vectors.as_ref(),
+                        gpu_device.as_deref_mut(),
+                        &graph_layers_builder,
+                        deleted_bitslice,
+                        num_entries,
+                        stopped,
+                    )?;
+                if let Some(gpu_constructed_graph) = main_graph_result {
+                    graph_layers_builder = gpu_constructed_graph;
+                    build_main_graph = false;
+                    debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+                }
+                if graph_device_lost {
+                    // The device was recreated mid-dispatch — gpu_vectors (built against the
+                    // device THIS build started with) is now bound to a dead device. Discard
+                    // it so the additional-links pass below correctly falls back to CPU
+                    // instead of reusing stale buffers and failing again. See
+                    // LockedGpuDevice::recreate_if_device_lost()'s doc comment (CodeRabbit
+                    // review, PR #10213) for the production incident this closes.
+                    gpu_vectors = None;
+                }
+            }
+            if vectors_device_lost {
+                // Already None in this case (create_gpu_vectors only returns device_lost=true
+                // alongside None), but kept explicit for the same reason as above — this must
+                // never silently start passing Some again if that function's contract changes.
+                gpu_vectors = None;
             }
             gpu_vectors
         } else {
@@ -659,19 +676,33 @@ fn build_filtered_graph(
     }
 
     #[cfg(feature = "gpu")]
-    if let Some(gpu_constructed_graph) = super::gpu_build::build_filtered_graph_on_gpu(
-        id_tracker,
-        vector_storage,
-        quantized_vectors,
-        gpu_device,
-        gpu_insert_context.as_mut(),
-        graph_layers_builder,
-        block_filter_list,
-        &points_to_index,
-        stopped,
-    )? {
-        *graph_layers_builder = gpu_constructed_graph;
-        return Ok(());
+    {
+        let (gpu_result, device_lost) = super::gpu_build::build_filtered_graph_on_gpu(
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            gpu_device,
+            gpu_insert_context.as_mut(),
+            graph_layers_builder,
+            block_filter_list,
+            &points_to_index,
+            stopped,
+        )?;
+        if device_lost {
+            // The device was recreated mid-dispatch — this gpu_insert_context (and the
+            // gpu_vectors it was built from) is bound to a dead device. Discard it here so
+            // EVERY remaining block/field in this additional-links pass (this function runs
+            // once per payload block, reusing the same outer gpu_insert_context across all of
+            // them) correctly falls back to CPU instead of repeatedly failing against stale
+            // buffers and burning a pointless recreation cycle each time. See
+            // LockedGpuDevice::recreate_if_device_lost()'s doc comment (CodeRabbit review,
+            // PR #10213) for the production incident this closes.
+            *gpu_insert_context = None;
+        }
+        if let Some(gpu_constructed_graph) = gpu_result {
+            *graph_layers_builder = gpu_constructed_graph;
+            return Ok(());
+        }
     }
 
     let insert_points = |block_point_id| {
