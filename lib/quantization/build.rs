@@ -36,6 +36,9 @@ fn main() {
     } else if target_arch == "aarch64" && target_feature.split(',').any(|feat| feat == "neon") {
         builder.file("cpp/neon.c");
         builder.flag("-O3");
+    } else {
+        // No SIMD sources for this target; nothing to compile.
+        return;
     }
 
     builder.compile("simd_utils");
