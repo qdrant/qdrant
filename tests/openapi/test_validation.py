@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import qdrant_host_headers, request_with_validation
 from .helpers.settings import QDRANT_HOST
 
 
@@ -199,6 +199,7 @@ def test_validation_positive_integer_zero(field):
     name = f"test_validation_{field}_zero"
     response = requests.put(
         f"{QDRANT_HOST}/collections/{name}",
+        headers=qdrant_host_headers(),
         json={
             "vectors": {"size": 4, "distance": "Dot"},
             field: 0,
@@ -220,6 +221,7 @@ def test_validation_positive_integer_negative(field):
     name = f"test_validation_{field}_neg"
     response = requests.put(
         f"{QDRANT_HOST}/collections/{name}",
+        headers=qdrant_host_headers(),
         json={
             "vectors": {"size": 4, "distance": "Dot"},
             field: -1,
