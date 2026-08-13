@@ -3,7 +3,7 @@ language: python
 severity: error
 files:
   - tests/openapi/**
-message: "raw requests.<verb>(...) call without qdrant_host_headers()"
+message: "raw requests.<verb>(...) call without qdrant_host_headers() in its headers= argument"
 note: |-
   `request_with_validation` (tests/openapi/helpers/helpers.py) injects
   QDRANT_HOST_HEADERS into every call that goes through it. Tests that bypass
@@ -15,4 +15,14 @@ rule:
   not:
     has:
       stopBy: end
-      regex: qdrant_host_headers
+      kind: keyword_argument
+      all:
+        - has:
+            field: name
+            regex: ^headers$
+        - has:
+            stopBy: end
+            regex: qdrant_host_headers
+constraints:
+  METHOD:
+    regex: ^(get|post|put|patch|delete|head|options|request)$

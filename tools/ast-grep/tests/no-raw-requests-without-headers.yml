@@ -21,6 +21,11 @@ valid:
         method="PUT",
         path_params={'collection_name': collection_name},
     )
+  # Constructors, not outbound calls -- $METHOD is restricted to HTTP verbs.
+  - |
+    session = requests.Session()
+  - |
+    req = requests.Request(method="GET", url=QDRANT_HOST)
 invalid:
   # A raw call missing the headers entirely.
   - |
@@ -34,4 +39,10 @@ invalid:
     response = requests.post(
         f"{QDRANT_HOST}/collections/{collection_name}/points/query",
         json={"query": [0.2, 0.1, 0.9, 0.7], "limit": 3},
+    )
+  # qdrant_host_headers() is called, but not passed as the headers= argument.
+  - |
+    response = requests.get(
+        f"{QDRANT_HOST}/snapshots/{snapshot_name}",
+        params=qdrant_host_headers(),
     )
