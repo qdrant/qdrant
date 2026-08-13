@@ -162,16 +162,10 @@ fn collect_audit_telemetry(
 }
 
 fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
-    let distribution = if let Ok(release) = sys_info::linux_os_release() {
-        release.id
-    } else {
-        sys_info::os_type().ok()
-    };
-    let distribution_version = if let Ok(release) = sys_info::linux_os_release() {
-        release.version_id
-    } else {
-        sys_info::os_release().ok()
-    };
+    // `ID` from `/etc/os-release` on Linux (e.g. "ubuntu"); the OS name on
+    // other platforms.
+    let distribution = Some(sysinfo::System::distribution_id());
+    let distribution_version = sysinfo::System::os_version();
     let mut cpu_flags = vec![];
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -240,8 +234,8 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         // `statvfs` to every telemetry request.
         disk_size: shard::quota::global()
             .disk_capacity_bytes(storage_path)
-            .map(|total| (total / 1024) as usize)
-            .or_else(|| sys_info::disk_info().ok().map(|x| x.total as usize)),
+            .or_else(|| common::disk_usage::disk_usage(storage_path).map(|usage| usage.total))
+            .map(|total| (total / 1024) as usize),
         cpu_flags: cpu_flags.join(","),
         cpu_endian: Some(CpuEndian::current()),
         gpu_devices,
