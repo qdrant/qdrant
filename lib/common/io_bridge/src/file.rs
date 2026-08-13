@@ -14,7 +14,7 @@ use crate::fs::BlobFs;
 use crate::pipeline::{BlobReadPipeline, read_into_byte_buffer, read_whole_into_byte_buffer};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
-use crate::write::AsyncAppend;
+use crate::write::{AppendRequest, AsyncAppend};
 
 /// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
@@ -197,7 +197,10 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
         }
 
         self.runtime
-            .block_on(self.inner.append(&self.path, offset, data))
+            .block_on(
+                self.inner
+                    .append(&self.path, AppendRequest::Native { offset, data }),
+            )
             .map(drop)
     }
 }
@@ -496,12 +499,21 @@ mod tests {
     }
 
     impl AsyncAppend for MutableMockSource {
+        fn supported_append(&self) -> crate::AppendMethod {
+            crate::AppendMethod::Native
+        }
+
         fn append(
             &self,
             path: &Path,
-            offset: u64,
-            data: Bytes,
+            request: AppendRequest,
         ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
+            let AppendRequest::Native { offset, data } = request else {
+                return std::future::ready(Err(UniversalIoError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "MutableMockSource only supports native appends",
+                ))));
+            };
             self.append_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut guard = self.store.lock().unwrap();
@@ -533,7 +545,13 @@ mod tests {
 
         // A rejected stale append must not materialize the object.
         let err = BridgeRuntime::global()
-            .block_on(source.append(Path::new("obj"), 5, Bytes::from_static(b"x")))
+            .block_on(source.append(
+                Path::new("obj"),
+                AppendRequest::Native {
+                    offset: 5,
+                    data: Bytes::from_static(b"x"),
+                },
+            ))
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
         assert!(source.content().is_none());

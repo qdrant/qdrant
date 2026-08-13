@@ -6,7 +6,8 @@
 //! pairs the two: reads are served through the lazily-populated local mirror,
 //! while [`UniversalAppend::append`] performs the remote mutation
 //! immediately — a native write-offset append, or a whole-object rewrite for
-//! stores without native append (see [`AppendMode`]).
+//! stores without native append, per the backend's advertised
+//! [`AppendMethod`].
 //!
 //! Appends are durable once the remote acknowledges them, like raw
 //! [`BlobFile`] appends (the flusher is a no-op); callers batch upstream, so
@@ -33,38 +34,19 @@ pub use pipeline::CachedBlobReadPipeline;
 
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
-use crate::write::AsyncAppend;
+use crate::write::{AppendMethod, AppendRequest, AsyncAppend};
 
 /// Minimum remote-prefix size worth a server-side multipart copy; below it a
 /// whole-object PUT re-uploads the prefix instead. Mirrors the S3 5 MiB
 /// minimum for non-last multipart parts.
-// TODO: move to `AsyncRewrite::MIN_COPY_PREFIX` once the backend trait lands.
 const MIN_COPY_PREFIX: u64 = 5 * 1024 * 1024;
-
-/// How an append is performed on the remote.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AppendMode {
-    /// The store supports native write-offset appends (S3 Express One Zone,
-    /// MinIO AiStor). `soft_limit` rewrites the whole object instead after
-    /// that many native appends, staying clear of the store's cap on appended
-    /// blocks per object; `None` relies on the reactive fallback alone.
-    Native { soft_limit: Option<u32> },
-    /// No native append (plain S3): every append rewrites the object — a
-    /// whole PUT while it is small, a server-side copy of the remote prefix
-    /// once it is large enough.
-    Rewrite,
-}
 
 /// A remote object handle that reads through a local [`DiskCache`] mirror and
 /// appends straight to the remote. See the module docs.
 pub struct CachedBlobFile<A: AsyncRead + Clone> {
     cache: DiskCache<BlobFile<A>>,
     remote: BlobFile<A>,
-    mode: AppendMode,
     writeable: bool,
-    /// Native appends since the last whole-object write, driving
-    /// [`AppendMode::Native`]'s `soft_limit`.
-    native_appends: u32,
 }
 
 impl<A: AsyncRead + Clone> std::fmt::Debug for CachedBlobFile<A> {
@@ -72,33 +54,22 @@ impl<A: AsyncRead + Clone> std::fmt::Debug for CachedBlobFile<A> {
         let Self {
             cache,
             remote,
-            mode,
             writeable,
-            native_appends,
         } = self;
         f.debug_struct("CachedBlobFile")
             .field("cache", cache)
             .field("remote", remote)
-            .field("mode", mode)
             .field("writeable", writeable)
-            .field("native_appends", native_appends)
             .finish()
     }
 }
 
 impl<A: AsyncRead + Clone> CachedBlobFile<A> {
-    pub(crate) fn new(
-        cache: DiskCache<BlobFile<A>>,
-        remote: BlobFile<A>,
-        mode: AppendMode,
-        writeable: bool,
-    ) -> Self {
+    pub(crate) fn new(cache: DiskCache<BlobFile<A>>, remote: BlobFile<A>, writeable: bool) -> Self {
         Self {
             cache,
             remote,
-            mode,
             writeable,
-            native_appends: 0,
         }
     }
 }
@@ -119,22 +90,22 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             )));
         }
 
-        match self.mode {
-            AppendMode::Native { soft_limit } => {
-                if soft_limit.is_some_and(|limit| self.native_appends >= limit) {
-                    self.rewrite(offset, &data)?;
-                } else {
-                    // TODO: switch to the inherent `BlobFile::append_native`
-                    // once the specialized remote ops land and `BlobFile`
-                    // loses its `UniversalAppend` impl.
-                    match self.remote.append(offset, data.as_ref()) {
-                        Ok(()) => self.native_appends += 1,
-                        Err(err) if err_requires_rewrite(&err) => self.rewrite(offset, &data)?,
-                        Err(err) => return Err(err),
+        match self.remote.source().supported_append() {
+            AppendMethod::Native => {
+                // TODO: switch to the inherent `BlobFile::append_native`
+                // once the specialized remote ops land and `BlobFile`
+                // loses its `UniversalAppend` impl.
+                match self.remote.append(offset, data.as_ref()) {
+                    Ok(()) => {}
+                    // The object hit the store's appended-block cap; the
+                    // rewrite resets it to a single block.
+                    Err(err) if err.is_append_rewrite_required() => {
+                        self.rewrite(offset, data.clone())?;
                     }
+                    Err(err) => return Err(err),
                 }
             }
-            AppendMode::Rewrite => self.rewrite(offset, &data)?,
+            AppendMethod::PartialUpload => self.rewrite(offset, data.clone())?,
         }
 
         let new_len = offset + data.len() as u64;
@@ -153,7 +124,7 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
     /// The remote offers no compare-and-swap here, so `offset` is validated
     /// against the mirror length — this handle's view of the remote EOF,
     /// kept in step after every append (single-writer contract).
-    fn rewrite(&mut self, offset: ByteOffset, data: &[u8]) -> UioResult<()> {
+    fn rewrite(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
         let local_len = self.cache.len::<u8>()?;
         if offset != local_len {
             return Err(UniversalIoError::AppendOffsetConflict {
@@ -163,21 +134,23 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
         }
 
         if offset == 0 {
-            self.save_whole(Bytes::copy_from_slice(data))?;
+            self.save_whole(data)?;
         } else if offset >= MIN_COPY_PREFIX {
             // Server-side copy of the remote prefix, `data` as the final part.
-            todo!("multipart rewrite with UploadPartCopy (AsyncRewrite backend capability)")
+            self.remote.runtime().block_on(self.remote.source().append(
+                self.remote.path(),
+                AppendRequest::PartialUpload { offset, data },
+            ))?;
         } else {
             // The prefix is small by construction; read it through the cache
             // (served locally once mirrored).
             let prefix = self.cache.read_bytes(0..offset, Sequential, 1)?;
             let mut whole = Vec::with_capacity(prefix.len() + data.len());
             whole.extend_from_slice(&prefix);
-            whole.extend_from_slice(data);
+            whole.extend_from_slice(&data);
             self.save_whole(Bytes::from(whole))?;
         }
 
-        self.native_appends = 0;
         Ok(())
     }
 
@@ -189,14 +162,6 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             .runtime()
             .block_on(self.remote.source().save(self.remote.path(), data))
     }
-}
-
-/// Whether a native-append failure means the store demands a full rewrite
-/// (append-block limit exceeded, or write-offset appends unsupported).
-// TODO: classify once `UniversalIoError::AppendRewriteRequired` exists; until
-// then only the proactive `soft_limit` triggers rewrites in `Native` mode.
-fn err_requires_rewrite(_err: &UniversalIoError) -> bool {
-    false
 }
 
 impl<A: AsyncAppend + Clone> UniversalRead for CachedBlobFile<A>

@@ -404,16 +404,26 @@ mod tests {
     /// single-request (see [`crate::append`]); this exists so the `BlobFile`
     /// append stack can be exercised hermetically.
     impl io_bridge::AsyncAppend for ObjectStoreSource<InMemory> {
+        fn supported_append(&self) -> io_bridge::AppendMethod {
+            io_bridge::AppendMethod::Native
+        }
+
         fn append(
             &self,
             path: &Path,
-            offset: u64,
-            data: Bytes,
+            request: io_bridge::AppendRequest,
         ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             let store = self.store().clone();
             let key = build_key(path);
 
             async move {
+                let io_bridge::AppendRequest::Native { offset, data } = request else {
+                    return Err(UniversalIoError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "InMemory emulation only supports native appends",
+                    )));
+                };
+
                 let conflict = || UniversalIoError::AppendOffsetConflict {
                     path: PathBuf::from(key.to_string()),
                     offset,

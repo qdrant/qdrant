@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
-use io_bridge::AsyncAppend;
+use io_bridge::{AppendMethod, AppendRequest, AsyncAppend};
 use object_store::aws::{AmazonS3, AwsAuthorizer};
 use object_store::client::{HttpClient, HttpConnector as _, HttpRequestBody, ReqwestConnector};
 use object_store::{ClientOptions, ObjectStoreExt as _};
@@ -36,6 +36,11 @@ const WRITE_OFFSET_HEADER: &str = "x-amz-write-offset-bytes";
 /// S3 error code returned when the write offset does not match the current
 /// object size.
 const INVALID_WRITE_OFFSET_CODE: &str = "InvalidWriteOffset";
+
+/// S3 error code returned when the object reached the store's cap on
+/// appended blocks (10,000 parts); the object can only keep growing through
+/// a whole-object rewrite.
+const TOO_MANY_PARTS_CODE: &str = "TooManyParts";
 
 /// State for issuing native append requests: a lazily-built shared HTTP
 /// client plus the resolved object-URL base and signing region.
@@ -92,25 +97,43 @@ impl AppendContext {
 }
 
 impl AsyncAppend for ObjectStoreSource<AmazonS3> {
+    fn supported_append(&self) -> AppendMethod {
+        // The append context exists exactly when the backend/config supports
+        // write-offset appends; plain S3 falls back to multipart rewrites.
+        if self.append_context().is_some() {
+            AppendMethod::Native
+        } else {
+            AppendMethod::PartialUpload
+        }
+    }
+
     fn append(
         &self,
         path: &std::path::Path,
-        offset: u64,
-        data: Bytes,
+        request: AppendRequest,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store().clone();
         let context = self.append_context().cloned();
         let key = crate::source::build_key(path);
 
         async move {
-            let Some(context) = context else {
-                return Err(UniversalIoError::S3Config {
-                    description: "append is not supported for this S3 backend/config (append context missing)"
-                        .to_string(),
-                });
-            };
+            match request {
+                AppendRequest::Native { offset, data } => {
+                    let Some(context) = context else {
+                        return Err(UniversalIoError::S3Config {
+                            description: "append is not supported for this S3 backend/config (append context missing)"
+                                .to_string(),
+                        });
+                    };
 
-            append_request(&store, &context, &key, offset, data).await
+                    append_request(&store, &context, &key, offset, data).await
+                }
+                AppendRequest::PartialUpload { offset: _, data: _ } => {
+                    // CreateMultipartUpload + UploadPartCopy of `[0, offset)`
+                    // + UploadPart(data) + CompleteMultipartUpload.
+                    todo!("multipart rewrite with UploadPartCopy")
+                }
+            }
         }
     }
 }
@@ -241,6 +264,16 @@ async fn append_request(
         // Read the body for the S3 error code (best-effort).
         let body = response.into_body().bytes().await.unwrap_or_default();
         let body_text = String::from_utf8_lossy(&body);
+
+        // The appended-block cap is a permanent property of the object —
+        // report it as rewrite-required so the caller can recover, instead
+        // of an opaque failure. Anything unrecognized stays a hard error
+        // rather than silently triggering a full-object rewrite.
+        if status == http::StatusCode::BAD_REQUEST && body_text.contains(TOO_MANY_PARTS_CODE) {
+            return Err(UniversalIoError::AppendRewriteRequired {
+                path: PathBuf::from(key.to_string()),
+            });
+        }
 
         // AWS reports a write-offset mismatch as 400 InvalidWriteOffset;
         // some S3-compatibles use 412 instead.
@@ -596,6 +629,18 @@ mod tests {
             err,
             UniversalIoError::AppendOffsetConflict { offset: 5, .. }
         );
+    }
+
+    /// The appended-block cap surfaces as `AppendRewriteRequired`, so the
+    /// caller recovers with a whole-object rewrite.
+    #[test]
+    fn too_many_parts_is_rewrite_required() {
+        let (endpoint, _seen) = stub_server(vec![
+            StubResponse::new(400).body("<Error><Code>TooManyParts</Code></Error>"),
+        ]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::AppendRewriteRequired { .. });
     }
 
     /// Only the `InvalidWriteOffset` error code makes a 400 a conflict;

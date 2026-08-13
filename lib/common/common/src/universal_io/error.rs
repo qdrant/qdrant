@@ -50,6 +50,7 @@ impl IsNotFound for UniversalIoError {
             | Self::UnchangedOpen { .. }
             | Self::QueueIsFull
             | Self::AppendOffsetConflict { .. }
+            | Self::AppendRewriteRequired { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::TaskPanicked(_) => false,
@@ -131,6 +132,12 @@ pub enum UniversalIoError {
     #[error("append offset conflict at {path}: expected end-of-file offset {offset}")]
     AppendOffsetConflict { path: PathBuf, offset: u64 },
 
+    /// A native append was rejected because the object reached the store's
+    /// cap on appended blocks; the object can only keep growing through a
+    /// whole-object rewrite.
+    #[error("append to {path} rejected: appended-block limit reached, rewrite required")]
+    AppendRewriteRequired { path: PathBuf },
+
     #[error("S3 object store error: {0}")]
     S3(#[source] Box<dyn std::error::Error + Send + Sync>),
 
@@ -156,6 +163,29 @@ impl UniversalIoError {
             | Self::InvalidFileIndex { .. }
             | Self::Uninitialized { .. }
             | Self::QueueIsFull
+            | Self::AppendRewriteRequired { .. }
+            | Self::S3(_)
+            | Self::S3Config { .. }
+            | Self::UnchangedOpen { .. }
+            | Self::TaskPanicked(_) => false,
+        }
+    }
+
+    pub fn is_append_rewrite_required(&self) -> bool {
+        match self {
+            Self::AppendRewriteRequired { .. } => true,
+            Self::Io(_)
+            | Self::Mmap(_)
+            | Self::Bincode(_)
+            | Self::BytemuckCast(_)
+            | Self::ZerocopySize(_)
+            | Self::IoUringNotSupported(_)
+            | Self::NotFound { .. }
+            | Self::OutOfBounds { .. }
+            | Self::InvalidFileIndex { .. }
+            | Self::Uninitialized { .. }
+            | Self::QueueIsFull
+            | Self::AppendOffsetConflict { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }

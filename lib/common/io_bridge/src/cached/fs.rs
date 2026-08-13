@@ -8,18 +8,17 @@ use common::universal_io::{
     UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
 };
 
-use super::{AppendMode, CachedBlobFile};
+use super::CachedBlobFile;
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
 use crate::read::AsyncRead;
 use crate::write::AsyncAppend;
 
-/// Construction context for [`CachedBlobFs`]: the local-mirror layout, the
-/// remote backend's own construction config, and the append strategy.
+/// Construction context for [`CachedBlobFs`]: the local-mirror layout and
+/// the remote backend's own construction config.
 pub struct CachedBlobFsContext<C> {
     pub disk_cache: Arc<DiskCacheConfig>,
     pub remote: C,
-    pub append_mode: AppendMode,
 }
 
 /// Filesystem handle for [`CachedBlobFile`]: a [`DiskCacheFs`] for the
@@ -32,20 +31,14 @@ pub struct CachedBlobFsContext<C> {
 pub struct CachedBlobFs<A: AsyncRead + Clone> {
     cache_fs: DiskCacheFs<BlobFile<A>>,
     blob_fs: BlobFs<A>,
-    mode: AppendMode,
 }
 
 impl<A: AsyncRead + Clone> std::fmt::Debug for CachedBlobFs<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            cache_fs,
-            blob_fs,
-            mode,
-        } = self;
+        let Self { cache_fs, blob_fs } = self;
         f.debug_struct("CachedBlobFs")
             .field("cache_fs", cache_fs)
             .field("blob_fs", blob_fs)
-            .field("mode", mode)
             .finish()
     }
 }
@@ -57,11 +50,7 @@ where
     type ContextConfig = CachedBlobFsContext<A::Config>;
 
     fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
-        let CachedBlobFsContext {
-            disk_cache,
-            remote,
-            append_mode,
-        } = context;
+        let CachedBlobFsContext { disk_cache, remote } = context;
 
         let blob_fs = BlobFs::<A>::from_context(remote.clone())?;
         let cache_fs = DiskCacheFs::from_context(DiskCacheFsContext {
@@ -69,11 +58,7 @@ where
             remote,
         })?;
 
-        Ok(Self {
-            cache_fs,
-            blob_fs,
-            mode: append_mode,
-        })
+        Ok(Self { cache_fs, blob_fs })
     }
 
     fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
@@ -108,12 +93,7 @@ where
 
         let remote = self.blob_fs.open(path.as_ref(), options, ())?;
 
-        Ok(CachedBlobFile::new(
-            cache,
-            remote,
-            self.mode,
-            options.writeable,
-        ))
+        Ok(CachedBlobFile::new(cache, remote, options.writeable))
     }
 }
 
