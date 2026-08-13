@@ -217,7 +217,7 @@ fn relock_under_concurrent_contention_diagnostic() {
                 let result =
                     GpuVectorStorage::new(locked_device.device(), &storage, None, false, &stopped);
                 eprintln!(
-                    "[troublemaker] 48GB alloc -> {} (took {:?})",
+                    "[troublemaker] {target_gb:.1}GB alloc -> {} (took {:?})",
                     if result.is_ok() { "OK" } else { "FAILED" },
                     alloc_start.elapsed()
                 );
