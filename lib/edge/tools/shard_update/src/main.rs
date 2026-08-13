@@ -59,8 +59,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use clap::{Args as ClapArgs, Parser, ValueEnum};
 use common::universal_io::{
-    DiskCacheConfig, MmapFile, OkNotFound as _, UniversalAppend, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs, read_json_via,
+    DiskCacheConfig, MmapFile, OkNotFound as _, UniversalAppend, UniversalReadFileOps,
+    UniversalReadFs, read_json_via,
 };
 use edge::external::uuid::Uuid;
 use edge::{
@@ -206,7 +206,7 @@ struct ShardSchema {
 /// parsed during the open — no extra reads) plus the payload-index schema,
 /// which is the one file the writer deliberately never opens, so the tool
 /// reads it through `fs` itself.
-fn read_schema<S: UniversalRead + 'static, F: UniversalReadFs>(
+fn read_schema<S: UniversalAppend + 'static, F: UniversalReadFs>(
     shard: &UpdateOnlyEdgeShard<S>,
     fs: &F,
     shard_path: &Path,
@@ -500,7 +500,7 @@ fn generate_batch(schema: &ShardSchema, ids: &[PointId], seed: u64) -> UpdateOpe
 /// Generate the random batch, resolve it against the open shard, and log what
 /// it would do. The backend is behind `S`, so this is the whole dry run for
 /// local and object-storage shards alike.
-fn dry_run<S: UniversalRead + 'static>(
+fn dry_run<S: UniversalAppend + 'static>(
     shard: &UpdateOnlyEdgeShard<S>,
     schema: &ShardSchema,
     ids: &[PointId],
@@ -558,7 +558,7 @@ fn apply_run<S: UniversalAppend + 'static>(
 ) -> Result<()> {
     let operation = generate_batch(schema, ids, seed);
 
-    let outcome = shard
+    let (_shard, outcome) = shard
         .apply_batch([(op_num, operation)])
         .context("failed to apply the batch")?;
 
