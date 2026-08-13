@@ -54,6 +54,7 @@ shard = { path = ".", default-features = false, features = ["testing"] }
 
 criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
+prost = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }
@@ -61,4 +62,8 @@ tar = { workspace = true }
 
 [[bench]]
 name = "find_duplicated_points"
+harness = false
+
+[[bench]]
+name = "raw_payload_transfer"
 harness = false

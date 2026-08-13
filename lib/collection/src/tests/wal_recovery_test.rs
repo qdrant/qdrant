@@ -7,7 +7,8 @@ use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
 use segment::types::{
-    Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector,
+    Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType, PointIdType, RawPayload,
+    WithPayload, WithVector,
 };
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
@@ -1590,6 +1591,7 @@ async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
                 id: id.into(),
                 vectors: std::iter::once((DEFAULT_VECTOR_NAME.to_owned(), bytes)).collect(),
                 payload: None,
+                payload_raw: None,
             },
         ]))
     };
@@ -1619,6 +1621,40 @@ async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
     assert!(
         matches!(err, CollectionError::BadInput { .. }),
         "malformed raw blob must be a BadInput user error (skipped on replay), got {err:?}",
+    );
+}
+
+/// Payload counterpart of [`test_malformed_raw_upsert_is_skipped_on_wal_replay`]: a blob
+/// reaches the WAL unparsed, so a bad one is only found on apply and must be skipped.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_malformed_raw_payload_upsert_is_skipped_on_wal_replay() {
+    let vector_bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+
+    let raw_upsert = |id: u64, payload_bytes: &[u8]| {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
+            PointStructRawPersisted {
+                id: PointIdType::from(id),
+                vectors: std::iter::once((DEFAULT_VECTOR_NAME.to_owned(), vector_bytes.clone()))
+                    .collect(),
+                payload: None,
+                payload_raw: Some(RawPayload::from_storage_bytes(payload_bytes.to_vec())),
+            },
+        ]))
+    };
+
+    let err = assert_bad_op_skipped_on_wal_replay(
+        create_collection_config(),
+        raw_upsert(1, br#"{"city": "Berlin"}"#),
+        raw_upsert(2, b"not json"),
+    )
+    .await;
+
+    assert!(
+        matches!(err, CollectionError::BadInput { .. }),
+        "malformed payload blob must be a BadInput user error (skipped on replay), got {err:?}",
     );
 }
 
@@ -1662,6 +1698,7 @@ async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
                 id: 2.into(),
                 vectors: std::iter::once((sparse_name.to_owned(), vec![0_u8, 1, 2])).collect(),
                 payload: None,
+                payload_raw: None,
             },
         ]));
 

@@ -3705,6 +3705,18 @@ impl From<Modifier> for grpc::Modifier {
     }
 }
 
+impl From<RawPayload> for grpc::RawPayload {
+    fn from(value: RawPayload) -> Self {
+        let RawPayload { payload_bytes } = value;
+
+        Self {
+            payload_bytes,
+            // A blob only ever comes from storage, which keeps payloads as serde_json.
+            encoding: grpc::RawPayloadEncoding::JsonBytes as i32,
+        }
+    }
+}
+
 impl TryFrom<grpc::RawPayload> for RawPayload {
     type Error = Status;
 

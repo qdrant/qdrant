@@ -7481,6 +7481,7 @@ dependencies = [
  "ordered-float 5.3.0",
  "parking_lot",
  "proptest",
+ "prost 0.14.4",
  "rand 0.10.2",
  "rmp-serde",
  "rstest",
