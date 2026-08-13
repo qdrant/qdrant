@@ -35,7 +35,16 @@ pub static GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(
 /// visibility (no error, no log line) until a full qdrant restart. This bounds that: give up
 /// waiting after this long and fall back to CPU for that one build, same as any other GPU
 /// failure, rather than hanging the entire optimizer indefinitely.
-static GPU_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+///
+/// Must stay above GPU_TIMEOUT below: a lock holder may legitimately run a single GPU
+/// operation for that long (confirmed live: multi-minute builds for individual segments), so a
+/// shorter bound here would report that entirely healthy contention as a stuck/wedged device —
+/// confirmed as a real inconsistency in this same patch before release (a reviewer caught
+/// GPU_LOCK_TIMEOUT=120s vs GPU_TIMEOUT=300s, i.e. the wait-for-a-device bound was SHORTER than
+/// the legitimate-hold-time bound it's supposed to exceed). Derived from GPU_TIMEOUT (not a
+/// second independent literal) specifically so the two can never drift back out of this
+/// relationship if either is tuned again later.
+static GPU_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(GPU_TIMEOUT.as_secs() * 2);
 
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.

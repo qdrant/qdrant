@@ -44,13 +44,45 @@ fn build_storage_of_size(target_gb: f64) -> VectorStorageEnum {
     storage
 }
 
+/// GPU vendor filter for these diagnostics, e.g. "nvidia" or "amd" — was previously hardcoded to
+/// "nvidia" (fine on our own host, but the diagnostic couldn't run at all on a different vendor,
+/// and would panic with a message pointing at GPU visibility rather than at the filter itself).
+fn gpu_filter() -> String {
+    std::env::var("QDRANT_GPU_DIAGNOSTIC_FILTER").unwrap_or_else(|_| "nvidia".to_owned())
+}
+
+/// This test's own oversized allocation is meant to exceed VRAM, not host RAM — but
+/// `build_storage_of_size()` allocates the full target size in host memory first (it builds a
+/// real `VectorStorageEnum` before ever touching the GPU). Reading `/proc/meminfo`'s
+/// `MemAvailable` and capping the request below it (leaving real headroom for the OTHER threads'
+/// concurrent allocations too) avoids the host OOM killer ending the diagnostic before it ever
+/// reaches the GPU, on a host with less RAM than ours. Falls back to the original hardcoded size
+/// if `/proc/meminfo` can't be read/parsed (non-Linux, or a sandboxed environment without it) —
+/// same behavior as before this fix in that case, not a regression.
+fn oversized_target_gb(preferred_gb: f64, headroom_fraction: f64) -> f64 {
+    let available_gb = std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|contents| {
+            contents.lines().find_map(|line| {
+                line.strip_prefix("MemAvailable:")
+                    .and_then(|rest| rest.trim().split_whitespace().next())
+                    .and_then(|kb| kb.parse::<f64>().ok())
+                    .map(|kb| kb / (1024.0 * 1024.0))
+            })
+        });
+    match available_gb {
+        Some(available_gb) => preferred_gb.min(available_gb * headroom_fraction),
+        None => preferred_gb,
+    }
+}
+
 /// Run explicitly with:
 ///   cargo test --features gpu -p segment relock_after_pressure_diagnostic -- --ignored --nocapture
 #[test]
 #[ignore]
 fn relock_after_pressure_diagnostic() {
     let stopped = AtomicBool::new(false);
-    let manager = GpuDevicesMaganer::new("nvidia", None, false, false, true, 1)
+    let manager = GpuDevicesMaganer::new(&gpu_filter(), None, false, false, true, 1)
         .expect("failed to init GpuDevicesMaganer — is a GPU actually visible on this host?");
 
     // Sizes chosen to straddle Qdrant's own documented ~16GB-per-segment-per-indexing-iteration
@@ -129,7 +161,7 @@ fn relock_under_concurrent_contention_diagnostic() {
 
     let stopped = Arc::new(AtomicBool::new(false));
     let manager = Arc::new(
-        GpuDevicesMaganer::new("nvidia", None, false, false, true, 1)
+        GpuDevicesMaganer::new(&gpu_filter(), None, false, false, true, 1)
             .expect("failed to init GpuDevicesMaganer — is a GPU actually visible on this host?"),
     );
 
@@ -174,8 +206,9 @@ fn relock_under_concurrent_contention_diagnostic() {
         let manager = manager.clone();
         let stopped = stopped.clone();
         handles.push(thread::spawn(move || {
-            eprintln!("[troublemaker] attempting oversized (48GB) allocation...");
-            let storage = build_storage_of_size(48.0);
+            let target_gb = oversized_target_gb(48.0, 0.5);
+            eprintln!("[troublemaker] attempting oversized ({target_gb:.1}GB) allocation...");
+            let storage = build_storage_of_size(target_gb);
             let lock_start = Instant::now();
             let locked = manager.lock_device(&stopped);
             eprintln!("[troublemaker] lock_device took {:?}", lock_start.elapsed());

@@ -23,42 +23,34 @@ struct GpuDeviceSlot {
     queue_index: usize,
 }
 
-/// Everything `LockedGpuDevice` needs to call `gpu::Device::new_with_params()` again for the
-/// exact same physical device/queue it was originally created with. `None` for devices locked
-/// via the bare `LockedGpuDevice::new()` constructor (used directly by tests, bypassing
-/// `GpuDevicesMaganer`) — those simply can't self-heal, same as before this patch.
-struct GpuDeviceRecreateInfo {
-    instance: Arc<gpu::Instance>,
-    physical_device: gpu::PhysicalDevice,
-    queue_index: usize,
-}
-
 pub struct LockedGpuDevice<'a> {
     locked_device: MutexGuard<'a, Arc<gpu::Device>>,
-    recreate_info: Option<GpuDeviceRecreateInfo>,
+    // Borrows the owning GpuDeviceSlot directly instead of cloning its instance/physical_device/
+    // queue_index into a separate struct on every single lock acquisition — a reviewer correctly
+    // flagged the clone-per-lock cost plus the field-duplication drift risk in an earlier version
+    // of this patch. A plain shared reference coexists fine with the MutexGuard above: both are
+    // non-exclusive borrows of (parts of) the same GpuDeviceSlot, and Mutex::lock() only needs
+    // &self to produce the guard, so there's no aliasing conflict. `None` for devices locked via
+    // the bare `LockedGpuDevice::new()` constructor (used directly by tests, bypassing
+    // `GpuDevicesMaganer`) — those simply can't self-heal, same as before this patch.
+    slot: Option<&'a GpuDeviceSlot>,
 }
 
 impl<'a> LockedGpuDevice<'a> {
     pub fn new(locked_device: MutexGuard<'a, Arc<gpu::Device>>) -> Self {
         Self {
             locked_device,
-            recreate_info: None,
+            slot: None,
         }
     }
 
-    fn new_with_recreate_info(
+    fn new_with_slot(
         locked_device: MutexGuard<'a, Arc<gpu::Device>>,
-        instance: Arc<gpu::Instance>,
-        physical_device: gpu::PhysicalDevice,
-        queue_index: usize,
+        slot: &'a GpuDeviceSlot,
     ) -> Self {
         Self {
             locked_device,
-            recreate_info: Some(GpuDeviceRecreateInfo {
-                instance,
-                physical_device,
-                queue_index,
-            }),
+            slot: Some(slot),
         }
     }
 
@@ -116,7 +108,7 @@ impl<'a> LockedGpuDevice<'a> {
     /// place — identical to today's existing behavior, so this can never make things worse than
     /// before the fix, only better.
     pub fn recreate_after_device_lost(&mut self) {
-        let Some(info) = &self.recreate_info else {
+        let Some(slot) = self.slot else {
             log::debug!(
                 "GPU device lost, but this LockedGpuDevice has no recreate info (constructed \
                  directly, bypassing GpuDevicesMaganer — e.g. in tests). Cannot self-heal; \
@@ -125,16 +117,16 @@ impl<'a> LockedGpuDevice<'a> {
             return;
         };
         match gpu::Device::new_with_params(
-            info.instance.clone(),
-            &info.physical_device,
-            info.queue_index,
+            slot.instance.clone(),
+            &slot.physical_device,
+            slot.queue_index,
             false,
         ) {
             Ok(new_device) => {
                 log::warn!(
                     "GPU device {:?} reported DEVICE_LOST; reinitialized a fresh Vulkan device \
                      in its place so subsequent builds can use GPU again.",
-                    info.physical_device.name,
+                    slot.physical_device.name,
                 );
                 *self.locked_device = new_device;
             }
@@ -142,7 +134,7 @@ impl<'a> LockedGpuDevice<'a> {
                 log::error!(
                     "GPU device {:?} reported DEVICE_LOST and could not be reinitialized: \
                      {err:?}. Falling back to CPU until qdrant is restarted.",
-                    info.physical_device.name,
+                    slot.physical_device.name,
                 );
             }
         }
@@ -280,12 +272,7 @@ impl GpuDevicesMaganer {
         loop {
             for slot in &self.devices {
                 if let Some(guard) = slot.device.try_lock() {
-                    return Ok(Some(LockedGpuDevice::new_with_recreate_info(
-                        guard,
-                        slot.instance.clone(),
-                        slot.physical_device.clone(),
-                        slot.queue_index,
-                    )));
+                    return Ok(Some(LockedGpuDevice::new_with_slot(guard, slot)));
                 }
             }
 
@@ -296,10 +283,14 @@ impl GpuDevicesMaganer {
             check_stopped(stopped)?;
 
             if wait_start.elapsed() > super::GPU_LOCK_TIMEOUT {
-                log::error!(
-                    "Timed out after {:?} waiting for a free GPU device (all {} device(s) \
-                     still busy — possibly one is permanently stuck, see lock_device()'s doc \
-                     comment). Falling back to CPU for this build.",
+                // warn, not error: hitting this bound means either genuine contention (a build
+                // legitimately holding the device for a long dispatch, expected under real
+                // parallel load) or a wedged holder — this function has no way to tell the two
+                // apart, and the graceful CPU fallback below handles both identically, so this
+                // isn't itself a failure worth an error-level log.
+                log::warn!(
+                    "Timed out after {:?} waiting for a free GPU device ({} device(s) still \
+                     busy). Falling back to CPU for this build.",
                     wait_start.elapsed(),
                     self.devices.len(),
                 );
