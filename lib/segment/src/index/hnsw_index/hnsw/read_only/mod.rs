@@ -242,7 +242,9 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::MmapFs;
+    use GraphLinksFormat::{Compressed, CompressedWithVectors, Plain};
+    use GraphLinksResidency::{Cached, Cold, Pinned};
+    use common::universal_io::{MmapFs, UniversalKind as Kind};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use tempfile::Builder;
@@ -252,11 +254,6 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
     use crate::types::Distance;
 
-    /// Pins which graph representation each (backend, format, residency) cell
-    /// loads — and its links residency. The decision lives in
-    /// [`HnswGraph::open_universal`], with the materialization fallback still
-    /// in `GraphLinksEnum::from_storage`. Search through the loaded graphs is
-    /// covered by the `graph_layers_batched` parity tests.
     #[test]
     fn test_open_matrix() {
         let mut rng = StdRng::seed_from_u64(42);
@@ -285,43 +282,47 @@ mod tests {
                 )
                 .unwrap();
 
-            check_backend(&MmapFs, dir.path(), format);
+            test_open_matrix_impl(&MmapFs, dir.path(), format);
             #[cfg(target_os = "linux")]
-            check_backend(&common::universal_io::IoUringFs, dir.path(), format);
+            test_open_matrix_impl(&common::universal_io::IoUringFs, dir.path(), format);
         }
     }
 
-    fn check_backend<Fs>(fs: &Fs, dir: &Path, format: GraphLinksFormat)
+    fn test_open_matrix_impl<Fs>(fs: &Fs, dir: &Path, format: GraphLinksFormat)
     where
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        for residency in [
-            GraphLinksResidency::Cold,
-            GraphLinksResidency::Cached,
-            GraphLinksResidency::Pinned,
-        ] {
-            let context = format!("{:?}, {format:?}, {residency:?}", Fs::File::kind());
+        #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+        enum ExpectedResult {
+            Batched,
+            Mmap,
+            Vec,
+        }
+        use ExpectedResult::{Batched, Mmap, Vec};
 
+        #[rustfmt::skip]
+        let row = match (Fs::File::kind(), format) {
+            //                                         Cold     Cached   Pinned
+            (Kind::Mmap,    Plain)                 => [Mmap,    Mmap,    Vec],
+            (Kind::Mmap,    Compressed)            => [Mmap,    Mmap,    Vec],
+            (Kind::Mmap,    CompressedWithVectors) => [Mmap,    Mmap,    Vec],
+
+            (Kind::IoUring, Plain)                 => [Vec,     Vec,     Vec],
+            (Kind::IoUring, Compressed)            => [Batched, Batched, Vec],
+            (Kind::IoUring, CompressedWithVectors) => [Batched, Batched, Vec],
+
+            _ => unreachable!(),
+        };
+
+        for (residency, expected) in [Cold, Cached, Pinned].into_iter().zip(row) {
             let graph = HnswGraph::open_universal(fs, dir, residency).unwrap();
-            let expect_batched = residency != GraphLinksResidency::Pinned
-                && match format {
-                    GraphLinksFormat::CompressedWithVectors | GraphLinksFormat::Compressed => {
-                        Fs::File::kind().can_be_async()
-                    }
-                    GraphLinksFormat::Plain => false,
-                };
-            match &graph {
-                HnswGraph::Direct(direct) => {
-                    assert!(!expect_batched, "{context}");
-                    // Links are materialized into heap when pinned explicitly,
-                    // or as the fallback for non-borrowable backends.
-                    let expect_heap = !Fs::File::kind().is_in_ram_or_mmap()
-                        || residency == GraphLinksResidency::Pinned;
-                    assert_eq!(direct.links_heap_size_bytes() > 0, expect_heap, "{context}");
-                }
-                HnswGraph::Batched(_) => assert!(expect_batched, "{context}"),
-            }
+            let actual = match &graph {
+                HnswGraph::Direct(direct) if direct.links_heap_size_bytes() > 0 => Vec,
+                HnswGraph::Direct(_) => Mmap,
+                HnswGraph::Batched(_) => Batched,
+            };
+            assert_eq!(actual, expected, "{format:?} {residency:?}");
         }
     }
 }
