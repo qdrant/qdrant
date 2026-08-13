@@ -18,10 +18,18 @@ pub trait OpenExtra: Default + Debug {
 
     /// Hint about the length of the file.
     fn with_known_len(self, known_len: u64) -> Self;
+
+    /// Hint about the entity tag of the remote object, when the backend
+    /// exposes one (object stores). Backends without etags treat this as a
+    /// no-op.
+    #[must_use]
+    fn with_known_etag(self, known_etag: Option<String>) -> Self;
 }
 
 impl OpenExtra for () {
     fn with_prevent_caching(self, _prevent_caching: bool) -> Self {}
 
     fn with_known_len(self, _known_len: u64) -> Self {}
+
+    fn with_known_etag(self, _known_etag: Option<String>) -> Self {}
 }

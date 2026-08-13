@@ -548,6 +548,7 @@ fn build_aws_config(conn: &ConnectionArgs) -> Result<AwsConfig> {
         region: conn.region.clone(),
         endpoint: conn.endpoint.clone(),
         s3_express: conn.s3_express,
+        native_append: false,
         credentials,
     })
 }

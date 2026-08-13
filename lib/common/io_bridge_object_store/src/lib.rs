@@ -34,7 +34,9 @@ mod source;
 #[cfg(test)]
 mod tests;
 
-pub use append::AppendContext;
+pub use append::{
+    AppendContext, ComposeAppend, NativeAppend, PartCopyAppend, SignedRequestContext,
+};
 pub use backend::BlobBackend;
 // Re-export the bridge core so a complete object-store-backed `UniversalRead`
 // stack can be built from this single crate.

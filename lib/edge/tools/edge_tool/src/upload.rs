@@ -234,6 +234,7 @@ fn build_aws_config(args: &UploadArgs) -> Result<AwsConfig> {
         region: args.region.clone(),
         endpoint: args.endpoint.clone(),
         s3_express: args.s3_express,
+        native_append: false,
         credentials,
     })
 }
