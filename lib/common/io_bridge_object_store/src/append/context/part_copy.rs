@@ -28,6 +28,10 @@ const MAX_COPY_PART_SIZE: u64 = 5 * 1024 * 1024 * 1024;
 /// server-side, the caller must rebuild the object by uploading it whole.
 const ENTITY_TOO_SMALL_CODE: &str = "EntityTooSmall";
 
+/// Request header making an `UploadPartCopy` conditional on the source
+/// object's entity tag; a mismatch fails the copy with 412.
+const COPY_SOURCE_IF_MATCH: &str = "x-amz-copy-source-if-match";
+
 /// Minimum existing-object size this strategy can append to: the copied
 /// prefix lands as non-last multipart parts, which S3 requires to be at
 /// least 5 MiB. Below this, callers must write the whole object themselves.
@@ -90,6 +94,13 @@ impl SignedObjectClient<'_> {
                     path: self.path.clone(),
                 });
             }
+            // The only precondition these requests carry is
+            // [`COPY_SOURCE_IF_MATCH`], so a 412 is an etag mismatch.
+            if status == http::StatusCode::PRECONDITION_FAILED {
+                return Err(UniversalIoError::AppendEtagMismatch {
+                    path: self.path.clone(),
+                });
+            }
             let excerpt: String = body_text.chars().take(512).collect();
             return Err(UniversalIoError::s3(std::io::Error::other(format!(
                 "{step} failed with status {status}: {excerpt}",
@@ -114,14 +125,20 @@ impl PartCopyAppend {
 
     /// Append `data` at `offset` (== the current object size) by rewriting
     /// the whole object. Returns the new total object size.
+    ///
+    /// `expected_etag` is attached to the prefix copies as
+    /// `x-amz-copy-source-if-match`, so the store itself rejects the
+    /// rewrite (as [`UniversalIoError::AppendEtagMismatch`]) if the object
+    /// no longer carries the entity tag the caller last observed.
     pub(in crate::append) async fn append(
         &self,
         store: &Arc<AmazonS3>,
         key: &object_store::path::Path,
         offset: u64,
         data: Bytes,
+        expected_etag: Option<&str>,
     ) -> UioResult<u64> {
-        multipart_rewrite(store, &self.signed, key, offset, data).await
+        multipart_rewrite(store, &self.signed, key, offset, data, expected_etag).await
     }
 }
 
@@ -130,15 +147,17 @@ impl PartCopyAppend {
 /// prefix, `data` as the final part, `CompleteMultipartUpload` (an atomic
 /// replace). Returns the new total object size.
 ///
-/// There is no compare-and-swap here — S3 evaluates the copy source when
-/// the part copy runs — so the caller must hold the single-writer contract
-/// (`CachedBlobFile` validates `offset` against its mirror length first).
+/// Without `expected_etag` there is no compare-and-swap here — S3 evaluates
+/// the copy source when the part copy runs — so the caller must hold the
+/// single-writer contract (`CachedBlobFile` validates `offset` against its
+/// mirror length first).
 async fn multipart_rewrite(
     store: &Arc<AmazonS3>,
     context: &SignedRequestContext,
     key: &object_store::path::Path,
     offset: u64,
     data: Bytes,
+    expected_etag: Option<&str>,
 ) -> UioResult<u64> {
     let credential = store
         .credentials()
@@ -171,7 +190,16 @@ async fn multipart_rewrite(
         })?
         .to_string();
 
-    let result = rewrite_parts(&client, context, key, offset, data, &upload_id).await;
+    let result = rewrite_parts(
+        &client,
+        context,
+        key,
+        offset,
+        data,
+        expected_etag,
+        &upload_id,
+    )
+    .await;
     if result.is_err() {
         // Best effort: an orphaned multipart upload holds storage until it
         // is aborted (or reaped by a bucket lifecycle rule).
@@ -190,37 +218,39 @@ async fn multipart_rewrite(
 
 /// The part copies and completion of [`multipart_rewrite`], separated so a
 /// failure of any step aborts the multipart upload.
+#[expect(clippy::too_many_arguments, reason = "internal helper")]
 async fn rewrite_parts(
     client: &SignedObjectClient<'_>,
     context: &SignedRequestContext,
     key: &object_store::path::Path,
     offset: u64,
     data: Bytes,
+    expected_etag: Option<&str>,
     upload_id: &str,
 ) -> UioResult<u64> {
     let mut etags = Vec::new();
-
-    // Server-side copy of `[0, offset)`, split evenly so every part fits
-    // the 5 GiB part ceiling while — at more than one part — staying at
-    // least half of it, far above the S3 5 MiB non-last-part minimum. A
-    // single part is >= 5 MiB by the caller's `MIN_COPY_PREFIX` bound.
     let copy_source = format!("/{}/{}", context.bucket, key);
     let part_len = offset.div_ceil(offset.div_ceil(MAX_COPY_PART_SIZE).max(1));
     let mut start = 0;
     while start < offset {
         let end = (start + part_len).min(offset);
         let part_number = etags.len() + 1;
+        let range = format!("bytes={start}-{}", end - 1);
+        let mut headers = vec![
+            ("x-amz-copy-source", copy_source.as_str()),
+            ("x-amz-copy-source-range", range.as_str()),
+        ];
+        // The store itself verifies the copied prefix still carries the
+        // caller's entity tag: a genuine compare-and-swap, unlike the
+        // unconditional rewrite. Rejected as 412 by `request`.
+        if let Some(expected_etag) = expected_etag {
+            headers.push((COPY_SOURCE_IF_MATCH, expected_etag));
+        }
         let (_, body) = client
             .request(
                 http::Method::PUT,
                 &format!("partNumber={part_number}&uploadId={upload_id}"),
-                &[
-                    ("x-amz-copy-source", copy_source.as_str()),
-                    (
-                        "x-amz-copy-source-range",
-                        &format!("bytes={start}-{}", end - 1),
-                    ),
-                ],
+                &headers,
                 HttpRequestBody::from(Bytes::new()),
                 "multipart rewrite part copy",
             )
@@ -304,6 +334,14 @@ mod tests {
     /// Multipart-rewrite `dir/append.dat` as its `[0, offset)` prefix plus
     /// `b"data"` via the stub.
     fn rewrite_data_at(endpoint: &str, offset: u64) -> UioResult<u64> {
+        rewrite_data_at_if_match(endpoint, offset, None)
+    }
+
+    fn rewrite_data_at_if_match(
+        endpoint: &str,
+        offset: u64,
+        expected_etag: Option<&str>,
+    ) -> UioResult<u64> {
         let (store, context) = stub_store_and_context(endpoint);
         let key = object_store::path::Path::from("dir/append.dat");
 
@@ -312,6 +350,7 @@ mod tests {
             &key,
             offset,
             Bytes::from_static(b"data"),
+            expected_etag,
         ))
     }
 
@@ -404,6 +443,44 @@ mod tests {
             Some("bytes=2684354561-5368709120")
         );
         assert!(seen[3].path.contains("partNumber=3"), "{}", seen[3].path);
+    }
+
+    /// The expected etag rides the part copies as
+    /// `x-amz-copy-source-if-match`; unconditional rewrites send no such
+    /// header.
+    #[test]
+    fn expected_etag_is_sent_as_copy_source_if_match() {
+        let (endpoint, seen) = stub_server(vec![
+            initiate_ok(),
+            copy_part_ok(),
+            data_part_ok(),
+            complete_ok(),
+        ]);
+
+        let offset = 10 * 1024 * 1024;
+        rewrite_data_at_if_match(&endpoint, offset, Some("\"expected\"")).unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[1].copy_if_match.as_deref(), Some("\"expected\""));
+        // The data part carries no copy source, hence no precondition.
+        assert_eq!(seen[2].copy_if_match, None);
+    }
+
+    /// A 412 on the conditional part copy is the store rejecting the etag
+    /// precondition: the object changed behind the caller's back. The
+    /// multipart upload is aborted like any other failure.
+    #[test]
+    fn copy_source_if_match_rejection_is_an_etag_mismatch() {
+        let (endpoint, seen) = stub_server(vec![
+            initiate_ok(),
+            StubResponse::new(412),
+            StubResponse::new(204),
+        ]);
+
+        let err =
+            rewrite_data_at_if_match(&endpoint, 10 * 1024 * 1024, Some("\"stale\"")).unwrap_err();
+        assert_matches!(err, UniversalIoError::AppendEtagMismatch { .. });
+        assert_eq!(seen.lock().unwrap().last().unwrap().method, "DELETE");
     }
 
     /// A failing step aborts the multipart upload, so it does not linger

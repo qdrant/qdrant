@@ -71,11 +71,23 @@ pub trait AsyncAppend: AsyncWrite {
     /// with [`UniversalIoError::AppendOffsetConflict`], so concurrent
     /// appenders cannot silently interleave.
     ///
+    /// `expected_etag`, when provided, is the entity tag the caller last
+    /// observed for the object. Backends attach it as a server-side
+    /// precondition where the store offers one (S3 rewrites:
+    /// `x-amz-copy-source-if-match`), rejecting with
+    /// [`UniversalIoError::AppendEtagMismatch`] if the object was replaced
+    /// behind the caller's back — which the offset compare-and-swap alone
+    /// cannot detect when the lengths coincide. Operations without a
+    /// matching precondition (native write-offset appends, GCS compose)
+    /// ignore it.
+    ///
     /// [`UniversalIoError::AppendOffsetConflict`]: common::universal_io::UniversalIoError::AppendOffsetConflict
+    /// [`UniversalIoError::AppendEtagMismatch`]: common::universal_io::UniversalIoError::AppendEtagMismatch
     fn append(
         &self,
         path: &Path,
         offset: u64,
         data: Bytes,
+        expected_etag: Option<String>,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static;
 }

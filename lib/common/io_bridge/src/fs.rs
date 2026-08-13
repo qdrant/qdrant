@@ -3,10 +3,9 @@ use std::path::Path;
 use bytes::Bytes;
 use common::universal_io::{
     ListedFile, OpenOptions, UioResult, UniversalReadFileOps, UniversalReadFs,
-    UniversalWriteFileOps,
 };
 
-use crate::{AsyncAppend, AsyncRead, BlobFile, BridgeRuntime};
+use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 
 /// Filesystem handle for an object-store backend: an [`AsyncRead`] handle plus
 /// the [`BridgeRuntime`] used to drive its async operations. Opens per-object
@@ -74,48 +73,26 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     }
 }
 
-/// Requires [`AsyncAppend`], not just [`AsyncWrite`](crate::AsyncWrite): a write-capable
-/// filesystem must hand out append handles, and only backends with a native
-/// single-request append can produce one (`BlobFile` appends through
-/// [`AsyncAppend::append`]). Backends that can only put whole objects stay
-/// read-only through universal I/O.
-impl<A: AsyncAppend + Clone> UniversalWriteFileOps for BlobFs<A> {
-    type AppendFile = BlobFile<A>;
-
-    fn create(&self, path: &Path, _expected_length: usize) -> UioResult<()> {
-        // Object stores have no fixed-size preallocation; the expected
-        // length is ignored, as the trait allows.
+/// Deliberately no [`UniversalWriteFileOps`] impl: the write-capable
+/// universal-IO filesystem for object stores is
+/// [`CachedBlobFs`](crate::CachedBlobFs), which delegates its mutating file
+/// ops to these inherent methods and hands out
+/// [`CachedBlobFile`](crate::CachedBlobFile) append handles.
+///
+/// [`UniversalWriteFileOps`]: common::universal_io::UniversalWriteFileOps
+impl<A: AsyncWrite + Clone> BlobFs<A> {
+    pub fn create(&self, path: &Path) -> UioResult<()> {
         self.runtime.block_on(self.inner.create(path))
     }
 
-    fn create_dir(&self, _path: &Path) -> UioResult<()> {
-        // No materialized directories.
-        Ok(())
-    }
-
-    fn remove(&self, path: &Path) -> UioResult<()> {
+    pub fn remove(&self, path: &Path) -> UioResult<()> {
         self.runtime.block_on(self.inner.remove(path))
     }
 
-    fn remove_dir(&self, _path: &Path) -> UioResult<()> {
-        // No materialized directories.
-        Ok(())
-    }
-
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        // A whole-object put is atomic on object stores.
+    /// A whole-object put, atomic on object stores.
+    pub fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         self.runtime
             .block_on(self.inner.save(path, Bytes::copy_from_slice(bytes)))
-    }
-
-    /// The very handle [`UniversalReadFs::open`] hands out, always writeable.
-    /// Performs no IO — the object is not touched until the first append or
-    /// read. Blob handles have no open-time knobs, so `options` is unused.
-    fn open_append(&self, path: impl AsRef<Path>, _options: OpenOptions) -> UioResult<BlobFile<A>> {
-        Ok(
-            BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
-                .with_writeable(true),
-        )
     }
 }
 

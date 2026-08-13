@@ -101,6 +101,12 @@ where
 }
 
 impl<R: UniversalRead> DiskCacheFs<R> {
+    /// Wrap an already-built remote filesystem handle. The config-driven
+    /// path is [`UniversalReadFileOps::from_context`].
+    pub fn new(config: Arc<DiskCacheConfig>, remote_fs: R::Fs) -> Self {
+        Self { config, remote_fs }
+    }
+
     fn open_remote(
         &self,
         path: impl AsRef<Path>,

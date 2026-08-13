@@ -12,6 +12,7 @@ use super::CachedBlobFile;
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
 use crate::read::AsyncRead;
+use crate::runtime::BridgeRuntime;
 use crate::write::AsyncAppend;
 
 /// Construction context for [`CachedBlobFs`]: the local-mirror layout and
@@ -31,6 +32,18 @@ pub struct CachedBlobFsContext<C> {
 pub struct CachedBlobFs<A: AsyncRead + Clone> {
     cache_fs: DiskCacheFs<BlobFile<A>>,
     blob_fs: BlobFs<A>,
+}
+
+impl<A: AsyncRead + Clone> CachedBlobFs<A> {
+    /// Build both halves around one shared backend handle — unlike
+    /// [`from_context`](UniversalReadFileOps::from_context), which
+    /// constructs each half's backend from the config.
+    pub fn new(remote: A, runtime: BridgeRuntime, disk_cache: Arc<DiskCacheConfig>) -> Self {
+        Self {
+            cache_fs: DiskCacheFs::new(disk_cache, BlobFs::new(remote.clone(), runtime.clone())),
+            blob_fs: BlobFs::new(remote, runtime),
+        }
+    }
 }
 
 impl<A: AsyncRead + Clone> std::fmt::Debug for CachedBlobFs<A> {
@@ -104,23 +117,25 @@ where
     type AppendFile = CachedBlobFile<A>;
 
     // Mutating file ops go straight to the remote.
-    // TODO: delegate to inherent `BlobFs` ops once `BlobFs` loses its
-    // `UniversalWriteFileOps` impl to `CachedBlobFs`.
 
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
-        self.blob_fs.create(path, expected_length)
+    fn create(&self, path: &Path, _expected_length: usize) -> UioResult<()> {
+        // Object stores have no fixed-size preallocation; the expected
+        // length is ignored, as the trait allows.
+        self.blob_fs.create(path)
     }
 
-    fn create_dir(&self, path: &Path) -> UioResult<()> {
-        self.blob_fs.create_dir(path)
+    fn create_dir(&self, _path: &Path) -> UioResult<()> {
+        // No materialized directories.
+        Ok(())
     }
 
     fn remove(&self, path: &Path) -> UioResult<()> {
         self.blob_fs.remove(path)
     }
 
-    fn remove_dir(&self, path: &Path) -> UioResult<()> {
-        self.blob_fs.remove_dir(path)
+    fn remove_dir(&self, _path: &Path) -> UioResult<()> {
+        // No materialized directories.
+        Ok(())
     }
 
     fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {

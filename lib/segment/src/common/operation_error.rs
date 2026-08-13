@@ -244,6 +244,7 @@ impl From<UniversalIoError> for OperationError {
             | UniversalIoError::AppendOffsetConflict { .. }
             | UniversalIoError::AppendRewriteRequired { .. }
             | UniversalIoError::AppendEntityTooSmall { .. }
+            | UniversalIoError::AppendEtagMismatch { .. }
             | UniversalIoError::S3(_)
             | UniversalIoError::S3Config { .. }
             | UniversalIoError::TaskPanicked(_) => Self::service_error(err.to_string()),
@@ -371,6 +372,7 @@ impl From<BlobstoreError> for OperationError {
                 | UniversalIoError::AppendOffsetConflict { .. }
                 | UniversalIoError::AppendRewriteRequired { .. }
                 | UniversalIoError::AppendEntityTooSmall { .. }
+                | UniversalIoError::AppendEtagMismatch { .. }
                 | UniversalIoError::S3(_)
                 | UniversalIoError::S3Config { .. }
                 | UniversalIoError::TaskPanicked(_)) => {

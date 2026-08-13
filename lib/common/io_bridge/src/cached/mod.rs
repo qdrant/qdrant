@@ -85,24 +85,22 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             )));
         }
 
+        let new_len = offset + data.len() as u64;
+
         match self.remote.source().append_support() {
             AppendSupport::Always => {
-                // TODO: switch to the inherent `BlobFile::append_native`
-                // once the specialized remote ops land and `BlobFile`
-                // loses its `UniversalAppend` impl.
-                self.remote.append(offset, data.as_ref())?;
+                self.remote.append_bytes(offset, data, self.cache.etag())?;
             }
             AppendSupport::AboveThreshold { min_offset } => {
                 if offset >= min_offset {
-                    self.remote.append(offset, data.as_ref())?;
+                    self.remote.append_bytes(offset, data, self.cache.etag())?;
                 } else {
-                    self.local_rewrite(offset, data.clone())?;
+                    self.local_rewrite(offset, data)?;
                 }
             }
-            AppendSupport::Never => self.local_rewrite(offset, data.clone())?,
+            AppendSupport::Never => self.local_rewrite(offset, data)?,
         }
 
-        let new_len = offset + data.len() as u64;
         self.cache.schedule_reopen(|_| {
             Some(FileInfo {
                 size: new_len,

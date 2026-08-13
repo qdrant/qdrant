@@ -41,6 +41,7 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
         path: &std::path::Path,
         offset: u64,
         data: Bytes,
+        expected_etag: Option<String>,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store().clone();
         let context = self.append_context().cloned();
@@ -57,13 +58,21 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
 
             match context {
                 AppendContext::Native(native) => {
+                    // The write-offset PUT has no etag precondition;
+                    // `expected_etag` applies from the rewrite fallbacks on.
                     match native.append(&store, &key, offset, data.clone()).await {
                         // The object hit the store's appended-block cap;
                         // rebuilding it as a single blob resets the cap.
                         Err(err) if err.is_append_rewrite_required() => {
                             let rewrite = native
                                 .part_copy()
-                                .append(&store, &key, offset, data.clone())
+                                .append(
+                                    &store,
+                                    &key,
+                                    offset,
+                                    data.clone(),
+                                    expected_etag.as_deref(),
+                                )
                                 .await;
                             match rewrite {
                                 // The store also rejected the server-side
@@ -71,7 +80,14 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
                                 // multipart part size. Download it and
                                 // rewrite the whole object.
                                 Err(err) if err.is_append_entity_too_small() => {
-                                    download_rewrite(&store, &key, offset, data).await
+                                    download_rewrite(
+                                        &store,
+                                        &key,
+                                        offset,
+                                        data,
+                                        expected_etag.as_deref(),
+                                    )
+                                    .await
                                 }
                                 result => result,
                             }
@@ -82,7 +98,9 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
                 // A direct append on a part-copy store IS the rewrite;
                 // the caller respects the advertised threshold.
                 AppendContext::PartCopy(part_copy) => {
-                    part_copy.append(&store, &key, offset, data).await
+                    part_copy
+                        .append(&store, &key, offset, data, expected_etag.as_deref())
+                        .await
                 }
                 AppendContext::Compose(_) => Err(UniversalIoError::S3Config {
                     description: "compose append context belongs to a GCS store, \
@@ -99,19 +117,27 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
 /// part size: download the existing prefix and atomically PUT the whole
 /// object back as `[0, offset) + data`. That same rejection bounds the
 /// download — the object is smaller than one minimum part (5 MiB on AWS).
+///
+/// `expected_etag` is checked against the downloaded prefix's own etag —
+/// the GET carries it, so the guard costs no extra request here.
 async fn download_rewrite(
     store: &AmazonS3,
     key: &object_store::path::Path,
     offset: u64,
     data: Bytes,
+    expected_etag: Option<&str>,
 ) -> UioResult<u64> {
-    let existing = store
-        .get(key)
-        .await
-        .map_err(UniversalIoError::s3)?
-        .bytes()
-        .await
-        .map_err(UniversalIoError::s3)?;
+    let result = store.get(key).await.map_err(UniversalIoError::s3)?;
+
+    if let Some(expected) = expected_etag
+        && result.meta.e_tag.as_deref() != Some(expected)
+    {
+        return Err(UniversalIoError::AppendEtagMismatch {
+            path: PathBuf::from(key.to_string()),
+        });
+    }
+
+    let existing = result.bytes().await.map_err(UniversalIoError::s3)?;
 
     // The same compare-and-swap token as a direct append: a prefix of a
     // different length means `offset` is not the current object size.
@@ -147,6 +173,9 @@ impl AsyncAppend for ObjectStoreSource<GoogleCloudStorage> {
         path: &std::path::Path,
         offset: u64,
         data: Bytes,
+        // GCS compose preconditions are generation-based, not etag-based,
+        // so the expected etag cannot be honored here.
+        _expected_etag: Option<String>,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store().clone();
         let context = self.append_context().cloned();
@@ -209,6 +238,7 @@ mod tests {
                 Path::new("dir/append.dat"),
                 offset,
                 Bytes::from_static(b"data"),
+                None,
             ))
             .unwrap();
         assert_eq!(new_len, offset + 4);
@@ -265,7 +295,12 @@ mod tests {
             .with_append_context(AppendContext::Native(NativeAppend::new(context)));
 
         let new_len = io_bridge::BridgeRuntime::global()
-            .block_on(source.append(Path::new("dir/append.dat"), 5, Bytes::from_static(b"data")))
+            .block_on(source.append(
+                Path::new("dir/append.dat"),
+                5,
+                Bytes::from_static(b"data"),
+                None,
+            ))
             .unwrap();
         assert_eq!(new_len, 9);
 
@@ -298,7 +333,12 @@ mod tests {
             .with_append_context(AppendContext::Native(NativeAppend::new(context)));
 
         let err = io_bridge::BridgeRuntime::global()
-            .block_on(source.append(Path::new("dir/append.dat"), 5, Bytes::from_static(b"data")))
+            .block_on(source.append(
+                Path::new("dir/append.dat"),
+                5,
+                Bytes::from_static(b"data"),
+                None,
+            ))
             .unwrap_err();
         assert!(matches!(
             err,

@@ -52,6 +52,7 @@ impl IsNotFound for UniversalIoError {
             | Self::AppendOffsetConflict { .. }
             | Self::AppendRewriteRequired { .. }
             | Self::AppendEntityTooSmall { .. }
+            | Self::AppendEtagMismatch { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::TaskPanicked(_) => false,
@@ -145,6 +146,13 @@ pub enum UniversalIoError {
     #[error("multipart rewrite of {path} rejected: below the store's minimum part size")]
     AppendEntityTooSmall { path: PathBuf },
 
+    /// The append was rejected because the object's entity tag no longer
+    /// matches the one the caller last observed: the object was replaced
+    /// behind the caller's back, which the end-of-file offset check alone
+    /// cannot detect when the lengths happen to coincide.
+    #[error("append to {path} rejected: entity tag mismatch, the object was replaced")]
+    AppendEtagMismatch { path: PathBuf },
+
     #[error("S3 object store error: {0}")]
     S3(#[source] Box<dyn std::error::Error + Send + Sync>),
 
@@ -172,6 +180,7 @@ impl UniversalIoError {
             | Self::QueueIsFull
             | Self::AppendRewriteRequired { .. }
             | Self::AppendEntityTooSmall { .. }
+            | Self::AppendEtagMismatch { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }
@@ -195,6 +204,7 @@ impl UniversalIoError {
             | Self::QueueIsFull
             | Self::AppendOffsetConflict { .. }
             | Self::AppendEntityTooSmall { .. }
+            | Self::AppendEtagMismatch { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }
@@ -218,6 +228,7 @@ impl UniversalIoError {
             | Self::QueueIsFull
             | Self::AppendOffsetConflict { .. }
             | Self::AppendRewriteRequired { .. }
+            | Self::AppendEtagMismatch { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }

@@ -44,6 +44,7 @@ pub(in crate::append) struct SeenRequest {
     pub(in crate::append) write_offset: Option<String>,
     pub(in crate::append) copy_source: Option<String>,
     pub(in crate::append) copy_range: Option<String>,
+    pub(in crate::append) copy_if_match: Option<String>,
     pub(in crate::append) signed: bool,
     pub(in crate::append) body: Vec<u8>,
 }
@@ -106,6 +107,7 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
     let mut write_offset = None;
     let mut copy_source = None;
     let mut copy_range = None;
+    let mut copy_if_match = None;
     let mut signed = false;
     loop {
         let mut line = String::new();
@@ -124,6 +126,8 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
             copy_source = Some(value);
         } else if name.eq_ignore_ascii_case("x-amz-copy-source-range") {
             copy_range = Some(value);
+        } else if name.eq_ignore_ascii_case("x-amz-copy-source-if-match") {
+            copy_if_match = Some(value);
         } else if name.eq_ignore_ascii_case("authorization") {
             signed = true;
         }
@@ -138,6 +142,7 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
         write_offset,
         copy_source,
         copy_range,
+        copy_if_match,
         signed,
         body,
     })
