@@ -36,6 +36,10 @@ pub(super) const WRITE_OFFSET_HEADER: &str = "x-amz-write-offset-bytes";
 /// object size.
 const INVALID_WRITE_OFFSET_CODE: &str = "InvalidWriteOffset";
 
+/// S3 error code distinguishing a missing *object* (recoverable stale view)
+/// from a missing *bucket* (a config/endpoint problem) on a 404.
+const NO_SUCH_KEY_CODE: &str = "NoSuchKey";
+
 /// S3 error code returned when the object reached the store's cap on
 /// appended blocks (10,000 parts); the object can only keep growing through
 /// a whole-object rewrite.
@@ -123,7 +127,7 @@ async fn append_request(
         // Signs all headers present on the request (including the
         // write-offset header) plus the payload SHA-256, and adds
         // host/date/token headers.
-        AwsAuthorizer::new(&credential, "s3", &context.region)
+        AwsAuthorizer::new(&credential, context.service, &context.region)
             .try_authorize(&mut request, None)
             .map_err(UniversalIoError::s3)?;
 
@@ -208,12 +212,19 @@ async fn append_request(
         let write_offset_conflict = match status {
             http::StatusCode::BAD_REQUEST => body_text.contains(INVALID_WRITE_OFFSET_CODE),
             http::StatusCode::PRECONDITION_FAILED => true,
-            // A missing object while a nonzero offset was expected is a
+            // A missing *object* while a nonzero offset was expected is a
             // stale view of the object (deleted behind our back) — the same
             // reopen-and-retry recovery as an offset mismatch, matching the
-            // in-memory emulation. At offset 0 a 404 is a genuine
-            // missing-target error (e.g. missing bucket).
-            http::StatusCode::NOT_FOUND => offset > 0,
+            // in-memory emulation; stores that return bodiless 404s keep
+            // that recovery. A missing *bucket* is a config/endpoint
+            // problem and must stay a hard error — it is also the runtime
+            // guard against drift in the zonal-endpoint derivation. At
+            // offset 0 a 404 is a genuine missing-target error.
+            http::StatusCode::NOT_FOUND => {
+                offset > 0
+                    && super::extract_xml_tag(&body_text, "Code")
+                        .is_none_or(|code| code == NO_SUCH_KEY_CODE)
+            }
             _ => false,
         };
 
@@ -235,9 +246,16 @@ async fn append_request(
         }
 
         return match status {
-            http::StatusCode::NOT_FOUND => Err(UniversalIoError::NotFound {
-                path: PathBuf::from(key.to_string()),
-            }),
+            // Only a missing object is a plain not-found; a NoSuchBucket
+            // body falls through to the loud error carrying the excerpt.
+            http::StatusCode::NOT_FOUND
+                if super::extract_xml_tag(&body_text, "Code")
+                    .is_none_or(|code| code == NO_SUCH_KEY_CODE) =>
+            {
+                Err(UniversalIoError::NotFound {
+                    path: PathBuf::from(key.to_string()),
+                })
+            }
             _ => {
                 let excerpt: String = body_text.chars().take(512).collect();
                 Err(UniversalIoError::s3(std::io::Error::other(format!(
@@ -276,6 +294,7 @@ mod tests {
             "bucket".to_string(),
             Url::parse("http://localhost:9000/bucket").unwrap(),
             "us-east-1".to_string(),
+            "s3",
         );
         // `url` accepts this; `http` caps URIs at u16::MAX bytes.
         let key = object_store::path::Path::from("k".repeat(70_000));
@@ -428,7 +447,7 @@ mod tests {
 
     /// A missing object under a nonzero offset is a stale view of the
     /// object (deleted behind our back): the same recovery as an offset
-    /// mismatch.
+    /// mismatch. Bodiless 404s (and explicit NoSuchKey) both qualify.
     #[test]
     fn not_found_at_a_nonzero_offset_is_a_conflict() {
         let (endpoint, _seen) = stub_server(vec![StubResponse::new(404)]);
@@ -438,6 +457,31 @@ mod tests {
             err,
             UniversalIoError::AppendOffsetConflict { offset: 5, .. }
         );
+
+        let (endpoint, _seen) = stub_server(vec![
+            StubResponse::new(404).body("<Error><Code>NoSuchKey</Code></Error>"),
+        ]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        );
+    }
+
+    /// A 404 whose body names a missing *bucket* is a config/endpoint
+    /// problem (e.g. a directory bucket addressed through the standard
+    /// endpoint): it must surface loudly instead of masquerading as a
+    /// recoverable offset conflict or a missing file.
+    #[test]
+    fn not_found_for_a_missing_bucket_is_a_hard_error() {
+        let (endpoint, _seen) = stub_server(vec![
+            StubResponse::new(404).body("<Error><Code>NoSuchBucket</Code></Error>"),
+        ]);
+
+        let err = append_data_at(&endpoint, 5).unwrap_err();
+        assert_matches!(err, UniversalIoError::S3(_));
+        assert!(err.to_string().contains("NoSuchBucket"), "{err}");
     }
 
     /// At offset 0 a 404 is a genuine missing target (e.g. missing bucket).

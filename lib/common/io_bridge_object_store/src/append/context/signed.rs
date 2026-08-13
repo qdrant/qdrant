@@ -27,21 +27,33 @@ pub struct SignedRequestContext {
     /// part-copy rewrites.
     pub(super) bucket: String,
     /// Base URL under which object keys live: path-style
-    /// `{endpoint}/{bucket}` for custom endpoints, or the virtual-hosted
-    /// `https://{bucket}.s3.{region}.amazonaws.com` for real AWS.
+    /// `{endpoint}/{bucket}` for custom endpoints, the virtual-hosted
+    /// `https://{bucket}.s3.{region}.amazonaws.com` for real AWS, or the
+    /// zonal `https://{bucket}.s3express-{az}.{region}.amazonaws.com` for
+    /// S3 Express directory buckets.
     object_url_base: Url,
     /// SigV4 signing region.
     pub(super) region: String,
+    /// SigV4 service name: `"s3"`, or `"s3express"` for S3 Express One
+    /// Zone directory buckets, which reject signatures scoped to `"s3"`.
+    pub(super) service: &'static str,
 }
 
 impl SignedRequestContext {
-    pub fn new(allow_http: bool, bucket: String, object_url_base: Url, region: String) -> Self {
+    pub fn new(
+        allow_http: bool,
+        bucket: String,
+        object_url_base: Url,
+        region: String,
+        service: &'static str,
+    ) -> Self {
         Self {
             client: Arc::new(OnceLock::new()),
             allow_http,
             bucket,
             object_url_base,
             region,
+            service,
         }
     }
 
@@ -95,6 +107,7 @@ mod tests {
             "bucket".to_string(),
             Url::parse("http://localhost:9000/bucket").unwrap(),
             "us-east-1".to_string(),
+            "s3",
         );
         assert!(context.client.get().is_none());
 

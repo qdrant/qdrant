@@ -92,9 +92,11 @@ impl BlobBackend for AmazonS3 {
         let (endpoint, region) =
             resolve_endpoint_and_region(config, |name| std::env::var(name).ok());
 
-        let object_url_base = match &endpoint {
+        let (object_url_base, service) = match &endpoint {
             // Path-style addressing, as object_store uses for custom
-            // endpoints.
+            // endpoints. An explicit endpoint stays the operator override
+            // (VPC endpoints, FIPS, MinIO & co) and keeps plain "s3"
+            // signing.
             Some(endpoint) => {
                 let mut url = Url::parse(endpoint)
                     .map_err(|err| s3_config_error(format!("append endpoint url: {err}")))?;
@@ -102,14 +104,33 @@ impl BlobBackend for AmazonS3 {
                     .map_err(|()| s3_config_error("append endpoint url cannot be a base".into()))?
                     .pop_if_empty()
                     .push(&config.bucket);
-                url
+                (url, "s3")
+            }
+            // S3 Express directory buckets only exist on their zonal
+            // endpoint and reject signatures scoped to "s3".
+            None if config.s3_express => {
+                let az = directory_bucket_az(&config.bucket).ok_or_else(|| {
+                    s3_config_error(format!(
+                        "s3_express appends need a directory bucket named \
+                         `<name>--<az>--x-s3`, got `{}`",
+                        config.bucket,
+                    ))
+                })?;
+                let url = format!(
+                    "https://{}.s3express-{az}.{region}.amazonaws.com",
+                    config.bucket,
+                );
+                let url = Url::parse(&url)
+                    .map_err(|err| s3_config_error(format!("append object url: {err}")))?;
+                (url, "s3express")
             }
             // Virtual-hosted-style addressing, as object_store uses for real
             // AWS.
             None => {
                 let url = format!("https://{}.s3.{region}.amazonaws.com", config.bucket);
-                Url::parse(&url)
-                    .map_err(|err| s3_config_error(format!("append object url: {err}")))?
+                let url = Url::parse(&url)
+                    .map_err(|err| s3_config_error(format!("append object url: {err}")))?;
+                (url, "s3")
             }
         };
 
@@ -118,8 +139,13 @@ impl BlobBackend for AmazonS3 {
         // built lazily on first append.
         let allow_http = endpoint.is_some();
 
-        let context =
-            SignedRequestContext::new(allow_http, config.bucket.clone(), object_url_base, region);
+        let context = SignedRequestContext::new(
+            allow_http,
+            config.bucket.clone(),
+            object_url_base,
+            region,
+            service,
+        );
 
         Ok(Some(if config.s3_express || config.native_append {
             AppendContext::Native(NativeAppend::new(context))
@@ -127,6 +153,16 @@ impl BlobBackend for AmazonS3 {
             AppendContext::PartCopy(PartCopyAppend::new(context))
         }))
     }
+}
+
+/// The availability-zone segment of a directory-bucket name
+/// (`<name>--<az>--x-s3`), from which the zonal S3 Express endpoint is
+/// derived. `object_store`'s builder performs the same derivation
+/// internally (object_store 0.14.1 `aws/builder.rs`) but does not expose
+/// it, hence the duplication.
+fn directory_bucket_az(bucket: &str) -> Option<&str> {
+    let (_, az) = bucket.strip_suffix("--x-s3")?.rsplit_once("--")?;
+    (!az.is_empty()).then_some(az)
 }
 
 /// Resolve the endpoint and signing region for appends the same way
@@ -215,5 +251,42 @@ mod tests {
         };
         let (endpoint, _) = resolve_endpoint_and_region(&config(AwsCredentials::Default), env_s3);
         assert_eq!(endpoint.as_deref(), Some("http://s3:9000"));
+    }
+
+    #[test]
+    fn directory_bucket_az_parses_the_mandatory_suffix() {
+        assert_eq!(
+            directory_bucket_az("my-bucket--use1-az4--x-s3"),
+            Some("use1-az4")
+        );
+        // Extra `--` in the name: the az is the last segment before the
+        // suffix.
+        assert_eq!(
+            directory_bucket_az("a--b--use1-az4--x-s3"),
+            Some("use1-az4")
+        );
+        assert_eq!(directory_bucket_az("plain-bucket"), None);
+        assert_eq!(directory_bucket_az("no-az--x-s3"), None);
+        assert_eq!(directory_bucket_az("empty-az----x-s3"), None);
+    }
+
+    /// `s3_express` without a parseable directory-bucket suffix cannot
+    /// derive the zonal endpoint and must fail loudly at construction.
+    #[test]
+    fn s3_express_append_context_requires_a_directory_bucket_name() {
+        let mut express = config(AwsCredentials::Static {
+            access_key_id: "id".to_string(),
+            secret_access_key: "secret".to_string(),
+            session_token: None,
+        });
+        express.s3_express = true;
+        express.region = Some("us-east-1".to_string());
+
+        let err = <AmazonS3 as BlobBackend>::append_context(&express).unwrap_err();
+        assert!(matches!(err, UniversalIoError::S3Config { .. }), "{err}");
+
+        express.bucket = "bucket--use1-az4--x-s3".to_string();
+        let context = <AmazonS3 as BlobBackend>::append_context(&express).unwrap();
+        assert!(matches!(context, Some(AppendContext::Native(_))));
     }
 }

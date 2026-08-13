@@ -17,6 +17,7 @@ use object_store::aws::{AmazonS3, AwsAuthorizer, AwsCredential};
 use object_store::client::{HttpClient, HttpRequestBody};
 use url::Url;
 
+use super::extract_xml_tag;
 use super::signed::SignedRequestContext;
 
 /// Max bytes per `UploadPartCopy` part: the S3 5 GiB part-size ceiling.
@@ -40,6 +41,8 @@ struct SignedObjectClient<'a> {
     client: HttpClient,
     credential: Arc<AwsCredential>,
     region: &'a str,
+    /// SigV4 service name, from [`SignedRequestContext::service`].
+    service: &'static str,
     url: Url,
     /// The object's path, for error reporting.
     path: PathBuf,
@@ -67,7 +70,7 @@ impl SignedObjectClient<'_> {
                 description: format!("{step} request: {err}"),
             })?;
 
-        AwsAuthorizer::new(&self.credential, "s3", self.region)
+        AwsAuthorizer::new(&self.credential, self.service, self.region)
             .try_authorize(&mut request, None)
             .map_err(UniversalIoError::s3)?;
 
@@ -146,6 +149,7 @@ async fn multipart_rewrite(
         client: context.client()?,
         credential,
         region: &context.region,
+        service: context.service,
         url: context.object_url(key)?,
         path: PathBuf::from(key.to_string()),
     };
@@ -288,15 +292,6 @@ async fn rewrite_parts(
     }
 
     Ok(final_size)
-}
-
-/// Text of the first `<tag>…</tag>` element in an S3 XML response.
-fn extract_xml_tag<'a>(body: &'a str, tag: &str) -> Option<&'a str> {
-    let open = format!("<{tag}>");
-    let close = format!("</{tag}>");
-    let start = body.find(&open)? + open.len();
-    let end = body[start..].find(&close)? + start;
-    Some(&body[start..end])
 }
 
 #[cfg(test)]

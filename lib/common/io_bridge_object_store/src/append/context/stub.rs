@@ -164,6 +164,7 @@ pub(in crate::append) fn stub_store_and_context(
         "bucket".to_string(),
         Url::parse(&format!("{endpoint}/bucket")).unwrap(),
         "us-east-1".to_string(),
+        "s3",
     );
     (store, context)
 }
