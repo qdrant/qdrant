@@ -121,6 +121,14 @@ impl<'a> LockedGpuDevice<'a> {
     /// genuinely gone, or the driver reset didn't complete), logs and leaves the dead device in
     /// place — identical to today's existing behavior, so this can never make things worse than
     /// before the fix, only better.
+    ///
+    /// This only replaces the `Arc<gpu::Device>` held by the shared slot — any `Arc` clone a
+    /// caller already obtained from `device()` *before* this ran (e.g. buffers/contexts built
+    /// earlier in the same segment build) still points at the lost device, and that device's
+    /// VRAM stays allocated until every such clone drops. Callers holding other GPU resources
+    /// across a `recreate_if_device_lost()` call must discard those resources themselves
+    /// instead of reusing them — see that method's return value and `hnsw/build.rs`'s use of it
+    /// (CodeRabbit review, PR #10213) for a concrete case this bit in practice.
     pub fn recreate_after_device_lost(&mut self) {
         let Some(slot) = self.slot else {
             log::debug!(
