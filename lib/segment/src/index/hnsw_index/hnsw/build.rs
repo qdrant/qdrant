@@ -434,16 +434,36 @@ impl HNSWIndex {
             let visited_pool = VisitedPool::new();
             let mut block_filter_list = visited_pool.get(total_vector_count);
 
+            // Was a bare `?` before (CodeRabbit review, PR #10213): GpuInsertContext::new()
+            // allocates GPU buffers and runs initialization commands, which can hit DEVICE_LOST
+            // just as much as the actual per-block dispatch in build_filtered_graph_on_gpu()
+            // below — but `?` propagated that as a hard error all the way up, skipping BOTH the
+            // graceful CPU-fallback pattern every other GPU failure in this file uses, and
+            // device recreation (recreate_if_device_lost() never got a chance to run), leaving
+            // the device dead for every future caller too. Same fix shape as
+            // build_main_graph_on_gpu's own GpuInsertContext::new() call.
             #[cfg(feature = "gpu")]
             let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors.as_ref() {
-                Some(GpuInsertContext::new(
+                match GpuInsertContext::new(
                     gpu_vectors,
                     get_gpu_groups_count(),
                     payload_m,
                     config.ef_construct,
                     false,
                     1..=GPU_MAX_VISITED_FLAGS_FACTOR,
-                )?)
+                ) {
+                    Ok(gpu_insert_context) => Some(gpu_insert_context),
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to create GPU insert context for additional links: {err}. \
+                             Falling back to CPU."
+                        );
+                        if let Some(gpu_device) = gpu_device.as_deref_mut() {
+                            gpu_device.recreate_if_device_lost(&err);
+                        }
+                        None
+                    }
+                }
             } else {
                 None
             };

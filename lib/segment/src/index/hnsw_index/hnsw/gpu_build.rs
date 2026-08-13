@@ -36,7 +36,7 @@ pub(super) fn build_main_graph_on_gpu(
     // create_gpu_vectors) produced 3 of 6 real DEVICE_LOST occurrences observed in ~3 hours of
     // production monitoring after the create_gpu_vectors-only fix first shipped — a genuine,
     // roughly-50/50 gap, not a rare edge case.
-    gpu_device: Option<&mut LockedGpuDevice>,
+    mut gpu_device: Option<&mut LockedGpuDevice>,
     graph_layers_builder: &GraphLayersBuilder,
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
@@ -54,22 +54,40 @@ pub(super) fn build_main_graph_on_gpu(
         )
     };
 
-    let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors {
-        Some(GpuInsertContext::new(
-            gpu_vectors,
-            get_gpu_groups_count(),
-            graph_layers_builder.hnsw_m(),
-            graph_layers_builder.ef_construct(),
-            false,
-            1..=GPU_MAX_VISITED_FLAGS_FACTOR,
-        )?)
-    } else {
-        None
+    let Some(gpu_vectors) = gpu_vectors else {
+        return Ok((None, false));
+    };
+
+    // Was a bare `?` before (CodeRabbit review, PR #10213): GpuInsertContext::new() allocates
+    // GPU buffers and runs initialization commands, which can hit DEVICE_LOST just as much as
+    // the actual graph dispatch in build_graph_on_gpu() below — but `?` propagated that as a
+    // hard error all the way up through build_vector_index(), skipping BOTH the graceful
+    // CPU-fallback pattern every other GPU failure in this file uses, and device recreation
+    // (recreate_if_device_lost() never got a chance to run), leaving the device dead for every
+    // future caller too. Same fix shape as build_graph_on_gpu's own match below.
+    let mut gpu_insert_context = match GpuInsertContext::new(
+        gpu_vectors,
+        get_gpu_groups_count(),
+        graph_layers_builder.hnsw_m(),
+        graph_layers_builder.ef_construct(),
+        false,
+        1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+    ) {
+        Ok(gpu_insert_context) => gpu_insert_context,
+        Err(err) => {
+            log::warn!("Failed to create GPU insert context: {err}. Falling back to CPU.");
+            let device_lost = if let Some(gpu_device) = gpu_device.as_deref_mut() {
+                gpu_device.recreate_if_device_lost(&err)
+            } else {
+                false
+            };
+            return Ok((None, device_lost));
+        }
     };
 
     build_graph_on_gpu(
         gpu_device,
-        gpu_insert_context.as_mut(),
+        Some(&mut gpu_insert_context),
         graph_layers_builder,
         id_tracker
             .point_mappings()
