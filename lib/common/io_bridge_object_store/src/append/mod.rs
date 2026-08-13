@@ -7,11 +7,12 @@
 
 mod context;
 
+use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
 pub use context::{
     AppendContext, ComposeAppend, NativeAppend, PartCopyAppend, SignedRequestContext,
 };
-use io_bridge::{AppendRequest, AppendSupport, AsyncAppend};
+use io_bridge::{AppendSupport, AsyncAppend};
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
 
@@ -35,7 +36,8 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
     fn append(
         &self,
         path: &std::path::Path,
-        request: AppendRequest,
+        offset: u64,
+        data: Bytes,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store().clone();
         let context = self.append_context().cloned();
@@ -50,38 +52,28 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
                 });
             };
 
-            match request {
-                AppendRequest::Append { offset, data } => match context {
-                    AppendContext::Native(native) => {
-                        native.append(&store, &key, offset, data).await
+            match context {
+                AppendContext::Native(native) => {
+                    match native.append(&store, &key, offset, data.clone()).await {
+                        // The object hit the store's appended-block cap;
+                        // rebuilding it as a single blob via the part-copy
+                        // strategy resets the cap.
+                        Err(err) if err.is_append_rewrite_required() => {
+                            native.part_copy().append(&store, &key, offset, data).await
+                        }
+                        result => result,
                     }
-                    // A direct append on a part-copy store IS the rewrite;
-                    // the caller respects the advertised threshold.
-                    AppendContext::PartCopy(part_copy) => {
-                        part_copy.append(&store, &key, offset, data).await
-                    }
-                    AppendContext::Compose(_) => Err(UniversalIoError::S3Config {
-                        description: "compose append context belongs to a GCS store, \
-                                      not an S3 one"
-                            .to_string(),
-                    }),
-                },
-                AppendRequest::Rewrite { offset, data } => match context {
-                    AppendContext::PartCopy(part_copy) => {
-                        part_copy.append(&store, &key, offset, data).await
-                    }
-                    // Native stores rewrite too — compacting an object that
-                    // reached the appended-block cap — via the part-copy
-                    // strategy over the same store.
-                    AppendContext::Native(native) => {
-                        native.part_copy().append(&store, &key, offset, data).await
-                    }
-                    AppendContext::Compose(_) => Err(UniversalIoError::S3Config {
-                        description: "compose append context belongs to a GCS store, \
-                                      not an S3 one"
-                            .to_string(),
-                    }),
-                },
+                }
+                // A direct append on a part-copy store IS the rewrite;
+                // the caller respects the advertised threshold.
+                AppendContext::PartCopy(part_copy) => {
+                    part_copy.append(&store, &key, offset, data).await
+                }
+                AppendContext::Compose(_) => Err(UniversalIoError::S3Config {
+                    description: "compose append context belongs to a GCS store, \
+                                  not an S3 one"
+                        .to_string(),
+                }),
             }
         }
     }
@@ -97,7 +89,8 @@ impl AsyncAppend for ObjectStoreSource<GoogleCloudStorage> {
     fn append(
         &self,
         path: &std::path::Path,
-        request: AppendRequest,
+        offset: u64,
+        data: Bytes,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let store = self.store().clone();
         let context = self.append_context().cloned();
@@ -112,11 +105,6 @@ impl AsyncAppend for ObjectStoreSource<GoogleCloudStorage> {
                 });
             };
 
-            // Both request shapes are the same operation under compose:
-            // `[0, offset)` is the existing object either way.
-            let (AppendRequest::Append { offset, data } | AppendRequest::Rewrite { offset, data }) =
-                request;
-
             match context {
                 AppendContext::Compose(compose) => compose.append(&store, &key, offset, data).await,
                 AppendContext::Native(_) | AppendContext::PartCopy(_) => {
@@ -126,5 +114,56 @@ impl AsyncAppend for ObjectStoreSource<GoogleCloudStorage> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use context::stub::{StubResponse, stub_server, stub_store_and_context};
+
+    use super::*;
+    use crate::source::ObjectStoreSource;
+
+    /// An append on a native store that hits the appended-block cap falls
+    /// back to the part-copy rewrite within the same `append` call.
+    #[test]
+    fn native_cap_hit_falls_back_to_part_copy_rewrite() {
+        let (endpoint, seen) = stub_server(vec![
+            // Native write-offset PUT: rejected with the appended-block cap.
+            StubResponse::new(400).body("<Error><Code>TooManyParts</Code></Error>"),
+            // The part-copy rewrite: initiate, prefix copy, data part, complete.
+            StubResponse::new(200).body(
+                "<InitiateMultipartUploadResult><UploadId>upload-1</UploadId>\
+                 </InitiateMultipartUploadResult>",
+            ),
+            StubResponse::new(200)
+                .body("<CopyPartResult><ETag>\"etag-copy\"</ETag></CopyPartResult>"),
+            StubResponse::new(200).header("etag", "\"etag-data\""),
+            StubResponse::new(200).body("<CompleteMultipartUploadResult/>"),
+        ]);
+        let (store, context) = stub_store_and_context(&endpoint);
+        let source = ObjectStoreSource::new(store)
+            .with_append_context(AppendContext::Native(NativeAppend::new(context)));
+
+        let offset: u64 = 10 * 1024 * 1024;
+        let new_len = io_bridge::BridgeRuntime::global()
+            .block_on(source.append(
+                Path::new("dir/append.dat"),
+                offset,
+                Bytes::from_static(b"data"),
+            ))
+            .unwrap();
+        assert_eq!(new_len, offset + 4);
+
+        let seen = seen.lock().unwrap();
+        let methods: Vec<&str> = seen.iter().map(|request| request.method.as_str()).collect();
+        assert_eq!(methods, ["PUT", "POST", "PUT", "PUT", "POST"]);
+        assert_eq!(seen[0].write_offset.as_deref(), Some(&*offset.to_string()));
+        assert_eq!(
+            seen[2].copy_source.as_deref(),
+            Some("/bucket/dir/append.dat")
+        );
     }
 }

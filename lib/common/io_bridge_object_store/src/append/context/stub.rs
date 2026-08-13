@@ -11,14 +11,14 @@ use url::Url;
 use super::signed::SignedRequestContext;
 
 /// Canned response served by [`stub_server`].
-pub(super) struct StubResponse {
+pub(in crate::append) struct StubResponse {
     status: u16,
     headers: Vec<(&'static str, String)>,
     body: &'static str,
 }
 
 impl StubResponse {
-    pub(super) fn new(status: u16) -> Self {
+    pub(in crate::append) fn new(status: u16) -> Self {
         Self {
             status,
             headers: Vec::new(),
@@ -26,26 +26,26 @@ impl StubResponse {
         }
     }
 
-    pub(super) fn header(mut self, name: &'static str, value: impl ToString) -> Self {
+    pub(in crate::append) fn header(mut self, name: &'static str, value: impl ToString) -> Self {
         self.headers.push((name, value.to_string()));
         self
     }
 
-    pub(super) fn body(mut self, body: &'static str) -> Self {
+    pub(in crate::append) fn body(mut self, body: &'static str) -> Self {
         self.body = body;
         self
     }
 }
 
 /// One request as observed by [`stub_server`].
-pub(super) struct SeenRequest {
-    pub(super) method: String,
-    pub(super) path: String,
-    pub(super) write_offset: Option<String>,
-    pub(super) copy_source: Option<String>,
-    pub(super) copy_range: Option<String>,
-    pub(super) signed: bool,
-    pub(super) body: Vec<u8>,
+pub(in crate::append) struct SeenRequest {
+    pub(in crate::append) method: String,
+    pub(in crate::append) path: String,
+    pub(in crate::append) write_offset: Option<String>,
+    pub(in crate::append) copy_source: Option<String>,
+    pub(in crate::append) copy_range: Option<String>,
+    pub(in crate::append) signed: bool,
+    pub(in crate::append) body: Vec<u8>,
 }
 
 /// Minimal local HTTP/1.1 server: serves the canned responses in order,
@@ -54,7 +54,9 @@ pub(super) struct SeenRequest {
 /// arrive as fresh connections), recording each request. The listener
 /// stops after the last response, so an unexpected extra request fails
 /// to connect instead of hanging the test.
-pub(super) fn stub_server(responses: Vec<StubResponse>) -> (String, Arc<Mutex<Vec<SeenRequest>>>) {
+pub(in crate::append) fn stub_server(
+    responses: Vec<StubResponse>,
+) -> (String, Arc<Mutex<Vec<SeenRequest>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -143,7 +145,9 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
 
 /// A store + signed-request context wired to the stub `endpoint`, for the
 /// bucket `bucket`.
-pub(super) fn stub_store_and_context(endpoint: &str) -> (Arc<AmazonS3>, SignedRequestContext) {
+pub(in crate::append) fn stub_store_and_context(
+    endpoint: &str,
+) -> (Arc<AmazonS3>, SignedRequestContext) {
     let store = Arc::new(
         AmazonS3Builder::new()
             .with_bucket_name("bucket")

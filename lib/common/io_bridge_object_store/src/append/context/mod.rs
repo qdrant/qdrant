@@ -6,7 +6,7 @@ mod native;
 pub(super) mod part_copy;
 mod signed;
 #[cfg(test)]
-mod stub;
+pub(super) mod stub;
 
 pub use compose::ComposeAppend;
 pub use native::NativeAppend;

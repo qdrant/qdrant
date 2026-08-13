@@ -411,19 +411,13 @@ mod tests {
         fn append(
             &self,
             path: &Path,
-            request: io_bridge::AppendRequest,
+            offset: u64,
+            data: Bytes,
         ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             let store = self.store().clone();
             let key = build_key(path);
 
             async move {
-                let io_bridge::AppendRequest::Append { offset, data } = request else {
-                    return Err(UniversalIoError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Unsupported,
-                        "InMemory emulation only supports native appends",
-                    )));
-                };
-
                 let conflict = || UniversalIoError::AppendOffsetConflict {
                     path: PathBuf::from(key.to_string()),
                     offset,

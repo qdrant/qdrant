@@ -11,10 +11,10 @@
 //!
 //! Appends are durable once the remote acknowledges them, like raw
 //! [`BlobFile`] appends (the flusher is a no-op); callers batch upstream, so
-//! one `append` call is one remote mutation. The mirror's length is advanced
-//! in the same call without extra IO, so this handle's `len`/reads observe
-//! the appended bytes right away; the appended blocks themselves fault in
-//! from the remote on first read.
+//! one `append` call is one remote append operation. The mirror's length is
+//! advanced in the same call without extra IO, so this handle's `len`/reads
+//! observe the appended bytes right away; the appended blocks themselves
+//! fault in from the remote on first read.
 
 mod fs;
 mod pipeline;
@@ -34,7 +34,7 @@ pub use pipeline::CachedBlobReadPipeline;
 
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
-use crate::write::{AppendRequest, AppendSupport, AsyncAppend};
+use crate::write::{AppendSupport, AsyncAppend};
 
 /// A remote object handle that reads through a local [`DiskCache`] mirror and
 /// appends straight to the remote. See the module docs.
@@ -70,9 +70,9 @@ impl<A: AsyncRead + Clone> CachedBlobFile<A> {
 }
 
 impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
-    /// One remote mutation per call: native append or rewrite, then advance
-    /// the mirror to the new length without extra IO (a successful append
-    /// proves `offset` was the remote EOF).
+    /// One remote append operation per call: direct append or whole-object
+    /// rewrite, then advance the mirror to the new length without extra IO
+    /// (a successful append proves `offset` was the remote EOF).
     fn append_bytes(&mut self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
         if data.is_empty() {
             return Ok(());
@@ -90,15 +90,7 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
                 // TODO: switch to the inherent `BlobFile::append_native`
                 // once the specialized remote ops land and `BlobFile`
                 // loses its `UniversalAppend` impl.
-                match self.remote.append(offset, data.as_ref()) {
-                    Ok(()) => {}
-                    // The object hit the store's appended-block cap; the
-                    // rewrite resets it to a single block.
-                    Err(err) if err.is_append_rewrite_required() => {
-                        self.remote_rewrite(offset, data.clone())?;
-                    }
-                    Err(err) => return Err(err),
-                }
+                self.remote.append(offset, data.as_ref())?;
             }
             AppendSupport::AboveThreshold { min_offset } => {
                 if offset >= min_offset {
@@ -119,20 +111,6 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             })
         })?;
         self.cache.reopen()
-    }
-
-    /// Append `data` while rebuilding the remote object as a single blob —
-    /// the appended-block cap recovery under [`AppendSupport::Always`].
-    fn remote_rewrite(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
-        self.check_offset(offset)?;
-        self.remote
-            .runtime()
-            .block_on(
-                self.remote
-                    .source()
-                    .append(self.remote.path(), AppendRequest::Rewrite { offset, data }),
-            )
-            .map(drop)
     }
 
     /// Replace the whole remote object with `[0, offset) + data`, built on

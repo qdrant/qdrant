@@ -30,7 +30,7 @@ pub trait AsyncWrite: AsyncRead {
     ) -> impl Future<Output = UioResult<()>> + Send + 'static;
 }
 
-/// When the backend accepts a direct append ([`AppendRequest::Append`]),
+/// When the backend accepts a direct append ([`AsyncAppend::append`]),
 /// advertised by [`AsyncAppend::append_support`]. Deliberately silent on
 /// *how* the backend performs the operation — that is the backend's
 /// business; this only tells the caller when it must fall back to building
@@ -39,11 +39,8 @@ pub trait AsyncWrite: AsyncRead {
 pub enum AppendSupport {
     /// Direct appends at any offset: a write-offset append (S3 Express,
     /// MinIO AiStor) or a `compose` concatenation (GCS). Stores that cap
-    /// appended blocks per object surface the cap as
-    /// [`UniversalIoError::AppendRewriteRequired`], and callers recover
-    /// with one [`AppendRequest::Rewrite`].
-    ///
-    /// [`UniversalIoError::AppendRewriteRequired`]: common::universal_io::UniversalIoError::AppendRewriteRequired
+    /// appended blocks per object recover internally with a whole-object
+    /// rewrite when an append hits the cap.
     Always,
     /// Direct appends only once the existing object is at least
     /// `min_offset` bytes (plain S3: appends land as multipart prefix
@@ -52,26 +49,6 @@ pub enum AppendSupport {
     AboveThreshold { min_offset: u64 },
     /// No direct appends: the caller always writes the whole object itself.
     Never,
-}
-
-/// One append operation.
-///
-/// In both variants `offset` MUST equal the current object size and acts as
-/// a compare-and-swap token: the backend rejects a mismatching request with
-/// [`UniversalIoError::AppendOffsetConflict`], so concurrent appenders
-/// cannot silently interleave.
-///
-/// [`UniversalIoError::AppendOffsetConflict`]: common::universal_io::UniversalIoError::AppendOffsetConflict
-#[derive(Clone, Debug)]
-pub enum AppendRequest {
-    /// Append `data` at `offset`, growing the object in place — by whatever
-    /// mechanism the backend has. `offset == 0` creates the object if it is
-    /// missing. Valid within the backend's advertised [`AppendSupport`].
-    Append { offset: u64, data: Bytes },
-    /// Append `data` at `offset` AND rebuild the object as a single blob:
-    /// the appended-block cap recovery for [`AppendSupport::Always`]
-    /// stores whose direct appends accumulate per-object blocks.
-    Rewrite { offset: u64, data: Bytes },
 }
 
 /// Blob backends supporting appends.
@@ -84,12 +61,21 @@ pub trait AsyncAppend: AsyncWrite {
     /// caller writes the whole object itself through [`AsyncWrite::save`].
     fn append_support(&self) -> AppendSupport;
 
-    /// Perform `request` on the object at `path`. Returns the new total
-    /// object size in bytes. See [`AppendRequest`] for the offset
-    /// compare-and-swap contract.
+    /// Append `data` to the object at `path`, growing it in place — by
+    /// whatever mechanism the backend has. `offset == 0` creates the object
+    /// if it is missing. Valid within the backend's advertised
+    /// [`AppendSupport`]. Returns the new total object size in bytes.
+    ///
+    /// `offset` MUST equal the current object size and acts as a
+    /// compare-and-swap token: the backend rejects a mismatching request
+    /// with [`UniversalIoError::AppendOffsetConflict`], so concurrent
+    /// appenders cannot silently interleave.
+    ///
+    /// [`UniversalIoError::AppendOffsetConflict`]: common::universal_io::UniversalIoError::AppendOffsetConflict
     fn append(
         &self,
         path: &Path,
-        request: AppendRequest,
+        offset: u64,
+        data: Bytes,
     ) -> impl Future<Output = UioResult<u64>> + Send + 'static;
 }
