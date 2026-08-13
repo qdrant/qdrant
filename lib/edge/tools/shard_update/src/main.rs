@@ -1,7 +1,6 @@
 //! Experimental binary that opens an [`UpdateOnlyEdgeShard`] over a local
 //! shard directory — or directly over object storage (AWS S3 / S3-compatible,
-//! or Google Cloud Storage) — and dry-runs a batch of random upserts against
-//! it.
+//! or Google Cloud Storage) — and runs a batch of random upserts against it.
 //!
 //! The counterpart of `edge-shard-query` for the write path. Point ids to
 //! overwrite are taken from the command line; the *shape* of each generated
@@ -10,13 +9,19 @@
 //! in its payload-index schema — so the batch is exactly what a real client
 //! could have written.
 //!
-//! Since the writer's write half is not implemented yet
-//! (`store_points`/`tombstone_points` are `todo!()`), the tool stops at the
-//! resolution stage: it runs [`preview_batch`], which shares the decision
-//! pipeline with the real `apply_batch`, and logs what *would* happen — which
-//! segments hold each point today, in which slots and at what versions, which
-//! points would be stored/skipped, and which slots would be tombstoned.
-//! Nothing is written, on any backend.
+//! By default the tool dry-runs: it runs [`preview_batch`], which shares the
+//! decision pipeline with the real apply, and logs what *would* happen —
+//! which segments hold each point today, in which slots and at what versions,
+//! which points would be stored/skipped, and which slots would be tombstoned.
+//! Nothing is written.
+//!
+//! With `--apply` it calls [`apply_batch`] instead and writes for real:
+//! appends to the write target and tombstones in every segment holding an
+//! older copy — over object storage through the appendable
+//! [`CachedBlobFile`], so the mutations are direct appends or server-side
+//! rewrites per the store's capability, durable once the run reports `Ok`.
+//!
+//! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 //!
 //! Example — local shard directory:
 //!
@@ -54,8 +59,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use clap::{Args as ClapArgs, Parser, ValueEnum};
 use common::universal_io::{
-    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, OkNotFound as _,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs, read_json_via,
+    DiskCacheConfig, MmapFile, OkNotFound as _, UniversalAppend, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, read_json_via,
 };
 use edge::external::uuid::Uuid;
 use edge::{
@@ -67,7 +72,9 @@ use edge::{
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
-use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
+use io_bridge_object_store::{
+    AsyncAppend, CachedBlobFile, CachedBlobFs, CachedBlobFsContext, ObjectStoreSource,
+};
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
 use rand::rngs::StdRng;
@@ -88,12 +95,18 @@ enum Backend {
 #[derive(Parser, Debug)]
 #[command(
     about = "Open an UpdateOnlyEdgeShard over a local directory or S3/GCS object storage and \
-             dry-run a batch of random upserts (nothing is written: the write half is not \
-             implemented yet)"
+             run a batch of random upserts against it — a dry run by default, written for real \
+             with --apply"
 )]
 struct Cli {
     #[command(flatten)]
     connection: ConnectionArgs,
+
+    /// Apply the batch for real: append to the write target and tombstone
+    /// older copies, durable on the backend once the run reports Ok. Without
+    /// this flag the batch is only resolved and logged; nothing is written.
+    #[arg(long)]
+    apply: bool,
 
     /// Point ids to overwrite with random points: comma-separated integers or
     /// UUIDs. Ids no segment holds are created rather than overwritten.
@@ -151,6 +164,12 @@ struct ConnectionArgs {
     /// [AWS] Use S3 Express One Zone (directory buckets, named `*--x-s3`).
     #[arg(long, env = "S3_EXPRESS")]
     s3_express: bool,
+
+    /// [AWS] The store honors native write-offset appends without being S3
+    /// Express — MinIO AiStor, RustFS. Implied by --s3-express; leave off
+    /// for plain S3, where appends go through server-side rewrites.
+    #[arg(long, env = "S3_NATIVE_APPEND")]
+    native_append: bool,
 
     /// [GCS] Path to a service-account JSON key file. Takes precedence over
     /// `--gcs-service-account-key`; if neither is set, application default
@@ -439,16 +458,9 @@ fn log_preview_point(point: &edge::PointPreview) {
     }
 }
 
-/// Generate the random batch, resolve it against the open shard, and log what
-/// it would do. The backend is behind `S`, so this is the whole dry run for
-/// local and object-storage shards alike.
-fn dry_run<S: UniversalRead + 'static>(
-    shard: &UpdateOnlyEdgeShard<S>,
-    schema: &ShardSchema,
-    ids: &[PointId],
-    op_num: u64,
-    seed: u64,
-) -> Result<()> {
+/// Generate the random upsert batch off the shard's schema, logging each
+/// point's shape.
+fn generate_batch(schema: &ShardSchema, ids: &[PointId], seed: u64) -> UpdateOperation {
     let mut rng = StdRng::seed_from_u64(seed);
     let points: Vec<PointStructPersisted> = ids
         .iter()
@@ -482,7 +494,20 @@ fn dry_run<S: UniversalRead + 'static>(
         })
         .collect();
 
-    let operation = UpdateOperation::PointOperation(PointOperations::UpsertPoints(points.into()));
+    UpdateOperation::PointOperation(PointOperations::UpsertPoints(points.into()))
+}
+
+/// Generate the random batch, resolve it against the open shard, and log what
+/// it would do. The backend is behind `S`, so this is the whole dry run for
+/// local and object-storage shards alike.
+fn dry_run<S: UniversalRead + 'static>(
+    shard: &UpdateOnlyEdgeShard<S>,
+    schema: &ShardSchema,
+    ids: &[PointId],
+    op_num: u64,
+    seed: u64,
+) -> Result<()> {
+    let operation = generate_batch(schema, ids, seed);
 
     let preview = shard
         .preview_batch([(op_num, operation)])
@@ -516,7 +541,34 @@ fn dry_run<S: UniversalRead + 'static>(
     for (segment, count) in &tombstones {
         log::info!("summary: segment {segment} would receive {count} tombstone(s)");
     }
-    log::info!("dry run only: store_points/tombstone_points are not implemented — nothing written");
+    log::info!("dry run: nothing written — pass --apply to write");
+
+    Ok(())
+}
+
+/// Generate the random batch and apply it for real: appends to the write
+/// target, tombstones in every segment holding an older copy — durable on
+/// the backend once this returns `Ok`.
+fn apply_run<S: UniversalAppend + 'static>(
+    shard: UpdateOnlyEdgeShard<S>,
+    schema: &ShardSchema,
+    ids: &[PointId],
+    op_num: u64,
+    seed: u64,
+) -> Result<()> {
+    let operation = generate_batch(schema, ids, seed);
+
+    let outcome = shard
+        .apply_batch([(op_num, operation)])
+        .context("failed to apply the batch")?;
+
+    log::info!(
+        "applied: {} stored, {} deleted, {} skipped, {} missing",
+        outcome.stored,
+        outcome.deleted,
+        outcome.skipped,
+        outcome.missing,
+    );
 
     Ok(())
 }
@@ -548,7 +600,7 @@ fn build_aws_config(conn: &ConnectionArgs) -> Result<AwsConfig> {
         region: conn.region.clone(),
         endpoint: conn.endpoint.clone(),
         s3_express: conn.s3_express,
-        native_append: false,
+        native_append: conn.native_append,
         credentials,
     })
 }
@@ -568,16 +620,17 @@ fn build_gcs_config(conn: &ConnectionArgs) -> Result<GcsConfig> {
     })
 }
 
-/// Build the disk-cache-backed filesystem used to read segment data: each
-/// remote block is fetched from object storage once and served from the local
-/// mirror afterwards.
+/// Build the combined cached-blob filesystem: reads are served through a
+/// local disk-cache mirror (each remote block fetched once), appends go
+/// straight to the remote.
 fn build_cached_fs<A>(
     remote_config: A::Config,
     remote_prefix: &Path,
     cache_dir: &Path,
-) -> Result<DiskCacheFs<BlobFile<A>>>
+) -> Result<CachedBlobFs<A>>
 where
-    A: AsyncRead + Clone,
+    A: AsyncAppend + Clone,
+    A::Config: Clone,
 {
     fs_err::create_dir_all(cache_dir)
         .with_context(|| format!("failed to create cache dir {}", cache_dir.display()))?;
@@ -585,11 +638,11 @@ where
     let config = DiskCacheConfig::new(remote_prefix.to_path_buf(), cache_dir.to_path_buf())
         .context("failed to build disk cache config")?;
 
-    DiskCacheFs::<BlobFile<A>>::from_context(DiskCacheFsContext {
-        config: Arc::new(config),
+    CachedBlobFs::<A>::from_context(CachedBlobFsContext {
+        disk_cache: Arc::new(config),
         remote: remote_config,
     })
-    .context("failed to build disk-cache filesystem")
+    .context("failed to build cached-blob filesystem")
 }
 
 /// Dry-run against a local shard directory: segments discovered by scanning
@@ -609,14 +662,20 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
     );
 
     let schema = read_schema(&shard, &common::universal_io::MmapFs, &path)?;
-    dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+    if cli.apply {
+        apply_run(shard, &schema, ids, cli.op_num, cli.seed)
+    } else {
+        dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+    }
 }
 
-/// Dry-run against object storage: segments discovered from the leader's
-/// segment manifest, read through the local disk cache.
+/// Run against object storage: segments discovered from the leader's
+/// segment manifest, reads through the local disk cache, appends (with
+/// `--apply`) straight to the remote.
 fn run_remote<A>(cli: &Cli, ids: &[PointId], remote_config: A::Config) -> Result<()>
 where
-    A: AsyncRead + Clone,
+    A: AsyncAppend + Clone,
+    A::Config: Clone,
 {
     let prefix = PathBuf::from(&cli.connection.prefix);
     let cache_dir = cli
@@ -630,7 +689,7 @@ where
 
     let enumerator = ManifestSegmentEnumerator::new(cached_fs.clone(), &prefix);
     let shard =
-        UpdateOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs.clone(), &prefix, enumerator)
+        UpdateOnlyEdgeShard::<CachedBlobFile<A>>::open(cached_fs.clone(), &prefix, enumerator)
             .context("failed to open update-only edge shard over object storage")?;
     log::info!(
         "opened update-only shard with {} segment(s)",
@@ -638,7 +697,11 @@ where
     );
 
     let schema = read_schema(&shard, &cached_fs, &prefix)?;
-    dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+    if cli.apply {
+        apply_run(shard, &schema, ids, cli.op_num, cli.seed)
+    } else {
+        dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+    }
 }
 
 fn main() -> Result<()> {
