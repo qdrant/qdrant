@@ -20,6 +20,10 @@
 //! older copy — over object storage through the appendable
 //! [`CachedBlobFile`], so the mutations are direct appends or server-side
 //! rewrites per the store's capability, durable once the run reports `Ok`.
+//! Adding `--interactive` keeps the session open: after each batch the tool
+//! prompts on stdin for the next round's ids and applies them through the
+//! writer `apply_batch` handed back — no shard re-open — with the op-num
+//! incremented per round.
 //!
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 //!
@@ -107,6 +111,13 @@ struct Cli {
     /// this flag the batch is only resolved and logged; nothing is written.
     #[arg(long)]
     apply: bool,
+
+    /// After a batch is applied, prompt on stdin for the next round's ids
+    /// (comma-separated; an empty line or EOF quits) and apply them through
+    /// the same writer — no shard re-open — with --op-num incremented by one
+    /// per round.
+    #[arg(long, requires = "apply")]
+    interactive: bool,
 
     /// Point ids to overwrite with random points: comma-separated integers or
     /// UUIDs. Ids no segment holds are created rather than overwritten.
@@ -548,29 +559,73 @@ fn dry_run<S: UniversalAppend + 'static>(
 
 /// Generate the random batch and apply it for real: appends to the write
 /// target, tombstones in every segment holding an older copy — durable on
-/// the backend once this returns `Ok`.
+/// the backend once this returns `Ok`. With `interactive`, keeps prompting
+/// for the next round's ids and applies them through the writer the previous
+/// `apply_batch` handed back, one op-num (and seed) higher per round.
 fn apply_run<S: UniversalAppend + 'static>(
-    shard: UpdateOnlyEdgeShard<S>,
+    mut shard: UpdateOnlyEdgeShard<S>,
     schema: &ShardSchema,
     ids: &[PointId],
-    op_num: u64,
-    seed: u64,
+    mut op_num: u64,
+    mut seed: u64,
+    interactive: bool,
 ) -> Result<()> {
-    let operation = generate_batch(schema, ids, seed);
+    let mut ids = ids.to_vec();
+    loop {
+        let operation = generate_batch(schema, &ids, seed);
 
-    let (_shard, outcome) = shard
-        .apply_batch([(op_num, operation)])
-        .context("failed to apply the batch")?;
+        let (returned, outcome) = shard
+            .apply_batch([(op_num, operation)])
+            .context("failed to apply the batch")?;
+        shard = returned;
 
-    log::info!(
-        "applied: {} stored, {} deleted, {} skipped, {} missing",
-        outcome.stored,
-        outcome.deleted,
-        outcome.skipped,
-        outcome.missing,
-    );
+        log::info!(
+            "applied at op-num {op_num}: {} stored, {} deleted, {} skipped, {} missing",
+            outcome.stored,
+            outcome.deleted,
+            outcome.skipped,
+            outcome.missing,
+        );
 
-    Ok(())
+        if !interactive {
+            return Ok(());
+        }
+        match prompt_next_ids()? {
+            Some(next_ids) => ids = next_ids,
+            None => return Ok(()),
+        }
+        op_num += 1;
+        seed = seed.wrapping_add(1);
+    }
+}
+
+/// Read the next round's ids from stdin: comma-separated on one line, with
+/// unparsable input re-prompted; an empty line or EOF ends the session.
+fn prompt_next_ids() -> Result<Option<Vec<PointId>>> {
+    loop {
+        eprint!("next ids (comma-separated, empty to quit): ");
+        let mut line = String::new();
+        if std::io::stdin()
+            .read_line(&mut line)
+            .context("failed to read ids from stdin")?
+            == 0
+        {
+            return Ok(None);
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            return Ok(None);
+        }
+
+        match line
+            .split(',')
+            .map(|raw| parse_point_id(raw.trim()))
+            .collect::<Result<Vec<_>>>()
+        {
+            Ok(ids) => return Ok(Some(ids)),
+            Err(err) => log::warn!("{err:#}"),
+        }
+    }
 }
 
 /// The bucket name, required by the object-storage backends.
@@ -663,7 +718,7 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
 
     let schema = read_schema(&shard, &common::universal_io::MmapFs, &path)?;
     if cli.apply {
-        apply_run(shard, &schema, ids, cli.op_num, cli.seed)
+        apply_run(shard, &schema, ids, cli.op_num, cli.seed, cli.interactive)
     } else {
         dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
     }
@@ -698,7 +753,7 @@ where
 
     let schema = read_schema(&shard, &cached_fs, &prefix)?;
     if cli.apply {
-        apply_run(shard, &schema, ids, cli.op_num, cli.seed)
+        apply_run(shard, &schema, ids, cli.op_num, cli.seed, cli.interactive)
     } else {
         dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
     }
