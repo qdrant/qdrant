@@ -1,0 +1,37 @@
+id: no-raw-requests-without-headers
+valid:
+  # Headers passed directly.
+  - |
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{name}",
+        headers=qdrant_host_headers(),
+        json={"vectors": {"size": 4, "distance": "Dot"}},
+    )
+  # Headers merged into a dict alongside other entries.
+  - |
+    response = requests.get(
+        f"{QDRANT_HOST}/snapshots/{snapshot_name}",
+        headers={**qdrant_host_headers(), "Content-Type": "application/json"},
+    )
+  # Calls that go through the shared helper, which injects headers itself,
+  # are untouched by this rule (no literal `requests.<verb>` call).
+  - |
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+    )
+invalid:
+  # A raw call missing the headers entirely.
+  - |
+    response = requests.put(
+        f"{QDRANT_HOST}/collections/{name}",
+        json={"vectors": {"size": 4, "distance": "Dot"}},
+    )
+  - |
+    response = requests.get(f"{QDRANT_HOST}/snapshots/{snapshot_name}")
+  - |
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}/points/query",
+        json={"query": [0.2, 0.1, 0.9, 0.7], "limit": 3},
+    )

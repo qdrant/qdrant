@@ -1,0 +1,18 @@
+id: no-raw-requests-without-headers
+language: python
+severity: error
+files:
+  - tests/openapi/**
+message: "raw requests.<verb>(...) call without qdrant_host_headers()"
+note: |-
+  `request_with_validation` (tests/openapi/helpers/helpers.py) injects
+  QDRANT_HOST_HEADERS into every call that goes through it. Tests that bypass
+  it and call `requests` directly must pass `headers=qdrant_host_headers()`
+  (or merge it into the headers dict) themselves, so they still work behind
+  host-based ingress.
+rule:
+  pattern: requests.$METHOD($$$ARGS)
+  not:
+    has:
+      stopBy: end
+      regex: qdrant_host_headers
