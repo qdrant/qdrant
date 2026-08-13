@@ -214,7 +214,7 @@ fn test_links_file_links<F: UniversalReadFs>(
         )
         .unwrap();
     let view = GraphLinksFile::<F::File>::open(file, format).unwrap();
-    let mut arena = stumpalo::Arena::new();
+    let arena = stumpalo::Arena::new();
     let max_levels = links.iter().map(|levels| levels.len()).max().unwrap_or(0);
     for level in 0..max_levels {
         let level_m = hnsw_m.level_m(level);
@@ -228,13 +228,13 @@ fn test_links_file_links<F: UniversalReadFs>(
                     normalize_links(level_m, links[chunk[position] as usize][level].clone()),
                 );
             };
-            view.links(&mut arena, chunk, level, |position, iter| {
+            view.links(&arena, chunk, level, |position, iter| {
                 check(position, iter.collect())
             })
             .unwrap();
             if let Some(vectors) = &vectors {
                 view.links_with_vectors(
-                    &mut arena,
+                    &arena,
                     chunk,
                     level,
                     |position, base_vector, iter, link_vectors| {
