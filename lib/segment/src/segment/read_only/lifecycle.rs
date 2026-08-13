@@ -243,7 +243,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         // per-file `exists` round-trips — important for object-storage backends).
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             &fs,
-            raw_fs,
             segment_path,
             deferred_internal_id,
         )?));
