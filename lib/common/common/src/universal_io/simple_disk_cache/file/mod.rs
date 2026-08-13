@@ -54,6 +54,11 @@ where
     pub(super) state: Mutex<State<R>>,
     /// Fast-path gate: `true` when `state` is [`State::Ready`].
     pub(super) is_ready: AtomicBool,
+    /// Entity tag of the remote object, as last known: seeded from the open
+    /// extras, refreshed by [`schedule_reopen`] and [`set_etag`](Self::set_etag).
+    ///
+    /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+    etag: Mutex<Option<String>>,
 }
 
 /// The lifecycle of a [`DiskCache`]'s local mirror, from "not yet materialized"
@@ -165,6 +170,7 @@ where
         local_path: PathBuf,
         options: OpenOptions,
         state: State<R>,
+        etag: Option<String>,
     ) -> Self {
         let is_ready = state.is_ready();
         Self {
@@ -175,7 +181,19 @@ where
             local_path,
             state: Mutex::new(state),
             is_ready: AtomicBool::new(is_ready),
+            etag: Mutex::new(etag),
         }
+    }
+
+    /// Entity tag of the remote object, as last known.
+    pub fn etag(&self) -> Option<String> {
+        self.etag.lock().clone()
+    }
+
+    /// Record a fresh entity tag for the remote object, e.g. after mutating
+    /// it directly on the backing storage.
+    pub fn set_etag(&self, etag: Option<String>) {
+        *self.etag.lock() = etag;
     }
 
     pub(super) fn open_remote(&self) -> UioResult<R> {

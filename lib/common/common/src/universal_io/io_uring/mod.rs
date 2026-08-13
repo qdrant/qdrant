@@ -125,6 +125,10 @@ impl OpenExtra for IoUringOpenExtra {
     fn with_known_len(self, _known_len: u64) -> Self {
         self
     }
+
+    fn with_known_etag(self, _known_etag: Option<String>) -> Self {
+        self
+    }
 }
 
 impl UniversalReadFs for IoUringFs {

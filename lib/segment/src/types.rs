@@ -504,6 +504,7 @@ impl IoBackend {
             common::universal_io::UniversalKind::IoUring => Some(Self::IoUring),
             common::universal_io::UniversalKind::DiskCache
             | common::universal_io::UniversalKind::SimpleDiskCache
+            | common::universal_io::UniversalKind::CachedBlob
             | common::universal_io::UniversalKind::S3
             | common::universal_io::UniversalKind::Gcs
             | common::universal_io::UniversalKind::Azure

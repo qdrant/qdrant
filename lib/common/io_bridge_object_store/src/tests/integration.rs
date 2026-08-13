@@ -3,10 +3,9 @@
 use std::assert_matches;
 use std::path::Path;
 
+use bytes::Bytes;
 use common::generic_consts::Random;
-use common::universal_io::{
-    ListedFile, ReadRange, UioResult, UniversalAppend, UniversalIoError, UniversalRead,
-};
+use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalIoError, UniversalRead};
 use io_bridge::{AsyncRead, BridgeRuntime};
 use object_store::aws::AmazonS3;
 
@@ -141,32 +140,38 @@ fn test_native_append_flow() {
     // Fresh key per run so reruns do not collide with leftover objects.
     let key = format!("append-{}.log", std::process::id());
 
-    let mut file = BlobFile::<ObjectStoreSource<AmazonS3>>::open(
+    let file = BlobFile::<ObjectStoreSource<AmazonS3>>::open(
         &rustfs_aws_config(),
         runtime.clone(),
         key.as_str(),
     )
     .expect("open");
-    file.append(0, b"hello ".as_slice())
+    file.append_bytes(0, Bytes::from_static(b"hello "), None)
         .expect("first append creates the object");
-    file.append(6, b"world".as_slice()).expect("append");
+    file.append_bytes(6, Bytes::from_static(b"world"), None)
+        .expect("append");
 
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello world");
 
     // A second handle appends behind this handle's back...
-    let mut interloper =
+    let interloper =
         BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, key.as_str())
             .expect("open");
-    interloper.append(11, b"A".as_slice()).expect("append");
+    interloper
+        .append_bytes(11, Bytes::from_static(b"A"), None)
+        .expect("append");
 
     // ...so an append at the stale offset conflicts without writing, and
     // re-deriving the offset from the actual length recovers.
-    let err = file.append(11, b"B".as_slice()).unwrap_err();
+    let err = file
+        .append_bytes(11, Bytes::from_static(b"B"), None)
+        .unwrap_err();
     assert_matches!(err, UniversalIoError::AppendOffsetConflict { .. });
     let eof = file.len::<u8>().expect("len");
     assert_eq!(eof, 12);
-    file.append(eof, b"B".as_slice()).expect("append");
+    file.append_bytes(eof, Bytes::from_static(b"B"), None)
+        .expect("append");
 
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello worldAB");

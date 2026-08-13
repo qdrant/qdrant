@@ -98,7 +98,9 @@ where
             });
         };
 
-        self.schedule_reopen_with_len(Some(file_info.size))
+        self.schedule_reopen_with_len(Some(file_info.size))?;
+        self.set_etag(file_info.etag);
+        Ok(())
     }
 
     /// Body of [`UniversalRead::schedule_reopen`].

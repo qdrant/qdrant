@@ -374,7 +374,7 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 mod tests {
     use bytes::Bytes;
     use common::generic_consts::{Random, Sequential};
-    use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalAppend, UniversalRead};
+    use common::universal_io::{DiskCacheConfig, ListedFile, ReadRange, UioResult, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
     use object_store::memory::InMemory;
     use object_store::{PutMode, UpdateVersion};
@@ -404,11 +404,16 @@ mod tests {
     /// single-request (see [`crate::append`]); this exists so the `BlobFile`
     /// append stack can be exercised hermetically.
     impl io_bridge::AsyncAppend for ObjectStoreSource<InMemory> {
+        fn append_support(&self) -> io_bridge::AppendSupport {
+            io_bridge::AppendSupport::Always
+        }
+
         fn append(
             &self,
             path: &Path,
             offset: u64,
             data: Bytes,
+            expected_etag: Option<String>,
         ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             let store = self.store().clone();
             let key = build_key(path);
@@ -418,10 +423,18 @@ mod tests {
                     path: PathBuf::from(key.to_string()),
                     offset,
                 };
+                let etag_mismatch = || UniversalIoError::AppendEtagMismatch {
+                    path: PathBuf::from(key.to_string()),
+                };
 
                 loop {
                     match store.head(&key).await {
                         Ok(meta) => {
+                            if let Some(expected) = &expected_etag
+                                && meta.e_tag.as_deref() != Some(expected.as_str())
+                            {
+                                return Err(etag_mismatch());
+                            }
                             if meta.size != offset {
                                 return Err(conflict());
                             }
@@ -449,6 +462,9 @@ mod tests {
                             }
                         }
                         Err(object_store::Error::NotFound { .. }) => {
+                            if expected_etag.is_some() {
+                                return Err(etag_mismatch());
+                            }
                             if offset != 0 {
                                 return Err(conflict());
                             }
@@ -743,14 +759,19 @@ mod tests {
     }
 
     /// The backend-generic append battery from `common`, run over the S3
-    /// stack (`BlobFs`/`BlobFile` over an object store) via the in-memory
-    /// append emulation. The real write-offset RPC is covered by the gated
-    /// `test_native_append_flow` integration test.
+    /// stack (`CachedBlobFs`/`CachedBlobFile` over an object store) via the
+    /// in-memory append emulation. The real write-offset RPC is covered by
+    /// the gated `test_native_append_flow` integration test.
     #[test]
     fn append_conformance_over_object_store() {
-        let fs = io_bridge::BlobFs::new(
+        let local_dir = tempfile::tempdir().unwrap();
+        let config =
+            DiskCacheConfig::new(PathBuf::from("conformance"), local_dir.path().to_path_buf())
+                .unwrap();
+        let fs = io_bridge::CachedBlobFs::new(
             ObjectStoreSource::new(Arc::new(InMemory::new())),
             BridgeRuntime::global(),
+            Arc::new(config),
         );
         common::universal_io::conformance::run_append_conformance(&fs, Path::new("conformance"));
     }
@@ -759,13 +780,15 @@ mod tests {
     fn append_through_blob_file() {
         let runtime = BridgeRuntime::global();
         let store = Arc::new(InMemory::new());
-        let mut file = make_file(runtime, store, "log");
+        let file = make_file(runtime, store, "log");
 
-        // Create-on-first-append at offset 0, then single-request batches.
-        file.append(0, b"hello ".as_slice()).unwrap();
-        file.append(6, b"world".as_slice()).unwrap();
-        let batch: [&[u8]; 2] = [b"!", b"?"];
-        file.append_batch(11, batch).unwrap();
+        // Create-on-first-append at offset 0, then sequential appends.
+        file.append_bytes(0, Bytes::from_static(b"hello "), None)
+            .unwrap();
+        file.append_bytes(6, Bytes::from_static(b"world"), None)
+            .unwrap();
+        file.append_bytes(11, Bytes::from_static(b"!?"), None)
+            .unwrap();
 
         let bytes = file.read_whole::<u8>().unwrap();
         assert_eq!(&bytes[..], b"hello world!?");
