@@ -87,18 +87,36 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
 
         let new_len = offset + data.len() as u64;
 
-        match self.remote.source().append_support() {
+        let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+        let start_time = enabled.then(std::time::Instant::now);
+
+        let strategy = match self.remote.source().append_support() {
             AppendSupport::Always => {
                 self.remote.append_bytes(offset, data, self.cache.etag())?;
+                "append"
             }
             AppendSupport::AboveThreshold { min_offset } => {
                 if offset >= min_offset {
                     self.remote.append_bytes(offset, data, self.cache.etag())?;
+                    "append"
                 } else {
                     self.local_rewrite(offset, data)?;
+                    "rewrite"
                 }
             }
-            AppendSupport::Never => self.local_rewrite(offset, data)?,
+            AppendSupport::Never => {
+                self.local_rewrite(offset, data)?;
+                "rewrite"
+            }
+        };
+
+        if let Some(start_time) = start_time {
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
+                "append_bytes({}, {offset}..{new_len}) took {:?} via {strategy}",
+                self.remote.path().display(),
+                start_time.elapsed(),
+            );
         }
 
         self.cache.schedule_reopen(|_| {
