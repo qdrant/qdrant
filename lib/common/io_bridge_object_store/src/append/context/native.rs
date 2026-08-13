@@ -14,24 +14,23 @@
 //! against this implementation yet.
 
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
-use io_bridge::{AppendMethod, AppendRequest, AsyncAppend};
+use object_store::ObjectStoreExt as _;
 use object_store::aws::{AmazonS3, AwsAuthorizer};
-use object_store::client::{HttpClient, HttpConnector as _, HttpRequestBody, ReqwestConnector};
-use object_store::{ClientOptions, ObjectStoreExt as _};
-use url::Url;
+use object_store::client::HttpRequestBody;
 
-use crate::source::ObjectStoreSource;
+use super::part_copy::PartCopyAppend;
+use super::signed::SignedRequestContext;
 
 /// Response header carrying the object size after an append.
 const OBJECT_SIZE_HEADER: &str = "x-amz-object-size";
 
 /// Request header selecting the write-offset append behavior of `PutObject`.
-const WRITE_OFFSET_HEADER: &str = "x-amz-write-offset-bytes";
+pub(super) const WRITE_OFFSET_HEADER: &str = "x-amz-write-offset-bytes";
 
 /// S3 error code returned when the write offset does not match the current
 /// object size.
@@ -41,102 +40,6 @@ const INVALID_WRITE_OFFSET_CODE: &str = "InvalidWriteOffset";
 /// appended blocks (10,000 parts); the object can only keep growing through
 /// a whole-object rewrite.
 const TOO_MANY_PARTS_CODE: &str = "TooManyParts";
-
-/// State for issuing native append requests: a lazily-built shared HTTP
-/// client plus the resolved object-URL base and signing region.
-///
-/// Built once per source by [`BlobBackend::append_context`]; construction is
-/// cheap — the HTTP client (TLS setup, connection pool) is only built on the
-/// first append, so sources that never append pay nothing.
-///
-/// [`BlobBackend::append_context`]: crate::BlobBackend::append_context
-#[derive(Debug, Clone)]
-pub struct AppendContext {
-    /// Reqwest-backed HTTP client, built on first use and shared across
-    /// clones of the source (and thus across file handles opened from it).
-    client: Arc<OnceLock<HttpClient>>,
-    /// Whether to allow plain-http endpoints; mirrors `build_store`.
-    allow_http: bool,
-    /// Base URL under which object keys live: path-style
-    /// `{endpoint}/{bucket}` for custom endpoints, or the virtual-hosted
-    /// `https://{bucket}.s3.{region}.amazonaws.com` for real AWS.
-    object_url_base: Url,
-    /// SigV4 signing region.
-    region: String,
-}
-
-impl AppendContext {
-    pub fn new(allow_http: bool, object_url_base: Url, region: String) -> Self {
-        Self {
-            client: Arc::new(OnceLock::new()),
-            allow_http,
-            object_url_base,
-            region,
-        }
-    }
-
-    /// The shared HTTP client, built on first call. Concurrent first calls
-    /// may build a transient extra client; exactly one is kept.
-    fn client(&self) -> UioResult<HttpClient> {
-        if let Some(client) = self.client.get() {
-            return Ok(client.clone());
-        }
-
-        let mut options = ClientOptions::new();
-        if self.allow_http {
-            options = options.with_allow_http(true);
-        }
-        let client = ReqwestConnector::default()
-            .connect(&options)
-            .map_err(|err| UniversalIoError::S3Config {
-                description: format!("append http client: {err}"),
-            })?;
-
-        Ok(self.client.get_or_init(|| client).clone())
-    }
-}
-
-impl AsyncAppend for ObjectStoreSource<AmazonS3> {
-    fn supported_append(&self) -> AppendMethod {
-        // The append context exists exactly when the backend/config supports
-        // write-offset appends; plain S3 falls back to multipart rewrites.
-        if self.append_context().is_some() {
-            AppendMethod::Native
-        } else {
-            AppendMethod::PartialUpload
-        }
-    }
-
-    fn append(
-        &self,
-        path: &std::path::Path,
-        request: AppendRequest,
-    ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
-        let store = self.store().clone();
-        let context = self.append_context().cloned();
-        let key = crate::source::build_key(path);
-
-        async move {
-            match request {
-                AppendRequest::Native { offset, data } => {
-                    let Some(context) = context else {
-                        return Err(UniversalIoError::S3Config {
-                            description: "append is not supported for this S3 backend/config (append context missing)"
-                                .to_string(),
-                        });
-                    };
-
-                    append_request(&store, &context, &key, offset, data).await
-                }
-                AppendRequest::PartialUpload { offset: _, data: _ } => {
-                    // CreateMultipartUpload + UploadPartCopy of `[0, offset)`
-                    // + UploadPart(data) + CompleteMultipartUpload.
-                    todo!("multipart rewrite with UploadPartCopy")
-                }
-            }
-        }
-    }
-}
 
 /// Total attempts for one append: transient failures (connection errors,
 /// 5xx, 429) are retried with a short linear backoff, like `object_store`
@@ -148,12 +51,44 @@ const MAX_ATTEMPTS: u32 = 3;
 /// Backoff before retry attempt `n` is `n * RETRY_BACKOFF`.
 const RETRY_BACKOFF: Duration = Duration::from_millis(100);
 
+/// The native append strategy: a signed single-request `PutObject` with
+/// `x-amz-write-offset-bytes`, atomically growing the object in place.
+#[derive(Debug, Clone)]
+pub struct NativeAppend {
+    signed: SignedRequestContext,
+}
+
+impl NativeAppend {
+    pub fn new(signed: SignedRequestContext) -> Self {
+        Self { signed }
+    }
+
+    /// Append `data` at `offset` (== the current object size). Returns the
+    /// new total object size.
+    pub(in crate::append) async fn append(
+        &self,
+        store: &Arc<AmazonS3>,
+        key: &object_store::path::Path,
+        offset: u64,
+        data: Bytes,
+    ) -> UioResult<u64> {
+        append_request(store, &self.signed, key, offset, data).await
+    }
+
+    /// The part-copy strategy over the same store, used to compact an
+    /// object that reached the appended-block cap — every native-append
+    /// store is multipart-capable.
+    pub(in crate::append) fn part_copy(&self) -> PartCopyAppend {
+        PartCopyAppend::new(self.signed.clone())
+    }
+}
+
 /// Issue a signed `PutObject` request with `x-amz-write-offset-bytes`,
 /// atomically growing the object at `key` by `data`. Returns the new total
 /// object size.
 async fn append_request(
     store: &Arc<AmazonS3>,
-    context: &AppendContext,
+    context: &SignedRequestContext,
     key: &object_store::path::Path,
     offset: u64,
     data: Bytes,
@@ -164,14 +99,7 @@ async fn append_request(
         .await
         .map_err(UniversalIoError::s3)?;
     let client = context.client()?;
-
-    let mut url = context.object_url_base.clone();
-    url.path_segments_mut()
-        .map_err(|()| UniversalIoError::S3Config {
-            description: "append object url cannot be a base".to_string(),
-        })?
-        .pop_if_empty()
-        .extend(key.parts().map(|part| part.as_ref().to_string()));
+    let url = context.object_url(key)?;
 
     let data_len = data.len() as u64;
 
@@ -323,12 +251,11 @@ async fn append_request(
 #[cfg(test)]
 mod tests {
     use std::assert_matches;
-    use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-    use std::net::{TcpListener, TcpStream};
-    use std::sync::Mutex;
 
     use object_store::aws::AmazonS3Builder;
+    use url::Url;
 
+    use super::super::stub::{StubResponse, stub_server, stub_store_and_context};
     use super::*;
 
     /// Request building failures (URIs the `http` crate rejects) surface as
@@ -344,185 +271,29 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let context = AppendContext::new(
+        let context = SignedRequestContext::new(
             true,
+            "bucket".to_string(),
             Url::parse("http://localhost:9000/bucket").unwrap(),
             "us-east-1".to_string(),
         );
         // `url` accepts this; `http` caps URIs at u16::MAX bytes.
         let key = object_store::path::Path::from("k".repeat(70_000));
 
-        let result = io_bridge::BridgeRuntime::global().block_on(append_request(
-            &store,
-            &context,
-            &key,
-            0,
-            Bytes::from_static(b"data"),
-        ));
-        assert!(matches!(result, Err(UniversalIoError::S3Config { .. })));
-    }
-
-    /// The HTTP client is built on first use and then reused; building it
-    /// performs no IO.
-    #[test]
-    fn client_is_built_lazily_and_cached() {
-        let context = AppendContext::new(
-            true,
-            Url::parse("http://localhost:9000/bucket").unwrap(),
-            "us-east-1".to_string(),
+        let result = io_bridge::BridgeRuntime::global().block_on(
+            NativeAppend::new(context).append(&store, &key, 0, Bytes::from_static(b"data")),
         );
-        assert!(context.client.get().is_none());
-
-        context.client().unwrap();
-        assert!(context.client.get().is_some());
-        context.client().unwrap();
-    }
-
-    /// Canned response served by [`stub_server`].
-    struct StubResponse {
-        status: u16,
-        headers: Vec<(&'static str, String)>,
-        body: &'static str,
-    }
-
-    impl StubResponse {
-        fn new(status: u16) -> Self {
-            Self {
-                status,
-                headers: Vec::new(),
-                body: "",
-            }
-        }
-
-        fn header(mut self, name: &'static str, value: impl ToString) -> Self {
-            self.headers.push((name, value.to_string()));
-            self
-        }
-
-        fn body(mut self, body: &'static str) -> Self {
-            self.body = body;
-            self
-        }
-    }
-
-    /// One request as observed by [`stub_server`].
-    struct SeenRequest {
-        method: String,
-        path: String,
-        write_offset: Option<String>,
-        signed: bool,
-        body: Vec<u8>,
-    }
-
-    /// Minimal local HTTP/1.1 server: serves the canned responses in order,
-    /// one connection per response (every response carries
-    /// `connection: close`, so retries and the `head()` reconciliation
-    /// arrive as fresh connections), recording each request. The listener
-    /// stops after the last response, so an unexpected extra request fails
-    /// to connect instead of hanging the test.
-    fn stub_server(responses: Vec<StubResponse>) -> (String, Arc<Mutex<Vec<SeenRequest>>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let seen = Arc::new(Mutex::new(Vec::new()));
-
-        let seen_in_server = Arc::clone(&seen);
-        std::thread::spawn(move || {
-            for response in responses {
-                let Ok((mut stream, _)) = listener.accept() else {
-                    return;
-                };
-                let Some(request) = read_request(&mut stream) else {
-                    return;
-                };
-                seen_in_server.lock().unwrap().push(request);
-
-                let mut payload = format!("HTTP/1.1 {} Stub\r\n", response.status);
-                for (name, value) in &response.headers {
-                    payload += &format!("{name}: {value}\r\n");
-                }
-                // A HEAD response declares a length without carrying a body.
-                let has_length = response
-                    .headers
-                    .iter()
-                    .any(|(name, _)| name.eq_ignore_ascii_case("content-length"));
-                if !has_length {
-                    payload += &format!("content-length: {}\r\n", response.body.len());
-                }
-                payload += "connection: close\r\n\r\n";
-                payload += response.body;
-                let _ = stream.write_all(payload.as_bytes());
-            }
-        });
-
-        (endpoint, seen)
-    }
-
-    fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
-        let mut reader = BufReader::new(stream);
-
-        let mut request_line = String::new();
-        reader.read_line(&mut request_line).ok()?;
-        let mut parts = request_line.split_whitespace();
-        let method = parts.next()?.to_string();
-        let path = parts.next()?.to_string();
-
-        let mut content_length = 0;
-        let mut write_offset = None;
-        let mut signed = false;
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).ok()?;
-            let line = line.trim_end();
-            if line.is_empty() {
-                break;
-            }
-            let (name, value) = line.split_once(':')?;
-            let value = value.trim().to_string();
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = value.parse().ok()?;
-            } else if name.eq_ignore_ascii_case(WRITE_OFFSET_HEADER) {
-                write_offset = Some(value);
-            } else if name.eq_ignore_ascii_case("authorization") {
-                signed = true;
-            }
-        }
-
-        let mut body = vec![0; content_length];
-        reader.read_exact(&mut body).ok()?;
-
-        Some(SeenRequest {
-            method,
-            path,
-            write_offset,
-            signed,
-            body,
-        })
+        assert!(matches!(result, Err(UniversalIoError::S3Config { .. })));
     }
 
     /// Append `b"data"` at `offset` to `dir/append.dat` via the stub, so a
     /// consistent store would report a new object size of `offset + 4`.
     fn append_data_at(endpoint: &str, offset: u64) -> UioResult<u64> {
-        let store = Arc::new(
-            AmazonS3Builder::new()
-                .with_bucket_name("bucket")
-                .with_region("us-east-1")
-                .with_access_key_id("id")
-                .with_secret_access_key("secret")
-                .with_endpoint(endpoint)
-                .with_allow_http(true)
-                .build()
-                .unwrap(),
-        );
-        let context = AppendContext::new(
-            true,
-            Url::parse(&format!("{endpoint}/bucket")).unwrap(),
-            "us-east-1".to_string(),
-        );
+        let (store, context) = stub_store_and_context(endpoint);
         let key = object_store::path::Path::from("dir/append.dat");
 
-        io_bridge::BridgeRuntime::global().block_on(append_request(
+        io_bridge::BridgeRuntime::global().block_on(NativeAppend::new(context).append(
             &store,
-            &context,
             &key,
             offset,
             Bytes::from_static(b"data"),

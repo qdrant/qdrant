@@ -30,24 +30,31 @@ pub trait AsyncWrite: AsyncRead {
     ) -> impl Future<Output = UioResult<()>> + Send + 'static;
 }
 
-/// How a backend grows objects, advertised by
-/// [`AsyncAppend::supported_append`].
+/// When the backend accepts a direct append ([`AppendRequest::Append`]),
+/// advertised by [`AsyncAppend::append_support`]. Deliberately silent on
+/// *how* the backend performs the operation — that is the backend's
+/// business; this only tells the caller when it must fall back to building
+/// the whole object itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AppendMethod {
-    /// Native single-request write-offset appends (S3 Express One Zone,
-    /// MinIO AiStor). Stores cap appended blocks per object; hitting the cap
-    /// surfaces as [`UniversalIoError::AppendRewriteRequired`] and callers
-    /// recover with a whole-object rewrite.
+pub enum AppendSupport {
+    /// Direct appends at any offset: a write-offset append (S3 Express,
+    /// MinIO AiStor) or a `compose` concatenation (GCS). Stores that cap
+    /// appended blocks per object surface the cap as
+    /// [`UniversalIoError::AppendRewriteRequired`], and callers recover
+    /// with one [`AppendRequest::Rewrite`].
     ///
     /// [`UniversalIoError::AppendRewriteRequired`]: common::universal_io::UniversalIoError::AppendRewriteRequired
-    Native,
-    /// No native append (plain S3): the object only grows by a rewrite —
-    /// a server-side copy of the existing prefix with the new data uploaded
-    /// as the final multipart part.
-    PartialUpload,
+    Always,
+    /// Direct appends only once the existing object is at least
+    /// `min_offset` bytes (plain S3: appends land as multipart prefix
+    /// copies, whose non-last parts must be ≥ 5 MiB). Below the threshold
+    /// the caller must write the whole object itself.
+    AboveThreshold { min_offset: u64 },
+    /// No direct appends: the caller always writes the whole object itself.
+    Never,
 }
 
-/// One append operation; each variant matches an [`AppendMethod`].
+/// One append operation.
 ///
 /// In both variants `offset` MUST equal the current object size and acts as
 /// a compare-and-swap token: the backend rejects a mismatching request with
@@ -57,15 +64,14 @@ pub enum AppendMethod {
 /// [`UniversalIoError::AppendOffsetConflict`]: common::universal_io::UniversalIoError::AppendOffsetConflict
 #[derive(Clone, Debug)]
 pub enum AppendRequest {
-    /// Append `data` at `offset` in a single native write-offset request,
-    /// growing the object in place. `offset == 0` creates the object if it
-    /// is missing.
-    Native { offset: u64, data: Bytes },
-    /// Rewrite the object as its existing `[0, offset)` prefix (server-side
-    /// copy, never downloaded) followed by `data`. Also the appended-block
-    /// cap recovery path for [`AppendMethod::Native`] backends, which all
-    /// sit on multipart-capable stores.
-    PartialUpload { offset: u64, data: Bytes },
+    /// Append `data` at `offset`, growing the object in place — by whatever
+    /// mechanism the backend has. `offset == 0` creates the object if it is
+    /// missing. Valid within the backend's advertised [`AppendSupport`].
+    Append { offset: u64, data: Bytes },
+    /// Append `data` at `offset` AND rebuild the object as a single blob:
+    /// the appended-block cap recovery for [`AppendSupport::Always`]
+    /// stores whose direct appends accumulate per-object blocks.
+    Rewrite { offset: u64, data: Bytes },
 }
 
 /// Blob backends supporting appends.
@@ -74,10 +80,9 @@ pub enum AppendRequest {
 ///
 /// [`UniversalAppend`]: common::universal_io::UniversalAppend
 pub trait AsyncAppend: AsyncWrite {
-    /// The append method this backend advertises; callers pick the matching
-    /// [`AppendRequest`] variant. Implementations reject request variants
-    /// they do not support.
-    fn supported_append(&self) -> AppendMethod;
+    /// When this backend accepts direct appends; below/without that, the
+    /// caller writes the whole object itself through [`AsyncWrite::save`].
+    fn append_support(&self) -> AppendSupport;
 
     /// Perform `request` on the object at `path`. Returns the new total
     /// object size in bytes. See [`AppendRequest`] for the offset

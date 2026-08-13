@@ -199,7 +199,7 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
         self.runtime
             .block_on(
                 self.inner
-                    .append(&self.path, AppendRequest::Native { offset, data }),
+                    .append(&self.path, AppendRequest::Append { offset, data }),
             )
             .map(drop)
     }
@@ -499,8 +499,8 @@ mod tests {
     }
 
     impl AsyncAppend for MutableMockSource {
-        fn supported_append(&self) -> crate::AppendMethod {
-            crate::AppendMethod::Native
+        fn append_support(&self) -> crate::AppendSupport {
+            crate::AppendSupport::Always
         }
 
         fn append(
@@ -508,7 +508,7 @@ mod tests {
             path: &Path,
             request: AppendRequest,
         ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
-            let AppendRequest::Native { offset, data } = request else {
+            let AppendRequest::Append { offset, data } = request else {
                 return std::future::ready(Err(UniversalIoError::Io(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
                     "MutableMockSource only supports native appends",
@@ -547,7 +547,7 @@ mod tests {
         let err = BridgeRuntime::global()
             .block_on(source.append(
                 Path::new("obj"),
-                AppendRequest::Native {
+                AppendRequest::Append {
                     offset: 5,
                     data: Bytes::from_static(b"x"),
                 },

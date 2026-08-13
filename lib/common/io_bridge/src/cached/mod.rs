@@ -5,9 +5,9 @@
 //! append, and [`DiskCache`] alone is strictly read-only. [`CachedBlobFile`]
 //! pairs the two: reads are served through the lazily-populated local mirror,
 //! while [`UniversalAppend::append`] performs the remote mutation
-//! immediately — a native write-offset append, or a whole-object rewrite for
-//! stores without native append, per the backend's advertised
-//! [`AppendMethod`].
+//! immediately — a direct append, or a whole-object rewrite when the
+//! backend's advertised [`AppendSupport`] leaves the caller to build the
+//! object itself.
 //!
 //! Appends are durable once the remote acknowledges them, like raw
 //! [`BlobFile`] appends (the flusher is a no-op); callers batch upstream, so
@@ -34,12 +34,7 @@ pub use pipeline::CachedBlobReadPipeline;
 
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
-use crate::write::{AppendMethod, AppendRequest, AsyncAppend};
-
-/// Minimum remote-prefix size worth a server-side multipart copy; below it a
-/// whole-object PUT re-uploads the prefix instead. Mirrors the S3 5 MiB
-/// minimum for non-last multipart parts.
-const MIN_COPY_PREFIX: u64 = 5 * 1024 * 1024;
+use crate::write::{AppendRequest, AppendSupport, AsyncAppend};
 
 /// A remote object handle that reads through a local [`DiskCache`] mirror and
 /// appends straight to the remote. See the module docs.
@@ -90,8 +85,8 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             )));
         }
 
-        match self.remote.source().supported_append() {
-            AppendMethod::Native => {
+        match self.remote.source().append_support() {
+            AppendSupport::Always => {
                 // TODO: switch to the inherent `BlobFile::append_native`
                 // once the specialized remote ops land and `BlobFile`
                 // loses its `UniversalAppend` impl.
@@ -100,12 +95,19 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
                     // The object hit the store's appended-block cap; the
                     // rewrite resets it to a single block.
                     Err(err) if err.is_append_rewrite_required() => {
-                        self.rewrite(offset, data.clone())?;
+                        self.remote_rewrite(offset, data.clone())?;
                     }
                     Err(err) => return Err(err),
                 }
             }
-            AppendMethod::PartialUpload => self.rewrite(offset, data.clone())?,
+            AppendSupport::AboveThreshold { min_offset } => {
+                if offset >= min_offset {
+                    self.remote.append(offset, data.as_ref())?;
+                } else {
+                    self.local_rewrite(offset, data.clone())?;
+                }
+            }
+            AppendSupport::Never => self.local_rewrite(offset, data.clone())?,
         }
 
         let new_len = offset + data.len() as u64;
@@ -119,12 +121,43 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
         self.cache.reopen()
     }
 
-    /// Replace the whole remote object with `[0, offset) + data`.
-    ///
-    /// The remote offers no compare-and-swap here, so `offset` is validated
-    /// against the mirror length — this handle's view of the remote EOF,
-    /// kept in step after every append (single-writer contract).
-    fn rewrite(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
+    /// Append `data` while rebuilding the remote object as a single blob —
+    /// the appended-block cap recovery under [`AppendSupport::Always`].
+    fn remote_rewrite(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
+        self.check_offset(offset)?;
+        self.remote
+            .runtime()
+            .block_on(
+                self.remote
+                    .source()
+                    .append(self.remote.path(), AppendRequest::Rewrite { offset, data }),
+            )
+            .map(drop)
+    }
+
+    /// Replace the whole remote object with `[0, offset) + data`, built on
+    /// this side — for stores (or object sizes) without direct appends.
+    fn local_rewrite(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
+        self.check_offset(offset)?;
+
+        if offset == 0 {
+            self.save_whole(data)
+        } else {
+            // The prefix is small by construction (below the direct-append
+            // threshold); read it through the cache (served locally once
+            // mirrored).
+            let prefix = self.cache.read_bytes(0..offset, Sequential, 1)?;
+            let mut whole = Vec::with_capacity(prefix.len() + data.len());
+            whole.extend_from_slice(&prefix);
+            whole.extend_from_slice(&data);
+            self.save_whole(Bytes::from(whole))
+        }
+    }
+
+    /// The rewrites offer no backend compare-and-swap, so `offset` is
+    /// validated against the mirror length — this handle's view of the
+    /// remote EOF, kept in step after every append (single-writer contract).
+    fn check_offset(&self, offset: ByteOffset) -> UioResult<()> {
         let local_len = self.cache.len::<u8>()?;
         if offset != local_len {
             return Err(UniversalIoError::AppendOffsetConflict {
@@ -132,25 +165,6 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
                 offset,
             });
         }
-
-        if offset == 0 {
-            self.save_whole(data)?;
-        } else if offset >= MIN_COPY_PREFIX {
-            // Server-side copy of the remote prefix, `data` as the final part.
-            self.remote.runtime().block_on(self.remote.source().append(
-                self.remote.path(),
-                AppendRequest::PartialUpload { offset, data },
-            ))?;
-        } else {
-            // The prefix is small by construction; read it through the cache
-            // (served locally once mirrored).
-            let prefix = self.cache.read_bytes(0..offset, Sequential, 1)?;
-            let mut whole = Vec::with_capacity(prefix.len() + data.len());
-            whole.extend_from_slice(&prefix);
-            whole.extend_from_slice(&data);
-            self.save_whole(Bytes::from(whole))?;
-        }
-
         Ok(())
     }
 

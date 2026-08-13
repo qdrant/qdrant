@@ -4,7 +4,7 @@ use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::aws::{AmazonS3, AmazonS3Builder};
 use url::Url;
 
-use crate::append::AppendContext;
+use crate::append::{AppendContext, NativeAppend, PartCopyAppend, SignedRequestContext};
 use crate::backend::BlobBackend;
 
 /// SigV4 signing needs a region even for endpoints that ignore it.
@@ -24,6 +24,12 @@ pub struct AwsConfig {
     pub endpoint: Option<String>,
     /// Enable S3 Express One Zone (`*--x-s3` directory buckets).
     pub s3_express: bool,
+    /// The store honors native write-offset appends (`PutObject` +
+    /// `x-amz-write-offset-bytes`). Not detectable from the endpoint — the
+    /// operator declares it for stores like MinIO AiStor or RustFS;
+    /// `s3_express` implies it. Left off (plain S3 Standard), appends go
+    /// through multipart rewrites with server-side prefix copies.
+    pub native_append: bool,
     /// How to authenticate to S3.
     pub credentials: AwsCredentials,
 }
@@ -112,11 +118,14 @@ impl BlobBackend for AmazonS3 {
         // built lazily on first append.
         let allow_http = endpoint.is_some();
 
-        Ok(Some(AppendContext::new(
-            allow_http,
-            object_url_base,
-            region,
-        )))
+        let context =
+            SignedRequestContext::new(allow_http, config.bucket.clone(), object_url_base, region);
+
+        Ok(Some(if config.s3_express || config.native_append {
+            AppendContext::Native(NativeAppend::new(context))
+        } else {
+            AppendContext::PartCopy(PartCopyAppend::new(context))
+        }))
     }
 }
 
@@ -161,6 +170,7 @@ mod tests {
             region: None,
             endpoint: None,
             s3_express: false,
+            native_append: false,
             credentials,
         }
     }
