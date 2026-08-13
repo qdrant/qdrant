@@ -5,7 +5,7 @@
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalRead, UniversalWrite};
+use common::universal_io::{UniversalAppend, UniversalRead};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -67,7 +67,7 @@ pub(super) struct PointLocations {
     pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     /// Apply a batch of update operations, each paired with the operation
     /// number to record as its version. Operations are expected in ascending
     /// operation-number order; see [`UpdateBatchPlan::build`] for what is
@@ -192,7 +192,7 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
 /// Open a writer over one segment of the shard, resuming it from the state its
 /// [`LookupSegment`](segment::segment::update_only::LookupSegment) observed —
 /// which also decides whether the segment accepts appends or deletes only.
-fn open_writer<S: UniversalAppend + UniversalWrite + 'static>(
+fn open_writer<S: UniversalAppend + 'static>(
     segments: &LookupSegmentHolder<S>,
     fs: &S::Fs,
     uuid: Uuid,

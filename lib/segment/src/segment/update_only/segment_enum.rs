@@ -4,19 +4,19 @@
 use std::path::Path;
 
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalWrite};
+use common::universal_io::UniversalAppend;
 
 use super::{AppendableSegment, DeleteOnlySegment, WriterIdTrackerState};
 use crate::common::operation_error::OperationResult;
 use crate::types::{PointIdType, SegmentConfig};
 
 /// A segment opened for writing: appendable, or accepting deletes only.
-pub enum UpdateOnlySegmentEnum<S: UniversalAppend + UniversalWrite + 'static> {
+pub enum UpdateOnlySegmentEnum<S: UniversalAppend + 'static> {
     DeleteOnly(DeleteOnlySegment<S>),
     Appendable(Box<AppendableSegment<S>>),
 }
 
-impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlySegmentEnum<S> {
+impl<S: UniversalAppend + 'static> UpdateOnlySegmentEnum<S> {
     /// Open a writer over the segment directory at `segment_path`, of the
     /// kind the read phase's `id_tracker_state` dictates.
     pub fn open(
