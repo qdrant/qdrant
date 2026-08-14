@@ -33,7 +33,7 @@ env:
   # Standalone tool crates (own workspace member), built with `-p`.
   # Bin name must match the crate name. Built in the same invocation as the
   # qdrant bins so Cargo unifies features and shared workspace crates compile once.
-  EDGE_BINS: edge-shard-query
+  EDGE_BINS: edge-shard-query edge-shard-update
   # Static target so the binaries run everywhere
   TARGET: x86_64-unknown-linux-musl
   # Faster to compile than release (no fat LTO); still opt-level 3. See [profile.perf].
