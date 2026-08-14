@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
 
-/// Log a warning if a single wait on a lock or on disk takes longer than this.
+/// Log a warning if one step of a larger operation takes longer than this.
 const SLOW_WAIT_REPORT_THRESHOLD: Duration = Duration::from_secs(1);
 
 /// Await `future`, reporting it if it blocks for longer than

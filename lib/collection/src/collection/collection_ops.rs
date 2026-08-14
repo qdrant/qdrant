@@ -2,6 +2,7 @@ use std::cmp;
 use std::sync::{Arc, LazyLock};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::slow_await::slow_await;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
@@ -294,11 +295,18 @@ impl Collection {
 
         for (replica_set, peer_id, transfers) in to_remove {
             for transfer in transfers {
-                self.abort_shard_transfer_and_resharding(transfer.key())
-                    .await?;
+                slow_await(
+                    "aborting a shard transfer in handle_replica_changes",
+                    self.abort_shard_transfer_and_resharding(transfer.key()),
+                )
+                .await?;
             }
 
-            replica_set.remove_peer(peer_id).await?;
+            slow_await(
+                "removing a peer in handle_replica_changes",
+                replica_set.remove_peer(peer_id),
+            )
+            .await?;
 
             // We can't remove the last repilca of a shard, so this should prevent removing
             // resharding shard, because it's always the *only* replica.

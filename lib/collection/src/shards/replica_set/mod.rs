@@ -18,7 +18,6 @@ use std::time::Duration;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
-use common::slow_await::{slow_await, slow_block};
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
 use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey, StrictModeConfig};
@@ -410,7 +409,7 @@ impl ShardReplicaSet {
 
     /// Checks if the shard exists locally and not a proxy.
     pub async fn is_local(&self) -> bool {
-        let local_read = slow_await("local shard read in is_local", self.local.read()).await;
+        let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Local(_) | Shard::Dummy(_)))
     }
 
@@ -691,10 +690,8 @@ impl ShardReplicaSet {
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
         debug_assert_ne!(peer_id, self.this_peer_id());
 
-        slow_block("replica state save in add_remote", || {
-            self.replica_state
-                .write(|rs| rs.set_peer_state(peer_id, state))
-        })?;
+        self.replica_state
+            .write(|rs| rs.set_peer_state(peer_id, state))?;
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
@@ -704,7 +701,7 @@ impl ShardReplicaSet {
 
         self.update_locally_disabled(peer_id);
 
-        let mut remotes = slow_await("remotes write in add_remote", self.remotes.write()).await;
+        let mut remotes = self.remotes.write().await;
 
         // check remote already exists
         if remotes.iter().any(|remote| remote.peer_id == peer_id) {
@@ -761,13 +758,11 @@ impl ShardReplicaSet {
             self.replica_state.read().get_peer_state(peer_id),
         );
 
-        slow_block("replica state save in set_replica_state", || {
-            self.replica_state.write(|rs| {
-                if rs.this_peer_id == peer_id {
-                    rs.is_local = true;
-                }
-                rs.set_peer_state(peer_id, state);
-            })
+        self.replica_state.write(|rs| {
+            if rs.this_peer_id == peer_id {
+                rs.is_local = true;
+            }
+            rs.set_peer_state(peer_id, state);
         })?;
 
         if self.this_peer_id() == peer_id {
