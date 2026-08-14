@@ -111,9 +111,12 @@ mod tests_mod {
 
     #[test]
     fn errors_on_files_of_both_modes() {
+        // Compact first: opening compact flags in a dynamic directory is
+        // refused outright, so this order is the only way to end up with
+        // files of both modes.
         let dir = TempDir::new().unwrap();
-        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
         CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No).unwrap();
+        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
         assert!(FlagsMode::detect(&Fs::default(), dir.path()).is_err());
     }
 }
