@@ -2,10 +2,12 @@
 //! batched pass over the whole point set, so a batch's cost scales with the
 //! points it touches, not the operations in it.
 
+use std::collections::HashMap;
+
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalRead, UniversalWrite};
+use common::universal_io::{UniversalAppend, UniversalRead};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -34,6 +36,41 @@ pub struct UpdateBatchOutcome {
     /// Points an operation named that no segment holds and the batch did not
     /// create — a payload update to a point that is not there.
     pub missing: usize,
+    /// One record per touched point, in first-touched order: what happened
+    /// to it, and which slots it vacated where.
+    pub points: Vec<PointApplyRecord>,
+}
+
+/// How one point's slots changed under [`apply_batch`]: where its previous
+/// copies were retired, distinguishing an overwrite from a fresh insert.
+///
+/// [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PointApplyRecord {
+    pub id: PointIdType,
+    pub kind: PointApplyKind,
+    /// Slots retired with a tombstone: every segment that held a copy of the
+    /// point, except the write target's own slot when the point is stored.
+    /// Empty for a stored point means a fresh insert, not an overwrite.
+    pub tombstoned: Vec<(Uuid, PointOffsetType)>,
+    /// The write-target slot a stored point left behind without a tombstone:
+    /// appending the point records a mapping that supersedes it.
+    pub superseded: Option<(Uuid, PointOffsetType)>,
+}
+
+/// The per-point action of [`PointApplyRecord`], mirroring the counts on
+/// [`UpdateBatchOutcome`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointApplyKind {
+    /// Appended to the write target — an overwrite when the record lists
+    /// retired slots, a fresh insert otherwise.
+    Stored,
+    /// Removed from every slot it occupied.
+    Deleted,
+    /// Left untouched: already at or beyond the batch's version.
+    Skipped,
+    /// Named by an operation, held by no segment, not created by the batch.
+    Missing,
 }
 
 /// One copy of a point: where it lives, and at what version.
@@ -67,7 +104,7 @@ pub(super) struct PointLocations {
     pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     /// Apply a batch of update operations, each paired with the operation
     /// number to record as its version. Operations are expected in ascending
     /// operation-number order; see [`UpdateBatchPlan::build`] for what is
@@ -77,21 +114,21 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
     /// error is returned, and re-applying a batch that partially landed skips
     /// the points that already carry its version.
     ///
-    /// Consumes the writer, because it can serve exactly one batch. The
-    /// segments were read when it opened, and that read is both what a batch
-    /// resolves against and what its writers resume from; a second batch would
-    /// resume an appendable segment from a log position its own first batch
-    /// has moved past, and appending there cuts off everything written since.
-    /// Open another writer for the next batch — or, to lift the restriction,
-    /// reload the segments after a batch, which the read-only segment's
-    /// `live_reload` already does for exactly the files a batch appends to.
+    /// Consumes the writer and hands it back on success, ready for the next
+    /// batch: the lookup half of every segment this one wrote to is
+    /// live-reloaded, so the next batch resolves against what this one
+    /// wrote. On error the writer is gone — its lookups may no longer
+    /// describe the durable state, and resolving another batch against them
+    /// can retire the wrong copy of a point. Recover by opening a fresh
+    /// writer over the directory, which also retires whatever the failed
+    /// batch left unpublished.
     pub fn apply_batch(
-        self,
+        mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
-    ) -> OperationResult<UpdateBatchOutcome> {
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         let plan = UpdateBatchPlan::build(operations)?;
         if plan.is_empty() {
-            return Ok(UpdateBatchOutcome::default());
+            return Ok((self, UpdateBatchOutcome::default()));
         }
 
         let hw_counter = HardwareCounterCell::disposable();
@@ -114,53 +151,73 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
                 action,
             } = point;
 
-            let stored = match action {
+            let kind = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
-                    continue;
+                    PointApplyKind::Skipped
                 }
                 PointAction::Missing => {
                     outcome.missing += 1;
-                    continue;
+                    PointApplyKind::Missing
                 }
                 PointAction::Store(point) => {
                     to_store.push(*point);
                     outcome.stored += 1;
-                    true
+                    PointApplyKind::Stored
                 }
                 PointAction::Delete => {
                     outcome.deleted += 1;
-                    false
+                    PointApplyKind::Deleted
                 }
             };
 
-            for (segment, internal_id) in slots {
-                // The copy a stored point leaves behind in the write target
-                // needs no retirement: appending the point records a mapping
-                // that supersedes its old slot, and retiring the id on top of
-                // that would take the new slot with it. Every other segment's
-                // copy does have to stop resolving — an older duplicate left
-                // by an interrupted move included — and a delete retires the
-                // point everywhere it sits.
-                if stored && Some(segment) == write_target_uuid {
-                    continue;
+            let mut record = PointApplyRecord {
+                id,
+                kind,
+                tombstoned: Vec::new(),
+                superseded: None,
+            };
+
+            if matches!(kind, PointApplyKind::Stored | PointApplyKind::Deleted) {
+                for (segment, internal_id) in slots {
+                    // The copy a stored point leaves behind in the write target
+                    // needs no retirement: appending the point records a mapping
+                    // that supersedes its old slot, and retiring the id on top of
+                    // that would take the new slot with it. Every other segment's
+                    // copy does have to stop resolving — an older duplicate left
+                    // by an interrupted move included — and a delete retires the
+                    // point everywhere it sits.
+                    if kind == PointApplyKind::Stored && Some(segment) == write_target_uuid {
+                        record.superseded = Some((segment, internal_id));
+                        continue;
+                    }
+                    to_tombstone
+                        .entry(segment)
+                        .or_default()
+                        .push((id, internal_id));
+                    record.tombstoned.push((segment, internal_id));
                 }
-                to_tombstone
-                    .entry(segment)
-                    .or_default()
-                    .push((id, internal_id));
             }
+
+            outcome.points.push(record);
+        }
+
+        drop(segments);
+
+        if to_store.is_empty() && to_tombstone.is_empty() {
+            return Ok((self, outcome));
         }
 
         // 4. Append the resolved points, then retire the slots they replaced.
-        // Writers live for this batch alone, and there is no flush step: the
-        // append-only components behind them buffer nothing across calls, so a
-        // write is durable when it returns.
+        // There is no flush step: the append-only components behind the
+        // writers buffer nothing across calls, so a write is durable when it
+        // returns.
+        let mut written: Vec<Uuid> = Vec::new();
         if !to_store.is_empty() {
             let uuid = write_target_uuid.ok_or_else(|| {
                 OperationError::service_error("No appendable segment exists, expected exactly one")
             })?;
-            let mut writer = open_writer(&segments, &self.fs, uuid)?;
+            let writer = get_writer(&mut self.writers, uuid)?;
 
             writer
                 .as_appendable_mut()
@@ -171,40 +228,54 @@ impl<S: UniversalAppend + UniversalWrite + 'static> UpdateOnlyEdgeShard<S> {
                 })?
                 .store_points(&to_store, &hw_counter)?;
 
-            // Whatever the write target has to retire goes through the writer
-            // already open: a second one would retire this batch's own
-            // half-written points as it resumed. It happens after the store,
-            // since every write is durable when it returns and the reverse
-            // order can lose a point outright if the process dies in between.
+            // The write target's retirements happen after the store, since
+            // every write is durable when it returns and the reverse order
+            // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 writer.tombstone_points(&points)?;
             }
+            written.push(uuid);
         }
 
         for (uuid, points) in to_tombstone {
-            open_writer(&segments, &self.fs, uuid)?.tombstone_points(&points)?;
+            get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
+            written.push(uuid);
         }
 
-        Ok(outcome)
+        self.reload_lookups(&written)?;
+
+        Ok((self, outcome))
+    }
+
+    /// Live-reload the lookup half of every segment in `written`, so the
+    /// next batch resolves against what this one wrote. The writers stay
+    /// open: their in-memory state advanced with each durable write, so a
+    /// reloaded lookup and its held writer describe the same log.
+    fn reload_lookups(&self, written: &[Uuid]) -> OperationResult<()> {
+        let segments = self.segments.read();
+        self.pool.install(|| {
+            written.par_iter().try_for_each(|&uuid| {
+                // Not shared across segments: `HardwareCounterCell` is not
+                // `Sync`, and the writer's accounting is disposable.
+                let hw_counter = HardwareCounterCell::disposable();
+                segments
+                    .get(uuid)?
+                    .write()
+                    .live_reload(&self.fs, &hw_counter)
+            })
+        })
     }
 }
 
-/// Open a writer over one segment of the shard, resuming it from the state its
-/// [`LookupSegment`](segment::segment::update_only::LookupSegment) observed —
-/// which also decides whether the segment accepts appends or deletes only.
-fn open_writer<S: UniversalAppend + UniversalWrite + 'static>(
-    segments: &LookupSegmentHolder<S>,
-    fs: &S::Fs,
+/// The held writer for segment `uuid`; an error when there is none, which can
+/// only mean the shard's inventory changed under a batch in flight.
+fn get_writer<S: UniversalAppend + 'static>(
+    writers: &mut HashMap<Uuid, UpdateOnlySegmentEnum<S>>,
     uuid: Uuid,
-) -> OperationResult<UpdateOnlySegmentEnum<S>> {
-    let segment = segments.get(uuid)?.read();
-
-    UpdateOnlySegmentEnum::open(
-        fs,
-        &segment.segment_path,
-        &segment.segment_config,
-        segment.writer_state(),
-    )
+) -> OperationResult<&mut UpdateOnlySegmentEnum<S>> {
+    writers
+        .get_mut(&uuid)
+        .ok_or_else(|| OperationError::service_error(format!("No writer open for segment {uuid}")))
 }
 
 /// Locate every point the batch touches: every slot it occupies, with the

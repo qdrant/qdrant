@@ -18,6 +18,8 @@
 
 mod fs;
 mod pipeline;
+#[cfg(test)]
+mod tests;
 
 use std::ops::Range;
 use std::path::Path;
@@ -26,8 +28,8 @@ use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{
-    ByteOffset, DiskCache, FileInfo, Flusher, UioResult, UniversalAppend, UniversalFlush,
-    UniversalIoError, UniversalKind, UniversalRead, UserData,
+    ByteOffset, DiskCache, FileInfo, Flusher, OkNotFound as _, UioResult, UniversalAppend,
+    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UserData,
 };
 pub use fs::{CachedBlobFs, CachedBlobFsContext};
 pub use pipeline::CachedBlobReadPipeline;
@@ -87,18 +89,36 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
 
         let new_len = offset + data.len() as u64;
 
-        match self.remote.source().append_support() {
+        let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+        let start_time = enabled.then(std::time::Instant::now);
+
+        let strategy = match self.remote.source().append_support() {
             AppendSupport::Always => {
                 self.remote.append_bytes(offset, data, self.cache.etag())?;
+                "append"
             }
             AppendSupport::AboveThreshold { min_offset } => {
                 if offset >= min_offset {
                     self.remote.append_bytes(offset, data, self.cache.etag())?;
+                    "append"
                 } else {
                     self.local_rewrite(offset, data)?;
+                    "rewrite"
                 }
             }
-            AppendSupport::Never => self.local_rewrite(offset, data)?,
+            AppendSupport::Never => {
+                self.local_rewrite(offset, data)?;
+                "rewrite"
+            }
+        };
+
+        if let Some(start_time) = start_time {
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
+                "append_bytes({}, {offset}..{new_len}) took {:?} via {strategy}",
+                self.remote.path().display(),
+                start_time.elapsed(),
+            );
         }
 
         self.cache.schedule_reopen(|_| {
@@ -133,8 +153,13 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
     /// The rewrites offer no backend compare-and-swap, so `offset` is
     /// validated against the mirror length — this handle's view of the
     /// remote EOF, kept in step after every append (single-writer contract).
+    ///
+    /// A remote object that is not there yet reads as length zero: the
+    /// offset-0 rewrite is what creates it, matching the direct-append
+    /// backends (a GCS compose or native append at offset 0 also creates
+    /// the object).
     fn check_offset(&self, offset: ByteOffset) -> UioResult<()> {
-        let local_len = self.cache.len::<u8>()?;
+        let local_len = self.cache.len::<u8>().ok_not_found()?.unwrap_or(0);
         if offset != local_len {
             return Err(UniversalIoError::AppendOffsetConflict {
                 path: self.remote.path().to_path_buf(),
