@@ -38,7 +38,7 @@ use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::SegmentConfig;
 use uuid::Uuid;
 
-pub use self::apply::UpdateBatchOutcome;
+pub use self::apply::{PointApplyKind, PointApplyRecord, UpdateBatchOutcome};
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
 use self::holder::LookupSegmentHolder;
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};

@@ -16,7 +16,7 @@ use tempfile::TempDir;
 use crate::read_only::tests::{
     delete as leader_delete, exact_count, open_follower, scrolled_ids, test_config, upsert,
 };
-use crate::update_only::UpdateOnlyEdgeShard;
+use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
 use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
@@ -54,6 +54,21 @@ fn delete_batch_retires_points_and_leaves_the_rest() {
     assert_eq!(outcome.stored, 0);
     assert_eq!(outcome.skipped, 0);
     assert_eq!(outcome.missing, 0);
+
+    // Each record names the one slot its point vacated.
+    assert_eq!(
+        outcome
+            .points
+            .iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>(),
+        [3, 7].map(ExtendedPointId::NumId).to_vec(),
+    );
+    for record in &outcome.points {
+        assert_eq!(record.kind, PointApplyKind::Deleted);
+        assert_eq!(record.tombstoned.len(), 1);
+        assert_eq!(record.superseded, None);
+    }
 
     // A reader opened afterwards must see the deletes, and nothing else: a
     // writer retiring the wrong slots would take neighbouring points with it.
@@ -144,6 +159,10 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
 
     let (writer, outcome) = writer.apply_batch(delete_batch([500])).unwrap();
     assert_eq!(outcome.deleted, 1);
+    // The record names the immutable segment the point was deleted from.
+    assert_eq!(outcome.points[0].kind, PointApplyKind::Deleted);
+    assert_eq!(outcome.points[0].tombstoned.len(), 1);
+    assert_eq!(outcome.points[0].tombstoned[0].0, holder);
 
     // The same writer resolves against the rewritten mask through its
     // reloaded lookup, and a fresh writer through its own open.
@@ -241,6 +260,21 @@ mod store {
         assert_eq!(outcome.deleted, 0);
         assert_eq!(outcome.skipped, 0);
         assert_eq!(outcome.missing, 0);
+
+        // The records tell a fresh insert from an overwrite: the new point
+        // vacated nothing, the rewritten one superseded its old write-target
+        // slot in place (no tombstone needed there).
+        let [fresh, overwrite] = &outcome.points[..] else {
+            panic!("expected one record per touched point");
+        };
+        assert_eq!(fresh.id, ExtendedPointId::NumId(11));
+        assert_eq!(fresh.kind, PointApplyKind::Stored);
+        assert!(fresh.tombstoned.is_empty());
+        assert_eq!(fresh.superseded, None);
+        assert_eq!(overwrite.id, ExtendedPointId::NumId(5));
+        assert_eq!(overwrite.kind, PointApplyKind::Stored);
+        assert!(overwrite.tombstoned.is_empty());
+        assert!(overwrite.superseded.is_some());
 
         let follower = open_follower(dir.path());
         assert_eq!(exact_count(&follower), 11);

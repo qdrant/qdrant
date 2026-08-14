@@ -70,9 +70,9 @@ use edge::external::uuid::Uuid;
 use edge::{
     FullyQualifiedPoint, ManifestSegmentEnumerator, PAYLOAD_INDEX_CONFIG_FILE, Payload,
     PayloadConfig, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, PointAction,
-    PointId, PointOperations, PointStructPersisted, SegmentConfig, SegmentConfigInfo, SparseVector,
-    UpdateOnlyEdgeShard, UpdateOperation, VectorPersisted, VectorStructPersisted,
-    get_payload_index_path,
+    PointApplyKind, PointApplyRecord, PointId, PointOperations, PointStructPersisted,
+    SegmentConfig, SegmentConfigInfo, SparseVector, UpdateOnlyEdgeShard, UpdateOperation,
+    VectorPersisted, VectorStructPersisted, get_payload_index_path,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
@@ -586,6 +586,9 @@ fn apply_run<S: UniversalAppend + 'static>(
             outcome.skipped,
             outcome.missing,
         );
+        for record in &outcome.points {
+            log_apply_record(record);
+        }
 
         if !interactive {
             return Ok(());
@@ -596,6 +599,47 @@ fn apply_run<S: UniversalAppend + 'static>(
         }
         op_num += 1;
         seed = seed.wrapping_add(1);
+    }
+}
+
+/// One line per applied point: whether it was created fresh or overwrote
+/// existing copies, and from which segments (and slots) the old copies were
+/// removed.
+fn log_apply_record(record: &PointApplyRecord) {
+    let PointApplyRecord {
+        id,
+        kind,
+        tombstoned,
+        superseded,
+    } = record;
+
+    let slot = |(segment, internal_id): &(Uuid, _)| format!("segment {segment} slot {internal_id}");
+    let tombstoned_list = tombstoned.iter().map(slot).collect::<Vec<_>>();
+
+    match kind {
+        PointApplyKind::Stored => {
+            let mut retired = tombstoned_list;
+            if let Some(superseded) = superseded {
+                retired.push(format!("{} (superseded in place)", slot(superseded)));
+            }
+            if retired.is_empty() {
+                log::info!("point {id}: created — no previous copy in any segment");
+            } else {
+                log::info!(
+                    "point {id}: overwritten — old copies deleted from {}",
+                    retired.join(", "),
+                );
+            }
+        }
+        PointApplyKind::Deleted => {
+            log::info!("point {id}: deleted from {}", tombstoned_list.join(", "));
+        }
+        PointApplyKind::Skipped => {
+            log::info!("point {id}: skipped — already at or beyond this op-num");
+        }
+        PointApplyKind::Missing => {
+            log::info!("point {id}: no segment holds it — nothing to do");
+        }
     }
 }
 

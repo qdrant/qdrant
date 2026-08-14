@@ -36,6 +36,41 @@ pub struct UpdateBatchOutcome {
     /// Points an operation named that no segment holds and the batch did not
     /// create — a payload update to a point that is not there.
     pub missing: usize,
+    /// One record per touched point, in first-touched order: what happened
+    /// to it, and which slots it vacated where.
+    pub points: Vec<PointApplyRecord>,
+}
+
+/// How one point's slots changed under [`apply_batch`]: where its previous
+/// copies were retired, distinguishing an overwrite from a fresh insert.
+///
+/// [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PointApplyRecord {
+    pub id: PointIdType,
+    pub kind: PointApplyKind,
+    /// Slots retired with a tombstone: every segment that held a copy of the
+    /// point, except the write target's own slot when the point is stored.
+    /// Empty for a stored point means a fresh insert, not an overwrite.
+    pub tombstoned: Vec<(Uuid, PointOffsetType)>,
+    /// The write-target slot a stored point left behind without a tombstone:
+    /// appending the point records a mapping that supersedes it.
+    pub superseded: Option<(Uuid, PointOffsetType)>,
+}
+
+/// The per-point action of [`PointApplyRecord`], mirroring the counts on
+/// [`UpdateBatchOutcome`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointApplyKind {
+    /// Appended to the write target — an overwrite when the record lists
+    /// retired slots, a fresh insert otherwise.
+    Stored,
+    /// Removed from every slot it occupied.
+    Deleted,
+    /// Left untouched: already at or beyond the batch's version.
+    Skipped,
+    /// Named by an operation, held by no segment, not created by the batch.
+    Missing,
 }
 
 /// One copy of a point: where it lives, and at what version.
@@ -116,42 +151,55 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
                 action,
             } = point;
 
-            let stored = match action {
+            let kind = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
-                    continue;
+                    PointApplyKind::Skipped
                 }
                 PointAction::Missing => {
                     outcome.missing += 1;
-                    continue;
+                    PointApplyKind::Missing
                 }
                 PointAction::Store(point) => {
                     to_store.push(*point);
                     outcome.stored += 1;
-                    true
+                    PointApplyKind::Stored
                 }
                 PointAction::Delete => {
                     outcome.deleted += 1;
-                    false
+                    PointApplyKind::Deleted
                 }
             };
 
-            for (segment, internal_id) in slots {
-                // The copy a stored point leaves behind in the write target
-                // needs no retirement: appending the point records a mapping
-                // that supersedes its old slot, and retiring the id on top of
-                // that would take the new slot with it. Every other segment's
-                // copy does have to stop resolving — an older duplicate left
-                // by an interrupted move included — and a delete retires the
-                // point everywhere it sits.
-                if stored && Some(segment) == write_target_uuid {
-                    continue;
+            let mut record = PointApplyRecord {
+                id,
+                kind,
+                tombstoned: Vec::new(),
+                superseded: None,
+            };
+
+            if matches!(kind, PointApplyKind::Stored | PointApplyKind::Deleted) {
+                for (segment, internal_id) in slots {
+                    // The copy a stored point leaves behind in the write target
+                    // needs no retirement: appending the point records a mapping
+                    // that supersedes its old slot, and retiring the id on top of
+                    // that would take the new slot with it. Every other segment's
+                    // copy does have to stop resolving — an older duplicate left
+                    // by an interrupted move included — and a delete retires the
+                    // point everywhere it sits.
+                    if kind == PointApplyKind::Stored && Some(segment) == write_target_uuid {
+                        record.superseded = Some((segment, internal_id));
+                        continue;
+                    }
+                    to_tombstone
+                        .entry(segment)
+                        .or_default()
+                        .push((id, internal_id));
+                    record.tombstoned.push((segment, internal_id));
                 }
-                to_tombstone
-                    .entry(segment)
-                    .or_default()
-                    .push((id, internal_id));
             }
+
+            outcome.points.push(record);
         }
 
         drop(segments);
