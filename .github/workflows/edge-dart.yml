@@ -58,11 +58,30 @@ jobs:
           version="$(tr -d '[:space:]' < lib/edge/VERSION)"
           crate="$(grep -m1 '^version = ' lib/edge/ffi/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           pubspec="$(grep -m1 '^version:' lib/edge/dart/pubspec.yaml | sed -E 's/version:[[:space:]]*//' | tr -d '[:space:]')"
-          if [ "$version" != "$crate" ] || [ "$version" != "$pubspec" ]; then
-            echo "::error::version skew — VERSION=$version crate=$crate pubspec=$pubspec"
+          native="$(grep -m1 'const _releaseTag' lib/edge/dart/hook/build.dart | sed -E "s/.*edge-dart-native-v([^']+)'.*/\1/")"
+          mm() { printf '%s\n' "$1" | cut -d. -f1,2; }
+          # The native library version is the single source of truth: VERSION == ffi crate, exact.
+          if [ "$version" != "$crate" ]; then
+            echo "::error::native version skew — VERSION=$version crate=$crate (both must equal the native library version)"
             exit 1
           fi
-          echo "OK: version $version in sync (VERSION == crate == pubspec)"
+          # The Dart plugin tracks the native library on major.minor (the API/ABI contract); the
+          # patch floats so a Dart-only fix ships without a native re-release. See README "Versioning".
+          if [ "$(mm "$pubspec")" != "$(mm "$version")" ]; then
+            echo "::error::plugin major.minor skew — pubspec=$pubspec must match native $version on major.minor ($(mm "$version"))"
+            exit 1
+          fi
+          # The prebuilt-native pin in the hook must be on that same major.minor line, so a plugin
+          # release can never download an ABI-incompatible native build.
+          if [ -z "$native" ]; then
+            echo "::error::could not parse _releaseTag native version from lib/edge/dart/hook/build.dart"
+            exit 1
+          fi
+          if [ "$(mm "$native")" != "$(mm "$version")" ]; then
+            echo "::error::hook native-pin skew — _releaseTag native $native must match VERSION $version on major.minor"
+            exit 1
+          fi
+          echo "OK: native $version (VERSION==crate); plugin $pubspec + hook pin $native track major.minor $(mm "$version")"
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7

@@ -109,6 +109,15 @@ ships as source, the native engine is downloaded at build time, never bundled).
 
 ## Versioning
 
-The version tracks `lib/edge/VERSION` (the published Qdrant Edge line) — the same
-single source the Swift `edge-v$VERSION` tag and the Kotlin `VERSION_NAME` use.
-`edge-dart.yml` enforces `pubspec version == crate version == lib/edge/VERSION`.
+The plugin tracks the native `qdrant-edge` library — `lib/edge/VERSION`, the same
+single source the Swift `edge-v$VERSION` tag and the Kotlin `VERSION_NAME` use — on
+**major.minor**, the API/ABI contract shared across every Edge SDK (`0.8.x` speaks the
+same surface on all platforms). `lib/edge/VERSION` and the `qdrant-edge-ffi` crate
+version are kept identical — they *are* the native version. The pub.dev `version`
+matches them on major.minor, but its patch floats independently: a Dart-only fix (a
+regenerated binding, a `hook/build.dart` change, docs) can ship as a new patch without
+cutting a fresh native release — it keeps downloading the prebuilt pinned by
+`_releaseTag`. So `qdrant_edge 0.8.1` may wrap native `0.8.0`, exactly as Rust `-sys`
+crates decouple their own version from the C library they bundle. `edge-dart.yml`
+enforces this: `VERSION == crate` exactly, and both the `pubspec` version and the
+hook's native pin must match `VERSION` on major.minor.
