@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use permutation_iterator::Permutor;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::EncodingError;
@@ -157,14 +156,11 @@ where
 
     // Random sample of `R` indices in `[0, count)`, sorted ascending so
     // the iterator can step through them with monotonic `nth(skip)`
-    // calls. `Permutor` produces a deterministic permutation per
-    // `count` — same input collection produces the same sample, which
-    // is what we want for reproducible recall across runs.
+    // calls. Seeded from the thread RNG, so the sample differs between
+    // runs.
     let actual_sample = sample_size.min(count);
-    let mut indices: Vec<usize> = Permutor::new(count as u64)
-        .map(|i| i as usize)
-        .take(actual_sample)
-        .collect();
+    let mut indices: Vec<usize> =
+        rand::seq::index::sample(&mut rand::rng(), count, actual_sample).into_vec();
     indices.sort_unstable();
 
     // One pair of P-square estimators per coord. The interleaved
@@ -282,7 +278,7 @@ where
     Ok(intervals)
 }
 
-// Take random vectors from the input iterator using `Permutor`.
+// Take a random subset of vectors from the input iterator.
 fn take_random_vectors<'a>(
     vector_data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
     count: usize,
@@ -290,8 +286,8 @@ fn take_random_vectors<'a>(
     stopped: &AtomicBool,
 ) -> Result<Vec<impl AsRef<[f32]> + 'a>, EncodingError> {
     let slice_size = std::cmp::min(count, sample_size);
-    let permutor = Permutor::new(count as u64);
-    let mut selected_vectors: Vec<usize> = permutor.map(|i| i as usize).take(slice_size).collect();
+    let mut selected_vectors: Vec<usize> =
+        rand::seq::index::sample(&mut rand::rng(), count, slice_size).into_vec();
     selected_vectors.sort_unstable();
 
     let mut data_slice = Vec::with_capacity(slice_size);
