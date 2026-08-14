@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
-use common::slow_await::slow_await;
+use common::slow_await::{slow_await, slow_block};
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
@@ -158,8 +158,10 @@ impl Collection {
                 CollectionError::bad_request(format!("shard {to_shard_id} doesn't exist"))
             })?;
 
-            let _was_not_transferred =
-                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
+            let _was_not_transferred = slow_block(
+                "registering a shard transfer in start_shard_transfer",
+                || shards_holder.register_start_shard_transfer(shard_transfer.clone()),
+            )?;
 
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
@@ -201,9 +203,11 @@ impl Collection {
                     old_shard.stop_gracefully().await;
                 }
             } else {
-                to_replica_set
-                    .ensure_replica_with_state(shard_transfer.to, initial_state)
-                    .await?;
+                slow_await(
+                    "updating replica state in start_shard_transfer",
+                    to_replica_set.ensure_replica_with_state(shard_transfer.to, initial_state),
+                )
+                .await?;
             }
 
             from_is_local && is_sender
@@ -401,7 +405,10 @@ impl Collection {
 
             // 6. Update the record's method in place. This is the last durable
             //    write, so it gates the whole operation on replay (see the doc comment).
-            shard_holder.register_restart_transfer(&transfer_key, new_method)?;
+            slow_block(
+                "registering a transfer restart in restart_shard_transfer",
+                || shard_holder.register_restart_transfer(&transfer_key, new_method),
+            )?;
         }
 
         // 7. Sender: (re)spawn the transfer driver for the new transfer.
