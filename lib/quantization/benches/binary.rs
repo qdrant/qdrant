@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
-use permutation_iterator::Permutor;
 use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_binary::{
@@ -70,8 +69,11 @@ fn binary_bench(c: &mut Criterion) {
         });
     });
 
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     group.bench_function("score binary random access u128", |b| {
         b.iter(|| {
@@ -114,8 +116,11 @@ fn binary_bench(c: &mut Criterion) {
         });
     });
 
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     group.bench_function("score binary random access u8", |b| {
         b.iter(|| {
@@ -165,8 +170,11 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     let encoded_query = encoded_u128.encode_query(&query);
 
     let hardware_counter = HardwareCounterCell::new();
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     group.bench_function("binary u128 scalar query", |b| {
         b.iter(|| {

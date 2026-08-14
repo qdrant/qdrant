@@ -20,7 +20,6 @@ cc = { workspace = true }
 [dependencies]
 fs-err = { workspace = true }
 serde = { workspace = true }
-permutation_iterator = "0.1.2"
 rand = { workspace = true }
 rayon = { workspace = true }
 num-traits = { workspace = true }
