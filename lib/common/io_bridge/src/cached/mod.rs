@@ -18,6 +18,8 @@
 
 mod fs;
 mod pipeline;
+#[cfg(test)]
+mod tests;
 
 use std::ops::Range;
 use std::path::Path;
@@ -26,8 +28,8 @@ use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{
-    ByteOffset, DiskCache, FileInfo, Flusher, UioResult, UniversalAppend, UniversalFlush,
-    UniversalIoError, UniversalKind, UniversalRead, UserData,
+    ByteOffset, DiskCache, FileInfo, Flusher, OkNotFound as _, UioResult, UniversalAppend,
+    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UserData,
 };
 pub use fs::{CachedBlobFs, CachedBlobFsContext};
 pub use pipeline::CachedBlobReadPipeline;
@@ -151,8 +153,13 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
     /// The rewrites offer no backend compare-and-swap, so `offset` is
     /// validated against the mirror length — this handle's view of the
     /// remote EOF, kept in step after every append (single-writer contract).
+    ///
+    /// A remote object that is not there yet reads as length zero: the
+    /// offset-0 rewrite is what creates it, matching the direct-append
+    /// backends (a GCS compose or native append at offset 0 also creates
+    /// the object).
     fn check_offset(&self, offset: ByteOffset) -> UioResult<()> {
-        let local_len = self.cache.len::<u8>()?;
+        let local_len = self.cache.len::<u8>().ok_not_found()?.unwrap_or(0);
         if offset != local_len {
             return Err(UniversalIoError::AppendOffsetConflict {
                 path: self.remote.path().to_path_buf(),
