@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use common::universal_io::{MmapFile, MmapFs, UniversalRead, UniversalReadFs};
+use common::universal_io::{MmapFile, MmapFs, UniversalAppend, UniversalReadFs};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
-use segment::segment::update_only::LookupSegment;
+use segment::segment::update_only::{LookupSegment, UpdateOnlySegmentEnum};
 use uuid::Uuid;
 
 use crate::read_only::{LocalSegmentEnumerator, SegmentEnumerator};
@@ -21,17 +22,19 @@ impl UpdateOnlyEdgeShard<MmapFile> {
     }
 }
 
-impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     /// Open a writer over the shard directory at `path`, using `fs` as the
-    /// read backend and `enumerator` to discover the segments.
+    /// backend and `enumerator` to discover the segments.
     ///
     /// Segments are opened in parallel on the shard's thread pool, each over
     /// its own prefetching [`CachedFs`](common::universal_io::CachedFs) (see
     /// [`LookupSegment::open`]) — the same shape as the read-only
     /// follower's load — and entirely cold: no point data is fetched until a
-    /// batch reads a point. A segment that fails to load is an error, not a
-    /// skip — a writer that misses a segment would resolve a point against a
-    /// stale copy of itself, or duplicate it.
+    /// batch reads a point. Each segment's writer is opened here too, resuming
+    /// from the state its lookup half just observed; the store components stay
+    /// unopened until a point is actually stored. A segment that fails to load
+    /// is an error, not a skip — a writer that misses a segment would resolve
+    /// a point against a stale copy of itself, or duplicate it.
     pub fn open(
         fs: S::Fs,
         path: &Path,
@@ -49,22 +52,31 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
         )?;
 
         let segments: Vec<(Uuid, PathBuf)> = enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<(Uuid, LookupSegment<S>)> = pool.install(|| {
-            segments
-                .into_par_iter()
-                .map(|(uuid, segment_path)| {
-                    // No deferred threshold yet: it belongs to the coordination
-                    // with an external rebuilder, which does not exist in this
-                    // iteration.
-                    let segment = LookupSegment::<S>::open(&fs, &segment_path, None)?;
-                    Ok((uuid, segment))
-                })
-                .collect::<OperationResult<Vec<_>>>()
-        })?;
+        let opened: Vec<(Uuid, LookupSegment<S>, UpdateOnlySegmentEnum<S>)> =
+            pool.install(|| {
+                segments
+                    .into_par_iter()
+                    .map(|(uuid, segment_path)| {
+                        // No deferred threshold yet: it belongs to the coordination
+                        // with an external rebuilder, which does not exist in this
+                        // iteration.
+                        let segment = LookupSegment::<S>::open(&fs, &segment_path, None)?;
+                        let writer = UpdateOnlySegmentEnum::open(
+                            &fs,
+                            &segment_path,
+                            &segment.segment_config,
+                            segment.writer_state(),
+                        )?;
+                        Ok((uuid, segment, writer))
+                    })
+                    .collect::<OperationResult<Vec<_>>>()
+            })?;
 
         let mut holder = LookupSegmentHolder::default();
-        for (uuid, segment) in opened {
+        let mut writers = HashMap::new();
+        for (uuid, segment, writer) in opened {
             holder.insert(uuid, segment);
+            writers.insert(uuid, writer);
         }
 
         if holder.is_empty() {
@@ -78,6 +90,7 @@ impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
             path: path.to_path_buf(),
             fs,
             segments: RwLock::new(holder),
+            writers,
             pool,
         })
     }

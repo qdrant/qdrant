@@ -16,7 +16,7 @@ use tempfile::TempDir;
 use crate::read_only::tests::{
     delete as leader_delete, exact_count, open_follower, scrolled_ids, test_config, upsert,
 };
-use crate::update_only::UpdateOnlyEdgeShard;
+use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
 use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
@@ -48,12 +48,27 @@ fn delete_batch_retires_points_and_leaves_the_rest() {
     let dir = leader_with_ten_points("edge-update-delete");
 
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    let outcome = writer.apply_batch(delete_batch([3, 7])).unwrap();
+    let (_writer, outcome) = writer.apply_batch(delete_batch([3, 7])).unwrap();
 
     assert_eq!(outcome.deleted, 2);
     assert_eq!(outcome.stored, 0);
     assert_eq!(outcome.skipped, 0);
     assert_eq!(outcome.missing, 0);
+
+    // Each record names the one slot its point vacated.
+    assert_eq!(
+        outcome
+            .points
+            .iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>(),
+        [3, 7].map(ExtendedPointId::NumId).to_vec(),
+    );
+    for record in &outcome.points {
+        assert_eq!(record.kind, PointApplyKind::Deleted);
+        assert_eq!(record.tombstoned.len(), 1);
+        assert_eq!(record.superseded, None);
+    }
 
     // A reader opened afterwards must see the deletes, and nothing else: a
     // writer retiring the wrong slots would take neighbouring points with it.
@@ -67,22 +82,24 @@ fn delete_batch_retires_points_and_leaves_the_rest() {
     );
 }
 
-/// A retried invocation — a fresh writer over the same directory — replays the
-/// batch harmlessly: the points it deletes are already gone, so they resolve
+/// A retried batch replays harmlessly, through the same writer (whose lookups
+/// were reloaded after the first batch) and through a fresh one over the same
+/// directory alike: the points it deletes are already gone, so they resolve
 /// to nothing.
-///
-/// Replaying through the *same* writer needs no test:
-/// [`apply_batch`](UpdateOnlyEdgeShard::apply_batch) consumes it, so a second
-/// batch does not compile.
 #[test]
 fn replayed_delete_batch_is_a_no_op() {
     let dir = leader_with_ten_points("edge-update-delete-replay");
 
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    assert_eq!(writer.apply_batch(delete_batch([3])).unwrap().deleted, 1);
+    let (writer, outcome) = writer.apply_batch(delete_batch([3])).unwrap();
+    assert_eq!(outcome.deleted, 1);
+
+    let (_writer, replayed) = writer.apply_batch(delete_batch([3])).unwrap();
+    assert_eq!(replayed.deleted, 0);
+    assert_eq!(replayed.missing, 1);
 
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    let replayed = writer.apply_batch(delete_batch([3])).unwrap();
+    let (_writer, replayed) = writer.apply_batch(delete_batch([3])).unwrap();
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
 
@@ -140,12 +157,21 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
         "point 500 should live in a non-appendable segment",
     );
 
-    let outcome = writer.apply_batch(delete_batch([500])).unwrap();
+    let (writer, outcome) = writer.apply_batch(delete_batch([500])).unwrap();
     assert_eq!(outcome.deleted, 1);
+    // The record names the immutable segment the point was deleted from.
+    assert_eq!(outcome.points[0].kind, PointApplyKind::Deleted);
+    assert_eq!(outcome.points[0].tombstoned.len(), 1);
+    assert_eq!(outcome.points[0].tombstoned[0].0, holder);
 
-    // A fresh writer resolves against the rewritten mask.
+    // The same writer resolves against the rewritten mask through its
+    // reloaded lookup, and a fresh writer through its own open.
+    let (_writer, replayed) = writer.apply_batch(delete_batch([500])).unwrap();
+    assert_eq!(replayed.deleted, 0);
+    assert_eq!(replayed.missing, 1);
+
     let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    let replayed = writer.apply_batch(delete_batch([500])).unwrap();
+    let (_writer, replayed) = writer.apply_batch(delete_batch([500])).unwrap();
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
 
@@ -226,7 +252,7 @@ mod store {
         };
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-        let outcome = writer
+        let (_writer, outcome) = writer
             .apply_batch(store_batch(100, vec![new_point, rewritten]))
             .unwrap();
 
@@ -234,6 +260,21 @@ mod store {
         assert_eq!(outcome.deleted, 0);
         assert_eq!(outcome.skipped, 0);
         assert_eq!(outcome.missing, 0);
+
+        // The records tell a fresh insert from an overwrite: the new point
+        // vacated nothing, the rewritten one superseded its old write-target
+        // slot in place (no tombstone needed there).
+        let [fresh, overwrite] = &outcome.points[..] else {
+            panic!("expected one record per touched point");
+        };
+        assert_eq!(fresh.id, ExtendedPointId::NumId(11));
+        assert_eq!(fresh.kind, PointApplyKind::Stored);
+        assert!(fresh.tombstoned.is_empty());
+        assert_eq!(fresh.superseded, None);
+        assert_eq!(overwrite.id, ExtendedPointId::NumId(5));
+        assert_eq!(overwrite.kind, PointApplyKind::Stored);
+        assert!(overwrite.tombstoned.is_empty());
+        assert!(overwrite.superseded.is_some());
 
         let follower = open_follower(dir.path());
         assert_eq!(exact_count(&follower), 11);
@@ -266,9 +307,12 @@ mod store {
         assert_eq!(results[1].payload, Some(payload_json! { "kind": "fresh" }),);
     }
 
-    /// A retried store batch — a fresh writer over the same directory — is a
-    /// no-op: every point already carries the batch's version, which only a
-    /// published versions array can tell it.
+    /// A retried store batch is a no-op — through the same writer and through
+    /// a fresh one over the same directory alike: every point already carries
+    /// the batch's version, which only a published versions array can tell
+    /// it. The same-writer replay is what the post-batch lookup reload buys:
+    /// without it, the resolve would not see the version the first batch
+    /// published and would store the point again.
     #[test]
     fn replayed_store_batch_is_a_no_op() {
         let dir = leader_with_ten_points("edge-update-store-replay");
@@ -276,10 +320,15 @@ mod store {
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
         let batch = || store_batch(100, vec![point(11)]);
-        assert_eq!(writer.apply_batch(batch()).unwrap().stored, 1);
+        let (writer, outcome) = writer.apply_batch(batch()).unwrap();
+        assert_eq!(outcome.stored, 1);
+
+        let (_writer, replayed) = writer.apply_batch(batch()).unwrap();
+        assert_eq!(replayed.stored, 0);
+        assert_eq!(replayed.skipped, 1);
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-        let replayed = writer.apply_batch(batch()).unwrap();
+        let (_writer, replayed) = writer.apply_batch(batch()).unwrap();
         assert_eq!(replayed.stored, 0);
         assert_eq!(replayed.skipped, 1);
 
@@ -297,16 +346,55 @@ mod store {
         recreate_payload_storages_append_only(dir.path());
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-        assert_eq!(
-            writer
-                .apply_batch(store_batch(100, vec![point(11)]))
-                .unwrap()
-                .stored,
-            1,
-        );
+        let (_writer, outcome) = writer
+            .apply_batch(store_batch(100, vec![point(11)]))
+            .unwrap();
+        assert_eq!(outcome.stored, 1);
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-        let second = writer
+        let (_writer, second) = writer
+            .apply_batch([
+                (
+                    101,
+                    PointOperation(UpsertPoints(PointsList(vec![point(12)]))),
+                ),
+                (
+                    102,
+                    PointOperation(DeletePoints {
+                        ids: vec![ExtendedPointId::NumId(2)],
+                    }),
+                ),
+            ])
+            .unwrap();
+        assert_eq!(second.stored, 1);
+        assert_eq!(second.deleted, 1);
+
+        let follower = open_follower(dir.path());
+        assert_eq!(exact_count(&follower), 11);
+        assert_eq!(
+            scrolled_ids(&follower),
+            [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+                .map(ExtendedPointId::NumId)
+                .to_vec(),
+        );
+        assert_follower_vectors(&follower, &[11, 12]);
+    }
+
+    /// Sequential batches through one writer: the second batch stores and
+    /// deletes through the same held writers the first one used, resolving
+    /// against the lookups reloaded after it — no re-open in between.
+    #[test]
+    fn sequential_batches_through_one_writer() {
+        let dir = leader_with_ten_points("edge-update-store-sequential");
+        recreate_payload_storages_append_only(dir.path());
+
+        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let (writer, outcome) = writer
+            .apply_batch(store_batch(100, vec![point(11)]))
+            .unwrap();
+        assert_eq!(outcome.stored, 1);
+
+        let (_writer, second) = writer
             .apply_batch([
                 (
                     101,

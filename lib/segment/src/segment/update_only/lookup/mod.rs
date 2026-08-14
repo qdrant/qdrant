@@ -2,6 +2,7 @@
 //! against, and nothing that writes.
 
 mod lifecycle;
+mod live_reload;
 mod resolve;
 
 use std::collections::HashMap;
