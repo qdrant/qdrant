@@ -34,6 +34,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
 use common::fs::safe_delete_in_tmp;
+use common::slow_await::slow_await;
 use dashmap::DashMap;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
@@ -425,7 +426,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
     ) -> Result<Arc<Collection>, StorageError> {
-        let read_collection = self.collections.read().await;
+        let read_collection = slow_await("collections read", self.collections.read()).await;
 
         let real_collection_name = {
             let alias_persistence = self.alias_persistence.read().await;

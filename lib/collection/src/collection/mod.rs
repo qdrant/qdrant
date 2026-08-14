@@ -25,6 +25,7 @@ use std::time::Duration;
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
+use common::slow_await::slow_await;
 use common::storage_version::StorageVersion;
 use common::universal_io::MmapFs;
 use segment::types::{SeqNumberType, ShardKey};
@@ -690,7 +691,8 @@ impl Collection {
     }
 
     pub async fn state(&self) -> State {
-        let shards_holder = self.shards_holder.read().await;
+        let shards_holder =
+            slow_await("shards holder read in state", self.shards_holder.read()).await;
         let transfers = shards_holder.shard_transfers.read().clone();
         let resharding = shards_holder.resharding_state.read().clone();
         State {

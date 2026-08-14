@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
+use common::slow_await::slow_await;
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
@@ -147,7 +148,11 @@ impl Collection {
                 .to_shard_id
                 .unwrap_or(shard_transfer.shard_id);
 
-            let shards_holder = self.shards_holder.read().await;
+            let shards_holder = slow_await(
+                "shards holder read in start_shard_transfer",
+                self.shards_holder.read(),
+            )
+            .await;
 
             let from_replica_set = shards_holder.get_shard(from_shard_id).ok_or_else(|| {
                 CollectionError::bad_request(format!("shard {from_shard_id} doesn't exist"))
