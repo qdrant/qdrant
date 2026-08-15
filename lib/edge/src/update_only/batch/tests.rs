@@ -149,25 +149,6 @@ fn insert_only_upsert_leaves_an_existing_point_alone() {
     );
 }
 
-/// An `update_only` upsert of a point no segment holds applies nothing.
-#[test]
-fn update_only_upsert_does_not_create_a_missing_point() {
-    let plan = UpdateBatchPlan::build([(
-        1,
-        conditional_upsert(
-            7,
-            payload_json! { "a": 1 },
-            UpdateMode::UpdateOnly,
-            Filter::default(),
-        ),
-    )])
-    .unwrap();
-
-    let (_id, updates) = plan.into_point_updates().next().unwrap();
-    assert!(!updates.applies_any(false));
-    assert!(updates.applies_any(true));
-}
-
 /// The condition is judged where the upsert sits in the fold, not against the
 /// state the batch started from: a point an earlier operation of the same
 /// batch created counts as existing, so an `insert_only` upsert after it does

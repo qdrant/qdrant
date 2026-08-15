@@ -77,14 +77,6 @@ impl PointMutation {
         }
     }
 
-    /// Whether this mutation applies whatever the point's current existence.
-    /// Only such a mutation may discard the mutations before it while the
-    /// batch is folded: a conditional one may turn out not to apply, and the
-    /// mutations it would have superseded then have to still be there.
-    fn always_applies(&self) -> bool {
-        self.applies(true) && self.applies(false)
-    }
-
     /// Whether this mutation makes every mutation before it irrelevant:
     /// nothing of the point as it stood survives, so neither the earlier
     /// mutations nor the stored point itself need to be looked at.
@@ -119,7 +111,10 @@ impl PointUpdates {
     }
 
     pub(super) fn push(&mut self, version: SeqNumberType, mutation: PointMutation) {
-        if mutation.always_applies() && mutation.discards_stored_point() {
+        // Only a mutation that applies whatever the point's existence may
+        // discard the ones before it: a conditional upsert may turn out not to
+        // apply, and what it would have superseded then has to still be there.
+        if mutation.applies(true) && mutation.applies(false) && mutation.discards_stored_point() {
             self.mutations.clear();
         }
         self.version = self.version.max(version);
@@ -131,15 +126,9 @@ impl PointUpdates {
         self.version
     }
 
-    /// Whether any mutation applies at all, given whether a segment holds the
-    /// point today. `false` means every operation naming it was rejected by
-    /// its update mode — an `insert_only` upsert of a point that is already
-    /// there, or an `update_only` upsert of one that is not — and the point
-    /// must be left exactly as it stands.
-    ///
-    /// Answering against the point's existence *before* the batch is enough:
-    /// for existence to flip mid-fold some mutation has to have applied, which
-    /// is what this asks in the first place.
+    /// Whether any mutation applies, given whether a segment holds the point
+    /// today. `false` means every operation naming it was rejected by its
+    /// update mode, and the point must be left exactly as it stands.
     ///
     /// [`materialize`](Self::materialize) assumes this is `true`; call it on a
     /// point this rejects and it rewrites the point unchanged into a fresh

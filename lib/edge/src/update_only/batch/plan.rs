@@ -123,14 +123,11 @@ impl UpdateBatchPlan {
                     condition,
                     update_mode,
                 } = operation;
-                // Whether a point exists is the whole condition the accepted
-                // modes need, and the batch locates every point it touches
-                // anyway. A real condition would mean querying payload
-                // indexes, which the writer never fetches.
-                //
-                // Rejected for `insert_only` too, even though the apply path
-                // ignores the condition in that mode: silently dropping a
-                // condition the caller wrote is worse than refusing it.
+                // Existence is the whole gate the accepted modes need, and the
+                // batch locates every point it touches anyway. A real
+                // condition needs payload indexes the writer never fetches —
+                // rejected for `insert_only` too, whose apply path ignores it,
+                // so a condition the caller wrote is never silently dropped.
                 if condition != Filter::default() {
                     return Err(unsupported("conditional upserts with a filter condition"));
                 }

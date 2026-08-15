@@ -253,20 +253,6 @@ mod store {
         )]
     }
 
-    fn insert_only_batch(
-        op_num: SeqNumberType,
-        points: Vec<PointStructPersisted>,
-    ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
-        conditional_batch(op_num, points, UpdateMode::InsertOnly)
-    }
-
-    fn update_only_batch(
-        op_num: SeqNumberType,
-        points: Vec<PointStructPersisted>,
-    ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
-        conditional_batch(op_num, points, UpdateMode::UpdateOnly)
-    }
-
     /// A batch of stores against the appendable segment: a new point (with a
     /// payload) and a rewrite of an existing one, appended by the writer and read
     /// back through an ordinary follower.
@@ -480,7 +466,11 @@ mod store {
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
         let (writer, outcome) = writer
-            .apply_batch(insert_only_batch(100, vec![taken.clone(), free]))
+            .apply_batch(conditional_batch(
+                100,
+                vec![taken.clone(), free],
+                UpdateMode::InsertOnly,
+            ))
             .unwrap();
 
         assert_eq!(outcome.stored, 1);
@@ -517,7 +507,11 @@ mod store {
         // The id it just created is now taken, so replaying the same batch
         // through the same writer rejects both.
         let (_writer, replayed) = writer
-            .apply_batch(insert_only_batch(101, vec![taken, point(11)]))
+            .apply_batch(conditional_batch(
+                101,
+                vec![taken, point(11)],
+                UpdateMode::InsertOnly,
+            ))
             .unwrap();
         assert_eq!(replayed.stored, 0);
         assert_eq!(replayed.rejected, 2);
@@ -537,7 +531,11 @@ mod store {
 
         let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
         let (_writer, outcome) = writer
-            .apply_batch(update_only_batch(100, vec![existing, point(11)]))
+            .apply_batch(conditional_batch(
+                100,
+                vec![existing, point(11)],
+                UpdateMode::UpdateOnly,
+            ))
             .unwrap();
 
         assert_eq!(outcome.stored, 1);
