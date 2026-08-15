@@ -32,7 +32,7 @@ mod read_ops;
 /// [1]: super::GeoIndex
 /// [2]: super::mutable_geo_index::MutableGeoIndex
 /// [3]: super::immutable_geo_index::ImmutableGeoIndex
-/// [4]: super::mmap_geo_index::OnDiskGeoIndex
+/// [4]: super::on_disk_geo_index::OnDiskGeoIndex
 /// [5]: super::GeoIndex::new_gridstore
 /// [6]: super::GeoIndex::new_mmap
 #[allow(clippy::large_enum_variant)]
