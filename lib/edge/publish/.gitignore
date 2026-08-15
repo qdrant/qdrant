@@ -1,3 +1,4 @@
 /Cargo.lock
+/target
 /examples/target
 /qdrant-edge
