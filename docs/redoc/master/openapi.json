@@ -15266,6 +15266,9 @@
             "$ref": "#/components/schemas/LnExpression"
           },
           {
+            "$ref": "#/components/schemas/AcoshExpression"
+          },
+          {
             "$ref": "#/components/schemas/LinDecayExpression"
           },
           {
@@ -15472,6 +15475,17 @@
         ],
         "properties": {
           "ln": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "AcoshExpression": {
+        "type": "object",
+        "required": [
+          "acosh"
+        ],
+        "properties": {
+          "acosh": {
             "$ref": "#/components/schemas/Expression"
           }
         }

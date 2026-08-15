@@ -508,6 +508,10 @@ impl<'a> Extractor<'a> {
                 self.update_from_expression(expression_internal);
                 return;
             }
+            ExpressionInternal::Acosh(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
             ExpressionInternal::Abs(expression_internal) => {
                 self.update_from_expression(expression_internal);
                 return;

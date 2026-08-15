@@ -1,5 +1,5 @@
 import pytest
-from math import isclose
+from math import acosh, isclose
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
@@ -44,6 +44,10 @@ def setup(on_disk_vectors, collection_name):
                 ],
             },
             lambda score, price: score + (price / (1.0 + abs(price))),
+        ),
+        (
+            {"acosh": {"sum": [1.0, {"abs": "price"}]}},
+            lambda score, price: acosh(1.0 + abs(price)),
         ),
     ],
 )
