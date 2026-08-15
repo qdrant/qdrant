@@ -7,6 +7,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::segment_record::NamedVectorBytesOwned;
 use segment::json_path::JsonPath;
 use segment::types::{Payload, PayloadKeyType, PointIdType, SeqNumberType, VectorNameBuf};
+use shard::operations::point_ops::UpdateMode;
 
 /// The vectors an operation carries, in the form the operation carried them:
 /// storage-native bytes travel to the new slot untouched, decoded vectors are
@@ -25,6 +26,9 @@ pub enum PointMutation {
     Replace {
         vectors: OperationVectors,
         payload: Payload,
+        /// The upsert's update mode, deciding whether it applies to a point
+        /// that already exists, one that does not, or both.
+        mode: UpdateMode,
     },
     /// The point is removed.
     Delete,
@@ -46,6 +50,41 @@ pub enum PointMutation {
 }
 
 impl PointMutation {
+    /// Whether this mutation applies at all, given whether the point exists
+    /// where this mutation sits in the fold. Only a conditional upsert can
+    /// answer `false` — every other mutation applies unconditionally.
+    ///
+    /// Existence is the whole condition: an upsert carrying a real filter is
+    /// rejected when the batch is built, so nothing here has to read payload.
+    fn applies(&self, exists: bool) -> bool {
+        match self {
+            Self::Replace {
+                mode,
+                vectors: _,
+                payload: _,
+            } => match mode {
+                UpdateMode::Upsert => true,
+                UpdateMode::InsertOnly => !exists,
+                UpdateMode::UpdateOnly => exists,
+            },
+            Self::Delete
+            | Self::UpdateVectors(_)
+            | Self::DeleteVectors(_)
+            | Self::SetPayload { .. }
+            | Self::OverwritePayload(_)
+            | Self::DeletePayload(_)
+            | Self::ClearPayload => true,
+        }
+    }
+
+    /// Whether this mutation applies whatever the point's current existence.
+    /// Only such a mutation may discard the mutations before it while the
+    /// batch is folded: a conditional one may turn out not to apply, and the
+    /// mutations it would have superseded then have to still be there.
+    fn always_applies(&self) -> bool {
+        self.applies(true) && self.applies(false)
+    }
+
     /// Whether this mutation makes every mutation before it irrelevant:
     /// nothing of the point as it stood survives, so neither the earlier
     /// mutations nor the stored point itself need to be looked at.
@@ -80,7 +119,7 @@ impl PointUpdates {
     }
 
     pub(super) fn push(&mut self, version: SeqNumberType, mutation: PointMutation) {
-        if mutation.discards_stored_point() {
+        if mutation.always_applies() && mutation.discards_stored_point() {
             self.mutations.clear();
         }
         self.version = self.version.max(version);
@@ -92,29 +131,59 @@ impl PointUpdates {
         self.version
     }
 
-    /// Whether applying these mutations requires reading the point as it is
-    /// stored today. False exactly when the first surviving mutation replaces
-    /// or removes the point.
-    pub fn needs_stored_point(&self) -> bool {
+    /// Whether any mutation applies at all, given whether a segment holds the
+    /// point today. `false` means every operation naming it was rejected by
+    /// its update mode — an `insert_only` upsert of a point that is already
+    /// there, or an `update_only` upsert of one that is not — and the point
+    /// must be left exactly as it stands.
+    ///
+    /// Answering against the point's existence *before* the batch is enough:
+    /// for existence to flip mid-fold some mutation has to have applied, which
+    /// is what this asks in the first place.
+    ///
+    /// [`materialize`](Self::materialize) assumes this is `true`; call it on a
+    /// point this rejects and it rewrites the point unchanged into a fresh
+    /// slot.
+    pub fn applies_any(&self, exists: bool) -> bool {
         self.mutations
-            .first()
-            .is_none_or(|mutation| !mutation.discards_stored_point())
+            .iter()
+            .any(|mutation| mutation.applies(exists))
     }
 
-    /// Fold the mutations onto `stored` — the point as it stands, absent when
-    /// no segment holds it — into the point to store.
+    /// Whether applying these mutations to a point some segment holds requires
+    /// reading it as it is stored today. False exactly when the first mutation
+    /// that applies replaces or removes the point — or when none applies.
+    ///
+    /// Only asked about points a segment holds: one that does not exist has
+    /// nothing to read. So the mutations are judged against `exists = true`,
+    /// which is what makes an `insert_only` upsert of an existing point free —
+    /// it is dropped, and the point it would have overwritten is never read.
+    pub fn needs_stored_point(&self) -> bool {
+        self.mutations
+            .iter()
+            .find(|mutation| mutation.applies(true))
+            .is_some_and(|mutation| !mutation.discards_stored_point())
+    }
+
+    /// Fold the mutations onto `stored` — the point as it stands — into the
+    /// point to store. `exists` says whether a segment holds the point;
+    /// `stored` carries its content, and is absent both when the point does
+    /// not exist and when [`needs_stored_point`](Self::needs_stored_point)
+    /// said the fold would discard it unread.
     ///
     /// `Ok(None)` means the batch leaves nothing to store: the point ends up
     /// deleted, or an operation that can only modify an existing point named
     /// one that does not exist.
+    ///
+    /// Only meaningful for a point [`applies_any`](Self::applies_any) accepts.
     pub fn materialize(
         self,
         id: PointIdType,
+        mut exists: bool,
         stored: Option<StoredPoint>,
     ) -> OperationResult<Option<FullyQualifiedPoint>> {
         let Self { version, mutations } = self;
 
-        let mut exists = stored.is_some();
         let (mut stored_vectors, mut payload) = match stored {
             Some(stored) => {
                 let StoredPoint {
@@ -132,10 +201,19 @@ impl PointUpdates {
         let mut updated_vectors = NamedVectors::default();
 
         for mutation in mutations {
+            // An upsert whose update mode does not match the point as it
+            // stands here in the fold leaves everything before it in place —
+            // including a point an earlier mutation of this very batch
+            // created, which is what an `insert_only` upsert has to see.
+            if !mutation.applies(exists) {
+                continue;
+            }
+
             match mutation {
                 PointMutation::Replace {
                     vectors,
                     payload: replacement,
+                    mode: _,
                 } => {
                     exists = true;
                     stored_vectors.clear();

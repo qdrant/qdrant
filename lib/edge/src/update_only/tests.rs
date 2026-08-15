@@ -197,11 +197,13 @@ mod store {
     use common::universal_io::MmapFs;
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
-    use segment::types::{WithPayloadInterface, WithVector};
+    use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
     use shard::files::SEGMENTS_PATH;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-    use shard::operations::point_ops::PointOperations::UpsertPoints;
-    use shard::operations::point_ops::PointStructPersisted;
+    use shard::operations::point_ops::PointOperations::{UpsertPoints, UpsertPointsConditional};
+    use shard::operations::point_ops::{
+        ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode,
+    };
 
     use super::*;
     use crate::RetrieveRequestBuilder;
@@ -230,6 +232,39 @@ mod store {
         points: Vec<PointStructPersisted>,
     ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
         [(op_num, PointOperation(UpsertPoints(PointsList(points))))]
+    }
+
+    /// A batch of one conditional upsert with the empty condition — existence
+    /// is the whole gate, which is what the writer accepts.
+    fn conditional_batch(
+        op_num: SeqNumberType,
+        points: Vec<PointStructPersisted>,
+        update_mode: UpdateMode,
+    ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
+        [(
+            op_num,
+            PointOperation(UpsertPointsConditional(
+                ConditionalInsertOperationInternal {
+                    points_op: PointsList(points),
+                    condition: Filter::default(),
+                    update_mode: Some(update_mode),
+                },
+            )),
+        )]
+    }
+
+    fn insert_only_batch(
+        op_num: SeqNumberType,
+        points: Vec<PointStructPersisted>,
+    ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
+        conditional_batch(op_num, points, UpdateMode::InsertOnly)
+    }
+
+    fn update_only_batch(
+        op_num: SeqNumberType,
+        points: Vec<PointStructPersisted>,
+    ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
+        conditional_batch(op_num, points, UpdateMode::UpdateOnly)
     }
 
     /// A batch of stores against the appendable segment: a new point (with a
@@ -420,5 +455,111 @@ mod store {
                 .to_vec(),
         );
         assert_follower_vectors(&follower, &[11, 12]);
+    }
+
+    /// An `insert_only` batch over a mix of taken and free ids: the free ones
+    /// are created, the taken ones keep the leader's point untouched — no
+    /// rewrite, no tombstone, no version bump — and the run reports which was
+    /// which.
+    #[test]
+    fn insert_only_batch_creates_only_the_free_ids() {
+        let dir = leader_with_ten_points("edge-update-insert-only");
+        recreate_payload_storages_append_only(dir.path());
+
+        // Point 5 is taken; giving the rejected upsert a vector the fixture
+        // would never produce makes an accidental overwrite visible.
+        let taken = PointStructPersisted {
+            vector: point(50).vector,
+            payload: Some(payload_json! { "kind": "rejected" }),
+            ..point(5)
+        };
+        let free = PointStructPersisted {
+            payload: Some(payload_json! { "kind": "fresh" }),
+            ..point(11)
+        };
+
+        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let (writer, outcome) = writer
+            .apply_batch(insert_only_batch(100, vec![taken.clone(), free]))
+            .unwrap();
+
+        assert_eq!(outcome.stored, 1);
+        assert_eq!(outcome.rejected, 1);
+        assert_eq!(outcome.deleted, 0);
+        assert_eq!(outcome.skipped, 0);
+        assert_eq!(outcome.missing, 0);
+
+        let [rejected, created] = &outcome.points[..] else {
+            panic!("expected one record per touched point");
+        };
+        assert_eq!(rejected.id, ExtendedPointId::NumId(5));
+        assert_eq!(rejected.kind, PointApplyKind::Rejected);
+        // A rejected point keeps every slot it had: nothing was written that
+        // could supersede them.
+        assert!(rejected.tombstoned.is_empty());
+        assert_eq!(rejected.superseded, None);
+        assert_eq!(created.id, ExtendedPointId::NumId(11));
+        assert_eq!(created.kind, PointApplyKind::Stored);
+
+        let follower = open_follower(dir.path());
+        assert_eq!(exact_count(&follower), 11);
+        // Point 5 still reads as the leader wrote it, payload included.
+        assert_follower_vectors(&follower, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let results = follower
+            .retrieve(
+                RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(5)])
+                    .with_payload(WithPayloadInterface::Bool(true))
+                    .build(),
+            )
+            .unwrap();
+        assert_eq!(results[0].payload, Some(Payload::default()));
+
+        // The id it just created is now taken, so replaying the same batch
+        // through the same writer rejects both.
+        let (_writer, replayed) = writer
+            .apply_batch(insert_only_batch(101, vec![taken, point(11)]))
+            .unwrap();
+        assert_eq!(replayed.stored, 0);
+        assert_eq!(replayed.rejected, 2);
+    }
+
+    /// An `update_only` batch is the mirror image: ids no segment holds are
+    /// reported missing rather than created.
+    #[test]
+    fn update_only_batch_does_not_create_missing_ids() {
+        let dir = leader_with_ten_points("edge-update-update-only");
+        recreate_payload_storages_append_only(dir.path());
+
+        let existing = PointStructPersisted {
+            payload: Some(payload_json! { "kind": "updated" }),
+            ..point(5)
+        };
+
+        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let (_writer, outcome) = writer
+            .apply_batch(update_only_batch(100, vec![existing, point(11)]))
+            .unwrap();
+
+        assert_eq!(outcome.stored, 1);
+        assert_eq!(outcome.missing, 1);
+        assert_eq!(outcome.rejected, 0);
+
+        let follower = open_follower(dir.path());
+        assert_eq!(exact_count(&follower), 10);
+        assert_eq!(
+            scrolled_ids(&follower),
+            (1..=10).map(ExtendedPointId::NumId).collect::<Vec<_>>(),
+        );
+        let results = follower
+            .retrieve(
+                RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(5)])
+                    .with_payload(WithPayloadInterface::Bool(true))
+                    .build(),
+            )
+            .unwrap();
+        assert_eq!(
+            results[0].payload,
+            Some(payload_json! { "kind": "updated" })
+        );
     }
 }

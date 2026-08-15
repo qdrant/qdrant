@@ -33,8 +33,12 @@ pub struct UpdateBatchOutcome {
     /// Points already at or beyond the batch's version, left untouched — what
     /// makes a replayed batch a no-op.
     pub skipped: usize,
+    /// Points every naming operation's update mode rejected, left untouched —
+    /// how many ids of an `insert_only` upsert were already taken.
+    pub rejected: usize,
     /// Points an operation named that no segment holds and the batch did not
-    /// create — a payload update to a point that is not there.
+    /// create — a payload update, or an `update_only` upsert, to a point that
+    /// is not there.
     pub missing: usize,
     /// One record per touched point, in first-touched order: what happened
     /// to it, and which slots it vacated where.
@@ -69,8 +73,23 @@ pub enum PointApplyKind {
     Deleted,
     /// Left untouched: already at or beyond the batch's version.
     Skipped,
+    /// Left untouched: every operation naming it was rejected by its update
+    /// mode.
+    Rejected,
     /// Named by an operation, held by no segment, not created by the batch.
     Missing,
+}
+
+impl PointApplyKind {
+    /// Whether the point's previous slots have to stop resolving: a point the
+    /// batch rewrote or removed must not keep serving from where it used to
+    /// sit. The kinds that write nothing leave every slot alone.
+    fn retires_slots(self) -> bool {
+        match self {
+            Self::Stored | Self::Deleted => true,
+            Self::Skipped | Self::Rejected | Self::Missing => false,
+        }
+    }
 }
 
 /// One copy of a point: where it lives, and at what version.
@@ -156,6 +175,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
                     outcome.skipped += 1;
                     PointApplyKind::Skipped
                 }
+                PointAction::Rejected => {
+                    outcome.rejected += 1;
+                    PointApplyKind::Rejected
+                }
                 PointAction::Missing => {
                     outcome.missing += 1;
                     PointApplyKind::Missing
@@ -178,7 +201,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
                 superseded: None,
             };
 
-            if matches!(kind, PointApplyKind::Stored | PointApplyKind::Deleted) {
+            if kind.retires_slots() {
                 for (segment, internal_id) in slots {
                     // The copy a stored point leaves behind in the write target
                     // needs no retirement: appending the point records a mapping

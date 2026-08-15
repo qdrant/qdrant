@@ -68,11 +68,12 @@ use common::universal_io::{
 };
 use edge::external::uuid::Uuid;
 use edge::{
-    FullyQualifiedPoint, ManifestSegmentEnumerator, PAYLOAD_INDEX_CONFIG_FILE, Payload,
-    PayloadConfig, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, PointAction,
-    PointApplyKind, PointApplyRecord, PointId, PointOperations, PointStructPersisted,
-    SegmentConfig, SegmentConfigInfo, SparseVector, UpdateOnlyEdgeShard, UpdateOperation,
-    VectorPersisted, VectorStructPersisted, get_payload_index_path,
+    ConditionalInsertOperation, Filter, FullyQualifiedPoint, ManifestSegmentEnumerator,
+    PAYLOAD_INDEX_CONFIG_FILE, Payload, PayloadConfig, PayloadFieldSchema, PayloadSchemaParams,
+    PayloadSchemaType, PointAction, PointApplyKind, PointApplyRecord, PointId,
+    PointInsertOperations, PointOperations, PointStructPersisted, SegmentConfig, SegmentConfigInfo,
+    SparseVector, UpdateMode, UpdateOnlyEdgeShard, UpdateOperation, VectorPersisted,
+    VectorStructPersisted, get_payload_index_path,
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
@@ -94,6 +95,28 @@ enum Backend {
     Aws,
     /// Google Cloud Storage.
     Gcs,
+}
+
+/// Which points of the generated upsert are written, mirroring the
+/// `update_mode` of the REST/gRPC upsert.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum UpdateModeArg {
+    /// Write every id: overwrite the ones that exist, create the rest.
+    Upsert,
+    /// Write only ids no segment holds; leave the ones that exist alone.
+    InsertOnly,
+    /// Write only ids that already exist; do not create the rest.
+    UpdateOnly,
+}
+
+impl From<UpdateModeArg> for UpdateMode {
+    fn from(mode: UpdateModeArg) -> Self {
+        match mode {
+            UpdateModeArg::Upsert => UpdateMode::Upsert,
+            UpdateModeArg::InsertOnly => UpdateMode::InsertOnly,
+            UpdateModeArg::UpdateOnly => UpdateMode::UpdateOnly,
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -123,6 +146,10 @@ struct Cli {
     /// UUIDs. Ids no segment holds are created rather than overwritten.
     #[arg(long, value_delimiter = ',', required = true)]
     ids: Vec<String>,
+
+    /// Update mode of the generated upsert.
+    #[arg(long, value_enum, default_value = "upsert")]
+    update_mode: UpdateModeArg,
 
     /// Operation number recorded as the new points' version. A point whose
     /// stored version is at or beyond this is reported as skipped — the
@@ -463,6 +490,9 @@ fn log_preview_point(point: &edge::PointPreview) {
             "point {id}: already at or beyond version — skipped (replay no-op); \
              re-run with a higher --op-num to overwrite",
         ),
+        PointAction::Rejected => {
+            log::info!("point {id}: already there — rejected by --update-mode, left untouched",);
+        }
         PointAction::Missing => {
             log::info!("point {id}: names a point no segment holds — nothing to do");
         }
@@ -471,7 +501,12 @@ fn log_preview_point(point: &edge::PointPreview) {
 
 /// Generate the random upsert batch off the shard's schema, logging each
 /// point's shape.
-fn generate_batch(schema: &ShardSchema, ids: &[PointId], seed: u64) -> UpdateOperation {
+fn generate_batch(
+    schema: &ShardSchema,
+    ids: &[PointId],
+    seed: u64,
+    mode: UpdateMode,
+) -> UpdateOperation {
     let mut rng = StdRng::seed_from_u64(seed);
     let points: Vec<PointStructPersisted> = ids
         .iter()
@@ -505,7 +540,21 @@ fn generate_batch(schema: &ShardSchema, ids: &[PointId], seed: u64) -> UpdateOpe
         })
         .collect();
 
-    UpdateOperation::PointOperation(PointOperations::UpsertPoints(points.into()))
+    let points = PointInsertOperations::PointsList(points);
+    let operation = match mode {
+        UpdateMode::Upsert => PointOperations::UpsertPoints(points),
+        // The writer accepts a conditional upsert only with an empty
+        // condition — existence is the whole condition it can answer.
+        UpdateMode::InsertOnly | UpdateMode::UpdateOnly => {
+            PointOperations::UpsertPointsConditional(ConditionalInsertOperation {
+                points_op: points,
+                condition: Filter::default(),
+                update_mode: Some(mode),
+            })
+        }
+    };
+
+    UpdateOperation::PointOperation(operation)
 }
 
 /// Generate the random batch, resolve it against the open shard, and log what
@@ -517,8 +566,9 @@ fn dry_run<S: UniversalAppend + 'static>(
     ids: &[PointId],
     op_num: u64,
     seed: u64,
+    mode: UpdateMode,
 ) -> Result<()> {
-    let operation = generate_batch(schema, ids, seed);
+    let operation = generate_batch(schema, ids, seed, mode);
 
     let preview = shard
         .preview_batch([(op_num, operation)])
@@ -526,6 +576,7 @@ fn dry_run<S: UniversalAppend + 'static>(
 
     let mut stored = 0usize;
     let mut skipped = 0usize;
+    let mut rejected = 0usize;
     let mut tombstones: HashMap<Uuid, usize> = HashMap::new();
     for point in &preview.points {
         log_preview_point(point);
@@ -542,12 +593,14 @@ fn dry_run<S: UniversalAppend + 'static>(
                 }
             }
             PointAction::Skip => skipped += 1,
+            PointAction::Rejected => rejected += 1,
             PointAction::Missing => {}
         }
     }
 
     log::info!(
-        "summary: {stored} point(s) would be appended to the write target, {skipped} skipped",
+        "summary: {stored} point(s) would be appended to the write target, \
+         {skipped} skipped, {rejected} rejected by --update-mode",
     );
     for (segment, count) in &tombstones {
         log::info!("summary: segment {segment} would receive {count} tombstone(s)");
@@ -568,11 +621,12 @@ fn apply_run<S: UniversalAppend + 'static>(
     ids: &[PointId],
     mut op_num: u64,
     mut seed: u64,
+    mode: UpdateMode,
     interactive: bool,
 ) -> Result<()> {
     let mut ids = ids.to_vec();
     loop {
-        let operation = generate_batch(schema, &ids, seed);
+        let operation = generate_batch(schema, &ids, seed, mode);
 
         let (returned, outcome) = shard
             .apply_batch([(op_num, operation)])
@@ -580,10 +634,12 @@ fn apply_run<S: UniversalAppend + 'static>(
         shard = returned;
 
         log::info!(
-            "applied at op-num {op_num}: {} stored, {} deleted, {} skipped, {} missing",
+            "applied at op-num {op_num}: {} stored, {} deleted, {} skipped, \
+             {} rejected, {} missing",
             outcome.stored,
             outcome.deleted,
             outcome.skipped,
+            outcome.rejected,
             outcome.missing,
         );
         for record in &outcome.points {
@@ -636,6 +692,9 @@ fn log_apply_record(record: &PointApplyRecord) {
         }
         PointApplyKind::Skipped => {
             log::info!("point {id}: skipped — already at or beyond this op-num");
+        }
+        PointApplyKind::Rejected => {
+            log::info!("point {id}: already there — rejected by --update-mode");
         }
         PointApplyKind::Missing => {
             log::info!("point {id}: no segment holds it — nothing to do");
@@ -762,9 +821,24 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
 
     let schema = read_schema(&shard, &common::universal_io::MmapFs, &path)?;
     if cli.apply {
-        apply_run(shard, &schema, ids, cli.op_num, cli.seed, cli.interactive)
+        apply_run(
+            shard,
+            &schema,
+            ids,
+            cli.op_num,
+            cli.seed,
+            cli.update_mode.into(),
+            cli.interactive,
+        )
     } else {
-        dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+        dry_run(
+            &shard,
+            &schema,
+            ids,
+            cli.op_num,
+            cli.seed,
+            cli.update_mode.into(),
+        )
     }
 }
 
@@ -797,9 +871,24 @@ where
 
     let schema = read_schema(&shard, &cached_fs, &prefix)?;
     if cli.apply {
-        apply_run(shard, &schema, ids, cli.op_num, cli.seed, cli.interactive)
+        apply_run(
+            shard,
+            &schema,
+            ids,
+            cli.op_num,
+            cli.seed,
+            cli.update_mode.into(),
+            cli.interactive,
+        )
     } else {
-        dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+        dry_run(
+            &shard,
+            &schema,
+            ids,
+            cli.op_num,
+            cli.seed,
+            cli.update_mode.into(),
+        )
     }
 }
 
