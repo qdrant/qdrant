@@ -50,12 +50,12 @@ pub enum PointMutation {
 }
 
 impl PointMutation {
-    /// Whether this mutation applies at all, given whether the point exists
-    /// where this mutation sits in the fold. Only a conditional upsert can
-    /// answer `false` — every other mutation applies unconditionally.
+    /// Whether this mutation applies, given whether the point exists where
+    /// this mutation sits in the fold. Only a conditional upsert can answer
+    /// `false` — every other mutation applies unconditionally.
     ///
-    /// Existence is the whole condition: an upsert carrying a real filter is
-    /// rejected when the batch is built, so nothing here has to read payload.
+    /// Decided from `exists` alone, never from the point's content: an upsert
+    /// whose condition is more than existence never reaches a mutation.
     fn applies(&self, exists: bool) -> bool {
         match self {
             Self::Replace {
@@ -150,14 +150,14 @@ impl PointUpdates {
             .any(|mutation| mutation.applies(exists))
     }
 
-    /// Whether applying these mutations to a point some segment holds requires
-    /// reading it as it is stored today. False exactly when the first mutation
-    /// that applies replaces or removes the point — or when none applies.
+    /// Whether folding these mutations reads the point as it is stored today.
+    /// False exactly when the first mutation that applies replaces or removes
+    /// the point, and when none applies at all.
     ///
-    /// Only asked about points a segment holds: one that does not exist has
-    /// nothing to read. So the mutations are judged against `exists = true`,
-    /// which is what makes an `insert_only` upsert of an existing point free —
-    /// it is dropped, and the point it would have overwritten is never read.
+    /// Answers for a point some segment holds — one that does not exist has
+    /// nothing to read either way. So an `insert_only` upsert of an existing
+    /// point answers `false`: it is dropped, and the point it would have
+    /// overwritten is never fetched.
     pub fn needs_stored_point(&self) -> bool {
         self.mutations
             .iter()
