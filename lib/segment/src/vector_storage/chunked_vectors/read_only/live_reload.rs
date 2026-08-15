@@ -18,17 +18,25 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         // Status is the change signal, let reload skip reloading if this didn't change.
         fs.reschedule_prefetch(&status_file(&self.directory), None, None)?;
 
-        if !self.chunks.is_empty() {
-            // Re-schedule so an unchanged last chunk doesn't re-fetch.
+        let num_files = list_chunk_files(fs, &self.directory)?.len();
+
+        // `len` marks max committed vector. First chunk that can have changed:
+        // the one the next append lands in.
+        let last_chunk = self.config.get_chunk_index(self.len);
+
+        let fresh_from = if last_chunk < self.chunks.len().min(num_files) {
             fs.reschedule_prefetch(
-                &chunk_name(&self.directory, self.chunks.len() - 1),
+                &chunk_name(&self.directory, last_chunk),
                 Some(chunk_open_options(self.advice, self.populate, false)),
                 None,
             )?;
-        }
+            last_chunk + 1
+        } else {
+            last_chunk
+        };
 
-        // Prefetch all new chunks
-        for chunk_id in self.chunks.len()..list_chunk_files(fs, &self.directory)?.len() {
+        // Prefetch the rest of the chunks the reload may open.
+        for chunk_id in fresh_from..num_files {
             fs.schedule_prefetch(
                 &chunk_name(&self.directory, chunk_id),
                 Some(chunk_open_options(self.advice, self.populate, false)),
@@ -57,29 +65,38 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         if new_len == self.len {
             return Ok(());
         }
+        assert!(new_len > self.len, "live_reload only supports appends");
 
-        if let Some(last) = self.chunks.len().checked_sub(1) {
-            // Fresh handle for the last held chunk, if the file actually changed.
-            if let Some(fresh) = TypedStorage::open(
+        // First chunk that can have changed: the one committed by `len`
+        let last_chunk = self.config.get_chunk_index(self.len);
+
+        // Fresh handle for the watermark chunk, if held and the file actually changed.
+        let fresh_from = if last_chunk < self.chunks.len() {
+            if let Some(fresh_chunk) = TypedStorage::open(
                 fs,
-                &chunk_name(&self.directory, last),
+                &chunk_name(&self.directory, last_chunk),
                 chunk_open_options(self.advice, self.populate, false),
                 Default::default(),
             )
             .ok_unchanged()?
             {
-                self.chunks[last] = fresh;
+                self.chunks[last_chunk] = fresh_chunk;
             }
-        }
+            last_chunk + 1
+        } else {
+            last_chunk
+        };
 
         let new_chunks = read_chunks_from(
             fs,
             &self.directory,
-            self.chunks.len(),
+            fresh_from,
             self.advice,
             self.populate,
             false,
         )?;
+
+        self.chunks.truncate(fresh_from);
         self.chunks.extend(new_chunks);
         self.len = new_len;
         Ok(())
