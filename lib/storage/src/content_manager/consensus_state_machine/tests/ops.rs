@@ -188,6 +188,81 @@ fn delete_named_vector_missing() {
     assert_eq!(machine.state(), &state);
 }
 
+#[test]
+fn create_payload_index() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&create_payload_index_op("city", PayloadSchemaType::Keyword));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("creating payload index should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPayloadIndex { .. }],
+    ));
+
+    let schema = &machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists")
+        .payload_index_schema
+        .schema;
+
+    assert!(schema.contains_key(&field_name("city")));
+}
+
+#[test]
+fn create_payload_index_replay() {
+    let state = cluster_state_with_index("city", PayloadSchemaType::Keyword);
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&create_payload_index_op("city", PayloadSchemaType::Keyword));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of an applied payload index should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPayloadIndex { .. }],
+    ));
+
+    assert_eq!(machine.state(), &state, "replay should not change anything");
+}
+
+#[test]
+fn create_payload_index_replace_schema() {
+    let state = cluster_state_with_index("city", PayloadSchemaType::Keyword);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&create_payload_index_op("city", PayloadSchemaType::Integer));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("indexing a field again with another schema should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPayloadIndex { .. }],
+    ));
+
+    let schema = &machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists")
+        .payload_index_schema
+        .schema;
+
+    // A field indexed with a different schema is replaced, where a named vector is rejected
+    assert_eq!(
+        schema.get(&field_name("city")),
+        Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+    );
+}
+
 fn cluster_state(vectors: Vec<(&str, VectorNameConfig)>) -> ClusterState {
     let vectors = vectors
         .into_iter()
@@ -200,6 +275,20 @@ fn cluster_state(vectors: Vec<(&str, VectorNameConfig)>) -> ClusterState {
         collections: HashMap::from([(COLLECTION.into(), collection_state)]),
         ..Default::default()
     }
+}
+
+fn cluster_state_with_index(field: &str, field_type: PayloadSchemaType) -> ClusterState {
+    let mut state = cluster_state(Vec::new());
+
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection exists")
+        .payload_index_schema
+        .schema
+        .insert(field_name(field), PayloadFieldSchema::FieldType(field_type));
+
+    state
 }
 
 fn collection_meta_op(op: CollectionMetaOperations) -> ConsensusOperations {
@@ -239,4 +328,18 @@ fn delete_named_vector_op(vector_name: &str) -> ConsensusOperations {
             vector_name: VectorNameBuf::from(vector_name),
         },
     ))
+}
+
+fn create_payload_index_op(field: &str, field_type: PayloadSchemaType) -> ConsensusOperations {
+    collection_meta_op(CollectionMetaOperations::CreatePayloadIndex(
+        CreatePayloadIndex {
+            collection_name: COLLECTION.to_string(),
+            field_name: field_name(field),
+            field_schema: PayloadFieldSchema::FieldType(field_type),
+        },
+    ))
+}
+
+fn field_name(field: &str) -> PayloadKeyType {
+    field.parse().expect("valid field name")
 }
