@@ -4,7 +4,9 @@ use std::path::Path;
 
 use roaring::RoaringBitmap;
 
-use super::format::{BitmaskContent, BitmaskHeader, Encoding, HEADER_SIZE, MAGIC, VERSION};
+use super::format::{
+    BitmaskContent, BitmaskHeader, Encoding, HEADER_SIZE, MAGIC, MAX_LOGICAL_LEN, VERSION,
+};
 use crate::bitvec::{BitSlice, BitVec};
 use crate::generic_consts::Sequential;
 use crate::universal_io::{
@@ -83,7 +85,7 @@ impl<S: UniversalRead> StoredBitmask<S> {
         };
         // Mirrors the write-side validation; also keeps every position
         // representable as `u32` for [`Self::read_ones`].
-        if header.logical_len > u64::from(u32::MAX) + 1 {
+        if header.logical_len > MAX_LOGICAL_LEN {
             return Err(invalid_data(
                 path,
                 format_args!(
