@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use roaring::RoaringBitmap;
@@ -155,8 +156,9 @@ impl MutableStoredBitmask {
             return Ok(());
         }
 
-        // The encoder consumes its bitmap; this handle keeps its own.
-        let bytes = bitmask_file_bytes(self.logical_len, self.ones.clone())?;
+        // Run-optimize in place so the encoder can serialize a borrow.
+        self.ones.optimize();
+        let bytes = bitmask_file_bytes(self.logical_len, Cow::Borrowed(&self.ones))?;
         fs.atomic_save(path, &bytes)?;
 
         self.changed = false;

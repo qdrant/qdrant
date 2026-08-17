@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io;
 use std::path::Path;
 
@@ -17,17 +18,25 @@ pub fn save_bitmask(
     logical_len: u64,
     ones: RoaringBitmap,
 ) -> UioResult<()> {
-    let bytes = bitmask_file_bytes(logical_len, ones)?;
+    let bytes = bitmask_file_bytes(logical_len, Cow::Owned(ones))?;
     fs.atomic_save(path, &bytes)
 }
 
 /// Encode a bitmask of `logical_len` bits whose set positions are `ones` into
 /// the complete file image: header plus the cheapest payload encoding.
-pub(super) fn bitmask_file_bytes(logical_len: u64, ones: RoaringBitmap) -> UioResult<Vec<u8>> {
+///
+/// A borrowed mask is serialized as-is; the caller run-optimizes it in place
+/// beforehand to keep this path clone-free.
+pub(super) fn bitmask_file_bytes(
+    logical_len: u64,
+    ones: Cow<'_, RoaringBitmap>,
+) -> UioResult<Vec<u8>> {
     validate(logical_len, &ones)?;
 
     let (polarity, mut minority) = minority_polarity(logical_len, ones);
-    minority.optimize();
+    if let Cow::Owned(minority) = &mut minority {
+        minority.optimize();
+    }
 
     let dense_bits_len = logical_len.div_ceil(u64::from(u8::BITS));
     if (minority.serialized_size() as u64) < dense_bits_len {
@@ -63,14 +72,17 @@ fn validate(logical_len: u64, ones: &RoaringBitmap) -> UioResult<()> {
 
 /// Reduce to whichever bit value is the minority: the set positions as-is, or
 /// their complement within `0..logical_len`.
-fn minority_polarity(logical_len: u64, ones: RoaringBitmap) -> (Encoding, RoaringBitmap) {
+fn minority_polarity(
+    logical_len: u64,
+    ones: Cow<'_, RoaringBitmap>,
+) -> (Encoding, Cow<'_, RoaringBitmap>) {
     if ones.len().saturating_mul(2) <= logical_len {
         (Encoding::RoaringOnes, ones)
     } else {
         let mut zeros = RoaringBitmap::new();
         zeros.insert_range(0..=(logical_len - 1) as u32);
-        zeros -= ones;
-        (Encoding::RoaringZeros, zeros)
+        zeros -= &*ones;
+        (Encoding::RoaringZeros, Cow::Owned(zeros))
     }
 }
 
