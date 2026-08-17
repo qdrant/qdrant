@@ -67,7 +67,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             segment_config: _,
         } = self;
 
-        let fs = &*reload_fs.get_mut();
+        let fs = &mut *reload_fs.get_mut();
 
         // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
@@ -97,8 +97,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             }
         }
 
-        // Every component is now in sync; discard the applied delta.
+        // Every component is now in sync; discard the applied delta and rotate
+        // file info.
         *pending = LiveReloadResult::default();
+        fs.rotate_cache_file_info();
 
         Ok(())
     }
