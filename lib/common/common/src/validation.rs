@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::Path;
 
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
@@ -107,11 +108,31 @@ fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationErr
     Err(err)
 }
 
-/// Validate the collection name contains no illegal characters
+/// Reject names that are not a plain, single path component.
 ///
-/// This does not check the length of the name.
+/// The name is joined onto a storage directory on disk, so a dot segment (`.`, `..`) — or
+/// anything else `Path::file_name` does not return verbatim, such as the empty string — would
+/// resolve outside (or to) the parent directory instead of a subdirectory of it. Same predicate
+/// as the snapshot name check in `collection::common::snapshots_manager`.
+fn check_plain_dir_name(value: &str, kind: &str) -> Result<(), ValidationError> {
+    if Path::new(value).file_name() != Some(value.as_ref()) {
+        let mut err = ValidationError::new("invalid_path_component");
+        err.add_param(Cow::from("value"), &value);
+        err.message.replace(
+            format!("{kind} cannot be {value:?}, it is used as a directory name on disk").into(),
+        );
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// Validate the collection name contains no illegal characters and stays a plain directory name
+/// on disk: dot segments (`.`, `..`) and the empty string are rejected.
+///
+/// This does not check the maximum length of the name.
 pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
-    check_invalid_name_chars(value, "collection name")
+    check_invalid_name_chars(value, "collection name")?;
+    check_plain_dir_name(value, "collection name")
 }
 
 /// Validate a named vector identifier.
@@ -141,21 +162,23 @@ pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
 /// were supported pre Qdrant 1.5. More specifically, this only disallows characters that could
 /// never have been used on both Linux and Windows filesystems.
 ///
-/// This does not check the length of the name.
+/// Dot segments (`.`, `..`) and the empty string are rejected here as well: they were never
+/// usable as directory names, so no pre-existing collection can carry such a name.
+///
+/// This does not check the maximum length of the name.
 pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationError> {
     // Disallowed characters on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
     const INVALID_CHARS: [char; 2] = ['/', '\0'];
 
-    match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
-        Some(c) => {
-            let mut err = ValidationError::new("does_not_contain");
-            err.add_param(Cow::from("pattern"), &c);
-            err.message
-                .replace(format!("collection name cannot contain \"{c}\" char").into());
-            Err(err)
-        }
-        None => Ok(()),
+    if let Some(c) = INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
+        let mut err = ValidationError::new("does_not_contain");
+        err.add_param(Cow::from("pattern"), &c);
+        err.message
+            .replace(format!("collection name cannot contain \"{c}\" char").into());
+        return Err(err);
     }
+
+    check_plain_dir_name(value, "collection name")
 }
 
 /// Validate a polygon has at least 4 points and is closed.
@@ -399,18 +422,61 @@ mod tests {
     #[test]
     fn test_validate_collection_name() {
         assert!(validate_collection_name("test_collection").is_ok());
-        assert!(validate_collection_name("").is_ok());
         assert!(validate_collection_name("no/path").is_err());
         assert!(validate_collection_name("no*path").is_err());
         assert!(validate_collection_name("?").is_err());
         assert!(validate_collection_name("\0").is_err());
 
         assert!(validate_collection_name_legacy("test_collection").is_ok());
-        assert!(validate_collection_name_legacy("").is_ok());
         assert!(validate_collection_name_legacy("no/path").is_err());
         assert!(validate_collection_name_legacy("no*path").is_ok());
         assert!(validate_collection_name_legacy("?").is_ok());
         assert!(validate_collection_name_legacy("\0").is_err());
+    }
+
+    /// Collection names become directory components on disk
+    /// (`storage/collections/<name>`, `snapshots/<name>`), so a name that resolves outside the
+    /// parent directory must be rejected — by the legacy validator too, since a traversing name
+    /// was never usable as a directory and thus cannot refer to a pre-existing collection.
+    ///
+    /// Mirrors `TRAVERSING_NAMES` in `collection::common::snapshots_manager`.
+    #[test]
+    fn test_validate_collection_name_rejects_traversal() {
+        const TRAVERSING_NAMES: &[&str] = &[
+            "/collections/other-collection",
+            "/etc/passwd",
+            "other-collection/nested",
+            "../other-collection",
+            "./other-collection",
+            "..",
+            ".",
+            "",
+        ];
+
+        for name in TRAVERSING_NAMES {
+            assert!(
+                validate_collection_name(name).is_err(),
+                "collection name {name:?} escapes the collections directory and must be rejected",
+            );
+            assert!(
+                validate_collection_name_legacy(name).is_err(),
+                "collection name {name:?} escapes the collections directory and must be rejected \
+                 by the legacy validator",
+            );
+        }
+
+        // Names merely containing dots do not traverse and must stay valid, so existing
+        // collections with such names remain reachable.
+        for name in ["v1.2", ".hidden", "..dots", "..."] {
+            assert!(
+                validate_collection_name(name).is_ok(),
+                "collection name {name:?} does not traverse and must stay valid",
+            );
+            assert!(
+                validate_collection_name_legacy(name).is_ok(),
+                "collection name {name:?} does not traverse and must stay valid",
+            );
+        }
     }
 
     #[test]
