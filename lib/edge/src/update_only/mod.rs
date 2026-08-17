@@ -10,7 +10,12 @@
 //! * writers are opened once, at shard open, next to the segments they resume
 //!   from; the store components only on the first point actually stored. Every
 //!   lookup is one batched pass per component over the whole point set;
-//! * there is no WAL: a batch is durable when the storages are flushed.
+//! * there is no WAL: a batch is durable when the storages are flushed;
+//! * an upsert's `update_mode` is honored off the same lookup: whether a point
+//!   exists is what locating it already answers, so `insert_only` costs
+//!   nothing beyond a plain upsert — and less, since the points it rejects are
+//!   never read. A conditional upsert carrying a real filter is rejected:
+//!   evaluating one needs payload indexes the writer never fetches.
 //!
 //! Storage is append-only throughout. Updating a point appends it in full and
 //! retires its old copy; a deletion writes no point data at all — it records

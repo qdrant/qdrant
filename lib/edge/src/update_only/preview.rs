@@ -56,8 +56,13 @@ pub enum PointAction {
     /// Left untouched: the stored copy is already at or beyond the batch's
     /// version, so re-applying would move the point backwards.
     Skip,
+    /// Left untouched: every operation naming the point was rejected by its
+    /// update mode — an `insert_only` upsert of a point that is already
+    /// there. Nothing is written and no slot is retired.
+    Rejected,
     /// An operation that can only modify an existing point named one that no
-    /// segment holds; there is nothing to write.
+    /// segment holds; there is nothing to write. An `update_only` upsert of a
+    /// point that does not exist lands here.
     Missing,
 }
 
@@ -86,6 +91,7 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
             .map(|location| location.slots.clone())
             .unwrap_or_default();
 
+        let exists = current.is_some();
         // Already applied: the stored point is at or beyond this batch's
         // version, so re-applying would move it backwards.
         let already_applied = current
@@ -94,10 +100,19 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
 
         let action = if already_applied {
             PointAction::Skip
+        } else if !updates.applies_any(exists) {
+            // Every operation was rejected by its update mode. A rejected
+            // `update_only` upsert is the `Missing` case — an operation that
+            // can only modify an existing point, naming one that is not there.
+            if exists {
+                PointAction::Rejected
+            } else {
+                PointAction::Missing
+            }
         } else {
-            match updates.materialize(id, stored.remove(&id))? {
+            match updates.materialize(id, exists, stored.remove(&id))? {
                 Some(point) => PointAction::Store(Box::new(point)),
-                None if current.is_some() => PointAction::Delete,
+                None if exists => PointAction::Delete,
                 None => PointAction::Missing,
             }
         };
