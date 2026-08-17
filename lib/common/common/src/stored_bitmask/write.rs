@@ -29,8 +29,8 @@ pub(super) fn bitmask_file_bytes(logical_len: u64, ones: RoaringBitmap) -> UioRe
     let (polarity, mut minority) = minority_polarity(logical_len, ones);
     minority.optimize();
 
-    let dense_payload_len = logical_len.div_ceil(u64::from(u8::BITS));
-    if (minority.serialized_size() as u64) < dense_payload_len {
+    let dense_bits_len = logical_len.div_ceil(u64::from(u8::BITS));
+    if (minority.serialized_size() as u64) < dense_bits_len {
         roaring_file_bytes(logical_len, polarity, &minority)
     } else {
         // Even the minority polarity does not compress below raw bits: store
