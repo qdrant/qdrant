@@ -5117,7 +5117,8 @@ pub struct Document {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Image {
-    /// Image data, either base64 encoded or URL
+    /// Image data, either base64 encoded or URL. Must be set: the server rejects a
+    /// request without it
     #[prost(message, optional, tag = "1")]
     pub image: ::core::option::Option<Value>,
     /// Model name
@@ -5130,7 +5131,7 @@ pub struct Image {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InferenceObject {
-    /// Object to infer
+    /// Object to infer. Must be set: the server rejects a request without it
     #[prost(message, optional, tag = "1")]
     pub object: ::core::option::Option<Value>,
     /// Model name
@@ -7686,10 +7687,13 @@ pub struct PointsIdsList {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointStruct {
+    /// Must be set: the server rejects a point without an id
     #[prost(message, optional, tag = "1")]
     pub id: ::core::option::Option<PointId>,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Optional on the wire, but required in practice: the server rejects a point
+    /// without vectors
     #[prost(message, optional, tag = "4")]
     #[validate(nested)]
     pub vectors: ::core::option::Option<Vectors>,
