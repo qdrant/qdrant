@@ -463,6 +463,9 @@ fn log_preview_point(point: &edge::PointPreview) {
             "point {id}: already at or beyond version — skipped (replay no-op); \
              re-run with a higher --op-num to overwrite",
         ),
+        PointAction::Rejected => {
+            log::info!("point {id}: already there — rejected by the upsert's update mode");
+        }
         PointAction::Missing => {
             log::info!("point {id}: names a point no segment holds — nothing to do");
         }
@@ -526,6 +529,7 @@ fn dry_run<S: UniversalAppend + 'static>(
 
     let mut stored = 0usize;
     let mut skipped = 0usize;
+    let mut rejected = 0usize;
     let mut tombstones: HashMap<Uuid, usize> = HashMap::new();
     for point in &preview.points {
         log_preview_point(point);
@@ -542,12 +546,14 @@ fn dry_run<S: UniversalAppend + 'static>(
                 }
             }
             PointAction::Skip => skipped += 1,
+            PointAction::Rejected => rejected += 1,
             PointAction::Missing => {}
         }
     }
 
     log::info!(
-        "summary: {stored} point(s) would be appended to the write target, {skipped} skipped",
+        "summary: {stored} point(s) would be appended to the write target, \
+         {skipped} skipped, {rejected} rejected by their update mode",
     );
     for (segment, count) in &tombstones {
         log::info!("summary: segment {segment} would receive {count} tombstone(s)");
@@ -580,10 +586,12 @@ fn apply_run<S: UniversalAppend + 'static>(
         shard = returned;
 
         log::info!(
-            "applied at op-num {op_num}: {} stored, {} deleted, {} skipped, {} missing",
+            "applied at op-num {op_num}: {} stored, {} deleted, {} skipped, \
+             {} rejected, {} missing",
             outcome.stored,
             outcome.deleted,
             outcome.skipped,
+            outcome.rejected,
             outcome.missing,
         );
         for record in &outcome.points {
@@ -636,6 +644,9 @@ fn log_apply_record(record: &PointApplyRecord) {
         }
         PointApplyKind::Skipped => {
             log::info!("point {id}: skipped — already at or beyond this op-num");
+        }
+        PointApplyKind::Rejected => {
+            log::info!("point {id}: already there — rejected by its update mode");
         }
         PointApplyKind::Missing => {
             log::info!("point {id}: no segment holds it — nothing to do");

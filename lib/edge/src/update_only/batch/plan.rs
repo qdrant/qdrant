@@ -3,11 +3,12 @@
 use ahash::AHashMap;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::types::{PointIdType, SeqNumberType};
+use segment::types::{Filter, PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::payload_ops::PayloadOps;
 use shard::operations::point_ops::{
-    PointOperations, PointStructPersisted, PointStructRawPersisted,
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointOperations,
+    PointStructPersisted, PointStructRawPersisted, UpdateMode,
 };
 use shard::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
 
@@ -27,8 +28,8 @@ impl UpdateBatchPlan {
     /// operation-number order; the fold is order-sensitive.
     ///
     /// Rejects everything outside the writer's contract: operations that
-    /// select points by filter, point sync, conditional upserts, and the
-    /// schema-level operations.
+    /// select points by filter — a conditional upsert carrying a real
+    /// condition included — point sync, and the schema-level operations.
     pub fn build(
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<Self> {
@@ -76,6 +77,37 @@ impl UpdateBatchPlan {
         }
     }
 
+    /// Fold an upsert's points in under `mode`, which decides whether each of
+    /// them applies to a point that already exists, one that does not, or
+    /// both.
+    fn push_upsert(
+        &mut self,
+        op_num: SeqNumberType,
+        points: PointInsertOperationsInternal,
+        mode: UpdateMode,
+    ) {
+        for point in points.into_point_vec() {
+            // Decode before destructuring: `get_vectors` reads the still-owned
+            // `vector` field, and taking the payload by value afterwards saves
+            // a clone of it.
+            let vectors = OperationVectors::Decoded(point.get_vectors().into_owned());
+            let PointStructPersisted {
+                id,
+                vector: _,
+                payload,
+            } = point;
+            self.push(
+                id,
+                op_num,
+                PointMutation::Replace {
+                    vectors,
+                    payload: payload.unwrap_or_default(),
+                    mode,
+                },
+            );
+        }
+    }
+
     fn push_point_operation(
         &mut self,
         op_num: SeqNumberType,
@@ -83,25 +115,23 @@ impl UpdateBatchPlan {
     ) -> OperationResult<()> {
         match operation {
             PointOperations::UpsertPoints(operation) => {
-                for point in operation.into_point_vec() {
-                    // Decode before destructuring: `get_vectors` reads the
-                    // still-owned `vector` field, and taking the payload by
-                    // value afterwards saves a clone of it.
-                    let vectors = OperationVectors::Decoded(point.get_vectors().into_owned());
-                    let PointStructPersisted {
-                        id,
-                        vector: _,
-                        payload,
-                    } = point;
-                    self.push(
-                        id,
-                        op_num,
-                        PointMutation::Replace {
-                            vectors,
-                            payload: payload.unwrap_or_default(),
-                        },
-                    );
+                self.push_upsert(op_num, operation, UpdateMode::Upsert);
+            }
+            PointOperations::UpsertPointsConditional(operation) => {
+                let ConditionalInsertOperationInternal {
+                    points_op,
+                    condition,
+                    update_mode,
+                } = operation;
+                // Existence is the whole gate the accepted modes need, and the
+                // batch locates every point it touches anyway. A real
+                // condition needs payload indexes the writer never fetches —
+                // rejected for `insert_only` too, whose apply path ignores it,
+                // so a condition the caller wrote is never silently dropped.
+                if condition != Filter::default() {
+                    return Err(unsupported("conditional upserts with a filter condition"));
                 }
+                self.push_upsert(op_num, points_op, update_mode.unwrap_or_default());
             }
             PointOperations::UpsertPointsRaw(points) => {
                 for mut point in points {
@@ -119,6 +149,7 @@ impl UpdateBatchPlan {
                         PointMutation::Replace {
                             vectors: OperationVectors::Raw(vectors),
                             payload: payload.unwrap_or_default(),
+                            mode: UpdateMode::Upsert,
                         },
                     );
                 }
@@ -127,9 +158,6 @@ impl UpdateBatchPlan {
                 for id in ids {
                     self.push(id, op_num, PointMutation::Delete);
                 }
-            }
-            PointOperations::UpsertPointsConditional(_) => {
-                return Err(unsupported("conditional upserts"));
             }
             PointOperations::DeletePointsByFilter(_) => {
                 return Err(unsupported("deleting points by filter"));
