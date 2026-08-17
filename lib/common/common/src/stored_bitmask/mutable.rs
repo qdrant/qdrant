@@ -27,9 +27,8 @@ pub struct MutableStoredBitmask {
     /// Authoritative set positions. Invariant: every position is below
     /// `logical_len`.
     ones: RoaringBitmap,
-    /// Positions whose current value differs from the last persisted
-    /// snapshot; empty right after [`Self::open`] and [`Self::save`].
-    changed: RoaringBitmap,
+    /// Whether this structures has any in-memory changes that are not yet persisted.
+    changed: bool,
     /// `logical_len` of the last persisted snapshot; `None` when the mask
     /// has never been persisted (fresh [`Self::new`]).
     persisted_len: Option<u64>,
@@ -50,7 +49,7 @@ impl MutableStoredBitmask {
         Self {
             logical_len,
             ones: RoaringBitmap::new(),
-            changed: RoaringBitmap::new(),
+            changed: false,
             persisted_len: None,
         }
     }
@@ -74,7 +73,7 @@ impl MutableStoredBitmask {
         Ok(Self {
             logical_len: stored.bit_len(),
             ones: stored.read_ones()?,
-            changed: RoaringBitmap::new(),
+            changed: false,
             persisted_len: Some(stored.bit_len()),
         })
     }
@@ -116,11 +115,7 @@ impl MutableStoredBitmask {
             self.ones.remove(index)
         };
         if previous != value {
-            // Toggle divergence: flipping a bit a second time lands it back
-            // on its persisted value, so the change cancels out.
-            if !self.changed.remove(index) {
-                self.changed.insert(index);
-            }
+            self.changed = true;
         }
         previous
     }
@@ -147,7 +142,7 @@ impl MutableStoredBitmask {
 
     /// Whether the in-RAM state differs from the last persisted snapshot.
     pub fn is_dirty(&self) -> bool {
-        self.persisted_len != Some(self.logical_len) || !self.changed.is_empty()
+        self.changed || self.persisted_len != Some(self.logical_len)
     }
 
     /// Persist the mask at `path` in one atomic whole-file write, or skip
@@ -164,7 +159,7 @@ impl MutableStoredBitmask {
         let bytes = bitmask_file_bytes(self.logical_len, self.ones.clone())?;
         fs.atomic_save(path, &bytes)?;
 
-        self.changed.clear();
+        self.changed = false;
         self.persisted_len = Some(self.logical_len);
         Ok(())
     }
