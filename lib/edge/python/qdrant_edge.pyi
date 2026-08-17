@@ -2518,6 +2518,11 @@ class Expression(Enum):
         ...
 
     @staticmethod
+    def Acosh(expr: "Expression") -> "Expression":
+        """Create an inverse hyperbolic cosine expression."""
+        ...
+
+    @staticmethod
     def Abs(expr: "Expression") -> "Expression":
         """Create an absolute value expression."""
         ...

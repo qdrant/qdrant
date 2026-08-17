@@ -464,6 +464,7 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::Exp(expression) => expression.validate(),
             grpc::expression::Variant::Log10(expression) => expression.validate(),
             grpc::expression::Variant::Ln(expression) => expression.validate(),
+            grpc::expression::Variant::Acosh(expression) => expression.validate(),
             grpc::expression::Variant::ExpDecay(decay_params_expression) => {
                 decay_params_expression.validate()
             }

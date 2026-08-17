@@ -74,6 +74,7 @@ pub enum ExpressionInternal {
     Exp(Box<ExpressionInternal>),
     Log10(Box<ExpressionInternal>),
     Ln(Box<ExpressionInternal>),
+    Acosh(Box<ExpressionInternal>),
     Abs(Box<ExpressionInternal>),
     Decay {
         kind: DecayKind,
@@ -161,6 +162,9 @@ impl ExpressionInternal {
                 expression_internal.parse_and_convert(payload_vars, conditions)?,
             )),
             ExpressionInternal::Ln(expression_internal) => ParsedExpression::Ln(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Acosh(expression_internal) => ParsedExpression::Acosh(Box::new(
                 expression_internal.parse_and_convert(payload_vars, conditions)?,
             )),
             ExpressionInternal::Abs(expression_internal) => ParsedExpression::Abs(Box::new(

@@ -282,6 +282,14 @@ impl Expression {
         })
     }
 
+    /// Inverse hyperbolic cosine.
+    #[uniffi::constructor]
+    pub fn acosh(expression: Arc<Expression>) -> Result<Arc<Self>> {
+        Self::node(&[&expression], || {
+            ExpressionInternal::Acosh(Box::new(expression.inner.clone()))
+        })
+    }
+
     /// Absolute value.
     #[uniffi::constructor]
     pub fn abs(expression: Arc<Expression>) -> Result<Arc<Self>> {
@@ -377,6 +385,8 @@ fn assert_every_expression_is_mapped(e: ExpressionInternal) {
         ExpressionInternal::Log10(_) => {}
         // [`Expression::ln`]
         ExpressionInternal::Ln(_) => {}
+        // [`Expression::acosh`]
+        ExpressionInternal::Acosh(_) => {}
         // [`Expression::abs`]
         ExpressionInternal::Abs(_) => {}
         // [`Expression::decay`], with every [`DecayKind`]

@@ -976,6 +976,8 @@ message Expression {
     DecayParamsExpression gauss_decay = 18;
     // Linear decay
     DecayParamsExpression lin_decay = 19;
+    // Inverse hyperbolic cosine
+    Expression acosh = 20;
   }
 }
 

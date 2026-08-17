@@ -250,6 +250,16 @@ impl FormulaScorer<'_> {
                     expression: format!("ln({value}) = {ln_value}"),
                 })
             }
+            ParsedExpression::Acosh(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                let acosh_value = value.acosh();
+                if acosh_value.is_finite() {
+                    return Ok(acosh_value);
+                }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("acosh({value}) = {acosh_value}"),
+                })
+            }
             ParsedExpression::Abs(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.abs())
@@ -440,6 +450,17 @@ mod tests {
         ParsedExpression::Constant(PreciseScoreOrdered::from(10.0)), ParsedExpression::new_score_id(0), None
     ), 10.0 / 1.0)]
     #[case(ParsedExpression::new_neg(ParsedExpression::Constant(PreciseScoreOrdered::from(10.0))), -10.0)]
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(1.0))),
+        0.0
+    )]
+    // acosh(cosh(2)) == 2
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(
+            3.7621956910836314
+        ))),
+        2.0
+    )]
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
         GeoPoint::new_unchecked(-100.43383200156751, 25.717877679163667), JsonPath::new(GEO_FIELD_NAME)
@@ -469,6 +490,11 @@ mod tests {
     #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0) = -inf" }"#)]
     #[case(
         ParsedExpression::new_ln(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        0.0
+    )]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "acosh(0.5) = NaN" }"#)]
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(0.5))),
         0.0
     )]
     #[test]

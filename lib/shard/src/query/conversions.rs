@@ -686,6 +686,9 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::Ln(rest::LnExpression { ln: expr }) => {
                 ExpressionInternal::Ln(Box::new(ExpressionInternal::from(*expr)))
             }
+            rest::Expression::Acosh(rest::AcoshExpression { acosh: expr }) => {
+                ExpressionInternal::Acosh(Box::new(ExpressionInternal::from(*expr)))
+            }
             rest::Expression::Abs(rest::AbsExpression { abs: expr }) => {
                 ExpressionInternal::Abs(Box::new(ExpressionInternal::from(*expr)))
             }
@@ -832,6 +835,9 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                 ExpressionInternal::Log10(Box::new((*expression).try_into()?))
             }
             Variant::Ln(expression) => ExpressionInternal::Ln(Box::new((*expression).try_into()?)),
+            Variant::Acosh(expression) => {
+                ExpressionInternal::Acosh(Box::new((*expression).try_into()?))
+            }
             Variant::LinDecay(decay_params) => {
                 try_from_decay_params(*decay_params, DecayKind::Lin)?
             }

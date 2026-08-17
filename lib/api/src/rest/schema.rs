@@ -945,6 +945,7 @@ pub enum Expression {
     Exp(ExpExpression),
     Log10(Log10Expression),
     Ln(LnExpression),
+    Acosh(AcoshExpression),
     LinDecay(LinDecayExpression),
     ExpDecay(ExpDecayExpression),
     GaussDecay(GaussDecayExpression),
@@ -1047,6 +1048,12 @@ pub struct Log10Expression {
 pub struct LnExpression {
     #[validate(nested)]
     pub ln: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct AcoshExpression {
+    #[validate(nested)]
+    pub acosh: Box<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
