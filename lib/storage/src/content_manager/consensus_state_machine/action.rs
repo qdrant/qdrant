@@ -21,6 +21,11 @@ pub enum Action {
         field_name: PayloadKeyType,
         field_schema: PayloadFieldSchema,
     },
+
+    DropPayloadIndex {
+        collection: CollectionId,
+        field_name: PayloadKeyType,
+    },
 }
 
 impl Action {
@@ -29,7 +34,8 @@ impl Action {
         match self {
             Action::AddNamedVector { collection, .. }
             | Action::DropNamedVector { collection, .. }
-            | Action::SetPayloadIndex { collection, .. } => Some(collection),
+            | Action::SetPayloadIndex { collection, .. }
+            | Action::DropPayloadIndex { collection, .. } => Some(collection),
         }
     }
 }

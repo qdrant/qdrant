@@ -59,6 +59,17 @@ impl ClusterState {
                     .schema
                     .insert(field_name.clone(), field_schema.clone());
             }
+
+            Action::DropPayloadIndex {
+                collection,
+                field_name,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.payload_index_schema.schema.remove(field_name);
+            }
         }
     }
 

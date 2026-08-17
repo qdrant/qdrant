@@ -68,4 +68,18 @@ impl ClusterState {
             field_schema: field_schema.clone(),
         }])
     }
+
+    pub fn plan_drop_payload_index(&self, op: &DropPayloadIndex) -> StorageResult<Actions> {
+        let DropPayloadIndex {
+            collection_name,
+            field_name,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+
+        Ok(vec![Action::DropPayloadIndex {
+            collection,
+            field_name: field_name.clone(),
+        }])
+    }
 }
