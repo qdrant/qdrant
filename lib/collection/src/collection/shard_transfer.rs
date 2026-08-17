@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
+use common::slow_await::{slow_await, slow_block};
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
@@ -157,8 +158,10 @@ impl Collection {
                 CollectionError::bad_request(format!("shard {to_shard_id} doesn't exist"))
             })?;
 
-            let _was_not_transferred =
-                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
+            let _was_not_transferred = slow_block(
+                "registering a shard transfer in start_shard_transfer",
+                || shards_holder.register_start_shard_transfer(shard_transfer.clone()),
+            )?;
 
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
@@ -177,17 +180,20 @@ impl Collection {
             if !to_is_local && is_receiver {
                 let effective_optimizers_config = self.effective_optimizers_config().await?;
 
-                let shard = LocalShard::build(
-                    to_shard_id,
-                    self.name().to_string(),
-                    &to_replica_set.shard_path,
-                    self.collection_config.clone(),
-                    self.shared_storage_config.clone(),
-                    self.payload_index_schema.clone(),
-                    self.update_runtime.clone(),
-                    self.search_runtime.clone(),
-                    self.optimizer_resource_budget.clone(),
-                    effective_optimizers_config,
+                let shard = slow_await(
+                    "building a local shard in start_shard_transfer",
+                    LocalShard::build(
+                        to_shard_id,
+                        self.name().to_string(),
+                        &to_replica_set.shard_path,
+                        self.collection_config.clone(),
+                        self.shared_storage_config.clone(),
+                        self.payload_index_schema.clone(),
+                        self.update_runtime.clone(),
+                        self.search_runtime.clone(),
+                        self.optimizer_resource_budget.clone(),
+                        effective_optimizers_config,
+                    ),
                 )
                 .await?;
 
@@ -197,9 +203,11 @@ impl Collection {
                     old_shard.stop_gracefully().await;
                 }
             } else {
-                to_replica_set
-                    .ensure_replica_with_state(shard_transfer.to, initial_state)
-                    .await?;
+                slow_await(
+                    "updating replica state in start_shard_transfer",
+                    to_replica_set.ensure_replica_with_state(shard_transfer.to, initial_state),
+                )
+                .await?;
             }
 
             from_is_local && is_sender
@@ -342,20 +350,31 @@ impl Collection {
         let initial_state = self.initial_replica_state_for_transfer(new_method).await?;
 
         // 2. Stop the running transfer task for the old record.
-        let _ = self
-            .transfer_tasks
-            .lock()
-            .await
-            .stop_task(&transfer_key)
-            .await;
+        let _ = slow_await(
+            "stopping the old transfer task in restart_shard_transfer",
+            async {
+                self.transfer_tasks
+                    .lock()
+                    .await
+                    .stop_task(&transfer_key)
+                    .await
+            },
+        )
+        .await;
 
         {
             let shard_holder = self.shards_holder.read().await;
 
             // 3. Sender: revert the queue/proxy back to a plain local shard.
             if is_sender {
-                transfer::driver::revert_proxy_shard_to_local(&shard_holder, new_transfer.shard_id)
-                    .await?;
+                slow_await(
+                    "reverting the proxy shard in restart_shard_transfer",
+                    transfer::driver::revert_proxy_shard_to_local(
+                        &shard_holder,
+                        new_transfer.shard_id,
+                    ),
+                )
+                .await?;
             }
 
             // The destination replica set exists on every peer (remote elsewhere,
@@ -371,7 +390,11 @@ impl Collection {
             //    proposed as a WAL-delta transfer fallback (never resharding), and the
             //    fallback method fully re-populates the destination.
             if is_receiver {
-                dest_replica_set.init_empty_local_shard().await?;
+                slow_await(
+                    "resetting the local shard in restart_shard_transfer",
+                    dest_replica_set.init_empty_local_shard(),
+                )
+                .await?;
             }
 
             // 5. All peers: set the destination replica to the new method's
@@ -382,7 +405,10 @@ impl Collection {
 
             // 6. Update the record's method in place. This is the last durable
             //    write, so it gates the whole operation on replay (see the doc comment).
-            shard_holder.register_restart_transfer(&transfer_key, new_method)?;
+            slow_block(
+                "registering a transfer restart in restart_shard_transfer",
+                || shard_holder.register_restart_transfer(&transfer_key, new_method),
+            )?;
         }
 
         // 7. Sender: (re)spawn the transfer driver for the new transfer.
