@@ -99,7 +99,6 @@ impl ConsensusStateMachine {
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _)
             | CollectionMetaOperations::Resharding(_, _)
-            | CollectionMetaOperations::CreatePayloadIndex(_)
             | CollectionMetaOperations::DropPayloadIndex(_) => ApplyOutcome::NotCovered,
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
@@ -109,6 +108,9 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_delete_named_vector(operation))
             }
 
+            CollectionMetaOperations::CreatePayloadIndex(operation) => {
+                ApplyOutcome::new(self.state.plan_create_payload_index(operation))
+            }
             // Sleeps, or fails at random. Neither is a state change to plan.
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(_)

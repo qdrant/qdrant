@@ -44,6 +44,21 @@ impl ClusterState {
                     vector_name,
                 );
             }
+
+            Action::SetPayloadIndex {
+                collection,
+                field_name,
+                field_schema,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state
+                    .payload_index_schema
+                    .schema
+                    .insert(field_name.clone(), field_schema.clone());
+            }
         }
     }
 

@@ -52,4 +52,20 @@ impl ClusterState {
             vector_name: vector_name.clone(),
         }])
     }
+
+    pub fn plan_create_payload_index(&self, op: &CreatePayloadIndex) -> StorageResult<Actions> {
+        let CreatePayloadIndex {
+            collection_name,
+            field_name,
+            field_schema,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+
+        Ok(vec![Action::SetPayloadIndex {
+            collection,
+            field_name: field_name.clone(),
+            field_schema: field_schema.clone(),
+        }])
+    }
 }

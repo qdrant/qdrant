@@ -1,5 +1,5 @@
 use collection::shards::CollectionId;
-use segment::types::VectorNameBuf;
+use segment::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use shard::operations::vector_name_ops::VectorNameConfig;
 
 /// A single change a consensus operation makes
@@ -15,6 +15,12 @@ pub enum Action {
         collection: CollectionId,
         vector_name: VectorNameBuf,
     },
+
+    SetPayloadIndex {
+        collection: CollectionId,
+        field_name: PayloadKeyType,
+        field_schema: PayloadFieldSchema,
+    },
 }
 
 impl Action {
@@ -22,7 +28,8 @@ impl Action {
     pub fn collection(&self) -> Option<&CollectionId> {
         match self {
             Action::AddNamedVector { collection, .. }
-            | Action::DropNamedVector { collection, .. } => Some(collection),
+            | Action::DropNamedVector { collection, .. }
+            | Action::SetPayloadIndex { collection, .. } => Some(collection),
         }
     }
 }
