@@ -702,15 +702,24 @@ mod tests {
             "good collection request should not error on validation"
         );
 
-        // Collection name validation must not be strict on non-creation
+        // Collection name validation must not be strict on non-creation. On Windows a
+        // backslash is a path separator, so there the same name is a path — it is rejected,
+        // and no existing collection can carry it (see `check_plain_dir_name`).
         let bad_request = UpdateCollection {
             collection_name: "no\\path".into(),
             ..Default::default()
         };
-        assert!(
-            bad_request.validate().is_ok(),
-            "good collection request should not error on validation"
-        );
+        if cfg!(windows) {
+            assert!(
+                bad_request.validate().is_err(),
+                "backslash collection name is a path on Windows and must error on validation"
+            );
+        } else {
+            assert!(
+                bad_request.validate().is_ok(),
+                "good collection request should not error on validation"
+            );
+        }
 
         // Collection name validation must not be strict on non-creation
         let bad_request = UpdateCollection {

@@ -465,6 +465,31 @@ mod tests {
             );
         }
 
+        // On Windows, backslashes are separators and drive prefixes re-root the joined path,
+        // so these names are paths there too. The legacy character list deliberately allows
+        // `\` and `:`, so containment rests on the plain-name check alone. No existing
+        // collection can carry such a name on Windows — they were never valid directory
+        // names there. (The strict validator rejects `\` and `:` on every platform.)
+        #[cfg(windows)]
+        for name in ["..\\other-collection", "a\\b", "C:", "C:other"] {
+            assert!(
+                validate_collection_name_legacy(name).is_err(),
+                "collection name {name:?} is a path on Windows and must be rejected by the \
+                 legacy validator",
+            );
+        }
+
+        // On Unix, a backslash is a plain character: the same name is a single path component
+        // and must stay valid, so existing collections keep working.
+        #[cfg(unix)]
+        for name in ["no\\path", "C:"] {
+            assert!(
+                validate_collection_name_legacy(name).is_ok(),
+                "collection name {name:?} is a single path component on Unix and must stay \
+                 valid for the legacy validator",
+            );
+        }
+
         // Names merely containing dots do not traverse and must stay valid, so existing
         // collections with such names remain reachable.
         for name in ["v1.2", ".hidden", "..dots", "..."] {
