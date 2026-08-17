@@ -473,6 +473,9 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::LinDecay(decay_params_expression) => {
                 decay_params_expression.validate()
             }
+            grpc::expression::Variant::StrDist(str_dist_params_expression) => {
+                str_dist_params_expression.validate()
+            }
         }
     }
 }
@@ -606,6 +609,7 @@ mod tests {
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
         GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request, vector,
     };
+    use crate::grpc::{StrDistFunc, StrDistParamsExpression};
 
     #[test]
     fn test_dense_vector_rejects_empty_data() {
@@ -891,6 +895,29 @@ mod tests {
         assert!(
             good_polygon.validate().is_ok(),
             "good polygon should not error on validation"
+        );
+    }
+
+    #[test]
+    fn test_str_dist_query_validation() {
+        let bad_request = StrDistParamsExpression {
+            field: String::from("title"),
+            query: String::from(""),
+            func: StrDistFunc::Levenshtein as i32,
+        };
+        assert!(
+            bad_request.validate().is_err(),
+            "empty str_dist query should error on validation"
+        );
+
+        let good_request = StrDistParamsExpression {
+            field: String::from("title"),
+            query: String::from("hello"),
+            func: StrDistFunc::JaroWinkler as i32,
+        };
+        assert!(
+            good_request.validate().is_ok(),
+            "non-empty str_dist query should not error on validation"
         );
     }
 
