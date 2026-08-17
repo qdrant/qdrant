@@ -49,7 +49,7 @@ pub struct RunningEnvironmentTelemetry {
     /// collected, or on transient failures reading process CPU time.
     #[anonymize(false)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    cpu_cores_used: Option<f32>,
+    pub cpu_cores_used: Option<f32>,
     /// Effective total memory for this process in KiB (cgroup limit or host RAM).
     ram_size: Option<usize>,
     /// Size in KiB of the filesystem hosting Qdrant's /storage path (if not available, fallback to host disk size)

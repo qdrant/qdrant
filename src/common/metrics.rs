@@ -223,6 +223,18 @@ impl MetricsProvider for AppBuildTelemetry {
                 prefix,
             ));
         }
+
+        if let Some(system) = &self.system
+            && let Some(cpu_cores_used) = system.cpu_cores_used
+        {
+            metrics.push_metric(metric_family(
+                "cpu_cores_used",
+                "average number of CPU cores used by this process over roughly the last two seconds",
+                MetricType::GAUGE,
+                vec![gauge(f64::from(cpu_cores_used), &[])],
+                prefix,
+            ));
+        }
     }
 }
 
