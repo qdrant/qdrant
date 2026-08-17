@@ -52,6 +52,13 @@ pub mod prelude {
 /// Allow us updating our peer metadata once every 60 seconds
 const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Log a warning if applying a single consensus entry takes longer than this.
+///
+/// Applying is synchronous and inline, so for that long the peer sends no heartbeats, reports no
+/// ticks and applies no further entry — it also keeps serving requests against the replica set
+/// state as it was before the entry.
+const SLOW_APPLY_REPORT_THRESHOLD: Duration = Duration::from_secs(1);
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
     pub collections_data: CollectionsSnapshot,
@@ -425,6 +432,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     }
                 }
             };
+            let apply_duration = apply_started.elapsed();
+            if apply_duration >= SLOW_APPLY_REPORT_THRESHOLD {
+                log::warn!(
+                    "Slow consensus entry: applying {entry_index} took {apply_duration:.2?}, \
+                     stalling the consensus thread for that long",
+                );
+            }
+
             if stop_consensus {
                 return Ok(stop_consensus);
             }
@@ -432,7 +447,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
-            self.applied_log.record(&entry, apply_started.elapsed());
+            self.applied_log.record(&entry, apply_duration);
         }
         Ok(false) // do not stop consensus
     }
