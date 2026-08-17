@@ -65,12 +65,17 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         if new_len == self.len {
             return Ok(());
         }
-        assert!(new_len > self.len, "live_reload only supports appends");
+        if new_len < self.len {
+            return Err(
+                crate::common::operation_error::OperationError::service_error(
+                    "live_reload only supports appends",
+                ),
+            );
+        }
 
         // First chunk that can have changed: the one committed by `len`
         let last_chunk = self.config.get_chunk_index(self.len);
 
-        // Fresh handle for the watermark chunk, if held and the file actually changed.
         let fresh_from = if last_chunk < self.chunks.len() {
             if let Some(fresh_chunk) = TypedStorage::open(
                 fs,
@@ -80,6 +85,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
             )
             .ok_unchanged()?
             {
+                // Fresh handle for the watermark chunk
                 self.chunks[last_chunk] = fresh_chunk;
             }
             last_chunk + 1
