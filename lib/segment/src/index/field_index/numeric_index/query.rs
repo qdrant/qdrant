@@ -362,11 +362,11 @@ where
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.index.check_values_any(
+        self.index.check_values_any(
             point_id,
             |value| self.typed_range.check_range(*value),
             &self.hw_counter,
-        ))
+        )
     }
 
     fn check_batched<K: CheckItem>(
