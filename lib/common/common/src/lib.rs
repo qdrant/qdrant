@@ -43,7 +43,6 @@ pub mod rate_limiting;
 pub mod raw_bytes_serde;
 pub mod save_on_disk;
 pub mod scope_tracker;
-pub mod slow_await;
 pub mod small_uint;
 pub mod sort_utils;
 pub mod sorted_slice;
