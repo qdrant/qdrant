@@ -70,7 +70,7 @@ pub struct SnapshotRecover {
 
     /// Defines which data should be used as a source of truth if there are other replicas in the cluster.
     /// If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten.
-    /// If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.
+    /// If set to `Replica`, the current state will be used as a source of truth, and after recovery it will be synchronized from other replicas.
     #[serde(default)]
     pub priority: Option<SnapshotPriority>,
 
