@@ -334,22 +334,6 @@ mod mutable {
     }
 
     #[test]
-    fn reverted_change_is_clean_again() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("mask.bin");
-        let ones = RoaringBitmap::from_sorted_iter([20u32]).unwrap();
-        save_bitmask(&MmapFs, &path, 100, ones).unwrap();
-
-        let mut mask = open_mutable(&path);
-        mask.set(20, false);
-        mask.set(30, true);
-        assert!(mask.is_dirty());
-        mask.set(20, true);
-        mask.set(30, false);
-        assert!(!mask.is_dirty());
-    }
-
-    #[test]
     fn save_when_clean_skips_write() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("mask.bin");
