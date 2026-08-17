@@ -99,7 +99,7 @@ rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory
 # (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
 sysinfo = { workspace = true }
-charabia = { version = "0.9.9", default-features = false, features = [
+charabia = { version = "0.10.0", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
