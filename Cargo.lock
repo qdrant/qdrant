@@ -7757,9 +7757,9 @@ dependencies = [
 
 [[package]]
 name = "stumpalo"
-version = "0.5.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd4fa66d5ecd840ccd544aeddcb68172bb374d6cc7edce7efda7f348dca7f0ed"
+checksum = "bf4a1e52ba589579bfea17e809d8845f5f216b76aac28c370a566b2a23f4ac09"
 dependencies = [
  "readme-rustdocifier",
  "rustc_version",
