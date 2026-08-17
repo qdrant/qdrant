@@ -6572,7 +6572,7 @@ pub struct Formula {
 pub struct Expression {
     #[prost(
         oneof = "expression::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20"
     )]
     #[validate(nested)]
     pub variant: ::core::option::Option<expression::Variant>,
@@ -6638,6 +6638,9 @@ pub mod expression {
         /// Linear decay
         #[prost(message, tag = "19")]
         LinDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
+        /// Inverse hyperbolic cosine
+        #[prost(message, tag = "20")]
+        Acosh(::prost::alloc::boxed::Box<super::Expression>),
     }
 }
 #[derive(serde::Serialize)]

@@ -79,6 +79,7 @@ pub enum ParsedExpression {
     Exp(Box<ParsedExpression>),
     Log10(Box<ParsedExpression>),
     Ln(Box<ParsedExpression>),
+    Acosh(Box<ParsedExpression>),
     Abs(Box<ParsedExpression>),
     Decay {
         kind: DecayKind,
@@ -165,6 +166,10 @@ impl ParsedExpression {
 
     pub fn new_ln(expression: ParsedExpression) -> Self {
         ParsedExpression::Ln(Box::new(expression))
+    }
+
+    pub fn new_acosh(expression: ParsedExpression) -> Self {
+        ParsedExpression::Acosh(Box::new(expression))
     }
 
     pub fn new_payload_id(path: JsonPath) -> Self {

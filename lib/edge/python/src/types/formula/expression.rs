@@ -67,6 +67,7 @@ impl FromPyObject<'_, '_> for PyExpression {
             PyExpressionInterface::Exp { expr } => ExpressionInternal::Exp(expr.into_box()),
             PyExpressionInterface::Log10 { expr } => ExpressionInternal::Log10(expr.into_box()),
             PyExpressionInterface::Ln { expr } => ExpressionInternal::Ln(expr.into_box()),
+            PyExpressionInterface::Acosh { expr } => ExpressionInternal::Acosh(expr.into_box()),
             PyExpressionInterface::Abs { expr } => ExpressionInternal::Abs(expr.into_box()),
 
             PyExpressionInterface::Decay {
@@ -158,6 +159,10 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 expr: Boxed::from_box(expr),
             },
 
+            ExpressionInternal::Acosh(expr) => PyExpressionInterface::Acosh {
+                expr: Boxed::from_box(expr),
+            },
+
             ExpressionInternal::Abs(expr) => PyExpressionInterface::Abs {
                 expr: Boxed::from_box(expr),
             },
@@ -241,6 +246,7 @@ impl Repr for PyExpression {
             ExpressionInternal::Exp(expr) => ("Exp", &[("expr", PyExpression::wrap_ref(expr))]),
             ExpressionInternal::Log10(expr) => ("Log10", &[("expr", PyExpression::wrap_ref(expr))]),
             ExpressionInternal::Ln(expr) => ("Ln", &[("expr", PyExpression::wrap_ref(expr))]),
+            ExpressionInternal::Acosh(expr) => ("Acosh", &[("expr", PyExpression::wrap_ref(expr))]),
             ExpressionInternal::Abs(expr) => ("Abs", &[("expr", PyExpression::wrap_ref(expr))]),
 
             ExpressionInternal::Decay {

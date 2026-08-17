@@ -73,6 +73,10 @@ pub enum PyExpressionInterface {
         expr: Boxed<PyExpression>,
     },
 
+    Acosh {
+        expr: Boxed<PyExpression>,
+    },
+
     Abs {
         expr: Boxed<PyExpression>,
     },
@@ -128,6 +132,7 @@ impl Repr for PyExpressionInterface {
             PyExpressionInterface::Exp { expr } => ("Exp", &[("expr", expr)]),
             PyExpressionInterface::Log10 { expr } => ("Log10", &[("expr", expr)]),
             PyExpressionInterface::Ln { expr } => ("Ln", &[("expr", expr)]),
+            PyExpressionInterface::Acosh { expr } => ("Acosh", &[("expr", expr)]),
             PyExpressionInterface::Abs { expr } => ("Abs", &[("expr", expr)]),
 
             PyExpressionInterface::Decay {

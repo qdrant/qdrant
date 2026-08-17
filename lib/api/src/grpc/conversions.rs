@@ -3658,6 +3658,9 @@ fn unparse_expression(
             Variant::Log10(Box::new(unparse_expression(*expr, conditions)))
         }
         ParsedExpression::Ln(expr) => Variant::Ln(Box::new(unparse_expression(*expr, conditions))),
+        ParsedExpression::Acosh(expr) => {
+            Variant::Acosh(Box::new(unparse_expression(*expr, conditions)))
+        }
         ParsedExpression::Abs(expr) => {
             Variant::Abs(Box::new(unparse_expression(*expr, conditions)))
         }
