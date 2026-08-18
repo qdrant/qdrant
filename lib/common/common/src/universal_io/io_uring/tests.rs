@@ -365,3 +365,53 @@ fn test_io_uring_direct_io() -> UioResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_io_uring_read_bytes_async() -> UioResult<()> {
+    let dir = tempfile::tempdir().unwrap();
+
+    // 2 + some pages of data, so the O_DIRECT tail block is short
+    let data: Vec<u8> = (0..KERNEL_PAGE_SIZE * 2 + 1337)
+        .map(|idx| (idx % 256) as u8)
+        .collect();
+
+    // --- buffered: whole file, sub-range, and concurrent reads ---
+    let file = test_file(&dir.path().join("async.bin"), &data, false)?;
+
+    let whole = file
+        .read_bytes_async(0..data.len() as u64, Sequential, 1)
+        .await?;
+    assert_eq!(whole.as_ref(), &data);
+
+    let sub = file.read_bytes_async(100..5000, Sequential, 1).await?;
+    assert_eq!(sub.as_ref(), &data[100..5000]);
+
+    let (a, b, c) = tokio::try_join!(
+        file.read_bytes_async(0..1000, Sequential, 1),
+        file.read_bytes_async(1000..2000, Sequential, 1),
+        file.read_bytes_async(2000..3000, Sequential, 1),
+    )?;
+    assert_eq!(a.as_ref(), &data[0..1000]);
+    assert_eq!(b.as_ref(), &data[1000..2000]);
+    assert_eq!(c.as_ref(), &data[2000..3000]);
+
+    // --- O_DIRECT: page-aligned blocks, short tail block at EOF ---
+    let file = test_file(&dir.path().join("async_direct.bin"), &data, true)?;
+
+    for (idx, expected) in data.chunks(KERNEL_PAGE_SIZE).enumerate() {
+        let start = idx * KERNEL_PAGE_SIZE;
+        let range = start as u64..(start + expected.len()) as u64;
+
+        let bytes = file
+            .read_bytes_async(range, Sequential, KERNEL_PAGE_SIZE)
+            .await?;
+
+        assert_eq!(
+            bytes.as_ref(),
+            expected,
+            "O_DIRECT async block {idx} mismatch"
+        );
+    }
+
+    Ok(())
+}

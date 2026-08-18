@@ -209,8 +209,17 @@ impl UniversalRead for IoUringFile {
         _access_pattern: P,
         align: usize,
     ) -> UioResult<ACow<'_>> {
-        // TODO(uio): implement real async
-        self.read_bytes(range, _access_pattern, align)
+        let mut rt = IoUringReadRuntime::new()?;
+
+        let entry = rt.state().read((), self.fd(), self.direct_io, range, align);
+        rt.enqueue(entry)?;
+
+        // warn: dropping this future mid-flight blocks in `rt`'s Drop until
+        // the kernel finishes the read (the buffer must outlive it).
+        rt.submit_and_wait_async().await?;
+
+        let (_, bytes) = rt.completed().next().expect("there's exactly one read")?;
+        Ok(ACow::Owned(bytes))
     }
 
     fn len<T>(&self) -> UioResult<u64> {

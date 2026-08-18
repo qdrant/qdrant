@@ -1,10 +1,13 @@
 use std::io;
 use std::ops::Range;
+use std::os::fd::AsRawFd as _;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{opcode, squeue};
 use aligned_vec::{AVec, RuntimeAlign};
 use slab::Slab;
+use tokio::io::Interest;
+use tokio::io::unix::AsyncFd;
 
 use super::*;
 
@@ -96,6 +99,38 @@ impl<Req, U> IoUringRuntime<Req, U> {
         debug_assert_eq!(remaining, 0);
 
         self.in_progress += enqueued - remaining;
+
+        Ok(())
+    }
+
+    /// Like [`Self::submit_and_wait`], but parks on the tokio reactor instead
+    /// of blocking in `io_uring_enter`: submits enqueued entries, then
+    /// resolves once at least one completion is available to reap.
+    ///
+    /// Must be polled within a tokio runtime.
+    pub async fn submit_and_wait_async(&mut self) -> io::Result<()> {
+        debug_assert!(
+            self.enqueued() + self.in_progress > 0,
+            "io_uring would never wake: no operations enqueued or in-progress"
+        );
+
+        self.submit_and_wait(0)?;
+
+        if self.io_uring.completion().is_empty() {
+            // The ring fd polls readable while the completion queue is
+            // non-empty. `AsyncFd` holds a copy of the raw fd, which stays
+            // open for as long as the ring it belongs to.
+            let ring_fd = AsyncFd::with_interest(self.io_uring.as_raw_fd(), Interest::READABLE)
+                .map_err(|err| {
+                    io_error_context(err, "failed to register io_uring fd with the reactor")
+                })?;
+
+            while self.io_uring.completion().is_empty() {
+                // Clearing before the re-check can't lose a wakeup: the queue
+                // only goes from empty to non-empty while we hold the ring.
+                ring_fd.readable().await?.clear_ready();
+            }
+        }
 
         Ok(())
     }
