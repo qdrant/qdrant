@@ -8,7 +8,6 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedFs, CachedReadFs, OkNotFound, Populate, UniversalReadFs, read_json_via,
 };
-use parking_lot::Mutex;
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -331,7 +330,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_index,
             payload_storage,
             pending_reload: AtomicRefCell::new(Default::default()),
-            reload_fs: Mutex::new(fs),
+            reload_fs: AtomicRefCell::new(fs),
             segment_type,
             segment_config: config,
         })

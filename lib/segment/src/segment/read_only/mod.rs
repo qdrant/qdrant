@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::universal_io::CachedFs;
-use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
@@ -54,7 +53,7 @@ pub struct ReadOnlySegment<S: UniversalReadExt + 'static> {
     /// re-snapshots its listing and stages into its prefetch pool, [`live_reload`](ReadOnlySegment::live_reload)
     /// consumes what was staged. Retaining it gives unchanged-detection a previous
     /// listing to compare against — the open-time one for the first reload.
-    pub(crate) reload_fs: Mutex<CachedFs<S::Fs>>,
+    pub(crate) reload_fs: AtomicRefCell<CachedFs<S::Fs>>,
 
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
