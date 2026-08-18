@@ -145,6 +145,46 @@ impl SegmentHolder {
         })
     }
 
+    /// Flushes a single segment outside `flush_all`, honoring its copy-on-write dependencies.
+    ///
+    /// The flush durably advances `segment` PAST the delete halves of any pending copy-on-write
+    /// moves out of it. Those moves are only replayable while a durable pre-image exists, so
+    /// their destinations must be durable at or beyond the move BEFORE the source flushes: they
+    /// are flushed first, mirroring `flush_all`'s dependency ordering. Destinations absent from
+    /// the holder already left through the optimizer's pinned swap path, which caps the WAL
+    /// acknowledge until they are durable. One hop is enough: destinations are appendable
+    /// segments and never copy-on-write sources themselves.
+    ///
+    /// The caller already holds `segment`'s guard (and must keep holding it across whatever
+    /// the flush pins, e.g. the payload-index build), so the guard is passed in rather than
+    /// re-locked. Destination read guards are taken before entering the flush lock to keep the
+    /// [segment locks -> flush lock] ordering documented on `with_flush_serialized`. Lock order
+    /// within segments also matches `apply_points_to_appendable` (copy-on-write source first,
+    /// then the appendable destination).
+    pub fn flush_segment_with_cow_destinations(
+        &self,
+        segment_id: SegmentId,
+        segment: &dyn StorageSegmentEntry,
+    ) -> OperationResult<()> {
+        let cow_destinations: Vec<_> = self
+            .cow_flush_destinations(segment_id)
+            .into_iter()
+            .filter_map(|destination_id| self.get(destination_id))
+            .map(|destination| destination.get())
+            .collect();
+        let destination_guards: Vec<_> = cow_destinations
+            .iter()
+            .map(|destination| destination.read())
+            .collect();
+        self.with_flush_serialized(|| {
+            for destination in &destination_guards {
+                destination.flush(true)?;
+            }
+            segment.flush(true)?;
+            Ok(())
+        })
+    }
+
     fn non_appendable_then_appendable_segments_ids(&self) -> impl Iterator<Item = SegmentId> {
         let non_appendable_segments = self.non_appendable_segments_ids();
         let appendable_segments = self.appendable_segments_ids();
@@ -235,14 +275,9 @@ impl SegmentHolder {
     /// Segment ids holding not-yet-flushed copy-on-write destinations of `segment_id`'s moves.
     ///
     /// Every copy-on-write move out of `segment_id` records an edge here (see
-    /// `apply_points_with_conditional_move`); until the destination is durable at or beyond the
-    /// move, flushing `segment_id` durably bakes in the delete half while the only remaining copy
-    /// is memory-only, and the move's WAL entry stops being replayable (its pre-image is gone).
-    /// Any flush of a single segment outside `flush_all`'s dependency-ordered pass must therefore
-    /// flush these destinations first.
-    ///
-    /// Sorted so callers lock destinations in `flush_all`'s in-group order.
-    pub fn cow_flush_destinations(&self, segment_id: SegmentId) -> Vec<SegmentId> {
+    /// `apply_points_with_conditional_move`). Sorted so callers lock destinations in
+    /// `flush_all`'s in-group order.
+    fn cow_flush_destinations(&self, segment_id: SegmentId) -> Vec<SegmentId> {
         let flush_dependency = self.flush_dependency.lock();
         let mut destinations: Vec<SegmentId> = flush_dependency
             .dependencies_of(&segment_id)
