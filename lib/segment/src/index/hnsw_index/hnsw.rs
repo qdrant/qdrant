@@ -2,13 +2,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::flags::feature_flags;
 use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::graph::{HnswGraph, HnswLinksStorage};
+#[cfg(test)]
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -47,7 +51,7 @@ pub struct HNSWIndex {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    graph: GraphLayers,
+    graph: HnswGraph<HnswLinksStorage>,
     searches_telemetry: HNSWSearchesTelemetry,
     is_on_disk: bool,
 }
@@ -79,7 +83,12 @@ impl HNSWIndex {
         let (memory, residency) = graph_residency(&hnsw_config, None);
         let is_on_disk = memory.is_on_disk();
 
-        let graph = GraphLayers::load(path, residency, do_convert)?;
+        let with_uring = use_io_uring(
+            IoUringFallback::Mmap,
+            memory,
+            feature_flags().async_hnsw_graph,
+        );
+        let graph = HnswGraph::open(path, residency, do_convert, with_uring)?;
 
         Ok(HNSWIndex {
             id_tracker,
@@ -109,7 +118,7 @@ impl HNSWIndex {
 
     #[cfg(test)]
     pub(super) fn graph(&self) -> &GraphLayers {
-        &self.graph
+        self.graph.as_direct().unwrap()
     }
 
     pub fn get_quantized_vectors(&self) -> Arc<AtomicRefCell<Option<QuantizedVectors>>> {
