@@ -141,6 +141,7 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
 
     # Stop it again to inject the stale address below.
     reinit_peer_process = processes[1]
+    restart_port = reinit_peer_process.p2p_port
     reinit_peer_process.kill()
     processes.remove(reinit_peer_process)
 
@@ -170,8 +171,15 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     # still alive and reachable at the injected address. This peer's own
     # consensus can never reach `old_commit`, so `/readyz` must not depend
     # on it.
+    #
+    # Keep the same URI: restarting under a new one makes the peer announce
+    # its address change to every address-book entry, i.e. also to the old
+    # first peer, which then re-adds it to the *old* cluster as a learner and
+    # starts replicating its log to it. That is a different scenario, and it
+    # even overtakes this peer's own log if its last term was not persisted
+    # before the kill above.
     restart_api_uri, _restart_bootstrap_uri = start_first_peer(
-        removed_peer_dir, "removed_peer_restart.log",
+        removed_peer_dir, "removed_peer_restart.log", port=restart_port,
     )
 
     wait_for_peer_online(restart_api_uri)
