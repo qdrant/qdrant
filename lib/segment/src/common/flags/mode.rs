@@ -3,7 +3,7 @@ use std::path::Path;
 use common::universal_io::UniversalReadFileOps;
 
 use super::compact_stored_flags::COMPACT_FLAGS_FILE;
-use super::dynamic_stored_flags::{FLAGS_FILE, FLAGS_FILE_LEGACY, status_file};
+use super::dynamic_stored_flags::{FLAGS_FILE, status_file};
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Storage mode of a flags directory, selecting the persistence flavor.
@@ -34,9 +34,8 @@ impl FlagsMode {
         fs: &impl UniversalReadFileOps,
         directory: &Path,
     ) -> OperationResult<Option<Self>> {
-        let dynamic = fs.exists(&status_file(directory))?
-            || fs.exists(&directory.join(FLAGS_FILE))?
-            || fs.exists(&directory.join(FLAGS_FILE_LEGACY))?;
+        let dynamic =
+            fs.exists(&status_file(directory))? || fs.exists(&directory.join(FLAGS_FILE))?;
         let compact = fs.exists(&directory.join(COMPACT_FLAGS_FILE))?;
         match (dynamic, compact) {
             (false, false) => Ok(None),
