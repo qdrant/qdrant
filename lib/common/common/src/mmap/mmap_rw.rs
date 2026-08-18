@@ -465,15 +465,12 @@ pub enum Error {
     SizeMultiple(usize, usize),
     #[error("{0}")]
     Io(#[from] std::io::Error),
-    #[error("File not found: {0}")]
-    MissingFile(String),
 }
 
 impl crate::universal_io::IsNotFound for Error {
     fn is_not_found(&self) -> bool {
         match self {
             Self::Io(err) => err.is_not_found(),
-            Self::MissingFile(_) => true,
             Self::SizeExact(..) | Self::SizeLess(..) | Self::SizeMultiple(..) => false,
         }
     }

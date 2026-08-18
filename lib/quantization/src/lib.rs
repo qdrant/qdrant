@@ -20,7 +20,6 @@ pub use encoded_vectors_u8::{EncodedQueryU8, EncodedVectorsU8};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EncodingError {
-    IOError(String),
     EncodingError(String),
     ArgumentsError(String),
     Stopped,
@@ -29,7 +28,6 @@ pub enum EncodingError {
 impl Display for EncodingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EncodingError::IOError(description) => write!(f, "IOError: {description}"),
             EncodingError::EncodingError(description) => {
                 write!(f, "EncodingError: {description}")
             }

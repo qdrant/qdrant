@@ -227,7 +227,6 @@ impl HttpError {
             StorageError::ServiceError { .. } => {}
             StorageError::BadRequest { .. } => {}
             StorageError::StandaloneMode { .. } => {}
-            StorageError::Locked { .. } => {}
             StorageError::Timeout { .. } => {}
             StorageError::ChecksumMismatch { .. } => {}
             StorageError::Forbidden { .. } => {}
@@ -249,7 +248,6 @@ impl ResponseError for HttpError {
             StorageError::ServiceError { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
             StorageError::BadRequest { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::StandaloneMode { .. } => http::StatusCode::METHOD_NOT_ALLOWED,
-            StorageError::Locked { .. } => http::StatusCode::FORBIDDEN,
             StorageError::Timeout { .. } => http::StatusCode::REQUEST_TIMEOUT,
             StorageError::AlreadyExists { .. } => http::StatusCode::CONFLICT,
             StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,

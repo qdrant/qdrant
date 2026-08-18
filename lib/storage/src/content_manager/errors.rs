@@ -28,8 +28,6 @@ pub enum StorageError {
     // operation requires distributed mode, but node runs standalone
     #[error("{description}")]
     StandaloneMode { description: String },
-    #[error("Storage locked: {description}")]
-    Locked { description: String },
     #[error("Timeout: {description}")]
     Timeout { description: String },
     #[error("Checksum mismatch: expected {expected}, actual {actual}")]
