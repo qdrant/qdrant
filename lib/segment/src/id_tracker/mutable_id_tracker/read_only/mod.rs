@@ -28,8 +28,8 @@ use crate::types::{PointIdType, SeqNumberType};
 /// The mappings and versions files may be absent: the writer only creates them once it flushes the
 /// first point (an empty file is never written), exactly as
 /// [`MutableIdTracker::open`](crate::id_tracker::mutable_id_tracker::MutableIdTracker::open)
-/// tolerates. A missing file is treated as an empty storage; the retained [`Self::fs`] lets the
-/// handle be opened lazily once the file appears.
+/// tolerates. A missing file is treated as an empty storage; the handle is opened lazily through
+/// the fs passed to [`Self::live_reload`] once the file appears.
 ///
 /// The mapping only ever contains *committed* points. The writer flushes mappings before data
 /// before versions, so a point is fully written only once its version is present. An insert read
@@ -37,9 +37,6 @@ use crate::types::{PointIdType, SeqNumberType};
 /// flushed, and only then linked into [`Self::mappings`].
 pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     segment_path: PathBuf,
-    /// Filesystem handle, retained so the mappings/versions files can be opened lazily once the
-    /// writer creates them (they are absent while empty).
-    fs: S::Fs,
     internal_to_version: Vec<SeqNumberType>,
     mappings: PointMappings,
 

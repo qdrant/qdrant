@@ -31,7 +31,6 @@ use crate::common::operation_error::OperationResult;
 pub(crate) trait LiveReload {
     type File: UniversalRead;
 
-    #[expect(dead_code)]
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,

@@ -135,7 +135,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
 
     // A reload with no new changes reports nothing
     assert_eq!(
-        read_only.live_reload().unwrap(),
+        read_only.live_reload(&MmapFs).unwrap(),
         LiveReloadResult::default(),
     );
 
@@ -145,7 +145,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result.inserted, vec![3, 4]);
     assert_eq!(result.deleted, vec![1]);
     assert_in_sync(&read_only, &mutable);
@@ -173,7 +173,7 @@ fn test_live_reload_insert_then_delete_within_batch() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_in_sync(&read_only, &mutable);
@@ -210,7 +210,7 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     mutable.set_internal_version(1, 20).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, vec![0]);
     assert_eq!(
@@ -244,7 +244,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
 
     // The version is not flushed yet, so the point is withheld from the result and, crucially, is
     // not present in the mapping at all (its data may be partially written).
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only
@@ -257,7 +257,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
     // the insert, links it into the mapping, and reconciles the version.
     mutable.versions_flusher()().unwrap();
 
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_eq!(
@@ -300,7 +300,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     }
 
     // The partial entry is ignored and we don't advance past it.
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only.mappings_read_to, complete_len,
@@ -316,7 +316,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
         insert(&mut mutable, 300.into(), 2, 12);
         flush(&mutable);
 
-        let result = read_only.live_reload().unwrap();
+        let result = read_only.live_reload(&MmapFs).unwrap();
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
         assert_in_sync(&read_only, &mutable);
@@ -377,7 +377,7 @@ fn test_live_reload_withholds_partially_written_version() {
     }
 
     // Only part of the version is written, so the point is withheld.
-    let result = read_only.live_reload().unwrap();
+    let result = read_only.live_reload(&MmapFs).unwrap();
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(read_only.internal_version(2), None);
 
@@ -389,7 +389,7 @@ fn test_live_reload_withholds_partially_written_version() {
     {
         mutable.versions_flusher()().unwrap();
 
-        let result = read_only.live_reload().unwrap();
+        let result = read_only.live_reload(&MmapFs).unwrap();
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(
             read_only.internal_id_with_behavior(

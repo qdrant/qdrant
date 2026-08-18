@@ -59,14 +59,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
-        // The tracker keeps a filesystem handle to re-open the append-only
-        // files on later reloads, so it must retain the *raw* backend — a
-        // caching wrapper's snapshot goes stale as soon as the writer
-        // appends. The bootstrap below consequently opens through the raw
-        // fs too, bypassing any prefetch pool.
+        // The bootstrap below opens through the raw fs passed here, bypassing
+        // any prefetch pool. Later reloads open through the fs their caller
+        // provides instead (typically a caching wrapper with a fresh snapshot).
         let mut tracker = Self {
             segment_path: segment_path.into(),
-            fs: fs.clone(),
             internal_to_version: Vec::new(),
             mappings: PointMappings::new(
                 Default::default(),
@@ -85,7 +82,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
         // delta (the whole committed set as inserts) is irrelevant for an initial open.
-        tracker.live_reload()?;
+        tracker.live_reload(fs)?;
 
         #[cfg(debug_assertions)]
         tracker.mappings.assert_mappings();
@@ -128,7 +125,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// second round-trip on object storage. Lazy backends (e.g. S3) touch the object only on the
     /// first read, so a missing object can instead surface as `NotFound` from a later `len`/`read`
     /// — `live_reload` tolerates that case too.
-    pub(super) fn try_open(fs: &S::Fs, path: &Path) -> OperationResult<Option<S>> {
+    pub(super) fn try_open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+    ) -> OperationResult<Option<S>> {
         let options = Self::open_options();
         Ok(fs.open(path, options, Default::default()).ok_not_found()?)
     }
