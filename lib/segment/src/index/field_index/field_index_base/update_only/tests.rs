@@ -225,8 +225,9 @@ fn rewriting_a_slot_is_rejected() {
     assert!(writer.add_point(0, &[&json!(0)], &hw_counter).is_err());
 }
 
-/// The boolean index is mask-backed: its writer rewrites both masks whole, and
-/// leaves behind the same two files the mutable index writes.
+/// The boolean index is mask-backed: its writer rewrites both masks whole,
+/// leaving compact-mode flags the mutable index picks up through mode
+/// detection.
 #[test]
 fn bool_index_round_trip() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();

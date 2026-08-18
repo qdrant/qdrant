@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use roaring::RoaringBitmap;
 
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
@@ -21,9 +21,9 @@ mod read_ops;
 /// condition checker / faceting) is shared with the writable variants via
 /// [`BoolIndexRead`][4].
 ///
-/// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
-/// can reopen the bitslice and apply only the changed positions, instead of
-/// re-materializing the bitmaps from scratch.
+/// Each [`ReadOnlyFlags`] retains its backend `S` so a [`LiveReload`][5]
+/// can reopen the backing files and resync, instead of re-materializing the
+/// bitmaps from scratch.
 ///
 /// [1]: super::mutable_bool_index::MutableBoolIndex
 /// [2]: super::immutable_bool_index::ImmutableBoolIndex
@@ -37,7 +37,7 @@ pub struct ReadOnlyBoolIndex<S: UniversalReadExt> {
     ///
     /// Deriving them eagerly would force both bitmaps to materialize at open,
     /// scanning each flags file end to end — exactly what the lazy
-    /// [`ReadOnlyRoaringFlags`] bitmap exists to avoid. [`LiveReload`][1]
+    /// [`ReadOnlyFlags`] bitmap exists to avoid. [`LiveReload`][1]
     /// refreshes them in place if they are present, and leaves them unset
     /// otherwise.
     ///
@@ -59,9 +59,9 @@ pub(super) struct BoolCounts {
 
 pub(super) struct ReadOnlyStorage<S: UniversalReadExt> {
     /// Points which have at least one `true` value
-    pub(super) trues_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) trues_flags: ReadOnlyFlags<S>,
     /// Points which have at least one `false` value
-    pub(super) falses_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) falses_flags: ReadOnlyFlags<S>,
 }
 
 impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
