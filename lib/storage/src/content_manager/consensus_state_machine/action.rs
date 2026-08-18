@@ -10,13 +10,19 @@ pub enum Action {
         vector_name: VectorNameBuf,
         config: Box<VectorNameConfig>,
     },
+
+    DropNamedVector {
+        collection: CollectionId,
+        vector_name: VectorNameBuf,
+    },
 }
 
 impl Action {
     /// Collection this action changes, if it is scoped to one
     pub fn collection(&self) -> Option<&CollectionId> {
         match self {
-            Action::AddNamedVector { collection, .. } => Some(collection),
+            Action::AddNamedVector { collection, .. }
+            | Action::DropNamedVector { collection, .. } => Some(collection),
         }
     }
 }

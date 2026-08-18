@@ -30,6 +30,20 @@ impl ClusterState {
                     log::error!("Failed to add named vector {vector_name} to {collection}: {err}");
                 }
             }
+
+            Action::DropNamedVector {
+                collection,
+                vector_name,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                vector_name_schema::remove_vector_from_config(
+                    &mut state.config.params,
+                    vector_name,
+                );
+            }
         }
     }
 

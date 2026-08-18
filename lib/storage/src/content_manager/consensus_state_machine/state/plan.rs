@@ -36,4 +36,20 @@ impl ClusterState {
             config: Box::new(config.clone()),
         }])
     }
+
+    pub fn plan_delete_named_vector(&self, op: &DeleteNamedVector) -> StorageResult<Actions> {
+        let DeleteNamedVector {
+            collection_name,
+            vector_name,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+
+        // Deleting vector that does not exist is a no-op, not an error
+
+        Ok(vec![Action::DropNamedVector {
+            collection,
+            vector_name: vector_name.clone(),
+        }])
+    }
 }
