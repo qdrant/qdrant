@@ -150,10 +150,12 @@ impl MutableStoredBitmask {
     /// the write entirely when nothing changed since the mask was opened or
     /// last saved.
     ///
+    /// Returns the number of bytes written, zero when the write was skipped.
+    ///
     /// A failed save leaves the mask dirty, so a later retry writes again.
-    pub fn save(&mut self, fs: &impl UniversalWriteFileOps, path: &Path) -> UioResult<()> {
+    pub fn save(&mut self, fs: &impl UniversalWriteFileOps, path: &Path) -> UioResult<usize> {
         if !self.is_dirty() {
-            return Ok(());
+            return Ok(0);
         }
 
         // Run-optimize in place so the encoder can serialize a borrow.
@@ -163,6 +165,6 @@ impl MutableStoredBitmask {
 
         self.changed = false;
         self.persisted_len = Some(self.logical_len);
-        Ok(())
+        Ok(bytes.len())
     }
 }

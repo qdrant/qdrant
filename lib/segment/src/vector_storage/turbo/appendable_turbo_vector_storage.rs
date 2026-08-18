@@ -22,8 +22,8 @@ use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use crate::common::Flusher;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
@@ -85,13 +85,11 @@ impl AppendableMmapTurboVectorStorage {
             in_ram,
         )?;
 
-        let deleted = BitvecFlags::new(
+        let deleted = BitvecFlags::open_or_create(
             MmapFs,
-            DynamicStoredFlags::open(
-                &MmapFs,
-                &path.join(DELETED_DIR_PATH),
-                Populate::from(in_ram),
-            )?,
+            &path.join(DELETED_DIR_PATH),
+            FlagsMode::from_feature_flags(),
+            Populate::from(in_ram),
         )?;
         let deleted_count = deleted.count_trues();
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];

@@ -28,7 +28,20 @@ use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollR
 
 pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
 
+/// Initialize the process-global feature flags the way a serverless
+/// deployment runs, which is what every edge shard serves in production.
+///
+/// Feature flags are first-init-wins for the whole process, so every fixture
+/// in this binary initializes the same set to stay deterministic regardless
+/// of test order. The field is private, set through the same route a config
+/// file takes.
+pub(crate) fn init_serverless_feature_flags() {
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+}
+
 pub(crate) fn test_config() -> EdgeConfig {
+    init_serverless_feature_flags();
     EdgeConfig {
         on_disk_payload: Some(false),
         vectors: HashMap::from([(
@@ -493,15 +506,10 @@ fn manifest_enumerator_requires_manifest() {
 /// its segments, and a follower opened over the same directory loads through it.
 #[test]
 fn leader_writes_manifest_and_follower_loads_it() {
-    let mut flags = FeatureFlags::default();
-    flags.write_segment_manifest = true;
-    init_feature_flags(flags);
-
-    // Another test in this process may have initialized flags first; the assertions below only hold
-    // with the flag enabled.
-    if !common::flags::feature_flags().write_segment_manifest {
-        return;
-    }
+    // Serverless mode implies `write_segment_manifest`, which the assertions
+    // below rely on.
+    init_serverless_feature_flags();
+    assert!(common::flags::feature_flags().write_segment_manifest);
 
     let dir = tempfile::Builder::new()
         .prefix("edge-ro-manifest-write")

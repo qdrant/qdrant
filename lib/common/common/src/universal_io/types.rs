@@ -119,6 +119,7 @@ impl Populate {
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
+    // Not needed for one shot reeds
     pub need_sequential: bool,
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Populate,

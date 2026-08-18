@@ -5,7 +5,7 @@ use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::UniversalReadExt;
 
@@ -22,8 +22,8 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<bool> {
-        let trues = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME), populate)?;
-        let falses = ReadOnlyRoaringFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME), populate)?;
+        let trues = ReadOnlyFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME), populate)?;
+        let falses = ReadOnlyFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME), populate)?;
         Ok(trues || falses)
     }
 
@@ -46,8 +46,8 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
-        let trues_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
-        let falses_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(FALSES_DIRNAME))?;
+        let trues_flags = ReadOnlyFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
+        let falses_flags = ReadOnlyFlags::<S>::open(fs, &path.join(FALSES_DIRNAME))?;
 
         match (trues_flags, falses_flags) {
             // Neither directory exists: the index isn't present on disk.

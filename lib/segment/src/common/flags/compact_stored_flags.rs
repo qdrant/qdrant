@@ -6,16 +6,56 @@ use common::mmap::AdviceSetting;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite, UniversalWriteFileOps,
+    OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWrite,
+    UniversalWriteFileOps,
 };
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
+use super::mode::FlagsMode;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Name of the single file holding the mask, inside the storage directory.
 pub(super) const COMPACT_FLAGS_FILE: &str = "compact_flags.dat";
+
+/// Open the compact-mode mask in `directory`, creating the directory and a
+/// persisted empty mask when none exists yet.
+///
+/// The eager persist is deliberate: flags directories double as the marker
+/// that their storage exists, and an empty directory would leave the next
+/// open to pick a mode from feature flags rather than from disk.
+///
+/// The caller must have ruled out dynamic-mode flags in the directory first —
+/// see [`FlagsMode::detect`]. Creating the compact file next to dynamic files
+/// would leave a directory of both modes behind, which every later open
+/// rejects.
+pub(super) fn open_or_create_compact_mask<Fs>(
+    fs: &Fs,
+    directory: &Path,
+    populate: Populate,
+) -> OperationResult<MutableStoredBitmask>
+where
+    Fs: UniversalReadFs + UniversalWriteFileOps,
+{
+    fs.create_dir(directory)?;
+    let path = directory.join(COMPACT_FLAGS_FILE);
+
+    let options = OpenOptions {
+        writeable: false,
+        need_sequential: true,
+        populate,
+        advice: AdviceSetting::Global,
+    };
+    match MutableStoredBitmask::open(fs, &path, options, Default::default()).ok_not_found()? {
+        Some(mask) => Ok(mask),
+        None => {
+            let mut mask = MutableStoredBitmask::new(0);
+            mask.save(fs, &path)?;
+            Ok(mask)
+        }
+    }
+}
 
 /// Flags over a single compact stored-bitmask file, rewritten whole on flush.
 ///
@@ -47,32 +87,22 @@ where
     /// Open the flags in `directory`, materializing the whole mask into RAM.
     ///
     /// Creates the directory and persists an empty mask when the file is
-    /// missing, so [`Self::files`] always exist on disk.
+    /// missing, so [`Self::files`] always exist on disk. Errors when the
+    /// directory holds dynamic-mode flags instead.
     pub fn open(fs: S::Fs, directory: &Path, populate: Populate) -> OperationResult<Self> {
-        fs.create_dir(directory)?;
-        let path = directory.join(COMPACT_FLAGS_FILE);
+        if FlagsMode::detect(&fs, directory)? == Some(FlagsMode::Dynamic) {
+            return Err(OperationError::service_error(format!(
+                "cannot open compact flags in {}: the directory holds flags of the dynamic mode",
+                directory.display(),
+            )));
+        }
 
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: true,
-            populate,
-            advice: AdviceSetting::Global,
-        };
-        let mask = match MutableStoredBitmask::open(&fs, &path, options, Default::default())
-            .ok_not_found()?
-        {
-            Some(mask) => mask,
-            None => {
-                let mut mask = MutableStoredBitmask::new(0);
-                mask.save(&fs, &path)?;
-                mask
-            }
-        };
+        let mask = open_or_create_compact_mask(&fs, directory, populate)?;
 
         Ok(Self {
             mask: Arc::new(Mutex::new(mask)),
             fs: Arc::new(fs),
-            path,
+            path: directory.join(COMPACT_FLAGS_FILE),
             is_alive_flush_lock: IsAliveLock::new(),
         })
     }
@@ -149,6 +179,8 @@ where
                 ));
             };
 
+            // TODO(serverless): we should not lock here during save
+            // TODO(serverless): currently acceptable because readers and writers are completely separate
             mask_arc.lock().save(&*fs, &path)?;
 
             drop(is_alive_flush_guard);
@@ -187,10 +219,19 @@ mod tests_mod {
     use tempfile::TempDir;
 
     use crate::common::flags::compact_stored_flags::CompactStoredFlags;
+    use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
     use crate::common::operation_error::OperationError;
 
     fn open(dir: &std::path::Path) -> CompactStoredFlags<S> {
         CompactStoredFlags::open(Fs::default(), dir, Populate::Blocking).unwrap()
+    }
+
+    #[test]
+    fn open_refuses_dynamic_directory() {
+        let dir = TempDir::new().unwrap();
+        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
+        let result = CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No);
+        assert!(result.is_err(), "expected refusal on a dynamic directory");
     }
 
     #[test]
