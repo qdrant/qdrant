@@ -106,6 +106,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             enumerator: Box::new(enumerator),
             search_pool,
             load_profile,
+            refresh_lock: Default::default(),
         };
         shard.refresh()?;
 
