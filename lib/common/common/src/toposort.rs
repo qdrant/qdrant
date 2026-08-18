@@ -48,6 +48,11 @@ impl<T: Eq + std::hash::Hash + Copy, V> TopoSort<T, V> {
             .insert(depends_on, value);
     }
 
+    /// Returns the elements `element` depends on, with the value stored per dependency.
+    pub fn dependencies_of(&self, element: &T) -> impl Iterator<Item = (&T, &V)> {
+        self.dependencies.get(element).into_iter().flatten()
+    }
+
     /// Removes dependencies for which the filter function returns false
     pub fn retain(&mut self, filter: impl Fn(&T, &T, &V) -> bool) {
         self.dependencies.retain(|element, deps| {

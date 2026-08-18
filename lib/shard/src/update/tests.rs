@@ -955,3 +955,76 @@ fn create_field_index_pins_pending_payload_state() {
         "filtered reads must agree with payload storage: the row was cleared",
     );
 }
+
+/// The pre-build flush of `create_field_index` durably advances a segment past the
+/// delete halves of its pending copy-on-write moves. The destinations of those moves
+/// must be durable at or beyond the moves FIRST: otherwise the moves' WAL entries stop
+/// being replayable (the durable pre-image is deleted while the only current copy sits
+/// in the unflushed destination) and a graceful close loses the points. The destination
+/// cannot be relied on to flush itself during the same pass: the `already_indexed`
+/// short-circuit skips its flush, e.g. when it is proxy-wrapped by a running
+/// optimization and the proxy reports the field as present. Root cause of the nightly
+/// model-testing reload divergence (#10095).
+#[test]
+fn create_field_index_flushes_cow_destinations_before_source() {
+    use segment::entry::NonAppendableSegmentEntry as _;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+
+    use crate::update::set_payload;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let key: PayloadKeyType = "color".parse().unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let mut source = build_segment_1(dir.path()); // points 1-5, version 6
+    source.appendable_flag = false;
+    let mut destination = empty_segment(dir.path());
+    // The destination already carries the index, so its own pre-build flush below is
+    // skipped by the `already_indexed` short-circuit; only the dependency-aware flush
+    // of the source's visit can cover it.
+    destination
+        .create_field_index(7, &key, Some(&schema), &hw_counter)
+        .unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let source_id = holder.add_new(source);
+    let destination_id = holder.add_new(destination);
+
+    // Durable baseline.
+    holder.flush_all(FlushMode::Sync, true).unwrap();
+
+    // Op 100 modifies point 1, which lives in the non-appendable source: the
+    // copy-on-write arm upserts the updated point into the destination, deletes it from
+    // the source, and records the flush dependency edge.
+    let payload = payload_json! {"other": "value"};
+    let moved = set_payload(&holder, 100, &payload, &[1.into()], &None, &hw_counter).unwrap();
+    assert_eq!(moved, 1);
+
+    create_field_index(&holder, 200, &key, Some(&schema), &hw_counter).unwrap();
+
+    let source_persisted = holder
+        .get(source_id)
+        .unwrap()
+        .get()
+        .read()
+        .persistent_version();
+    let destination_persisted = holder
+        .get(destination_id)
+        .unwrap()
+        .get()
+        .read()
+        .persistent_version();
+
+    assert!(
+        source_persisted >= 100,
+        "the source's pre-build flush must cover the move's delete half to arm the \
+         hazard, got {source_persisted}",
+    );
+    assert!(
+        destination_persisted >= 100,
+        "the move's destination must be durable at or beyond the move once the source \
+         flushed past it; anything lower durably deletes the WAL replay pre-image while \
+         the only remaining copy is memory-only, got {destination_persisted}",
+    );
+}
