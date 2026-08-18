@@ -10,7 +10,7 @@ use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
-use crate::index::hnsw_index::graph::{DEFAULT_LINKS_BATCH_SIZE, GraphSearchArgs, SearchScorers};
+use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
@@ -137,7 +137,6 @@ where
                     base: base_scorer_bytes,
                 }),
                 custom_entry_points,
-                batch_size: DEFAULT_LINKS_BATCH_SIZE,
                 is_stopped: &is_stopped,
             })?))
         };
@@ -162,7 +161,6 @@ where
                 algorithm,
                 scorers: SearchScorers::Regular(points_scorer),
                 custom_entry_points,
-                batch_size: DEFAULT_LINKS_BATCH_SIZE,
                 is_stopped: &is_stopped,
             })?;
 

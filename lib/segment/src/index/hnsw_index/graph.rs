@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(not(target_os = "linux"))]
 use common::universal_io::MmapFile;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalKind, UniversalRead, UniversalReadFs};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
 use itertools::Itertools as _;
@@ -31,9 +31,6 @@ pub type HnswLinksStorage = cfg_select! {
     _ => MmapFile,
 };
 
-/// Default for [`GraphSearchArgs::batch_size`].
-pub const DEFAULT_LINKS_BATCH_SIZE: usize = 512;
-
 /// Args for [`HnswGraph::search`].
 pub struct GraphSearchArgs<'a> {
     pub top: usize,
@@ -41,7 +38,6 @@ pub struct GraphSearchArgs<'a> {
     pub algorithm: SearchAlgorithm,
     pub scorers: SearchScorers<'a>,
     pub custom_entry_points: Option<&'a [PointOffsetType]>,
-    pub batch_size: usize,
     pub is_stopped: &'a AtomicBool,
 }
 
@@ -144,7 +140,6 @@ impl<S: UniversalRead> HnswGraph<S> {
             algorithm,
             mut scorers,
             custom_entry_points,
-            batch_size,
             is_stopped,
         } = args;
 
@@ -154,6 +149,19 @@ impl<S: UniversalRead> HnswGraph<S> {
         };
         let Some(entry) = self.get_entry_point(filters, custom_entry_points)? else {
             return Ok(Vec::new());
+        };
+
+        let batch_size = match S::kind() {
+            UniversalKind::IoUring => 4,
+            // Not tested, but let's assume it's same as for IoUring
+            UniversalKind::Mmap => 4,
+            // Network-based backends.
+            UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::UioGrpc => 16,
         };
 
         match (self, &mut scorers) {
