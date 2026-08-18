@@ -39,6 +39,7 @@ mod reexports_from_qdrant_crates {
         ContextPair, ContextQuery, DiscoverQuery, FeedbackItem,
         NaiveFeedbackCoefficients as NaiveFeedbackStrategy,
         NaiveFeedbackQuery as FeedbackNaiveQuery, RecoQuery as RecommendQuery,
+        avg_vector_for_recommendation,
     };
     pub use shard::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     pub use shard::operations::point_ops::{
@@ -66,7 +67,7 @@ pub use reexports_from_qdrant_crates::*;
 
 /// TODO: We need to do something these duplicates of Vector/Point structures
 mod todo_to_clean_up {
-    pub use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
+    pub use segment::data_types::vectors::{VectorInternal, VectorRef, VectorStructInternal};
     pub use shard::operations::point_ops::{
         PointStructPersisted, VectorPersisted, VectorStructPersisted,
     };

@@ -11,7 +11,9 @@ mod reco_query;
 pub use context_query::{ContextPair, ContextQuery};
 pub use discover_query::DiscoverQuery;
 pub use feedback_query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
-pub use reco_query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
+pub use reco_query::{
+    RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, avg_vector_for_recommendation,
+};
 
 pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {
     /// Change the underlying type of the query, or just process it in some way.
