@@ -81,6 +81,16 @@ where
         Ok(bytes)
     }
 
+    async fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        // TODO(uio): implement real async
+        self.read_bytes(range, access_pattern, align)
+    }
+
     fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         self.prefill_if_uninit()?;
         let length = self.len::<T>()?;

@@ -107,6 +107,16 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         align: usize,
     ) -> UioResult<ACow<'_>>;
 
+    /// Async-capable version of [`UniversalRead::read_bytes`].
+    ///
+    /// If backend allows it, uses async primitives.
+    fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> impl Future<Output = UioResult<ACow<'_>>>;
+
     /// Read the entire file in one logical access.
     ///
     /// Implementations may override this to avoid the two accesses that would
