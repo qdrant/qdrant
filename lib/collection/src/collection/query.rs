@@ -7,7 +7,7 @@ use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
 use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{ScoreFusion, score_fusion};
+use segment::common::score_fusion::score_fusion;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
@@ -386,7 +386,7 @@ impl Collection {
                             .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
                         rrf_scoring(intermediates, *k, weights_slice.as_deref())?
                     }
-                    FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
+                    FusionInternal::Dbsf => score_fusion(intermediates),
                 };
                 if let Some(&score_threshold) = score_threshold.as_ref() {
                     fused = fused

@@ -8,7 +8,7 @@ use common::types::{DeferredBehavior, ScoreType};
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{ScoreFusion, score_fusion};
+use segment::common::score_fusion::score_fusion;
 use segment::data_types::query_context::FormulaContext;
 use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
@@ -301,7 +301,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
                 rrf_scoring(sources, k, weights_slice.as_deref())?
             }
-            FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
+            FusionInternal::Dbsf => score_fusion(sources),
         };
 
         let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {

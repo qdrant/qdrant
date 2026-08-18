@@ -1,84 +1,21 @@
-use std::iter;
-
 use ahash::AHashMap;
 use common::types::ScoreType;
-use itertools::{Itertools, MinMaxResult};
-use ordered_float::OrderedFloat;
+use itertools::Itertools;
 
-use crate::types::{Order, PointIdType, ScoredPoint};
+use crate::types::{PointIdType, ScoredPoint};
 
-pub struct ScoreFusion {
-    /// Defines how to combine the scores of the same point in different lists
-    pub method: Aggregation,
-    /// Defines how to normalize the scores in each list
-    pub norm: Normalization,
-    /// Multipliers for each list of scores
-    pub weights: Vec<f32>,
-    /// Final ordering of the results
-    pub order: Order,
-}
-
-impl ScoreFusion {
-    /// Params for the distribution-based score fusion
-    pub fn dbsf() -> Self {
-        Self {
-            method: Aggregation::Sum,
-            norm: Normalization::Distr,
-            weights: vec![],
-            order: Order::LargeBetter,
-        }
-    }
-}
-
-/// Defines how to combine the scores of the same point in different lists
-pub enum Aggregation {
-    /// Sums the scores
-    Sum,
-}
-
-pub enum Normalization {
-    /// Uses the minimum and maximum scores as extremes
-    MinMax,
-    /// Uses the 3rd standard deviation as extremes
-    Distr,
-}
-
-pub fn score_fusion(
-    all_results: impl IntoIterator<Item = Vec<ScoredPoint>>,
-    params: ScoreFusion,
-) -> Vec<ScoredPoint> {
-    let ScoreFusion {
-        method,
-        norm,
-        weights,
-        order,
-    } = params;
-
-    let weights = weights.into_iter().chain(iter::repeat(1.0));
-
+/// Distribution-based score fusion.
+pub fn score_fusion(all_results: impl IntoIterator<Item = Vec<ScoredPoint>>) -> Vec<ScoredPoint> {
     all_results
         .into_iter()
         // normalize
-        .map(|points| match norm {
-            Normalization::MinMax => min_max_norm(points),
-            Normalization::Distr => distr_norm(points),
-        })
-        // weight each list of points
-        .zip(weights)
-        .flat_map(|(points, weight)| {
-            points.into_iter().map(move |p| ScoredPoint {
-                score: p.score * weight,
-                ..p
-            })
-        })
+        .flat_map(distr_norm)
         // combine to deduplicate
         .fold(
             AHashMap::<PointIdType, ScoredPoint>::new(),
             |mut acc, point| {
                 acc.entry(point.id)
-                    .and_modify(|entry| match method {
-                        Aggregation::Sum => entry.score += point.score,
-                    })
+                    .and_modify(|entry| entry.score += point.score)
                     .or_insert(point);
 
                 acc
@@ -86,10 +23,7 @@ pub fn score_fusion(
         )
         // sort and return
         .into_values()
-        .sorted_by(|a, b| match order {
-            Order::SmallBetter => a.cmp(b),
-            Order::LargeBetter => b.cmp(a),
-        })
+        .sorted_by(|a, b| b.cmp(a))
         .collect()
 }
 
@@ -106,15 +40,6 @@ fn norm(mut points: Vec<ScoredPoint>, min: ScoreType, max: ScoreType) -> Vec<Sco
     });
 
     points
-}
-
-pub fn min_max_norm(points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
-    let (min, max) = match points.iter().map(|p| OrderedFloat(p.score)).minmax() {
-        MinMaxResult::NoElements | MinMaxResult::OneElement(_) => return points,
-        MinMaxResult::MinMax(min, max) => (min.0, max.0),
-    };
-
-    norm(points, min, max)
 }
 
 /// Welford's method for stable one-pass mean and variance calculation.
