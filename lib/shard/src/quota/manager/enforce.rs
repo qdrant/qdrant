@@ -164,6 +164,7 @@ fn threshold(limit: u8, was_exceeded: bool, release_margin_percent: u8) -> u8 {
 mod tests {
     use super::*;
     use crate::quota::QuotaConfig;
+    use crate::quota::check::percent_of;
     use crate::quota::config::DEFAULT_RELEASE_MARGIN_PERCENT;
 
     #[test]
@@ -254,11 +255,38 @@ mod tests {
         assert!(!was_exceeded.load(Ordering::Relaxed));
     }
 
+    /// A storage directory on a filesystem that is at least 1% full, the
+    /// smallest disk limit that can be configured. The system temp dir is
+    /// often a near-empty tmpfs (`/tmp` on the dev machine), where a 1% limit
+    /// trips nothing; the crate directory sits on a disk holding at least the
+    /// checkout and its build output.
+    fn storage_dir_at_least_one_percent_full() -> tempfile::TempDir {
+        let used_percent = |dir: &tempfile::TempDir| {
+            ::common::disk_usage::disk_usage(dir.path())
+                .and_then(|usage| percent_of(usage.used(), usage.total))
+                .unwrap_or(0)
+        };
+
+        let dir = tempfile::Builder::new().tempdir().unwrap();
+        if used_percent(&dir) >= 1 {
+            return dir;
+        }
+
+        let dir = tempfile::Builder::new()
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        assert!(
+            used_percent(&dir) >= 1,
+            "no filesystem at hand is 1% full, cannot exercise a disk limit",
+        );
+        dir
+    }
+
     #[test]
     fn limits_only_apply_while_the_quota_is_enabled() {
-        let dir = tempfile::Builder::new().tempdir().unwrap();
-        // No real filesystem is less than 1% full, so this limit rejects
-        // everything — while it is in force.
+        let dir = storage_dir_at_least_one_percent_full();
+        // The lowest limit there is rejects everything on that filesystem —
+        // while it is in force.
         let settings = QuotaConfig {
             enabled: false,
             max_disk_usage_percent: Some(1),
