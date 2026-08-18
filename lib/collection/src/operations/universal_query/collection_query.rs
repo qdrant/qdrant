@@ -13,6 +13,7 @@ use segment::types::{
 };
 use segment::vector_storage::query::{
     ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, RecoQuery,
+    avg_vector_for_recommendation,
 };
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
@@ -25,7 +26,6 @@ use crate::common::fetch_vectors::ReferencedVectors;
 use crate::lookup::WithLookup;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
-use crate::recommendations::avg_vector_for_recommendation;
 
 const DEFAULT_MMR_LAMBDA: f32 = 0.5;
 
