@@ -163,18 +163,26 @@ mod tests {
 
     use fs_err as fs;
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
-    use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
-    use shard::operations::CollectionUpdateOperations::{PointOperation, VectorNameOperation};
-    use shard::operations::VectorNameOperations;
+    use segment::json_path::JsonPath;
+    use segment::types::{
+        Distance, ExtendedPointId, PayloadFieldSchema, PayloadSchemaType, WithPayloadInterface,
+        WithVector,
+    };
+    use shard::operations::CollectionUpdateOperations::{
+        FieldIndexOperation, PointOperation, VectorNameOperation,
+    };
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
     use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
     use shard::operations::vector_name_ops::DeleteVectorName;
+    use shard::operations::{CreateIndex, FieldIndexOperations, VectorNameOperations};
     use shard::optimizers::config::default_segment_number;
     use uuid::Uuid;
 
     use crate::config::vectors::EdgeVectorParams;
-    use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder};
+    use crate::{
+        CountRequest, EdgeConfig, EdgeOptimizersConfig, EdgeShard, RetrieveRequestBuilder,
+    };
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
@@ -826,6 +834,83 @@ mod tests {
 
     /// Retrieve points by ID and verify each one is present with the correct
     /// vector value. Every test point was created with vector `[id as f32]`.
+    /// A shard loaded with only immutable segments gets a fresh appendable one that carries the
+    /// immutable segments' payload indexes, so writes stay indexed instead of falling back to
+    /// full scans until the next merge.
+    #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+    #[test]
+    fn appendable_segment_created_on_load_inherits_payload_indexes() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-load-inherit-indexes")
+            .tempdir()
+            .unwrap();
+
+        // Lowered indexing threshold makes the vacuum rebuild non-appendable.
+        let config = EdgeConfig {
+            optimizers: Some(EdgeOptimizersConfig {
+                deleted_threshold: Some(0.2),
+                vacuum_min_vector_number: Some(1),
+                indexing_threshold: Some(1),
+                ..EdgeOptimizersConfig::default()
+            }),
+            ..test_config()
+        };
+        let field: JsonPath = "k".parse().unwrap();
+        let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Integer);
+
+        let shard = EdgeShard::new(dir.path(), config).unwrap();
+        shard
+            .update(FieldIndexOperation(FieldIndexOperations::CreateIndex(
+                CreateIndex {
+                    field_name: field.clone(),
+                    field_schema: Some(schema.clone()),
+                },
+            )))
+            .unwrap();
+        let points = (1..=1000).map(point).collect::<Vec<_>>();
+        shard
+            .update(PointOperation(UpsertPoints(PointsList(points))))
+            .unwrap();
+        let deleted_ids = (1..=300).map(ExtendedPointId::NumId).collect();
+        shard
+            .update(PointOperation(DeletePoints { ids: deleted_ids }))
+            .unwrap();
+        assert!(shard.optimize().unwrap(), "expected a vacuum to run");
+
+        // Wipe the (empty) appendable CoW segment so the reload has to create one.
+        let appendable_dirs = shard
+            .segments
+            .read()
+            .iter()
+            .filter(|(_, segment)| segment.get().read().is_appendable())
+            .map(|(_, segment)| segment.get().read().data_path())
+            .collect::<Vec<_>>();
+        assert!(!appendable_dirs.is_empty());
+        drop(shard);
+        for segment_dir in appendable_dirs {
+            fs::remove_dir_all(segment_dir).unwrap();
+        }
+
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        assert_eq!(reopened.count(CountRequest::new()).unwrap(), 700);
+
+        let segments = reopened.segments.read();
+        let mut seen_appendable = false;
+        for (_, segment) in segments.iter() {
+            let segment = segment.get().read();
+            if segment.is_appendable() {
+                seen_appendable = true;
+            }
+            assert_eq!(
+                segment.get_indexed_fields().get(&field),
+                Some(&schema),
+                "segment {} lost the payload index",
+                segment.data_path().display(),
+            );
+        }
+        assert!(seen_appendable, "load must create an appendable segment");
+    }
+
     fn assert_points_retrievable_with_vectors(shard: &EdgeShard, ids: &[u64]) {
         let point_ids = ids
             .iter()
