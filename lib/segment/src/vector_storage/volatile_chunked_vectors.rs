@@ -37,6 +37,11 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
         self.len
     }
 
+    /// Size of one stored vector in bytes.
+    pub fn vector_size_bytes(&self) -> usize {
+        self.dim * mem::size_of::<T>()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

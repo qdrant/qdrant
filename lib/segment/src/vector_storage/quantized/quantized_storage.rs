@@ -9,7 +9,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
-use common::prefetch::prefetch_slice;
+use common::prefetch::{
+    MAX_UNPREFETCHED_BATCH, prefetch_slice, prefetch_slice_l2, prefetch_windows,
+};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult,
@@ -100,6 +102,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         }
 
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
+        let (near, far) = prefetch_windows(self.quantized_vector_size.get());
 
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let sequential = is_read_with_prefetch_efficient(keys);
@@ -114,14 +117,8 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
             // Dense-ascending batches stream; the hardware prefetcher already
-            // covers them and software prefetch is pure overhead. Batches no
-            // longer than the window would only be prefetched right before
-            // use, too late to hide anything. Scoring two vectors takes about
-            // as long as a memory fetch (~80 ns), so a prefetch issued two
-            // vectors ahead arrives just in time; deeper windows benched
-            // neutral.
-            const PREFETCH_AHEAD: usize = 2;
-            if sequential || vectors.len() <= PREFETCH_AHEAD {
+            // covers them and software prefetch is pure overhead.
+            if sequential || vectors.len() <= MAX_UNPREFETCHED_BATCH {
                 for (vector_idx, vector) in vectors.iter().enumerate() {
                     f(batch_offset + vector_idx, vector);
                 }
@@ -129,12 +126,20 @@ impl<S: UniversalRead> QuantizedStorage<S> {
                 // The gathered `vectors` are borrowed straight from the mmap,
                 // so nothing has touched the bytes yet; without prefetch the
                 // scorer stalls on DRAM at the start of every cold vector.
-                for vector in vectors.iter().take(PREFETCH_AHEAD) {
+                for vector in vectors.iter().take(far) {
+                    prefetch_slice_l2(vector);
+                }
+                for vector in vectors.iter().take(near) {
                     prefetch_slice(vector);
                 }
 
                 for (vector_idx, vector) in vectors.iter().enumerate() {
-                    if let Some(upcoming) = vectors.get(vector_idx + PREFETCH_AHEAD) {
+                    if far > 0
+                        && let Some(upcoming) = vectors.get(vector_idx + far)
+                    {
+                        prefetch_slice_l2(upcoming);
+                    }
+                    if let Some(upcoming) = vectors.get(vector_idx + near) {
                         prefetch_slice(upcoming);
                     }
                     f(batch_offset + vector_idx, vector);

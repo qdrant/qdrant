@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
-use common::prefetch::prefetch_slice;
+use common::prefetch::{
+    MAX_UNPREFETCHED_BATCH, prefetch_slice, prefetch_slice_l2, prefetch_windows,
+};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
 use fs_err as fs;
@@ -133,13 +135,9 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) {
         // Dense-ascending batches stream; the hardware prefetcher already
-        // covers them and software prefetch is pure overhead. Batches no
-        // longer than the window would only be prefetched right before use,
-        // too late to hide anything. Scoring two vectors takes about as long
-        // as a memory fetch (~80 ns), so a prefetch issued two vectors ahead
-        // arrives just in time; deeper windows benched neutral.
-        const PREFETCH_AHEAD: usize = 2;
-        if offsets.len() <= PREFETCH_AHEAD || is_read_with_prefetch_efficient(offsets) {
+        // covers them and software prefetch is pure overhead.
+        let (near, far) = prefetch_windows(self.vectors.vector_size_bytes());
+        if offsets.len() <= MAX_UNPREFETCHED_BATCH || is_read_with_prefetch_efficient(offsets) {
             default_for_each_batch(self, offsets, callback);
             return;
         }
@@ -147,12 +145,20 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         // Heap-resident vectors have the same random-access DRAM latency as
         // the mmap-backed storage; prefetch a couple of vectors ahead of the
         // scorer to hide it.
-        for &offset in offsets.iter().take(PREFETCH_AHEAD) {
+        for &offset in offsets.iter().take(far) {
+            prefetch_slice_l2(self.vectors.get(offset as VectorOffsetType));
+        }
+        for &offset in offsets.iter().take(near) {
             prefetch_slice(self.vectors.get(offset as VectorOffsetType));
         }
 
         for (index, &offset) in offsets.iter().enumerate() {
-            if let Some(&upcoming) = offsets.get(index + PREFETCH_AHEAD) {
+            if far > 0
+                && let Some(&upcoming) = offsets.get(index + far)
+            {
+                prefetch_slice_l2(self.vectors.get(upcoming as VectorOffsetType));
+            }
+            if let Some(&upcoming) = offsets.get(index + near) {
                 prefetch_slice(self.vectors.get(upcoming as VectorOffsetType));
             }
             callback(
