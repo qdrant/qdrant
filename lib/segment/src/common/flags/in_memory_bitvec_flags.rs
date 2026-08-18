@@ -53,7 +53,8 @@ fn bitslice_open_options(populate: Populate) -> OpenOptions {
 fn compact_open_options(populate: Populate) -> OpenOptions {
     OpenOptions {
         writeable: false,
-        need_sequential: true,
+        // Not needed for one shot reeds
+        need_sequential: false,
         populate,
         advice: AdviceSetting::Global,
     }
