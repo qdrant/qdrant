@@ -33,9 +33,7 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{
-    CachedReadFs, MmapFs, OpenOptions, Populate, UniversalReadFs, read_bin_via,
-};
+use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -48,7 +46,7 @@ use crate::common::operation_error::{
 };
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
-use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer, ScorerFilters};
+use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::vector_storage::RawScorer;
@@ -503,30 +501,6 @@ impl GraphLayers {
         self.links.point_level(point_id)
     }
 
-    pub fn get_entry_point(
-        &self,
-        filters: &ScorerFilters,
-        custom_entry_points: Option<&[PointOffsetType]>,
-    ) -> Option<EntryPoint> {
-        // Try to get it from custom entry points
-        custom_entry_points
-            .and_then(|custom_entry_points| {
-                custom_entry_points
-                    .iter()
-                    .filter(|&&point_id| filters.check_vector(point_id))
-                    .map(|&point_id| {
-                        let level = self.point_level(point_id);
-                        EntryPoint { point_id, level }
-                    })
-                    .max_by_key(|ep| ep.level)
-            })
-            .or_else(|| {
-                // Otherwise use normal entry points
-                self.entry_points
-                    .get_entry_point(|point_id| filters.check_vector(point_id))
-            })
-    }
-
     #[cfg(any(test, feature = "testing"))]
     pub fn unfiltered_entry_point(&self) -> EntryPoint {
         self.entry_points.get_entry_point(|_| true).unwrap()
@@ -608,10 +582,6 @@ impl GraphLayers {
         ]
     }
 
-    pub fn num_points(&self) -> usize {
-        self.links.num_points()
-    }
-
     /// Heap RAM held by the graph links, in bytes.
     /// Zero when the links are backed by a live (mmap-backed) file handle;
     /// see [`GraphLinks::heap_size_bytes`].
@@ -658,37 +628,6 @@ impl GraphLayers {
             }
         }
         Ok(None)
-    }
-
-    /// Schedule background prefetch of the files [`Self::load_universal`] will
-    /// read: the graph data plus whichever links format is present, probed in
-    /// the same order as the load.
-    pub fn preopen_universal(
-        fs: &impl CachedReadFs,
-        dir: &Path,
-        residency: GraphLinksResidency,
-    ) -> OperationResult<()> {
-        // Graph data
-        fs.schedule_prefetch(&Self::get_path(dir), None, None)?;
-
-        // The load reads `Cached` links with a *blocking* populate and
-        // materializes `Pinned` links into heap; at prefetch time both become
-        // a background populate so the fetch overlaps the rest of the open.
-        // `Cold` links stay unpopulated, matching the load.
-        let populate = match residency {
-            GraphLinksResidency::Cold => Populate::No,
-            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => Populate::PreferBackground,
-        };
-        let options = OpenOptions {
-            populate,
-            ..GraphLinks::open_options(residency)
-        };
-
-        // Links
-        if let Some(format) = Self::probe_links_format(fs, dir)? {
-            fs.schedule_prefetch(&Self::get_links_path(dir, format), Some(options), None)?;
-        }
-        Ok(())
     }
 
     /// Load purely through universal IO, without the format conversion path of
@@ -787,26 +726,11 @@ impl GraphLayers {
         )
         .unwrap();
     }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        self.links.populate()?;
-        Ok(())
-    }
-
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self {
-            hnsw_m: _,
-            links,
-            entry_points: _,
-            visited_pool: _,
-        } = self;
-        links.clear_cache()?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use common::universal_io::MmapFile;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
@@ -815,6 +739,7 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
+    use crate::index::hnsw_index::graph::HnswGraph;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
@@ -874,7 +799,7 @@ mod tests {
         // Same order as the segment open path: snapshot, then preopen, then load.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
-        GraphLayers::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
+        HnswGraph::<MmapFile>::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
 
         // Everything `load_universal` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {

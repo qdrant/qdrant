@@ -63,6 +63,23 @@ impl GraphLinks {
         }
     }
 
+    /// Open options for scheduling a prefetch of the links file ahead of a
+    /// load with the same `residency`.
+    pub(in crate::index::hnsw_index) fn preopen_options(
+        residency: GraphLinksResidency,
+    ) -> OpenOptions {
+        let populate = match residency {
+            GraphLinksResidency::Cold => Populate::No,
+            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => Populate::PreferBackground,
+        };
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Advice(Advice::Random),
+        }
+    }
+
     pub fn load_universal<Fs>(
         fs: &Fs,
         path: &Path,

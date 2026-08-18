@@ -1,6 +1,7 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
@@ -9,7 +10,8 @@ use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
-use crate::index::hnsw_index::graph_layers::{GraphLayersWithVectors, SearchAlgorithm};
+use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
+use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
@@ -21,12 +23,13 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query::DiscoverQuery;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
+impl<'a, I, V, Q, P, S> HNSWIndexReadView<'a, I, V, Q, P, S>
 where
     I: IdTrackerRead,
     V: VectorStorageRead + RawScorerBuilder,
     Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
+    S: UniversalRead,
 {
     pub(super) fn search_with_graph(
         &self,
@@ -124,30 +127,25 @@ where
                 return Ok(None);
             };
 
-            let Some(entry_point) = self
-                .graph
-                .get_entry_point(link_scorer_filtered.filters(), custom_entry_points)
-            else {
-                return Ok(Some(Vec::new()));
-            };
-            Ok(Some(self.graph.search_with_vectors(
+            Ok(Some(self.graph.search(GraphSearchArgs {
                 top,
-                std::cmp::max(ef, oversampled_top),
-                GraphWithVectorsScorers {
+                ef: std::cmp::max(ef, oversampled_top),
+                algorithm: SearchAlgorithm::Hnsw,
+                scorers: SearchScorers::WithVectors(GraphWithVectorsScorers {
                     links: &link_scorer_filtered,
                     links_bytes: &link_scorer_filtered_bytes,
                     base: base_scorer_bytes,
-                },
-                entry_point,
-                &vector_query_context.is_stopped(),
-            )?))
+                }),
+                custom_entry_points,
+                is_stopped: &is_stopped,
+            })?))
         };
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
             let filter_context = filter
                 .map(|f| self.payload_index.filter_context(f, &hw_counter))
                 .transpose()?;
-            let mut points_scorer = construct_search_scorer(
+            let points_scorer = construct_search_scorer(
                 vector,
                 self.vector_storage,
                 self.quantized_vectors,
@@ -157,20 +155,14 @@ where
                 filter_context,
             )?;
 
-            let entry_point = self
-                .graph
-                .get_entry_point(points_scorer.filters(), custom_entry_points);
-            let search_result = match entry_point {
-                Some(entry_point) => self.graph.search(
-                    oversampled_top,
-                    ef,
-                    algorithm,
-                    &mut points_scorer,
-                    entry_point,
-                    &is_stopped,
-                )?,
-                None => Vec::new(),
-            };
+            let search_result = self.graph.search(GraphSearchArgs {
+                top: oversampled_top,
+                ef,
+                algorithm,
+                scorers: SearchScorers::Regular(points_scorer),
+                custom_entry_points,
+                is_stopped: &is_stopped,
+            })?;
 
             postprocess_search_result(
                 search_result,
