@@ -81,7 +81,7 @@ pub struct OperationDurationsAggregator {
     min_value: Option<f32>,
     max_value: Option<f32>,
     total_value: u64,
-    last_response_date: Option<DateTime<Utc>>,
+    last_response_date: DateTime<Utc>,
 
     /// The non-cumulative count of operations in each bucket.
     /// The total operations count (aka the last bucket, or `{le="+Inf"}` in Prometheus terms) is
@@ -234,7 +234,7 @@ impl OperationDurationsAggregator {
             min_value: None,
             max_value: None,
             total_value: 0,
-            last_response_date: Some(Utc::now().round_subsecs(2)),
+            last_response_date: Utc::now().round_subsecs(2),
             buckets: smallvec::smallvec![0; DEFAULT_BUCKET_BOUNDARIES_MICROS.len()],
         }))
     }
@@ -270,7 +270,7 @@ impl OperationDurationsAggregator {
             self.fail_count += 1;
         }
 
-        self.last_response_date = Some(Utc::now().round_subsecs(2));
+        self.last_response_date = Utc::now().round_subsecs(2);
     }
 
     pub fn get_statistics(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
@@ -296,7 +296,7 @@ impl OperationDurationsAggregator {
             min_duration_micros: detailed.then_some(self.min_value).flatten(),
             max_duration_micros: detailed.then_some(self.max_value).flatten(),
             total_duration_micros: detailed.then_some(self.total_value),
-            last_responded: detailed.then_some(self.last_response_date).flatten(),
+            last_responded: detailed.then_some(self.last_response_date),
             duration_micros_histogram,
         }
     }
