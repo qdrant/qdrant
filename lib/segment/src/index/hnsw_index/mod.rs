@@ -6,6 +6,7 @@ use crate::vector_storage::query_scorer::QueryScorerBytes;
 pub mod build_condition_checker;
 mod config;
 mod entry_points;
+mod graph;
 pub mod graph_layers;
 mod graph_layers_batched;
 pub mod graph_layers_builder;

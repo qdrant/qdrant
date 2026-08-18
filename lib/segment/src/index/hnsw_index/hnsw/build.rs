@@ -34,6 +34,7 @@ use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
+use crate::index::hnsw_index::graph::HnswGraph;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
@@ -591,7 +592,7 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            graph,
+            graph: HnswGraph::Direct(graph),
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
         })
