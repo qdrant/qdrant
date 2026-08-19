@@ -13,7 +13,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyChunkedMultiTurboVectorStorage<S> 
     fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
         self.storage.live_preload(fs)?;
         self.offsets.live_preload(fs)?;
-        // TODO(uio): use upcoming bitmap structure
         self.deleted.live_preload(fs)?;
         Ok(())
     }

@@ -12,7 +12,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlySparseVectorStorage<S> {
 
     fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
         self.storage.live_preload(fs)?;
-        // TODO(uio): use upcoming bitmap structure
         self.deleted.live_preload(fs)?;
         Ok(())
     }
