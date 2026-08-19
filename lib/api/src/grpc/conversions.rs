@@ -1685,14 +1685,30 @@ impl From<MultiVectorComparator> for segment::types::MultiVectorComparator {
     }
 }
 
+/// Maximum nesting depth accepted when converting a gRPC [`Filter`] into the
+/// internal representation.
+///
+/// A `Filter` can hold `Condition`s that hold further `Filter`s, and the
+/// conversion recurses once per level. Without a bound, an unauthenticated
+/// request with a deeply nested filter exhausts the (comparatively small)
+/// worker-thread stack and aborts the whole process. Reject over-deep filters
+/// instead, mirroring the recursion limit `serde_json` already enforces on the
+/// REST API. See GHSA-h4mh-v26f-h4x8.
+///
+/// This matches what prost already enforces while decoding: its
+/// `RECURSION_LIMIT` of 100 nested messages bounds a self-nested filter to this
+/// many levels, as each level nests a `Filter` inside a `Condition`.
+const MAX_FILTER_NESTING: usize = 50;
+
 fn conditions_helper_from_grpc(
     conditions: Vec<Condition>,
+    depth: usize,
 ) -> Result<Option<Vec<segment::types::Condition>>, tonic::Status> {
     // Convert gRPC into internal conditions, filter out empty conditions
     // See: <https://github.com/qdrant/qdrant/pull/5690>
     let mut converted = Vec::with_capacity(conditions.len());
     for condition in conditions {
-        if let Some(condition) = grpc_condition_into_condition(condition)? {
+        if let Some(condition) = condition_from_grpc(condition, depth)? {
             converted.push(condition);
         }
     }
@@ -1725,31 +1741,44 @@ impl TryFrom<Filter> for segment::types::Filter {
     type Error = Status;
 
     fn try_from(value: Filter) -> Result<Self, Self::Error> {
-        let Filter {
-            should,
-            min_should,
-            must,
-            must_not,
-        } = value;
-        Ok(Self {
-            should: conditions_helper_from_grpc(should)?,
-            min_should: {
-                match min_should {
-                    Some(MinShould {
-                        conditions,
-                        min_count,
-                    }) => Some(segment::types::MinShould {
-                        conditions: conditions_helper_from_grpc(conditions)
-                            .map(|conds| conds.unwrap_or_default())?,
-                        min_count: min_count as usize,
-                    }),
-                    None => None,
-                }
-            },
-            must: conditions_helper_from_grpc(must)?,
-            must_not: conditions_helper_from_grpc(must_not)?,
-        })
+        filter_from_grpc(value, 0)
     }
+}
+
+/// Convert a gRPC filter into an internal filter, tracking the current nesting
+/// `depth` so over-deep filters are rejected before the recursion overflows the
+/// stack. See [`MAX_FILTER_NESTING`].
+fn filter_from_grpc(value: Filter, depth: usize) -> Result<segment::types::Filter, Status> {
+    if depth > MAX_FILTER_NESTING {
+        return Err(Status::invalid_argument(format!(
+            "Filter is nested too deep, the maximum nesting depth is {MAX_FILTER_NESTING}",
+        )));
+    }
+
+    let Filter {
+        should,
+        min_should,
+        must,
+        must_not,
+    } = value;
+    Ok(segment::types::Filter {
+        should: conditions_helper_from_grpc(should, depth)?,
+        min_should: {
+            match min_should {
+                Some(MinShould {
+                    conditions,
+                    min_count,
+                }) => Some(segment::types::MinShould {
+                    conditions: conditions_helper_from_grpc(conditions, depth)
+                        .map(|conds| conds.unwrap_or_default())?,
+                    min_count: min_count as usize,
+                }),
+                None => None,
+            }
+        },
+        must: conditions_helper_from_grpc(must, depth)?,
+        must_not: conditions_helper_from_grpc(must_not, depth)?,
+    })
 }
 
 impl From<segment::types::Filter> for Filter {
@@ -1788,6 +1817,15 @@ impl From<segment::types::Filter> for Filter {
 pub fn grpc_condition_into_condition(
     value: Condition,
 ) -> Result<Option<segment::types::Condition>, Status> {
+    condition_from_grpc(value, 0)
+}
+
+/// Like [`grpc_condition_into_condition`], but carries the current filter
+/// nesting `depth` so nested filters stay bounded. See [`MAX_FILTER_NESTING`].
+fn condition_from_grpc(
+    value: Condition,
+    depth: usize,
+) -> Result<Option<segment::types::Condition>, Status> {
     let Some(condition) = value.condition_one_of else {
         return Ok(None);
     };
@@ -1795,9 +1833,9 @@ pub fn grpc_condition_into_condition(
     let condition = match condition {
         ConditionOneOf::Field(field) => Some(segment::types::Condition::Field(field.try_into()?)),
         ConditionOneOf::HasId(has_id) => Some(segment::types::Condition::HasId(has_id.try_into()?)),
-        ConditionOneOf::Filter(filter) => {
-            Some(segment::types::Condition::Filter(filter.try_into()?))
-        }
+        ConditionOneOf::Filter(filter) => Some(segment::types::Condition::Filter(
+            filter_from_grpc(filter, depth + 1)?,
+        )),
         ConditionOneOf::IsEmpty(is_empty) => {
             Some(segment::types::Condition::IsEmpty(is_empty.try_into()?))
         }
@@ -1805,7 +1843,7 @@ pub fn grpc_condition_into_condition(
             Some(segment::types::Condition::IsNull(is_null.try_into()?))
         }
         ConditionOneOf::Nested(nested) => Some(segment::types::Condition::Nested(
-            segment::types::NestedCondition::new(nested.try_into()?),
+            segment::types::NestedCondition::new(nested_from_grpc(nested, depth + 1)?),
         )),
         ConditionOneOf::HasVector(has_vector) => Some(segment::types::Condition::HasVector(
             segment::types::HasVectorCondition {
@@ -1890,16 +1928,25 @@ impl TryFrom<NestedCondition> for segment::types::Nested {
     type Error = Status;
 
     fn try_from(value: NestedCondition) -> Result<Self, Self::Error> {
-        let NestedCondition { key, filter } = value;
-        match filter {
-            None => Err(Status::invalid_argument(
-                "Nested condition must have a filter",
-            )),
-            Some(filter) => Ok(Self {
-                key: json::json_path_from_proto(&key)?,
-                filter: filter.try_into()?,
-            }),
-        }
+        nested_from_grpc(value, 0)
+    }
+}
+
+/// Convert a gRPC nested condition into an internal one, carrying the nesting
+/// `depth` of its inner filter. See [`MAX_FILTER_NESTING`].
+fn nested_from_grpc(
+    value: NestedCondition,
+    depth: usize,
+) -> Result<segment::types::Nested, Status> {
+    let NestedCondition { key, filter } = value;
+    match filter {
+        None => Err(Status::invalid_argument(
+            "Nested condition must have a filter",
+        )),
+        Some(filter) => Ok(segment::types::Nested {
+            key: json::json_path_from_proto(&key)?,
+            filter: filter_from_grpc(filter, depth)?,
+        }),
     }
 }
 
@@ -3857,5 +3904,88 @@ fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
         VectorStorageDatatype::Float16 => grpc::Datatype::Float16,
         VectorStorageDatatype::Uint8 => grpc::Datatype::Uint8,
         VectorStorageDatatype::Turbo4 => grpc::Datatype::Turbo4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a gRPC filter nested `depth` levels deep, each level wrapping the
+    /// previous one in `must -> Condition::Filter`.
+    fn nested_filter(depth: usize) -> Filter {
+        let mut filter = Filter::default();
+        for _ in 0..depth {
+            filter = Filter {
+                must: vec![Condition {
+                    condition_one_of: Some(ConditionOneOf::Filter(filter)),
+                }],
+                ..Default::default()
+            };
+        }
+        filter
+    }
+
+    #[test]
+    fn filter_at_max_nesting_is_accepted() {
+        let filter = nested_filter(MAX_FILTER_NESTING);
+        assert!(segment::types::Filter::try_from(filter).is_ok());
+    }
+
+    #[test]
+    fn filter_beyond_max_nesting_is_rejected_not_crashed() {
+        // One level past the limit must return an error rather than recurse
+        // until the worker-thread stack overflows and aborts the process.
+        // See GHSA-h4mh-v26f-h4x8.
+        let filter = nested_filter(MAX_FILTER_NESTING + 1);
+        let err = segment::types::Filter::try_from(filter).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// Encode `value` as a protobuf LEB128 varint.
+    fn put_varint(mut value: usize, out: &mut Vec<u8>) {
+        while value >= 0x80 {
+            out.push((value as u8 & 0x7f) | 0x80);
+            value >>= 7;
+        }
+        out.push(value as u8);
+    }
+
+    /// Protobuf wire bytes for a `Filter` self-nested `depth` levels through
+    /// `Filter.must[0].filter`, i.e. the payload shape from the advisory. Built
+    /// as a flat buffer (no recursion), so any depth is safe to construct.
+    fn deeply_nested_filter_bytes(depth: usize) -> Vec<u8> {
+        // Field tags: Filter.must = field 2 (0x12), Condition.filter = field 4 (0x22).
+        let mut inner = Vec::new();
+        for _ in 0..depth {
+            let mut cond = vec![0x22];
+            put_varint(inner.len(), &mut cond);
+            cond.extend_from_slice(&inner);
+
+            let mut filter = vec![0x12];
+            put_varint(cond.len(), &mut filter);
+            filter.extend_from_slice(&cond);
+
+            inner = filter;
+        }
+        inner
+    }
+
+    /// End-to-end check of the advisory's attack vector: crafted, deeply nested
+    /// filter bytes decoded exactly as tonic's `ProstDecoder` would decode an
+    /// incoming request. A too-deep filter must be rejected while decoding
+    /// (prost's recursion limit) rather than overflow the worker-thread stack
+    /// and abort the process. This also guards the assumption behind
+    /// [`MAX_FILTER_NESTING`]: were prost's decode limit ever disabled (its
+    /// `no-recursion-limit` feature), this would fail loudly. See
+    /// GHSA-h4mh-v26f-h4x8.
+    #[test]
+    fn deeply_nested_filter_bytes_are_rejected_by_decode() {
+        use prost::Message;
+
+        // A shallow filter still decodes fine.
+        assert!(Filter::decode(deeply_nested_filter_bytes(3).as_slice()).is_ok());
+        // One nested far past any legitimate depth is rejected gracefully.
+        assert!(Filter::decode(deeply_nested_filter_bytes(1_000).as_slice()).is_err());
     }
 }
