@@ -75,8 +75,7 @@ impl QdrantInternal for QdrantInternalService {
         let ok = self
             .consensus_state
             .wait_for_consensus_commit(commit, term, consensus_tick, timeout)
-            .await
-            .is_ok();
+            .await;
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }
 
