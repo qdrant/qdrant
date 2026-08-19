@@ -15,7 +15,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
 
     fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
         self.vectors.live_preload(fs)?;
-        // TODO(uio): use upcoming bitmap structure
         self.deleted.live_preload(fs)?;
         Ok(())
     }

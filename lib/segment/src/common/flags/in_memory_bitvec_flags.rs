@@ -7,7 +7,8 @@ use common::stored_bitmask::StoredBitmask;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkUnchanged, OpenOptions, Populate, TypedStorage, UioResult, UniversalRead,
+    UniversalReadFs,
 };
 
 use super::compact_stored_flags::COMPACT_FLAGS_FILE;
@@ -94,20 +95,31 @@ impl InMemoryBitvecFlags {
     /// Stage the two files [`Self::reload_appended`] may open. A no-op for
     /// [`Self::from_bitvec`] flags, mirroring the reload.
     pub fn live_preload(&self, fs: &impl CachedReadFs) -> OperationResult<()> {
-        let Some(directory) = &self.directory else {
+        let Some((directory, mode)) = &self.backing else {
             return Ok(());
         };
 
-        fs.schedule_prefetch(
-            &status_file(directory),
-            Some(bitslice_open_options(Populate::No)),
-            None,
-        )?;
-        fs.schedule_prefetch(
-            &directory.join(FLAGS_FILE),
-            Some(bitslice_open_options(Populate::No)),
-            None,
-        )?;
+        match mode {
+            FlagsMode::Dynamic => {
+                fs.reschedule_prefetch(
+                    &status_file(directory),
+                    Some(bitslice_open_options(Populate::PreferBackground)),
+                    None,
+                )?;
+                fs.reschedule_prefetch(
+                    &directory.join(FLAGS_FILE),
+                    Some(bitslice_open_options(Populate::PreferBackground)),
+                    None,
+                )?;
+            }
+            FlagsMode::Compact => {
+                fs.reschedule_prefetch(
+                    &directory.join(COMPACT_FLAGS_FILE),
+                    Some(compact_open_options(Populate::PreferBackground)),
+                    None,
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -116,7 +128,7 @@ impl InMemoryBitvecFlags {
     fn persisted_len<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
-    ) -> OperationResult<usize> {
+    ) -> UioResult<usize> {
         // TypedStorage, not StoredStruct which is write-bound.
         let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
             status_file(directory),
@@ -273,19 +285,28 @@ impl InMemoryBitvecFlags {
             return Ok(());
         };
 
-        let len = Self::persisted_len(fs, directory)? as u64;
+        let len = Self::persisted_len(fs, directory)
+            .ok_unchanged()?
+            .unwrap_or_else(|| self.bitvec.len()) as u64;
+
         let start = u64::from(first);
         let end = u64::from(last).saturating_add(1).min(len);
         if start >= end {
             return Ok(());
         }
 
-        let flags = StoredBitSlice::<S>::open(
+        let Some(flags) = StoredBitSlice::<S>::open(
             fs,
             &directory.join(FLAGS_FILE),
             bitslice_open_options(Populate::No),
             Default::default(),
-        )?;
+        )
+        .ok_unchanged()?
+        else {
+            // No difference in deleted points. All new points are active
+            return Ok(());
+        };
+
         let bits = flags.read_bit_range(start..end)?;
 
         let mut deleted = Vec::new();
@@ -313,12 +334,18 @@ impl InMemoryBitvecFlags {
             return Ok(());
         }
 
-        let mask = StoredBitmask::<S>::open(
+        let Some(mask) = StoredBitmask::<S>::open(
             fs,
             directory.join(COMPACT_FLAGS_FILE),
             compact_open_options(Populate::No),
             Default::default(),
-        )?;
+        )
+        .ok_unchanged()?
+        else {
+            // No difference in deleted points. All new points are active
+            return Ok(());
+        };
+
         let ones = mask.read_ones()?;
 
         let deleted: Vec<_> = new_points
