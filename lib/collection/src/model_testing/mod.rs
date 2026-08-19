@@ -1004,8 +1004,7 @@ mod tests {
             {
                 let path = dir.keep(); // leak: do not delete on failure
                 eprintln!(
-                    "model_testing: {} FAILED (seed = {}), storage retained at {} \
-                     (held in RAM when under {SHM_ROOT})",
+                    "model_testing: {} FAILED (seed = {}), storage retained at {}",
                     self.name,
                     self.seed,
                     path.display(),
