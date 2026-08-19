@@ -33,24 +33,13 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     }
 
     /// Detect the persisted id-tracker format and load it, by *attempting* each
-    /// format's open rather than probing file names one by one.
-    ///
-    /// This avoids the separate `exists` round-trips that a name-based detector
-    /// would issue — costly on object storage (S3/GCS/Azure), where each is a
-    /// remote request. Each candidate's open reads its own defining file, so a
-    /// not-found there simply means "not this format" and we fall through.
+    /// format's open.
     ///
     /// Order: disk-resident (the serverless/object-storage format) first, then
     /// the in-RAM immutable format, then the appendable/mutable format (whose
     /// open tolerates absent files, i.e. a fresh or empty segment).
-    ///
-    /// The attempts are sequential for now; they are independent and can be
-    /// issued concurrently later (the slow-path being remote opens).
-    /// `raw_fs` is the canonical backend for the appendable tracker's
-    /// bootstrap opens, which bypass any prefetch pool.
     pub fn detect_and_load(
         fs: &impl UniversalReadFs<File = S>,
-        raw_fs: &S::Fs,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
@@ -61,7 +50,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             return Ok(Self::Immutable(tracker));
         }
         Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
-            raw_fs,
+            fs,
             segment_path,
             deferred_internal_id,
         )?))
@@ -69,9 +58,11 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
 
     /// Stage everything the next [`Self::live_reload`] needs. Shared access.
     pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
-        // todo(uio): dispatch per variant as the trackers gain live_preload
-        let _ = fs;
-        Ok(())
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.live_preload(fs),
+            Self::Immutable(id_tracker) => id_tracker.live_preload(fs),
+            Self::DiskResident(id_tracker) => id_tracker.live_preload(fs),
+        }
     }
 
     /// Reload externally-applied changes, dispatching to the active variant.

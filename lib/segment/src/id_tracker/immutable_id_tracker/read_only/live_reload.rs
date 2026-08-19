@@ -1,6 +1,6 @@
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyImmutableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -8,6 +8,12 @@ use crate::id_tracker::immutable_id_tracker::deleted_storage::deleted_path;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
+    /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
+    pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+        fs.reschedule_prefetch(&deleted_path(&self.path), Some(Self::open_options()), None)?;
+        Ok(())
+    }
+
     /// Re-read the on-disk `deleted` bitslice and apply points deleted since the last reload.
     ///
     /// The bitslice is a fixed-size bitmap whose bits the writer flips in
@@ -22,12 +28,19 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
     ) -> OperationResult<LiveReloadResult> {
-        let fresh = StoredBitSlice::<S>::open(
+        let Some(fresh) = StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(),
             Default::default(),
-        )?;
+        )
+        .ok_unchanged()?
+        else {
+            return Ok(LiveReloadResult {
+                inserted: Vec::new(),
+                deleted: Vec::new(),
+            });
+        };
 
         // `mappings` already reflects every previously reported deletion, so
         // it is the diff baseline: a set bit not yet dropped there is new.

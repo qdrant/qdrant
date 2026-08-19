@@ -72,21 +72,17 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         fs: &S::Fs,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFs<File = S>,
-    {
+    ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
         let config = Self::preopen(&cached_fs, segment_path)?;
-        Self::open_via(&cached_fs, fs, segment_path, config, deferred_internal_id)
+        Self::open_via(&cached_fs, segment_path, config, deferred_internal_id)
     }
 
     /// Open the segment's components: the id tracker, the payload storage and
     /// one storage per named vector — nothing else.
     ///
     /// `fs` opens the component files (in production the [`CachedFs`] that
-    /// [`open`](Self::open) primed); `raw_fs` is the canonical backend, kept
-    /// by components that re-open files after this call. `config` is the one
+    /// [`open`](Self::open) primed). `config` is the one
     /// [`preopen`](Self::preopen) already parsed, so the state file is not
     /// read twice.
     ///
@@ -100,7 +96,6 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// cutoff is ignored.
     pub fn open_via(
         fs: &impl UniversalReadFs<File = S>,
-        raw_fs: &S::Fs,
         segment_path: &Path,
         config: SegmentConfig,
         deferred_internal_id: Option<PointOffsetType>,
@@ -122,13 +117,11 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
 
         let appendable = config.is_appendable();
 
-        // Detect the persisted format by attempting each format's open (no
-        // per-file `exists` round-trips — important for object-storage
-        // backends). The deferred threshold applies to the appendable tracker
-        // only, mirroring `ReadOnlySegment::open_via`.
+        // Detect the persisted format by attempting each format's open. The
+        // deferred threshold applies to the appendable tracker only, mirroring
+        // `ReadOnlySegment::open_via`.
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             fs,
-            raw_fs,
             segment_path,
             deferred_internal_id.filter(|_| appendable),
         )?));
