@@ -822,6 +822,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// Wait and block until consensus reaches a `term` and actually applies the `commit`.
     ///
     /// Returns `false` if we have diverged commit/term for example, or if `timeout` elapsed first.
+    #[must_use]
     pub async fn wait_for_consensus_commit(
         &self,
         commit: u64,
