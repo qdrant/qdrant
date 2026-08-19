@@ -542,6 +542,20 @@ fn assert_internal_scorer_eq(
 /// `ReadOnlyChunkedVectors`'s own tests.
 #[test]
 fn live_reload_chunked_preserves_scores() {
+    reload_chunked_preserves_scores(false);
+}
+
+/// Preload must stage every file the reload opens: after the preload the
+/// quantized storage's files are deleted, so the reload can only succeed from
+/// the prefetch pool (parked mmap handles keep reading deleted files on unix).
+#[test]
+fn live_preload_then_reload_chunked_preserves_scores() {
+    reload_chunked_preserves_scores(true);
+}
+
+fn reload_chunked_preserves_scores(preload: bool) {
+    use common::universal_io::{CachedFs, CachedReadFs};
+
     let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
     let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
@@ -584,8 +598,24 @@ fn live_reload_chunked_preserves_scores() {
     };
 
     let empty = SortedSlice::new(&[]).unwrap();
-    ro.live_reload(&MmapFs, &empty, &empty, &HardwareCounterCell::disposable())
+    if preload {
+        let mut cached_fs = CachedFs::new(MmapFs, quant_dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        ro.live_preload(&cached_fs).unwrap();
+
+        fs_err::remove_dir_all(quant_dir.path()).unwrap();
+
+        ro.live_reload(
+            &cached_fs,
+            &empty,
+            &empty,
+            &HardwareCounterCell::disposable(),
+        )
         .unwrap();
+    } else {
+        ro.live_reload(&MmapFs, &empty, &empty, &HardwareCounterCell::disposable())
+            .unwrap();
+    }
 
     let after: Vec<_> = {
         let scorer = ro
