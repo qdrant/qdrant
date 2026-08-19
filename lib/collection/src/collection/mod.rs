@@ -1067,7 +1067,7 @@ impl RecreateOptimizersState {
     fn request(&self) -> bool {
         let prev =
             self.state
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
                     RECREATE_IDLE => Some(RECREATE_RUNNING),
                     RECREATE_RUNNING => Some(RECREATE_RUNNING_PENDING),
                     // Already queued, nothing to change.
@@ -1084,7 +1084,7 @@ impl RecreateOptimizersState {
     fn finish_run(&self) -> bool {
         let prev =
             self.state
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |state| match state {
                     RECREATE_RUNNING_PENDING => Some(RECREATE_RUNNING),
                     RECREATE_RUNNING => Some(RECREATE_IDLE),
                     // Idle would mean finish_run was called without a running task.
