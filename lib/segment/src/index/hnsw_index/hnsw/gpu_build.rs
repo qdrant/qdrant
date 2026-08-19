@@ -29,13 +29,10 @@ pub(super) fn build_main_graph_on_gpu(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     gpu_vectors: Option<&GpuVectorStorage>,
-    // Passed through only so a DEVICE_LOST hit during the actual graph dispatch below (as
-    // opposed to during create_gpu_vectors' own device acquisition) can also trigger
-    // recreate_if_device_lost() — see build_graph_on_gpu's own doc comment for why this call
-    // site needed the same fix. Confirmed live 2026-08-11: this exact path (not
-    // create_gpu_vectors) produced 3 of 6 real DEVICE_LOST occurrences observed in ~3 hours of
-    // production monitoring after the create_gpu_vectors-only fix first shipped — a genuine,
-    // roughly-50/50 gap, not a rare edge case.
+    // Passed through so a DEVICE_LOST hit during the graph dispatch below (as opposed to
+    // during create_gpu_vectors' own device acquisition) can also trigger
+    // recreate_if_device_lost() — see build_graph_on_gpu's doc comment. This path hits
+    // DEVICE_LOST about as often as create_gpu_vectors does, not a rare edge case.
     mut gpu_device: Option<&mut LockedGpuDevice>,
     graph_layers_builder: &GraphLayersBuilder,
     deleted_bitslice: &BitSlice,
@@ -58,13 +55,10 @@ pub(super) fn build_main_graph_on_gpu(
         return Ok((None, false));
     };
 
-    // Was a bare `?` before (CodeRabbit review, PR #10213): GpuInsertContext::new() allocates
-    // GPU buffers and runs initialization commands, which can hit DEVICE_LOST just as much as
-    // the actual graph dispatch in build_graph_on_gpu() below — but `?` propagated that as a
-    // hard error all the way up through build_vector_index(), skipping BOTH the graceful
-    // CPU-fallback pattern every other GPU failure in this file uses, and device recreation
-    // (recreate_if_device_lost() never got a chance to run), leaving the device dead for every
-    // future caller too. Same fix shape as build_graph_on_gpu's own match below.
+    // Was a bare `?` before: GpuInsertContext::new() can hit DEVICE_LOST just as much as the
+    // graph dispatch in build_graph_on_gpu() below, but `?` skipped both the CPU-fallback
+    // pattern every other GPU failure here uses and device recreation. Same shape as
+    // build_graph_on_gpu's own match below.
     let mut gpu_insert_context = match GpuInsertContext::new(
         gpu_vectors,
         get_gpu_groups_count(),
@@ -138,11 +132,9 @@ pub(super) fn build_filtered_graph_on_gpu(
 }
 
 /// Returns `(constructed graph if GPU succeeded, whether a DEVICE_LOST was hit)`. The second
-/// field lets callers holding other GPU resources built earlier against the SAME device (e.g.
+/// field lets callers holding other GPU resources built against the same device (e.g.
 /// `GpuVectorStorage`/`GpuInsertContext` in `hnsw/build.rs`) know to discard them instead of
-/// reusing them against what is now a different, freshly recreated device — see
-/// `LockedGpuDevice::recreate_if_device_lost()`'s own doc comment for the production incident
-/// this closes.
+/// reusing them against what is now a different, freshly recreated device.
 #[allow(clippy::too_many_arguments)]
 fn build_graph_on_gpu<'a, 'b>(
     gpu_device: Option<&mut LockedGpuDevice>,
@@ -173,9 +165,7 @@ fn build_graph_on_gpu<'a, 'b>(
             Ok(gpu_constructed_graph) => Ok((Some(gpu_constructed_graph), false)),
             Err(gpu_error) => {
                 log::warn!("Failed to build HNSW on GPU: {gpu_error}. Falling back to CPU.");
-                // Same DEVICE_LOST recreate-in-place logic as create_gpu_vectors() — confirmed
-                // live 2026-08-11 this call site hits DEVICE_LOST just as often (see
-                // build_main_graph_on_gpu's doc comment on the gpu_device parameter above).
+                // Same DEVICE_LOST recreate-in-place logic as create_gpu_vectors() below.
                 let device_lost = if let Some(gpu_device) = gpu_device {
                     gpu_device.recreate_if_device_lost(&gpu_error)
                 } else {
@@ -219,10 +209,7 @@ pub(super) fn create_gpu_vectors(
             Ok(gpu_vectors) => Ok((Some(gpu_vectors), false)),
             Err(err) => {
                 log::error!("Failed to create GPU vectors, use CPU instead. Error: {err}.");
-                // If this specific error is DEVICE_LOST, the Vulkan device itself is now
-                // permanently dead (per spec) and would otherwise stay dead in the shared pool
-                // for the rest of the process's life — see recreate_if_device_lost()'s doc
-                // comment. No-op for any other error (timeout, OOM, ...).
+                // Recreates the device if this was DEVICE_LOST; no-op otherwise.
                 let device_lost = gpu_device.recreate_if_device_lost(&err);
                 Ok((None, device_lost))
             }

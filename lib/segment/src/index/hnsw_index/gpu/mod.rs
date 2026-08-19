@@ -26,37 +26,24 @@ use crate::index::hnsw_index::HnswM;
 pub static GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
 
 /// Bounded wait for `GpuDevicesMaganer::lock_device()` to acquire a free device — see that
-/// function's own doc comment for the full story. Was previously UNBOUNDED (a bare
-/// `try_lock()`/`sleep(100ms)` retry loop with no exit besides success or external
-/// cancellation). Confirmed live 2026-08-05/06 (real production incident): if the thread
-/// currently holding a device gets stuck in a lower-level driver call that never returns (not a
-/// clean Vulkan error — those already recover fine via the existing GPU_TIMEOUT/DEVICE_LOST
-/// path below), every other caller waiting on `lock_device()` piles up forever with zero
-/// visibility (no error, no log line) until a full qdrant restart. This bounds that: give up
-/// waiting after this long and fall back to CPU for that one build, same as any other GPU
-/// failure, rather than hanging the entire optimizer indefinitely.
+/// function's own doc comment. Was previously unbounded: a device whose holder is stuck in a
+/// lower-level driver call that never returns (not a clean Vulkan error, which already
+/// recovers via the GPU_TIMEOUT/DEVICE_LOST path below) would hang every other caller forever
+/// with no visibility.
 ///
-/// Must stay above GPU_TIMEOUT below: a lock holder may legitimately run a single GPU
-/// operation for that long (confirmed live: multi-minute builds for individual segments), so a
-/// shorter bound here would report that entirely healthy contention as a stuck/wedged device —
-/// confirmed as a real inconsistency in this same patch before release (a reviewer caught
-/// GPU_LOCK_TIMEOUT=120s vs GPU_TIMEOUT=300s, i.e. the wait-for-a-device bound was SHORTER than
-/// the legitimate-hold-time bound it's supposed to exceed). Derived from GPU_TIMEOUT (not a
-/// second independent literal) specifically so the two can never drift back out of this
-/// relationship if either is tuned again later.
-static GPU_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(GPU_TIMEOUT.as_secs() * 2);
+/// Must stay above GPU_TIMEOUT: a lock holder may legitimately run a single GPU operation for
+/// that long, so a shorter bound here would misreport healthy contention as a stuck device.
+/// Derived from GPU_TIMEOUT rather than an independent literal so the two can't drift back out
+/// of this relationship if either is tuned later.
+static GPU_LOCK_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(GPU_TIMEOUT.as_secs() * 2);
 
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.
 /// We cannot use too small timeout and check stopper in the loop because
 /// GPU resources should be alive while GPU operation is in progress.
-/// Was 60s — confirmed live 2026-08-05/06 our workload's bge_colbert (per-token multivector)
-/// segments are genuinely expensive per GPU dispatch (multi-minute builds observed for
-/// individual segments in production), so a single wait_finish() call landing on a slow-but-
-/// genuinely-still-working step could plausibly hit 60s and get killed/misreported even when
-/// nothing is actually stuck. Not yet confirmed as an actual observed failure (no plain
-/// GpuError::Timeout seen in production logs, only real driver-reported DEVICE_LOST errors —
-/// see GPU_LOCK_TIMEOUT above for the fix targeting those), but cheap, safe headroom against it.
+/// Bumped from 60s: some workloads' individual GPU dispatches (e.g. large multivector segments)
+/// can genuinely take multiple minutes — not confirmed as an observed failure, just headroom.
 static GPU_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Warps count for GPU.

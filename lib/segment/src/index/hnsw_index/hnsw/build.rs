@@ -31,9 +31,9 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
+use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
-use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -276,19 +276,15 @@ impl HNSWIndex {
                     debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
                 }
                 if graph_device_lost {
-                    // The device was recreated mid-dispatch — gpu_vectors (built against the
-                    // device THIS build started with) is now bound to a dead device. Discard
-                    // it so the additional-links pass below correctly falls back to CPU
-                    // instead of reusing stale buffers and failing again. See
-                    // LockedGpuDevice::recreate_if_device_lost()'s doc comment (CodeRabbit
-                    // review, PR #10213) for the production incident this closes.
+                    // Device was recreated mid-dispatch — gpu_vectors is bound to the now-dead
+                    // device. Discard it so the additional-links pass below falls back to CPU
+                    // instead of reusing stale buffers.
                     gpu_vectors = None;
                 }
             }
             if vectors_device_lost {
-                // Already None in this case (create_gpu_vectors only returns device_lost=true
-                // alongside None), but kept explicit for the same reason as above — this must
-                // never silently start passing Some again if that function's contract changes.
+                // Already None here, but kept explicit so this doesn't silently start passing
+                // Some again if create_gpu_vectors' contract changes.
                 gpu_vectors = None;
             }
             gpu_vectors
@@ -434,13 +430,9 @@ impl HNSWIndex {
             let visited_pool = VisitedPool::new();
             let mut block_filter_list = visited_pool.get(total_vector_count);
 
-            // Was a bare `?` before (CodeRabbit review, PR #10213): GpuInsertContext::new()
-            // allocates GPU buffers and runs initialization commands, which can hit DEVICE_LOST
-            // just as much as the actual per-block dispatch in build_filtered_graph_on_gpu()
-            // below — but `?` propagated that as a hard error all the way up, skipping BOTH the
-            // graceful CPU-fallback pattern every other GPU failure in this file uses, and
-            // device recreation (recreate_if_device_lost() never got a chance to run), leaving
-            // the device dead for every future caller too. Same fix shape as
+            // Was a bare `?` before: GpuInsertContext::new() can hit DEVICE_LOST just as much
+            // as the per-block dispatch below, but `?` skipped both the CPU-fallback pattern
+            // every other GPU failure here uses, and device recreation. Same shape as
             // build_main_graph_on_gpu's own GpuInsertContext::new() call.
             #[cfg(feature = "gpu")]
             let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors.as_ref() {
@@ -709,14 +701,10 @@ fn build_filtered_graph(
             stopped,
         )?;
         if device_lost {
-            // The device was recreated mid-dispatch — this gpu_insert_context (and the
-            // gpu_vectors it was built from) is bound to a dead device. Discard it here so
-            // EVERY remaining block/field in this additional-links pass (this function runs
-            // once per payload block, reusing the same outer gpu_insert_context across all of
-            // them) correctly falls back to CPU instead of repeatedly failing against stale
-            // buffers and burning a pointless recreation cycle each time. See
-            // LockedGpuDevice::recreate_if_device_lost()'s doc comment (CodeRabbit review,
-            // PR #10213) for the production incident this closes.
+            // gpu_insert_context is bound to the now-dead device. Discard it so every
+            // remaining block in this additional-links pass (this function runs once per
+            // payload block, reusing the same outer gpu_insert_context) falls back to CPU
+            // instead of repeatedly failing against stale buffers.
             *gpu_insert_context = None;
         }
         if let Some(gpu_constructed_graph) = gpu_result {

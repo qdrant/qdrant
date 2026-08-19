@@ -1,15 +1,7 @@
-//! Diagnostic test (deliberately NOT part of the normal `cargo test` sweep — `#[ignore]`d, run
-//! explicitly) probing whether a large/failed GPU vector-storage allocation leaves
-//! `GpuDevicesMaganer`'s device lock unusable for subsequent callers. Uses the REAL production
-//! code paths (`GpuDevicesMaganer`, `GpuVectorStorage`) — no reinvented Vulkan primitives — so
-//! this exercises exactly what `/index/page`'s HNSW GPU build path does in production.
-//!
-//! Context (see project_qdrant_gpu_indexing_xid109 memory, 2026-08-05/06 investigation): a
-//! multi-hour silent optimizer stall was traced to `gpu_devices_manager.rs`'s `lock_device()`
-//! having NO timeout at all — a bare `try_lock()` + `sleep(100ms)` retry loop, forever, if no
-//! device ever frees up. The open question this diagnostic targets: does a failed/oversized
-//! allocation (VRAM exhaustion) or contention while a device is locked leave that device
-//! permanently unable to be re-locked, even after the failing call returns?
+//! Diagnostic test (`#[ignore]`d, run explicitly) probing whether a large/failed GPU
+//! vector-storage allocation leaves `GpuDevicesMaganer`'s device lock unusable for subsequent
+//! callers. Uses the real `GpuDevicesMaganer`/`GpuVectorStorage` code paths, not reinvented
+//! Vulkan primitives.
 
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
@@ -23,12 +15,10 @@ use crate::types::Distance;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
-/// Builds a dense f32 vector storage of approximately `target_gb` GB total size. Fixed, small
-/// per-vector dim (8192 floats = 32KB/vector) — `VolatileChunkedVectors::new()` hard-asserts a
-/// single vector's byte size must fit under `CHUNK_SIZE` (≤32MB depending on build config;
-/// confirmed live: a few-huge-vectors approach with ~512MB/vector panicked immediately, before
-/// ever touching the GPU). Many small vectors instead — content is irrelevant here, only the
-/// total size (to force a real GPU allocation of that size).
+/// Builds a dense f32 vector storage of approximately `target_gb` GB total size. Many small
+/// vectors (8192 floats each) rather than a few huge ones — `VolatileChunkedVectors::new()`
+/// hard-asserts a single vector's byte size must fit under `CHUNK_SIZE` (≤32MB depending on
+/// build config). Content is irrelevant, only the total size (to force a real GPU allocation).
 fn build_storage_of_size(target_gb: f64) -> VectorStorageEnum {
     const DIM: usize = 8192;
     let total_floats = (target_gb * 1024.0 * 1024.0 * 1024.0 / 4.0) as usize;
@@ -44,28 +34,22 @@ fn build_storage_of_size(target_gb: f64) -> VectorStorageEnum {
     storage
 }
 
-/// GPU vendor filter for these diagnostics, e.g. "nvidia" or "amd" — was previously hardcoded to
-/// "nvidia" (fine on our own host, but the diagnostic couldn't run at all on a different vendor,
-/// and would panic with a message pointing at GPU visibility rather than at the filter itself).
+/// GPU vendor filter for these diagnostics, e.g. "nvidia" or "amd".
 fn gpu_filter() -> String {
     std::env::var("QDRANT_GPU_DIAGNOSTIC_FILTER").unwrap_or_else(|_| "nvidia".to_owned())
 }
 
-/// This test's own oversized allocation is meant to exceed VRAM, not host RAM — but
-/// `build_storage_of_size()` allocates the full target size in host memory first (it builds a
-/// real `VectorStorageEnum` before ever touching the GPU). Reading `/proc/meminfo`'s
-/// `MemAvailable` and capping the request below it (leaving real headroom for the OTHER threads'
-/// concurrent allocations too) avoids the host OOM killer ending the diagnostic before it ever
-/// reaches the GPU, on a host with less RAM than ours. Falls back to the original hardcoded size
-/// if `/proc/meminfo` can't be read/parsed (non-Linux, or a sandboxed environment without it) —
-/// same behavior as before this fix in that case, not a regression.
+/// `build_storage_of_size()` allocates its full target size in host memory first (a real
+/// `VectorStorageEnum`, before ever touching the GPU) — caps the request below available RAM
+/// (via `/proc/meminfo`) to avoid the OOM killer ending the diagnostic before it reaches the
+/// GPU. Falls back to the preferred size if `/proc/meminfo` can't be read.
 fn oversized_target_gb(preferred_gb: f64, headroom_fraction: f64) -> f64 {
-    let available_gb = std::fs::read_to_string("/proc/meminfo")
+    let available_gb = fs_err::read_to_string("/proc/meminfo")
         .ok()
         .and_then(|contents| {
             contents.lines().find_map(|line| {
                 line.strip_prefix("MemAvailable:")
-                    .and_then(|rest| rest.trim().split_whitespace().next())
+                    .and_then(|rest| rest.split_whitespace().next())
                     .and_then(|kb| kb.parse::<f64>().ok())
                     .map(|kb| kb / (1024.0 * 1024.0))
             })
@@ -85,10 +69,9 @@ fn relock_after_pressure_diagnostic() {
     let manager = GpuDevicesMaganer::new(&gpu_filter(), None, false, false, true, 1)
         .expect("failed to init GpuDevicesMaganer — is a GPU actually visible on this host?");
 
-    // Sizes chosen to straddle Qdrant's own documented ~16GB-per-segment-per-indexing-iteration
-    // GPU limit (see running-with-gpu docs) — some should succeed cleanly, some should fail,
-    // the interesting question is what RELOCKING looks like after each, not just whether the
-    // allocation itself succeeds.
+    // Sizes chosen to straddle Qdrant's documented ~16GB-per-segment GPU limit — some should
+    // succeed, some should fail; the interesting question is what relocking looks like after
+    // each, not just whether the allocation itself succeeds.
     for target_gb in [4.0_f64, 8.0, 16.0] {
         eprintln!("\n=== target size: {target_gb} GB ===");
         eprintln!("  building host-side vector storage ({target_gb} GB)...");
@@ -141,15 +124,15 @@ fn relock_after_pressure_diagnostic() {
         );
         drop(relocked);
     }
-    eprintln!("\n=== diagnostic complete — see above for any '*** SLOW/STUCK RELOCK ***' lines ===");
+    eprintln!(
+        "\n=== diagnostic complete — see above for any '*** SLOW/STUCK RELOCK ***' lines ==="
+    );
 }
 
-/// Companion test: instead of one thread doing allocate-then-immediately-relock, spawn several
-/// threads hammering lock_device()/GpuVectorStorage concurrently (mirrors DIR_PARALLEL's real
-/// fan-out shape more closely than the single-threaded test above) while one of them
-/// deliberately attempts an oversized allocation. If a single stuck/oversized attempt can wedge
-/// the shared device mutex, the OTHER threads' lock_device() calls should show it as unusually
-/// long waits, not just the one that failed.
+/// Companion test: spawns several threads hammering lock_device()/GpuVectorStorage
+/// concurrently, one of them deliberately attempting an oversized allocation. If a single
+/// stuck/oversized attempt can wedge the shared device mutex, the other threads' lock_device()
+/// calls should show it as unusually long waits, not just the one that failed.
 ///
 /// Run explicitly with:
 ///   cargo test --features gpu -p segment relock_under_concurrent_contention_diagnostic -- --ignored --nocapture
