@@ -509,6 +509,55 @@ fn test_check_consistency() {
     );
 }
 
+/// A torn write of the point versions file must not cost us a point whose data is all durable.
+#[test]
+fn test_repair_keeps_point_with_torn_versions_write() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let segment_path = segment.segment_path.clone();
+
+    let vec1 = vec![1.0, 0.0, 0.0, 0.0];
+    segment
+        .upsert_point(100, 1.into(), only_default_vector(&vec1), &hw_counter)
+        .unwrap();
+    let vec2 = vec![0.0, 1.0, 0.0, 0.0];
+    segment
+        .upsert_point(101, 2.into(), only_default_vector(&vec2), &hw_counter)
+        .unwrap();
+    segment.flush(true).unwrap();
+    drop(segment);
+
+    // Versions are flushed last, as a dense array of one u64 per slot. Dropping its tail slot is
+    // what a kill part-way through the flush order leaves on disk: mapped, but versionless.
+    let versions_path = segment_path.join("mutable_id_tracker.versions");
+    assert!(versions_path.is_file(), "expected a mutable ID tracker");
+    let versions_len = fs::metadata(&versions_path).unwrap().len();
+    File::options()
+        .write(true)
+        .open(&versions_path)
+        .unwrap()
+        .set_len(versions_len - size_of::<u64>() as u64)
+        .unwrap();
+
+    let mut segment =
+        load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    segment.check_consistency_and_repair().unwrap();
+
+    assert!(
+        segment.has_point(2.into(), DeferredBehavior::VisibleOnly),
+        "repair dropped a point whose vectors and mapping were both persisted",
+    );
+    assert!(
+        segment
+            .vector(DEFAULT_VECTOR_NAME, 2.into(), &hw_counter)
+            .is_ok()
+    );
+    assert!(segment.has_point(1.into(), DeferredBehavior::VisibleOnly));
+}
+
 #[test]
 fn test_point_vector_count() {
     init_logger();
