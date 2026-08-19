@@ -12,4 +12,5 @@ mod pagination_test;
 mod resharding_abort_deferred_points_test;
 mod snapshot_recovery_test;
 mod sparse_idf_test;
+mod torn_versions_write_test;
 mod wal_less_snapshot_clocks_test;
