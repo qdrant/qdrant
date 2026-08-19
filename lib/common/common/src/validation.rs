@@ -93,6 +93,22 @@ pub fn validate_not_empty(value: &str) -> Result<(), ValidationError> {
 const INVALID_NAME_CHARS: [char; 11] =
     ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0', '\u{1F}'];
 
+/// Path-resolution-only directory entries that must never be allowed as a
+/// collection / vector name, even though they contain only otherwise-allowed
+/// characters.
+///
+/// `.` resolves to "this directory" and `..` resolves to "the parent
+/// directory" on every supported filesystem. Allowing them as names lets a
+/// caller — once authenticated — produce a path that escapes the configured
+/// `collection/` or `snapshots/` root via constructions like
+/// `storage_path/collection/{name}` or `snapshots_path/{name}`. Existing
+/// downstream protections (e.g. `safe_delete_in_tmp` failing to rename a
+/// directory into a subdir of itself, or `do_recover_from_snapshot`
+/// canonicalising against `snapshots_path`) catch the most obvious abuse,
+/// but the validator should fail closed here so that future call sites
+/// joining `collection_name` into a path don't silently regress.
+const RESERVED_PATH_NAMES: [&str; 2] = [".", ".."];
+
 /// Reject any character from [`INVALID_NAME_CHARS`] in `value`. The `kind`
 /// argument is interpolated into the error message ("collection name" /
 /// "vector name") so callers get a context-appropriate error.
@@ -107,10 +123,27 @@ fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationErr
     Err(err)
 }
 
+/// Reject `value` if it matches one of [`RESERVED_PATH_NAMES`].
+fn check_reserved_path_name(value: &str, kind: &str) -> Result<(), ValidationError> {
+    if RESERVED_PATH_NAMES
+        .iter()
+        .any(|reserved| *reserved == value)
+    {
+        let mut err = ValidationError::new("reserved_path_name");
+        err.add_param(Cow::from("value"), &value);
+        err.message.replace(Cow::from(format!(
+            "{kind} cannot be a path-traversal segment (\"{value}\")"
+        )));
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// Validate the collection name contains no illegal characters
 ///
 /// This does not check the length of the name.
 pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
+    check_reserved_path_name(value, "collection name")?;
     check_invalid_name_chars(value, "collection name")
 }
 
@@ -132,6 +165,7 @@ pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
         return Err(err);
     }
 
+    check_reserved_path_name(value, "vector name")?;
     check_invalid_name_chars(value, "vector name")
 }
 
@@ -145,6 +179,11 @@ pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
 pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationError> {
     // Disallowed characters on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
     const INVALID_CHARS: [char; 2] = ['/', '\0'];
+
+    // Reject path-resolution names regardless of legacy compatibility:
+    // these escape the configured collection/snapshots root once joined into
+    // a path, and were never useful as actual collection identifiers.
+    check_reserved_path_name(value, "collection name")?;
 
     match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
         Some(c) => {
@@ -411,6 +450,39 @@ mod tests {
         assert!(validate_collection_name_legacy("no*path").is_ok());
         assert!(validate_collection_name_legacy("?").is_ok());
         assert!(validate_collection_name_legacy("\0").is_err());
+    }
+
+    /// Regression: `.` and `..` resolve to "this directory" / "parent
+    /// directory" once the validated name is joined into a filesystem path
+    /// such as `storage_path/collection/{name}` or `snapshots_path/{name}`.
+    /// They must be rejected by both the strict and the legacy validator,
+    /// and by `validate_vector_name` (which also produces on-disk path
+    /// components).
+    ///
+    /// Names that merely *contain* `.` (e.g. `my.collection`,
+    /// `..hidden_prefix`) stay legal — only the bare `.` and `..` segments
+    /// are blocked.
+    #[test]
+    fn test_validate_path_traversal_names_are_rejected() {
+        // strict
+        assert!(validate_collection_name(".").is_err());
+        assert!(validate_collection_name("..").is_err());
+        assert!(validate_collection_name(".hidden").is_ok());
+        assert!(validate_collection_name("..hidden").is_ok());
+        assert!(validate_collection_name("my.collection").is_ok());
+
+        // legacy
+        assert!(validate_collection_name_legacy(".").is_err());
+        assert!(validate_collection_name_legacy("..").is_err());
+        assert!(validate_collection_name_legacy(".hidden").is_ok());
+        assert!(validate_collection_name_legacy("..hidden").is_ok());
+        assert!(validate_collection_name_legacy("my.collection").is_ok());
+
+        // vector names share the same on-disk-path rule.
+        assert!(validate_vector_name(".").is_err());
+        assert!(validate_vector_name("..").is_err());
+        assert!(validate_vector_name(".hidden").is_ok());
+        assert!(validate_vector_name("my.vector").is_ok());
     }
 
     #[test]
