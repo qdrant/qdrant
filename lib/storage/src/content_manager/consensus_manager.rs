@@ -824,6 +824,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// # Errors
     ///
     /// Returns an error if we have diverged commit/term for example.
+    // The only caller wants success or failure, there is nothing to carry in an error type.
+    #[allow(clippy::result_unit_err)]
     pub async fn wait_for_consensus_commit(
         &self,
         commit: u64,
