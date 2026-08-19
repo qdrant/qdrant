@@ -949,6 +949,34 @@ mod tests {
     const SNAPSHOTS_OFF: bool = true;
     const SNAPSHOTS_ON: bool = false;
 
+    /// tmpfs root a run prefers over the platform temp dir: every gridstore storage preallocates
+    /// a 32 MB page, so a run occupies ~600 MB (~3 GB for the snapshot gate) and is unusably slow
+    /// on a copy-on-write filesystem (~30 s on tmpfs vs. not finishing in 7 min on btrfs).
+    const SHM_ROOT: &str = "/dev/shm";
+
+    /// Free space required at [`SHM_ROOT`], above the ~3 GB peak. Guards against the 64 MB
+    /// `/dev/shm` a container gets by default, where a run would die on `ENOSPC` partway through.
+    const SHM_MIN_AVAILABLE: u64 = 4 * 1024 * 1024 * 1024;
+
+    /// Create one run's storage dir, on tmpfs where possible. An explicit `TMPDIR` wins: it stays
+    /// the escape hatch for running these gates against a real filesystem.
+    fn create_storage_dir() -> tempfile::TempDir {
+        // Named prefix: a failing run leaks its dir for postmortem, and on tmpfs that leak is RAM.
+        let mut builder = tempfile::Builder::new();
+        let builder = builder.prefix("qdrant-model-testing-");
+        let shm = Path::new(SHM_ROOT);
+        let use_shm = !std::env::var_os("TMPDIR").is_some_and(|v| !v.is_empty())
+            && shm.is_dir()
+            && common::disk_usage::disk_usage(shm)
+                .is_some_and(|usage| usage.available >= SHM_MIN_AVAILABLE);
+        if use_shm {
+            builder.tempdir_in(shm)
+        } else {
+            builder.tempdir()
+        }
+        .expect("failed to create temp dir")
+    }
+
     /// Owns a run's storage dir. On a clean drop the dir is deleted (normal `TempDir`
     /// behaviour); if the test is unwinding from a panic the dir is leaked instead and its
     /// path printed, so the trace + data survive for postmortem reproduction with the seed.
@@ -974,7 +1002,8 @@ mod tests {
             {
                 let path = dir.keep(); // leak: do not delete on failure
                 eprintln!(
-                    "model_testing: {} FAILED (seed = {}), storage retained at {}",
+                    "model_testing: {} FAILED (seed = {}), storage retained at {} \
+                     (held in RAM when under {SHM_ROOT})",
                     self.name,
                     self.seed,
                     path.display(),
@@ -1001,9 +1030,12 @@ mod tests {
         disable_snapshots: bool,
         op_num: usize,
     ) {
-        let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let storage_dir = create_storage_dir();
         let seed = rand::rng().random();
-        println!("model_testing: {name} seed = {seed}");
+        println!(
+            "model_testing: {name} seed = {seed}, storage = {}",
+            storage_dir.path().display(),
+        );
         let guard = StorageGuard {
             dir: Some(storage_dir),
             name,
