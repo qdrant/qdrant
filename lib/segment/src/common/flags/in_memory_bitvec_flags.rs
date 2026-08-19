@@ -91,6 +91,26 @@ impl InMemoryBitvecFlags {
         Ok(())
     }
 
+    /// Stage the two files [`Self::reload_appended`] may open. A no-op for
+    /// [`Self::from_bitvec`] flags, mirroring the reload.
+    pub fn live_preload(&self, fs: &impl CachedReadFs) -> OperationResult<()> {
+        let Some(directory) = &self.directory else {
+            return Ok(());
+        };
+
+        fs.schedule_prefetch(
+            &status_file(directory),
+            Some(bitslice_open_options(Populate::No)),
+            None,
+        )?;
+        fs.schedule_prefetch(
+            &directory.join(FLAGS_FILE),
+            Some(bitslice_open_options(Populate::No)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// Logical flag count from the status file; the flags file itself is padded
     /// past this.
     fn persisted_len<S: UniversalRead>(
