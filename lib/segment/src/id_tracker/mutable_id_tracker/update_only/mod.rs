@@ -194,7 +194,11 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         // entry boundaries stay visible to it.
         file.append_batch(
             committed_len,
-            versions_buffer.chunks_exact(VERSION_ELEMENT_SIZE as usize),
+            versions_buffer
+                .as_chunks::<{ VERSION_ELEMENT_SIZE as usize }>()
+                .0
+                .iter()
+                .map(|entry| entry.as_slice()),
         )?;
         (file.flusher())()?;
 

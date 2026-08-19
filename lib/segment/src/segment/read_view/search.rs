@@ -650,8 +650,10 @@ mod tests {
                 let decoded = match name.as_str() {
                     DENSE_NAME => VectorInternal::Dense(
                         bytes
-                            .chunks_exact(size_of::<f32>())
-                            .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()))
+                            .as_chunks::<{ size_of::<f32>() }>()
+                            .0
+                            .iter()
+                            .map(|chunk| f32::from_ne_bytes(*chunk))
                             .collect(),
                     ),
                     SPARSE_NAME => VectorInternal::Sparse(
