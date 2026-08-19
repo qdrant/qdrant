@@ -15,7 +15,7 @@ use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::PointIdType;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
-    fn open_options() -> OpenOptions {
+    pub(super) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
@@ -55,7 +55,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// mappings log and versions file are consumed, applying only committed points (a partial
     /// trailing entry is simply not consumed and picked up on a later reload).
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {

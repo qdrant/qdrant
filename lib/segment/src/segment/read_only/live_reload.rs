@@ -27,7 +27,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             segment_config: _,
         } = self;
 
-        let mut reload_fs = reload_fs.lock();
+        let mut reload_fs = reload_fs.borrow_mut();
         // perf: one LIST per segment per refresh; could be a single shard-prefix
         // LIST partitioned into the per-segment snapshots.
         reload_fs.cache_file_info()?;
