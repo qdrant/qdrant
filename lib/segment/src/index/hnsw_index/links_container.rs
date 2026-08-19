@@ -6,6 +6,30 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use crate::common::vector_utils::TrySetCapacityExact as _;
 
+/// Neighbour-selection ("not closer than base") test.
+///
+/// A candidate is dropped when an already selected link is closer to it than the
+/// target is. The comparison is strict, *except* between candidates that are
+/// exactly equidistant from the target: without that exception a group of
+/// byte-identical vectors is mutually non-pruning and fills every link slot,
+/// turning the group into a sink with no edges leaving it.
+///
+/// Restricting the non-strict comparison to `candidate_score == existing_score`
+/// keeps ordinary (non-duplicate) candidates unaffected: for them the equality
+/// case has measure zero.
+#[inline]
+fn is_redundant(
+    candidate_to_existing: ScoreType,
+    candidate_score: ScoreType,
+    existing_score: ScoreType,
+) -> bool {
+    if candidate_score == existing_score {
+        candidate_to_existing >= candidate_score
+    } else {
+        candidate_to_existing > candidate_score
+    }
+}
+
 pub struct LinksContainer {
     links: Vec<PointOffsetType>,
     /// Number of links that have been processed by the heuristic.
@@ -56,13 +80,20 @@ impl LinksContainer {
             self.processed_by_heuristic = 0;
             return;
         }
+        // Scores of the already selected links, to detect exact ties (see `is_redundant`).
+        let mut selected_scores: Vec<ScoreType> = Vec::with_capacity(level_m);
         'outer: for candidate in candidates {
-            for &existing in &self.links {
-                if score(candidate.idx, existing) > candidate.score {
+            for (&existing, &existing_score) in self.links.iter().zip(&selected_scores) {
+                if is_redundant(
+                    score(candidate.idx, existing),
+                    candidate.score,
+                    existing_score,
+                ) {
                     continue 'outer;
                 }
             }
             self.links.push(candidate.idx);
+            selected_scores.push(candidate.score);
             if self.links.len() >= level_m {
                 break;
             }
@@ -204,9 +235,11 @@ impl LinksContainer {
                 if candidate.order.is_some() && existing.order.is_some() {
                     continue; // See (A).
                 }
-                if score(candidate.idx, existing.idx)
-                    > candidate.cached_score(target_point_id, &mut score)
-                {
+                if is_redundant(
+                    score(candidate.idx, existing.idx),
+                    candidate.cached_score(target_point_id, &mut score),
+                    existing.cached_score(target_point_id, &mut score),
+                ) {
                     continue 'outer;
                 }
             }
@@ -388,6 +421,59 @@ mod tests {
             links_container.connect(id, 0, m, scorer);
         }
         assert_eq!(links_container.links(), &vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    /// A group of byte-identical vectors must not consume each other's whole link
+    /// budget: every copy is equidistant from every other, so under a strictly
+    /// greater comparison none of them prunes any other and the group ends up as a
+    /// sink at level 0 with no edges leaving it.
+    #[test]
+    fn test_exact_duplicates_do_not_fill_the_link_list() {
+        const M: usize = 6;
+        const COPIES: usize = 8;
+
+        // Point 0 is the target. Points 1..=COPIES are byte-identical to it.
+        // The remaining points are ordinary neighbours, all a little further away.
+        let mut points: Vec<DenseVector> = vec![vec![0.0, 0.0]; COPIES + 1];
+        points.extend([
+            vec![1.0, 0.0],
+            vec![0.0, 1.0],
+            vec![-1.0, 0.0],
+            vec![0.0, -1.0],
+        ]);
+        let scorer = |a: PointOffsetType, b: PointOffsetType| {
+            -((points[a as usize][0] - points[b as usize][0]).powi(2)
+                + (points[a as usize][1] - points[b as usize][1]).powi(2))
+            .sqrt()
+        };
+
+        let mut candidates = FixedLengthPriorityQueue::new(points.len() - 1);
+        for id in 1..points.len() as PointOffsetType {
+            candidates.push(ScoredPointOffset {
+                idx: id,
+                score: scorer(0, id),
+            });
+        }
+
+        let mut container = LinksContainer::with_capacity(M);
+        container.fill_from_sorted_with_heuristic(candidates.into_iter_sorted(), M, scorer);
+
+        let copies = container
+            .links()
+            .iter()
+            .filter(|&&idx| idx as usize <= COPIES)
+            .count();
+        assert_eq!(
+            copies,
+            1,
+            "only one of {COPIES} identical copies should be kept, got {:?}",
+            container.links(),
+        );
+        assert!(
+            container.links().len() > 1,
+            "the rest of the budget should go to real neighbours, got {:?}",
+            container.links(),
+        );
     }
 
     #[test]
