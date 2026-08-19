@@ -704,7 +704,9 @@ mod tests {
 
         // Collection name validation must not be strict on non-creation. On Windows a
         // backslash is a path separator, so there the same name is a path — it is rejected,
-        // and no existing collection can carry it (see `check_plain_dir_name`).
+        // Collection name validation must not be strict on non-creation.
+        // Backslash is a path separator on Windows and rejected in collection names there,
+        // so that `no\path` can't be interpreted as a path (see `check_plain_dir_name`).
         let bad_request = UpdateCollection {
             collection_name: "no\\path".into(),
             ..Default::default()

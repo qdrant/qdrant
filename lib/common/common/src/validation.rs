@@ -110,10 +110,13 @@ fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationErr
 
 /// Reject names that are not a plain, single path component.
 ///
-/// The name is joined onto a storage directory on disk, so a dot segment (`.`, `..`) — or
-/// anything else `Path::file_name` does not return verbatim, such as the empty string — would
-/// resolve outside (or to) the parent directory instead of a subdirectory of it. Same predicate
-/// as the snapshot name check in `collection::common::snapshots_manager`.
+/// Name is used as the name of a storage directory on disk.
+/// It must not contain path separators or dot-segments (`.`, `..`),
+/// so that it won't be interpreted as a path.
+///
+/// `Path::file_name` is a simple way to check this: it returns the whole path
+/// only when it's a simple name with no restricted components.
+/// Same check is used in `collection::common::snapshots_manager`.
 fn check_plain_dir_name(value: &str, kind: &str) -> Result<(), ValidationError> {
     if Path::new(value).file_name() != Some(value.as_ref()) {
         let mut err = ValidationError::new("invalid_path_component");
