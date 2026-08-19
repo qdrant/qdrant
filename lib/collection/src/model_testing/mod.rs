@@ -950,13 +950,15 @@ mod tests {
     const SNAPSHOTS_ON: bool = false;
 
     /// tmpfs root a run prefers over the platform temp dir: every gridstore storage preallocates
-    /// a 32 MB page, so a run occupies ~600 MB (~3 GB for the snapshot gate) and is unusably slow
+    /// a 32 MB page, so a run occupies ~600 MB (~3.2 GB for the snapshot gate) and is unusably slow
     /// on a copy-on-write filesystem (~30 s on tmpfs vs. not finishing in 7 min on btrfs).
     const SHM_ROOT: &str = "/dev/shm";
 
-    /// Free space required at [`SHM_ROOT`], above the ~3 GB peak. Guards against the 64 MB
-    /// `/dev/shm` a container gets by default, where a run would die on `ENOSPC` partway through.
-    const SHM_MIN_AVAILABLE: u64 = 4 * 1024 * 1024 * 1024;
+    /// Free space required at [`SHM_ROOT`]. Sized against the 4.1-4.5 GB the five gates peak at
+    /// *together* (nextest runs them concurrently and none of them reserves capacity), not the
+    /// ~3.2 GB of a single gate. Also guards against the 64 MB `/dev/shm` a container gets by
+    /// default. Too small a mount means falling back to disk, not an `ENOSPC` mid-run.
+    const SHM_MIN_AVAILABLE: u64 = 6 * 1024 * 1024 * 1024;
 
     /// Create one run's storage dir, on tmpfs where possible. An explicit `TMPDIR` wins: it stays
     /// the escape hatch for running these gates against a real filesystem.
