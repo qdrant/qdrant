@@ -67,7 +67,8 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             Populate::Auto | Populate::No => {
                 Populate::Partial(ReadRange::new(0, stored_bitmask::HEADER_SIZE as u64))
             }
-            Populate::Blocking | Populate::PreferBackground => Populate::PreferBackground,
+            Populate::Blocking => Populate::Blocking,
+            Populate::PreferBackground => Populate::PreferBackground,
             partial @ Populate::Partial(_) => partial,
         };
 
