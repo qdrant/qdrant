@@ -126,6 +126,68 @@ fn create_named_vector_reject_existing(config: VectorNameConfig) {
     assert_eq!(machine.state(), &state);
 }
 
+#[test]
+fn delete_named_vector_dense() {
+    delete_named_vector_impl(dense(4, Distance::Cosine));
+}
+
+#[test]
+fn delete_named_vector_sparse() {
+    delete_named_vector_impl(sparse());
+}
+
+fn delete_named_vector_impl(config: VectorNameConfig) {
+    let state = cluster_state(vec![("text", config)]);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&delete_named_vector_op("text"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("deleting an existing vector should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::DropNamedVector { .. }],
+    ));
+
+    let params = &machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists")
+        .config
+        .params;
+
+    assert!(params.vectors.get_params("text").is_none());
+
+    assert!(
+        params
+            .sparse_vectors
+            .as_ref()
+            .is_none_or(|sparse| !sparse.contains_key("text")),
+    );
+}
+
+#[test]
+fn delete_named_vector_missing() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&delete_named_vector_op("text"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("deleting a vector that does not exist should be accepted, got {outcome:?}");
+    };
+
+    // Action is emitted even if state already matches
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::DropNamedVector { .. }],
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
 fn cluster_state(vectors: Vec<(&str, VectorNameConfig)>) -> ClusterState {
     let vectors = vectors
         .into_iter()
@@ -168,4 +230,13 @@ fn sparse() -> VectorNameConfig {
         modifier: None,
         datatype: None,
     })
+}
+
+fn delete_named_vector_op(vector_name: &str) -> ConsensusOperations {
+    collection_meta_op(CollectionMetaOperations::DeleteNamedVector(
+        DeleteNamedVector {
+            collection_name: COLLECTION.into(),
+            vector_name: VectorNameBuf::from(vector_name),
+        },
+    ))
 }
