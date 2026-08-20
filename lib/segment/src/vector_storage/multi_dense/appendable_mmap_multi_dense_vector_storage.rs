@@ -157,11 +157,7 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
 
         if multi_vector.vectors_count() > offset.capacity as usize {
             // append vector to the end
-            let mut new_key = self.vectors.len();
-            let chunk_left_keys = self.vectors.get_remaining_chunk_keys(new_key);
-            if multi_vector.vectors_count() > chunk_left_keys {
-                new_key += chunk_left_keys;
-            }
+            let new_key = self.vectors.len();
 
             offset = MultivectorMmapOffset {
                 offset: new_key as PointOffsetType,

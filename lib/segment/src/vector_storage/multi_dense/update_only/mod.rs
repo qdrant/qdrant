@@ -23,8 +23,7 @@ use crate::vector_storage::update_only::VectorToStore;
 /// vectors flat, the per-point row ranges into them, and the deleted flags.
 ///
 /// Unlike the single-vector storages, rows are not indexed by point slot — a
-/// point owns a run of them — so this writer tracks where the row space ends
-/// and places each point's run itself.
+/// point owns a run of them — so this writer tracks where the row space ends.
 ///
 /// [`AppendableMmapMultiDenseVectorStorage`]: super::appendable_mmap_multi_dense_vector_storage::AppendableMmapMultiDenseVectorStorage
 pub struct UpdateOnlyMultiDenseVectorStorage<
@@ -71,10 +70,6 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // Rows are placed as we go, and a run that would straddle a chunk
-        // skips to the next one — the rows of a batch are therefore not
-        // gapless. The gaps become explicit zero rows, so a single append
-        // lands every run exactly where its offset entry points.
         let batch_start = self.next_row;
         let mut rows: Vec<T> = Vec::new();
         let mut offsets = Vec::new();
@@ -94,15 +89,14 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
             };
 
             let count = flattened.len() / self.dim;
-            let row = self.place(count)?;
-            rows.resize(rows.len() + (row - self.next_row) * self.dim, T::default());
+            self.check_fits(count)?;
             rows.extend_from_slice(&flattened);
             offsets.push(MultivectorMmapOffset {
-                offset: row as PointOffsetType,
+                offset: self.next_row as PointOffsetType,
                 count: count as PointOffsetType,
                 capacity: count as PointOffsetType,
             });
-            self.next_row = row + count;
+            self.next_row += count;
         }
 
         self.vectors.append_many(
@@ -124,20 +118,15 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
         self.deleted.flush(hw_counter)
     }
 
-    /// Where a run of `count` rows goes: at the end, or at the start of the next
-    /// chunk when it would otherwise straddle a chunk boundary.
-    fn place(&self, count: usize) -> OperationResult<usize> {
-        let remaining = self.vectors.remaining_chunk_keys(self.next_row);
-        if count > remaining {
-            let max = self.vectors.remaining_chunk_keys(0);
-            if count > max {
-                return Err(OperationError::service_error(format!(
-                    "Cannot insert a multi vector of {count} inner vectors, a chunk holds {max}",
-                )));
-            }
-            return Ok(self.next_row + remaining);
+    /// Multivectors are capped at one chunk, as in the other storages.
+    fn check_fits(&self, count: usize) -> OperationResult<()> {
+        let max = self.vectors.max_run_vectors();
+        if count > max {
+            return Err(OperationError::service_error(format!(
+                "Cannot insert a multi vector of {count} inner vectors, a chunk holds {max}",
+            )));
         }
-        Ok(self.next_row)
+        Ok(())
     }
 
     fn flatten_decoded(&self, vector: VectorRef<'_>) -> OperationResult<Vec<T>> {

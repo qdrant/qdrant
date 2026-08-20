@@ -1,7 +1,8 @@
 //! Fixed-dimension vectors stored flattened across a directory of chunk files.
 //!
 //! The directory holds a config file, a status file carrying the vector count,
-//! and `chunk_<n>.mmap` files. A vector never straddles a chunk boundary.
+//! and `chunk_<n>.mmap` files. A single vector never straddles a chunk
+//! boundary, a run of them may.
 //!
 //! Three types share that layout:
 //!
@@ -63,9 +64,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::iter::zip;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::SeedableRng;
@@ -149,6 +152,51 @@ mod tests {
             );
 
             chunked_mmap.flusher()().unwrap();
+        }
+    }
+
+    /// A run of vectors crossing a chunk boundary is written to both chunks and
+    /// read back as one copied slice.
+    #[test]
+    fn run_across_chunk_boundary_round_trips() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let dim = 500;
+        let hw_counter = HardwareCounterCell::new();
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> = ChunkedVectors::open(
+            MmapFs,
+            dir.path(),
+            dim,
+            AdviceSetting::Global,
+            Populate::Blocking,
+        )
+        .unwrap();
+
+        // Start the run two vectors before the boundary, so it spans both chunks
+        let per_chunk = chunked_mmap.config.chunk_size_vectors;
+        let start = per_chunk - 2;
+        let count = 5;
+        let run: Vec<VectorElementType> = (0..count)
+            .flat_map(|_| random_vector(&mut rng, dim))
+            .collect();
+
+        chunked_mmap
+            .insert_many(start, &run, count, &hw_counter)
+            .unwrap();
+
+        assert_eq!(chunked_mmap.chunks.len(), 2);
+        assert_eq!(chunked_mmap.len(), start + count);
+
+        let read = chunked_mmap.get_many::<Random>(start, count).unwrap();
+        assert!(matches!(read, Cow::Owned(_)), "straddling read must copy");
+        assert_eq!(read.as_ref(), run.as_slice());
+
+        // The parts are readable on their own too, borrowed from their chunk
+        for (i, vector) in run.chunks_exact(dim).enumerate() {
+            let one = chunked_mmap.get::<Random>(start + i).unwrap();
+            assert!(matches!(one, Cow::Borrowed(_)));
+            assert_eq!(one.as_ref(), vector);
         }
     }
 }

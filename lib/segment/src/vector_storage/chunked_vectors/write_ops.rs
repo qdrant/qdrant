@@ -6,7 +6,7 @@ use num_traits::AsPrimitive;
 
 use super::ChunkedVectors;
 use super::chunks::create_chunk;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 
 impl<T, S> ChunkedVectors<T, S>
@@ -50,26 +50,28 @@ where
         );
 
         let start_key = start_key.as_();
-        let chunk_idx = self.inner.config.get_chunk_index(start_key);
-        let chunk_offset = self.inner.config.get_chunk_offset(start_key);
 
-        // check if the vectors fit in the chunk
-        if chunk_offset + vectors.len()
-            > self.inner.config.dim * self.inner.config.chunk_size_vectors
-        {
-            return Err(OperationError::service_error(format!(
-                "Vectors do not fit in the chunk. Chunk idx {chunk_idx}, chunk offset {chunk_offset}, vectors count {count}",
-            )));
+        // A run longer than the chunk's tail continues in the next one
+        let mut key = start_key;
+        let mut rest = vectors;
+        while !rest.is_empty() {
+            let chunk_idx = self.inner.config.get_chunk_index(key);
+            let chunk_offset = self.inner.config.get_chunk_offset(key);
+
+            // Ensure capacity
+            while chunk_idx >= self.inner.chunks.len() {
+                self.add_chunk()?;
+            }
+
+            let fits = self.inner.config.remaining_chunk_capacity(key) * self.inner.config.dim;
+            let (part, tail) = rest.split_at(fits.min(rest.len()));
+
+            let chunk = &mut self.inner.chunks[chunk_idx];
+            chunk.write((chunk_offset * size_of::<T>()) as u64, part)?;
+
+            key += part.len() / self.inner.config.dim;
+            rest = tail;
         }
-
-        // Ensure capacity
-        while chunk_idx >= self.inner.chunks.len() {
-            self.add_chunk()?;
-        }
-
-        let chunk = &mut self.inner.chunks[chunk_idx];
-
-        chunk.write((chunk_offset * size_of::<T>()) as u64, vectors)?;
 
         hw_counter
             .vector_io_write_counter()

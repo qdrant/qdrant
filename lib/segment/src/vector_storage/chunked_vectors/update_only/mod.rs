@@ -75,12 +75,10 @@ where
         Ok(read_status_len(&self.fs, &status_file(&self.directory))?)
     }
 
-    /// How many more vectors fit in the chunk that `key` falls in.
-    ///
-    /// A vector never straddles a chunk, so a caller placing a run of rows has
-    /// to skip to the next chunk when the run does not fit in this one.
-    pub fn remaining_chunk_keys(&self, key: usize) -> usize {
-        self.config.remaining_chunk_capacity(key)
+    /// The most vectors one run may span, since a chunk is never grown past
+    /// its configured size.
+    pub fn max_run_vectors(&self) -> usize {
+        self.config.chunk_size_vectors
     }
 
     /// Replace the stored vector count.

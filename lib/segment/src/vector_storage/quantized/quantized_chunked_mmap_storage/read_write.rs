@@ -50,15 +50,14 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
         data.clear_cache()
     }
 
-    /// Record slots left in the chunk containing `start`.
-    pub fn get_remaining_chunk_keys(&self, start: PointOffsetType) -> usize {
-        self.data
-            .get_remaining_chunk_keys(start as VectorOffsetType)
+    /// Bytes a single chunk holds.
+    pub fn max_vector_size_bytes(&self) -> usize {
+        self.data.max_vector_size_bytes()
     }
 
     /// Returns multiple continuous vectors given a start `index` and a `count` of vectors to return.
     ///
-    /// This function returns `None` if the vector is out of bounds or is located across multiple chunks.
+    /// This function returns `None` if the vector is out of bounds.
     pub fn get_many<P>(&self, index: PointOffsetType, count: usize) -> Option<Cow<'_, [u8]>>
     where
         P: AccessPattern,
@@ -68,8 +67,7 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
 
     /// Batched counterpart of [`Self::get_many`]: invoke `callback` with the
     /// concatenated records of each `(user_data, start, count)` range, batching
-    /// the underlying reads. Like [`Self::get_many`], a range must not
-    /// straddle a chunk boundary.
+    /// the underlying reads.
     pub fn for_each_many<P, U>(
         &self,
         ranges: impl Iterator<Item = (U, PointOffsetType, u32)>,
