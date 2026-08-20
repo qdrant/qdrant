@@ -783,4 +783,91 @@ mod tests {
             "point 1 must be intact — the unbuffered skew would clobber its head rows",
         );
     }
+
+    /// Pre-straddle writers skipped a chunk's leftover slots so each run stayed
+    /// inside one chunk. Fabricate that layout, flush, reopen, and confirm the
+    /// new reader still recovers the point as a single-chunk borrow.
+    #[test]
+    fn reads_legacy_layout_with_chunk_tail_padding() {
+        use crate::vector_storage::common::CHUNK_SIZE;
+
+        const DIM: usize = 128;
+        let dir = Builder::new().prefix("legacy_pad").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+        let padded = multivec(3, 7.0, DIM);
+        let per_chunk = CHUNK_SIZE / (DIM * std::mem::size_of::<VectorElementType>());
+
+        {
+            let mut storage =
+                open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+                    dir.path(),
+                    DIM,
+                    Distance::Dot,
+                    MultiVectorConfig::default(),
+                    AdviceSetting::Global,
+                    false,
+                )
+                .unwrap();
+
+            let filler = multivec(per_chunk - 1, 1.0, DIM);
+            storage
+                .insert_vector(0, VectorRef::from(&filler), &hw)
+                .unwrap();
+            assert_eq!(storage.vectors.len(), per_chunk - 1);
+
+            // Old place(): jump to the next chunk, leaving the tail slot unused.
+            let start = per_chunk;
+            storage
+                .vectors
+                .insert_many(start as VectorOffsetType, &padded.flattened_vectors, 3, &hw)
+                .unwrap();
+            storage.offsets.set(
+                1,
+                MultivectorMmapOffset {
+                    offset: start as PointOffsetType,
+                    count: 3,
+                    capacity: 3,
+                },
+            );
+            assert_eq!(storage.vectors.len(), per_chunk + 3);
+
+            let read = storage.get_multi::<Random>(1);
+            assert!(matches!(read, CowMultiVector::Borrowed(_)));
+            assert_eq!(
+                read.as_vec_ref().flattened_vectors,
+                padded.flattened_vectors.as_slice(),
+            );
+
+            // Batched path must agree with the single-key getter.
+            let mut seen = None;
+            storage
+                .for_each_flat_multi::<Random, _>([((), 1)], |(), _, flat| {
+                    seen = Some(flat.into_owned());
+                })
+                .unwrap();
+            assert_eq!(seen.unwrap(), padded.flattened_vectors);
+
+            storage.flusher()().unwrap();
+        }
+
+        let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            MultiVectorConfig::default(),
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        let offset = storage.offsets.get::<Random>(1).unwrap();
+        assert_eq!(offset.offset as usize, per_chunk);
+        assert_eq!(offset.count, 3);
+
+        let read = storage.get_multi::<Random>(1);
+        assert!(matches!(read, CowMultiVector::Borrowed(_)));
+        assert_eq!(
+            read.as_vec_ref().flattened_vectors,
+            padded.flattened_vectors.as_slice(),
+        );
+    }
 }
