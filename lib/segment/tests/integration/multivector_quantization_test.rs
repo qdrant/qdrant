@@ -67,8 +67,14 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
         .count()
 }
 
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
+// `test_attr(ignore = ...)` (not just `ignore = ...`) is required for rstest
+// to forward the attribute to each generated per-case test function. See
+// `byte_storage_quantization_test.rs` for another use of this pattern.
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
+)]
 #[case::nearest_binary_dot(
     QueryVariant::Nearest,
     QuantizationVariant::Binary,
