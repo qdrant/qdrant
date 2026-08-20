@@ -30,8 +30,14 @@ use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 
 /// Check all cases with single vector per multi and several vectors per multi
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
+// `test_attr(ignore = ...)` (not just `ignore = ...`) is required for rstest
+// to forward the attribute to each generated per-case test function. See
+// `byte_storage_quantization_test.rs` for another use of this pattern.
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
+)]
 #[case::nearest_eq(QueryVariant::Nearest, 1, 32, 5)]
 #[case::nearest_multi(QueryVariant::Nearest, 3, 64, 20)]
 #[case::discover_eq(QueryVariant::Discover, 1, 128, 5)]
