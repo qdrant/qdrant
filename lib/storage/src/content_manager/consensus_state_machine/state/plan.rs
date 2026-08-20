@@ -193,4 +193,10 @@ impl ClusterState {
             value: value.clone(),
         }]
     }
+
+    /// Emitted even when the config matches: `QuotaManager::set_config` also drops the limit
+    /// verdicts it recorded, so an operator raising a limit is served right away
+    pub fn plan_set_quota_config(&self, config: &QuotaConfig) -> Actions {
+        vec![Action::SetQuotaConfig { config: *config }]
+    }
 }

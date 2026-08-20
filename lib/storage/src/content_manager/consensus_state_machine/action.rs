@@ -4,6 +4,8 @@ use collection::shards::shard::PeerId;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use shard::operations::vector_name_ops::VectorNameConfig;
 
+use crate::quota::QuotaConfig;
+
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
@@ -53,6 +55,10 @@ pub enum Action {
         key: String,
         value: serde_json::Value,
     },
+
+    SetQuotaConfig {
+        config: QuotaConfig,
+    },
 }
 
 impl Action {
@@ -69,7 +75,8 @@ impl Action {
             | Action::DeleteAlias { .. }
             | Action::RenameAlias { .. }
             | Action::SetPeerMetadata { .. }
-            | Action::SetClusterMetadataKey { .. } => None,
+            | Action::SetClusterMetadataKey { .. }
+            | Action::SetQuotaConfig { .. } => None,
         }
     }
 }

@@ -83,9 +83,13 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(actions)
             }
 
-            ConsensusOperations::AddPeer { .. }
-            | ConsensusOperations::RemovePeer(_)
-            | ConsensusOperations::SetQuotaConfig(_) => ApplyOutcome::NotCovered,
+            ConsensusOperations::SetQuotaConfig(config) => {
+                ApplyOutcome::Accepted(self.state.plan_set_quota_config(config))
+            }
+
+            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
+                ApplyOutcome::NotCovered
+            }
 
             // Never reach the apply path: consensus handles them in its own thread
             ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. } => {

@@ -102,6 +102,10 @@ impl ClusterState {
                     self.cluster_metadata.insert(key.clone(), value.clone());
                 }
             }
+
+            Action::SetQuotaConfig { config } => {
+                self.quota_config = Some(*config);
+            }
         }
     }
 
