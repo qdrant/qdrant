@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
@@ -15,6 +15,10 @@ where
     S: UniversalRead,
 {
     type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, _fs: &Fs) -> OperationResult<()> {
+        Ok(())
+    }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
