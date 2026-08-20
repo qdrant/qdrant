@@ -3975,17 +3975,40 @@ mod tests {
     /// filter bytes decoded exactly as tonic's `ProstDecoder` would decode an
     /// incoming request. A too-deep filter must be rejected while decoding
     /// (prost's recursion limit) rather than overflow the worker-thread stack
-    /// and abort the process. This also guards the assumption behind
-    /// [`MAX_FILTER_NESTING`]: were prost's decode limit ever disabled (its
-    /// `no-recursion-limit` feature), this would fail loudly. See
-    /// GHSA-h4mh-v26f-h4x8.
+    /// and abort the process. This guards the assumption behind
+    /// [`MAX_FILTER_NESTING`]: prost's decode limit is compiled out by its
+    /// `no-recursion-limit` feature, which cargo feature unification lets *any*
+    /// crate in the build enable for our prost as well — `pprof_util` did
+    /// exactly that (hence its version pin in the root Cargo.toml), leaving
+    /// production decode unbounded while `cargo test -p api` still passed.
+    /// This test only proves the real build safe when run against the
+    /// workspace-unified feature set, i.e. workspace-wide invocations like CI's
+    /// `cargo nextest run --workspace`. See GHSA-h4mh-v26f-h4x8.
     #[test]
     fn deeply_nested_filter_bytes_are_rejected_by_decode() {
         use prost::Message;
 
         // A shallow filter still decodes fine.
         assert!(Filter::decode(deeply_nested_filter_bytes(3).as_slice()).is_ok());
-        // One nested far past any legitimate depth is rejected gracefully.
-        assert!(Filter::decode(deeply_nested_filter_bytes(1_000).as_slice()).is_err());
+
+        // One nested far past any legitimate depth must fail to decode. Probe
+        // on a thread with plenty of stack (and drop the result there too), so
+        // that if prost's recursion limit is ever compiled out again the
+        // unbounded decode recursion turns into a clean assertion failure
+        // below instead of a stack-overflow abort of the whole test run.
+        let deep_decode_succeeded = std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| Filter::decode(deeply_nested_filter_bytes(1_000).as_slice()).is_ok())
+            .expect("failed to spawn decode probe thread")
+            .join()
+            .expect("decode probe thread panicked");
+        assert!(
+            !deep_decode_succeeded,
+            "deeply nested filter bytes decoded successfully: prost's recursion \
+             limit is disabled, some dependency enables prost's \
+             `no-recursion-limit` feature (see the pprof_util pin in the root \
+             Cargo.toml); this reopens the stack-overflow DoS from \
+             GHSA-h4mh-v26f-h4x8",
+        );
     }
 }
