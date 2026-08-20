@@ -19,13 +19,19 @@
 //! such as propagating a payload index to local shards, is emitted even when the state already
 //! matches.
 
+pub mod action;
 pub mod state;
 
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 
+pub use self::action::Action;
 pub use self::state::ClusterState;
+use super::errors::StorageResult;
+use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
+use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::errors::StorageError;
 
 #[derive(Clone, Debug)]
 pub struct ConsensusStateMachine {
@@ -45,6 +51,62 @@ impl ConsensusStateMachine {
     pub fn context(&self) -> &NodeContext {
         &self.context
     }
+
+    /// Plan `operation` and advance the state by the actions it returns
+    pub fn apply(&mut self, operation: &ConsensusOperations) -> ApplyOutcome {
+        let outcome = self.plan(operation);
+
+        if let ApplyOutcome::Accepted(actions) = &outcome {
+            for action in actions {
+                self.state.apply_action(action);
+            }
+        }
+
+        outcome
+    }
+
+    /// Plan `operation` and return actions to apply or an error
+    fn plan(&self, operation: &ConsensusOperations) -> ApplyOutcome {
+        match operation {
+            ConsensusOperations::CollectionMeta(operation) => self.plan_collection_meta(operation),
+
+            ConsensusOperations::AddPeer { .. }
+            | ConsensusOperations::RemovePeer(_)
+            | ConsensusOperations::UpdatePeerMetadata { .. }
+            | ConsensusOperations::UpdateClusterMetadata { .. }
+            | ConsensusOperations::SetQuotaConfig(_) => ApplyOutcome::NotCovered,
+
+            // Never reach the apply path: consensus handles them in its own thread
+            ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. } => {
+                ApplyOutcome::NotCovered
+            }
+        }
+    }
+
+    fn plan_collection_meta(&self, operation: &CollectionMetaOperations) -> ApplyOutcome {
+        match operation {
+            CollectionMetaOperations::Nop { .. } => ApplyOutcome::Accepted(Vec::new()),
+
+            CollectionMetaOperations::CreateCollection(_)
+            | CollectionMetaOperations::UpdateCollection(_)
+            | CollectionMetaOperations::DeleteCollection(_)
+            | CollectionMetaOperations::ChangeAliases(_)
+            | CollectionMetaOperations::CreateShardKey(_)
+            | CollectionMetaOperations::DropShardKey(_)
+            | CollectionMetaOperations::SetShardReplicaState(_)
+            | CollectionMetaOperations::TransferShard(_, _)
+            | CollectionMetaOperations::Resharding(_, _)
+            | CollectionMetaOperations::CreateNamedVector(_)
+            | CollectionMetaOperations::DeleteNamedVector(_)
+            | CollectionMetaOperations::CreatePayloadIndex(_)
+            | CollectionMetaOperations::DropPayloadIndex(_) => ApplyOutcome::NotCovered,
+
+            // Sleeps, or fails at random. Neither is a state change to plan.
+            #[cfg(feature = "staging")]
+            CollectionMetaOperations::TestSlowDown(_)
+            | CollectionMetaOperations::TestTransientError(_) => ApplyOutcome::NotCovered,
+        }
+    }
 }
 
 /// Node-local values operations read.
@@ -59,4 +121,28 @@ pub struct NodeContext {
     pub collection_defaults: Option<CollectionConfigDefaults>,
     /// Transfer method this node picks when an operation does not name one
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
+}
+
+/// What the machine decided about an operation.
+#[derive(Clone, Debug)]
+pub enum ApplyOutcome {
+    /// Apply these actions, in order
+    Accepted(Vec<Action>),
+
+    /// Reject the operation with a user error.
+    /// Consensus counts the entry as applied and moves on.
+    Rejected(StorageError),
+
+    /// Operation is not yet implemented.
+    /// Caller must rebuild the state from `TableOfContent`.
+    NotCovered,
+}
+
+impl ApplyOutcome {
+    pub fn new(result: StorageResult<Vec<Action>>) -> Self {
+        match result {
+            Ok(actions) => ApplyOutcome::Accepted(actions),
+            Err(err) => ApplyOutcome::Rejected(err),
+        }
+    }
 }
