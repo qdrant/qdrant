@@ -1,6 +1,7 @@
 //! Proptest generators for cluster state and consensus operations
 
 use collection::collection_state;
+use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use proptest::prelude::*;
 use segment::data_types::modifier::Modifier;
@@ -13,6 +14,7 @@ use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
+use crate::types::PeerMetadataById;
 
 const COLLECTION_NAMES: &[&str] = &["alpha", "beta", "gamma"];
 const MISSING_COLLECTION_NAME: &str = "missing";
@@ -22,6 +24,10 @@ const DANGLING_ALIAS_NAME: &str = "dangling";
 
 const VECTOR_NAMES: &[&str] = &["", "text", "image"];
 const FIELD_NAMES: &[&str] = &["city", "count", "nested.key"];
+
+/// This node, and one other peer
+const PEER_IDS: &[PeerId] = &[PEER_ID, 43];
+const PEER_VERSIONS: &[&str] = &["1.14.0", "1.15.0"];
 
 pub fn arb_state_and_operation() -> impl Strategy<Value = (ClusterState, ConsensusOperations)> {
     arb_cluster_state().prop_flat_map(|state| {
@@ -45,12 +51,31 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
     collections.prop_flat_map(|collections| {
         let names = collections.keys().cloned().collect();
 
-        (Just(collections), arb_aliases(names)).prop_map(|(collections, aliases)| ClusterState {
-            collections,
-            aliases,
-            ..Default::default()
-        })
+        (
+            Just(collections),
+            arb_aliases(names),
+            arb_peer_metadata_by_id(),
+        )
+            .prop_map(|(collections, aliases, peer_metadata_by_id)| ClusterState {
+                collections,
+                aliases,
+                peer_metadata_by_id,
+                ..Default::default()
+            })
     })
+}
+
+fn arb_peer_metadata_by_id() -> impl Strategy<Value = PeerMetadataById> {
+    proptest::collection::hash_map(arb_peer_id(), arb_peer_metadata(), 0..3)
+}
+
+fn arb_peer_id() -> impl Strategy<Value = PeerId> {
+    proptest::sample::select(PEER_IDS)
+}
+
+fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
+    proptest::sample::select(PEER_VERSIONS)
+        .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
 }
 
 fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
@@ -92,8 +117,18 @@ fn arb_aliases(collections: Vec<CollectionId>) -> impl Strategy<Value = AliasMap
 }
 
 pub fn arb_consensus_operation(
-    mut collection_names: Vec<String>,
+    collection_names: Vec<String>,
 ) -> impl Strategy<Value = ConsensusOperations> {
+    let collection_meta = arb_collection_meta_operation(collection_names)
+        .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)));
+
+    // Weighted by how many operations each arm covers, so one operation is as likely as another
+    prop_oneof![6 => collection_meta, 1 => arb_update_peer_metadata()]
+}
+
+fn arb_collection_meta_operation(
+    mut collection_names: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
     collection_names.push(MISSING_COLLECTION_NAME.into());
 
     prop_oneof![
@@ -104,7 +139,12 @@ pub fn arb_consensus_operation(
         arb_create_payload_index(collection_names.clone()),
         arb_drop_payload_index(collection_names.clone()),
     ]
-    .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)))
+}
+
+fn arb_update_peer_metadata() -> impl Strategy<Value = ConsensusOperations> {
+    (arb_peer_id(), arb_peer_metadata()).prop_map(|(peer_id, metadata)| {
+        ConsensusOperations::UpdatePeerMetadata { peer_id, metadata }
+    })
 }
 
 fn arb_collection_name(names: Vec<String>) -> impl Strategy<Value = String> {
