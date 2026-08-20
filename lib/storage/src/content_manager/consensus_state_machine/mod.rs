@@ -86,7 +86,6 @@ impl ConsensusStateMachine {
         }
     }
 
-    #[expect(clippy::unused_self)]
     fn plan_collection_meta(&self, operation: &CollectionMetaOperations) -> ApplyOutcome {
         match operation {
             CollectionMetaOperations::Nop { .. } => ApplyOutcome::Accepted(Vec::new()),
@@ -100,10 +99,13 @@ impl ConsensusStateMachine {
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _)
             | CollectionMetaOperations::Resharding(_, _)
-            | CollectionMetaOperations::CreateNamedVector(_)
             | CollectionMetaOperations::DeleteNamedVector(_)
             | CollectionMetaOperations::CreatePayloadIndex(_)
             | CollectionMetaOperations::DropPayloadIndex(_) => ApplyOutcome::NotCovered,
+
+            CollectionMetaOperations::CreateNamedVector(operation) => {
+                ApplyOutcome::new(self.state.plan_create_named_vector(operation))
+            }
 
             // Sleeps, or fails at random. Neither is a state change to plan.
             #[cfg(feature = "staging")]
