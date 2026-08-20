@@ -11,10 +11,11 @@ use crate::universal_io::{IoUringFile, UioResult, UniversalIoError};
 static URING_BRIDGE: LazyLock<UringBridge> = LazyLock::new(UringBridge::spawn);
 
 struct UringRequest {
-    file: std::fs::File,
+    file: fs_err::File,
     offset: u64,
     len: usize,
-    reply: mpsc::Sender<UioResult<Vec<u8>>>,
+    align: usize,
+    reply: mpsc::Sender<UioResult<AVec<u8, RuntimeAlign>>>,
 }
 
 struct UringBridge {
@@ -40,16 +41,16 @@ impl UringBridge {
     }
 
     async fn execute(req: UringRequest) {
-        let file = tokio_uring::fs::File::from_std(req.file);
+        let file = tokio_uring::fs::File::from_std(req.file.into_file());
 
         let read = || async {
-            // TODO(uio): impl tokio_uring::buf::bounded::BoundedBufMut for an AVec newtype
-            let buf = Vec::with_capacity(req.len);
+            let buf = ABuf(AVec::with_capacity(req.align, req.len));
+
             let (res, buf) = file.read_exact_at(buf, req.offset).await;
 
-            let _ = res?;
+            res?;
 
-            Ok(buf)
+            Ok(buf.0)
         };
 
         let _ = req.reply.send(read().await);
@@ -63,7 +64,7 @@ pub async fn read_bytes_async(
 ) -> UioResult<AVec<u8, RuntimeAlign>> {
     let (tx, mut rx) = mpsc::channel(1);
 
-    let file = file.file.try_clone()?.into_file();
+    let file = file.file.try_clone()?;
 
     let Ok(len) = range.try_len() else {
         return Err(UniversalIoError::OutOfBounds {
@@ -77,6 +78,7 @@ pub async fn read_bytes_async(
         file,
         offset: range.start,
         len,
+        align,
         reply: tx,
     };
 
@@ -87,13 +89,39 @@ pub async fn read_bytes_async(
             description: "uring bridge receiver has been closed".to_owned(),
         })?;
 
-    let Some(buf) = rx.recv().await else {
+    let Some(result) = rx.recv().await else {
         return Err(UniversalIoError::Uninitialized {
             description: "uring request been dropped".to_owned(),
         });
     };
 
-    let avec = AVec::from_slice(align, &buf?);
+    result
+}
 
-    Ok(avec)
+struct ABuf(AVec<u8, RuntimeAlign>);
+
+unsafe impl tokio_uring::buf::IoBuf for ABuf {
+    fn stable_ptr(&self) -> *const u8 {
+        self.0.as_ptr()
+    }
+
+    fn bytes_init(&self) -> usize {
+        self.0.len()
+    }
+
+    fn bytes_total(&self) -> usize {
+        self.0.capacity()
+    }
+}
+
+unsafe impl tokio_uring::buf::IoBufMut for ABuf {
+    fn stable_mut_ptr(&mut self) -> *mut u8 {
+        self.0.as_mut_ptr()
+    }
+
+    unsafe fn set_init(&mut self, init_len: usize) {
+        if self.0.len() < init_len {
+            unsafe { self.0.set_len(init_len) };
+        }
+    }
 }
