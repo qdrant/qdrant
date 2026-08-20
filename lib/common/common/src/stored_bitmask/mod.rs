@@ -17,7 +17,7 @@ mod read;
 mod tests;
 mod write;
 
-pub use format::BitmaskContent;
+pub use format::{BitmaskContent, HEADER_SIZE};
 pub use mutable::MutableStoredBitmask;
 pub use read::StoredBitmask;
 pub use write::save_bitmask;

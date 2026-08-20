@@ -8,6 +8,7 @@ use super::read_only_compact_flags::ReadOnlyCompactFlags;
 use super::read_only_roaring_flags::ReadOnlyRoaringFlags;
 use super::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::LiveReload;
 
 /// Read-only flags in either [storage mode](FlagsMode), serving the
 /// [`RoaringFlagsRead`] surface.
@@ -65,6 +66,33 @@ impl<S: UniversalRead> ReadOnlyFlags<S> {
         match self {
             Self::Dynamic(flags) => flags.live_reload(fs),
             Self::Compact(flags) => flags.live_reload(fs),
+        }
+    }
+}
+
+impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
+    type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = Self::File>>(
+        &self,
+        cached_fs: &Fs,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs),
+            ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs),
+        }
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = Self::File>>(
+        &mut self,
+        fs: &Fs,
+        _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
+        _new_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
+        _hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_reload(fs),
+            ReadOnlyFlags::Compact(compact) => compact.live_reload(fs),
         }
     }
 }
