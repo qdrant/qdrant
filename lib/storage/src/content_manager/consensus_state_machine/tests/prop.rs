@@ -99,6 +99,7 @@ pub fn arb_consensus_operation(
     prop_oneof![
         Just(CollectionMetaOperations::Nop { token: 0 }),
         arb_create_named_vector(collection_names.clone()),
+        arb_delete_named_vector(collection_names.clone()),
     ]
     .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)))
 }
@@ -119,6 +120,20 @@ fn arb_create_named_vector(
             collection_name,
             vector_name,
             config,
+        })
+    })
+}
+
+fn arb_delete_named_vector(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let vector_name = arb_vector_name();
+
+    (collection_name, vector_name).prop_map(|(collection_name, vector_name)| {
+        CollectionMetaOperations::DeleteNamedVector(DeleteNamedVector {
+            collection_name,
+            vector_name,
         })
     })
 }
