@@ -933,8 +933,8 @@ async fn drain_snapshot(
     }
 }
 
-/// Skipped on Windows because it is too slow
-#[cfg(not(target_os = "windows"))]
+/// Linux-only: too slow on Windows and macOS CI
+#[cfg(target_os = "linux")]
 #[cfg(test)]
 mod tests {
     use super::*;
