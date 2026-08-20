@@ -7,7 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalReadFs;
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
@@ -73,6 +73,14 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
 
 impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
     type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+        for field_index in self.field_indexes.values().flatten() {
+            field_index.live_preload(fs)?;
+        }
+
+        Ok(())
+    }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,

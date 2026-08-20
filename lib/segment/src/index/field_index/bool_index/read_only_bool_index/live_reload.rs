@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalReadFs;
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 use super::ReadOnlyBoolIndex;
 use crate::common::operation_error::OperationResult;
@@ -10,6 +10,12 @@ use crate::index::field_index::LiveReload;
 
 impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
     type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) -> OperationResult<()> {
+        self.storage.trues_flags.live_preload(cached_fs)?;
+        self.storage.falses_flags.live_preload(cached_fs)?;
+        Ok(())
+    }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
