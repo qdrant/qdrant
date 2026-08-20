@@ -359,6 +359,11 @@ impl Consensus {
 
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
+        //
+        // Note: this advances the applied index tracked in persistent state past the `applied`
+        // index the Raft node was configured with above. The first `Ready` re-delivers the
+        // entries applied here. `handle_committed_entries` skips them by consulting the
+        // persisted applied index.
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
 
         if force_compact_wal {
@@ -1208,7 +1213,24 @@ fn handle_committed_entries(
 ) -> anyhow::Result<bool> {
     let mut stop_consensus = false;
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
-        state.set_unapplied_entries(first.index, last.index)?;
+        // Raft delivers committed entries starting right after the `applied` index the node
+        // was constructed with, which does not account for the entries applied during catch-up
+        // in `Consensus::new`. The first `Ready` after a (re)start therefore re-delivers
+        // entries that are already applied. We never want to apply an entry twice.
+        let first_unapplied = state
+            .last_applied_entry()
+            .map_or(first.index, |applied| cmp::max(first.index, applied + 1));
+
+        if first_unapplied > first.index {
+            log::debug!(
+                "Skipping committed entries up to {} which are already applied",
+                first_unapplied - 1,
+            );
+        }
+
+        if first_unapplied <= last.index {
+            state.set_unapplied_entries(first_unapplied, last.index)?;
+        }
         stop_consensus = state.apply_entries(raw_node)?;
     }
     Ok(stop_consensus)
