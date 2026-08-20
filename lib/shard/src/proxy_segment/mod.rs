@@ -34,8 +34,6 @@ pub struct ProxySegment {
     changed_indexes: ProxyIndexChanges,
     changed_vector_names: ProxyVectorNameChanges,
     /// Points which should no longer used from wrapped_segment
-    /// May contain points which are not in wrapped_segment,
-    /// because the set is shared among all proxy segments
     deleted_points: DeletedPoints,
     deleted_deferred_count: usize,
     wrapped_config: SegmentConfig,
