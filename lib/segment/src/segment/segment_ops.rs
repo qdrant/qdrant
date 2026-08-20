@@ -22,7 +22,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::tiny_map::TinyMap;
 use crate::entry::entry_point::StorageSegmentEntry as _;
 use crate::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry};
-use crate::id_tracker::{IdTracker, IdTrackerRead};
+use crate::id_tracker::{IdTracker, IdTrackerInconsistencies, IdTrackerRead};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
@@ -765,10 +765,65 @@ impl Segment {
     }
 
     /// Check consistency of the segment's data and repair it if possible.
-    /// Removes partially persisted points.
+    ///
+    /// Flush writes the id mapping first, then vectors and payloads, then the point versions, so
+    /// an interrupted flush can leave a point mapped but versionless, and can leave a version
+    /// behind for a point that has no mapping any more.
+    ///
+    /// A versionless point whose vectors are not durable never got past the vectors flush, so the
+    /// segment state file was never updated for it either and its operation is above the
+    /// persisted segment version. WAL replay is guaranteed to still hold it, and the point is
+    /// dropped here so replay can insert it cleanly.
+    ///
+    /// A versionless point whose vectors are durable is the opposite case: its data survived the
+    /// vectors flush, so its operation can be covered by the persisted segment version and can
+    /// already be gone from the WAL. Dropping it would destroy the only copy, so it is kept and
+    /// given the persisted segment version. That version is never above its real one, so replay
+    /// still corrects it wherever the WAL does hold the operation.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
-        // Get rid of mappingless points.
-        let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
+        let IdTrackerInconsistencies {
+            versionless,
+            unmapped: mut ids_to_clean,
+        } = self.id_tracker.borrow().find_inconsistencies()?;
+
+        let mut restored = 0;
+        if !versionless.is_empty() {
+            // Only what a completed flush left behind can be trusted here.
+            let persisted_version = *self.persisted_version.lock();
+
+            // Resolved before the tracker is borrowed, the storages may reach into it.
+            let checked: Vec<_> = versionless
+                .into_iter()
+                .map(|(internal_id, external_id)| {
+                    let durable = self.has_durable_vector_data(internal_id);
+                    (internal_id, external_id, durable)
+                })
+                .collect();
+
+            let mut id_tracker = self.id_tracker.borrow_mut();
+            for (internal_id, external_id, durable) in checked {
+                let restored_version = match persisted_version {
+                    Some(version) if durable => {
+                        id_tracker.try_set_missing_version(internal_id, version)?
+                    }
+                    _ => false,
+                };
+
+                if restored_version {
+                    restored += 1;
+                } else {
+                    id_tracker.drop(external_id)?;
+                    ids_to_clean.push(internal_id);
+                }
+            }
+        }
+
+        if restored > 0 {
+            log::warn!(
+                "Restored the point version of {restored} points with durable data in segment {:?}, their version entries were missing",
+                self.data_path(),
+            );
+        }
 
         // There are some leftovers to clean from segment.
         // After that we need to set internal version to 0, so that
@@ -776,18 +831,17 @@ impl Segment {
 
         // This is internal operation, no hw measurement needed
         let disposable_hw_counter = HardwareCounterCell::disposable();
+        let repaired = restored > 0 || !ids_to_clean.is_empty();
         if !ids_to_clean.is_empty() {
-            log::debug!(
-                "Cleaning up {} points with version but no mapping in segment {:?}",
+            log::warn!(
+                "Cleaning up {} partially persisted points in segment {:?}, assuming their recovery by WAL",
                 ids_to_clean.len(),
-                self.data_path()
+                self.data_path(),
             );
 
             for internal_id in ids_to_clean {
                 self.delete_point_internal(internal_id, None, &disposable_hw_counter)?;
             }
-
-            self.flush(true)?;
 
             // We do not drop version here, because it is already not loaded into memory.
             // There are no explicit mapping between internal ID and version, so all dangling
@@ -796,7 +850,26 @@ impl Segment {
             // They will also be deleted by the next optimization.
         }
 
+        if repaired {
+            self.flush(true)?;
+        }
+
         Ok(())
+    }
+
+    /// Whether any vector storage of this segment holds live data for this internal id.
+    ///
+    /// Vectors are flushed after the id mapping and before the point versions, so live data in a
+    /// slot means the flush that wrote its mapping got at least as far as the vectors. A slot no
+    /// storage ever received is prefilled as deleted when the segment is opened
+    /// (`prefill_vector_storage`), which is what an insert cut short after the mapping flush
+    /// looks like here.
+    fn has_durable_vector_data(&self, internal_id: PointOffsetType) -> bool {
+        self.vector_data.values().any(|data| {
+            let storage = data.vector_storage.borrow();
+            (internal_id as usize) < storage.total_vector_count()
+                && !storage.is_deleted_vector(internal_id)
+        })
     }
 
     /// Update all payload/field indices to match `desired_schemas`
@@ -944,12 +1017,6 @@ impl Segment {
 
     pub fn total_point_count(&self) -> usize {
         self.id_tracker.borrow().total_point_count()
-    }
-
-    /// Fixes inconsistencies in the ID tracker, if any.
-    /// Returns list of IDs without mappings which should be removed from segment
-    pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
-        self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 }
 

@@ -164,6 +164,15 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
+    fn try_set_missing_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<bool> {
+        self.set_internal_version(internal_id, version)?;
+        Ok(self.internal_version(internal_id).is_some())
+    }
+
     fn set_link(
         &mut self,
         external_id: PointIdType,

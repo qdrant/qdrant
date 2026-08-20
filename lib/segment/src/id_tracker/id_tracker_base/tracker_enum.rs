@@ -287,12 +287,24 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+    fn try_set_missing_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<bool> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.try_set_missing_version(internal_id, version)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.try_set_missing_version(internal_id, version)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.try_set_missing_version(internal_id, version)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.try_set_missing_version(internal_id, version)
+            }
         }
     }
 

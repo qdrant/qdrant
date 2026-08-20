@@ -281,6 +281,15 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
+    fn try_set_missing_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<bool> {
+        self.set_internal_version(internal_id, version)?;
+        Ok(true)
+    }
+
     fn set_link(
         &mut self,
         external_id: PointIdType,

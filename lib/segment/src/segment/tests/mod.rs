@@ -50,6 +50,7 @@ use crate::types::{
     WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
+use crate::vector_storage::VectorStorageRead as _;
 use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
 
 fn init_logger() {
@@ -507,6 +508,49 @@ fn test_check_consistency() {
         segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
         Ok(None)
     );
+}
+
+/// A mapping that got past the mapping flush but not the vectors flush is an insert that never
+/// completed. Its operation is above the persisted segment version, so the WAL still holds it and
+/// repair has to drop the point rather than resurrect one without vectors.
+#[test]
+fn test_repair_drops_point_without_durable_vectors() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let segment_path = segment.segment_path.clone();
+
+    let vec1 = vec![1.0, 0.0, 0.0, 0.0];
+    segment
+        .upsert_point(100, 1.into(), only_default_vector(&vec1), &hw_counter)
+        .unwrap();
+    segment.flush(true).unwrap();
+
+    // Flush runs the mapping flusher first and the vectors flusher after it. Running just the
+    // first one is what a kill in between leaves on disk: a mapping for a slot that no vector
+    // storage holds data for.
+    let orphan_internal_id = segment.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_storage
+        .borrow()
+        .total_vector_count() as PointOffsetType;
+    {
+        let mut id_tracker = segment.id_tracker.borrow_mut();
+        id_tracker.set_link(2.into(), orphan_internal_id).unwrap();
+        id_tracker.mapping_flusher()().unwrap();
+    }
+    drop(segment);
+
+    let mut segment =
+        load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    segment.check_consistency_and_repair().unwrap();
+
+    assert!(
+        !segment.has_point(2.into(), DeferredBehavior::VisibleOnly),
+        "repair kept a point whose vectors never reached disk",
+    );
+    assert!(segment.has_point(1.into(), DeferredBehavior::VisibleOnly));
 }
 
 /// A torn write of the point versions file must not cost us a point whose data is all durable.

@@ -22,6 +22,18 @@ const SEED: u64 = 0b101100001101111000111001010100101000101100110100101001000111
 /// It does not mean a point with this version is always deleted.
 pub const DELETED_POINT_VERSION: SeqNumberType = 0;
 
+/// Points whose id mapping and version entry disagree, as found by
+/// [`IdTrackerRead::find_inconsistencies`].
+#[derive(Debug, Default)]
+pub struct IdTrackerInconsistencies {
+    /// Mapped points with no version entry, as `(internal id, external id)`.
+    pub versionless: Vec<(PointOffsetType, PointIdType)>,
+
+    /// Points with a non-deleted version but no mapping. Their leftovers must be cleaned from
+    /// the rest of the segment.
+    pub unmapped: Vec<PointOffsetType>,
+}
+
 /// Trait for point ids tracker.
 ///
 /// This tracker is used to convert external (i.e. user-facing) point id into internal point id
@@ -54,45 +66,18 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
     /// Flush points versions to disk
     fn versions_flusher(&self) -> Flusher;
 
-    /// Finds inconsistencies between id mapping and versions storage.
-    /// It might happen that point doesn't have version due to un-flushed WAL.
-    /// This method makes those points usable again.
+    /// Give a mapped point that has no version entry the given version, if this tracker can
+    /// extend its version list. Returns whether the version was set.
     ///
-    /// Returns a list of internal ids, that have non-zero versions, but are missing in the id mapping.
-    /// Those points should be removed from all other parts of the segment.
-    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
-        // Points with mapping, but no version.
-        // Can happen if insertion didn't complete.
-        // We need to remove mapping and assume the point is going to be re-inserted by WAL.
-        let mut to_remove = Vec::new();
-
-        // Points with version, but no mapping.
-        // Can happen if point was deleted, but version (and likely the storage) wasn't cleaned up.
-        // We return those points to the caller to clean up the storage.
-        let mut to_return = Vec::new();
-
-        for (internal_id, version) in self.iter_internal_versions()? {
-            if version != DELETED_POINT_VERSION && self.external_id(internal_id).is_none() {
-                to_return.push(internal_id);
-            }
-        }
-
-        for internal_id in self.point_mappings().iter_internal() {
-            if self.internal_version(internal_id).is_none() {
-                if let Some(external_id) = self.external_id(internal_id) {
-                    to_remove.push(external_id);
-                    to_return.push(internal_id);
-                } else {
-                    debug_assert!(false, "internal id {internal_id} has no external id");
-                }
-            }
-        }
-        for external_id in to_remove {
-            self.drop(external_id)?;
-            #[cfg(debug_assertions)]
-            log::debug!("dropped mapping for point {external_id} without version");
-        }
-        Ok(to_return)
+    /// Only the trackers of appendable segments can grow their versions; the immutable and
+    /// disk-resident ones size theirs with the mappings at build time and refuse to extend.
+    /// The caller falls back to dropping the point when this returns `false`.
+    fn try_set_missing_version(
+        &mut self,
+        _internal_id: PointOffsetType,
+        _version: SeqNumberType,
+    ) -> OperationResult<bool> {
+        Ok(false)
     }
 
     fn files(&self) -> Vec<PathBuf>;
@@ -240,6 +225,38 @@ pub trait IdTrackerRead {
     fn iter_internal_versions(
         &self,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>>;
+
+    /// Find points whose mapping and version disagree, without changing anything.
+    ///
+    /// Flush writes mappings before versions, so both halves can be missing after a crash. What
+    /// to do about them depends on segment data the tracker cannot see, so the decision is left
+    /// to [`Segment::check_consistency_and_repair`](crate::segment::Segment::check_consistency_and_repair).
+    fn find_inconsistencies(&self) -> OperationResult<IdTrackerInconsistencies> {
+        let mut inconsistencies = IdTrackerInconsistencies::default();
+
+        // Points with a version, but no mapping.
+        // Can happen if point was deleted, but version (and likely the storage) wasn't cleaned up.
+        for (internal_id, version) in self.iter_internal_versions()? {
+            if version != DELETED_POINT_VERSION && self.external_id(internal_id).is_none() {
+                inconsistencies.unmapped.push(internal_id);
+            }
+        }
+
+        // Points with a mapping, but no version.
+        // Either an insert that never reached the versions flush, or a version entry that was
+        // lost after it did.
+        for internal_id in self.point_mappings().iter_internal() {
+            if self.internal_version(internal_id).is_none() {
+                if let Some(external_id) = self.external_id(internal_id) {
+                    inconsistencies.versionless.push((internal_id, external_id));
+                } else {
+                    debug_assert!(false, "internal id {internal_id} has no external id");
+                }
+            }
+        }
+
+        Ok(inconsistencies)
+    }
 
     /// Internal-id threshold above which points are hidden from reads.
     ///
