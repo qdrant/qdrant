@@ -86,6 +86,7 @@ impl ConsensusStateMachine {
         }
     }
 
+    #[expect(clippy::unused_self)]
     fn plan_collection_meta(&self, operation: &CollectionMetaOperations) -> ApplyOutcome {
         match operation {
             CollectionMetaOperations::Nop { .. } => ApplyOutcome::Accepted(Vec::new()),
