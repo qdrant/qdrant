@@ -73,9 +73,13 @@ impl ConsensusStateMachine {
         match operation {
             ConsensusOperations::CollectionMeta(operation) => self.plan_collection_meta(operation),
 
+            ConsensusOperations::UpdatePeerMetadata { peer_id, metadata } => {
+                let actions = self.state.plan_update_peer_metadata(*peer_id, metadata);
+                ApplyOutcome::Accepted(actions)
+            }
+
             ConsensusOperations::AddPeer { .. }
             | ConsensusOperations::RemovePeer(_)
-            | ConsensusOperations::UpdatePeerMetadata { .. }
             | ConsensusOperations::UpdateClusterMetadata { .. }
             | ConsensusOperations::SetQuotaConfig(_) => ApplyOutcome::NotCovered,
 

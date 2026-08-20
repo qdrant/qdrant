@@ -90,6 +90,10 @@ impl ClusterState {
                     "action renames alias {old_alias}, which is not in the state",
                 );
             }
+
+            Action::SetPeerMetadata { peer_id, metadata } => {
+                self.peer_metadata_by_id.insert(*peer_id, metadata.clone());
+            }
         }
     }
 

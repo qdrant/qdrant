@@ -1,4 +1,6 @@
+use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
+use collection::shards::shard::PeerId;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use shard::operations::vector_name_ops::VectorNameConfig;
 
@@ -40,6 +42,11 @@ pub enum Action {
         old_alias: String,
         new_alias: String,
     },
+
+    SetPeerMetadata {
+        peer_id: PeerId,
+        metadata: PeerMetadata,
+    },
 }
 
 impl Action {
@@ -51,10 +58,11 @@ impl Action {
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
-            // Alias actions change the alias mapping, not the collection an alias points at
-            Action::SetAlias { .. } | Action::DeleteAlias { .. } | Action::RenameAlias { .. } => {
-                None
-            }
+            // Change the alias mapping or a peer, neither of which belongs to a collection
+            Action::SetAlias { .. }
+            | Action::DeleteAlias { .. }
+            | Action::RenameAlias { .. }
+            | Action::SetPeerMetadata { .. } => None,
         }
     }
 }

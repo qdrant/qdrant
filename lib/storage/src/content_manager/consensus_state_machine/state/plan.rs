@@ -1,4 +1,6 @@
 use collection::collection::vector_name_schema;
+use collection::operations::types::PeerMetadata;
+use collection::shards::shard::PeerId;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
@@ -157,5 +159,18 @@ impl ClusterState {
             collection,
             field_name: field_name.clone(),
         }])
+    }
+
+    /// Metadata is an absolute value, so a peer that already has it needs no action.
+    /// Nothing to validate: any peer can report any metadata.
+    pub fn plan_update_peer_metadata(&self, peer_id: PeerId, metadata: &PeerMetadata) -> Actions {
+        if self.peer_metadata_by_id.get(&peer_id) == Some(metadata) {
+            return Actions::new();
+        }
+
+        vec![Action::SetPeerMetadata {
+            peer_id,
+            metadata: metadata.clone(),
+        }]
     }
 }
