@@ -1,5 +1,7 @@
 //! Proptest generators for cluster state and consensus operations
 
+use std::collections::HashMap;
+
 use collection::collection_state;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
@@ -29,6 +31,8 @@ const FIELD_NAMES: &[&str] = &["city", "count", "nested.key"];
 const PEER_IDS: &[PeerId] = &[PEER_ID, 43];
 const PEER_VERSIONS: &[&str] = &["1.14.0", "1.15.0"];
 
+const METADATA_KEYS: &[&str] = &["region", "tier"];
+
 pub fn arb_state_and_operation() -> impl Strategy<Value = (ClusterState, ConsensusOperations)> {
     arb_cluster_state().prop_flat_map(|state| {
         let collections = state.collections.keys().cloned();
@@ -55,13 +59,17 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
             Just(collections),
             arb_aliases(names),
             arb_peer_metadata_by_id(),
+            arb_cluster_metadata(),
         )
-            .prop_map(|(collections, aliases, peer_metadata_by_id)| ClusterState {
-                collections,
-                aliases,
-                peer_metadata_by_id,
-                ..Default::default()
-            })
+            .prop_map(
+                |(collections, aliases, peer_metadata_by_id, cluster_metadata)| ClusterState {
+                    collections,
+                    aliases,
+                    peer_metadata_by_id,
+                    cluster_metadata,
+                    ..Default::default()
+                },
+            )
     })
 }
 
@@ -76,6 +84,23 @@ fn arb_peer_id() -> impl Strategy<Value = PeerId> {
 fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
     proptest::sample::select(PEER_VERSIONS)
         .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
+}
+
+/// Cluster metadata never holds a null value: that is how a key is removed
+fn arb_cluster_metadata() -> impl Strategy<Value = HashMap<String, serde_json::Value>> {
+    proptest::collection::hash_map(arb_metadata_key(), arb_metadata_value(), 0..2)
+}
+
+fn arb_metadata_key() -> impl Strategy<Value = String> {
+    proptest::sample::select(METADATA_KEYS).prop_map(String::from)
+}
+
+fn arb_metadata_value() -> impl Strategy<Value = serde_json::Value> {
+    prop_oneof![
+        Just(serde_json::json!("eu")),
+        Just(serde_json::json!(2)),
+        Just(serde_json::json!(true)),
+    ]
 }
 
 fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
@@ -123,7 +148,11 @@ pub fn arb_consensus_operation(
         .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)));
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
-    prop_oneof![6 => collection_meta, 1 => arb_update_peer_metadata()]
+    prop_oneof![
+        6 => collection_meta,
+        1 => arb_update_peer_metadata(),
+        1 => arb_update_cluster_metadata(),
+    ]
 }
 
 fn arb_collection_meta_operation(
@@ -145,6 +174,13 @@ fn arb_update_peer_metadata() -> impl Strategy<Value = ConsensusOperations> {
     (arb_peer_id(), arb_peer_metadata()).prop_map(|(peer_id, metadata)| {
         ConsensusOperations::UpdatePeerMetadata { peer_id, metadata }
     })
+}
+
+fn arb_update_cluster_metadata() -> impl Strategy<Value = ConsensusOperations> {
+    let value = prop_oneof![arb_metadata_value(), Just(serde_json::Value::Null)];
+
+    (arb_metadata_key(), value)
+        .prop_map(|(key, value)| ConsensusOperations::UpdateClusterMetadata { key, value })
 }
 
 fn arb_collection_name(names: Vec<String>) -> impl Strategy<Value = String> {
