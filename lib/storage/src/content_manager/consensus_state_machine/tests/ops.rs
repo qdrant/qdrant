@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use collection::operations::types::PeerMetadata;
 use segment::data_types::vector_name_config::*;
 use segment::types::*;
 
@@ -521,6 +522,73 @@ fn drop_payload_index_missing() {
 }
 
 #[test]
+fn update_peer_metadata() {
+    let mut machine = state_machine(ClusterState::default());
+    let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("metadata of a peer without any should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPeerMetadata { .. }],
+    ));
+
+    assert_eq!(
+        machine.state().peer_metadata_by_id.get(&PEER_ID),
+        Some(&peer_metadata("1.15.0")),
+    );
+}
+
+#[test]
+fn update_peer_metadata_replace() {
+    let mut state = ClusterState::default();
+
+    state
+        .peer_metadata_by_id
+        .insert(PEER_ID, peer_metadata("1.14.0"));
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a peer reporting a new version should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPeerMetadata { .. }],
+    ));
+
+    assert_eq!(
+        machine.state().peer_metadata_by_id.get(&PEER_ID),
+        Some(&peer_metadata("1.15.0")),
+    );
+}
+
+#[test]
+fn update_peer_metadata_replay() {
+    let mut state = ClusterState::default();
+
+    state
+        .peer_metadata_by_id
+        .insert(PEER_ID, peer_metadata("1.15.0"));
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of applied metadata should be accepted, got {outcome:?}");
+    };
+
+    // Nothing left to do: metadata is absolute and the applier only writes it
+    assert!(actions.is_empty());
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn reject_missing_collection() {
     let mut machine = state_machine(ClusterState::default());
     let outcome = machine.apply(&create_named_vector_op("text", dense(4, Distance::Cosine)));
@@ -703,6 +771,17 @@ fn drop_payload_index_op(field: &str) -> ConsensusOperations {
             field_name: field_name(field),
         },
     ))
+}
+
+fn update_peer_metadata_op(peer_id: PeerId, version: &str) -> ConsensusOperations {
+    ConsensusOperations::UpdatePeerMetadata {
+        peer_id,
+        metadata: peer_metadata(version),
+    }
+}
+
+fn peer_metadata(version: &str) -> PeerMetadata {
+    PeerMetadata::new(version.parse().expect("valid version"))
 }
 
 fn field_name(field: &str) -> PayloadKeyType {
