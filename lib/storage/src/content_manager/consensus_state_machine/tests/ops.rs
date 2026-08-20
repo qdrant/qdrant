@@ -32,6 +32,217 @@ fn nop() {
 }
 
 #[test]
+fn create_alias() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "alias", COLLECTION,
+    )]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("creating an alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::SetAlias { .. }]));
+
+    let aliases = &machine.state().aliases;
+
+    assert_eq!(aliases.get("alias").map(String::as_str), Some(COLLECTION));
+}
+
+#[test]
+fn create_alias_replay() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "alias", COLLECTION,
+    )]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of an applied alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::SetAlias { .. }]));
+
+    assert_eq!(machine.state(), &state, "replay should not change anything");
+}
+
+#[test]
+fn create_alias_reject_missing_collection() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "alias", "missing",
+    )]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn create_alias_reject_alias_target() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "other", "alias",
+    )]));
+
+    // An alias of an alias is rejected: the target is not resolved
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn create_alias_reject_collection_name() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        COLLECTION, COLLECTION,
+    )]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::AlreadyExists { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn delete_alias() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![delete_alias_action("alias")]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("deleting an alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::DeleteAlias { .. }]));
+
+    assert!(machine.state().aliases.get("alias").is_none());
+}
+
+#[test]
+fn delete_alias_missing() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![delete_alias_action("alias")]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("deleting an alias that does not exist should be accepted, got {outcome:?}");
+    };
+
+    // Action is emitted even if state already matches
+    assert!(matches!(actions.as_slice(), [Action::DeleteAlias { .. }]));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn rename_alias() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![rename_alias_action(
+        "alias", "other",
+    )]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("renaming an alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::RenameAlias { .. }]));
+
+    let aliases = &machine.state().aliases;
+
+    assert!(aliases.get("alias").is_none());
+    assert_eq!(aliases.get("other").map(String::as_str), Some(COLLECTION));
+}
+
+#[test]
+fn rename_alias_reject_missing() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![rename_alias_action(
+        "alias", "other",
+    )]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn change_aliases_in_order() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![
+        create_alias_action("alias", COLLECTION),
+        rename_alias_action("alias", "other"),
+    ]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("renaming an alias the operation just created should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetAlias { .. }, Action::RenameAlias { .. }],
+    ));
+
+    let aliases = &machine.state().aliases;
+
+    assert!(aliases.get("alias").is_none());
+    assert_eq!(aliases.get("other").map(String::as_str), Some(COLLECTION));
+}
+
+#[test]
+fn change_aliases_reject_whole_operation() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![
+        delete_alias_action("alias"),
+        create_alias_action("other", "missing"),
+    ]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    // `TableOfContent::update_aliases` saves each action as it goes,
+    // so it drops the alias and rejects the operation after that
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn create_named_vector_dense() {
     let machine = create_named_vector_impl(dense(4, Distance::Cosine));
 
@@ -409,6 +620,35 @@ fn cluster_state_with_index(field: &str, field_type: PayloadSchemaType) -> Clust
 
 fn collection_meta_op(op: CollectionMetaOperations) -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(op))
+}
+
+fn change_aliases_op(actions: Vec<AliasOperations>) -> ConsensusOperations {
+    collection_meta_op(CollectionMetaOperations::ChangeAliases(
+        ChangeAliasesOperation { actions },
+    ))
+}
+
+fn create_alias_action(alias: &str, collection: &str) -> AliasOperations {
+    CreateAlias {
+        collection_name: collection.into(),
+        alias_name: alias.into(),
+    }
+    .into()
+}
+
+fn delete_alias_action(alias: &str) -> AliasOperations {
+    DeleteAlias {
+        alias_name: alias.into(),
+    }
+    .into()
+}
+
+fn rename_alias_action(old_alias: &str, new_alias: &str) -> AliasOperations {
+    RenameAlias {
+        old_alias_name: old_alias.into(),
+        new_alias_name: new_alias.into(),
+    }
+    .into()
 }
 
 fn create_named_vector_op(vector_name: &str, config: VectorNameConfig) -> ConsensusOperations {
