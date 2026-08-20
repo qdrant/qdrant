@@ -5,7 +5,6 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadPipeline, ReadRange, TypedStorage, UniversalRead, UserData};
-use num_traits::AsPrimitive;
 
 use super::ReadOnlyChunkedVectors;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -29,51 +28,49 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         self.config.dim
     }
 
-    // returns how many vectors can be inserted starting from key
-    pub fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize {
-        self.config.remaining_chunk_capacity(start_key.as_())
-    }
-
-    #[inline]
-    fn read_range(&self, offset: VectorOffsetType, count: usize) -> Option<(usize, ReadRange)> {
+    /// Per-chunk parts of `offset..offset + count`, in order.
+    ///
+    /// More than one part when the run straddles a chunk boundary.
+    fn read_ranges(
+        &self,
+        offset: VectorOffsetType,
+        count: usize,
+    ) -> Option<impl Iterator<Item = (usize, ReadRange)> + '_> {
         if offset.checked_add(count)? > self.len {
             return None;
         }
 
-        let chunk_idx = self.config.get_chunk_index(offset);
-        if chunk_idx >= self.chunks.len() {
-            return None;
-        }
+        let mut key = offset;
+        let mut left = count;
+        let mut first = true;
+        Some(std::iter::from_fn(move || {
+            // An empty run still reads once, at its own offset
+            if !first && left == 0 {
+                return None;
+            }
+            first = false;
 
-        let element_offset = self.config.get_chunk_offset(offset);
-        let elements_length = count * self.config.dim;
-        if element_offset + elements_length > self.config.chunk_size_vectors * self.config.dim {
-            return None;
-        }
+            let part = left.min(self.config.remaining_chunk_capacity(key));
+            let range = ReadRange {
+                byte_offset: (self.config.get_chunk_offset(key) * size_of::<T>()) as u64,
+                length: (part * self.config.dim) as u64,
+            };
+            let chunk_idx = self.config.get_chunk_index(key);
 
-        let range = ReadRange {
-            byte_offset: (element_offset * size_of::<T>()) as u64,
-            length: elements_length as u64,
-        };
+            key += part;
+            left -= part;
 
-        Some((chunk_idx, range))
+            Some((chunk_idx, range))
+        }))
     }
 
-    /// Returns `count` flattened vectors starting from `starting_key`.
-    ///
-    /// Returns `None` when:
-    /// - chunk boundary is crossed
-    /// - any section of `start_key..start_key + count` is out of bounds
-    #[inline]
-    fn get_many_impl(
+    fn read_part(
         &self,
-        start_key: VectorOffsetType,
-        count: usize,
+        chunk_idx: usize,
+        range: ReadRange,
         force_sequential: bool,
     ) -> Option<Cow<'_, [T]>> {
-        let (chunk_idx, range) = self.read_range(start_key, count)?;
-
-        let chunk = &self.chunks[chunk_idx];
+        let chunk = self.chunks.get(chunk_idx)?;
 
         let use_sequential =
             force_sequential || range.length as usize * size_of::<T>() > PAGE_SIZE_BYTES * 4;
@@ -83,6 +80,31 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         } else {
             chunk.read(range, Random).ok()
         }
+    }
+
+    /// Returns `count` flattened vectors starting from `starting_key`.
+    ///
+    /// Borrows a single chunk, or copies when the run straddles a boundary.
+    /// Returns `None` when any section of `start_key..start_key + count` is
+    /// out of bounds.
+    #[inline]
+    fn get_many_impl(
+        &self,
+        start_key: VectorOffsetType,
+        count: usize,
+        force_sequential: bool,
+    ) -> Option<Cow<'_, [T]>> {
+        let mut parts = self.read_ranges(start_key, count)?;
+
+        let (chunk_idx, range) = parts.next()?;
+        let mut vectors = self.read_part(chunk_idx, range, force_sequential)?;
+
+        for (chunk_idx, range) in parts {
+            let part = self.read_part(chunk_idx, range, force_sequential)?;
+            vectors.to_mut().extend_from_slice(&part);
+        }
+
+        Some(vectors)
     }
 
     #[inline]
@@ -166,14 +188,28 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             while pipeline.can_schedule()
                 && let Some((user_data, offset, count)) = offsets.next()
             {
-                let (chunk_idx, range) = self
-                    .read_range(offset as _, count as _)
-                    .ok_or_else(|| OperationError::service_error("vector offset out of bounds"))?;
-                let range = range.into_byte_range::<T>();
+                let out_of_bounds = || OperationError::service_error("vector offset out of bounds");
+
+                let mut parts = self
+                    .read_ranges(offset as _, count as _)
+                    .ok_or_else(out_of_bounds)?;
+                let (chunk_idx, range) = parts.next().ok_or_else(out_of_bounds)?;
+
+                if parts.next().is_some() {
+                    // A scheduled read is a single range, so a straddling run is
+                    // stitched here instead.
+                    let vector = self
+                        .get_many_impl(offset as _, count as _, P::IS_SEQUENTIAL)
+                        .ok_or_else(out_of_bounds)?;
+                    callback(user_data, vector)?;
+                    continue;
+                }
+
+                let chunk = self.chunks.get(chunk_idx).ok_or_else(out_of_bounds)?;
                 pipeline.schedule::<P>(
                     user_data,
-                    &self.chunks[chunk_idx].inner,
-                    range,
+                    &chunk.inner,
+                    range.into_byte_range::<T>(),
                     align_of::<T>(),
                 )?;
             }
