@@ -242,6 +242,12 @@ fn scoring_equivalency(
 }
 
 #[rstest]
+// `test_attr(ignore = ...)` is required so rstest forwards `#[ignore]` to each
+// generated per-case function. Product-quant cases alone take ~130s on Windows CI.
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
+)]
 fn compare_scoring_equivalency(
     #[values(
         QueryVariant::RecoBestScore,
