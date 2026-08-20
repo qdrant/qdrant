@@ -8,6 +8,7 @@ use common::universal_io::{ReadPipeline, ReadRange, TypedStorage, UniversalRead,
 
 use super::ReadOnlyChunkedVectors;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::chunked_vectors::config::RunPart;
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{VectorOffset, VectorOffsetType};
@@ -40,27 +41,19 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             return None;
         }
 
-        let mut key = offset;
-        let mut left = count;
-        let mut first = true;
-        Some(std::iter::from_fn(move || {
-            // An empty run still reads once, at its own offset
-            if !first && left == 0 {
-                return None;
-            }
-            first = false;
+        Some(self.config.split_run(offset, count).map(|part| {
+            let RunPart {
+                chunk_idx,
+                element_offset,
+                count,
+            } = part;
 
-            let part = left.min(self.config.remaining_chunk_capacity(key));
             let range = ReadRange {
-                byte_offset: (self.config.get_chunk_offset(key) * size_of::<T>()) as u64,
-                length: (part * self.config.dim) as u64,
+                byte_offset: (element_offset * size_of::<T>()) as u64,
+                length: (count * self.config.dim) as u64,
             };
-            let chunk_idx = self.config.get_chunk_index(key);
 
-            key += part;
-            left -= part;
-
-            Some((chunk_idx, range))
+            (chunk_idx, range)
         }))
     }
 

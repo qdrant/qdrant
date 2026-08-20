@@ -51,25 +51,18 @@ where
 
         let start_key = start_key.as_();
 
-        // A run longer than the chunk's tail continues in the next one
-        let mut key = start_key;
+        // Ensure capacity for the whole run up front, so the write loop below
+        // does not need `&mut self`
+        let last_key = start_key + count.saturating_sub(1);
+        while self.inner.config.get_chunk_index(last_key) >= self.inner.chunks.len() {
+            self.add_chunk()?;
+        }
+
         let mut rest = vectors;
-        while !rest.is_empty() {
-            let chunk_idx = self.inner.config.get_chunk_index(key);
-            let chunk_offset = self.inner.config.get_chunk_offset(key);
-
-            // Ensure capacity
-            while chunk_idx >= self.inner.chunks.len() {
-                self.add_chunk()?;
-            }
-
-            let fits = self.inner.config.remaining_chunk_capacity(key) * self.inner.config.dim;
-            let (part, tail) = rest.split_at(fits.min(rest.len()));
-
-            let chunk = &mut self.inner.chunks[chunk_idx];
-            chunk.write((chunk_offset * size_of::<T>()) as u64, part)?;
-
-            key += part.len() / self.inner.config.dim;
+        for part in self.inner.config.split_run(start_key, count) {
+            let (elements, tail) = rest.split_at(part.count * self.inner.config.dim);
+            self.inner.chunks[part.chunk_idx]
+                .write((part.element_offset * size_of::<T>()) as u64, elements)?;
             rest = tail;
         }
 

@@ -35,19 +35,48 @@ pub(super) struct ChunkedVectorsConfig {
     pub(super) populate: Option<bool>,
 }
 
+/// One chunk's share of a run of vectors.
+pub(super) struct RunPart {
+    pub chunk_idx: usize,
+    /// Where the part starts within its chunk, in elements.
+    pub element_offset: usize,
+    /// Vectors in the part.
+    pub count: usize,
+}
+
 impl ChunkedVectorsConfig {
     pub fn get_chunk_index(&self, key: usize) -> usize {
         key / self.chunk_size_vectors
     }
 
-    pub fn get_chunk_offset(&self, key: usize) -> usize {
-        let chunk_vector_idx = key % self.chunk_size_vectors;
-        chunk_vector_idx * self.dim
-    }
+    /// Split the run of `count` vectors at `key` into one part per chunk it
+    /// covers, in order.
+    ///
+    /// Always yields at least one part, so an empty run still resolves to a
+    /// position.
+    pub fn split_run(&self, key: usize, count: usize) -> impl Iterator<Item = RunPart> + '_ {
+        let mut key = key;
+        let mut left = count;
+        let mut first = true;
 
-    /// How many vectors still fit in the chunk holding `key`, starting at it.
-    pub fn remaining_chunk_capacity(&self, key: usize) -> usize {
-        self.chunk_size_vectors - key % self.chunk_size_vectors
+        std::iter::from_fn(move || {
+            if !first && left == 0 {
+                return None;
+            }
+            first = false;
+
+            let in_chunk = key % self.chunk_size_vectors;
+            let part = RunPart {
+                chunk_idx: key / self.chunk_size_vectors,
+                element_offset: in_chunk * self.dim,
+                count: left.min(self.chunk_size_vectors - in_chunk),
+            };
+
+            key += part.count;
+            left -= part.count;
+
+            Some(part)
+        })
     }
 }
 
