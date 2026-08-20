@@ -75,12 +75,6 @@ where
         Ok(read_status_len(&self.fs, &status_file(&self.directory))?)
     }
 
-    /// The most vectors one run may span, since a chunk is never grown past
-    /// its configured size.
-    pub fn max_run_vectors(&self) -> usize {
-        self.config.chunk_size_vectors
-    }
-
     /// Replace the stored vector count.
     fn save_len(&self, len: usize) -> OperationResult<()> {
         self.fs.atomic_save(

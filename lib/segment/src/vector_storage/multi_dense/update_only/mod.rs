@@ -89,7 +89,6 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
             };
 
             let count = flattened.len() / self.dim;
-            self.check_fits(count)?;
             rows.extend_from_slice(&flattened);
             offsets.push(MultivectorMmapOffset {
                 offset: self.next_row as PointOffsetType,
@@ -116,17 +115,6 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
         }
 
         self.deleted.flush(hw_counter)
-    }
-
-    /// Multivectors are capped at one chunk, as in the other storages.
-    fn check_fits(&self, count: usize) -> OperationResult<()> {
-        let max = self.vectors.max_run_vectors();
-        if count > max {
-            return Err(OperationError::service_error(format!(
-                "Cannot insert a multi vector of {count} inner vectors, a chunk holds {max}",
-            )));
-        }
-        Ok(())
     }
 
     fn flatten_decoded(&self, vector: VectorRef<'_>) -> OperationResult<Vec<T>> {

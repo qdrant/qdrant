@@ -89,7 +89,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
             };
 
             let count = encoded.len() / encoded_size;
-            self.check_fits(count)?;
             rows.extend_from_slice(&encoded);
             offsets.push(MultivectorMmapOffset {
                 offset: self.next_row as PointOffsetType,
@@ -116,17 +115,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
         }
 
         self.deleted.flush(hw_counter)
-    }
-
-    /// Multivectors are capped at one chunk, as in the other storages.
-    fn check_fits(&self, count: usize) -> OperationResult<()> {
-        let max = self.vectors.max_run_vectors();
-        if count > max {
-            return Err(OperationError::service_error(format!(
-                "Cannot insert a multi vector of {count} inner vectors, a chunk holds {max}",
-            )));
-        }
-        Ok(())
     }
 
     /// Encode every inner vector, back to back.

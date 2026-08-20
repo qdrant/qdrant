@@ -50,11 +50,6 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
         data.clear_cache()
     }
 
-    /// Bytes a single chunk holds.
-    pub fn max_vector_size_bytes(&self) -> usize {
-        self.data.max_vector_size_bytes()
-    }
-
     /// Returns multiple continuous vectors given a start `index` and a `count` of vectors to return.
     ///
     /// This function returns `None` if the vector is out of bounds.

@@ -15,7 +15,7 @@ use super::buffered_offsets::BufferedOffsets;
 use crate::common::Flusher;
 use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -141,14 +141,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.vectors.dim());
-        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
-        let max_vector_size_bytes = self.vectors.max_vector_size_bytes();
-        if multivector_size_in_bytes >= max_vector_size_bytes {
-            return Err(OperationError::service_error(format!(
-                "Cannot insert multi vector of size {multivector_size_in_bytes} to the mmap vector storage.\
-                 It's too large, maximum size is {max_vector_size_bytes}."
-            )));
-        }
 
         let mut offset = self
             .offsets

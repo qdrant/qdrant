@@ -4,7 +4,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
 use rstest::rstest;
 use tempfile::Builder;
 
@@ -351,29 +350,29 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
     }
 }
 
+/// An inner vector nearly fills a chunk, so the multivector spans several.
 #[rstest]
 #[case(MultiDenseStorageType::AppendableMmapFloat)]
 fn test_large_multi_dense_vector_storage(#[case] storage_type: MultiDenseStorageType) {
-    assert!(MAX_MULTIVECTOR_FLATTENED_LEN * std::mem::size_of::<VectorElementType>() < CHUNK_SIZE);
-
     let vec_dim = 100_000;
-    let vec_count = 100;
+    let vec_count = 10;
+    assert!(vec_dim * vec_count * std::mem::size_of::<VectorElementType>() > CHUNK_SIZE);
+
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
 
-    let vectors = vec![vec![0.0; vec_dim]; vec_count];
+    let vectors: Vec<Vec<VectorElementType>> = (0..vec_count)
+        .map(|i| vec![i as VectorElementType; vec_dim])
+        .collect();
     let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
-    let result = storage.insert_vector(0, VectorRef::from(&multivec), &hw_counter);
-    match result {
-        Ok(_) => {
-            panic!("Inserting vector should fail");
-        }
-        Err(e) => {
-            assert!(e.to_string().contains("too large"));
-        }
-    }
+    storage
+        .insert_vector(0, VectorRef::from(&multivec), &hw_counter)
+        .unwrap();
+
+    let stored = storage.get_vector::<Random>(0);
+    assert_eq!(stored.as_vec_ref(), VectorRef::from(&multivec));
 }
 
 #[test]
@@ -418,29 +417,29 @@ fn test_update_from_delete_points_volatile_multi_dense_vector_storage() {
     }
 }
 
+/// An inner vector nearly fills a chunk, so the multivector spans several.
 #[test]
 fn test_large_volatile_multi_dense_vector_storage() {
-    assert!(MAX_MULTIVECTOR_FLATTENED_LEN * std::mem::size_of::<VectorElementType>() < CHUNK_SIZE);
-
     let vec_dim = 100_000;
-    let vec_count = 100;
+    let vec_count = 10;
+    assert!(vec_dim * vec_count * std::mem::size_of::<VectorElementType>() > CHUNK_SIZE);
+
     let mut storage = new_volatile_multi_dense_vector_storage(
         vec_dim,
         Distance::Dot,
         MultiVectorConfig::default(),
     );
 
-    let vectors = vec![vec![0.0; vec_dim]; vec_count];
+    let vectors: Vec<Vec<VectorElementType>> = (0..vec_count)
+        .map(|i| vec![i as VectorElementType; vec_dim])
+        .collect();
     let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
-    let result = storage.insert_vector(0, VectorRef::from(&multivec), &hw_counter);
-    match result {
-        Ok(_) => {
-            panic!("Inserting vector should fail");
-        }
-        Err(e) => {
-            assert!(e.to_string().contains("too large"));
-        }
-    }
+    storage
+        .insert_vector(0, VectorRef::from(&multivec), &hw_counter)
+        .unwrap();
+
+    let stored = storage.get_vector::<Random>(0);
+    assert_eq!(stored.as_vec_ref(), VectorRef::from(&multivec));
 }

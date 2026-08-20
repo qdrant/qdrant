@@ -158,13 +158,6 @@ pub fn open_appendable_turbo_multi_vector_storage(
     })
 }
 
-/// Rejection message for a multivector too large to store. Single source of
-/// truth for both write paths; only the error class differs by call site (user
-/// error on ingest, service error on the optimizer merge).
-fn exceeds_chunk_capacity_message(count: PointOffsetType) -> String {
-    format!("Multivector of {count} subvectors exceeds the chunk capacity")
-}
-
 impl AppendableMmapMultiTurboVectorStorage {
     /// Offset record for `key`, if the point exists.
     fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
@@ -291,11 +284,6 @@ impl AppendableMmapMultiTurboVectorStorage {
             })
     }
 
-    /// Multivectors are capped at one chunk, as in the other storages.
-    fn exceeds_chunk_capacity(&self, count: PointOffsetType) -> bool {
-        count as usize * self.quantizer.quantized_size() > self.storage.max_vector_size_bytes()
-    }
-
     /// Record range for upserting `count` records at `key`: reuse the existing
     /// range in place when the new count fits its capacity, else allocate a
     /// fresh range at the end.
@@ -303,7 +291,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         key: PointOffsetType,
         count: PointOffsetType,
-    ) -> OperationResult<MultivectorMmapOffset> {
+    ) -> MultivectorMmapOffset {
         let mut offset = self
             .offsets
             .get::<Random>(key as VectorOffsetType)
@@ -311,13 +299,6 @@ impl AppendableMmapMultiTurboVectorStorage {
             .unwrap_or_default();
 
         if count > offset.capacity {
-            if self.exceeds_chunk_capacity(count) {
-                // User error so WAL replay skips the op instead of crash-looping.
-                // Reachable only internally (no `MAX_MULTIVECTOR_FLATTENED_LEN` check).
-                return Err(OperationError::malformed_vector_blob(
-                    exceeds_chunk_capacity_message(count),
-                ));
-            }
             offset = MultivectorMmapOffset {
                 offset: self.storage.vectors_count() as PointOffsetType,
                 count,
@@ -326,7 +307,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         } else {
             offset.count = count;
         }
-        Ok(offset)
+        offset
     }
 
     /// Encode and upsert one multivector at `key`.
@@ -339,7 +320,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         assert_eq!(multi_vector.dim, self.dim);
 
         let count = multi_vector.vectors_count() as PointOffsetType;
-        let offset = self.record_range_for_upsert(key, count)?;
+        let offset = self.record_range_for_upsert(key, count);
 
         for (i, inner) in multi_vector
             .flattened_vectors
@@ -381,7 +362,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         }
 
         let count = (bytes.len() / record_size) as PointOffsetType;
-        let offset = self.record_range_for_upsert(key, count)?;
+        let offset = self.record_range_for_upsert(key, count);
 
         for (i, encoded) in bytes.chunks_exact(record_size).enumerate() {
             self.storage.upsert_vector(
@@ -742,13 +723,6 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
             }
 
             let count = (blob.len() / record_size) as u32;
-            if self.exceeds_chunk_capacity(count) {
-                // Merge of already-stored data: over-capacity here is genuine
-                // corruption, kept as a service error.
-                return Err(OperationError::service_error(
-                    exceeds_chunk_capacity_message(count),
-                ));
-            }
             let key = self.offsets.len() as PointOffsetType;
             let inner_start = self.storage.vectors_count() as PointOffsetType;
             for (i, record) in blob.chunks_exact(record_size).enumerate() {
@@ -1352,11 +1326,10 @@ mod tests {
         );
     }
 
-    /// The largest multivector that fits one chunk is accepted; one subvector
-    /// more is rejected at write time on both write paths.
-    /// Cheap thanks to the small 512 KiB test-build `CHUNK_SIZE`.
+    /// A multivector larger than a whole chunk is stored and read back on both
+    /// write paths. Cheap thanks to the small 512 KiB test-build `CHUNK_SIZE`.
     #[test]
-    fn chunk_sized_multivector_accepted_one_larger_rejected() {
+    fn multivector_larger_than_a_chunk_round_trips() {
         const DIM: usize = 128;
         let distance = Distance::Dot;
         let dir = Builder::new()
@@ -1376,38 +1349,31 @@ mod tests {
         .unwrap();
         let record_size = storage.quantized_vector_size();
         let records_per_chunk = CHUNK_SIZE / record_size;
+        let oracle = Oracle::new(DIM, distance);
 
-        // Exactly one whole chunk of records is the maximum allowed.
-        let max_blob = vec![0u8; records_per_chunk * record_size];
-        let mut it = std::iter::once((Cow::from(max_blob.as_slice()), false));
+        // One record past a whole chunk, so the range covers two of them
+        let blob = vec![0u8; (records_per_chunk + 1) * record_size];
+        let mut it = std::iter::once((Cow::from(blob.as_slice()), false));
         assert_eq!(storage.update_from(&mut it, &stopped).unwrap(), 0..1);
-        let blob = storage.get_multi_tq::<Random>(0);
-        assert!(matches!(blob, Cow::Borrowed(_)));
-        assert_eq!(blob.as_ref(), max_blob.as_slice());
 
-        // One subvector more cannot fit any chunk: rejected via `update_from`...
-        let oversized_blob = vec![0u8; (records_per_chunk + 1) * record_size];
-        let mut it = std::iter::once((Cow::from(oversized_blob.as_slice()), false));
-        assert!(storage.update_from(&mut it, &stopped).is_err());
+        let read = storage.get_multi_tq::<Random>(0);
+        assert!(matches!(read, Cow::Owned(_)), "straddling read must copy");
+        assert_eq!(read.as_ref(), blob.as_slice());
 
-        // ...and via `insert_vector`, before any record is written.
-        let oversized = multi_of(DIM, records_per_chunk + 1, 11);
-        assert!(
-            storage
-                .insert_vector(
-                    1,
-                    TypedMultiDenseVectorRef::from(&oversized).into(),
-                    &hw_counter,
-                )
-                .is_err()
-        );
+        // Same through `insert_vector`
+        let multi = multi_of(DIM, records_per_chunk + 1, 11);
+        storage
+            .insert_vector(
+                1,
+                TypedMultiDenseVectorRef::from(&multi).into(),
+                &hw_counter,
+            )
+            .unwrap();
 
-        // The rejected points left no trace; the accepted one is intact.
-        assert_eq!(storage.total_vector_count(), 1);
-        assert_eq!(storage.storage.vectors_count(), records_per_chunk);
+        assert_eq!(storage.total_vector_count(), 2);
         assert_eq!(
-            storage.get_multi_tq::<Random>(0).as_ref(),
-            max_blob.as_slice()
+            storage.get_multi_tq::<Random>(1).as_ref(),
+            oracle.encode_multi(&multi).concat().as_slice(),
         );
     }
 

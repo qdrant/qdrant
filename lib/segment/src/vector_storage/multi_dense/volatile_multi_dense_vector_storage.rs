@@ -10,12 +10,12 @@ use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::common::CHUNK_SIZE;
+use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::flattened_to_multi_vector;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
     MultiVectorStorage, MultiVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
@@ -156,12 +156,6 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.dim);
-        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
-        if multivector_size_in_bytes >= CHUNK_SIZE {
-            return Err(OperationError::service_error(format!(
-                "Cannot insert multi vector of size {multivector_size_in_bytes} to the vector storage. It's too large, maximum size is {CHUNK_SIZE}.",
-            )));
-        }
 
         let key_usize = key as usize;
         if key_usize >= self.vectors_metadata.len() {
@@ -173,37 +167,29 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         metadata.inner_vectors_count = multi_vector.vectors_count();
 
         if multi_vector.vectors_count() > metadata.inner_vector_capacity {
+            // Does not fit its old place, so it is appended to the end
             metadata.inner_vector_capacity = metadata.inner_vectors_count;
             metadata.start = self.vectors.len();
-            let left_keys = self.vectors.get_chunk_left_keys(metadata.start);
-            if multi_vector.vectors_count() > left_keys {
-                metadata.start += left_keys;
-            }
-            self.vectors.insert_many(
-                metadata.start,
-                multi_vector.flattened_vectors,
-                multi_vector.vectors_count(),
-            )?;
-        } else {
-            self.vectors.insert_many(
-                metadata.start,
-                multi_vector.flattened_vectors,
-                multi_vector.vectors_count(),
-            )?;
         }
+
+        self.vectors.insert_many(
+            metadata.start,
+            multi_vector.flattened_vectors,
+            multi_vector.vectors_count(),
+        )?;
 
         self.set_deleted(key, is_deleted);
         Ok(())
     }
 
-    fn get_multi_impl(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+    fn get_multi_impl(&self, key: PointOffsetType) -> Option<CowMultiVector<'_, T>> {
         let &MultiVectorMetadata {
             start,
             inner_vectors_count,
             ..
         } = self.vectors_metadata.get(key as usize)?;
         let vectors = self.vectors.get_many(start, inner_vectors_count)?;
-        Some(TypedMultiDenseVectorRef::new(vectors, self.dim))
+        Some(flattened_to_multi_vector(vectors, self.dim))
     }
 }
 
@@ -223,7 +209,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDense
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>> {
         // No sequential optimizations available for in memory storage.
-        self.get_multi_impl(key).map(CowMultiVector::Borrowed)
+        self.get_multi_impl(key)
     }
 
     fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
@@ -232,7 +218,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDense
     {
         for (idx, &key) in keys.iter().enumerate() {
             let vector = self.get_multi_impl(key).expect("multi vector exists");
-            callback(idx, vector);
+            callback(idx, vector.as_ref());
         }
     }
 
