@@ -403,6 +403,17 @@ impl ShardReplicaSet {
         !self.remotes.read().await.is_empty()
     }
 
+    /// On-disk path of the underlying local (or queue-proxy-wrapped local)
+    /// shard's data directory, if this replica set currently has one.
+    /// Returns  for a remote-only or dummy shard.
+    pub async fn local_shard_path(&self) -> Option<std::path::PathBuf> {
+        let local_read = self.local.read().await;
+        local_read
+            .as_ref()?
+            .local_shard()
+            .map(|local| local.shard_path())
+    }
+
     pub async fn has_local_shard(&self) -> bool {
         self.local.read().await.is_some()
     }

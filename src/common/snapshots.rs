@@ -103,6 +103,35 @@ pub async fn stream_shard_snapshot(
     Ok(snapshot_stream)
 }
 
+/// Bucketed-transfer counterpart to `stream_shard_snapshot`: streams only
+/// `entries` (relative paths under the shard's data directory) as their own
+/// self-contained tar, live, instead of the whole shard.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
+pub async fn stream_shard_snapshot_bucket(
+    toc: Arc<TableOfContent>,
+    auth: &Auth,
+    collection_name: String,
+    shard_id: ShardId,
+    entries: Vec<String>,
+) -> Result<SnapshotStream, StorageError> {
+    let collection_pass = auth.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().write().extras(),
+        "stream_shard_snapshot_bucket",
+    )?;
+
+    let collection = toc.get_collection(&collection_pass).await?;
+
+    let snapshot_stream = collection
+        .stream_shard_snapshot_bucket(shard_id, entries)
+        .await?;
+
+    Ok(snapshot_stream)
+}
+
 /// # Cancel safety
 ///
 /// This function is cancel safe.

@@ -1137,6 +1137,8 @@ enum ShardTransferMethod {
   WalDelta = 2;
   // Stream shard records in batches for resharding
   ReshardingStreamRecords = 3;
+  // Like Snapshot, but partitions the shard into independent buckets transferred over their own connections
+  SnapshotBucketed = 4;
 }
 
 message Replica {

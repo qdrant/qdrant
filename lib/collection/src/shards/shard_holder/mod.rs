@@ -1354,6 +1354,72 @@ impl ShardHolder {
         ))
     }
 
+    /// Stream exactly `entries` (relative paths under the shard's data
+    /// directory, as produced by [`super::transfer::bucketed_snapshot::assign_buckets`])
+    /// as their own self-contained tar, live, without materializing
+    /// anything to disk first -- the bucketed-transfer counterpart to
+    /// [`Self::stream_shard_snapshot`], which always streams the *whole*
+    /// shard.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn stream_shard_snapshot_bucket(
+        shard: OwnedRwLockReadGuard<ShardHolder, Arc<ShardReplicaSet>>,
+        shard_id: ShardId,
+        entries: Vec<String>,
+    ) -> CollectionResult<SnapshotStream> {
+        if !shard.is_local().await && !shard.is_queue_proxy().await {
+            return Err(CollectionError::bad_input(format!(
+                "Shard {shard_id} is not a local or queue proxy shard"
+            )));
+        }
+
+        let shard_path = shard.local_shard_path().await.ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Shard {shard_id} has no local data to stream a bucket from"
+            ))
+        })?;
+
+        drop(shard);
+
+        let (read_half, write_half) = tokio::io::duplex(4096);
+
+        // Same rationale as `stream_shard_snapshot`: abort if the consumer
+        // stops draining the stream, rather than leaking a blocking thread
+        // forever.
+        let write_half = TimeoutWriter::new(write_half, SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT);
+
+        let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
+
+        let write_task = tokio::task::spawn_blocking({
+            let tar = tar.clone();
+            move || {
+                super::transfer::bucketed_snapshot::write_bucket_tar(&tar, &shard_path, &entries)
+            }
+        });
+
+        tokio::spawn(async move {
+            let result: CollectionResult<()> = async {
+                write_task.await.map_err(|err| {
+                    CollectionError::service_error(format!("Bucket tar writer task failed: {err}"))
+                })??;
+                tar.finish().await?;
+                Ok(())
+            }
+            .await;
+
+            if let Err(err) = result {
+                log::error!("Failed to stream shard snapshot bucket: {err}");
+            }
+        });
+
+        Ok(SnapshotStream::new_stream(
+            FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
+            None,
+        ))
+    }
+
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.

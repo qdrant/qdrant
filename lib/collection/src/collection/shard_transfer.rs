@@ -77,7 +77,9 @@ impl Collection {
     ) -> CollectionResult<ReplicaState> {
         let initial_state = match method {
             ShardTransferMethod::StreamRecords => ReplicaState::Partial,
-            ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => ReplicaState::Recovery,
+            ShardTransferMethod::Snapshot
+            | ShardTransferMethod::WalDelta
+            | ShardTransferMethod::SnapshotBucketed => ReplicaState::Recovery,
             ShardTransferMethod::ReshardingStreamRecords => {
                 let direction = self.resharding_state().await.map(|state| state.direction);
 
@@ -260,7 +262,8 @@ impl Collection {
                 ShardTransferMethod::WalDelta => ShardTransferMethod::Snapshot,
                 method @ (ShardTransferMethod::StreamRecords
                 | ShardTransferMethod::Snapshot
-                | ShardTransferMethod::ReshardingStreamRecords) => method,
+                | ShardTransferMethod::ReshardingStreamRecords
+                | ShardTransferMethod::SnapshotBucketed) => method,
             }
         };
         let transfer_task = transfer::driver::spawn_transfer_task(
