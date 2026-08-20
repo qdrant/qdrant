@@ -309,6 +309,76 @@ fn drop_payload_index_missing() {
     assert_eq!(machine.state(), &state);
 }
 
+#[test]
+fn reject_missing_collection() {
+    let mut machine = state_machine(ClusterState::default());
+    let outcome = machine.apply(&create_named_vector_op("text", dense(4, Distance::Cosine)));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+}
+
+#[test]
+fn resolve_alias() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::CreateNamedVector(CreateNamedVector {
+            collection_name: "alias".into(),
+            vector_name: "text".into(),
+            config: dense(4, Distance::Cosine),
+        }),
+    ));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("an alias should resolve to its collection, got {outcome:?}");
+    };
+
+    assert_eq!(
+        actions
+            .first()
+            .and_then(Action::collection)
+            .expect("action modifies collection"),
+        &COLLECTION,
+    );
+
+    let vectors = &machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists")
+        .config
+        .params
+        .vectors;
+
+    assert!(vectors.get_params("text").is_some());
+}
+
+#[test]
+fn reject_dangling_alias() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("dangling".into(), "missing".into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::CreateNamedVector(CreateNamedVector {
+            collection_name: "dangling".into(),
+            vector_name: "text".into(),
+            config: dense(4, Distance::Cosine),
+        }),
+    ));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
 fn cluster_state(vectors: Vec<(&str, VectorNameConfig)>) -> ClusterState {
     let vectors = vectors
         .into_iter()
