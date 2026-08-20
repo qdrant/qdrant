@@ -1705,16 +1705,12 @@ async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
     assert_bad_op_skipped_on_wal_replay(config, valid_upsert, malformed_raw_upsert).await;
 }
 
-/// A multivector exceeding whole-chunk capacity in TurboQuant storage is only
-/// rejected during apply, after the WAL write. Public APIs can't produce one
-/// (`MAX_MULTIVECTOR_FLATTENED_LEN`); the internal API applies operations
-/// without that validation.
+/// Multivector counterpart of [`test_malformed_raw_upsert_is_skipped_on_wal_replay`]:
+/// a raw blob that is not a whole number of TurboQuant records. Only the apply
+/// path rejects it, after the WAL write.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_over_capacity_multivector_upsert_is_skipped_on_wal_replay() {
-    // Test builds use a 512 KiB storage chunk; a Turbo4 record of a dim-128
-    // subvector is at least 64 bytes, so one chunk holds at most 8192 subvectors.
+async fn test_malformed_multivector_raw_upsert_is_skipped_on_wal_replay() {
     const DIM: usize = 128;
-    const OVER_CAPACITY_COUNT: usize = 9000;
 
     // Single multivector with TurboQuant (Turbo4) storage.
     let mut vector_params = VectorParamsBuilder::new(DIM as u64, Distance::Dot)
@@ -1727,23 +1723,28 @@ async fn test_over_capacity_multivector_upsert_is_skipped_on_wal_replay() {
         vectors: VectorsConfig::Single(vector_params),
         ..CollectionParams::empty()
     };
-    // The over-capacity operation (~4.6 MB of f32 input) must fit a WAL segment.
-    config.wal_config.wal_capacity_mb = 16;
 
-    let multi_upsert = |id: u64, count: usize| {
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-            PointInsertOperationsInternal::from(vec![PointStructPersisted {
-                id: id.into(),
-                vector: VectorStructPersisted::MultiDense(vec![vec![1.0; DIM]; count]),
+    // A valid multivector point via the plain upsert path.
+    let valid_upsert = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(vec![PointStructPersisted {
+            id: 1.into(),
+            vector: VectorStructPersisted::MultiDense(vec![vec![1.0; DIM]; 2]),
+            payload: None,
+        }]),
+    ));
+
+    // A quantized record of a dim-128 subvector is at least 64 bytes, so three
+    // bytes are never a whole number of them.
+    let malformed_raw_upsert =
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
+            PointStructRawPersisted {
+                id: 2.into(),
+                vectors: std::iter::once((DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2]))
+                    .collect(),
                 payload: None,
-            }]),
-        ))
-    };
+                payload_raw: None,
+            },
+        ]));
 
-    assert_bad_op_skipped_on_wal_replay(
-        config,
-        multi_upsert(1, 2),
-        multi_upsert(2, OVER_CAPACITY_COUNT),
-    )
-    .await;
+    assert_bad_op_skipped_on_wal_replay(config, valid_upsert, malformed_raw_upsert).await;
 }
