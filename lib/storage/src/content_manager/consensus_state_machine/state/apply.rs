@@ -94,6 +94,14 @@ impl ClusterState {
             Action::SetPeerMetadata { peer_id, metadata } => {
                 self.peer_metadata_by_id.insert(*peer_id, metadata.clone());
             }
+
+            Action::SetClusterMetadataKey { key, value } => {
+                if value.is_null() {
+                    self.cluster_metadata.remove(key);
+                } else {
+                    self.cluster_metadata.insert(key.clone(), value.clone());
+                }
+            }
         }
     }
 

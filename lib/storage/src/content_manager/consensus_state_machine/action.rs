@@ -47,6 +47,12 @@ pub enum Action {
         peer_id: PeerId,
         metadata: PeerMetadata,
     },
+
+    /// Null value removes the key
+    SetClusterMetadataKey {
+        key: String,
+        value: serde_json::Value,
+    },
 }
 
 impl Action {
@@ -58,11 +64,12 @@ impl Action {
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
-            // Change the alias mapping or a peer, neither of which belongs to a collection
+            // Change the alias mapping, a peer or the cluster, none of which is a collection
             Action::SetAlias { .. }
             | Action::DeleteAlias { .. }
             | Action::RenameAlias { .. }
-            | Action::SetPeerMetadata { .. } => None,
+            | Action::SetPeerMetadata { .. }
+            | Action::SetClusterMetadataKey { .. } => None,
         }
     }
 }

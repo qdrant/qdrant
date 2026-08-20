@@ -173,4 +173,24 @@ impl ClusterState {
             metadata: metadata.clone(),
         }]
     }
+
+    /// Null value removes the key, so the goal state is reached when the key is gone.
+    /// Nothing to validate: any key can hold any value.
+    pub fn plan_update_cluster_metadata(&self, key: &str, value: &serde_json::Value) -> Actions {
+        let current = self.cluster_metadata.get(key);
+
+        let applied = match value.is_null() {
+            true => current.is_none(),
+            false => current == Some(value),
+        };
+
+        if applied {
+            return Actions::new();
+        }
+
+        vec![Action::SetClusterMetadataKey {
+            key: key.to_string(),
+            value: value.clone(),
+        }]
+    }
 }

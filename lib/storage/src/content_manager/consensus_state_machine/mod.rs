@@ -78,9 +78,13 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(actions)
             }
 
+            ConsensusOperations::UpdateClusterMetadata { key, value } => {
+                let actions = self.state.plan_update_cluster_metadata(key, value);
+                ApplyOutcome::Accepted(actions)
+            }
+
             ConsensusOperations::AddPeer { .. }
             | ConsensusOperations::RemovePeer(_)
-            | ConsensusOperations::UpdateClusterMetadata { .. }
             | ConsensusOperations::SetQuotaConfig(_) => ApplyOutcome::NotCovered,
 
             // Never reach the apply path: consensus handles them in its own thread
