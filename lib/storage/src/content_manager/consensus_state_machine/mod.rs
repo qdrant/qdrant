@@ -93,12 +93,15 @@ impl ConsensusStateMachine {
             CollectionMetaOperations::CreateCollection(_)
             | CollectionMetaOperations::UpdateCollection(_)
             | CollectionMetaOperations::DeleteCollection(_)
-            | CollectionMetaOperations::ChangeAliases(_)
             | CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_)
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _)
             | CollectionMetaOperations::Resharding(_, _) => ApplyOutcome::NotCovered,
+
+            CollectionMetaOperations::ChangeAliases(operation) => {
+                ApplyOutcome::new(self.state.plan_change_aliases(operation))
+            }
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))

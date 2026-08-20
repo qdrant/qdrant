@@ -26,6 +26,20 @@ pub enum Action {
         collection: CollectionId,
         field_name: PayloadKeyType,
     },
+
+    SetAlias {
+        alias: String,
+        collection: CollectionId,
+    },
+
+    DeleteAlias {
+        alias: String,
+    },
+
+    RenameAlias {
+        old_alias: String,
+        new_alias: String,
+    },
 }
 
 impl Action {
@@ -36,6 +50,11 @@ impl Action {
             | Action::DropNamedVector { collection, .. }
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. } => Some(collection),
+
+            // Alias actions change the alias mapping, not the collection an alias points at
+            Action::SetAlias { .. } | Action::DeleteAlias { .. } | Action::RenameAlias { .. } => {
+                None
+            }
         }
     }
 }
