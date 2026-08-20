@@ -12,6 +12,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_path;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use fs_err as fs;
 use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture};
@@ -61,17 +62,17 @@ async fn test_torn_versions_write_keeps_point() {
     // The flush worker acknowledges flushed operations and drops them from the WAL. Do it here so
     // the state under test is the steady one, reached whenever a flush completes.
     let wal_path = LocalShard::wal_path(&shard_path);
-    for entry in std::fs::read_dir(&wal_path).unwrap() {
-        std::fs::remove_file(entry.unwrap().path()).unwrap();
+    for entry in fs::read_dir(&wal_path).unwrap() {
+        fs::remove_file(entry.unwrap().path()).unwrap();
     }
 
     // Point versions are flushed last, as a dense array of one u64 per slot. Cutting its tail is
     // what a kill part-way through the flush order leaves behind: a slot mapped, but versionless.
     let versions_path = largest_versions_file(&LocalShard::segments_path(&shard_path));
-    let versions_len = std::fs::metadata(&versions_path).unwrap().len();
+    let versions_len = fs::metadata(&versions_path).unwrap().len();
     let slot = size_of::<u64>() as u64;
     assert!(versions_len >= 2 * slot, "expected a segment with points");
-    std::fs::OpenOptions::new()
+    fs::OpenOptions::new()
         .write(true)
         .open(&versions_path)
         .unwrap()
@@ -94,13 +95,11 @@ async fn test_torn_versions_write_keeps_point() {
 }
 
 fn largest_versions_file(segments_path: &Path) -> PathBuf {
-    std::fs::read_dir(segments_path)
+    fs::read_dir(segments_path)
         .unwrap()
         .filter_map(|entry| {
             let path = entry.unwrap().path().join(VERSIONS_FILE);
-            let len = path
-                .is_file()
-                .then(|| std::fs::metadata(&path).unwrap().len())?;
+            let len = path.is_file().then(|| fs::metadata(&path).unwrap().len())?;
             Some((len, path))
         })
         .max_by_key(|(len, _)| *len)
