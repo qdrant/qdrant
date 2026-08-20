@@ -40,6 +40,23 @@ jobs:
           echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
         fi
       shell: bash
+    # Windows-only build acceleration: use rust-lld (much faster than MSVC link.exe)
+    # and drop debug info + incremental compilation. The default MSVC linker + PDB
+    # emission is the single biggest reason the Windows job is ~8 min slower than
+    # the Linux/macOS ones. Test binaries don't need PDBs on CI (we already set
+    # `debug = "line-tables-only"` on profile.dev in Cargo.toml — Windows drops it
+    # entirely for CI). Incremental is useless on a from-cache CI build.
+    - name: Configure fast Windows build
+      if: matrix.os == 'windows-latest'
+      run: |
+        mkdir -p .cargo
+        {
+          echo "[target.x86_64-pc-windows-msvc]"
+          echo "linker = \"rust-lld\""
+        } >> .cargo/config.toml
+        echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
+        echo "CARGO_PROFILE_DEV_INCREMENTAL=false" >> "$GITHUB_ENV"
+      shell: bash
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
