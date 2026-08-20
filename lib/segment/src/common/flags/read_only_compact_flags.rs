@@ -2,9 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use common::mmap::AdviceSetting;
-use common::stored_bitmask::StoredBitmask;
+use common::stored_bitmask::{self, StoredBitmask};
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkNotFound, OkUnchanged, OpenOptions, Populate, ReadRange, UniversalRead,
+    UniversalReadFs,
 };
 use roaring::RoaringBitmap;
 
@@ -60,8 +61,17 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         directory: &Path,
-        populate: Populate,
+        mut populate: Populate,
     ) -> OperationResult<bool> {
+        populate = match populate {
+            Populate::Auto | Populate::No => {
+                Populate::Partial(ReadRange::new(0, stored_bitmask::HEADER_SIZE as u64))
+            }
+            Populate::Blocking => Populate::Blocking,
+            Populate::PreferBackground => Populate::PreferBackground,
+            partial @ Populate::Partial(_) => partial,
+        };
+
         Ok(fs
             .schedule_prefetch(
                 &directory.join(COMPACT_FLAGS_FILE),
@@ -119,6 +129,21 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) -> OperationResult<()> {
+        let directory = self.directory.as_path();
+        let populate = if self.bitmap.get().is_some() {
+            Populate::PreferBackground
+        } else {
+            Populate::Partial(ReadRange::new(0, stored_bitmask::HEADER_SIZE as u64))
+        };
+        cached_fs.reschedule_prefetch(
+            &directory.join(COMPACT_FLAGS_FILE),
+            Some(open_options(populate)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// Refresh to the current on-disk state.
     ///
     /// The compact file is never mutated in place — every flush replaces it
@@ -132,12 +157,16 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
     pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
         // Once the flags exist their file always does, so absence here is a
         // genuine not-found (segment removed mid-reload), not a lazy file.
-        let storage = StoredBitmask::<S>::open(
+        let Some(storage) = StoredBitmask::<S>::open(
             fs,
             self.directory.join(COMPACT_FLAGS_FILE),
             open_options(Populate::No),
             Default::default(),
-        )?;
+        )
+        .ok_unchanged()?
+        else {
+            return Ok(());
+        };
 
         if let Some(bitmap) = self.bitmap.get_mut() {
             *bitmap = storage.read_ones()?;
