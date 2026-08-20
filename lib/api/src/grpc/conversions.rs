@@ -70,7 +70,7 @@ use crate::grpc::qdrant::{
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
-    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
+    DivExpression, GeoDistance, MaxExpression, MultExpression, PowExpression, SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, ShardKeysResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -3628,6 +3628,12 @@ fn unparse_expression(
         }),
         ParsedExpression::Sum(exprs) => Variant::Sum(SumExpression {
             sum: exprs
+                .into_iter()
+                .map(|expr| unparse_expression(expr, conditions))
+                .collect(),
+        }),
+        ParsedExpression::Max(exprs) => Variant::Max(MaxExpression {
+            max: exprs
                 .into_iter()
                 .map(|expr| unparse_expression(expr, conditions))
                 .collect(),

@@ -45,6 +45,10 @@ impl FromPyObject<'_, '_> for PyExpression {
                 ExpressionInternal::Sum(PyExpression::peel_vec(exprs))
             }
 
+            PyExpressionInterface::Max { exprs } => {
+                ExpressionInternal::Max(PyExpression::peel_vec(exprs))
+            }
+
             PyExpressionInterface::Neg { expr } => ExpressionInternal::Neg(expr.into_box()),
 
             PyExpressionInterface::Div {
@@ -121,6 +125,10 @@ impl<'py> IntoPyObject<'py> for PyExpression {
             },
 
             ExpressionInternal::Sum(exprs) => PyExpressionInterface::Sum {
+                exprs: PyExpression::wrap_vec(exprs),
+            },
+
+            ExpressionInternal::Max(exprs) => PyExpressionInterface::Max {
                 exprs: PyExpression::wrap_vec(exprs),
             },
 
@@ -216,6 +224,10 @@ impl Repr for PyExpression {
 
             ExpressionInternal::Sum(exprs) => {
                 ("Sum", &[("exprs", &PyExpression::wrap_slice(exprs))])
+            }
+
+            ExpressionInternal::Max(exprs) => {
+                ("Max", &[("exprs", &PyExpression::wrap_slice(exprs))])
             }
 
             ExpressionInternal::Neg(expr) => ("Neg", &[("expr", PyExpression::wrap_ref(expr))]),

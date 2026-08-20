@@ -42,6 +42,10 @@ pub enum PyExpressionInterface {
         exprs: Vec<PyExpression>,
     },
 
+    Max {
+        exprs: Vec<PyExpression>,
+    },
+
     Neg {
         expr: Boxed<PyExpression>,
     },
@@ -108,6 +112,7 @@ impl Repr for PyExpressionInterface {
             PyExpressionInterface::DatetimeKey { path } => ("DatetimeKey", &[("path", path)]),
             PyExpressionInterface::Mult { exprs } => ("Mult", &[("exprs", exprs)]),
             PyExpressionInterface::Sum { exprs } => ("Sum", &[("exprs", exprs)]),
+            PyExpressionInterface::Max { exprs } => ("Max", &[("exprs", exprs)]),
             PyExpressionInterface::Neg { expr } => ("Neg", &[("expr", expr)]),
 
             PyExpressionInterface::Div {

@@ -474,6 +474,12 @@ impl<'a> Extractor<'a> {
                 }
                 return;
             }
+            ExpressionInternal::Max(expression_internals) => {
+                for expr in expression_internals {
+                    self.update_from_expression(expr);
+                }
+                return;
+            }
             ExpressionInternal::Neg(expression_internal) => {
                 self.update_from_expression(expression_internal);
                 return;
@@ -690,6 +696,23 @@ mod tests {
             infer_index_from_field_condition(&condition),
             vec![FieldIndexType::KeywordPrefix],
         );
+    }
+
+    /// Payload fields referenced inside `max` still need an index, so the walker must recurse
+    /// into its operands the same way it does for `sum` and `mult`. Missing this would silently
+    /// stop suggesting indexes for any field used under a max.
+    #[test]
+    fn max_operands_report_unindexed_payload_fields() {
+        let payload_schema = HashMap::new();
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_expression(&ExpressionInternal::Max(vec![
+            ExpressionInternal::Variable("$score".to_string()),
+            ExpressionInternal::Variable("popularity".to_string()),
+        ]));
+
+        let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
+        assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
     }
 
     #[test]

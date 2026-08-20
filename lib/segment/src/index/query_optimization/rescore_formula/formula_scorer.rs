@@ -169,6 +169,14 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(acc + value)
             }),
+            ParsedExpression::Max(expressions) => {
+                expressions
+                    .iter()
+                    .try_fold(PreciseScore::NEG_INFINITY, |acc, expr| {
+                        let value = self.eval_expression(expr, point_id)?;
+                        Ok(acc.max(value))
+                    })
+            }
             ParsedExpression::Div {
                 left,
                 right,
@@ -449,6 +457,27 @@ mod tests {
     #[case(ParsedExpression::new_div(
         ParsedExpression::Constant(PreciseScoreOrdered::from(10.0)), ParsedExpression::new_score_id(0), None
     ), 10.0 / 1.0)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
+    ]), 85.0)]
+    // A single operand is returned as-is
+    #[case(ParsedExpression::Max(vec![ParsedExpression::new_score_id(1)]), 2.0)]
+    // Negative operands: max must not be confused by magnitude
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-10.0)),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-2.0)),
+    ]), -2.0)]
+    // Nested sub-expressions are evaluated before comparing
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Mult(vec![
+            ParsedExpression::Constant(PreciseScoreOrdered::from(3.0)),
+            ParsedExpression::new_score_id(0),
+        ]),
+        ParsedExpression::new_score_id(1),
+    ]), 3.0)]
     #[case(ParsedExpression::new_neg(ParsedExpression::Constant(PreciseScoreOrdered::from(10.0))), -10.0)]
     #[case(
         ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(1.0))),

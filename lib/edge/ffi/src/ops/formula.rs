@@ -209,6 +209,18 @@ impl Expression {
         })
     }
 
+    /// Largest of `operands`. Requires at least one operand: unlike [`Expression::sum`]
+    /// and [`Expression::mult`], `max` has no identity element to fall back on, so an empty
+    /// list is rejected here rather than scoring every point with -infinity at query time.
+    #[uniffi::constructor]
+    pub fn max(operands: Vec<Arc<Expression>>) -> Result<Arc<Self>> {
+        require_non_empty("max", &operands)?;
+        let children: Vec<&Arc<Expression>> = operands.iter().collect();
+        Self::node(&children, || {
+            ExpressionInternal::Max(operands.iter().map(|e| e.inner.clone()).collect())
+        })
+    }
+
     /// Negation: `-expression`.
     #[uniffi::constructor]
     pub fn negate(expression: Arc<Expression>) -> Result<Arc<Self>> {
@@ -345,6 +357,18 @@ impl Expression {
 // ── Coverage map ────────────────────────────────────────────────────────────
 
 /// Compile-time map of the engine's formula-expression tree onto the
+/// Rejects a variadic operator given no operands. `max` has no identity element to fall back on,
+/// so an empty list would otherwise score every point with -infinity at query time; failing at
+/// build time points at the mistake instead.
+fn require_non_empty(operator: &str, operands: &[Arc<Expression>]) -> Result<()> {
+    if operands.is_empty() {
+        return Err(EdgeError::invalid_argument(format!(
+            "`{operator}` needs at least one operand"
+        )));
+    }
+    Ok(())
+}
+
 /// [`Expression`] constructors above — same contract as the maps in
 /// [`crate::update`], [`crate::ops::query`], and [`crate::filter`]: no
 /// wildcard arms, so a variant added to [`ExpressionInternal`] or the
@@ -371,6 +395,8 @@ fn assert_every_expression_is_mapped(e: ExpressionInternal) {
         ExpressionInternal::Mult(_) => {}
         // [`Expression::sum`]
         ExpressionInternal::Sum(_) => {}
+        // [`Expression::max`]
+        ExpressionInternal::Max(_) => {}
         // [`Expression::negate`]
         ExpressionInternal::Neg(_) => {}
         // [`Expression::div`]

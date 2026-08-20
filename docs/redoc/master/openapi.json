@@ -15257,6 +15257,9 @@
             "$ref": "#/components/schemas/SumExpression"
           },
           {
+            "$ref": "#/components/schemas/MaxExpression"
+          },
+          {
             "$ref": "#/components/schemas/NegExpression"
           },
           {
@@ -15364,6 +15367,21 @@
         ],
         "properties": {
           "sum": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "MaxExpression": {
+        "description": "Largest of the given expressions. Requires at least one operand.",
+        "type": "object",
+        "required": [
+          "max"
+        ],
+        "properties": {
+          "max": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Expression"
