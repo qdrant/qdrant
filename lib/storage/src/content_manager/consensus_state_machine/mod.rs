@@ -22,6 +22,9 @@
 pub mod action;
 pub mod state;
 
+#[cfg(test)]
+mod tests;
+
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
