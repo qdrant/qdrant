@@ -101,6 +101,7 @@ pub fn arb_consensus_operation(
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
+        arb_drop_payload_index(collection_names.clone()),
     ]
     .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)))
 }
@@ -155,6 +156,20 @@ fn arb_create_payload_index(
             })
         },
     )
+}
+
+fn arb_drop_payload_index(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let field_name = arb_field_name();
+
+    (collection_name, field_name).prop_map(|(collection_name, field_name)| {
+        CollectionMetaOperations::DropPayloadIndex(DropPayloadIndex {
+            collection_name,
+            field_name,
+        })
+    })
 }
 
 fn arb_vector_name() -> impl Strategy<Value = VectorNameBuf> {
