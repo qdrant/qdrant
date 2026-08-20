@@ -44,6 +44,13 @@ jobs:
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
       run: cargo build --workspace --tests --locked
+    # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
+    # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
+    # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
+    - name: Put test temp files on tmpfs
+      if: matrix.os == 'ubuntu-latest'
+      run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
+      shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci --locked
