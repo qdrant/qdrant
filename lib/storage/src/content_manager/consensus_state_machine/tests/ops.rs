@@ -263,6 +263,52 @@ fn create_payload_index_replace_schema() {
     );
 }
 
+#[test]
+fn drop_payload_index() {
+    let state = cluster_state_with_index("city", PayloadSchemaType::Keyword);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&drop_payload_index_op("city"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("dropping an indexed field should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::DropPayloadIndex { .. }],
+    ));
+
+    let schema = &machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists")
+        .payload_index_schema
+        .schema;
+
+    assert!(!schema.contains_key(&field_name("city")));
+}
+
+#[test]
+fn drop_payload_index_missing() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&drop_payload_index_op("city"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("dropping a field that is not indexed should be accepted, got {outcome:?}");
+    };
+
+    // Action is emitted even if state already matches
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::DropPayloadIndex { .. }],
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
 fn cluster_state(vectors: Vec<(&str, VectorNameConfig)>) -> ClusterState {
     let vectors = vectors
         .into_iter()
@@ -336,6 +382,15 @@ fn create_payload_index_op(field: &str, field_type: PayloadSchemaType) -> Consen
             collection_name: COLLECTION.to_string(),
             field_name: field_name(field),
             field_schema: PayloadFieldSchema::FieldType(field_type),
+        },
+    ))
+}
+
+fn drop_payload_index_op(field: &str) -> ConsensusOperations {
+    collection_meta_op(CollectionMetaOperations::DropPayloadIndex(
+        DropPayloadIndex {
+            collection_name: COLLECTION.to_string(),
+            field_name: field_name(field),
         },
     ))
 }
