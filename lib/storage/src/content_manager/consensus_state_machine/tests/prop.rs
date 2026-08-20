@@ -16,6 +16,7 @@ use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
+use crate::quota::QuotaConfig;
 use crate::types::PeerMetadataById;
 
 const COLLECTION_NAMES: &[&str] = &["alpha", "beta", "gamma"];
@@ -60,14 +61,18 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
             arb_aliases(names),
             arb_peer_metadata_by_id(),
             arb_cluster_metadata(),
+            proptest::option::of(arb_quota_config()),
         )
             .prop_map(
-                |(collections, aliases, peer_metadata_by_id, cluster_metadata)| ClusterState {
-                    collections,
-                    aliases,
-                    peer_metadata_by_id,
-                    cluster_metadata,
-                    ..Default::default()
+                |(collections, aliases, peer_metadata_by_id, cluster_metadata, quota_config)| {
+                    ClusterState {
+                        collections,
+                        aliases,
+                        peer_metadata_by_id,
+                        cluster_metadata,
+                        quota_config,
+                        ..Default::default()
+                    }
                 },
             )
     })
@@ -101,6 +106,21 @@ fn arb_metadata_value() -> impl Strategy<Value = serde_json::Value> {
         Just(serde_json::json!(2)),
         Just(serde_json::json!(true)),
     ]
+}
+
+/// Quota config varying two of its fields: no covered operation reads any of them
+fn arb_quota_config() -> impl Strategy<Value = QuotaConfig> {
+    let enabled = proptest::bool::ANY;
+    let max_resident_memory_percent = proptest::option::of(Just(90));
+
+    (enabled, max_resident_memory_percent).prop_map(|(enabled, max_resident_memory_percent)| {
+        QuotaConfig {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent: None,
+            release_margin_percent: None,
+        }
+    })
 }
 
 fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
@@ -152,6 +172,7 @@ pub fn arb_consensus_operation(
         6 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
+        1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
     ]
 }
 
