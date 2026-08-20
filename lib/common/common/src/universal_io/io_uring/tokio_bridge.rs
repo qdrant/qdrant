@@ -1,11 +1,13 @@
 //! Alternative Tokio-based IO implementation using io-uring.
 
+use std::io;
 use std::ops::Range;
 use std::sync::LazyLock;
 
 use aligned_vec::{AVec, RuntimeAlign};
 use tokio::sync::mpsc;
 
+use super::KERNEL_PAGE_SIZE;
 use crate::universal_io::{IoUringFile, UioResult, UniversalIoError};
 static URING_BRIDGE: LazyLock<UringBridge> = LazyLock::new(UringBridge::spawn);
 
@@ -14,6 +16,7 @@ struct UringRequest {
     offset: u64,
     len: usize,
     align: usize,
+    direct_io: bool,
     reply: mpsc::Sender<UioResult<AVec<u8, RuntimeAlign>>>,
 }
 
@@ -40,19 +43,64 @@ impl UringBridge {
     }
 
     async fn execute(req: UringRequest) {
-        let file = tokio_uring::fs::File::from_std(req.file.into_file());
+        let UringRequest {
+            file,
+            offset,
+            len,
+            align,
+            direct_io,
+            reply,
+        } = req;
+
+        let file = tokio_uring::fs::File::from_std(file.into_file());
 
         let read = || async {
-            let buf = ABuf(AVec::with_capacity(req.align, req.len));
+            if !direct_io {
+                let buf = ABuf(AVec::with_capacity(align, len));
 
-            let (res, buf) = file.read_exact_at(buf, req.offset).await;
+                let (res, buf) = file.read_exact_at(buf, offset).await;
 
-            res?;
+                res?;
 
-            Ok(buf.0)
+                return Ok(buf.0);
+            }
+
+            // Mirror `IoUringState::read`: `O_DIRECT` requires a page-aligned
+            // offset and buffer, and a page-multiple submitted length.
+            assert!(
+                align.is_multiple_of(KERNEL_PAGE_SIZE),
+                "O_DIRECT read buffer must be aligned to {KERNEL_PAGE_SIZE} bytes (alignment: {align})",
+            );
+            assert!(
+                offset.is_multiple_of(KERNEL_PAGE_SIZE as u64),
+                "O_DIRECT read offset must be aligned to {KERNEL_PAGE_SIZE} bytes (offset: {offset})",
+            );
+
+            let kernel_len = len
+                .checked_next_multiple_of(KERNEL_PAGE_SIZE)
+                .expect("rounded read length fit within usize");
+
+            let buf = ABuf(AVec::with_capacity(align, kernel_len));
+            let (res, buf) = file.read_at(buf, offset).await;
+            let bytes_read = res?;
+
+            // A short count only happens when the range crosses EOF: the
+            // EOF-clamped tail block still yields all `len` requested bytes.
+            if bytes_read < len {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!("O_DIRECT read at {offset} returned {bytes_read} of {len} bytes"),
+                )
+                .into());
+            }
+
+            // Drop the over-read up to the page boundary.
+            let mut buffer = buf.0;
+            buffer.truncate(len);
+            Ok(buffer)
         };
 
-        match req.reply.send(read().await).await {
+        match reply.send(read().await).await {
             Ok(()) => {}
             Err(_err) => {
                 // The requester was dropped or closed the channel, nothing to do here
@@ -68,6 +116,7 @@ pub async fn read_bytes_async(
 ) -> UioResult<AVec<u8, RuntimeAlign>> {
     let (tx, mut rx) = mpsc::channel(1);
 
+    let direct_io = file.direct_io;
     let file = file.file.try_clone()?;
 
     let Some(len) = range.end.checked_sub(range.start) else {
@@ -83,6 +132,7 @@ pub async fn read_bytes_async(
         offset: range.start,
         len: len as usize,
         align,
+        direct_io,
         reply: tx,
     };
 

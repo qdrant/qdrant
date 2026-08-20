@@ -426,6 +426,47 @@ async fn test_io_uring_read_bytes_async_direct_io() -> UioResult<()> {
     Ok(())
 }
 
+/// `O_DIRECT` async reads that aren't whole pages: the bridge over-reads to
+/// the page boundary and truncates back to the requested length. (The sync
+/// pipeline doesn't support this shape — it asserts full-page reads.)
+#[tokio::test]
+async fn test_io_uring_read_bytes_async_direct_io_partial() -> UioResult<()> {
+    let dir = tempfile::tempdir().unwrap();
+
+    let data: Vec<u8> = (0..KERNEL_PAGE_SIZE * 2 + 1337)
+        .map(|idx| (idx % 256) as u8)
+        .collect();
+    let file = test_file(&dir.path().join("o_direct_partial.bin"), &data, true)?;
+    let eof = data.len() as u64;
+
+    // Sub-page length at a page-aligned offset, mid-file: over-read to the
+    // page boundary, truncated back to the requested 100 bytes.
+    let bytes = file
+        .read_bytes_async(0..100, Sequential, KERNEL_PAGE_SIZE)
+        .await?;
+    assert_eq!(bytes.as_ref(), &data[..100]);
+
+    // Sub-page EOF-clamped tail: yields exactly the bytes up to EOF.
+    let tail_start = (KERNEL_PAGE_SIZE * 2) as u64;
+    let bytes = file
+        .read_bytes_async(tail_start..eof, Sequential, KERNEL_PAGE_SIZE)
+        .await?;
+    assert_eq!(bytes.as_ref(), &data[KERNEL_PAGE_SIZE * 2..]);
+
+    // Page-aligned range crossing EOF: the short read must error, not
+    // silently return fewer bytes than requested.
+    let crossing = file
+        .read_bytes_async(
+            tail_start..tail_start + 2 * KERNEL_PAGE_SIZE as u64,
+            Sequential,
+            KERNEL_PAGE_SIZE,
+        )
+        .await;
+    assert!(crossing.is_err(), "O_DIRECT read crossing EOF must error");
+
+    Ok(())
+}
+
 /// Invalid ranges must error rather than resolve: past EOF, crossing EOF,
 /// and inverted (`start > end`) ranges.
 #[tokio::test]
