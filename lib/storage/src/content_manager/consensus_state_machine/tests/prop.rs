@@ -98,6 +98,7 @@ pub fn arb_consensus_operation(
 
     prop_oneof![
         Just(CollectionMetaOperations::Nop { token: 0 }),
+        arb_change_aliases(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
@@ -108,6 +109,49 @@ pub fn arb_consensus_operation(
 
 fn arb_collection_name(names: Vec<String>) -> impl Strategy<Value = String> {
     proptest::sample::select(names)
+}
+
+fn arb_change_aliases(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
+    let actions = proptest::collection::vec(arb_alias_operation(collections), 1..3);
+
+    actions.prop_map(|actions| {
+        CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation { actions })
+    })
+}
+
+fn arb_alias_operation(collections: Vec<String>) -> impl Strategy<Value = AliasOperations> {
+    let create = (arb_alias_name(), arb_collection_name(collections)).prop_map(
+        |(alias_name, collection_name)| {
+            CreateAlias {
+                collection_name,
+                alias_name,
+            }
+            .into()
+        },
+    );
+
+    let delete = arb_alias_name().prop_map(|alias_name| DeleteAlias { alias_name }.into());
+
+    let rename =
+        (arb_alias_name(), arb_alias_name()).prop_map(|(old_alias_name, new_alias_name)| {
+            RenameAlias {
+                old_alias_name,
+                new_alias_name,
+            }
+            .into()
+        });
+
+    prop_oneof![create, delete, rename]
+}
+
+fn arb_alias_name() -> impl Strategy<Value = String> {
+    let names: Vec<_> = ALIAS_NAMES
+        .iter()
+        .chain([&DANGLING_ALIAS_NAME])
+        .copied()
+        .collect();
+
+    proptest::sample::select(names).prop_map(String::from)
 }
 
 fn arb_create_named_vector(
