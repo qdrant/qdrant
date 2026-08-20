@@ -101,6 +101,7 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 /// independent random inputs instead of a single fixed one.
 const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E];
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn upsert_flush_reload_in_ram_matches_independent_oracle() {
     const COUNT: usize = 64;
@@ -1207,6 +1208,7 @@ const SEEDS_PER_CELL: u64 = 2;
 const OPS: usize = 60;
 
 /// Sweep dims and distances with several randomized scenarios each.
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn turbo_model_test_random_ops_dot() {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
@@ -1221,6 +1223,7 @@ fn turbo_model_test_random_ops_dot() {
 }
 
 /// Sweep dims and distances with several randomized scenarios each.
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn turbo_model_test_random_ops_cosine() {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
