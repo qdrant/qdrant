@@ -23,6 +23,11 @@ impl AliasMapping {
     pub fn save(&self, path: &Path) -> Result<(), StorageError> {
         Ok(atomic_save_json(path, self)?)
     }
+
+    /// Returns collection `alias` points at, or `None` if it does not exist.
+    pub fn get(&self, alias: &str) -> Option<&CollectionId> {
+        self.0.get(alias)
+    }
 }
 
 /// Persists mapping between alias and collection name. The data is assumed to be relatively small.
