@@ -231,6 +231,9 @@ struct KernelCell {
     datatype: Datatype,
     dim: usize,
     vec_bytes: usize,
+    /// Size of the code buffer the timed loop cycles over — printed so
+    /// cache residency is auditable against the machine's private L1+L2.
+    ws_bytes: usize,
     ns_per_vec: f64,
     bytes_per_ns: f64,
 }
@@ -296,7 +299,7 @@ fn measure_kernel(datatype: Datatype, dim: usize, secs: u64, rng: &mut SmallRng)
     let stopped = AtomicBool::new(false);
     let hw = HardwareCounterCell::new();
 
-    let (vec_bytes, ns_per_vec) = match datatype {
+    let (vec_bytes, ns_per_vec, ws_bytes) = match datatype {
         Datatype::Turbo4 | Datatype::Turbo1 => {
             let bits = match datatype {
                 Datatype::Turbo4 => TQBits::Bits4,
@@ -324,7 +327,7 @@ fn measure_kernel(datatype: Datatype, dim: usize, secs: u64, rng: &mut SmallRng)
             let ns = run_rate(&buf, vec_bytes, count, secs, rng, |bytes| {
                 quantizer.score_precomputed(&query, bytes)
             });
-            (vec_bytes, ns)
+            (vec_bytes, ns, buf.len())
         }
         Datatype::Bq | Datatype::Bq2 => {
             let encoding = match datatype {
@@ -356,7 +359,7 @@ fn measure_kernel(datatype: Datatype, dim: usize, secs: u64, rng: &mut SmallRng)
             let ns = run_rate(&buf, vec_bytes, count, secs, rng, |bytes| {
                 encoded.score(&query, bytes, &hw)
             });
-            (vec_bytes, ns)
+            (vec_bytes, ns, buf.len())
         }
         Datatype::Int8 => {
             let qsize = encoded_vectors_u8::get_quantized_vector_size(&params);
@@ -382,7 +385,7 @@ fn measure_kernel(datatype: Datatype, dim: usize, secs: u64, rng: &mut SmallRng)
             let ns = run_rate(&buf, vec_bytes, count, secs, rng, |bytes| {
                 encoded.score(&query, bytes, &hw)
             });
-            (vec_bytes, ns)
+            (vec_bytes, ns, buf.len())
         }
     };
 
@@ -390,6 +393,7 @@ fn measure_kernel(datatype: Datatype, dim: usize, secs: u64, rng: &mut SmallRng)
         datatype,
         dim,
         vec_bytes,
+        ws_bytes,
         ns_per_vec,
         bytes_per_ns: vec_bytes as f64 / ns_per_vec,
     }
@@ -408,10 +412,11 @@ fn measure_kernels(
         .map(|(datatype, dim)| {
             let cell = measure_kernel(datatype, dim, secs, rng);
             println!(
-                "{prefix}{:7} dim {:4}  code {:4} B  {:7.2} ns/vec  {:5.1} B/ns",
+                "{prefix}{:7} dim {:4}  code {:4} B  ws {:3} KiB  {:7.2} ns/vec  {:5.1} B/ns",
                 cell.datatype.label(),
                 cell.dim,
                 cell.vec_bytes,
+                cell.ws_bytes / 1024,
                 cell.ns_per_vec,
                 cell.bytes_per_ns
             );
