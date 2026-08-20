@@ -504,8 +504,11 @@ fn test_building_cancellation() {
     let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, Some(late_stop_delay));
 
     // Timing on CI (especially Windows) can be noisy due to scheduler delays.
-    // Keep a fixed lower bound but scale tolerance for slower baseline runs.
-    let acceptable_stopping_delay = std::cmp::max(600, time_baseline / 8); // millis
+    // Reaction to the stop flag is bounded by the largest non-interruptible
+    // chunk of build work plus scheduler noise, neither of which shrinks with
+    // the baseline, so the fixed floor must dominate. Reactions of ~860ms were
+    // observed on windows-latest with a ~3.5s baseline (see #9183).
+    let acceptable_stopping_delay = std::cmp::max(1500, time_baseline / 4); // millis
 
     assert!(was_cancelled_early);
     assert!(
@@ -518,15 +521,13 @@ fn test_building_cancellation() {
         time_long < late_stop_delay + acceptable_stopping_delay,
         "time_later: {time_long}, late_stop_delay: {late_stop_delay}"
     );
-    assert!(
-        time_long < time_baseline,
-        "cancelled build should be faster than baseline: time_later={time_long}, baseline={time_baseline}",
-    );
 
-    assert!(
-        time_fast < time_long,
-        "time_early: {time_fast}, time_later: {time_long}, was_cancelled_later: {was_cancelled_later}",
-    );
+    // Comparative assertions between runs (early vs late vs baseline) are
+    // deliberately avoided: the reaction time to the stop flag can vary by
+    // more than the difference between the stop delays, which made such
+    // assertions flaky on CI. Ignored cancellation is already caught by the
+    // `was_cancelled_*` checks (the build would complete with `Ok`), and
+    // prompt reaction is covered by the per-run bounds above.
 }
 
 /// `SegmentBuilder::update` must reject schema mismatches in both directions
