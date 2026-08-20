@@ -38,6 +38,23 @@ impl AliasMapping {
     pub fn insert(&mut self, alias: Alias, collection_name: CollectionId) {
         self.0.insert(alias, collection_name);
     }
+
+    /// Drop `alias`, if it exists.
+    pub fn remove(&mut self, alias: &str) {
+        self.0.remove(alias);
+    }
+
+    /// Rename `old_alias` as `new_alias`, keeping collection it points at.
+    /// Returns `false` if `old_alias` does not exist.
+    pub fn rename(&mut self, old_alias: &str, new_alias: Alias) -> bool {
+        let Some(collection_name) = self.0.remove(old_alias) else {
+            return false;
+        };
+
+        self.0.insert(new_alias, collection_name);
+
+        true
+    }
 }
 
 /// Persists mapping between alias and collection name. The data is assumed to be relatively small.
