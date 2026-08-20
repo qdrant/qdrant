@@ -882,3 +882,268 @@ mod tests_mod {
         );
     }
 }
+
+/// `read_bytes_async` against a remote whose sync read surface always errors:
+/// proves cache misses are fetched via the remote's `read_bytes_async`, never
+/// its (pipelined) sync reads.
+#[cfg(test)]
+mod tests_async {
+    use std::marker::PhantomData;
+    use std::ops::Range;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::ext::aligned_vec::ACow;
+    use crate::generic_consts::AccessPattern;
+    use crate::universal_io::{ListedFile, MmapFs, UioResult, UniversalKind, UserData};
+
+    fn sync_read_error() -> UniversalIoError {
+        UniversalIoError::Io(std::io::Error::other("sync read on async-only remote"))
+    }
+
+    /// Mmap-backed remote that serves reads only through `read_bytes_async`,
+    /// counting them; every sync read path errors.
+    #[derive(Debug)]
+    struct AsyncOnlyRemote {
+        inner: MmapFile,
+        async_reads: AtomicUsize,
+    }
+
+    struct AsyncOnlyPipeline<'file, U>(PhantomData<fn(&'file AsyncOnlyRemote, U)>);
+
+    impl<'file, U: UserData> ReadPipeline<'file, U> for AsyncOnlyPipeline<'file, U> {
+        type File = AsyncOnlyRemote;
+
+        fn new() -> UioResult<Self> {
+            Ok(Self(PhantomData))
+        }
+
+        fn can_schedule(&mut self) -> bool {
+            true
+        }
+
+        fn schedule<P: AccessPattern>(
+            &mut self,
+            _user_data: U,
+            _file: &'file AsyncOnlyRemote,
+            _range: Range<u64>,
+            _align: usize,
+        ) -> UioResult<()> {
+            Err(sync_read_error())
+        }
+
+        fn schedule_whole(
+            &mut self,
+            _user_data: U,
+            _file: &'file AsyncOnlyRemote,
+            _from: u64,
+        ) -> UioResult<()> {
+            Err(sync_read_error())
+        }
+
+        fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
+            Ok(None)
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct AsyncOnlyFs(MmapFs);
+
+    impl UniversalReadFileOps for AsyncOnlyFs {
+        type ContextConfig = ();
+
+        fn from_context(ctx: ()) -> UioResult<Self> {
+            Ok(Self(MmapFs::from_context(ctx)?))
+        }
+
+        fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files(prefix_path)
+        }
+
+        fn exists(&self, path: &Path) -> UioResult<bool> {
+            self.0.exists(path)
+        }
+    }
+
+    impl UniversalReadFs for AsyncOnlyFs {
+        type File = AsyncOnlyRemote;
+        type OpenExtra = ();
+
+        fn open(
+            &self,
+            path: impl AsRef<Path>,
+            options: OpenOptions,
+            extra: (),
+        ) -> UioResult<AsyncOnlyRemote> {
+            Ok(AsyncOnlyRemote {
+                inner: self.0.open(path, options, extra)?,
+                async_reads: AtomicUsize::new(0),
+            })
+        }
+    }
+
+    impl UniversalRead for AsyncOnlyRemote {
+        type Fs = AsyncOnlyFs;
+
+        type ReadPipeline<'a, U>
+            = AsyncOnlyPipeline<'a, U>
+        where
+            Self: 'a,
+            U: UserData;
+
+        fn reopen(&mut self) -> UioResult<()> {
+            self.inner.reopen()
+        }
+
+        fn read_bytes<P: AccessPattern>(
+            &self,
+            _range: Range<u64>,
+            _access_pattern: P,
+            _align: usize,
+        ) -> UioResult<ACow<'_>> {
+            Err(sync_read_error())
+        }
+
+        async fn read_bytes_async<P: AccessPattern>(
+            &self,
+            range: Range<u64>,
+            access_pattern: P,
+            align: usize,
+        ) -> UioResult<ACow<'_>> {
+            // Suspend once so concurrent reads interleave like a real async remote.
+            tokio::task::yield_now().await;
+            self.async_reads.fetch_add(1, Ordering::Relaxed);
+            self.inner.read_bytes(range, access_pattern, align)
+        }
+
+        fn len<T>(&self) -> UioResult<u64> {
+            self.inner.len::<T>()
+        }
+
+        fn populate(&self) -> UioResult<()> {
+            Ok(())
+        }
+
+        fn populate_auto() -> bool {
+            false
+        }
+
+        fn clear_ram_cache(&self) -> UioResult<()> {
+            Ok(())
+        }
+
+        fn kind() -> UniversalKind {
+            UniversalKind::Mmap
+        }
+    }
+
+    /// A cache miss must fetch through the remote's async read and commit the
+    /// covering blocks to the local mirror.
+    #[tokio::test]
+    async fn miss_fetches_via_remote_async_read() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<AsyncOnlyRemote>(false);
+
+        let range = 10u64..30;
+        let bytes = file
+            .read_bytes_async(range.clone(), Random, 1)
+            .await
+            .unwrap();
+        assert_eq!(&*bytes, scn.slice(&range));
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
+        assert!(state.local.contains(0..1));
+    }
+
+    /// Blocks committed by an earlier fetch serve later async reads locally,
+    /// without touching the remote again.
+    #[tokio::test]
+    async fn cached_blocks_skip_remote() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = scn.open::<AsyncOnlyRemote>(false);
+
+        let first = 10u64..30;
+        let bytes = file
+            .read_bytes_async(first.clone(), Random, 1)
+            .await
+            .unwrap();
+        assert_eq!(&*bytes, scn.slice(&first));
+
+        // Different range, same block: no second fetch.
+        let second = 100u64..200;
+        let bytes = file
+            .read_bytes_async(second.clone(), Random, 1)
+            .await
+            .unwrap();
+        assert_eq!(&*bytes, scn.slice(&second));
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
+    }
+
+    /// A read spanning a block boundary into the EOF-clamped partial tail
+    /// block resolves in one fetch covering all its blocks.
+    #[tokio::test]
+    async fn spanning_read_commits_all_blocks() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = scn.open::<AsyncOnlyRemote>(false);
+        let eof = scn.data.len() as u64;
+
+        let range = (BLOCK_SIZE * 3 - 50) as u64..eof;
+        let bytes = file
+            .read_bytes_async(range.clone(), Sequential, 1)
+            .await
+            .unwrap();
+        assert_eq!(&*bytes, scn.slice(&range));
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
+        assert!(state.local.contains(2..4));
+    }
+
+    /// Two concurrent cold reads of the same block: both resolve with the
+    /// correct bytes, and the block is committed exactly once.
+    #[tokio::test]
+    async fn concurrent_misses_same_block() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = scn.open::<AsyncOnlyRemote>(false);
+
+        let first = 10u64..30;
+        let second = 100u64..200;
+
+        let (bytes_first, bytes_second) = tokio::join!(
+            file.read_bytes_async(first.clone(), Random, 1),
+            file.read_bytes_async(second.clone(), Random, 1),
+        );
+
+        assert_eq!(&*bytes_first.unwrap(), scn.slice(&first));
+        assert_eq!(&*bytes_second.unwrap(), scn.slice(&second));
+
+        let state = file.state().unwrap();
+        // perf: no in-flight dedup on the async path yet — both misses fetch
+        // the same block; the loser's commit is discarded by `contains_range`.
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 2);
+        assert!(state.local.contains(0..1));
+    }
+
+    /// Parity with the sync path for the no-fetch branches: empty reads
+    /// resolve to an empty slice, out-of-bounds reads error.
+    #[tokio::test]
+    async fn empty_and_out_of_bounds_need_no_fetch() {
+        let scn = Scenario::new(1024);
+        let file = scn.open::<AsyncOnlyRemote>(false);
+
+        let bytes = file.read_bytes_async(5..5, Sequential, 1).await.unwrap();
+        assert!(bytes.is_empty());
+
+        let err = file
+            .read_bytes_async(1000..1100, Sequential, 1)
+            .await
+            .unwrap_err();
+        assert_matches!(err, UniversalIoError::OutOfBounds { .. });
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
+    }
+}
