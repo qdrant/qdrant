@@ -4,7 +4,6 @@ use std::ops::Range;
 use std::sync::LazyLock;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use itertools::Itertools;
 use tokio::sync::mpsc;
 
 use crate::universal_io::{IoUringFile, UioResult, UniversalIoError};
@@ -53,7 +52,12 @@ impl UringBridge {
             Ok(buf.0)
         };
 
-        let _ = req.reply.send(read().await);
+        match req.reply.send(read().await).await {
+            Ok(()) => {}
+            Err(_err) => {
+                // The requester was dropped or closed the channel, nothing to do here
+            }
+        }
     }
 }
 
@@ -66,7 +70,7 @@ pub async fn read_bytes_async(
 
     let file = file.file.try_clone()?;
 
-    let Ok(len) = range.try_len() else {
+    let Some(len) = range.end.checked_sub(range.start) else {
         return Err(UniversalIoError::OutOfBounds {
             start: range.start,
             end: range.end,
@@ -77,7 +81,7 @@ pub async fn read_bytes_async(
     let req = UringRequest {
         file,
         offset: range.start,
-        len,
+        len: len as usize,
         align,
         reply: tx,
     };

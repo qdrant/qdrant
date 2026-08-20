@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -7,7 +8,7 @@ use nix::libc;
 use super::super::*;
 use super::*;
 use crate::generic_consts::Sequential;
-use crate::universal_io::UioResult;
+use crate::universal_io::{UioResult, UniversalIoError};
 
 /// Create `path`, populate it with the binary representation of `data`,
 /// then open and return it.
@@ -362,6 +363,136 @@ fn test_io_uring_direct_io() -> UioResult<()> {
 
     let num_blocks = data.len().div_ceil(KERNEL_PAGE_SIZE);
     assert_eq!(count, num_blocks);
+
+    Ok(())
+}
+
+/// `read_bytes_async` must return the same bytes as the sync path on a
+/// buffered (non-`O_DIRECT`) handle.
+#[tokio::test]
+async fn test_io_uring_read_bytes_async() -> UioResult<()> {
+    let dir = tempfile::tempdir().unwrap();
+
+    let data: Vec<u8> = (0..KERNEL_PAGE_SIZE * 2 + 1337)
+        .map(|idx| (idx % 256) as u8)
+        .collect();
+    let file = test_file(&dir.path().join("async.bin"), &data, false)?;
+    let eof = data.len() as u64;
+
+    // Full file
+    let bytes = file.read_bytes_async(0..eof, Sequential, 8).await?;
+    assert_eq!(bytes.as_ref(), &data);
+
+    // Odd, unaligned sub-range
+    let bytes = file.read_bytes_async(13..1350, Sequential, 8).await?;
+    assert_eq!(bytes.as_ref(), &data[13..1350]);
+
+    // Tail ending exactly at EOF
+    let bytes = file.read_bytes_async(eof - 100..eof, Sequential, 8).await?;
+    assert_eq!(bytes.as_ref(), &data[data.len() - 100..]);
+
+    // Empty range
+    let bytes = file.read_bytes_async(10..10, Sequential, 8).await?;
+    assert!(bytes.as_ref().is_empty());
+
+    Ok(())
+}
+
+/// `read_bytes_async` on an `O_DIRECT` handle: same contract as
+/// [`test_io_uring_direct_io`], including the EOF-truncated tail block.
+#[tokio::test]
+async fn test_io_uring_read_bytes_async_direct_io() -> UioResult<()> {
+    let dir = tempfile::tempdir().unwrap();
+
+    let data: Vec<u8> = (0..KERNEL_PAGE_SIZE * 2 + 1337)
+        .map(|idx| (idx % 256) as u8)
+        .collect();
+    let file = test_file(&dir.path().join("o_direct_async.bin"), &data, true)?;
+
+    for (idx, expected) in data.chunks(KERNEL_PAGE_SIZE).enumerate() {
+        let start = idx * KERNEL_PAGE_SIZE;
+        let range = start as u64..(start + expected.len()) as u64;
+
+        let bytes = file
+            .read_bytes_async(range, Sequential, KERNEL_PAGE_SIZE)
+            .await?;
+        assert_eq!(
+            bytes.as_ref(),
+            expected,
+            "O_DIRECT async block {idx} mismatch"
+        );
+    }
+
+    Ok(())
+}
+
+/// Invalid ranges must error rather than resolve: past EOF, crossing EOF,
+/// and inverted (`start > end`) ranges.
+#[tokio::test]
+async fn test_io_uring_read_bytes_async_invalid_ranges() -> UioResult<()> {
+    let dir = tempfile::tempdir().unwrap();
+
+    let data: Vec<u8> = (0..1024).map(|idx| (idx % 256) as u8).collect();
+    let file = test_file(&dir.path().join("invalid.bin"), &data, false)?;
+    let eof = data.len() as u64;
+
+    let past_eof = file
+        .read_bytes_async(eof + 10..eof + 20, Sequential, 8)
+        .await;
+    assert!(past_eof.is_err(), "read past EOF must error");
+
+    let crossing = file
+        .read_bytes_async(eof - 10..eof + 10, Sequential, 8)
+        .await;
+    assert!(crossing.is_err(), "read crossing EOF must error");
+
+    // Inverted range: an error, not a silent empty read.
+    #[expect(clippy::reversed_empty_ranges)]
+    let inverted = file.read_bytes_async(300..100, Sequential, 8).await;
+    assert_matches!(inverted, Err(UniversalIoError::OutOfBounds { .. }));
+
+    Ok(())
+}
+
+/// Concurrent `read_bytes_async` calls from spawned tasks across two files:
+/// each must resolve with its own file's bytes. Spawning also pins that the
+/// returned future is `Send`.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_io_uring_read_bytes_async_concurrent() -> UioResult<()> {
+    const NUM_TASKS: usize = 32;
+    const CHUNK: usize = 1000;
+
+    let dir = tempfile::tempdir().unwrap();
+
+    let data_a: Vec<u8> = (0..NUM_TASKS * CHUNK)
+        .map(|idx| (idx % 251) as u8)
+        .collect();
+    let data_b: Vec<u8> = (0..NUM_TASKS * CHUNK)
+        .map(|idx| (idx % 241) as u8)
+        .collect();
+
+    let file_a = test_file(&dir.path().join("conc_a.bin"), &data_a, false)?;
+    let file_b = test_file(&dir.path().join("conc_b.bin"), &data_b, false)?;
+
+    let mut tasks = Vec::new();
+
+    for idx in 0..NUM_TASKS {
+        for (file, data) in [(&file_a, &data_a), (&file_b, &data_b)] {
+            let file = file.clone();
+            let expected = data[idx * CHUNK..(idx + 1) * CHUNK].to_vec();
+            let range = (idx * CHUNK) as u64..((idx + 1) * CHUNK) as u64;
+
+            tasks.push(tokio::spawn(async move {
+                let bytes = file.read_bytes_async(range, Sequential, 8).await?;
+                assert_eq!(bytes.as_ref(), &expected, "concurrent read {idx} mismatch");
+                UioResult::Ok(())
+            }));
+        }
+    }
+
+    for task in tasks {
+        task.await.expect("task join")?;
+    }
 
     Ok(())
 }
