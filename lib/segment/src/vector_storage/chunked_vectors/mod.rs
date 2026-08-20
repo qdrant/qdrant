@@ -70,6 +70,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::SeedableRng;
     use rand::prelude::StdRng;
@@ -197,6 +198,67 @@ mod tests {
             let one = chunked_mmap.get::<Random>(start + i).unwrap();
             assert!(matches!(one, Cow::Borrowed(_)));
             assert_eq!(one.as_ref(), vector);
+        }
+    }
+
+    /// The batched path schedules one read per chunk a run covers and stitches
+    /// them once they land, alongside runs that take a single read.
+    #[test]
+    fn for_each_vector_stitches_straddling_runs() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let dim = 500;
+        let hw_counter = HardwareCounterCell::new();
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> = ChunkedVectors::open(
+            MmapFs,
+            dir.path(),
+            dim,
+            AdviceSetting::Global,
+            Populate::Blocking,
+        )
+        .unwrap();
+
+        let per_chunk = chunked_mmap.config.chunk_size_vectors;
+        let straddle_start = per_chunk - 2;
+        let straddle_count = 5;
+
+        // A run before the boundary, one across it, one after it
+        let runs = [
+            (0, 1),
+            (straddle_start, straddle_count),
+            (straddle_start + straddle_count, 3),
+        ];
+        let expected: Vec<Vec<VectorElementType>> = runs
+            .iter()
+            .map(|&(_, count)| {
+                (0..count)
+                    .flat_map(|_| random_vector(&mut rng, dim))
+                    .collect()
+            })
+            .collect();
+
+        for (&(start, count), vectors) in zip(&runs, &expected) {
+            chunked_mmap
+                .insert_many(start, vectors, count, &hw_counter)
+                .unwrap();
+        }
+
+        let mut read = vec![None; runs.len()];
+        chunked_mmap
+            .for_each_vector::<Random, _>(
+                runs.iter()
+                    .enumerate()
+                    .map(|(i, &(start, count))| (i, start as PointOffsetType, count as u32)),
+                |i, vectors| {
+                    read[i] = Some(vectors.to_vec());
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        for (i, expected) in expected.iter().enumerate() {
+            assert_eq!(read[i].as_ref(), Some(expected), "run {i}");
         }
     }
 }

@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::mem::MaybeUninit;
 
+use ahash::AHashMap;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
@@ -12,6 +14,21 @@ use crate::vector_storage::chunked_vectors::config::RunPart;
 use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{VectorOffset, VectorOffsetType};
+
+/// What a scheduled read carries back: the caller's data when the run is a
+/// single read, and where to file the part when it is not.
+#[derive(Debug)]
+enum PartTag<U> {
+    Whole(U),
+    Part { run: u32, part: u32 },
+}
+
+/// A run whose parts are still arriving from the read pipeline.
+struct SplitRun<'a, U, T: Clone> {
+    user_data: U,
+    landed: Vec<Option<Cow<'a, [T]>>>,
+    missing: usize,
+}
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     #[inline]
@@ -36,7 +53,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         &self,
         offset: VectorOffsetType,
         count: usize,
-    ) -> Option<impl Iterator<Item = (usize, ReadRange)> + '_> {
+    ) -> Option<impl ExactSizeIterator<Item = (usize, ReadRange)> + '_> {
         if offset.checked_add(count)? > self.len {
             return None;
         }
@@ -164,7 +181,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     /// Invoke `callback` for each flattened multi-vector at the given offsets.
     ///
     /// Drives the read pipeline directly across chunk files: refills it from the
-    /// offsets, then drains completed reads.
+    /// offsets, then drains completed reads. A run spanning several chunks is
+    /// one scheduled read per chunk, stitched once the last one lands.
     pub fn for_each_vector<P, U>(
         &self,
         mut offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
@@ -174,42 +192,96 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         P: AccessPattern,
         U: UserData,
     {
+        let out_of_bounds = || OperationError::service_error("vector offset out of bounds");
+
         // access pattern does not matter for io_uring
-        let mut pipeline = S::ReadPipeline::<'_, U>::new()?;
+        let mut pipeline = S::ReadPipeline::<'_, PartTag<U>>::new()?;
+
+        // Parts resolved but not scheduled yet, because the queue was full
+        let mut queued: VecDeque<(PartTag<U>, usize, ReadRange)> = VecDeque::new();
+        // Runs still missing a part. Parts complete in any order, so each run
+        // holds what has landed until the last one does. Stays empty unless a
+        // run straddles a chunk boundary.
+        let mut split_runs: AHashMap<u32, SplitRun<'_, U, T>> = AHashMap::new();
+        let mut next_run = 0;
 
         loop {
-            while pipeline.can_schedule()
-                && let Some((user_data, offset, count)) = offsets.next()
-            {
-                let out_of_bounds = || OperationError::service_error("vector offset out of bounds");
+            while pipeline.can_schedule() {
+                if queued.is_empty() {
+                    let Some((user_data, offset, count)) = offsets.next() else {
+                        break;
+                    };
 
-                let mut parts = self
-                    .read_ranges(offset as _, count as _)
-                    .ok_or_else(out_of_bounds)?;
-                let (chunk_idx, range) = parts.next().ok_or_else(out_of_bounds)?;
-
-                if parts.next().is_some() {
-                    // A scheduled read is a single range, so a straddling run is
-                    // stitched here instead.
-                    let vector = self
-                        .get_many_impl(offset as _, count as _, P::IS_SEQUENTIAL)
+                    let mut parts = self
+                        .read_ranges(offset as _, count as _)
                         .ok_or_else(out_of_bounds)?;
-                    callback(user_data, vector)?;
-                    continue;
+
+                    if parts.len() <= 1 {
+                        let (chunk_idx, range) = parts.next().ok_or_else(out_of_bounds)?;
+                        queued.push_back((PartTag::Whole(user_data), chunk_idx, range));
+                    } else {
+                        let run = next_run;
+                        next_run += 1;
+
+                        split_runs.insert(
+                            run,
+                            SplitRun {
+                                user_data,
+                                landed: (0..parts.len()).map(|_| None).collect(),
+                                missing: parts.len(),
+                            },
+                        );
+
+                        for (part, (chunk_idx, range)) in parts.enumerate() {
+                            let part = part as u32;
+                            queued.push_back((PartTag::Part { run, part }, chunk_idx, range));
+                        }
+                    }
                 }
 
+                let Some((tag, chunk_idx, range)) = queued.pop_front() else {
+                    break;
+                };
                 let chunk = self.chunks.get(chunk_idx).ok_or_else(out_of_bounds)?;
                 pipeline.schedule::<P>(
-                    user_data,
+                    tag,
                     &chunk.inner,
                     range.into_byte_range::<T>(),
                     align_of::<T>(),
                 )?;
             }
 
-            let Some((user_data, vector)) = pipeline.wait_bytemuck::<T>()? else {
+            let Some((tag, vector)) = pipeline.wait_bytemuck::<T>()? else {
+                debug_assert!(queued.is_empty(), "scheduling left parts behind");
+                debug_assert!(split_runs.is_empty(), "a run never got all its parts");
                 break;
             };
+
+            let (user_data, vector) = match tag {
+                PartTag::Whole(user_data) => (user_data, vector),
+                PartTag::Part { run, part } => {
+                    let pending = split_runs.get_mut(&run).expect("part of an in-flight run");
+                    pending.landed[part as usize] = Some(vector);
+                    pending.missing -= 1;
+
+                    if pending.missing > 0 {
+                        continue;
+                    }
+
+                    let SplitRun {
+                        user_data,
+                        landed,
+                        missing: _,
+                    } = split_runs.remove(&run).expect("just resolved");
+
+                    let mut stitched = Vec::new();
+                    for part in landed {
+                        stitched.extend_from_slice(&part.expect("every part landed"));
+                    }
+                    (user_data, Cow::Owned(stitched))
+                }
+            };
+
             callback(user_data, vector)?;
         }
 
