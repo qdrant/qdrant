@@ -290,9 +290,9 @@ mod tests {
             storage.for_each_run(ids, |first, run_len, bytes| {
                 assert_eq!(first, visited, "runs must cover `ids` in order");
                 assert_eq!(bytes.len(), run_len * VECTOR_SIZE);
-                for (i, vector) in bytes.chunks_exact(VECTOR_SIZE).enumerate() {
+                for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
                     assert_eq!(
-                        vector,
+                        vector.as_slice(),
                         storage.get_vector_data(ids[first + i]).as_ref(),
                         "run bytes diverge at offset {}",
                         ids[first + i],
