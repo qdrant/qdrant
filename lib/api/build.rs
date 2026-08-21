@@ -350,6 +350,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Expression.variant", ""),
             ("MultExpression.mult", ""),
             ("SumExpression.sum", ""),
+            ("MaxExpression.max", ""),
             ("DivExpression.left", ""),
             ("DivExpression.right", ""),
             ("PowExpression.base", ""),

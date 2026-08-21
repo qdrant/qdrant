@@ -456,6 +456,7 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::DatetimeKey(_) => Ok(()),
             grpc::expression::Variant::Mult(mult_expression) => mult_expression.validate(),
             grpc::expression::Variant::Sum(sum_expression) => sum_expression.validate(),
+            grpc::expression::Variant::Max(max_expression) => max_expression.validate(),
             grpc::expression::Variant::Div(div_expression) => div_expression.validate(),
             grpc::expression::Variant::Neg(expression) => expression.validate(),
             grpc::expression::Variant::Abs(expression) => expression.validate(),
