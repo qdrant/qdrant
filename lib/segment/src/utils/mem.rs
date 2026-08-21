@@ -130,7 +130,16 @@ mod cgroups_mem {
             };
 
             let usage_path = dir.join(usage_file);
-            let used_memory_bytes = read_memory_usage(&usage_path);
+
+            let used_memory_bytes = match read_memory_usage(&usage_path) {
+                Ok(used_memory_bytes) => used_memory_bytes,
+                Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
+                Err(err) => {
+                    log::error!("Failed to read memory usage while initializing CgroupsMem: {err}");
+
+                    return None;
+                }
+            };
 
             Some(Self {
                 limit_path,
@@ -142,7 +151,11 @@ mod cgroups_mem {
 
         pub fn refresh(&mut self) {
             self.memory_limit_bytes = read_memory_limit(&self.limit_path).ok().flatten();
-            self.used_memory_bytes = read_memory_usage(&self.usage_path);
+
+            // Keep the last known usage rather than reporting the whole limit as free
+            if let Ok(used_memory_bytes) = read_memory_usage(&self.usage_path) {
+                self.used_memory_bytes = used_memory_bytes;
+            }
         }
 
         pub fn memory_limit_bytes(&self) -> Option<u64> {
@@ -221,11 +234,12 @@ mod cgroups_mem {
         Ok(memory_limit_bytes)
     }
 
-    fn read_memory_usage(path: &Path) -> u64 {
-        fs::read_to_string(path)
-            .ok()
-            .and_then(|raw| raw.trim().parse().ok())
-            .unwrap_or(0)
+    fn read_memory_usage(path: &Path) -> io::Result<u64> {
+        let raw = fs::read_to_string(path)?;
+
+        raw.trim()
+            .parse()
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
 
     #[cfg(test)]
@@ -285,9 +299,33 @@ mod cgroups_mem {
         }
 
         #[test]
+        fn unreadable_memory_usage_keeps_the_last_known_value() {
+            let dir = tempfile::Builder::new().tempdir().unwrap();
+            let limit_path = dir.path().join("memory.max");
+            let usage_path = dir.path().join("memory.current");
+            fs::write(&limit_path, "1073741824").unwrap();
+            fs::write(&usage_path, "1024").unwrap();
+
+            let mut mem = CgroupsMem {
+                limit_path,
+                usage_path: usage_path.clone(),
+                memory_limit_bytes: Some(1073741824),
+                used_memory_bytes: 1024,
+            };
+
+            fs::write(&usage_path, "garbage").unwrap();
+            mem.refresh();
+
+            assert_eq!(mem.used_memory_bytes(), 1024);
+        }
+
+        #[test]
         fn missing_memory_limit_file_is_not_found() {
             let dir = tempfile::Builder::new().tempdir().unwrap();
             let err = read_memory_limit(&dir.path().join("memory.max")).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::NotFound);
+
+            let err = read_memory_usage(&dir.path().join("memory.current")).unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::NotFound);
         }
     }
