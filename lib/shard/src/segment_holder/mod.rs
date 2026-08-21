@@ -431,9 +431,25 @@ impl SegmentHolder {
         self.appendable_segments.keys().copied().collect()
     }
 
-    /// Return appendable segment IDs smaller than `max_segment_size_bytes`, sorted by IDs.
+    /// Whether `segment` is smaller than `max_segment_size_bytes`.
     ///
-    /// Segments that cannot be measured right now stay eligible, the size cap is best effort.
+    /// A segment that cannot be measured right now counts as having capacity, the size cap is
+    /// best effort.
+    fn segment_has_capacity(segment: &LockedSegment, max_segment_size_bytes: NonZeroUsize) -> bool {
+        let segment_arc = segment.get();
+        let Some(segment) = segment_arc.try_read() else {
+            return true;
+        };
+        match segment.max_available_vectors_size_in_bytes() {
+            Ok(size) => size < max_segment_size_bytes.get(),
+            Err(err) => {
+                log::error!("Failed to get segment size, ignoring: {err}");
+                true
+            }
+        }
+    }
+
+    /// Return appendable segment IDs smaller than `max_segment_size_bytes`, sorted by IDs.
     fn eligible_appendable_segments_ids(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
@@ -444,19 +460,7 @@ impl SegmentHolder {
 
         self.appendable_segments
             .iter()
-            .filter(|(_, locked_segment)| {
-                let segment_arc = locked_segment.get();
-                let Some(segment) = segment_arc.try_read() else {
-                    return true;
-                };
-                match segment.max_available_vectors_size_in_bytes() {
-                    Ok(size) => size < max_segment_size_bytes.get(),
-                    Err(err) => {
-                        log::error!("Failed to get segment size, ignoring: {err}");
-                        true
-                    }
-                }
-            })
+            .filter(|(_, segment)| Self::segment_has_capacity(segment, max_segment_size_bytes))
             .map(|(segment_id, _)| *segment_id)
             .collect()
     }
@@ -467,9 +471,13 @@ impl SegmentHolder {
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> bool {
-        !self
-            .eligible_appendable_segments_ids(max_segment_size_bytes)
-            .is_empty()
+        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
+            return !self.appendable_segments.is_empty();
+        };
+
+        self.appendable_segments
+            .values()
+            .any(|segment| Self::segment_has_capacity(segment, max_segment_size_bytes))
     }
 
     /// Candidate destinations for copy-on-write moves, computed lazily on the first move and
