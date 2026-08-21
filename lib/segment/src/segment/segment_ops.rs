@@ -481,7 +481,7 @@ impl Segment {
     /// # Arguments
     ///
     /// * `op_num` - sequential operation of the current operation
-    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
+    /// * `operation` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
     ///   and optionally new offset of the changed point.
     ///
     /// # Result
@@ -536,7 +536,7 @@ impl Segment {
     /// * `point_id` - external id of the point the operation targets; used for error correlation.
     /// * `op_point_offset` - If point offset is specified, handler will use point version for comparison.
     ///   Otherwise, it will be applied without version checks.
-    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
+    /// * `operation` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
     ///
     /// # Result
     ///
