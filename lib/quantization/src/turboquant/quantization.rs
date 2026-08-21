@@ -563,6 +563,80 @@ impl TurboQuantizer {
         }
     }
 
+    /// Batch counterpart of [`Self::score_precomputed`] for a contiguous run
+    /// of encoded vectors: scores vector `v` at `data[v * quantized_size()..]`
+    /// into `scores[v]`.  One call per run hoists the query dispatch and the
+    /// distance selection out of the per-vector work, and lets the 4-bit
+    /// kernel batch over the run.
+    ///
+    /// # Panics
+    /// Panics if `data` is shorter than `scores.len()` encoded vectors.
+    pub fn score_precomputed_batch(&self, query: &EncodedQueryTQ, data: &[u8], scores: &mut [f32]) {
+        let stride = self.quantized_size();
+        let count = scores.len();
+        assert!(
+            data.len() >= count * stride,
+            "score_precomputed_batch: {count} vectors of {stride} bytes don't fit into {} data bytes",
+            data.len(),
+        );
+
+        if matches!(self.distance, DistanceType::L1) {
+            // L1 dequantizes per vector — no batched kernel to amortize.
+            for (v, score) in scores.iter_mut().enumerate() {
+                *score = self.score_precomputed(query, &data[v * stride..(v + 1) * stride]);
+            }
+            return;
+        }
+
+        let extra_len = TqVectorExtras::size_for(self.bits, self.distance, self.mode);
+        let code_len = stride - extra_len;
+
+        // Raw centroid dots first: the 4-bit query batches over the whole
+        // run in one kernel call, the other widths score per vector.
+        match &query.data {
+            EncodedQueryTQData::Bits4(q) => q.dotprod_batch(data, stride, scores),
+            EncodedQueryTQData::Bits1(q) => {
+                for (v, score) in scores.iter_mut().enumerate() {
+                    *score = q.dotprod(&data[v * stride..][..code_len]);
+                }
+            }
+            EncodedQueryTQData::Bits1Wide(q) => {
+                for (v, score) in scores.iter_mut().enumerate() {
+                    *score = q.dotprod(&data[v * stride..][..code_len]);
+                }
+            }
+            EncodedQueryTQData::Bits2(q) => {
+                for (v, score) in scores.iter_mut().enumerate() {
+                    *score = q.dotprod(&data[v * stride..][..code_len]);
+                }
+            }
+        }
+
+        // Fold in the per-vector extras, same formulas (and float order) as
+        // `score_precomputed`.
+        match self.distance {
+            DistanceType::Cosine | DistanceType::Dot => {
+                for (v, score) in scores.iter_mut().enumerate() {
+                    let extras =
+                        TqVectorExtras::from_bytes(&data[v * stride + code_len..(v + 1) * stride]);
+                    let dot = *score + query.ec_correction;
+                    *score = dot * extras.scaling_factor();
+                }
+            }
+            DistanceType::L2 => {
+                let query_l2 = query.l2_norm.unwrap_or(1.0);
+                for (v, score) in scores.iter_mut().enumerate() {
+                    let extras =
+                        TqVectorExtras::from_bytes(&data[v * stride + code_len..(v + 1) * stride]);
+                    let dot = *score + query.ec_correction;
+                    let l2 = extras.l2_length();
+                    *score = query_l2 * query_l2 + l2 * l2 - 2.0 * dot * extras.scaling_factor();
+                }
+            }
+            DistanceType::L1 => unreachable!("L1 is handled by the per-vector fallback above"),
+        }
+    }
+
     /// Similarity score with a query that has already been rotated via
     /// [`Self::precompute_query`]. Returns an approximate `<query, v>` for Dot
     /// and `cos(θ)` for Cosine.
@@ -1493,6 +1567,87 @@ mod tests {
                 gap > ref_mag,
                 "score spread too small for {bits:?}/{distance:?}: self={self_score}, anti={anti_score}",
             );
+        }
+    }
+
+    /// `score_precomputed_batch` must reproduce per-vector `score_precomputed`
+    /// bit-exactly for every bit width, distance, and mode, across run sizes
+    /// that hit every kernel path (single vector, partial block, full runs).
+    #[rstest::rstest]
+    #[case(TQBits::Bits1)]
+    #[case(TQBits::Bits1_5)]
+    #[case(TQBits::Bits2)]
+    #[case(TQBits::Bits4)]
+    fn score_precomputed_batch_matches_single(#[case] bits: TQBits) {
+        // 200 exercises both a partial trailing SIMD block and (for Bits4)
+        // the 16-dim chunk tail of the interleaved layout.
+        let dim = 200;
+        let count = 100;
+
+        for &distance in &[
+            DistanceType::Dot,
+            DistanceType::Cosine,
+            DistanceType::L2,
+            DistanceType::L1,
+        ] {
+            for &mode in &[TQMode::Normal, TQMode::Plus] {
+                let mut rng = StdRng::seed_from_u64(0xBA7C4);
+                let padded_dim = TurboQuantizer::padded_dim(dim, bits);
+                let error_correction = match mode {
+                    TQMode::Normal => None,
+                    TQMode::Plus => Some(ErrorCorrection::new(
+                        (0..padded_dim)
+                            .map(|_| rng.random_range(-0.1..0.1))
+                            .collect(),
+                        (0..padded_dim)
+                            .map(|_| rng.random_range(0.9..1.1))
+                            .collect(),
+                    )),
+                };
+                let tq = TurboQuantizer::new(
+                    dim,
+                    bits,
+                    mode,
+                    distance,
+                    TQRotation::Padded,
+                    error_correction,
+                );
+
+                let mut buf = vec![0.0f64; tq.padded_dim];
+                let mut data = Vec::new();
+                for _ in 0..count {
+                    let v = match distance {
+                        DistanceType::Cosine => normalize_vector(&random_vector(dim, &mut rng)),
+                        DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => {
+                            random_vector(dim, &mut rng)
+                        }
+                    };
+                    data.extend_from_slice(&tq.quantize(&v, &mut buf));
+                }
+
+                let stride = tq.quantized_size();
+                let query = tq.precompute_query(&random_vector(dim, &mut rng));
+
+                let single: Vec<f32> = (0..count)
+                    .map(|v| tq.score_precomputed(&query, &data[v * stride..(v + 1) * stride]))
+                    .collect();
+
+                for run_len in [1, 7, count] {
+                    let mut batched = vec![0.0f32; count];
+                    for (run_idx, scores) in batched.chunks_mut(run_len).enumerate() {
+                        let start = run_idx * run_len * stride;
+                        tq.score_precomputed_batch(
+                            &query,
+                            &data[start..start + scores.len() * stride],
+                            scores,
+                        );
+                    }
+                    assert_eq!(
+                        single, batched,
+                        "batch mismatch for {bits:?}/{distance:?}/{mode:?} at run_len {run_len}",
+                    );
+                }
+            }
         }
     }
 }

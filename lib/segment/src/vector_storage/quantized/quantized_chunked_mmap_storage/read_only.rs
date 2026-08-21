@@ -143,6 +143,27 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
             .expect("vectors read");
     }
 
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        quantization::encoded_storage::for_each_consecutive_run(
+            offsets,
+            |start| {
+                self.data
+                    .get_remaining_chunk_keys(start as VectorOffsetType)
+            },
+            |first, start, len| {
+                let bytes = self
+                    .data
+                    .get_many::<Random>(start as VectorOffsetType, len)
+                    .expect("vectors read");
+                callback(first, len, bytes);
+            },
+        );
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         self.data.files()
     }

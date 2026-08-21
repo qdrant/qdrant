@@ -52,9 +52,54 @@ pub trait EncodedStorage: EncodedStorageWrite {
         callback: impl FnMut(usize, Cow<'_, [u8]>),
     );
 
+    /// Invoke `callback(first, count, bytes)` over `offsets` split into runs
+    /// the storage serves from one contiguous slice: `bytes` holds the
+    /// concatenated vectors of `offsets[first..first + count]`.  Runs cover
+    /// `offsets` in order, so a sequential scan over consecutive offsets
+    /// resolves storage internals (chunk lookups, reads) once per run rather
+    /// than once per vector.
+    ///
+    /// The default serves every vector as its own run; storages with
+    /// contiguous regions should override it to coalesce consecutive offsets.
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        for (index, &offset) in offsets.iter().enumerate() {
+            callback(index, 1, self.get_vector_data(offset));
+        }
+    }
+
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf>;
+}
+
+/// Shared run detection for [`EncodedStorage::for_each_run`] implementations:
+/// splits `offsets` into maximal runs of consecutive ids, additionally capped
+/// by `max_run(start)` — the number of vectors the storage can serve
+/// contiguously starting at `start` (e.g. up to its chunk boundary).  Invokes
+/// `emit(first, start, len)` per run, where `first` indexes into `offsets`.
+pub fn for_each_consecutive_run(
+    offsets: &[PointOffsetType],
+    mut max_run: impl FnMut(PointOffsetType) -> usize,
+    mut emit: impl FnMut(usize, PointOffsetType, usize),
+) {
+    let mut first = 0;
+    while first < offsets.len() {
+        let start = offsets[first];
+        let cap = max_run(start).max(1);
+        let mut len = 1;
+        while len < cap
+            && first + len < offsets.len()
+            && offsets[first + len] == start + len as PointOffsetType
+        {
+            len += 1;
+        }
+        emit(first, start, len);
+        first += len;
+    }
 }
 
 pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
@@ -230,6 +275,22 @@ impl EncodedStorage for TestEncodedStorage {
         default_for_each_batch(self, offsets, callback);
     }
 
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        for_each_consecutive_run(
+            offsets,
+            |_| usize::MAX,
+            |first, start, len| {
+                let begin = start as usize * self.quantized_vector_size.get();
+                let end = begin + len * self.quantized_vector_size.get();
+                callback(first, len, Cow::Borrowed(&self.data[begin..end]));
+            },
+        );
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         if let Some(ref path) = self.path {
             vec![path.clone()]
@@ -330,5 +391,37 @@ mod tests {
         let storage = storage_with_stride(260, 0);
         // With no stored vectors there is nothing to check, so any size is accepted.
         validate_storage_vector_size(&storage, 999).unwrap();
+    }
+
+    /// Runs must cover `offsets` in order, split only at non-consecutive ids
+    /// and at the storage's contiguity cap (chunk boundaries).
+    #[test]
+    fn consecutive_runs_split_at_gaps_and_capacity() {
+        let collect = |offsets: &[u32], cap: fn(u32) -> usize| {
+            let mut runs = Vec::new();
+            for_each_consecutive_run(offsets, cap, |first, start, len| {
+                runs.push((first, start, len));
+            });
+            runs
+        };
+
+        // Unbounded capacity: split at gaps only.
+        assert_eq!(
+            collect(&[0, 1, 2, 5, 6, 9], |_| usize::MAX),
+            vec![(0, 0, 3), (3, 5, 2), (5, 9, 1)],
+        );
+        // Descending and scattered ids degrade to singleton runs.
+        assert_eq!(
+            collect(&[4, 3, 2], |_| usize::MAX),
+            vec![(0, 4, 1), (1, 3, 1), (2, 2, 1)],
+        );
+        // A capacity boundary every 4 ids splits an 8-long run in two.
+        assert_eq!(
+            collect(&[0, 1, 2, 3, 4, 5, 6, 7], |start| 4 - start as usize % 4),
+            vec![(0, 0, 4), (4, 4, 4)],
+        );
+        // A zero capacity still makes progress one vector at a time.
+        assert_eq!(collect(&[7, 8], |_| 0), vec![(0, 7, 1), (1, 8, 1)]);
+        assert_eq!(collect(&[], |_| usize::MAX), vec![]);
     }
 }

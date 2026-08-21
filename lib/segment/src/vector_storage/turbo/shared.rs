@@ -9,7 +9,8 @@
 
 use std::borrow::Cow;
 
-use common::types::ScoreType;
+use common::types::{PointOffsetType, ScoreType};
+use quantization::encoded_storage::EncodedStorage;
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
@@ -100,6 +101,42 @@ pub(super) fn score_query_bytes(
         -score
     } else {
         score
+    }
+}
+
+/// Batch counterpart of [`score_query_bytes`] over an [`EncodedStorage`]:
+/// `scores[i]` ← score of `query` against `ids[i]`.  Coalesces consecutive ids
+/// into contiguous storage runs and scores each run with one batched quantizer
+/// call, so a sequential scan pays the storage resolution and kernel setup per
+/// run rather than per vector.
+pub(super) fn score_query_batch<TStorage: EncodedStorage>(
+    storage: &TStorage,
+    quantizer: &TurboQuantizer,
+    distance: Distance,
+    query: &EncodedQueryTQ,
+    ids: &[PointOffsetType],
+    scores: &mut [ScoreType],
+) {
+    debug_assert_eq!(ids.len(), scores.len());
+
+    if !TStorage::is_in_ram_or_mmap() {
+        // Backends with async reads (io_uring, remote caches) pipeline
+        // per-vector reads in `for_each_batch`; run-granular reads would
+        // serialize them.
+        storage.for_each_batch(ids, |idx, bytes| {
+            scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
+        });
+        return;
+    }
+
+    storage.for_each_run(ids, |first, count, bytes| {
+        quantizer.score_precomputed_batch(query, &bytes, &mut scores[first..first + count]);
+    });
+
+    if invert_score(distance) {
+        for score in scores {
+            *score = -*score;
+        }
     }
 }
 

@@ -170,6 +170,70 @@ pub struct Query4bitSimd {
     /// chunks + tail).  Subtracted from `dot_raw` to recover the true signed
     /// dot product.  `0` on aarch64, where the codebook is already signed.
     bias_correction: i64,
+    /// Even/odd query planes for the wide x86 kernels — the same `[low, high]`
+    /// halves as `query_data` + tail, regrouped by nibble position instead of
+    /// by 16-dim chunk.  A packed data byte holds dims `(2j, 2j+1)` in its
+    /// low/high nibbles, so a wide load of raw data bytes yields all even dims
+    /// with one mask and all odd dims with one shift+mask; the planes line the
+    /// query halves up with exactly that order.  Four sections of
+    /// `plane_stride` bytes each — `[even_low, even_high, odd_low, odd_high]`
+    /// — where entry `j` of an even (odd) section is the half for query dim
+    /// `2j` (`2j + 1`).  Zero-padded to `plane_stride` so kernels can always
+    /// load full SIMD blocks of the query side.
+    #[cfg(target_arch = "x86_64")]
+    planes: Vec<i8>,
+    /// Section length of `planes`, in bytes: `ceil(dim / 2)` rounded up to 64.
+    #[cfg(target_arch = "x86_64")]
+    plane_stride: usize,
+    /// SIMD backend resolved once at construction, so scoring doesn't re-run
+    /// CPU feature detection on every call.
+    backend: Backend,
+}
+
+/// Best scoring backend for the host CPU, resolved once in
+/// [`Query4bitSimd::new`].
+#[derive(Clone, Copy)]
+enum Backend {
+    #[cfg(target_arch = "x86_64")]
+    Avx512Vnni,
+    #[cfg(target_arch = "x86_64")]
+    Avx2,
+    #[cfg(target_arch = "x86_64")]
+    Sse,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    NeonSdot,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    Neon,
+    Scalar,
+}
+
+impl Backend {
+    fn detect() -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                return Backend::Avx512Vnni;
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                return Backend::Avx2;
+            }
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                return Backend::Sse;
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                return Backend::NeonSdot;
+            }
+            return Backend::Neon;
+        }
+        #[allow(unreachable_code)]
+        Backend::Scalar
+    }
 }
 
 impl Query4bitSimd {
@@ -235,6 +299,26 @@ impl Query4bitSimd {
             sum_q_signed += q;
         }
 
+        // Even/odd planes for the wide x86 kernels — see the field doc.
+        #[cfg(target_arch = "x86_64")]
+        let (planes, plane_stride) = {
+            let half = data.len() / 2;
+            let stride = half.next_multiple_of(64);
+            let mut planes = vec![0_i8; 4 * stride];
+            let (even, odd) = planes.split_at_mut(2 * stride);
+            let (even_low, even_high) = even.split_at_mut(stride);
+            let (odd_low, odd_high) = odd.split_at_mut(stride);
+            for j in 0..half {
+                let (el, eh, _) = encode(data[2 * j]);
+                let (ol, oh, _) = encode(data[2 * j + 1]);
+                even_low[j] = el;
+                even_high[j] = eh;
+                odd_low[j] = ol;
+                odd_high[j] = oh;
+            }
+            (planes, stride)
+        };
+
         Self {
             query_data,
             tail_low,
@@ -242,6 +326,11 @@ impl Query4bitSimd {
             tail_dims: tail_dims as u8,
             postprocess_scale: 1.0 / (q_scale * CODEBOOK_SCALE),
             bias_correction: CODEBOOK_OFFSET * sum_q_signed,
+            #[cfg(target_arch = "x86_64")]
+            planes,
+            #[cfg(target_arch = "x86_64")]
+            plane_stride,
+            backend: Backend::detect(),
         }
     }
 
@@ -257,40 +346,86 @@ impl Query4bitSimd {
     /// = odd lane).  `vector.len()` must equal `ceil(dim / 2)` — full chunks
     /// first, then the tail bytes covering `tail_dims`.
     ///
-    /// Dispatches at runtime to the best SIMD backend available on the host
-    /// CPU (AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar).
+    /// Dispatches to the SIMD backend resolved at construction
+    /// (AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar).
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
         // No per-vector correction loop: `bias_correction` was baked in at `new()`.
         let dot_raw = self.dotprod_raw_best(vector);
         self.postprocess_scale * (dot_raw - self.bias_correction) as f32
     }
 
+    /// Batch counterpart of [`Self::dotprod`] for vectors stored at a fixed
+    /// `stride` in one contiguous `data` slice: scores vector `v` at
+    /// `data[v * stride..]` into `out[v]` for `v < out.len()`.  One call per
+    /// run amortizes the backend dispatch and the kernel's register setup
+    /// over the whole run instead of paying them per vector.
+    ///
+    /// # Panics
+    /// Panics if `stride` is smaller than the encoded vector size or `data`
+    /// is too short for `out.len()` vectors.
+    pub fn dotprod_batch(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        let Some(count) = std::num::NonZeroUsize::new(out.len()) else {
+            return;
+        };
+        let vector_bytes = self.expected_vector_bytes();
+        assert!(
+            stride >= vector_bytes && data.len() >= (count.get() - 1) * stride + vector_bytes,
+            "Query4bitSimd::dotprod_batch: {count} vectors of {vector_bytes} bytes at stride \
+             {stride} don't fit into {} data bytes",
+            data.len(),
+        );
+
+        match self.backend {
+            #[cfg(target_arch = "x86_64")]
+            Backend::Avx512Vnni => unsafe { self.dotprod_batch_avx512_vnni(data, stride, out) },
+            #[cfg(target_arch = "x86_64")]
+            Backend::Avx2 => unsafe { self.dotprod_batch_avx2(data, stride, out) },
+            #[cfg(target_arch = "x86_64")]
+            Backend::Sse => {
+                for (v, out) in out.iter_mut().enumerate() {
+                    let raw = unsafe { self.dotprod_raw_sse(&data[v * stride..][..vector_bytes]) };
+                    *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+                }
+            }
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            Backend::NeonSdot => {
+                for (v, out) in out.iter_mut().enumerate() {
+                    let raw =
+                        unsafe { self.dotprod_raw_neon_sdot(&data[v * stride..][..vector_bytes]) };
+                    *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+                }
+            }
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            Backend::Neon => {
+                for (v, out) in out.iter_mut().enumerate() {
+                    let raw = unsafe { self.dotprod_raw_neon(&data[v * stride..][..vector_bytes]) };
+                    *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+                }
+            }
+            Backend::Scalar => {
+                for (v, out) in out.iter_mut().enumerate() {
+                    let raw = self.dotprod_raw(&data[v * stride..][..vector_bytes]);
+                    *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+                }
+            }
+        }
+    }
+
     #[inline]
     fn dotprod_raw_best(&self, vector: &[u8]) -> i64 {
-        #[cfg(target_arch = "x86_64")]
-        {
-            if std::is_x86_feature_detected!("avx512f")
-                && std::is_x86_feature_detected!("avx512bw")
-                && std::is_x86_feature_detected!("avx512vnni")
-            {
-                return unsafe { self.dotprod_raw_avx512_vnni(vector) };
-            }
-            if std::is_x86_feature_detected!("avx2") {
-                return unsafe { self.dotprod_raw_avx2(vector) };
-            }
-            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-                return unsafe { self.dotprod_raw_sse(vector) };
-            }
+        match self.backend {
+            #[cfg(target_arch = "x86_64")]
+            Backend::Avx512Vnni => unsafe { self.dotprod_raw_avx512_vnni(vector) },
+            #[cfg(target_arch = "x86_64")]
+            Backend::Avx2 => unsafe { self.dotprod_raw_avx2(vector) },
+            #[cfg(target_arch = "x86_64")]
+            Backend::Sse => unsafe { self.dotprod_raw_sse(vector) },
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            Backend::NeonSdot => unsafe { self.dotprod_raw_neon_sdot(vector) },
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            Backend::Neon => unsafe { self.dotprod_raw_neon(vector) },
+            Backend::Scalar => self.dotprod_raw(vector),
         }
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            if std::arch::is_aarch64_feature_detected!("dotprod") {
-                return unsafe { self.dotprod_raw_neon_sdot(vector) };
-            }
-            return unsafe { self.dotprod_raw_neon(vector) };
-        }
-        #[allow(unreachable_code)]
-        self.dotprod_raw(vector)
     }
 
     /// Compute `Σ q_signed[j] · c_raw[v[j]]` over all dims — both the

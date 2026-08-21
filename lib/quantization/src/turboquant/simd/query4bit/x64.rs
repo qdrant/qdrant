@@ -71,18 +71,18 @@ impl Query4bitSimd {
         }
     }
 
-    /// x86_64 AVX2 implementation.  `query_data` stores `[low, high]` as 32
-    /// contiguous i8 bytes per chunk, so a single YMM load grabs both halves.
-    /// Codebook is broadcast to both 128-bit lanes; maddubs pairs the upper
-    /// lane with `high` and the lower lane with `low`, producing i32 sums
-    /// split cleanly by lane at the end.
+    /// x86_64 AVX2 implementation over the even/odd query planes: 32 packed
+    /// bytes (64 dims) per iteration.  One mask yields the 32 even-dim
+    /// codebook indices, one shift+mask the 32 odd-dim ones, so the per-dim
+    /// shuffle work is two `vpshufb` per 64 dims; the four `maddubs → madd`
+    /// products go into four independent accumulators to keep the pipeline
+    /// full.  `maddubs` pair sums stay inside i16 by the module-level query
+    /// bound (`|pair| ≤ 2·255·64 = 32 640 < 32 767`).
     ///
     /// # Safety
     /// CPU must support `avx2`.
     #[target_feature(enable = "avx2")]
     pub unsafe fn dotprod_raw_avx2(&self, vector: &[u8]) -> i64 {
-        use core::arch::x86_64::*;
-
         assert_eq!(
             vector.len(),
             self.expected_vector_bytes(),
@@ -91,63 +91,128 @@ impl Query4bitSimd {
             self.expected_vector_bytes(),
         );
 
+        unsafe { self.dotprod_raw_avx2_core(vector) }
+    }
+
+    /// Batch counterpart of [`Self::dotprod_raw_avx2`], with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (length preconditions are asserted there).
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn dotprod_batch_avx2(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        unsafe {
+            for (v, out) in out.iter_mut().enumerate() {
+                let raw = self.dotprod_raw_avx2_core(&data[v * stride..]);
+                *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+            }
+        }
+    }
+
+    /// Shared core of the AVX2 kernels.  Reads exactly
+    /// `expected_vector_bytes()` from the front of `vector` — callers
+    /// guarantee the slice is at least that long.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[target_feature(enable = "avx2")]
+    unsafe fn dotprod_raw_avx2_core(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
         unsafe {
             let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
             let codebook = _mm256_broadcastsi128_si256(codebook_128);
             let ones = _mm256_set1_epi16(1);
-            let ones_128 = _mm_set1_epi16(1);
-            let nibble_mask = _mm_set1_epi8(0x0F);
-            let mut acc = _mm256_setzero_si256();
+            let nibble_mask = _mm256_set1_epi8(0x0F);
+            let mut acc_even_low = _mm256_setzero_si256();
+            let mut acc_even_high = _mm256_setzero_si256();
+            let mut acc_odd_low = _mm256_setzero_si256();
+            let mut acc_odd_high = _mm256_setzero_si256();
 
-            for (chunk_idx, chunk) in self.query_data.iter().enumerate() {
-                let low_high = _mm256_loadu_si256(chunk.as_ptr().cast::<__m256i>());
+            let stride = self.plane_stride;
+            let planes = self.planes.as_ptr();
+            let half = self.expected_vector_bytes();
 
-                let v_packed =
-                    _mm_loadl_epi64(vector.as_ptr().add(chunk_idx * 8).cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
-                let v128 = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v = _mm256_broadcastsi128_si256(v128);
-                let c = _mm256_shuffle_epi8(codebook, v);
+            // A local macro rather than a closure: closures don't reliably
+            // inherit the enclosing `#[target_feature]`, which would demote
+            // the intrinsics inside to non-inlined calls.
+            macro_rules! step {
+                ($v_packed:expr, $offset:expr) => {{
+                    let v_packed = $v_packed;
+                    let offset = $offset;
+                    let idx_even = _mm256_and_si256(v_packed, nibble_mask);
+                    let idx_odd = _mm256_and_si256(_mm256_srli_epi16(v_packed, 4), nibble_mask);
+                    let c_even = _mm256_shuffle_epi8(codebook, idx_even);
+                    let c_odd = _mm256_shuffle_epi8(codebook, idx_odd);
 
-                let prods = _mm256_maddubs_epi16(c, low_high);
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(prods, ones));
+                    let q_even_low = _mm256_loadu_si256(planes.add(offset).cast::<__m256i>());
+                    let q_even_high =
+                        _mm256_loadu_si256(planes.add(stride + offset).cast::<__m256i>());
+                    let q_odd_low =
+                        _mm256_loadu_si256(planes.add(2 * stride + offset).cast::<__m256i>());
+                    let q_odd_high =
+                        _mm256_loadu_si256(planes.add(3 * stride + offset).cast::<__m256i>());
+
+                    let prod_el = _mm256_maddubs_epi16(c_even, q_even_low);
+                    let prod_eh = _mm256_maddubs_epi16(c_even, q_even_high);
+                    let prod_ol = _mm256_maddubs_epi16(c_odd, q_odd_low);
+                    let prod_oh = _mm256_maddubs_epi16(c_odd, q_odd_high);
+                    acc_even_low = _mm256_add_epi32(acc_even_low, _mm256_madd_epi16(prod_el, ones));
+                    acc_even_high =
+                        _mm256_add_epi32(acc_even_high, _mm256_madd_epi16(prod_eh, ones));
+                    acc_odd_low = _mm256_add_epi32(acc_odd_low, _mm256_madd_epi16(prod_ol, ones));
+                    acc_odd_high = _mm256_add_epi32(acc_odd_high, _mm256_madd_epi16(prod_oh, ones));
+                }};
             }
 
-            let mut acc_low = _mm256_castsi256_si128(acc);
-            let mut acc_high = _mm256_extracti128_si256(acc, 1);
-
-            // Tail: one extra SSE chunk on a zero-padded scratch — matches
-            // the SSE variant's post-loop kernel.
-            if let Some(buf) = self.tail_chunk_scratch(vector) {
-                let v_packed = _mm_loadl_epi64(buf.as_ptr().cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask);
-                let v = _mm_unpacklo_epi8(v_lo, v_hi);
-                let c_u = _mm_shuffle_epi8(codebook_128, v);
-                let q_low = _mm_loadu_si128(self.tail_low.as_ptr().cast::<__m128i>());
-                let q_high = _mm_loadu_si128(self.tail_high.as_ptr().cast::<__m128i>());
-                let prod_low = _mm_maddubs_epi16(c_u, q_low);
-                let prod_high = _mm_maddubs_epi16(c_u, q_high);
-                acc_low = _mm_add_epi32(acc_low, _mm_madd_epi16(prod_low, ones_128));
-                acc_high = _mm_add_epi32(acc_high, _mm_madd_epi16(prod_high, ones_128));
+            let full_blocks = half / 32;
+            for i in 0..full_blocks {
+                let v_packed = _mm256_loadu_si256(vector.as_ptr().add(32 * i).cast::<__m256i>());
+                step!(v_packed, 32 * i);
             }
 
-            i64::from(hsum_i32_sse(acc_low)) + QUERY_HIGH_COEF * i64::from(hsum_i32_sse(acc_high))
+            // Last partial data block via a zero-padded scratch: the matching
+            // query-plane bytes past `half` are zero, so the scratch's zero
+            // data lanes contribute nothing either way.
+            let rem = half - full_blocks * 32;
+            if rem > 0 {
+                let mut buf = [0_u8; 32];
+                buf[..rem].copy_from_slice(&vector[full_blocks * 32..half]);
+                let v_packed = _mm256_loadu_si256(buf.as_ptr().cast::<__m256i>());
+                step!(v_packed, 32 * full_blocks);
+            }
+
+            let acc_low = _mm256_add_epi32(acc_even_low, acc_odd_low);
+            let acc_high = _mm256_add_epi32(acc_even_high, acc_odd_high);
+            let sum_low = _mm_add_epi32(
+                _mm256_castsi256_si128(acc_low),
+                _mm256_extracti128_si256(acc_low, 1),
+            );
+            let sum_high = _mm_add_epi32(
+                _mm256_castsi256_si128(acc_high),
+                _mm256_extracti128_si256(acc_high, 1),
+            );
+            i64::from(hsum_i32_sse(sum_low)) + QUERY_HIGH_COEF * i64::from(hsum_i32_sse(sum_high))
         }
     }
 
-    /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+): 2 chunks per iteration.  Two
-    /// consecutive `[low, high]` entries = 64 bytes = one ZMM load.  `VPDPBUSD`
-    /// fuses the 4-wide u8×i8 dot with i32 accumulation; the ZMM layout puts
-    /// [low_a, high_a, low_b, high_b] into lanes 0..3.
+    /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+) over the even/odd query planes:
+    /// 64 packed bytes (128 dims) per iteration.  One mask yields the 64
+    /// even-dim codebook indices, one shift+mask the 64 odd-dim ones — two
+    /// `vpshufb` of shuffle work per 128 dims — and the four `VPDPBUSD` land
+    /// in four independent accumulators, so throughput isn't bound by the
+    /// multi-cycle `VPDPBUSD` latency the way a single accumulator chain is.
+    /// The last partial block uses a masked load; its dead lanes multiply
+    /// against the planes' zero padding.
+    ///
+    /// i32 lane bound: each `VPDPBUSD` adds ≤ 4·255·64 = 65 280 per lane, so
+    /// overflow would need ~2¹⁵ blocks ≈ 4M dims — far beyond any real input.
     ///
     /// # Safety
     /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
-    #[target_feature(enable = "avx512f,avx512bw,avx512vnni,sse4.1,ssse3")]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
     pub unsafe fn dotprod_raw_avx512_vnni(&self, vector: &[u8]) -> i64 {
-        use core::arch::x86_64::*;
-
         assert_eq!(
             vector.len(),
             self.expected_vector_bytes(),
@@ -156,84 +221,98 @@ impl Query4bitSimd {
             self.expected_vector_bytes(),
         );
 
+        unsafe { self.dotprod_raw_avx512_vnni_core(vector) }
+    }
+
+    /// Batch counterpart of [`Self::dotprod_raw_avx512_vnni`], with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (length preconditions are asserted there).
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    pub(super) unsafe fn dotprod_batch_avx512_vnni(
+        &self,
+        data: &[u8],
+        stride: usize,
+        out: &mut [f32],
+    ) {
+        unsafe {
+            for (v, out) in out.iter_mut().enumerate() {
+                let raw = self.dotprod_raw_avx512_vnni_core(&data[v * stride..]);
+                *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+            }
+        }
+    }
+
+    /// Shared core of the AVX-512 kernels.  Reads exactly
+    /// `expected_vector_bytes()` from the front of `vector` — callers
+    /// guarantee the slice is at least that long.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn dotprod_raw_avx512_vnni_core(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
         unsafe {
             let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
-            let codebook_512 = _mm512_broadcast_i32x4(codebook_128);
-            let nibble_mask_128 = _mm_set1_epi8(0x0F);
-            let ones_128 = _mm_set1_epi16(1);
-            let mut acc = _mm512_setzero_si512();
+            let codebook = _mm512_broadcast_i32x4(codebook_128);
+            let nibble_mask = _mm512_set1_epi8(0x0F);
+            let mut acc_even_low = _mm512_setzero_si512();
+            let mut acc_even_high = _mm512_setzero_si512();
+            let mut acc_odd_low = _mm512_setzero_si512();
+            let mut acc_odd_high = _mm512_setzero_si512();
 
-            let chunks = self.query_data.as_slice();
-            let n_pairs = chunks.len() / 2;
+            let stride = self.plane_stride;
+            let planes = self.planes.as_ptr();
+            let half = self.expected_vector_bytes();
 
-            for i in 0..n_pairs {
-                let pair_ptr = chunks.as_ptr().add(2 * i).cast::<__m512i>();
-                let low_high_pair = _mm512_loadu_si512(pair_ptr);
+            // A local macro rather than a closure: closures don't reliably
+            // inherit the enclosing `#[target_feature]`, which would demote
+            // the intrinsics inside to non-inlined calls.
+            macro_rules! step {
+                ($v_packed:expr, $offset:expr) => {{
+                    let v_packed = $v_packed;
+                    let offset = $offset;
+                    let idx_even = _mm512_and_si512(v_packed, nibble_mask);
+                    let idx_odd = _mm512_and_si512(_mm512_srli_epi16(v_packed, 4), nibble_mask);
+                    let c_even = _mm512_shuffle_epi8(codebook, idx_even);
+                    let c_odd = _mm512_shuffle_epi8(codebook, idx_odd);
 
-                let v_packed_16 = _mm_loadu_si128(vector.as_ptr().add(16 * i).cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed_16, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed_16, 4), nibble_mask_128);
-                let v_chunk_a = _mm_unpacklo_epi8(v_lo, v_hi);
-                let v_chunk_b = _mm_unpackhi_epi8(v_lo, v_hi);
+                    let q_even_low = _mm512_loadu_si512(planes.add(offset).cast::<__m512i>());
+                    let q_even_high =
+                        _mm512_loadu_si512(planes.add(stride + offset).cast::<__m512i>());
+                    let q_odd_low =
+                        _mm512_loadu_si512(planes.add(2 * stride + offset).cast::<__m512i>());
+                    let q_odd_high =
+                        _mm512_loadu_si512(planes.add(3 * stride + offset).cast::<__m512i>());
 
-                let v_dup_a = _mm256_broadcastsi128_si256(v_chunk_a);
-                let v_dup_b = _mm256_broadcastsi128_si256(v_chunk_b);
-                let v_512 = _mm512_inserti64x4(_mm512_castsi256_si512(v_dup_a), v_dup_b, 1);
-
-                let c_512 = _mm512_shuffle_epi8(codebook_512, v_512);
-                acc = _mm512_dpbusd_epi32(acc, c_512, low_high_pair);
+                    acc_even_low = _mm512_dpbusd_epi32(acc_even_low, c_even, q_even_low);
+                    acc_even_high = _mm512_dpbusd_epi32(acc_even_high, c_even, q_even_high);
+                    acc_odd_low = _mm512_dpbusd_epi32(acc_odd_low, c_odd, q_odd_low);
+                    acc_odd_high = _mm512_dpbusd_epi32(acc_odd_high, c_odd, q_odd_high);
+                }};
             }
 
-            let acc_256_lo = _mm512_castsi512_si256(acc);
-            let acc_256_hi = _mm512_extracti64x4_epi64(acc, 1);
-            let lane_a_low = _mm256_castsi256_si128(acc_256_lo);
-            let lane_a_high = _mm256_extracti128_si256(acc_256_lo, 1);
-            let lane_b_low = _mm256_castsi256_si128(acc_256_hi);
-            let lane_b_high = _mm256_extracti128_si256(acc_256_hi, 1);
-            let mut sum_low_xmm = _mm_add_epi32(lane_a_low, lane_b_low);
-            let mut sum_high_xmm = _mm_add_epi32(lane_a_high, lane_b_high);
+            let full_blocks = half / 64;
+            for i in 0..full_blocks {
+                let v_packed = _mm512_loadu_si512(vector.as_ptr().add(64 * i).cast::<__m512i>());
+                step!(v_packed, 64 * i);
+            }
 
-            // Odd leftover chunk via SSE-style `maddubs + madd_epi16` — 1 chunk
-            // is too narrow to benefit from VNNI here.  Only reached when
-            // `query_data.len()` is odd (dim not a multiple of 32).
-            if chunks.len() % 2 == 1 {
-                let tail_chunk = 2 * n_pairs;
-                let [low, high] = chunks[tail_chunk];
-
+            let rem = half - full_blocks * 64;
+            if rem > 0 {
+                let mask = (1_u64 << rem) - 1;
                 let v_packed =
-                    _mm_loadl_epi64(vector.as_ptr().add(tail_chunk * 8).cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
-                let v = _mm_unpacklo_epi8(v_lo, v_hi);
-                let c_u = _mm_shuffle_epi8(codebook_128, v);
-
-                let q_low = _mm_loadu_si128(low.as_ptr().cast::<__m128i>());
-                let q_high = _mm_loadu_si128(high.as_ptr().cast::<__m128i>());
-                let prod_low = _mm_maddubs_epi16(c_u, q_low);
-                let prod_high = _mm_maddubs_epi16(c_u, q_high);
-                sum_low_xmm = _mm_add_epi32(sum_low_xmm, _mm_madd_epi16(prod_low, ones_128));
-                sum_high_xmm = _mm_add_epi32(sum_high_xmm, _mm_madd_epi16(prod_high, ones_128));
+                    _mm512_maskz_loadu_epi8(mask, vector.as_ptr().add(64 * full_blocks).cast());
+                step!(v_packed, 64 * full_blocks);
             }
 
-            // Tail dims (< 14 remaining after the optional leftover chunk):
-            // one SSE chunk on a zero-padded scratch, same as the SSE variant.
-            if let Some(buf) = self.tail_chunk_scratch(vector) {
-                let v_packed = _mm_loadl_epi64(buf.as_ptr().cast::<__m128i>());
-                let v_lo = _mm_and_si128(v_packed, nibble_mask_128);
-                let v_hi = _mm_and_si128(_mm_srli_epi16(v_packed, 4), nibble_mask_128);
-                let v = _mm_unpacklo_epi8(v_lo, v_hi);
-                let c_u = _mm_shuffle_epi8(codebook_128, v);
-
-                let q_low = _mm_loadu_si128(self.tail_low.as_ptr().cast::<__m128i>());
-                let q_high = _mm_loadu_si128(self.tail_high.as_ptr().cast::<__m128i>());
-                let prod_low = _mm_maddubs_epi16(c_u, q_low);
-                let prod_high = _mm_maddubs_epi16(c_u, q_high);
-                sum_low_xmm = _mm_add_epi32(sum_low_xmm, _mm_madd_epi16(prod_low, ones_128));
-                sum_high_xmm = _mm_add_epi32(sum_high_xmm, _mm_madd_epi16(prod_high, ones_128));
-            }
-
-            i64::from(hsum_i32_sse(sum_low_xmm))
-                + QUERY_HIGH_COEF * i64::from(hsum_i32_sse(sum_high_xmm))
+            let acc_low = _mm512_add_epi32(acc_even_low, acc_odd_low);
+            let acc_high = _mm512_add_epi32(acc_even_high, acc_odd_high);
+            i64::from(_mm512_reduce_add_epi32(acc_low))
+                + QUERY_HIGH_COEF * i64::from(_mm512_reduce_add_epi32(acc_high))
         }
     }
 }

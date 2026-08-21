@@ -171,7 +171,11 @@ impl TurboQuantizer {
 
     /// Size in bytes of a vector quantized by this quantizer.
     pub fn quantized_size(&self) -> usize {
-        Self::quantized_size_for(self.padded_dim, self.bits, self.distance, self.mode)
+        // `self.padded_dim` is already padded — don't route it through
+        // `quantized_size_for`, whose re-padding is not idempotent for
+        // `Bits1_5` (it would apply the ×1.5 expansion a second time).
+        let vector_data_size = self.padded_dim * self.bits.bit_size() as usize / u8::BITS as usize;
+        vector_data_size + TqVectorExtras::size_for(self.bits, self.distance, self.mode)
     }
 
     /// Total size in bytes of a quantized vector, including both the packed

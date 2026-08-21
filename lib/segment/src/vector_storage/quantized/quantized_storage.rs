@@ -279,6 +279,28 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
             .expect("vectors exist and are read correctly");
     }
 
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        let size = self.quantized_vector_size.get() as u64;
+        quantization::encoded_storage::for_each_consecutive_run(
+            offsets,
+            |_| usize::MAX,
+            |first, start, len| {
+                let range = ReadRange::new(size * u64::from(start), size * len as u64);
+                let bytes = if len > 1 {
+                    self.storage.read(range, Sequential)
+                } else {
+                    self.storage.read(range, Random)
+                };
+                let bytes = bytes.expect("vectors read from quantized storage failed");
+                callback(first, len, bytes);
+            },
+        );
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }

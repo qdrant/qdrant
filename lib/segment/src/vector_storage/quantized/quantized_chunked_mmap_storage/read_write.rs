@@ -153,6 +153,21 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
             .expect("vectors read");
     }
 
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        quantization::encoded_storage::for_each_consecutive_run(
+            offsets,
+            |start| self.get_remaining_chunk_keys(start),
+            |first, start, len| {
+                let bytes = self.get_many::<Random>(start, len).expect("vectors read");
+                callback(first, len, bytes);
+            },
+        );
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         self.data.files()
     }
