@@ -82,7 +82,7 @@ impl SegmentsSearcher {
     /// # Arguments
     /// * `search_result` - `[segment_size x batch_size]`
     /// * `limits` - `[batch_size]` - how many results to return for each batched request
-    /// * `further_searches` - `[segment_size x batch_size]` - whether we can search further in the segment
+    /// * `further_results` - `[segment_size x batch_size]` - whether we can search further in the segment
     ///
     /// Returns batch results aggregated by `[batch_size]` and list of queries, grouped by segment to re-run
     pub(crate) fn process_search_result_step1(
@@ -605,7 +605,7 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// * `segment` - Locked segment to search in
 /// * `request` - Batch of search requests
 /// * `use_sampling` - If true, try to use probabilistic sampling
-/// * `query_context` - Additional context for the search
+/// * `segment_query_context` - Additional context for the search
 ///
 /// # Returns
 ///

@@ -28,12 +28,11 @@ use super::MmrInternal;
 ///
 /// # Arguments
 ///
-/// * `collection_params` - The parameters of the collection. Used to determine the right distance metric, or multivec config.
 /// * `points_with_vector` - The points with vectors.
 /// * `mmr` - The MMR parameters.
+/// * `distance` - The distance metric of the collection.
+/// * `multivector_config` - The multivector configuration of the collection, if any.
 /// * `limit` - The maximum number of points to return.
-/// * `search_runtime_handle` - The runtime handle for searching.
-/// * `timeout` - The timeout for the operation.
 /// * `hw_measurement_acc` - The hardware measurement accumulator.
 ///
 /// # Returns

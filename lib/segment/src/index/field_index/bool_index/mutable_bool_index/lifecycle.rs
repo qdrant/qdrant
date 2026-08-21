@@ -26,7 +26,6 @@ impl MutableBoolIndex {
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    /// - `is_on_disk` - If the index should be kept on disk. Memory will be populated if false.
     /// - `create_if_missing` - If true, creates the index if it doesn't exist.
     pub fn open(path: &Path, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let falses_dir = path.join(FALSES_DIRNAME);

@@ -397,7 +397,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     ///
     /// # Arguments
     /// * `page_id` - The ID of the page to mark blocks on.
-    /// * `block_ranges` - An iterator over the ranges of blocks to mark, relative to the page start.
+    /// * `local_block_ranges` - An iterator over the ranges of blocks to mark, relative to the page start.
     /// * `used` - Whether the blocks should be marked as used or free.
     pub(crate) fn mark_blocks_batch(
         &mut self,
