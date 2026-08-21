@@ -11,6 +11,21 @@
 
 use super::{CODEBOOK_SCALE, CODEBOOK_U8, QUERY_HIGH_COEF, Query4bitSimd};
 
+/// Largest encoded vector size (in bytes, = dim / 2) the fused low/high
+/// reduction accepts: 31 blocks of 64 bytes, i.e. dims up to 3968 — see
+/// `reduce_fused_avx512` for the overflow arithmetic behind the bound.
+/// Larger vectors take the per-vector core with its separate (unbounded)
+/// reductions.
+const FUSED_REDUCTION_MAX_HALF: usize = 31 * 64;
+
+/// Largest encoded vector size the four-vector interleaved batch kernel is
+/// used for (dims up to 256).  Interleaving amortizes the query loads and the
+/// reduction, which dominate at small dims — but it reads the four vectors'
+/// bytes as four interleaved streams, which hardware prefetchers stream far
+/// worse than the per-vector kernel's purely sequential walk once the
+/// per-vector byte count grows past a few cache lines.
+const INTERLEAVE_MAX_HALF: usize = 128;
+
 impl Query4bitSimd {
     /// x86_64 SSE4.1 + SSSE3 implementation of [`Query4bitSimd::dotprod_raw`].
     ///
@@ -228,6 +243,12 @@ impl Query4bitSimd {
     /// reconstruction applied — see `dotprod_batch` for the layout contract
     /// (length preconditions are asserted there).
     ///
+    /// Small dims go through [`Self::dotprod_batch4_avx512_vnni`] in groups of
+    /// four; mid-size dims keep the per-vector block loop (its purely
+    /// sequential data access is what hardware prefetchers stream best) but
+    /// use the fused reduction; dims past the fused bound fall back entirely
+    /// to the per-vector core.
+    ///
     /// # Safety
     /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
@@ -237,12 +258,196 @@ impl Query4bitSimd {
         stride: usize,
         out: &mut [f32],
     ) {
+        use core::arch::x86_64::*;
+
         unsafe {
-            for (v, out) in out.iter_mut().enumerate() {
-                let raw = self.dotprod_raw_avx512_vnni_core(&data[v * stride..]);
+            let half = self.expected_vector_bytes();
+            let mut v = 0;
+            if half <= INTERLEAVE_MAX_HALF {
+                let (groups, _) = out.as_chunks_mut::<4>();
+                for group in groups {
+                    self.dotprod_batch4_avx512_vnni(&data[v * stride..], stride, group);
+                    v += 4;
+                }
+            }
+            if half <= FUSED_REDUCTION_MAX_HALF {
+                for out in &mut out[v..] {
+                    let (acc_low, acc_high) = self.accumulate_avx512_vnni(&data[v * stride..]);
+                    let raw = Self::reduce_fused_avx512(acc_low, acc_high);
+                    *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+                    v += 1;
+                }
+            } else {
+                for out in &mut out[v..] {
+                    let (acc_low, acc_high) = self.accumulate_avx512_vnni(&data[v * stride..]);
+                    let raw = i64::from(_mm512_reduce_add_epi32(acc_low))
+                        + QUERY_HIGH_COEF * i64::from(_mm512_reduce_add_epi32(acc_high));
+                    *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
+                    v += 1;
+                }
+            }
+        }
+    }
+
+    /// Four-vector interleaved AVX-512 VNNI kernel: scores vectors at
+    /// `data[0..]`, `data[stride..]`, `data[2 * stride..]`, `data[3 * stride..]`
+    /// into `out`.  Interleaving amortizes what the per-vector core pays per
+    /// call — the four query-plane loads and the tail mask are shared by all
+    /// four vectors per block, and the horizontal reduction fuses the low/high
+    /// accumulators (see [`Self::reduce_fused_avx512`]) — while the sixteen
+    /// independent accumulators keep the `VPDPBUSD` pipeline saturated.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.  The encoded
+    /// vector size must be within [`FUSED_REDUCTION_MAX_HALF`].
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn dotprod_batch4_avx512_vnni(&self, data: &[u8], stride: usize, out: &mut [f32; 4]) {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let codebook_128 = _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>());
+            let codebook = _mm512_broadcast_i32x4(codebook_128);
+            let nibble_mask = _mm512_set1_epi8(0x0F);
+
+            let plane_stride = self.plane_stride;
+            let planes = self.planes.as_ptr();
+            let half = self.expected_vector_bytes();
+            debug_assert!(half <= FUSED_REDUCTION_MAX_HALF);
+
+            // Sixteen named accumulators (4 vectors × even/odd × low/high):
+            // named locals rather than a `[[__m512i; 4]; 4]` so nothing
+            // forces them into a stack-backed array — spilled accumulators
+            // turn every block into 32 ZMM memory round-trips.
+            let mut acc0_el = _mm512_setzero_si512();
+            let mut acc0_eh = _mm512_setzero_si512();
+            let mut acc0_ol = _mm512_setzero_si512();
+            let mut acc0_oh = _mm512_setzero_si512();
+            let mut acc1_el = _mm512_setzero_si512();
+            let mut acc1_eh = _mm512_setzero_si512();
+            let mut acc1_ol = _mm512_setzero_si512();
+            let mut acc1_oh = _mm512_setzero_si512();
+            let mut acc2_el = _mm512_setzero_si512();
+            let mut acc2_eh = _mm512_setzero_si512();
+            let mut acc2_ol = _mm512_setzero_si512();
+            let mut acc2_oh = _mm512_setzero_si512();
+            let mut acc3_el = _mm512_setzero_si512();
+            let mut acc3_eh = _mm512_setzero_si512();
+            let mut acc3_ol = _mm512_setzero_si512();
+            let mut acc3_oh = _mm512_setzero_si512();
+
+            // Folds one vector's already-loaded packed codes into its four
+            // accumulators; the query-plane registers are shared by all four
+            // vectors of the block.
+            macro_rules! step {
+                ($v_packed:expr, $queries:expr, $el:ident, $eh:ident, $ol:ident, $oh:ident) => {{
+                    let idx_even = _mm512_and_si512($v_packed, nibble_mask);
+                    let idx_odd = _mm512_and_si512(_mm512_srli_epi16($v_packed, 4), nibble_mask);
+                    let c_even = _mm512_shuffle_epi8(codebook, idx_even);
+                    let c_odd = _mm512_shuffle_epi8(codebook, idx_odd);
+                    let (q_even_low, q_even_high, q_odd_low, q_odd_high) = $queries;
+                    $el = _mm512_dpbusd_epi32($el, c_even, q_even_low);
+                    $eh = _mm512_dpbusd_epi32($eh, c_even, q_even_high);
+                    $ol = _mm512_dpbusd_epi32($ol, c_odd, q_odd_low);
+                    $oh = _mm512_dpbusd_epi32($oh, c_odd, q_odd_high);
+                }};
+            }
+            macro_rules! block {
+                ($d0:expr, $d1:expr, $d2:expr, $d3:expr, $offset:expr) => {{
+                    let offset = $offset;
+                    let queries = (
+                        _mm512_loadu_si512(planes.add(offset).cast::<__m512i>()),
+                        _mm512_loadu_si512(planes.add(plane_stride + offset).cast::<__m512i>()),
+                        _mm512_loadu_si512(planes.add(2 * plane_stride + offset).cast::<__m512i>()),
+                        _mm512_loadu_si512(planes.add(3 * plane_stride + offset).cast::<__m512i>()),
+                    );
+                    step!($d0, queries, acc0_el, acc0_eh, acc0_ol, acc0_oh);
+                    step!($d1, queries, acc1_el, acc1_eh, acc1_ol, acc1_oh);
+                    step!($d2, queries, acc2_el, acc2_eh, acc2_ol, acc2_oh);
+                    step!($d3, queries, acc3_el, acc3_eh, acc3_ol, acc3_oh);
+                }};
+            }
+
+            let full_blocks = half / 64;
+            for i in 0..full_blocks {
+                let offset = 64 * i;
+                let load =
+                    |v: usize| _mm512_loadu_si512(data.as_ptr().add(v * stride + offset).cast());
+                block!(load(0), load(1), load(2), load(3), offset);
+            }
+
+            let rem = half - full_blocks * 64;
+            if rem > 0 {
+                let offset = 64 * full_blocks;
+                let mask = (1_u64 << rem) - 1;
+                let load = |v: usize| {
+                    _mm512_maskz_loadu_epi8(mask, data.as_ptr().add(v * stride + offset).cast())
+                };
+                block!(load(0), load(1), load(2), load(3), offset);
+            }
+
+            let raws = [
+                Self::reduce_fused_avx512(
+                    _mm512_add_epi32(acc0_el, acc0_ol),
+                    _mm512_add_epi32(acc0_eh, acc0_oh),
+                ),
+                Self::reduce_fused_avx512(
+                    _mm512_add_epi32(acc1_el, acc1_ol),
+                    _mm512_add_epi32(acc1_eh, acc1_oh),
+                ),
+                Self::reduce_fused_avx512(
+                    _mm512_add_epi32(acc2_el, acc2_ol),
+                    _mm512_add_epi32(acc2_eh, acc2_oh),
+                ),
+                Self::reduce_fused_avx512(
+                    _mm512_add_epi32(acc3_el, acc3_ol),
+                    _mm512_add_epi32(acc3_eh, acc3_oh),
+                ),
+            ];
+            for (out, raw) in out.iter_mut().zip(raws) {
                 *out = self.postprocess_scale * (raw - self.bias_correction) as f32;
             }
         }
+    }
+
+    /// `Σ acc_low + QUERY_HIGH_COEF · Σ acc_high` with the two horizontal
+    /// reductions fused into one: the high lanes are shifted by
+    /// `log2(QUERY_HIGH_COEF)` and added to the low lanes up front, so only a
+    /// single tree reduction remains, widened to i64 before the last two adds.
+    ///
+    /// Lane-overflow bound (worst case, per block: 2 accumulators × 4 dpbusd
+    /// products × 255 × 64 = 130 560 per fused lane before the ×129 of the
+    /// shift-add, ×4 more after folding to 128-bit):
+    /// `B · 130 560 · 129 · 4 ≤ i32::MAX` ⇒ `B ≤ 31` blocks — enforced via
+    /// [`FUSED_REDUCTION_MAX_HALF`] by the caller.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f` and `avx512bw`; the accumulators must obey
+    /// the block bound above.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn reduce_fused_avx512(
+        acc_low: core::arch::x86_64::__m512i,
+        acc_high: core::arch::x86_64::__m512i,
+    ) -> i64 {
+        use core::arch::x86_64::*;
+
+        const { assert!(QUERY_HIGH_COEF == 128) };
+
+        let combined = _mm512_add_epi32(acc_low, _mm512_slli_epi32(acc_high, 7));
+        let fold_256 = _mm256_add_epi32(
+            _mm512_castsi512_si256(combined),
+            _mm512_extracti64x4_epi64(combined, 1),
+        );
+        let fold_128 = _mm_add_epi32(
+            _mm256_castsi256_si128(fold_256),
+            _mm256_extracti128_si256(fold_256, 1),
+        );
+        let wide = _mm256_cvtepi32_epi64(fold_128);
+        let pair = _mm_add_epi64(
+            _mm256_castsi256_si128(wide),
+            _mm256_extracti128_si256(wide, 1),
+        );
+        let total = _mm_add_epi64(pair, _mm_unpackhi_epi64(pair, pair));
+        _mm_cvtsi128_si64(total)
     }
 
     /// Shared core of the AVX-512 kernels.  Reads exactly
@@ -253,6 +458,27 @@ impl Query4bitSimd {
     /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
     unsafe fn dotprod_raw_avx512_vnni_core(&self, vector: &[u8]) -> i64 {
+        use core::arch::x86_64::*;
+
+        unsafe {
+            let (acc_low, acc_high) = self.accumulate_avx512_vnni(vector);
+            i64::from(_mm512_reduce_add_epi32(acc_low))
+                + QUERY_HIGH_COEF * i64::from(_mm512_reduce_add_epi32(acc_high))
+        }
+    }
+
+    /// Block loop shared by the AVX-512 kernels: accumulates one vector's
+    /// codebook·query products and returns the combined `(low, high)`
+    /// query-half accumulators, leaving the horizontal reduction to the
+    /// caller.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn accumulate_avx512_vnni(
+        &self,
+        vector: &[u8],
+    ) -> (core::arch::x86_64::__m512i, core::arch::x86_64::__m512i) {
         use core::arch::x86_64::*;
 
         unsafe {
@@ -268,9 +494,6 @@ impl Query4bitSimd {
             let planes = self.planes.as_ptr();
             let half = self.expected_vector_bytes();
 
-            // A local macro rather than a closure: closures don't reliably
-            // inherit the enclosing `#[target_feature]`, which would demote
-            // the intrinsics inside to non-inlined calls.
             macro_rules! step {
                 ($v_packed:expr, $offset:expr) => {{
                     let v_packed = $v_packed;
@@ -309,10 +532,10 @@ impl Query4bitSimd {
                 step!(v_packed, 64 * full_blocks);
             }
 
-            let acc_low = _mm512_add_epi32(acc_even_low, acc_odd_low);
-            let acc_high = _mm512_add_epi32(acc_even_high, acc_odd_high);
-            i64::from(_mm512_reduce_add_epi32(acc_low))
-                + QUERY_HIGH_COEF * i64::from(_mm512_reduce_add_epi32(acc_high))
+            (
+                _mm512_add_epi32(acc_even_low, acc_odd_low),
+                _mm512_add_epi32(acc_even_high, acc_odd_high),
+            )
         }
     }
 }

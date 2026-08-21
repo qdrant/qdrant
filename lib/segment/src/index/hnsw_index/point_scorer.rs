@@ -434,7 +434,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // A whole harvested 64-point block must fit into one scoring chunk.
-        const { assert!(VECTOR_READ_BATCH_SIZE >= 64) };
+        const { assert!(VISIBLE_SCAN_BATCH_SIZE >= 64) };
 
         let Self {
             mut scorer_batch,
@@ -458,8 +458,8 @@ impl<'a> BatchFilteredSearcher<'a> {
             ],
         );
 
-        let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
-        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+        let mut chunk = [0; VISIBLE_SCAN_BATCH_SIZE];
+        let mut scores_buffer = [0.0; VISIBLE_SCAN_BATCH_SIZE];
         loop {
             let n = scan.next_chunk(&mut chunk);
             if n == 0 {
@@ -534,13 +534,20 @@ impl<'a> BatchFilteredSearcher<'a> {
     }
 }
 
+/// Ids scored per `RawScorer::score_points` call by the unfiltered full scan.
+/// Larger than [`VECTOR_READ_BATCH_SIZE`]: a full scan walks consecutive ids,
+/// so a bigger chunk amortizes the per-call machinery (dispatch, storage run
+/// resolution, counters) over more points without hurting locality — the id
+/// and score buffers still fit comfortably in L1.
+const VISIBLE_SCAN_BATCH_SIZE: usize = 512;
+
 /// Score one harvested chunk against every scorer and push into its queue.
 /// Applies `filter_context` if present; the deletion bitmaps were already folded into the harvest masks by the caller.
 fn score_chunk(
     filters: &ScorerFilters<'_>,
     scorer_batch: &mut [BatchSearch<'_>],
     chunk: &mut [PointOffsetType],
-    scores_buffer: &mut [ScoreType; VECTOR_READ_BATCH_SIZE],
+    scores_buffer: &mut [ScoreType; VISIBLE_SCAN_BATCH_SIZE],
 ) -> OperationResult<()> {
     let n = match &filters.filter_context {
         Some(f) => f.check_batched(chunk, Select::Matches, Rest::Discard)?,
@@ -552,11 +559,36 @@ fn score_chunk(
     }
     for BatchSearch { raw_scorer, pq } in scorer_batch {
         raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()]);
-        for i in 0..chunk.len() {
-            pq.push(ScoredPointOffset {
-                idx: chunk[i],
-                score: scores_buffer[i],
-            });
+
+        // `push` on a full queue inserts only when the queue minimum is
+        // smaller, and that minimum only rises as the scan progresses — so a
+        // whole block whose maximum score doesn't beat the current minimum
+        // contributes nothing.  The block-max fold vectorizes, making the
+        // steady state (a warm queue rejecting nearly everything) almost
+        // free; only blocks holding an actual candidate walk the heap path.
+        const SKIP_BLOCK: usize = 64;
+        let mut start = 0;
+        while start < chunk.len() {
+            let end = (start + SKIP_BLOCK).min(chunk.len());
+            if pq.is_full()
+                && let Some(min) = pq.top()
+            {
+                let block_max = scores_buffer[start..end]
+                    .iter()
+                    .copied()
+                    .fold(ScoreType::NEG_INFINITY, ScoreType::max);
+                if block_max <= min.score {
+                    start = end;
+                    continue;
+                }
+            }
+            for i in start..end {
+                pq.push(ScoredPointOffset {
+                    idx: chunk[i],
+                    score: scores_buffer[i],
+                });
+            }
+            start = end;
         }
     }
     Ok(())
