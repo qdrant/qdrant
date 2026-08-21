@@ -270,6 +270,7 @@ impl Validate for Expression {
             Expression::DatetimeKey(_) => Ok(()),
             Expression::Mult(mult_expression) => mult_expression.validate(),
             Expression::Sum(sum_expression) => sum_expression.validate(),
+            Expression::Max(max_expression) => max_expression.validate(),
             Expression::Neg(neg_expression) => neg_expression.validate(),
             Expression::Abs(abs_expression) => abs_expression.validate(),
             Expression::Div(div_expression) => div_expression.validate(),

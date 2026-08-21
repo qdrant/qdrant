@@ -937,6 +937,7 @@ pub enum Expression {
     DatetimeKey(DatetimeKeyExpression),
     Mult(MultExpression),
     Sum(SumExpression),
+    Max(MaxExpression),
     Neg(NegExpression),
     Abs(AbsExpression),
     Div(DivExpression),
@@ -984,6 +985,13 @@ pub struct MultExpression {
 pub struct SumExpression {
     #[validate(nested)]
     pub sum: Vec<Expression>,
+}
+
+/// Largest of the given expressions. Requires at least one operand.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct MaxExpression {
+    #[validate(nested)]
+    pub max: Vec<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

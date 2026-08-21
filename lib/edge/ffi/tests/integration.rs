@@ -2760,6 +2760,92 @@ fn formula_rescoring_boosts_by_payload() {
     );
 }
 
+/// `max` against a dominating constant pins every score to that constant. Asserting the exact
+/// value distinguishes `max` from `sum`, which would instead add the constant to each score.
+#[test]
+fn formula_max_clamps_scores_to_a_floor() {
+    use qdrant_edge_ffi::{Expression, Prefetch, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.1, 0.1, 0.1]),
+            payload: None,
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.09, 0.09, 0.09, 0.09]),
+            payload: None,
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    const FLOOR: f32 = 42.0;
+
+    let expression = Expression::max(vec![
+        Expression::variable("$score".to_string()),
+        Expression::constant(FLOOR).expect("constant build failed"),
+    ])
+    .expect("expression build failed");
+
+    let hits = shard
+        .query(QueryRequest {
+            limit: 2,
+            offset: None,
+            query: Some(ScoringQuery::Formula {
+                expression,
+                defaults: HashMap::new(),
+            }),
+            prefetches: vec![Prefetch {
+                limit: 10,
+                query: Some(ScoringQuery::Vector {
+                    query: Query::Nearest {
+                        vector: NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                        using: Some("vec".to_string()),
+                    },
+                }),
+                prefetches: vec![],
+                filter: None,
+                score_threshold: None,
+                params: None,
+            }],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("formula query failed");
+
+    assert_eq!(hits.len(), 2, "both points should be re-scored");
+    for hit in &hits {
+        assert_eq!(
+            hit.score, FLOOR,
+            "every score is below the floor, so max must return the floor itself"
+        );
+    }
+}
+
+/// An empty `max` has no identity element to fall back on, so building the query must fail rather
+/// than score every point with -infinity.
+#[test]
+fn formula_empty_max_is_rejected() {
+    use qdrant_edge_ffi::Expression;
+
+    let err = Expression::max(vec![]).expect_err("empty max must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
 /// Grouped query: one group per category, best hit each.
 #[test]
 fn query_groups_returns_one_group_per_key() {

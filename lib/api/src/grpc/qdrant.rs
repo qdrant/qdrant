@@ -6572,7 +6572,7 @@ pub struct Formula {
 pub struct Expression {
     #[prost(
         oneof = "expression::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21"
     )]
     #[validate(nested)]
     pub variant: ::core::option::Option<expression::Variant>,
@@ -6641,6 +6641,9 @@ pub mod expression {
         /// Inverse hyperbolic cosine
         #[prost(message, tag = "20")]
         Acosh(::prost::alloc::boxed::Box<super::Expression>),
+        /// Maximum
+        #[prost(message, tag = "21")]
+        Max(super::MaxExpression),
     }
 }
 #[derive(serde::Serialize)]
@@ -6666,6 +6669,14 @@ pub struct SumExpression {
     #[prost(message, repeated, tag = "1")]
     #[validate(nested)]
     pub sum: ::prost::alloc::vec::Vec<Expression>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaxExpression {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub max: ::prost::alloc::vec::Vec<Expression>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
