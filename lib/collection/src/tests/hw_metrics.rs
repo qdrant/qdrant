@@ -1,4 +1,3 @@
-use std::assert_matches;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -70,7 +69,7 @@ async fn test_hw_metrics_cancellation() {
         .unwrap();
 
     let mut rand = rng();
-    let req = CoreSearchRequestBatch {
+    let req = Arc::new(CoreSearchRequestBatch {
         searches: vec![CoreSearchRequest {
             query: QueryEnum::Nearest(NamedQuery {
                 using: None,
@@ -84,44 +83,71 @@ async fn test_hw_metrics_cancellation() {
             with_vector: None,
             score_threshold: None,
         }],
-    };
+    });
 
-    let outer_hw = Arc::new(HwSharedDrain::default());
+    // Warm up the blocking pool and measure how long a full search takes on this machine.
+    // Fast CI runners (especially macos ARM) can finish the search well under a fixed 350ms
+    // timeout; overloaded runners can miss a too-short timeout before spawn_blocking starts.
+    // See https://github.com/qdrant/qdrant/pull/9233
+    let warmup_started = std::time::Instant::now();
+    shard
+        .do_search(
+            req.clone(),
+            &current_runtime,
+            Duration::from_secs(60),
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("warmup search should succeed");
+    let baseline = warmup_started.elapsed();
 
-    {
-        let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());
-        let search_res = shard
-            .do_search(
-                Arc::new(req),
-                &current_runtime,
-                // Short but not extremely short timeout to not conflict with os-thread spawning overhead.
-                // (For more information see https://github.com/qdrant/qdrant/pull/9233)
-                Duration::from_millis(350),
-                hw_counter,
-            )
-            .await;
+    // Cancel roughly mid-flight. Keep a small floor so we still exercise cancellation even
+    // when the baseline is tiny; isolation via nextest threads-required + warmup above should
+    // make spawn_blocking prompt enough for short timeouts.
+    let mut timeout = (baseline / 4).clamp(Duration::from_millis(15), Duration::from_millis(500));
 
-        // Ensure we triggered a timeout and the search didn't exit too early.
-        assert_matches!(
-            search_res.unwrap_err(),
-            CollectionError::Timeout { description: _ },
-        );
+    let mut cancelled_with_cpu = false;
+    for _ in 0..12 {
+        let outer_hw = Arc::new(HwSharedDrain::default());
+        {
+            let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());
+            let search_res = shard
+                .do_search(req.clone(), &current_runtime, timeout, hw_counter)
+                .await;
+
+            match search_res {
+                Err(CollectionError::Timeout { .. }) => {}
+                Ok(_) => {
+                    // Finished before timeout — tighten and retry.
+                    timeout = (timeout / 2).max(Duration::from_millis(5));
+                    continue;
+                }
+                Err(err) => panic!("unexpected search error: {err}"),
+            }
+        }
+
+        // Cancellation and draining hardware counters is asynchronous on CI runners.
+        let wait_timeout = Duration::from_secs(2);
+        let poll_interval = Duration::from_millis(10);
+        let wait_started = std::time::Instant::now();
+        while outer_hw.get_cpu() == 0 && wait_started.elapsed() <= wait_timeout {
+            tokio::time::sleep(poll_interval).await;
+        }
+
+        if outer_hw.get_cpu() > 0 {
+            cancelled_with_cpu = true;
+            break;
+        }
+
+        // Timed out before meaningful work started — give the search more time.
+        timeout = (timeout * 2).min(baseline.saturating_mul(2).max(Duration::from_millis(50)));
     }
 
-    // Cancellation and draining hardware counters is asynchronous on CI runners.
-    // Poll with a bounded timeout to avoid timing-sensitive flakes.
-    let wait_timeout = Duration::from_secs(2);
-    let poll_interval = Duration::from_millis(10);
-    let wait_started = std::time::Instant::now();
-    while outer_hw.get_cpu() == 0 {
-        assert!(
-            wait_started.elapsed() <= wait_timeout,
-            "Timeout waiting for cancellation metrics to be drained",
-        );
-        tokio::time::sleep(poll_interval).await;
-    }
-
-    assert!(outer_hw.get_cpu() > 0);
+    assert!(
+        cancelled_with_cpu,
+        "failed to observe mid-flight search cancellation with non-zero CPU metrics \
+         (baseline={baseline:?})",
+    );
 }
 
 fn make_random_points_upsert_op(len: usize, dim: usize) -> CollectionUpdateOperations {
