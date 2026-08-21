@@ -11933,6 +11933,7 @@
       "RunningEnvironmentTelemetry": {
         "type": "object",
         "required": [
+          "container_runtime",
           "cpu_flags",
           "is_docker"
         ],
@@ -11947,6 +11948,9 @@
           },
           "is_docker": {
             "type": "boolean"
+          },
+          "container_runtime": {
+            "$ref": "#/components/schemas/ContainerRuntime"
           },
           "cores": {
             "type": "integer",
@@ -11995,6 +11999,16 @@
             "nullable": true
           }
         }
+      },
+      "ContainerRuntime": {
+        "description": "Container runtime Qdrant is running under (`none` if bare metal).",
+        "type": "string",
+        "enum": [
+          "none",
+          "docker",
+          "kubernetes",
+          "other"
+        ]
       },
       "CpuEndian": {
         "type": "string",
