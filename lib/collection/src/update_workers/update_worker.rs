@@ -1,10 +1,13 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
 
 use cancel::CancellationToken;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
+use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, watch};
@@ -16,7 +19,7 @@ use crate::operations::types::{CollectionError, CollectionResult, UpdateStatus};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
 use crate::shards::update_tracker::UpdateTracker;
-use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
+use crate::update_handler::{OperationData, Optimizer, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::update_workers::internal_update_result::InternalUpdateResult;
@@ -50,10 +53,19 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized: bool,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
+        // Take thresholds from the first optimizer, like the optimization worker does.
+        // Resolved once, a config update restarts the workers.
+        let capacity_optimizer = optimizers.first().cloned();
+        let max_segment_size_bytes = capacity_optimizer
+            .as_ref()
+            .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
+
         let receiver = loop {
             let signal = tokio::select! {
                 biased; // biased to check cancellation first
@@ -120,7 +132,25 @@ impl UpdateWorkers {
 
                     let wait = sender.is_some();
                     let segments_clone = segments.clone();
+                    let capacity_optimizer_clone = capacity_optimizer.clone();
+                    let payload_index_schema_clone = payload_index_schema.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
+                        // Make sure a destination below the size cap exists before applying.
+                        // Best effort, a failure here must not fail the write itself.
+                        if let Some(optimizer) = capacity_optimizer_clone
+                            && let Err(err) = Self::ensure_appendable_segment_with_capacity(
+                                &segments_clone,
+                                optimizer.segments_path(),
+                                optimizer.segment_optimizer_config(),
+                                optimizer.threshold_config(),
+                                payload_index_schema_clone,
+                            )
+                        {
+                            log::error!(
+                                "Failed to provision appendable capacity, applying anyway: {err}"
+                            );
+                        }
+
                         Self::update_worker_internal(
                             collection_name_clone,
                             operation,
@@ -130,6 +160,7 @@ impl UpdateWorkers {
                             segments_clone,
                             update_operation_lock_clone,
                             update_tracker_clone,
+                            max_segment_size_bytes,
                             hw_measurements,
                         )
                     })
@@ -311,6 +342,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         hw_measurements: HwMeasurementAcc,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
@@ -337,6 +369,7 @@ impl UpdateWorkers {
                 operation,
                 update_operation_lock.clone(),
                 update_tracker.clone(),
+                max_segment_size_bytes,
                 &hw_measurements.get_counter_cell(),
             )
         });
@@ -354,5 +387,178 @@ impl UpdateWorkers {
         });
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use cancel::CancellationToken;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::save_on_disk::SaveOnDisk;
+    use segment::common::BYTES_IN_KB;
+    use segment::entry::entry_point::SegmentEntry as _;
+    use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use segment::types::{
+        Condition, Distance, FieldCondition, Filter, Match, MatchValue, ValueVariants,
+    };
+    use shard::fixtures::random_segment;
+    use shard::operations::OperationWithClockTag;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use shard::segment_holder::SegmentHolder;
+    use shard::wal::SerdeWal;
+    use tempfile::Builder;
+    use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock, mpsc, oneshot, watch};
+    use wal::WalOptions;
+
+    use super::*;
+    use crate::config::CollectionConfigInternal;
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+    use crate::optimizers_builder::build_optimizers;
+    use crate::tests::fixtures::create_collection_config;
+
+    /// Check that the update worker provisions a segment with capacity before applying, and
+    /// applies with the size cap. The optimization worker is not running here, so the new
+    /// segment can only come from the update worker itself.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_provisions_capacity_before_applying() {
+        let dir = Builder::new().prefix("shard").tempdir().unwrap();
+        let hw_counter = common::counter::hardware_counter::HardwareCounterCell::new();
+
+        // With 256-dim vectors a single point exceeds the 1 KB cap configured below.
+        // The non-appendable segment holds the point the filtered update matches.
+        const DIM: usize = 256;
+        let mut holder = SegmentHolder::default();
+        let full_id = holder.add_new(random_segment(dir.path(), 100, 3, DIM));
+        let mut source = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+        source
+            .upsert_point(
+                1,
+                100.into(),
+                segment::data_types::vectors::only_default_vector(&vec![1.0; DIM]),
+                &hw_counter,
+            )
+            .unwrap();
+        source
+            .set_payload(
+                1,
+                100.into(),
+                &segment::payload_json! {"city": "Berlin".to_owned()},
+                &None,
+                &hw_counter,
+            )
+            .unwrap();
+        source.appendable_flag = false;
+        holder.add_new(source);
+        let segments = LockedSegmentHolder::new(holder);
+        assert_eq!(segments.read().len(), 2);
+
+        let full_size = segments
+            .read()
+            .get(full_id)
+            .unwrap()
+            .get()
+            .read()
+            .max_available_vectors_size_in_bytes()
+            .unwrap();
+        assert!(
+            full_size > BYTES_IN_KB,
+            "Segment should exceed the 1 KB cap"
+        );
+
+        let mut config: CollectionConfigInternal = create_collection_config();
+        config.params.vectors =
+            VectorsConfig::Single(VectorParamsBuilder::new(DIM as u64, Distance::Dot).build());
+        config.optimizer_config.max_segment_size = Some(1);
+        let config = Arc::new(TokioRwLock::new(config));
+
+        let optimizers = {
+            let read = config.read().await;
+            build_optimizers(
+                dir.path(),
+                config.clone(),
+                &read.params,
+                &read.optimizer_config,
+                &read.hnsw_config,
+                &Default::default(),
+                &read.quantization_config,
+            )
+        };
+
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap());
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(dir.path(), WalOptions::default()).unwrap();
+        let wal = Arc::new(TokioMutex::new(wal));
+
+        let (update_sender, update_receiver) = mpsc::channel(8);
+        let (optimize_sender, _optimize_receiver) = mpsc::channel(8);
+        let (_finished_sender, finished_receiver) = watch::channel(());
+        let cancel = CancellationToken::new();
+
+        let worker = tokio::spawn(UpdateWorkers::update_worker_fn(
+            "test".to_string(),
+            update_receiver,
+            optimize_sender,
+            wal,
+            segments.clone(),
+            Arc::new(TokioRwLock::new(())),
+            UpdateTracker::default(),
+            false,
+            optimizers,
+            payload_index_schema,
+            finished_receiver,
+            Arc::new(AppliedSeqHandler::load_or_init(dir.path(), 0)),
+            cancel.clone(),
+        ));
+
+        let (feedback_sender, feedback_receiver) = oneshot::channel();
+        update_sender
+            .send(UpdateSignal::Operation(OperationData {
+                op_num: 10,
+                operation: Some(Box::new(CollectionUpdateOperations::PayloadOperation(
+                    PayloadOps::SetPayload(SetPayloadOp {
+                        payload: segment::payload_json! {"color": "red".to_owned()},
+                        points: None,
+                        filter: Some(Filter::new_must(Condition::Field(
+                            FieldCondition::new_match(
+                                "city".parse().unwrap(),
+                                Match::Value(MatchValue {
+                                    value: ValueVariants::String("Berlin".to_string()),
+                                }),
+                            ),
+                        ))),
+                        key: None,
+                    }),
+                ))),
+                sender: Some(feedback_sender),
+                wait_for_deferred: false,
+                hw_measurements: HwMeasurementAcc::new(),
+            }))
+            .await
+            .unwrap();
+
+        feedback_receiver.await.unwrap().unwrap();
+
+        assert_eq!(
+            segments.read().len(),
+            3,
+            "Worker should provision a new appendable segment before applying",
+        );
+        assert!(
+            !segments
+                .read()
+                .get(full_id)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
+            "Moved point should not land in the full segment",
+        );
+
+        cancel.cancel();
+        let _ = worker.await;
     }
 }
