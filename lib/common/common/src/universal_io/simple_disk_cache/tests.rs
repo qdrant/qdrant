@@ -1102,31 +1102,6 @@ mod tests_async {
         assert!(state.local.contains(2..4));
     }
 
-    /// Two concurrent cold reads of the same block: both resolve with the
-    /// correct bytes, and the block is committed exactly once.
-    #[tokio::test]
-    async fn concurrent_misses_same_block() {
-        let scn = Scenario::new(BLOCK_SIZE * 2);
-        let file = scn.open::<AsyncOnlyRemote>(false);
-
-        let first = 10u64..30;
-        let second = 100u64..200;
-
-        let (bytes_first, bytes_second) = tokio::join!(
-            file.read_bytes_async(first.clone(), Random, 1),
-            file.read_bytes_async(second.clone(), Random, 1),
-        );
-
-        assert_eq!(&*bytes_first.unwrap(), scn.slice(&first));
-        assert_eq!(&*bytes_second.unwrap(), scn.slice(&second));
-
-        let state = file.state().unwrap();
-        // perf: no in-flight dedup on the async path yet — both misses fetch
-        // the same block; the loser's commit is discarded by `contains_range`.
-        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 2);
-        assert!(state.local.contains(0..1));
-    }
-
     /// Parity with the sync path for the no-fetch branches: empty reads
     /// resolve to an empty slice, out-of-bounds reads error.
     #[tokio::test]

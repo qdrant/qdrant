@@ -46,7 +46,7 @@ where
 /// Outcome of [`pick_source`]: either the requested range is already available
 /// locally (or is empty) and needs no remote work, or a remote read must be
 /// scheduled for `blocks_byte_range` covering `blocks_range`.
-enum Source {
+pub(super) enum Source {
     Local {
         range: Range<u64>,
         is_sequential: bool,
@@ -60,7 +60,7 @@ enum Source {
 /// Decide whether `range` can be answered from local mmap or needs a remote fetch.
 ///
 /// Avoids materializing the local file for empty reads.
-fn pick_source<P>(local: &LocalState, range: Range<u64>) -> UioResult<Source>
+pub(super) fn pick_source<P>(local: &LocalState, range: Range<u64>) -> UioResult<Source>
 where
     P: AccessPattern,
 {
@@ -108,7 +108,7 @@ where
 /// `byte_range` must correspond to blocks already known to be local (typically
 /// because [`pick_source`] returned [`Source::Local`] for it, or
 /// [`commit_and_read`] just fetched them).
-unsafe fn read_local<R>(
+pub(super) unsafe fn read_local<R>(
     file: &DiskCache<R>,
     range: Range<u64>,
     is_sequential: bool,
