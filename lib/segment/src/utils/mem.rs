@@ -231,10 +231,13 @@ mod cgroups_mem {
 
         let memory_limit_bytes = raw
             .parse::<u64>()
-            .ok()
-            .filter(|&memory_limit_bytes| memory_limit_bytes < V1_UNLIMITED_THRESHOLD);
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
 
-        Ok(memory_limit_bytes)
+        if memory_limit_bytes >= V1_UNLIMITED_THRESHOLD {
+            return Ok(None);
+        }
+
+        Ok(Some(memory_limit_bytes))
     }
 
     fn read_memory_usage(path: &Path) -> io::Result<u64> {
@@ -264,7 +267,16 @@ mod cgroups_mem {
             // v1 reports LONG_MAX rounded down to the page size when unlimited
             assert_eq!(read_limit("9223372036854771712\n"), None);
             assert_eq!(read_limit("9223372036854710272\n"), None);
-            assert_eq!(read_limit("garbage\n"), None);
+        }
+
+        #[test]
+        fn malformed_memory_limit_is_invalid_data() {
+            let dir = tempfile::Builder::new().tempdir().unwrap();
+            let path = dir.path().join("memory.max");
+            fs::write(&path, "garbage").unwrap();
+
+            let err = read_memory_limit(&path).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         }
 
         #[test]
@@ -332,6 +344,11 @@ mod cgroups_mem {
             let mut mem = cgroup_mem(dir.path());
 
             fs::remove_file(&mem.limit_path).unwrap();
+            mem.refresh();
+
+            assert_eq!(mem.memory_limit_bytes(), Some(1073741824));
+
+            fs::write(&mem.limit_path, "garbage").unwrap();
             mem.refresh();
 
             assert_eq!(mem.memory_limit_bytes(), Some(1073741824));
