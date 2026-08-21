@@ -15274,6 +15274,9 @@
             "$ref": "#/components/schemas/MaxExpression"
           },
           {
+            "$ref": "#/components/schemas/MinExpression"
+          },
+          {
             "$ref": "#/components/schemas/NegExpression"
           },
           {
@@ -15396,6 +15399,21 @@
         ],
         "properties": {
           "max": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "MinExpression": {
+        "description": "Smallest of the given expressions. Requires at least one operand.",
+        "type": "object",
+        "required": [
+          "min"
+        ],
+        "properties": {
+          "min": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Expression"

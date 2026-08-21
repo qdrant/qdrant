@@ -654,6 +654,9 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::Max(rest::MaxExpression { max: exprs }) => {
                 ExpressionInternal::Max(exprs.into_iter().map(ExpressionInternal::from).collect())
             }
+            rest::Expression::Min(rest::MinExpression { min: exprs }) => {
+                ExpressionInternal::Min(exprs.into_iter().map(ExpressionInternal::from).collect())
+            }
             rest::Expression::Neg(rest::NegExpression { neg: expr }) => {
                 ExpressionInternal::Neg(Box::new(ExpressionInternal::from(*expr)))
             }
@@ -799,6 +802,13 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                     .try_collect()?;
                 ExpressionInternal::Max(max)
             }
+            Variant::Min(grpc::MinExpression { min }) => {
+                let min = min
+                    .into_iter()
+                    .map(ExpressionInternal::try_from)
+                    .try_collect()?;
+                ExpressionInternal::Min(min)
+            }
             Variant::Div(div) => {
                 let grpc::DivExpression {
                     left,
@@ -925,6 +935,25 @@ mod formula_grpc_roundtrip_tests {
         assert_roundtrips(ParsedExpression::Max(vec![
             ParsedExpression::new_score_id(0),
             constant(0.5),
+        ]));
+    }
+
+    #[test]
+    fn min_survives_grpc_roundtrip() {
+        assert_roundtrips(ParsedExpression::Min(vec![
+            ParsedExpression::new_score_id(0),
+            constant(0.5),
+        ]));
+    }
+
+    /// `max` and `min` share the same shape, so a copy-paste slip in either unparse arm would
+    /// send one operator's operands out under the other's tag. Nesting them in each other pins
+    /// the two arms apart.
+    #[test]
+    fn max_and_min_do_not_swap_in_grpc_roundtrip() {
+        assert_roundtrips(ParsedExpression::Max(vec![
+            ParsedExpression::Min(vec![constant(1.0), ParsedExpression::new_score_id(0)]),
+            ParsedExpression::Min(vec![constant(2.0), ParsedExpression::new_score_id(1)]),
         ]));
     }
 

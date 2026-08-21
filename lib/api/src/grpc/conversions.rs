@@ -70,7 +70,8 @@ use crate::grpc::qdrant::{
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
-    DivExpression, GeoDistance, MaxExpression, MultExpression, PowExpression, SumExpression,
+    DivExpression, GeoDistance, MaxExpression, MinExpression, MultExpression, PowExpression,
+    SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, ShardKeysResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -3634,6 +3635,12 @@ fn unparse_expression(
         }),
         ParsedExpression::Max(exprs) => Variant::Max(MaxExpression {
             max: exprs
+                .into_iter()
+                .map(|expr| unparse_expression(expr, conditions))
+                .collect(),
+        }),
+        ParsedExpression::Min(exprs) => Variant::Min(MinExpression {
+            min: exprs
                 .into_iter()
                 .map(|expr| unparse_expression(expr, conditions))
                 .collect(),

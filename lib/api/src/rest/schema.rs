@@ -938,6 +938,7 @@ pub enum Expression {
     Mult(MultExpression),
     Sum(SumExpression),
     Max(MaxExpression),
+    Min(MinExpression),
     Neg(NegExpression),
     Abs(AbsExpression),
     Div(DivExpression),
@@ -992,6 +993,13 @@ pub struct SumExpression {
 pub struct MaxExpression {
     #[validate(nested)]
     pub max: Vec<Expression>,
+}
+
+/// Smallest of the given expressions. Requires at least one operand.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct MinExpression {
+    #[validate(nested)]
+    pub min: Vec<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
