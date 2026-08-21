@@ -75,20 +75,31 @@ impl Mem {
 
 #[cfg(target_os = "linux")]
 mod cgroups_mem {
-    use cgroups_rs::fs::{Cgroup, hierarchies, memory};
-    use procfs::process::Process;
+    use std::io;
+    use std::path::{Path, PathBuf};
+
+    use fs_err as fs;
+    use procfs::process::{MountInfos, Process};
+
+    /// Mount point of the unified (v2) hierarchy.
+    const UNIFIED_MOUNTPOINT: &str = "/sys/fs/cgroup";
+
+    /// With no limit set, `memory.limit_in_bytes` (v1) reads back as `LONG_MAX` rounded down to the
+    /// page size. Treat anything that large as "no limit", rather than a ~9 EB total memory.
+    const V1_UNLIMITED_THRESHOLD: u64 = i64::MAX as u64 - (1 << 20);
 
     #[derive(Clone, Debug)]
     pub struct CgroupsMem {
-        mem_controller: memory::MemController,
+        limit_path: PathBuf,
+        usage_path: PathBuf,
         memory_limit_bytes: Option<u64>,
         used_memory_bytes: u64,
     }
 
     impl CgroupsMem {
         pub fn new() -> Option<Self> {
-            let memory_cgroup_path = match get_current_process_memory_cgroup_path() {
-                Ok(memory_cgroup_path) => memory_cgroup_path?,
+            let (dir, is_v2) = match memory_cgroup_dir() {
+                Ok(dir) => dir?,
                 Err(err) => {
                     log::error!(
                         "Failed to query current process info \
@@ -99,26 +110,39 @@ mod cgroups_mem {
                 }
             };
 
-            let cgroup = Cgroup::load(
-                hierarchies::auto(),
-                memory_cgroup_path.trim_start_matches('/'),
-            );
-
-            let mut mem = Self {
-                mem_controller: cgroup.controller_of::<memory::MemController>()?.clone(),
-                memory_limit_bytes: None,
-                used_memory_bytes: 0,
+            let (limit_file, usage_file) = if is_v2 {
+                ("memory.max", "memory.current")
+            } else {
+                ("memory.limit_in_bytes", "memory.usage_in_bytes")
             };
 
-            mem.refresh();
+            let limit_path = dir.join(limit_file);
 
-            Some(mem)
+            let memory_limit_bytes = match read_memory_limit(&limit_path) {
+                Ok(memory_limit_bytes) => memory_limit_bytes,
+                // The memory controller is not available in this cgroup
+                Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
+                Err(err) => {
+                    log::error!("Failed to read memory limit while initializing CgroupsMem: {err}");
+
+                    return None;
+                }
+            };
+
+            let usage_path = dir.join(usage_file);
+            let used_memory_bytes = read_memory_usage(&usage_path);
+
+            Some(Self {
+                limit_path,
+                usage_path,
+                memory_limit_bytes,
+                used_memory_bytes,
+            })
         }
 
         pub fn refresh(&mut self) {
-            let stat = self.mem_controller.memory_stat();
-            self.memory_limit_bytes = stat.limit_in_bytes.try_into().ok();
-            self.used_memory_bytes = stat.usage_in_bytes;
+            self.memory_limit_bytes = read_memory_limit(&self.limit_path).ok().flatten();
+            self.used_memory_bytes = read_memory_usage(&self.usage_path);
         }
 
         pub fn memory_limit_bytes(&self) -> Option<u64> {
@@ -130,30 +154,142 @@ mod cgroups_mem {
         }
     }
 
-    fn get_current_process_memory_cgroup_path() -> procfs::ProcResult<Option<String>> {
+    /// Directory holding the memory controller files of the current process, and whether it belongs
+    /// to the unified (v2) hierarchy.
+    fn memory_cgroup_dir() -> procfs::ProcResult<Option<(PathBuf, bool)>> {
         let process = Process::myself()?;
-        let cgroups = process.cgroups()?;
 
-        for cgroup in cgroups {
+        if is_cgroup2_unified_mode() {
             // TODO: Can a process belong to multiple v2 cgroups!?
-            let is_v2_cgroup = cgroup.controllers.is_empty()
-                || cgroup
-                    .controllers
-                    .iter()
-                    .all(|controller| controller.is_empty());
+            let dir = process
+                .cgroups()?
+                .into_iter()
+                // The v2 entry is the one with hierarchy ID 0
+                .find(|cgroup| cgroup.hierarchy == 0)
+                .map(|cgroup| join_cgroup_path(Path::new(UNIFIED_MOUNTPOINT), &cgroup.pathname));
 
-            // TODO: Can a process belong to multiple v1 cgroups, with some of these cgroups having the same controllers (e.g., memory)!?
-            let is_v1_memory_cgroup = cgroup
-                .controllers
-                .iter()
-                .any(|controller| controller == "memory");
-
-            if is_v2_cgroup || is_v1_memory_cgroup {
-                return Ok(Some(cgroup.pathname));
-            }
+            return Ok(dir.map(|dir| (dir, true)));
         }
 
-        Ok(None)
+        let Some(mount_point) = v1_memory_mount_point(process.mountinfo()?) else {
+            return Ok(None);
+        };
+
+        // TODO: Can a process belong to multiple v1 cgroups, with some of these cgroups having the same controllers (e.g., memory)!?
+        let dir = process
+            .cgroups()?
+            .into_iter()
+            .find(|cgroup| cgroup.controllers.iter().any(|c| c == "memory"))
+            .map(|cgroup| join_cgroup_path(&mount_point, &cgroup.pathname));
+
+        Ok(dir.map(|dir| (dir, false)))
+    }
+
+    fn is_cgroup2_unified_mode() -> bool {
+        Path::new(UNIFIED_MOUNTPOINT)
+            .join("cgroup.controllers")
+            .exists()
+    }
+
+    /// Where the v1 memory controller is mounted.
+    fn v1_memory_mount_point(mountinfo: MountInfos) -> Option<PathBuf> {
+        mountinfo
+            .into_iter()
+            .find(|mount| mount.fs_type == "cgroup" && mount.super_options.contains_key("memory"))
+            .map(|mount| mount.mount_point)
+    }
+
+    /// Cgroup pathnames are relative to the mount point of their hierarchy, but start with a `/`.
+    fn join_cgroup_path(mount_point: &Path, pathname: &str) -> PathBuf {
+        mount_point.join(pathname.trim_start_matches('/'))
+    }
+
+    /// `None` if no limit is set, either as v2 `max` or as the v1 `LONG_MAX` sentinel.
+    fn read_memory_limit(path: &Path) -> io::Result<Option<u64>> {
+        let raw = fs::read_to_string(path)?;
+        let raw = raw.trim();
+
+        if raw == "max" {
+            return Ok(None);
+        }
+
+        let memory_limit_bytes = raw
+            .parse::<u64>()
+            .ok()
+            .filter(|&memory_limit_bytes| memory_limit_bytes < V1_UNLIMITED_THRESHOLD);
+
+        Ok(memory_limit_bytes)
+    }
+
+    fn read_memory_usage(path: &Path) -> u64 {
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| raw.trim().parse().ok())
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn read_limit(contents: &str) -> Option<u64> {
+            let dir = tempfile::Builder::new().tempdir().unwrap();
+            let path = dir.path().join("memory.max");
+            fs::write(&path, contents).unwrap();
+            read_memory_limit(&path).unwrap()
+        }
+
+        #[test]
+        fn memory_limit_parsing() {
+            assert_eq!(read_limit("1073741824\n"), Some(1073741824));
+            // v2 reports "max" when unlimited
+            assert_eq!(read_limit("max\n"), None);
+            // v1 reports LONG_MAX rounded down to the page size when unlimited
+            assert_eq!(read_limit("9223372036854771712\n"), None);
+            assert_eq!(read_limit("9223372036854710272\n"), None);
+            assert_eq!(read_limit("garbage\n"), None);
+        }
+
+        #[test]
+        fn v1_memory_mount_point_is_picked_by_super_option() {
+            let mountinfo = MountInfos(
+                [
+                    "30 23 0:26 / /sys/fs/cgroup ro,nosuid,nodev,noexec - tmpfs tmpfs ro,mode=755",
+                    "32 30 0:28 / /sys/fs/cgroup/cpu,cpuacct rw,relatime - cgroup cgroup rw,cpu,cpuacct",
+                    "33 30 0:29 / /sys/fs/cgroup/memory rw,relatime - cgroup cgroup rw,memory",
+                ]
+                .into_iter()
+                .map(|line| procfs::process::MountInfo::from_line(line).unwrap())
+                .collect(),
+            );
+
+            assert_eq!(
+                v1_memory_mount_point(mountinfo),
+                Some(PathBuf::from("/sys/fs/cgroup/memory")),
+            );
+        }
+
+        #[test]
+        fn cgroup_paths_are_joined_onto_the_mount_point() {
+            let mount_point = Path::new("/sys/fs/cgroup");
+
+            // A container with its own cgroup namespace sees the root
+            assert_eq!(
+                join_cgroup_path(mount_point, "/"),
+                Path::new("/sys/fs/cgroup"),
+            );
+            assert_eq!(
+                join_cgroup_path(mount_point, "/user.slice/session-2.scope"),
+                Path::new("/sys/fs/cgroup/user.slice/session-2.scope"),
+            );
+        }
+
+        #[test]
+        fn missing_memory_limit_file_is_not_found() {
+            let dir = tempfile::Builder::new().tempdir().unwrap();
+            let err = read_memory_limit(&dir.path().join("memory.max")).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        }
     }
 }
 
