@@ -2846,6 +2846,93 @@ fn formula_empty_max_is_rejected() {
     );
 }
 
+/// `min` against a dominated constant pins every score to that constant, the mirror of the `max`
+/// floor test. A negative ceiling also distinguishes `min` from `sum`, which would instead
+/// subtract from each score.
+#[test]
+fn formula_min_clamps_scores_to_a_ceiling() {
+    use qdrant_edge_ffi::{Expression, Prefetch, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.1, 0.1, 0.1]),
+            payload: None,
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.09, 0.09, 0.09, 0.09]),
+            payload: None,
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    const CEILING: f32 = -42.0;
+
+    let expression = Expression::min(vec![
+        Expression::variable("$score".to_string()),
+        Expression::constant(CEILING).expect("constant build failed"),
+    ])
+    .expect("expression build failed");
+
+    let hits = shard
+        .query(QueryRequest {
+            limit: 2,
+            offset: None,
+            query: Some(ScoringQuery::Formula {
+                expression,
+                defaults: HashMap::new(),
+            }),
+            prefetches: vec![Prefetch {
+                limit: 10,
+                query: Some(ScoringQuery::Vector {
+                    query: Query::Nearest {
+                        vector: NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                        using: Some("vec".to_string()),
+                    },
+                }),
+                prefetches: vec![],
+                filter: None,
+                score_threshold: None,
+                params: None,
+            }],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("formula query failed");
+
+    assert_eq!(hits.len(), 2, "both points should be re-scored");
+    for hit in &hits {
+        assert_eq!(
+            hit.score, CEILING,
+            "every score is above the ceiling, so min must return the ceiling itself"
+        );
+    }
+}
+
+/// An empty `min` is rejected for the same reason as an empty `max`: no identity element, so it
+/// would otherwise score every point with +infinity.
+#[test]
+fn formula_empty_min_is_rejected() {
+    use qdrant_edge_ffi::Expression;
+
+    let err = Expression::min(vec![]).expect_err("empty min must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
 /// Grouped query: one group per category, best hit each.
 #[test]
 fn query_groups_returns_one_group_per_key() {

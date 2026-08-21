@@ -46,6 +46,10 @@ pub enum PyExpressionInterface {
         exprs: Vec<PyExpression>,
     },
 
+    Min {
+        exprs: Vec<PyExpression>,
+    },
+
     Neg {
         expr: Boxed<PyExpression>,
     },
@@ -113,6 +117,7 @@ impl Repr for PyExpressionInterface {
             PyExpressionInterface::Mult { exprs } => ("Mult", &[("exprs", exprs)]),
             PyExpressionInterface::Sum { exprs } => ("Sum", &[("exprs", exprs)]),
             PyExpressionInterface::Max { exprs } => ("Max", &[("exprs", exprs)]),
+            PyExpressionInterface::Min { exprs } => ("Min", &[("exprs", exprs)]),
             PyExpressionInterface::Neg { expr } => ("Neg", &[("expr", expr)]),
 
             PyExpressionInterface::Div {

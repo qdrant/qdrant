@@ -221,6 +221,18 @@ impl Expression {
         })
     }
 
+    /// Smallest of `operands`. Requires at least one operand, for the same reason as
+    /// [`Expression::max`]: there is no identity element, so an empty list would otherwise
+    /// score every point with +infinity at query time.
+    #[uniffi::constructor]
+    pub fn min(operands: Vec<Arc<Expression>>) -> Result<Arc<Self>> {
+        require_non_empty("min", &operands)?;
+        let children: Vec<&Arc<Expression>> = operands.iter().collect();
+        Self::node(&children, || {
+            ExpressionInternal::Min(operands.iter().map(|e| e.inner.clone()).collect())
+        })
+    }
+
     /// Negation: `-expression`.
     #[uniffi::constructor]
     pub fn negate(expression: Arc<Expression>) -> Result<Arc<Self>> {
@@ -357,9 +369,9 @@ impl Expression {
 // ── Coverage map ────────────────────────────────────────────────────────────
 
 /// Compile-time map of the engine's formula-expression tree onto the
-/// Rejects a variadic operator given no operands. `max` has no identity element to fall back on,
-/// so an empty list would otherwise score every point with -infinity at query time; failing at
-/// build time points at the mistake instead.
+/// Rejects a variadic operator given no operands. `max` and `min` have no identity element to
+/// fall back on, so an empty list would otherwise score every point with -infinity or +infinity
+/// at query time; failing at build time points at the mistake instead.
 fn require_non_empty(operator: &str, operands: &[Arc<Expression>]) -> Result<()> {
     if operands.is_empty() {
         return Err(EdgeError::invalid_argument(format!(
@@ -397,6 +409,8 @@ fn assert_every_expression_is_mapped(e: ExpressionInternal) {
         ExpressionInternal::Sum(_) => {}
         // [`Expression::max`]
         ExpressionInternal::Max(_) => {}
+        // [`Expression::min`]
+        ExpressionInternal::Min(_) => {}
         // [`Expression::negate`]
         ExpressionInternal::Neg(_) => {}
         // [`Expression::div`]

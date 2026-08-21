@@ -351,6 +351,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("MultExpression.mult", ""),
             ("SumExpression.sum", ""),
             ("MaxExpression.max", ""),
+            ("MinExpression.min", ""),
             ("DivExpression.left", ""),
             ("DivExpression.right", ""),
             ("PowExpression.base", ""),
