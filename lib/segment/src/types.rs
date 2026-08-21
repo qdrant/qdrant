@@ -2019,10 +2019,6 @@ pub enum VectorStorageType {
     /// Storage in a single mmap file, not appendable
     /// Pre-fetched into RAM on load
     InRamMmap,
-    /// Placeholder storage: contains no data, all vectors reported as deleted.
-    /// Used for newly created named vectors on immutable segments.
-    /// No files on disk, reconstructed from config on load.
-    Empty,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -2124,9 +2120,6 @@ impl VectorStorageType {
             Self::Memory => Memory::Pinned,
             Self::Mmap | Self::ChunkedMmap => Memory::Cold,
             Self::InRamChunkedMmap | Self::InRamMmap => Memory::Cached,
-            // Empty storage has no data; report the safe placement, consistent with
-            // `is_on_disk`
-            Self::Empty => Memory::Cold,
         }
     }
 
@@ -2135,17 +2128,7 @@ impl VectorStorageType {
         match self {
             Self::Memory | Self::InRamChunkedMmap | Self::InRamMmap => false,
             Self::Mmap | Self::ChunkedMmap => true,
-            // Empty storage has no actual data; report based on what the
-            // runtime EmptyDenseVectorStorage was configured with.
-            // This fallback returns true to be safe, but callers that need
-            // the real on-disk status should check the storage instance.
-            Self::Empty => true,
         }
-    }
-
-    /// Whether this is a placeholder empty storage type
-    pub fn is_empty(&self) -> bool {
-        matches!(self, Self::Empty)
     }
 }
 
@@ -2186,7 +2169,6 @@ impl VectorDataConfig {
             VectorStorageType::ChunkedMmap => true,
             VectorStorageType::InRamChunkedMmap => true,
             VectorStorageType::InRamMmap => false,
-            VectorStorageType::Empty => false,
         };
         is_index_appendable && is_storage_appendable
     }
@@ -2253,18 +2235,15 @@ pub enum SparseVectorStorageType {
     /// Storage in memory maps (gridstore storage)
     #[default]
     Mmap,
-    /// Placeholder storage: contains no data, all vectors reported as deleted.
-    /// Used for newly created sparse named vectors on immutable segments.
-    Empty,
 }
 
 impl SparseVectorStorageType {
     /// Whether this storage type is a mmap on disk
     pub fn is_on_disk(&self) -> bool {
         match self {
-            // Both options are on disk, but we keep it explicit for the case if someone adds a new
-            // storage type in the future
-            Self::Mmap | Self::Empty => true,
+            // On disk; kept explicit for the case if someone adds a new storage
+            // type in the future.
+            Self::Mmap => true,
         }
     }
 }

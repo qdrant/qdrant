@@ -12701,13 +12701,6 @@
             "enum": [
               "InRamMmap"
             ]
-          },
-          {
-            "description": "Placeholder storage: contains no data, all vectors reported as deleted. Used for newly created named vectors on immutable segments. No files on disk, reconstructed from config on load.",
-            "type": "string",
-            "enum": [
-              "Empty"
-            ]
           }
         ]
       },
@@ -12864,13 +12857,6 @@
             "type": "string",
             "enum": [
               "mmap"
-            ]
-          },
-          {
-            "description": "Placeholder storage: contains no data, all vectors reported as deleted. Used for newly created sparse named vectors on immutable segments.",
-            "type": "string",
-            "enum": [
-              "empty"
             ]
           }
         ]
