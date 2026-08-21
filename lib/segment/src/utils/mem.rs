@@ -149,10 +149,13 @@ mod cgroups_mem {
             })
         }
 
+        /// Failed reads keep the last known value: dropping the limit would silently fall back to
+        /// host memory, and zeroing the usage would report the whole limit as free.
         pub fn refresh(&mut self) {
-            self.memory_limit_bytes = read_memory_limit(&self.limit_path).ok().flatten();
+            if let Ok(memory_limit_bytes) = read_memory_limit(&self.limit_path) {
+                self.memory_limit_bytes = memory_limit_bytes;
+            }
 
-            // Keep the last known usage rather than reporting the whole limit as free
             if let Ok(used_memory_bytes) = read_memory_usage(&self.usage_path) {
                 self.used_memory_bytes = used_memory_bytes;
             }
@@ -298,25 +301,46 @@ mod cgroups_mem {
             );
         }
 
-        #[test]
-        fn unreadable_memory_usage_keeps_the_last_known_value() {
-            let dir = tempfile::Builder::new().tempdir().unwrap();
-            let limit_path = dir.path().join("memory.max");
-            let usage_path = dir.path().join("memory.current");
+        fn cgroup_mem(dir: &Path) -> CgroupsMem {
+            let limit_path = dir.join("memory.max");
+            let usage_path = dir.join("memory.current");
             fs::write(&limit_path, "1073741824").unwrap();
             fs::write(&usage_path, "1024").unwrap();
 
-            let mut mem = CgroupsMem {
+            CgroupsMem {
                 limit_path,
-                usage_path: usage_path.clone(),
+                usage_path,
                 memory_limit_bytes: Some(1073741824),
                 used_memory_bytes: 1024,
-            };
+            }
+        }
 
-            fs::write(&usage_path, "garbage").unwrap();
+        #[test]
+        fn unreadable_memory_usage_keeps_the_last_known_value() {
+            let dir = tempfile::Builder::new().tempdir().unwrap();
+            let mut mem = cgroup_mem(dir.path());
+
+            fs::write(&mem.usage_path, "garbage").unwrap();
             mem.refresh();
 
             assert_eq!(mem.used_memory_bytes(), 1024);
+        }
+
+        #[test]
+        fn unreadable_memory_limit_keeps_the_last_known_value() {
+            let dir = tempfile::Builder::new().tempdir().unwrap();
+            let mut mem = cgroup_mem(dir.path());
+
+            fs::remove_file(&mem.limit_path).unwrap();
+            mem.refresh();
+
+            assert_eq!(mem.memory_limit_bytes(), Some(1073741824));
+
+            // A limit lifted at runtime still clears
+            fs::write(&mem.limit_path, "max").unwrap();
+            mem.refresh();
+
+            assert_eq!(mem.memory_limit_bytes(), None);
         }
 
         #[test]
