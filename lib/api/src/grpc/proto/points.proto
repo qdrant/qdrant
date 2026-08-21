@@ -980,6 +980,8 @@ message Expression {
     Expression acosh = 20;
     // Maximum
     MaxExpression max = 21;
+    // Minimum
+    MinExpression min = 22;
   }
 }
 
@@ -998,6 +1000,10 @@ message SumExpression {
 
 message MaxExpression {
   repeated Expression max = 1;
+}
+
+message MinExpression {
+  repeated Expression min = 1;
 }
 
 message DivExpression {

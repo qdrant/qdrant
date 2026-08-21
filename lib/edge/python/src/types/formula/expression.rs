@@ -49,6 +49,10 @@ impl FromPyObject<'_, '_> for PyExpression {
                 ExpressionInternal::Max(PyExpression::peel_vec(exprs))
             }
 
+            PyExpressionInterface::Min { exprs } => {
+                ExpressionInternal::Min(PyExpression::peel_vec(exprs))
+            }
+
             PyExpressionInterface::Neg { expr } => ExpressionInternal::Neg(expr.into_box()),
 
             PyExpressionInterface::Div {
@@ -129,6 +133,10 @@ impl<'py> IntoPyObject<'py> for PyExpression {
             },
 
             ExpressionInternal::Max(exprs) => PyExpressionInterface::Max {
+                exprs: PyExpression::wrap_vec(exprs),
+            },
+
+            ExpressionInternal::Min(exprs) => PyExpressionInterface::Min {
                 exprs: PyExpression::wrap_vec(exprs),
             },
 
@@ -228,6 +236,10 @@ impl Repr for PyExpression {
 
             ExpressionInternal::Max(exprs) => {
                 ("Max", &[("exprs", &PyExpression::wrap_slice(exprs))])
+            }
+
+            ExpressionInternal::Min(exprs) => {
+                ("Min", &[("exprs", &PyExpression::wrap_slice(exprs))])
             }
 
             ExpressionInternal::Neg(expr) => ("Neg", &[("expr", PyExpression::wrap_ref(expr))]),

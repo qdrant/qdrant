@@ -474,7 +474,8 @@ impl<'a> Extractor<'a> {
                 }
                 return;
             }
-            ExpressionInternal::Max(expression_internals) => {
+            ExpressionInternal::Max(expression_internals)
+            | ExpressionInternal::Min(expression_internals) => {
                 for expr in expression_internals {
                     self.update_from_expression(expr);
                 }
@@ -696,6 +697,22 @@ mod tests {
             infer_index_from_field_condition(&condition),
             vec![FieldIndexType::KeywordPrefix],
         );
+    }
+
+    /// The walker shares one arm for `max` and `min`, so this pins down that `min` recurses too
+    /// rather than relying on the shared arm staying shared.
+    #[test]
+    fn min_operands_report_unindexed_payload_fields() {
+        let payload_schema = HashMap::new();
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_expression(&ExpressionInternal::Min(vec![
+            ExpressionInternal::Variable("$score".to_string()),
+            ExpressionInternal::Variable("popularity".to_string()),
+        ]));
+
+        let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
+        assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
     }
 
     /// Payload fields referenced inside `max` still need an index, so the walker must recurse
