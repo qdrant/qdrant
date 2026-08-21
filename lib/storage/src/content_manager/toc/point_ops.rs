@@ -19,8 +19,7 @@ use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard_trait::WaitUntil;
 use collection::{discovery, recommendations};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::TryStreamExt as _;
-use futures::stream::FuturesUnordered;
+use futures::stream::{FuturesUnordered, StreamExt as _};
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::{ScoredPoint, ShardKey};
 use shard::retrieve::record_internal::RecordInternal;
@@ -511,13 +510,11 @@ impl TableOfContent {
             })
             .collect();
 
-        // `Collection::update_from_client` is cancel safe, so it's safe to use `TryStreamExt::try_collect`
-        let results: Vec<_> = updates.try_collect().await?;
+        // `Collection::update_from_client` is cancel safe, so it's safe to use
+        // `StreamExt::collect` to gather every per-shard result, including per-shard errors.
+        let results: Vec<CollectionResult<UpdateResult>> = updates.collect().await;
 
-        results
-            .into_iter()
-            .next()
-            .ok_or_else(|| StorageError::bad_input("Empty shard keys selection"))
+        aggregate_multi_shard_update_results(results)
     }
 
     /// # Cancel safety
@@ -763,5 +760,159 @@ impl TableOfContent {
         }
 
         Ok(())
+    }
+}
+
+/// Aggregate per-shard-key results from a fan-out dispatch in
+/// [`TableOfContent::_update_shard_keys`].
+///
+/// The dispatcher clones the same full operation into every targeted shard key,
+/// so when the operation references specific point ids, each replica set
+/// legitimately reports `PointNotFound` for the points that live in *other*
+/// shard keys. Naively propagating the first error makes the whole request
+/// fail for requests that should obviously succeed.
+///
+/// The aggregation rule is intentionally conservative: we only swallow
+/// `PointNotFound` when at least one shard key applied the operation
+/// successfully. If *every* shard key reports `PointNotFound`, the points
+/// truly do not exist anywhere in the collection, and we surface a
+/// `StorageError::NotFound` that mirrors the single-shard behavior.
+fn aggregate_multi_shard_update_results(
+    results: Vec<CollectionResult<UpdateResult>>,
+) -> StorageResult<UpdateResult> {
+    if results.is_empty() {
+        return Err(StorageError::bad_input("Empty shard keys selection"));
+    }
+
+    let mut first_success: Option<UpdateResult> = None;
+    let mut first_non_point_not_found_error: Option<CollectionError> = None;
+    let mut all_point_not_found = true;
+
+    for result in results {
+        match result {
+            Ok(update_result) => {
+                first_success.get_or_insert(update_result);
+                all_point_not_found = false;
+            }
+            Err(CollectionError::PointNotFound { .. }) => {
+                // Per-shard "this point isn't in my shard"; expected when the
+                // caller targeted multiple shard keys.
+            }
+            Err(err) => {
+                first_non_point_not_found_error.get_or_insert(err);
+                all_point_not_found = false;
+            }
+        }
+    }
+
+    if let Some(update_result) = first_success {
+        return Ok(update_result);
+    }
+
+    if all_point_not_found {
+        // No shard owned any of the points — surface a representative
+        // `PointNotFound` so the caller sees the same error as a single-shard
+        // call would have produced.
+        return Err(StorageError::NotFound {
+            description: "No points with given ids found in any of the targeted shard keys"
+                .to_string(),
+        });
+    }
+
+    if let Some(err) = first_non_point_not_found_error {
+        return Err(err.into());
+    }
+
+    // `first_success` is `None` and every error was `PointNotFound`, which the
+    // branch above already handled. Reaching here means a non-`PointNotFound`
+    // error was observed; the `if let Some(err) = ...` arm above would have
+    // returned. We keep a defensive fallback so a future refactor cannot
+    // accidentally return `Ok`.
+    Err(StorageError::service_error(
+        "Inconsistent state in `_update_shard_keys` result aggregation",
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ok() -> CollectionResult<UpdateResult> {
+        Ok(UpdateResult {
+            operation_id: None,
+            clock_tag: None,
+            status: UpdateStatus::Completed,
+        })
+    }
+
+    fn point_not_found() -> CollectionResult<UpdateResult> {
+        Err(CollectionError::PointNotFound {
+            missed_point_id: 9.into(),
+        })
+    }
+
+    fn service_error() -> CollectionResult<UpdateResult> {
+        Err(CollectionError::ServiceError {
+            error: "disk full".to_string(),
+            backtrace: None,
+        })
+    }
+
+    #[test]
+    fn aggregator_returns_empty_input_as_bad_input() {
+        let err = aggregate_multi_shard_update_results(vec![]).unwrap_err();
+        assert!(matches!(err, StorageError::BadInput { .. }));
+    }
+
+    /// The exact reproducer for <https://github.com/qdrant/qdrant/issues/10064>:
+    /// two shard keys, one reports success, the other reports `PointNotFound`
+    /// for the foreign point. The aggregation must surface success.
+    #[test]
+    fn aggregator_swallows_cross_shard_point_not_found() {
+        let result = aggregate_multi_shard_update_results(vec![ok(), point_not_found()]).unwrap();
+        // The successful shard's `UpdateResult` is the one returned to the caller.
+        assert!(matches!(result.status, UpdateStatus::Completed));
+    }
+
+    #[test]
+    fn aggregator_swallows_point_not_found_when_all_other_shards_succeed() {
+        let result =
+            aggregate_multi_shard_update_results(vec![ok(), point_not_found(), point_not_found()])
+                .unwrap();
+        assert!(matches!(result.status, UpdateStatus::Completed));
+    }
+
+    /// Negative case: if every targeted shard key reports `PointNotFound`, the
+    /// points really do not exist anywhere — we must not silently mask that
+    /// error.
+    #[test]
+    fn aggregator_surfaces_not_found_when_every_shard_reports_point_not_found() {
+        let err = aggregate_multi_shard_update_results(vec![point_not_found(), point_not_found()])
+            .unwrap_err();
+        assert!(
+            matches!(err, StorageError::NotFound { .. }),
+            "expected StorageError::NotFound, got {err:?}",
+        );
+    }
+
+    /// A non-`PointNotFound` error must propagate even if other shards
+    /// succeeded — it indicates a real problem the caller needs to react to.
+    /// Ordering matters here: we only observe the service error if *no*
+    /// shard succeeded.
+    #[test]
+    fn aggregator_surfaces_service_error_when_no_shard_succeeded() {
+        let err = aggregate_multi_shard_update_results(vec![service_error(), point_not_found()])
+            .unwrap_err();
+        assert!(matches!(err, StorageError::ServiceError { .. }));
+    }
+
+    /// Mixed: one shard reports `PointNotFound`, another reports a
+    /// non-`PointNotFound` error. The non-missing error wins, because it
+    /// indicates a real problem that the caller needs to react to.
+    #[test]
+    fn aggregator_prefers_non_point_not_found_error_over_point_not_found() {
+        let err = aggregate_multi_shard_update_results(vec![point_not_found(), service_error()])
+            .unwrap_err();
+        assert!(matches!(err, StorageError::ServiceError { .. }));
     }
 }
