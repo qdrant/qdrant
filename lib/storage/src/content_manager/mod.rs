@@ -11,6 +11,7 @@ pub mod collection_verification;
 mod collections_ops;
 pub mod consensus;
 pub mod consensus_manager;
+pub mod consensus_state_machine;
 pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;

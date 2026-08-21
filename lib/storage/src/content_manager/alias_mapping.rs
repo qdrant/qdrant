@@ -23,6 +23,21 @@ impl AliasMapping {
     pub fn save(&self, path: &Path) -> Result<(), StorageError> {
         Ok(atomic_save_json(path, self)?)
     }
+
+    /// Iterate over aliases and collections they point at.
+    pub fn iter(&self) -> impl Iterator<Item = (&Alias, &CollectionId)> {
+        self.0.iter()
+    }
+
+    /// Returns collection `alias` points at, or `None` if it does not exist.
+    pub fn get(&self, alias: &str) -> Option<&CollectionId> {
+        self.0.get(alias)
+    }
+
+    /// Point `alias` at `collection_name`, replacing collection it pointed at before.
+    pub fn insert(&mut self, alias: Alias, collection_name: CollectionId) {
+        self.0.insert(alias, collection_name);
+    }
 }
 
 /// Persists mapping between alias and collection name. The data is assumed to be relatively small.
