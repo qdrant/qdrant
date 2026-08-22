@@ -52,6 +52,33 @@ where
                 resolved_offsets.push(offset);
             },
         )?;
+        self.retrieve_resolved(
+            resolved_ids,
+            resolved_offsets,
+            with_payload,
+            with_vector,
+            hw_counter,
+            is_stopped,
+        )
+    }
+
+    /// Like [`Self::retrieve`], but for callers that already hold the internal
+    /// offsets alongside the external ids (e.g. search post-processing, where
+    /// offsets come straight from the vector index). Skips the per-point
+    /// external→internal resolution entirely.
+    ///
+    /// `resolved_ids` and `resolved_offsets` must be parallel arrays;
+    /// deferred filtering, if required, must already be applied by the caller.
+    fn retrieve_resolved(
+        &self,
+        resolved_ids: Vec<PointIdType>,
+        resolved_offsets: Vec<PointOffsetType>,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
 
         // One blank record per resolved point; `vectors` is `Some` only when
         // vectors were requested, so the `WithVector::Bool(false)` path needs
@@ -261,9 +288,16 @@ where
             },
         )?;
 
+        // The deferred cutoff is applied directly by offset: the offsets are
+        // already known here, so there is no need to resolve the external ids
+        // back into offsets (`retrieve`'s first stage) just to filter them.
+        let deferred_cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
             .filter_map(|scored_point_offset| {
+                if deferred_cutoff.is_some_and(|cutoff| scored_point_offset.idx >= cutoff) {
+                    return None;
+                }
                 let point_id = external_ids.get(&scored_point_offset.idx).copied();
                 // This can happen if a point was modified between retrieving and post-processing,
                 // but this function locks the segment so it can't be modified during execution.
@@ -276,13 +310,17 @@ where
             })
             .unzip();
 
-        let mut segment_records = self.retrieve(
-            &point_ids,
+        // The offsets ride along from the index — hand them to
+        // `retrieve_resolved`, so no per-point external→internal lookup
+        // happens on the search path.
+        let point_offsets: Vec<_> = scored_offsets.iter().map(|scored| scored.idx).collect();
+        let mut segment_records = self.retrieve_resolved(
+            point_ids.clone(),
+            point_offsets,
             with_payload,
             with_vector,
             hw_counter,
             is_stopped,
-            DeferredBehavior::VisibleOnly,
         )?;
 
         let mut versions = AHashMap::with_capacity(scored_offsets.len());
