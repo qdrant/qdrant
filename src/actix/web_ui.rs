@@ -65,13 +65,11 @@ mod tests {
         let mut settings = Settings::new(None).unwrap();
         settings.service.static_content_dir = Some(static_dir.clone());
 
-        let maybe_static_folder = web_ui_folder(&settings);
-        if maybe_static_folder.is_none() {
+        let Some(static_folder) = web_ui_folder(&settings) else {
             println!("Skipping test because the static folder was not found.");
             return;
-        }
+        };
 
-        let static_folder = maybe_static_folder.unwrap();
         let srv = test::init_service(App::new().service(web_ui_factory(&static_folder))).await;
 
         // Index path (no trailing slash)
