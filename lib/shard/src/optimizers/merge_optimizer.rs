@@ -126,6 +126,75 @@ impl SegmentOptimizer for MergeOptimizer {
             .max_segment_size_kb
             .saturating_mul(BYTES_IN_KB);
 
+        // Segments below the HNSW full-scan boundary are effectively scanned in
+        // full by every search request, so they must not be left behind
+        // permanently. When the segment-count target is already reached (the
+        // loop below would plan nothing), merge all non-empty sub-threshold
+        // tails together with the smallest regular segment: merging only
+        // reduces the segment count, so the target is not violated, and the
+        // resulting segment ends up above the boundary, so this converges.
+        if planner.expected_segments_number() <= self.default_segments_number {
+            // `size` above is the LARGEST vector field of a segment
+            // (`max_available_vectors_size_in_bytes`), so pair it with the
+            // SMALLEST per-field threshold: a segment qualifies as a tail only
+            // when even its biggest field stays under the lowest boundary.
+            // That is the conservative half of the comparison — it may leave
+            // some multi-vector tails unmerged, but never merges a segment
+            // that no index would full-scan.
+            let full_scan_bytes = self
+                .segment_optimizer_config
+                .dense_vector
+                .values()
+                .map(|cfg| cfg.hnsw_config.full_scan_threshold)
+                .min()
+                .unwrap_or(0)
+                .saturating_mul(BYTES_IN_KB);
+            // Only frozen (non-appendable) segments qualify as tails: appendable
+            // segments are still receiving writes and will grow past the
+            // boundary or be optimized on their own.
+            // Sizes ride along with the ids: the running sum is needed right
+            // below, and recovering it from `candidates` afterwards would mean
+            // looking up every id again.
+            let tails = candidates
+                .iter()
+                .filter(|&&(segment_id, size)| {
+                    size > 0
+                        && size < full_scan_bytes
+                        && planner
+                            .remaining()
+                            .get(&segment_id)
+                            .is_some_and(|segment| !segment.read().is_appendable())
+                })
+                .scan(0, |size_sum, &(segment_id, size)| {
+                    *size_sum += size;
+                    (*size_sum < threshold).then_some((segment_id, size))
+                })
+                .collect_vec();
+            if !tails.is_empty() {
+                let tails_size: usize = tails.iter().map(|&(_, size)| size).sum();
+                let mut batch = tails
+                    .iter()
+                    .map(|&(segment_id, _)| segment_id)
+                    .collect_vec();
+                // Merge the tails into the smallest regular segment when one
+                // fits, so the result lands above the full-scan boundary.
+                if let Some(&(segment_id, _)) = candidates.iter().find(|&&(segment_id, size)| {
+                    size >= full_scan_bytes
+                        && tails_size.saturating_add(size) < threshold
+                        && planner
+                            .remaining()
+                            .get(&segment_id)
+                            .is_some_and(|segment| !segment.read().is_appendable())
+                }) {
+                    batch.push(segment_id);
+                }
+                if batch.len() >= 2 {
+                    planner.plan(batch);
+                }
+            }
+            return;
+        }
+
         let mut first_batch = None;
         let mut taken_candidates = 0;
         let mut last_candidate =
