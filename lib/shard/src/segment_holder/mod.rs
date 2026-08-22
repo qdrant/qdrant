@@ -1344,12 +1344,12 @@ impl SegmentHolder {
     pub fn remove_segment_if_not_needed(&mut self, segment_id: SegmentId) -> OperationResult<bool> {
         let tmp_segment = {
             let mut segments = self.remove(&[segment_id]);
-            if segments.is_empty() {
+            let Some(segment) = segments.pop() else {
                 // Seems like segment is already removed, ignore
                 return Ok(false);
-            }
-            assert_eq!(segments.len(), 1, "expected exactly one segment");
-            segments.pop().unwrap()
+            };
+            assert!(segments.is_empty(), "expected exactly one segment");
+            segment
         };
 
         // Append a temp segment to collection if it is not empty or there is no other appendable segment

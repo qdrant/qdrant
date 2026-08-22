@@ -208,12 +208,9 @@ impl From<GeoPoint> for Coord<f64> {
 }
 
 pub fn common_hash_prefix(geo_hashes: &[GeoHash]) -> Option<GeoHash> {
-    if geo_hashes.is_empty() {
-        return None;
-    }
-    let first = &geo_hashes[0];
+    let (first, rest) = geo_hashes.split_first()?;
     let mut prefix: usize = first.len();
-    for geo_hash in geo_hashes.iter().skip(1) {
+    for geo_hash in rest {
         for i in 0..prefix {
             if first[i] != geo_hash[i] {
                 prefix = i;
