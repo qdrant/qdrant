@@ -118,15 +118,12 @@ impl ValueChecker for FieldCondition {
             is_null,
         } = self;
 
-        if values_count.is_some() {
-            self.values_count
-                .as_ref()
-                .unwrap()
-                .check_count_from(payload)
-        } else if is_empty.is_some() {
-            check_is_empty(is_empty.unwrap(), payload)
-        } else if is_null.is_some() {
-            check_is_null(is_null.unwrap(), payload)
+        if let Some(values_count) = values_count {
+            values_count.check_count_from(payload)
+        } else if let Some(is_empty) = is_empty {
+            check_is_empty(*is_empty, payload)
+        } else if let Some(is_null) = is_null {
+            check_is_null(*is_null, payload)
         } else {
             self._check(payload)
         }

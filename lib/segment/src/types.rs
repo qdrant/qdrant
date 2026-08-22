@@ -3759,11 +3759,11 @@ impl FieldCondition {
     }
 
     fn input_size(&self) -> usize {
-        if self.r#match.is_none() {
+        let Some(r#match) = &self.r#match else {
             return 0;
-        }
+        };
 
-        match self.r#match.as_ref().unwrap() {
+        match r#match {
             Match::Any(match_any) => match_any.any.len(),
             Match::Except(match_except) => match_except.except.len(),
             Match::Value(_) => 0,

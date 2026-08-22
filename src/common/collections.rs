@@ -258,10 +258,9 @@ pub async fn do_update_collection_cluster(
         "update_collection_cluster",
     )?;
 
-    if dispatcher.consensus_state().is_none() {
+    let Some(consensus_state) = dispatcher.consensus_state() else {
         return Err(StorageError::standalone_mode());
-    }
-    let consensus_state = dispatcher.consensus_state().unwrap();
+    };
 
     let get_all_peer_ids = || {
         consensus_state
