@@ -25,15 +25,14 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`NumericIndexInner`]: super::NumericIndexInner
 pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
     /// Hardware counter is used only by the mmap-backed variant; in-memory
-    /// variants ignore it. Returns `false` if the mmap read fails (matches
-    /// the legacy enum dispatcher behavior — see the FIXME on
-    /// [`super::NumericIndexInner::check_values_any`]).
+    /// variants ignore it. Read errors from the mmap-backed variant are
+    /// propagated so callers do not silently lose matching points.
     fn check_values_any(
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
-    ) -> bool;
+    ) -> OperationResult<bool>;
 
     /// Batched counterpart of [`Self::check_values_any`].
     fn for_each_matching_value<I, F, M, U>(
@@ -50,7 +49,7 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         M: FnMut(U, bool),
     {
         for (tag, idx) in items {
-            on_match(tag, self.check_values_any(idx, &check_fn, hw_counter));
+            on_match(tag, self.check_values_any(idx, &check_fn, hw_counter)?);
         }
         Ok(())
     }

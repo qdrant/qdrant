@@ -30,9 +30,7 @@ where
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
-    ) -> bool {
-        // FIXME: don't silently ignore mmap-read errors; promote the trait
-        // method's return type to `OperationResult<bool>` and propagate.
+    ) -> OperationResult<bool> {
         match self {
             NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn, hw_counter),
             NumericIndexInner::Immutable(index) => {

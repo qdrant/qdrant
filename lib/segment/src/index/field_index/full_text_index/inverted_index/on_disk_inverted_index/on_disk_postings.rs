@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{
-    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UioResult, UniversalRead,
-    UniversalReadFs,
+    OkNotFound, OpenOptions, ReadRange, UioResult, UniversalIoError, UniversalRead, UniversalReadFs,
 };
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
