@@ -38,11 +38,24 @@ where
     };
 
     // TODO(scoreboost): optimize by reusing the same payload for all variables?
-    Ok(indexed.unwrap_or_else(|| {
-        // if the variable is not found in the index, try to find it in the payload
-        let key = json_path.clone();
-        payload_variable_retriever(payload_provider, key, hw_counter)
-    }))
+    let key = json_path.clone();
+    if let Some(indexed_retriever) = indexed {
+        let payload_retriever =
+            payload_variable_retriever(payload_provider, key, hw_counter);
+        // An index can cover only one payload type. Fall back to the payload when the
+        // indexed value is absent so a narrower index does not hide valid values of
+        // another numeric type.
+        Ok(Box::new(move |point_id| {
+            let indexed_values = indexed_retriever(point_id);
+            if indexed_values.is_empty() {
+                payload_retriever(point_id)
+            } else {
+                indexed_values
+            }
+        }))
+    } else {
+        Ok(payload_variable_retriever(payload_provider, key, hw_counter))
+    }
 }
 
 fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
@@ -203,10 +216,7 @@ mod tests {
 
     #[test]
     fn test_variable_retriever_from_index() {
-        // Empty payload provider.
-        let payload_provider = PayloadProvider::new(Arc::new(AtomicRefCell::new(
-            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default()),
-        )));
+        let payload_provider = fixture_payload_provider();
         let hw_counter = HardwareCounterCell::new();
         // No deletions in this test — sized to comfortably exceed the
         // stored deletion bitslice for the few points added below.
@@ -270,12 +280,13 @@ mod tests {
             &hw_counter,
         )
         .unwrap();
-        for id in 0..=2 {
+        for id in 0..=3 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, [json!(42)].into()),
                 1 => assert_eq!(value, MultiValue::<Value>::new()),
                 2 => assert_eq!(value, [json!(99), json!(55)].into()),
+                3 => assert_eq!(value, [json!(42.5)].into()),
                 _ => unreachable!(),
             }
         }
