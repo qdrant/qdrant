@@ -36,6 +36,13 @@ fn main() {
     } else if target_arch == "aarch64" && target_feature.split(',').any(|feat| feat == "neon") {
         builder.file("cpp/neon.c");
         builder.flag("-O3");
+
+        let compiler = builder.get_compiler();
+        if compiler.is_like_msvc() {
+            // MSVC on ARM64 Windows: NEON is always available on ARM64
+            // No special flags needed for basic NEON
+            builder.flag("/arch:ARMv8");
+        }
     }
 
     builder.compile("simd_utils");
