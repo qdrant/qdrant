@@ -26,10 +26,18 @@ pub fn check_is_empty<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
 }
 
 pub fn check_is_null<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
-    values.into_iter().any(|x| x.is_null())
-    // { "a": [ { "b": null }, { "b": 1 } ] } => true
-    // { "a": [ { "b": 1 }, { "b": null } ] } => true
-    // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
+    // Match FieldCondition / NullIndex semantics: a field is null if any
+    // top-level value is Null, or any array value contains a Null element.
+    // { "a": null } => true
+    // { "a": [null, 1] } => true
+    // { "a": [1, 2] } => false
+    // { "a": [ { "b": null }, { "b": 1 } ] } with key "a[].b" => true
+    //   (nested paths are flattened by get_value into separate values)
+    values.into_iter().any(|x| match x {
+        Value::Null => true,
+        Value::Array(arr) => arr.iter().any(Value::is_null),
+        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => false,
+    })
 }
 
 pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
@@ -140,8 +148,29 @@ impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
 mod tests {
     use schemars::{JsonSchema, schema_for};
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
 
-    use crate::common::utils::MaybeOneOrMany;
+    use crate::common::utils::{MaybeOneOrMany, check_is_null};
+
+    #[test]
+    fn test_check_is_null_matches_array_containing_null() {
+        // Plain null
+        assert!(check_is_null([&json!(null)]));
+        // Array with only null — must match (parity with FieldCondition / NullIndex)
+        assert!(check_is_null([&json!([null])]));
+        // Array with null mixed with other values — the reported inconsistency case
+        assert!(check_is_null([&json!([null, "a"])]));
+        assert!(check_is_null([&json!(["a", null])]));
+        // Non-null values
+        assert!(!check_is_null([&json!("a")]));
+        assert!(!check_is_null([&json!(["a"])]));
+        assert!(!check_is_null([&json!([])]));
+        assert!(!check_is_null([&json!(1)]));
+        assert!(!check_is_null([&json!({"b": null})]));
+        // Multiple flattened values (as from nested path get_value)
+        assert!(check_is_null([&json!(1), &json!(null)]));
+        assert!(!check_is_null([&json!(1), &json!(2)]));
+    }
 
     #[test]
     fn test_deserialize_one_or_many() {
