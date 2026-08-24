@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0-dev.2
+
+- Fix: normalize the iOS native binary's minimum OS version to 13.0 to avoid
+  App Store rejection (ITMS-90208). Flutter's Native Assets wrapper hardcodes
+  `MinimumOSVersion 13.0` into the generated `.framework` Info.plist, and App
+  Store Connect rejects a nested framework whose binary minos (15.0) exceeds
+  its own plist. The prebuilt iOS dylibs now carry minos 13.0.
+
 ## 0.8.0
 
 First release of the Qdrant Edge SDK for Dart & Flutter — on-device vector
