@@ -19,6 +19,10 @@ pub enum Action {
         state: Box<collection_state::State>,
     },
 
+    DropCollection {
+        collection: CollectionId,
+    },
+
     AddNamedVector {
         collection: CollectionId,
         vector_name: VectorNameBuf,
@@ -74,6 +78,7 @@ impl Action {
     pub fn collection(&self) -> Option<&CollectionId> {
         match self {
             Action::CreateCollection { collection, .. }
+            | Action::DropCollection { collection }
             | Action::AddNamedVector { collection, .. }
             | Action::DropNamedVector { collection, .. }
             | Action::SetPayloadIndex { collection, .. }

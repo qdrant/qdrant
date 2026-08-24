@@ -79,6 +79,39 @@ impl ClusterState {
             state: Box::new(state),
         }])
     }
+
+    /// Aliases of the collection first, then the collection itself, so a replay of a partially
+    /// applied operation still finds the collection and finishes the removal.
+    ///
+    /// Nothing to validate: `TableOfContent::delete_collection` also accepts a collection that is
+    /// not there. It removes leftover aliases and the directory, and answers `Ok(false)`.
+    pub fn plan_delete_collection(&self, op: &DeleteCollectionOperation) -> Actions {
+        let DeleteCollectionOperation(collection) = op;
+
+        // Collection name is *not* resolved through aliases, `DeleteCollection` must name existing
+        // collection directly
+        let remove: BTreeSet<_> = self.aliases.collection_aliases(collection).collect();
+
+        let mut actions = Actions::new();
+
+        // Collection without aliases does not produce an empty `UpdateAliases` action
+        // (similar to `plan_change_aliases`)
+        if !remove.is_empty() {
+            actions.push(Action::UpdateAliases {
+                set: Default::default(),
+                remove,
+            });
+        }
+
+        // Produce `DropCollection` action, even if collection does not exist:
+        // it removes leftover aliases and storage directory
+        actions.push(Action::DropCollection {
+            collection: collection.clone(),
+        });
+
+        actions
+    }
+
     pub fn plan_create_named_vector(&self, op: &CreateNamedVector) -> StorageResult<Actions> {
         let CreateNamedVector {
             collection_name,

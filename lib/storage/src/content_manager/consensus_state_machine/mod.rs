@@ -116,8 +116,11 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_create_collection(&self.context, operation))
             }
 
+            CollectionMetaOperations::DeleteCollection(operation) => {
+                ApplyOutcome::Accepted(self.state.plan_delete_collection(operation))
+            }
+
             CollectionMetaOperations::UpdateCollection(_)
-            | CollectionMetaOperations::DeleteCollection(_)
             | CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_)
             | CollectionMetaOperations::SetShardReplicaState(_)

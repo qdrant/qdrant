@@ -4,14 +4,17 @@ use super::*;
 
 impl ClusterState {
     /// Apply one action. Cannot fail.
-    ///
-    /// Action naming a missing collection changes nothing.
-    /// Correct operation never emits one, so debug builds assert.
     pub fn apply_action(&mut self, action: &Action) {
         match action {
             Action::CreateCollection { collection, state } => {
                 self.collections
                     .insert(collection.clone(), (**state).clone());
+            }
+
+            // Missing collection is legal here: the applier also deletes the directory
+            // a collection that failed to load leaves behind
+            Action::DropCollection { collection } => {
+                self.collections.remove(collection);
             }
 
             Action::AddNamedVector {
@@ -108,6 +111,10 @@ impl ClusterState {
         }
     }
 
+    /// State of the collection an action changes.
+    ///
+    /// An action that changes a collection is never planned against a state without it,
+    /// so debug builds assert.
     fn collection_mut(&mut self, collection: &str) -> Option<&mut collection_state::State> {
         let state = self.collections.get_mut(collection);
 
