@@ -97,10 +97,79 @@ pub fn arb_consensus_operation(
     collection_names.push(MISSING_COLLECTION_NAME.into());
 
     prop_oneof![
-        // TODO!
         Just(CollectionMetaOperations::Nop { token: 0 }),
+        arb_create_named_vector(collection_names.clone()),
+        arb_delete_named_vector(collection_names.clone()),
+        arb_create_payload_index(collection_names.clone()),
+        arb_drop_payload_index(collection_names.clone()),
     ]
     .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)))
+}
+
+fn arb_collection_name(names: Vec<String>) -> impl Strategy<Value = String> {
+    proptest::sample::select(names)
+}
+
+fn arb_create_named_vector(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let vector_name = arb_vector_name();
+    let config = arb_vector_name_config();
+
+    (collection_name, vector_name, config).prop_map(|(collection_name, vector_name, config)| {
+        CollectionMetaOperations::CreateNamedVector(CreateNamedVector {
+            collection_name,
+            vector_name,
+            config,
+        })
+    })
+}
+
+fn arb_delete_named_vector(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let vector_name = arb_vector_name();
+
+    (collection_name, vector_name).prop_map(|(collection_name, vector_name)| {
+        CollectionMetaOperations::DeleteNamedVector(DeleteNamedVector {
+            collection_name,
+            vector_name,
+        })
+    })
+}
+
+fn arb_create_payload_index(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let field_name = arb_field_name();
+    let field_schema = arb_field_schema();
+
+    (collection_name, field_name, field_schema).prop_map(
+        |(collection_name, field_name, field_schema)| {
+            CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
+                collection_name,
+                field_name,
+                field_schema,
+            })
+        },
+    )
+}
+
+fn arb_drop_payload_index(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let field_name = arb_field_name();
+
+    (collection_name, field_name).prop_map(|(collection_name, field_name)| {
+        CollectionMetaOperations::DropPayloadIndex(DropPayloadIndex {
+            collection_name,
+            field_name,
+        })
+    })
 }
 
 fn arb_vector_name() -> impl Strategy<Value = VectorNameBuf> {
