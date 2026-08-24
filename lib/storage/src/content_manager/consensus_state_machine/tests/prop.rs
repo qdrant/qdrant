@@ -66,9 +66,9 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
             .prop_map(
                 |(collections, aliases, peer_metadata_by_id, cluster_metadata, quota_config)| {
                     ClusterState {
+                        peer_metadata_by_id,
                         collections,
                         aliases,
-                        peer_metadata_by_id,
                         cluster_metadata,
                         quota_config,
                         ..Default::default()
