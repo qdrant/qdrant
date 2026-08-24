@@ -739,6 +739,43 @@ fn set_quota_config_replay() {
     assert_eq!(machine.state(), &state);
 }
 
+#[cfg(feature = "staging")]
+#[test]
+fn test_slow_down() {
+    let operation = CollectionMetaOperations::TestSlowDown(TestSlowDown {
+        peer_id: Some(PEER_ID),
+        duration_ms: 10,
+    });
+
+    staging_operation_changes_nothing(operation);
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn test_transient_error() {
+    let operation = CollectionMetaOperations::TestTransientError(TestTransientError {
+        peer_id: Some(PEER_ID),
+        failure_probability_percent: 100,
+    });
+
+    staging_operation_changes_nothing(operation);
+}
+
+#[cfg(feature = "staging")]
+fn staging_operation_changes_nothing(operation: CollectionMetaOperations) {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&collection_meta_op(operation));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a staging operation should be accepted, got {outcome:?}");
+    };
+
+    assert!(actions.is_empty());
+    assert_eq!(machine.state(), &state);
+}
+
 #[test]
 fn reject_missing_collection() {
     let mut machine = state_machine(ClusterState::default());
