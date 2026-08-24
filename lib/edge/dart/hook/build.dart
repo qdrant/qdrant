@@ -156,12 +156,30 @@ void main(List<String> args) async {
       return;
     }
 
-    throw UnsupportedError(
-      'qdrant_edge: cannot provision the engine for $targetOS/$arch'
-      '${iosSdk == null ? '' : '/$iosSdk'}. No local prebuilt under '
-      'native/prebuilt/$dirName (or \$QDRANT_EDGE_PREBUILT_DIR), not a host '
-      'source build, and no pinned release archive for "$dirName" '
-      '(release $_releaseTag). See the README "Distribution" section.',
+    // ---- 4. A target we deliberately do not ship -------------------------
+    // Return WITHOUT registering an asset rather than throwing. Two target
+    // classes reach here in ordinary use, and neither is an error:
+    //
+    //  * 32-bit ARM (`android/arm`, armeabi-v7a). The engine is 64-bit only,
+    //    but armeabi-v7a is in `flutter build apk`/`appbundle`'s DEFAULT ABI
+    //    set — so throwing here fails the standard Android release build of
+    //    every app that depends on this package, on the arm64 slice too.
+    //  * The x86_64 Apple slices (`ios/x64` simulator, `macos/x64`). Flutter
+    //    still invokes the hook for them on Apple Silicon hosts.
+    //
+    // A genuinely missing archive is still loud: if `_sha256` HAS an entry for
+    // this target, section 3 above ran and `_download` throws on a bad HTTP
+    // status or a checksum mismatch. Absence from `_sha256` is the declaration
+    // that we do not ship this target, not an accident.
+    //
+    // The consequence of skipping is a build with no engine for that slice, so
+    // say so once instead of leaving it invisible — this is what an app on an
+    // unsupported ABI will hit later as a `dlopen` failure.
+    stderr.writeln(
+      'qdrant_edge: no native engine for $targetOS/$arch'
+      '${iosSdk == null ? '' : '/$iosSdk'} — skipping this slice. '
+      'The engine is 64-bit only; anything calling it on this ABI will fail '
+      'to load the library at runtime.',
     );
   });
 }
