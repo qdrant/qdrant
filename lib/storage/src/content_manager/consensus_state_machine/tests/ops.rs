@@ -659,7 +659,7 @@ fn update_cluster_metadata_remove() {
         [Action::SetClusterMetadataKey { .. }],
     ));
 
-    assert!(machine.state().cluster_metadata.get("region").is_none());
+    assert!(!machine.state().cluster_metadata.contains_key("region"));
 }
 
 #[test]
