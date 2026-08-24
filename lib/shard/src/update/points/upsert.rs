@@ -1,5 +1,7 @@
 //! Point upserts: plain, conditional and raw.
 
+use std::num::NonZeroUsize;
+
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
@@ -29,12 +31,13 @@ pub fn upsert_points<'a, T>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: T,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
-    upsert_points_impl(segments, op_num, points, hw_counter)
+    upsert_points_impl(segments, op_num, points, max_segment_size_bytes, hw_counter)
 }
 
 /// Same as [`upsert_points`], but for points carrying raw vector bytes verbatim.
@@ -42,10 +45,11 @@ pub fn upsert_points_raw(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: &[PointStructRawPersisted],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     ensure_payloads_decoded(points)?;
-    upsert_points_impl(segments, op_num, points, hw_counter)
+    upsert_points_impl(segments, op_num, points, max_segment_size_bytes, hw_counter)
 }
 
 /// Applying a point writes [`PointStructRawPersisted::payload`], so one still holding a
@@ -108,6 +112,7 @@ pub fn conditional_upsert(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     operation: ConditionalInsertOperationInternal,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let ConditionalInsertOperationInternal {
@@ -119,7 +124,13 @@ pub fn conditional_upsert(
     retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode, hw_counter)?;
 
     let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
+    let upserted_points = upsert_points(
+        segments,
+        op_num,
+        points.iter(),
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
 
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -208,6 +219,7 @@ pub(super) fn upsert_points_impl<'a, P>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: impl IntoIterator<Item = &'a P>,
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
@@ -233,6 +245,7 @@ where
             |id, raw_vectors, updated_vectors, old_payload| {
                 points_map[&id].write_moved(raw_vectors, updated_vectors, old_payload)
             },
+            max_segment_size_bytes,
             hw_counter,
         )?;
 
