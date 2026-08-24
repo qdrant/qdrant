@@ -129,10 +129,10 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_drop_payload_index(operation))
             }
 
-            // Sleeps, or fails at random. Neither is a state change to plan.
+            // Sleeps on a peer, or fails at random. Neither changes the state.
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(_)
-            | CollectionMetaOperations::TestTransientError(_) => ApplyOutcome::NotCovered,
+            | CollectionMetaOperations::TestTransientError(_) => ApplyOutcome::Accepted(Vec::new()),
         }
     }
 }
