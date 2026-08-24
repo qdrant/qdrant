@@ -173,7 +173,7 @@ pub fn arb_consensus_operation(
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        7 => collection_meta,
+        8 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -188,6 +188,7 @@ fn arb_collection_meta_operation(
     prop_oneof![
         Just(CollectionMetaOperations::Nop { token: 0 }),
         arb_create_collection(collection_names.clone()),
+        arb_delete_collection(collection_names.clone()),
         arb_change_aliases(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
@@ -257,6 +258,14 @@ fn arb_shard_distribution() -> impl Strategy<Value = Option<ShardDistributionPro
     });
 
     proptest::option::of(distribution)
+}
+
+fn arb_delete_collection(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    arb_collection_name(collections).prop_map(|collection_name| {
+        CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(collection_name))
+    })
 }
 
 fn arb_change_aliases(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
