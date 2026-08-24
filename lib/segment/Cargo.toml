@@ -124,7 +124,6 @@ roaring = { workspace = true }
 duplicate = "2.0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.5"
 procfs = { version = "0.18", default-features = false }
 
 [[bench]]
