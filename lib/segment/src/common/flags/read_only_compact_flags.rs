@@ -136,7 +136,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         } else {
             Populate::Partial(ReadRange::new(0, stored_bitmask::HEADER_SIZE as u64))
         };
-        cached_fs.reschedule_prefetch(
+        cached_fs.reschedule_open(
             &directory.join(COMPACT_FLAGS_FILE),
             Some(open_options(populate)),
             None,

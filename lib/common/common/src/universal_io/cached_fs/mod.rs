@@ -234,13 +234,12 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             open_extra = open_extra.with_known_len(info.size);
         }
 
-        let file = self.fs.open(path, open_options, open_extra)?;
-        files_prefetched.insert(path.to_path_buf(), Some(file));
-
-        Ok(())
+        let file = self.fs.open_async(path.to_owned(), open_options, open_extra);
+        files_prefetched.insert(path.to_path_buf(), ScheduledFile::Future(Box::pin(file)));
     }
 
-    fn reschedule_prefetch(
+    // TODO(uio): merge into `schedule_open`? might make it simpler to use
+    fn reschedule_open(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
