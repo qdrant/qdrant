@@ -2,14 +2,22 @@
 //! and tests for cases that `proptest` is unlikely to generate or reach
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::num::NonZeroU32;
 
 use ahash::AHashMap;
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
-use collection::operations::types::PeerMetadata;
+use collection::operations::config_diff::{
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+};
+use collection::operations::types::{
+    PeerMetadata, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
+};
+use collection::shards::replica_set;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::vector_name_config::*;
 use segment::types::*;
 use serde_json::{Value, json};
@@ -207,6 +215,181 @@ fn create_collection_reject_zero_shards() {
         outcome,
         ApplyOutcome::Rejected(StorageError::BadInput { .. })
     ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn update_collection() {
+    let mut update = empty_update();
+    update.hnsw_config = Some(hnsw_diff(8));
+
+    let mut machine = state_machine(cluster_state(Vec::new()));
+    let outcome = machine.apply(&update_collection_op(update));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("updating a collection should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::UpdateCollectionConfig { .. }]
+    ));
+
+    assert_eq!(collection_config(&machine).hnsw_config.m, 8);
+}
+
+#[test]
+fn update_collection_diff_order() {
+    let update = UpdateCollection {
+        vectors: Some(vectors_diff("text")),
+        optimizers_config: Some(optimizers_diff()),
+        params: Some(params_diff()),
+        hnsw_config: Some(hnsw_diff(8)),
+        quantization_config: Some(QuantizationConfigDiff::new_disabled()),
+        sparse_vectors: Some(sparse_vectors_diff("sparse")),
+        strict_mode_config: Some(strict_mode_diff(true)),
+        metadata: Some(metadata(json!({ "region": "eu" }))),
+    };
+
+    let mut machine = state_machine(cluster_state(vec![
+        ("text", dense(4, Distance::Cosine)),
+        ("sparse", sparse()),
+    ]));
+
+    let outcome = machine.apply(&update_collection_op(update));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("updating a collection should be accepted, got {outcome:?}");
+    };
+
+    // Same order `TableOfContent::update_collection` saves them in
+    let kinds: Vec<_> = actions.iter().map(config_diff_kind).collect();
+
+    assert_eq!(
+        kinds,
+        [
+            "optimizers",
+            "params",
+            "hnsw",
+            "vectors",
+            "quantization",
+            "sparse vectors",
+            "strict mode",
+            "metadata",
+        ],
+    );
+}
+
+#[test]
+fn update_collection_replay() {
+    let mut update = empty_update();
+    update.hnsw_config = Some(hnsw_diff(8));
+    update.strict_mode_config = Some(strict_mode_diff(true));
+    update.metadata = Some(metadata(json!({ "region": "eu" })));
+
+    let mut machine = state_machine(cluster_state(Vec::new()));
+    machine.apply(&update_collection_op(update.clone()));
+
+    let applied = machine.state().clone();
+    let outcome = machine.apply(&update_collection_op(update));
+
+    let ApplyOutcome::Accepted(_) = outcome else {
+        panic!("replay of an applied update should be accepted, got {outcome:?}");
+    };
+
+    assert_eq!(
+        machine.state(),
+        &applied,
+        "replay should not change anything"
+    );
+}
+
+#[test]
+fn update_collection_reject_vector_name() {
+    let mut update = empty_update();
+    update.hnsw_config = Some(hnsw_diff(8));
+    update.vectors = Some(vectors_diff("missing"));
+
+    update_collection_reject_whole_operation(update);
+}
+
+#[test]
+fn update_collection_reject_sparse_vector_name() {
+    let mut update = empty_update();
+    update.hnsw_config = Some(hnsw_diff(8));
+    update.sparse_vectors = Some(sparse_vectors_diff("missing"));
+
+    update_collection_reject_whole_operation(update);
+}
+
+/// A diff rejected in the middle keeps nothing, not even the diffs before it
+fn update_collection_reject_whole_operation(update: UpdateCollection) {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&update_collection_op(update));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadInput { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn update_collection_metadata_merge() {
+    let mut state = cluster_state(Vec::new());
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection exists")
+        .config
+        .metadata = Some(metadata(json!({ "region": "eu", "tier": "gold" })));
+
+    let mut update = empty_update();
+    update.metadata = Some(metadata(json!({ "region": null, "size": 2 })));
+
+    let mut machine = state_machine(state);
+    machine.apply(&update_collection_op(update));
+
+    // Merged into what is there, and a null value removes its key
+    assert_eq!(
+        collection_config(&machine).metadata,
+        Some(metadata(json!({ "tier": "gold", "size": 2 }))),
+    );
+}
+
+#[test]
+fn update_collection_metadata_null_without_metadata() {
+    let mut update = empty_update();
+    update.metadata = Some(metadata(json!({ "region": null })));
+
+    let mut machine = state_machine(cluster_state(Vec::new()));
+    machine.apply(&update_collection_op(update));
+
+    // A collection with no metadata takes the payload as it is, so the null is stored.
+    // A replay merges the payload into itself and drops the key.
+    assert_eq!(
+        collection_config(&machine).metadata,
+        Some(metadata(json!({ "region": null }))),
+    );
+}
+
+#[test]
+fn update_collection_replica_changes() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, PEER_ID)]);
+
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::UpdateCollection(operation),
+    ));
+
+    assert!(matches!(outcome, ApplyOutcome::NotCovered));
 
     assert_eq!(machine.state(), &state);
 }
@@ -1222,6 +1405,109 @@ fn shards(placement: Vec<Vec<PeerId>>) -> AHashMap<ShardId, ShardInfo> {
             (idx as ShardId, ShardInfo { replicas })
         })
         .collect()
+}
+
+fn update_collection_op(update: UpdateCollection) -> ConsensusOperations {
+    let operation =
+        UpdateCollectionOperation::new(COLLECTION.into(), update).expect("valid operation");
+
+    collection_meta_op(CollectionMetaOperations::UpdateCollection(operation))
+}
+
+/// Update with every diff absent, for a test to fill in the ones it covers
+fn empty_update() -> UpdateCollection {
+    UpdateCollectionOperation::new_empty(COLLECTION.into()).update_collection
+}
+
+fn collection_config(machine: &ConsensusStateMachine) -> &CollectionConfigInternal {
+    &machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists")
+        .config
+}
+
+fn config_diff_kind(action: &Action) -> &'static str {
+    let Action::UpdateCollectionConfig { diff, .. } = action else {
+        panic!("expected a config update, got {action:?}");
+    };
+
+    match **diff {
+        CollectionConfigDiff::Optimizers(_) => "optimizers",
+        CollectionConfigDiff::Params(_) => "params",
+        CollectionConfigDiff::Hnsw(_) => "hnsw",
+        CollectionConfigDiff::Vectors(_) => "vectors",
+        CollectionConfigDiff::Quantization(_) => "quantization",
+        CollectionConfigDiff::SparseVectors(_) => "sparse vectors",
+        CollectionConfigDiff::StrictMode(_) => "strict mode",
+        CollectionConfigDiff::Metadata(_) => "metadata",
+    }
+}
+
+fn hnsw_diff(m: usize) -> HnswConfigDiff {
+    HnswConfigDiff {
+        m: Some(m),
+        ..Default::default()
+    }
+}
+
+fn optimizers_diff() -> OptimizersConfigDiff {
+    OptimizersConfigDiff {
+        deleted_threshold: Some(0.5),
+        vacuum_min_vector_number: None,
+        default_segment_number: None,
+        max_segment_size: None,
+        #[expect(deprecated)]
+        memmap_threshold: None,
+        indexing_threshold: None,
+        flush_interval_sec: None,
+        max_optimization_threads: None,
+        prevent_unoptimized: None,
+    }
+}
+
+fn params_diff() -> CollectionParamsDiff {
+    CollectionParamsDiff {
+        replication_factor: NonZeroU32::new(2),
+        write_consistency_factor: None,
+        read_fan_out_factor: None,
+        read_fan_out_delay_ms: None,
+        #[expect(deprecated)]
+        on_disk_payload: None,
+        payload: None,
+    }
+}
+
+fn vectors_diff(vector_name: &str) -> VectorsConfigDiff {
+    let params = VectorParamsDiff {
+        hnsw_config: Some(hnsw_diff(8)),
+        quantization_config: None,
+        #[expect(deprecated)]
+        on_disk: None,
+        memory: None,
+    };
+
+    VectorsConfigDiff(BTreeMap::from([(vector_name.into(), params)]))
+}
+
+fn sparse_vectors_diff(vector_name: &str) -> SparseVectorsConfig {
+    let params = SparseVectorParams {
+        index: None,
+        modifier: Some(Modifier::Idf),
+    };
+
+    SparseVectorsConfig(BTreeMap::from([(vector_name.into(), params)]))
+}
+
+fn strict_mode_diff(enabled: bool) -> StrictModeConfig {
+    StrictModeConfig {
+        enabled: Some(enabled),
+        ..Default::default()
+    }
+}
+
+fn metadata(value: Value) -> Payload {
+    serde_json::from_value(value).expect("valid metadata")
 }
 
 fn delete_collection_op(collection: &str) -> ConsensusOperations {
