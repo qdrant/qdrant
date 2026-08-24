@@ -2,6 +2,13 @@
 #include <arm_neon.h>
 #endif
 
+// MSVC doesn't define __ARM_FEATURE_FP16_VECTOR_ARITHMETIC but supports
+// f16 NEON intrinsics with /arch:ARMv8.2-A+FP16 flag.
+// We define the macro ourselves for MSVC to enable the f16 NEON code path.
+#if defined(_MSC_VER) && defined(_M_ARM64)
+#define __ARM_FEATURE_FP16_VECTOR_ARITHMETIC 1
+#endif
+
 #ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
 #include <arm_fp16.h>
 float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, uint32_t blockSize)
