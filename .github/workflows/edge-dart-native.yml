@@ -73,6 +73,37 @@ jobs:
           cp "target/${{ matrix.target }}/release/${{ matrix.file }}" "out/${{ matrix.name }}/"
           ls -lh "out/${{ matrix.name }}/"
 
+      # Flutter's Native Assets wrapper hardcodes MinimumOSVersion 13.0 into the
+      # generated .framework Info.plist (flutter_tools
+      # isolated/native_assets/ios/native_assets.dart: `const targetIOSVersion = 13`),
+      # and App Store Connect compares each nested framework's BINARY minos
+      # against that framework's OWN plist. A 15.0 binary under a 13.0 plist is
+      # rejected with ITMS-90208 — regardless of the consuming app's own floor.
+      # This already shipped once and had to be hot-fixed
+      # (DenisovAV/flutter_gemma#286).
+      #
+      # Keep IPHONEOS_DEPLOYMENT_TARGET=15.0 above: it governs which symbols
+      # rustc/cc-rs bind strongly, and the Swift XCFramework consumer needs it.
+      # vtool rewrites only the LC_BUILD_VERSION metadata, so this is safe —
+      # verified at 0.8.0-dev.1: the dylib has zero weak imports and every
+      # undefined symbol predates iOS 13.
+      - name: Normalize iOS minos to 13.0 (Flutter Native Assets wrapper plist)
+        if: startsWith(matrix.target, 'aarch64-apple-ios')
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            *-sim) PLATFORM=iossim ;;
+            *)     PLATFORM=ios ;;
+          esac
+          LIB="out/${{ matrix.name }}/${{ matrix.file }}"
+          vtool -set-build-version "$PLATFORM" 13.0 18.5 -replace \
+            -output "$LIB.tmp" "$LIB"
+          mv "$LIB.tmp" "$LIB"
+          vtool -show-build "$LIB"
+          # Fail the build if it did not take, rather than shipping a rejectable
+          # archive that only App Store Connect will notice.
+          vtool -show-build "$LIB" | grep -q 'minos 13.0'
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: edge-dart-native-${{ matrix.name }}
