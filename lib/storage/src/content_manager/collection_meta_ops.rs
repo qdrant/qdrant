@@ -314,6 +314,10 @@ impl CreateCollectionOperation {
         self.distribution.is_some()
     }
 
+    pub fn distribution(&self) -> Option<&ShardDistributionProposal> {
+        self.distribution.as_ref()
+    }
+
     pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {
         self.distribution.take()
     }
