@@ -33,9 +33,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
         let options = Self::open_options();
 
-        fs.schedule_prefetch(&mappings_path(segment_path), Some(options), None)
+        fs.schedule_open(&mappings_path(segment_path), Some(options), None)
             .ok_not_found()?;
-        fs.schedule_prefetch(&versions_path(segment_path), Some(options), None)
+        fs.schedule_open(&versions_path(segment_path), Some(options), None)
             .ok_not_found()?;
 
         Ok(())

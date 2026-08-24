@@ -60,7 +60,7 @@ impl MultivectorOffsetsStorageRam {
     ///
     /// The open reads the whole file, so the prefetch populates it.
     pub fn preopen(fs: &impl CachedReadFs, path: &Path) -> OperationResult<()> {
-        fs.schedule_prefetch(
+        fs.schedule_open(
             path,
             Some(Self::open_options(Populate::PreferBackground)),
             None,
@@ -181,7 +181,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        fs.schedule_prefetch(path, Some(Self::open_options(populate)), None)?;
+        fs.schedule_open(path, Some(Self::open_options(populate)), None)?;
         Ok(())
     }
 

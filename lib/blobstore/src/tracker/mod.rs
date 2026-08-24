@@ -330,7 +330,7 @@ impl<S: UniversalRead> Tracker<S> {
     ) -> Result<()> {
         // Default a lazy open to partially populating the header.
         let populate = populate.or_partial(0..size_of::<TrackerHeader>() as u64);
-        fs.schedule_prefetch(
+        fs.schedule_open(
             tracker_path,
             Some(tracker_open_options(populate, false)),
             None,

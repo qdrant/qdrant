@@ -166,7 +166,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // Stats
         let stats_path = path.join(STATS_PATH);
         if fs
-            .schedule_prefetch(&stats_path, None, None)
+            .schedule_open(&stats_path, None, None)
             .ok_not_found()?
             .is_none()
         {
@@ -176,17 +176,17 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
 
         // Geohash counts, points map, and point-id list
         let options = Self::open_options(populate);
-        fs.schedule_prefetch(&path.join(COUNTS_PER_HASH), Some(options), None)?;
-        fs.schedule_prefetch(&path.join(POINTS_MAP), Some(options), None)?;
-        fs.schedule_prefetch(&path.join(POINTS_MAP_IDS), Some(options), None)?;
+        fs.schedule_open(&path.join(COUNTS_PER_HASH), Some(options), None)?;
+        fs.schedule_open(&path.join(POINTS_MAP), Some(options), None)?;
+        fs.schedule_open(&path.join(POINTS_MAP_IDS), Some(options), None)?;
 
         // Block indexes over the two sorted arrays; optional, absent on old
         // segments
         let _ = fs
-            .schedule_prefetch(&path.join(COUNTS_PER_HASH_BLOCK_INDEX), None, None)
+            .schedule_open(&path.join(COUNTS_PER_HASH_BLOCK_INDEX), None, None)
             .ok_not_found()?;
         let _ = fs
-            .schedule_prefetch(&path.join(POINTS_MAP_BLOCK_INDEX), None, None)
+            .schedule_open(&path.join(POINTS_MAP_BLOCK_INDEX), None, None)
             .ok_not_found()?;
 
         // Point to values
