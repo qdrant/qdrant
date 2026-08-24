@@ -17,7 +17,19 @@ fn main() {
         let mut builder = cc::Build::new();
         builder.file("src/spaces/metric_f16/cpp/neon.c");
         builder.flag("-O3");
-        builder.flag("-march=armv8.2-a+fp16");
+
+        let compiler = builder.get_compiler();
+        if compiler.is_like_msvc() {
+            // MSVC on ARM64 Windows: use /arch:ARMv8.2-A+FP16 for f16 NEON support
+            builder.flag("/arch:ARMv8.2-A+FP16");
+            // MSVC doesn't define __ARM_FEATURE_FP16_VECTOR_ARITHMETIC, 
+            // but supports f16 NEON intrinsics with /arch:ARMv8.2-A+FP16
+            builder.define("_ARM_FEATURE_FP16_VECTOR_ARITHMETIC", None);
+        } else {
+            builder.flag("-O3");
+            builder.flag("-march=armv8.2-a+fp16");
+        }
+
         builder.compile("simd_utils");
     }
 }
