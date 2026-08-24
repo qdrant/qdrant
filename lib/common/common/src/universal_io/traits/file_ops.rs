@@ -177,7 +177,7 @@ pub trait CachedReadFs: UniversalReadFs {
     ///
     /// This will force `Self::open` to return `UnchangedOpen` error if the file
     /// did not change its `FileInfo` in between snapshots.
-    fn reschedule_prefetch(
+    fn reschedule_open(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,

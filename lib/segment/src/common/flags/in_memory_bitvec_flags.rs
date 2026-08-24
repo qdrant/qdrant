@@ -101,19 +101,19 @@ impl InMemoryBitvecFlags {
 
         match mode {
             FlagsMode::Dynamic => {
-                fs.reschedule_prefetch(
+                fs.reschedule_open(
                     &status_file(directory),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
                 )?;
-                fs.reschedule_prefetch(
+                fs.reschedule_open(
                     &directory.join(FLAGS_FILE),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
                 )?;
             }
             FlagsMode::Compact => {
-                fs.reschedule_prefetch(
+                fs.reschedule_open(
                     &directory.join(COMPACT_FLAGS_FILE),
                     Some(compact_open_options(Populate::PreferBackground)),
                     None,

@@ -240,7 +240,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         Ok(())
     }
 
-    fn reschedule_prefetch(
+    fn reschedule_open(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
