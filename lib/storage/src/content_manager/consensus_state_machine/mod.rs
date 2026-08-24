@@ -25,9 +25,12 @@ pub mod state;
 #[cfg(test)]
 mod tests;
 
+use collection::config::{PayloadStorageParams, WalConfig};
+use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
+use segment::types::HnswConfig;
 
 pub use self::action::Action;
 pub use self::state::ClusterState;
@@ -146,7 +149,7 @@ impl ConsensusStateMachine {
 /// Node-local values operations read.
 ///
 /// These come from this node's config, not from consensus, so two peers can read different values
-/// for the same operation.
+/// for the same operation. Values scraped from `StorageConfig` keep the names they have there.
 #[derive(Clone, Debug)]
 pub struct NodeContext {
     pub peer_id: PeerId,
@@ -155,6 +158,13 @@ pub struct NodeContext {
     pub collection_defaults: Option<CollectionConfigDefaults>,
     /// Transfer method this node picks when an operation does not name one
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
+    pub max_collections: Option<usize>,
+    pub wal: WalConfig,
+    pub optimizers: OptimizersConfig,
+    pub hnsw_index: HnswConfig,
+    pub payload: Option<PayloadStorageParams>,
+    /// Mirrors the deprecated storage config flag of the same name, which `payload` overrides
+    pub on_disk_payload: bool,
 }
 
 /// What the machine decided about an operation.
