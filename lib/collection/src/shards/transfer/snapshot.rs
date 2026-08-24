@@ -247,6 +247,9 @@ pub(super) async fn transfer_snapshot(
         .as_deref()
         .or(channel_service.alt_api_key.as_deref());
 
+    // Use checksum from snapshot description for integrity verification
+    let snapshot_checksum = snapshot_description.checksum.clone();
+
     remote_shard
         .recover_shard_snapshot_from_url(
             collection_id,
@@ -255,6 +258,8 @@ pub(super) async fn transfer_snapshot(
             SnapshotPriority::ShardTransfer,
             // Provide API key here so the remote can access our snapshot
             local_api_key,
+            // Provide checksum for integrity verification of the snapshot
+            snapshot_checksum,
         )
         .await
         .map_err(|err| {
