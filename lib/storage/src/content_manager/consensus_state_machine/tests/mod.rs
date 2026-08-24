@@ -17,6 +17,7 @@ use shard::operations::VectorNameConfig;
 use super::*;
 
 const PEER_ID: u64 = 42;
+const OTHER_PEER_ID: u64 = 43;
 
 fn state_machine(state: ClusterState) -> ConsensusStateMachine {
     ConsensusStateMachine::new(state, node_context())
@@ -35,6 +36,28 @@ fn node_context() -> NodeContext {
         hnsw_index: Default::default(),
         payload: None,
         on_disk_payload: false,
+    }
+}
+
+/// Request leaving everything to defaults, for a test to set the parts it covers
+fn create_collection_request() -> CreateCollection {
+    CreateCollection {
+        vectors: VectorsConfig::Multi(Default::default()),
+        shard_number: None,
+        sharding_method: None,
+        replication_factor: None,
+        write_consistency_factor: None,
+        #[expect(deprecated)]
+        on_disk_payload: None,
+        payload: None,
+        hnsw_config: None,
+        wal_config: None,
+        optimizers_config: None,
+        quantization_config: None,
+        sparse_vectors: None,
+        strict_mode_config: None,
+        uuid: None,
+        metadata: None,
     }
 }
 

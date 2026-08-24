@@ -3,8 +3,10 @@
 use std::collections::HashMap;
 
 use collection::collection_state;
+use collection::config::ShardingMethod;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
+use collection::shards::shard::ShardId;
 use proptest::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vector_name_config::*;
@@ -16,6 +18,7 @@ use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::quota::QuotaConfig;
 use crate::types::PeerMetadataById;
 
@@ -29,7 +32,7 @@ const VECTOR_NAMES: &[&str] = &["", "text", "image"];
 const FIELD_NAMES: &[&str] = &["city", "count", "nested.key"];
 
 /// This node, and one other peer
-const PEER_IDS: &[PeerId] = &[PEER_ID, 43];
+const PEER_IDS: &[PeerId] = &[PEER_ID, OTHER_PEER_ID];
 const PEER_VERSIONS: &[&str] = &["1.14.0", "1.15.0"];
 
 const METADATA_KEYS: &[&str] = &["region", "tier"];
@@ -170,7 +173,7 @@ pub fn arb_consensus_operation(
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        6 => collection_meta,
+        7 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -184,6 +187,7 @@ fn arb_collection_meta_operation(
 
     prop_oneof![
         Just(CollectionMetaOperations::Nop { token: 0 }),
+        arb_create_collection(collection_names.clone()),
         arb_change_aliases(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
@@ -207,6 +211,52 @@ fn arb_update_cluster_metadata() -> impl Strategy<Value = ConsensusOperations> {
 
 fn arb_collection_name(names: Vec<String>) -> impl Strategy<Value = String> {
     proptest::sample::select(names)
+}
+
+/// Only the sharding method and the distribution vary: everything else the operation carries goes
+/// into the config unchanged, or picks up a node-local default that no generated state sets.
+fn arb_create_collection(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let sharding_method = proptest::option::of(prop_oneof![
+        Just(ShardingMethod::Auto),
+        Just(ShardingMethod::Custom),
+    ]);
+
+    (
+        arb_collection_name(collections),
+        sharding_method,
+        arb_shard_distribution(),
+    )
+        .prop_map(|(collection_name, sharding_method, distribution)| {
+            let mut create_collection = create_collection_request();
+            create_collection.sharding_method = sharding_method;
+
+            let mut operation = CreateCollectionOperation::new(collection_name, create_collection)
+                .expect("valid operation");
+
+            if let Some(distribution) = distribution {
+                operation.set_distribution(distribution);
+            }
+
+            CollectionMetaOperations::CreateCollection(operation)
+        })
+}
+
+/// The proposer picks the distribution, and only a single node proposes without one.
+/// An empty one leaves auto sharding with no shards, which is rejected.
+fn arb_shard_distribution() -> impl Strategy<Value = Option<ShardDistributionProposal>> {
+    let placement = proptest::collection::vec(proptest::collection::vec(arb_peer_id(), 1..3), 0..3);
+
+    let distribution = placement.prop_map(|placement| ShardDistributionProposal {
+        distribution: placement
+            .into_iter()
+            .enumerate()
+            .map(|(idx, peers)| (idx as ShardId, peers))
+            .collect(),
+    });
+
+    proptest::option::of(distribution)
 }
 
 fn arb_change_aliases(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
