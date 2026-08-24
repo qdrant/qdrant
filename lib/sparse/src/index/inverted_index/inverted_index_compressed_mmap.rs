@@ -61,10 +61,10 @@ fn index_open_options(populate: Populate) -> OpenOptions {
 /// (mmap).
 pub fn preopen(fs: &impl CachedReadFs, path: &Path, populate: Populate) -> UioResult<()> {
     // Config
-    fs.schedule_prefetch(&index_config_file_path(path), None, None)?;
+    fs.schedule_open(&index_config_file_path(path), None, None)?;
 
     // Index data
-    fs.schedule_prefetch(
+    fs.schedule_open(
         &index_file_path(path),
         Some(index_open_options(populate)),
         None,

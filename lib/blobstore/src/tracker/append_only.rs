@@ -74,7 +74,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         dir: &Path,
         populate: Populate,
     ) -> Result<()> {
-        fs.schedule_prefetch(
+        fs.schedule_open(
             &Self::tracker_file_name(dir),
             Some(Self::open_options(populate, false)),
             None,

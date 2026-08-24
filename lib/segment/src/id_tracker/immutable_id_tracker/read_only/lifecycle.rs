@@ -43,9 +43,9 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
 
         let options = Self::open_options();
 
-        fs.schedule_prefetch(&deleted_path(segment_path), Some(options), None)?;
-        fs.schedule_prefetch(&version_mapping_path(segment_path), Some(options), None)?;
-        fs.schedule_prefetch(&mappings_path(segment_path), Some(options), None)?;
+        fs.schedule_open(&deleted_path(segment_path), Some(options), None)?;
+        fs.schedule_open(&version_mapping_path(segment_path), Some(options), None)?;
+        fs.schedule_open(&mappings_path(segment_path), Some(options), None)?;
 
         Ok(true)
     }

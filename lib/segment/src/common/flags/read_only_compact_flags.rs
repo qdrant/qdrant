@@ -73,7 +73,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         };
 
         Ok(fs
-            .schedule_prefetch(
+            .schedule_open(
                 &directory.join(COMPACT_FLAGS_FILE),
                 Some(open_options(populate)),
                 None,

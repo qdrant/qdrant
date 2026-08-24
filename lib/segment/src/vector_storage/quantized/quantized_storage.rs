@@ -152,7 +152,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        fs.schedule_prefetch(path, Some(Self::open_options(populate)), None)?;
+        fs.schedule_open(path, Some(Self::open_options(populate)), None)?;
         Ok(())
     }
 

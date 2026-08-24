@@ -73,7 +73,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     .schedule_reopen(|p| fs.cached_file_info(p))
                     .ok_not_found()?,
                 None => fs
-                    .schedule_prefetch(&path, Some(options), None)
+                    .schedule_open(&path, Some(options), None)
                     .ok_not_found()?,
             };
         }

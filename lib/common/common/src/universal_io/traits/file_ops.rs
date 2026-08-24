@@ -166,7 +166,7 @@ pub trait CachedReadFs: UniversalReadFs {
     /// Open `path` in the background and park the handle in the prefetch
     /// pool, to be consumed by a later [`UniversalReadFs::open`] of the same
     /// path. Idempotent per path while the handle is unconsumed.
-    fn schedule_prefetch(
+    fn schedule_open(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,

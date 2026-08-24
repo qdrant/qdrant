@@ -54,8 +54,8 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
 
     /// Schedule background prefetch of the two files [`open`](Self::open) reads.
     pub fn preopen(fs: &impl CachedReadFs, path: &Path) -> OperationResult<()> {
-        fs.schedule_prefetch(&path.join(CONFIG_PATH), None, None)?;
-        fs.schedule_prefetch(&path.join(BORDERS_PATH), None, None)?;
+        fs.schedule_open(&path.join(CONFIG_PATH), None, None)?;
+        fs.schedule_open(&path.join(BORDERS_PATH), None, None)?;
         Ok(())
     }
 

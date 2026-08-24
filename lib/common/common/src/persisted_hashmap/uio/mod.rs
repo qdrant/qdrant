@@ -51,12 +51,12 @@ where
         fs: &Fs,
         path: impl AsRef<Path>,
         mut options: OpenOptions,
-    ) -> UioResult<()> {
+    ) {
         // Default a lazy open to partially populating the header + a slice of
         // the perfect-hash table, so the map can be opened without a full read.
         options.populate = options.populate.or_partial(0..HEADER_AND_BASIC_PHF_SIZE);
 
-        fs.schedule_prefetch(path.as_ref(), Some(options), None)
+        fs.schedule_open(path.as_ref(), Some(options), None)
     }
 
     /// Load the hash map from file.

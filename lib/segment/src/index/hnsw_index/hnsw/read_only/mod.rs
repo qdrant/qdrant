@@ -102,7 +102,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         // Graph config; may legitimately be absent (`open` derives defaults).
-        fs.schedule_prefetch(&HnswGraphConfig::get_config_path(path), None, None)
+        fs.schedule_open(&HnswGraphConfig::get_config_path(path), None, None)
             .ok_not_found()?;
 
         // Graph data and links

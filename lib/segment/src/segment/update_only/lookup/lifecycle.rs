@@ -47,7 +47,7 @@ fn build_cached_fs<Fs: UniversalReadFs>(
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
         cached_fs
-            .schedule_prefetch(&segment_path.join(file_name), None, None)
+            .schedule_open(&segment_path.join(file_name), None, None)
             .ok_not_found()?;
     }
 

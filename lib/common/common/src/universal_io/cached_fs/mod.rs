@@ -210,12 +210,12 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         self.files_prefetched.lock().clear();
     }
 
-    fn schedule_prefetch(
+    fn schedule_open(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) -> UioResult<()> {
+    ) {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
@@ -265,7 +265,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         }
 
         // Otherwise schedule normally
-        self.schedule_prefetch(path, open_arguments, open_extra)
+        self.schedule_open(path, open_arguments, open_extra)
     }
 
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
