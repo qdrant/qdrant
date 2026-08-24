@@ -404,6 +404,10 @@ impl UpdateCollectionOperation {
         })
     }
 
+    pub fn has_shard_replica_changes(&self) -> bool {
+        self.shard_replica_changes.is_some()
+    }
+
     pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {
         self.shard_replica_changes.take()
     }
