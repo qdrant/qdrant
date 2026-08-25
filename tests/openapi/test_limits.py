@@ -52,7 +52,7 @@ def test_vector_dimension_limit(collection_name):
         # Rejected by the documented schema before reaching the server.
         pass
     else:
-        assert not response.ok
+        assert response.status_code == 422
         error = response.json()["status"]["error"]
         assert error == (
             f"Validation error in JSON body: "
