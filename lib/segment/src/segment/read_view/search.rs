@@ -53,8 +53,8 @@ where
             },
         )?;
         self.retrieve_resolved(
-            resolved_ids,
-            resolved_offsets,
+            &resolved_ids,
+            &resolved_offsets,
             with_payload,
             with_vector,
             hw_counter,
@@ -71,8 +71,8 @@ where
     /// it passes is read as given.
     fn retrieve_resolved(
         &self,
-        resolved_ids: Vec<PointIdType>,
-        resolved_offsets: Vec<PointOffsetType>,
+        resolved_ids: &[PointIdType],
+        resolved_offsets: &[PointOffsetType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
@@ -96,7 +96,7 @@ where
             .collect();
 
         for vector_name in self.requested_vector_names(with_vector) {
-            let keys = resolved_keys(&resolved_ids, &resolved_offsets, is_stopped);
+            let keys = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
             self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vector| {
                 if let Some(record) = records.get_mut(&id) {
                     record
@@ -176,7 +176,7 @@ where
         }
 
         let payloads =
-            self.requested_payloads_raw(resolved_ids, resolved_offsets, is_stopped, hw_counter)?;
+            self.requested_payloads_raw(&resolved_ids, &resolved_offsets, is_stopped, hw_counter)?;
         for (id, payload) in payloads {
             if let Some(record) = records.get_mut(&id) {
                 record.payload = Some(payload);
@@ -206,8 +206,8 @@ where
     /// already-resolved offsets. Empty when payload wasn't requested.
     fn requested_payloads(
         &self,
-        resolved_ids: Vec<ExtendedPointId>,
-        resolved_offsets: Vec<PointOffsetType>,
+        resolved_ids: &[ExtendedPointId],
+        resolved_offsets: &[PointOffsetType],
         with_payload: &WithPayload,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
@@ -217,7 +217,7 @@ where
         }
 
         let mut payloads = Vec::with_capacity(resolved_ids.len());
-        let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+        let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
 
         self.read_payloads::<Random, _>(
             point_offsets,
@@ -245,13 +245,13 @@ where
     /// payload".
     fn requested_payloads_raw(
         &self,
-        resolved_ids: Vec<ExtendedPointId>,
-        resolved_offsets: Vec<PointOffsetType>,
+        resolved_ids: &[ExtendedPointId],
+        resolved_offsets: &[PointOffsetType],
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(ExtendedPointId, RawPayload)>> {
         let mut payloads = Vec::with_capacity(resolved_ids.len());
-        let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+        let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
 
         self.read_payloads_raw::<Random, _>(
             point_offsets,
@@ -319,8 +319,8 @@ where
         // lookup happens on the search path.
         let point_offsets: Vec<_> = scored_offsets.iter().map(|scored| scored.idx).collect();
         let mut segment_records = self.retrieve_resolved(
-            point_ids.clone(),
-            point_offsets,
+            &point_ids,
+            &point_offsets,
             with_payload,
             with_vector,
             hw_counter,
