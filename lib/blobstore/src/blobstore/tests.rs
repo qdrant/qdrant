@@ -1924,7 +1924,8 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Mutable, Mode::AppendOnl
     // Same order as the segment open path: snapshot the file listing, preopen, then open.
     type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
     let fs = RoFs::from_context(Default::default()).unwrap();
-    let mut cached_fs = CachedFs::new(fs, dir.path()).unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut cached_fs = CachedFs::new(fs, dir.path(), runtime.handle().clone()).unwrap();
     cached_fs.cache_file_info().unwrap();
     BlobstoreReader::<Payload, ReadOnly<MmapFile>>::preopen(
         &cached_fs,

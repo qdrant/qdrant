@@ -797,7 +797,8 @@ mod tests {
         drop(graph);
 
         // Same order as the segment open path: snapshot, then preopen, then load.
-        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
         cached_fs.cache_file_info().unwrap();
         HnswGraph::<MmapFile>::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
 

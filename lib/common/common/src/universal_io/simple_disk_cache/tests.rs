@@ -38,6 +38,7 @@ struct Scenario {
     remote_path: PathBuf,
     data: Vec<u8>,
     config: Arc<DiskCacheConfig>,
+    runtime: tokio::runtime::Runtime,
 }
 
 impl Scenario {
@@ -59,6 +60,7 @@ impl Scenario {
             _tmp: tmp,
             remote_path,
             data,
+            runtime: tokio::runtime::Runtime::new().unwrap(),
             config: Arc::new(DiskCacheConfig::new(remote_dir, local_dir).unwrap()),
         }
     }
@@ -143,7 +145,12 @@ impl Scenario {
         R: DiskCacheRemote,
         <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
     {
-        let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
+        let mut cached_fs = CachedFs::new(
+            self.fs::<R>(),
+            &self.remote_path,
+            self.runtime.handle().clone(),
+        )
+        .unwrap();
         cached_fs.cache_file_info().unwrap();
         move |path| cached_fs.file_info(path).cloned()
     }
@@ -977,6 +984,18 @@ mod tests_async {
         ) -> UioResult<AsyncOnlyRemote> {
             Ok(AsyncOnlyRemote {
                 inner: self.0.open(path, options, extra)?,
+                async_reads: AtomicUsize::new(0),
+            })
+        }
+
+        async fn open_async(
+            &self,
+            path: PathBuf,
+            options: OpenOptions,
+            extra: Self::OpenExtra,
+        ) -> UioResult<Self::File> {
+            Ok(AsyncOnlyRemote {
+                inner: self.0.open_async(path, options, extra).await?,
                 async_reads: AtomicUsize::new(0),
             })
         }

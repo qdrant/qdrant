@@ -1338,8 +1338,10 @@ fn test_block_index_preopen() {
     let deleted = empty_deleted();
 
     // Same order as the segment open path: snapshot, then preopen, then open.
+    let runtime = tokio::runtime::Runtime::new().unwrap();
     let fs = RoFs::from_context(Default::default()).unwrap();
-    let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
+    let mut cached_fs =
+        CachedFs::new(fs.clone(), temp_dir.path(), runtime.handle().clone()).unwrap();
     cached_fs.cache_file_info().unwrap();
     assert!(
         OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
@@ -1364,7 +1366,7 @@ fn test_block_index_preopen() {
 
     // Absent sidecars (segment built before they were introduced): `preopen`
     // must not fail on the missing files and `open` must fall back.
-    let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
+    let mut cached_fs = CachedFs::new(fs, temp_dir.path(), runtime.handle().clone()).unwrap();
     cached_fs.cache_file_info().unwrap();
     assert!(
         OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)

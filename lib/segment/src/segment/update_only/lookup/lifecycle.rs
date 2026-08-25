@@ -40,8 +40,9 @@ const WRITER_POPULATE: Populate = Populate::No;
 fn build_cached_fs<Fs: UniversalReadFs>(
     fs: &Fs,
     segment_path: &Path,
+    runtime: tokio::runtime::Handle,
 ) -> OperationResult<CachedFs<Fs>> {
-    let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
+    let mut cached_fs = CachedFs::new(fs.clone(), segment_path, runtime)?;
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
@@ -70,9 +71,17 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
-        let cached_fs = build_cached_fs(fs, segment_path)?;
+        // TODO(uio): share runtime with other segments?
+        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let cached_fs = build_cached_fs(fs, segment_path, runtime.handle().clone())?;
         let config = Self::preopen(&cached_fs, segment_path)?;
-        Self::open_via(&cached_fs, segment_path, config, deferred_internal_id)
+        Self::open_via(
+            &cached_fs,
+            segment_path,
+            config,
+            deferred_internal_id,
+            runtime,
+        )
     }
 
     /// Open the segment's components: the id tracker, the payload storage and
@@ -96,6 +105,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         segment_path: &Path,
         config: SegmentConfig,
         deferred_internal_id: Option<PointOffsetType>,
+        runtime: Arc<tokio::runtime::Runtime>,
     ) -> OperationResult<Self> {
         if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written
@@ -148,6 +158,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
             id_tracker,
             payload_storage,
             vector_data,
+            lifecycle_runtime: runtime,
             segment_config: config,
             appendable,
         })

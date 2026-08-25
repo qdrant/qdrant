@@ -28,6 +28,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
             id_tracker,
             payload_storage,
             vector_data,
+            lifecycle_runtime: _,
             segment_config: _,
             appendable: _,
         } = self;

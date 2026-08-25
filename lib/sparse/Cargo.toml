@@ -43,6 +43,7 @@ indicatif = { workspace = true }
 sha2 = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 zerocopy = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]

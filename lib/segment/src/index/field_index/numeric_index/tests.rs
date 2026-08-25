@@ -1167,8 +1167,10 @@ fn test_block_index_preopen() {
 
     // Same order as the segment open path: snapshot, then preopen, then open.
     use common::universal_io::UniversalReadFileOps as _;
+    let runtime = tokio::runtime::Runtime::new().unwrap();
     let fs = RoFs::from_context(Default::default()).unwrap();
-    let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
+    let mut cached_fs =
+        CachedFs::new(fs.clone(), temp_dir.path(), runtime.handle().clone()).unwrap();
     cached_fs.cache_file_info().unwrap();
     assert!(
         OnDiskNumericIndex::<FloatPayloadType, Storage>::preopen(
@@ -1195,7 +1197,7 @@ fn test_block_index_preopen() {
 
     // An absent sidecar (segment built before it was introduced): `preopen`
     // must not fail on the missing file and `open` must fall back.
-    let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
+    let mut cached_fs = CachedFs::new(fs, temp_dir.path(), runtime.handle().clone()).unwrap();
     cached_fs.cache_file_info().unwrap();
     assert!(
         OnDiskNumericIndex::<FloatPayloadType, Storage>::preopen(

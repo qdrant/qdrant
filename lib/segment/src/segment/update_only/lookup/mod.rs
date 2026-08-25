@@ -32,6 +32,9 @@ pub struct LookupSegment<S: UniversalRead + 'static> {
     /// One storage per named vector — no vector index, no quantized vectors.
     pub vector_data: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageReadEnum<S>>>>,
 
+    /// The runtime used for lifecycle tasks such as reopen scheduling.
+    pub lifecycle_runtime: Arc<tokio::runtime::Runtime>,
+
     pub segment_config: SegmentConfig,
     /// Whether this segment accepts appends, and can therefore be the target
     /// of a write.

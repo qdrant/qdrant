@@ -883,6 +883,7 @@ dependencies = [
  "strum",
  "tempfile",
  "thiserror 2.0.20",
+ "tokio",
  "zerocopy",
 ]
 
@@ -7289,6 +7290,7 @@ dependencies = [
  "sha2 0.11.0",
  "sparse",
  "tempfile",
+ "tokio",
  "validator",
  "zerocopy",
 ]

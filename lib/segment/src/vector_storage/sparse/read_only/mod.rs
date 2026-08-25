@@ -141,7 +141,8 @@ mod tests {
         }
 
         // Same order as the segment open path: snapshot, then preopen, then open.
-        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
         cached_fs.cache_file_info().unwrap();
         ReadOnlySparseVectorStorage::<MmapFile>::preopen(&cached_fs, dir.path(), Populate::No)
             .unwrap();
@@ -231,7 +232,9 @@ mod tests {
         let deleted = SortedSlice::new(&deleted_ids).unwrap();
         let new = SortedSlice::new(&new_ids).unwrap();
         if preload {
-            let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            let mut cached_fs =
+                CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
             cached_fs.cache_file_info().unwrap();
             reader.live_preload(&cached_fs).unwrap();
 
