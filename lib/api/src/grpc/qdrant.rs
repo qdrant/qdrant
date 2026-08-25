@@ -1205,7 +1205,7 @@ pub struct CreateCollection {
     /// Number of shards in the collection, default is 1 for standalone, otherwise
     /// equal to the number of nodes. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 65536))]
     pub shard_number: ::core::option::Option<u32>,
     /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory

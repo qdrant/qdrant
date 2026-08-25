@@ -123,13 +123,15 @@ pub struct CreateCollection {
     /// Number of shards in collection.
     ///  - Default is 1 for standalone, otherwise equal to the number of nodes
     ///  - Minimum is 1
+    ///  - Maximum is 65536
     ///
     /// For custom sharding:
     /// Number of shards in collection per shard group.
     ///  - Default is 1, meaning that each shard key will be mapped to a single shard
     ///  - Minimum is 1
+    ///  - Maximum is 65536
     #[serde(default)]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = 65536))]
     pub shard_number: Option<u32>,
     /// Sharding method
     /// Default is Auto - points are distributed across all available shards
@@ -555,5 +557,49 @@ impl From<CollectionConfigInternal> for CreateCollection {
             uuid,
             metadata,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn create_collection_with_shard_number(shard_number: u32) -> CreateCollection {
+        serde_json::from_value(json!({
+            "vectors": {"size": 4, "distance": "Cosine"},
+            "shard_number": shard_number,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_shard_number_above_upper_bound_rejected() {
+        // An unreasonably large shard_number must be rejected up front instead of
+        // reaching the shard allocation path and exhausting resources.
+        let create_collection = create_collection_with_shard_number(u32::MAX);
+        assert!(
+            create_collection.validate().is_err(),
+            "shard_number = u32::MAX should fail validation"
+        );
+    }
+
+    #[test]
+    fn test_shard_number_at_upper_bound_accepted() {
+        let create_collection = create_collection_with_shard_number(65536);
+        assert!(
+            create_collection.validate().is_ok(),
+            "shard_number = 65536 is within the allowed range"
+        );
+    }
+
+    #[test]
+    fn test_shard_number_just_above_upper_bound_rejected() {
+        let create_collection = create_collection_with_shard_number(65537);
+        assert!(
+            create_collection.validate().is_err(),
+            "shard_number = 65537 exceeds the allowed range"
+        );
     }
 }
