@@ -96,3 +96,7 @@ harness = false
 [[bench]]
 name = "universal_io"
 harness = false
+
+[[bench]]
+name = "fixed_length_priority_queue"
+harness = false
