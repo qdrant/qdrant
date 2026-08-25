@@ -36,8 +36,8 @@ def test_vector_dimension_limit(collection_name):
     # documents the enforced 1..=dim_max bound, so request_with_validation may
     # reject the payload client-side before it ever reaches the server; both
     # layers of defense are accepted here.
-    with pytest.raises(jsonschema.exceptions.ValidationError):
-        request_with_validation(
+    try:
+        response = request_with_validation(
             api='/collections/{collection_name}',
             method="PUT",
             path_params={'collection_name': collection_name},
@@ -47,6 +47,16 @@ def test_vector_dimension_limit(collection_name):
                     "distance": "Dot",
                 },
             }
+        )
+    except jsonschema.exceptions.ValidationError:
+        # Rejected by the documented schema before reaching the server.
+        pass
+    else:
+        assert not response.ok
+        error = response.json()["status"]["error"]
+        assert error == (
+            f"Validation error in JSON body: "
+            f"[vectors.size: value {dim_max + 1} invalid, must be from 1 to {dim_max}]"
         )
 
     drop_collection(collection_name)
