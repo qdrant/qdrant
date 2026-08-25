@@ -232,8 +232,14 @@ fn install_probe(
     let floor = med[1]; // T0 documented "all levels" everywhere = the L1 floor
     let dram_gap = base - floor;
 
-    println!("\n{:>6} {:>12} {:>12}  verdict (heuristic)", "hint", "ns/hop", "vs t0");
-    println!("{:>6} {:>12.1} {:>12}  DRAM baseline (no hint)", "none", base, "-");
+    println!(
+        "\n{:>6} {:>12} {:>12}  verdict (heuristic)",
+        "hint", "ns/hop", "vs t0"
+    );
+    println!(
+        "{:>6} {:>12.1} {:>12}  DRAM baseline (no hint)",
+        "none", base, "-"
+    );
     for m in 1..4 {
         let d = med[m] - floor;
         let verdict = if m == 1 {
@@ -313,9 +319,8 @@ fn main() {
                 order.swap(i, rng.below(i + 1));
             }
             // one run per page at a random in-page offset that fits K lines
-            let start_of = |page: u32, off: usize| {
-                (page as usize * lines_per_page + off) * words_per_line
-            };
+            let start_of =
+                |page: u32, off: usize| (page as usize * lines_per_page + off) * words_per_line;
             let mut starts: Vec<u32> = Vec::with_capacity(pages);
             for &page in &order {
                 let off = rng.below(lines_per_page - k + 1);
