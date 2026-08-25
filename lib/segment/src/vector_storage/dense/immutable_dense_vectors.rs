@@ -58,7 +58,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         populate: Populate,
     ) -> OperationResult<()> {
         // Vector data
-        fs.schedule_open(vectors_path, Some(Self::open_options(populate)), None)?;
+        fs.schedule_open(vectors_path, Some(Self::open_options(populate)), None);
 
         Ok(())
     }

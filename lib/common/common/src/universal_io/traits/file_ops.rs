@@ -171,7 +171,7 @@ pub trait CachedReadFs: UniversalReadFs {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
-    ) -> UioResult<()>;
+    );
 
     /// Schedule a prefetch for a file that has been opened already.
     ///
@@ -182,7 +182,7 @@ pub trait CachedReadFs: UniversalReadFs {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
-    ) -> UioResult<()>;
+    );
 
     /// Return the file info from the current snapshot.
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;

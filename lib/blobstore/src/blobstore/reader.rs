@@ -45,7 +45,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     ) -> Result<()> {
         // schedule config file, so the config read in `open` is served from the prefetch pool
         let config_path = base_path.join(CONFIG_FILENAME);
-        fs.schedule_open(&config_path, None, None)?;
+        fs.schedule_open(&config_path, None, None);
 
         // Don't read config now; instead, probe all modes and ignore not-found errors
         for mode in Mode::iter() {

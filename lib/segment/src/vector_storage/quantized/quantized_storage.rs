@@ -147,13 +147,8 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     ///
     /// The storage reads lazily through its mmap-style handle; `populate`
     /// warms the parked handle for the `cached` memory placement.
-    pub fn preopen(
-        fs: &impl CachedReadFs<File = S>,
-        path: &Path,
-        populate: Populate,
-    ) -> OperationResult<()> {
-        fs.schedule_open(path, Some(Self::open_options(populate)), None)?;
-        Ok(())
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path, populate: Populate) {
+        fs.schedule_open(path, Some(Self::open_options(populate)), None)
     }
 
     pub fn from_file(

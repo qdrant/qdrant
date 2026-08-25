@@ -64,16 +64,13 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
 
         // Config; `open` reads it off the parked handle.
         let config_path = QuantizedVectors::get_config_path(path);
-        if fs
-            .schedule_open(&config_path, None, None)
-            .ok_not_found()?
-            .is_none()
-        {
+        if !fs.exists(&config_path)? {
             return Ok(());
         }
+        fs.schedule_open(&config_path, None, None);
 
         // Per-method metadata
-        fs.schedule_open(&QuantizedVectors::get_meta_path(path), None, None)?;
+        fs.schedule_open(&QuantizedVectors::get_meta_path(path), None, None);
 
         let placement = QuantizedVectors::memory_placement(
             quantization_config.memory_placement(),
@@ -119,9 +116,9 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
                 QuantizedVectorsStorageType::Immutable => {
                     if fs.exists(&data_path)? {
                         match placement {
-                            Memory::Pinned => QuantizedRamStorage::preopen(fs, &data_path)?,
+                            Memory::Pinned => QuantizedRamStorage::preopen(fs, &data_path),
                             Memory::Cached | Memory::Cold => {
-                                QuantizedStorage::<S>::preopen(fs, &data_path, data_populate)?
+                                QuantizedStorage::<S>::preopen(fs, &data_path, data_populate)
                             }
                         }
                     }
@@ -135,7 +132,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
                                     fs,
                                     &offsets_path,
                                     populate,
-                                )?
+                                )
                             }
                         }
                     }

@@ -19,7 +19,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        QuantizedStorage::<S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
+        QuantizedStorage::<S>::preopen(fs, &path.join(VECTORS_PATH), populate);
         InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
         Ok(())
     }

@@ -78,7 +78,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
             return Ok(());
         }
 
-        fs.schedule_open(&file_path, Some(Self::prefix_open_options(populate)), None)?;
+        fs.schedule_open(&file_path, Some(Self::prefix_open_options(populate)), None);
 
         Ok(())
     }

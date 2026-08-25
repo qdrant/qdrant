@@ -69,17 +69,12 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
 
     /// Schedule a prefetch of the tracker file, so a subsequent open is served from the prefetch
     /// pool.
-    pub fn preopen<Fs: CachedReadFs<File = S>>(
-        fs: &Fs,
-        dir: &Path,
-        populate: Populate,
-    ) -> Result<()> {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path, populate: Populate) {
         fs.schedule_open(
             &Self::tracker_file_name(dir),
             Some(Self::open_options(populate, false)),
             None,
-        )?;
-        Ok(())
+        );
     }
 
     /// Open the tracker file handle, mapping a missing file to a service error.

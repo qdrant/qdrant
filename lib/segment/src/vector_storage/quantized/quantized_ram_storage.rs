@@ -25,12 +25,8 @@ impl QuantizedRamStorage {
     /// Schedule background prefetch of the data file [`Self::from_file`] reads.
     ///
     /// The load reads the whole file, so the prefetch populates it.
-    pub fn preopen<S: UniversalRead>(
-        fs: &impl CachedReadFs<File = S>,
-        path: &Path,
-    ) -> OperationResult<()> {
-        OneshotFile::<S>::preopen(fs, path)?;
-        Ok(())
+    pub fn preopen<S: UniversalRead>(fs: &impl CachedReadFs<File = S>, path: &Path) {
+        OneshotFile::<S>::preopen(fs, path)
     }
 
     /// Load all quantized vectors into RAM through the provided [`UniversalRead`]

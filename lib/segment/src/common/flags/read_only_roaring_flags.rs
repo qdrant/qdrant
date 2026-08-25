@@ -84,24 +84,22 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         populate: Populate,
     ) -> OperationResult<bool> {
         // Status file.
-        if fs
-            .schedule_open(
-                &status_file(directory),
-                Some(open_options(Populate::PreferBackground)),
-                None,
-            )
-            .ok_not_found()?
-            .is_none()
-        {
+        let status_path = status_file(directory);
+        if !fs.exists(&status_path)? {
             return Ok(false);
         }
+        fs.schedule_open(
+            &status_path,
+            Some(open_options(Populate::PreferBackground)),
+            None,
+        );
 
         // Bitslice
         fs.schedule_open(
             &directory.join(FLAGS_FILE),
             Some(open_options(populate)),
             None,
-        )?;
+        );
 
         Ok(true)
     }
@@ -160,7 +158,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) -> OperationResult<()> {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {
         let directory = self.directory.as_path();
 
         // Bitslice
@@ -174,16 +172,14 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             &directory.join(FLAGS_FILE),
             Some(open_options(populate)),
             None,
-        )?;
+        );
 
         // Status file.
         cached_fs.reschedule_open(
             &status_file(directory),
             Some(open_options(Populate::PreferBackground)),
             None,
-        )?;
-
-        Ok(())
+        );
     }
 
     /// Refresh to the current on-disk state.
