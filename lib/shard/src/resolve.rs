@@ -167,6 +167,26 @@ pub fn resolve_operation(
     Ok(resolved)
 }
 
+/// Number of point IDs an already-resolved (id-based) operation will touch.
+///
+/// Every filter-resolving update is rewritten to an id-based operation before
+/// it reaches the WAL (see [`resolve_operation`]), so this counts exactly the
+/// points the operation would affect. Used by the strict-mode
+/// `max_update_by_filter_limit` check.
+pub fn resolved_point_count(operation: &CollectionUpdateOperations) -> usize {
+    match operation {
+        CollectionUpdateOperations::PointOperation(op) => op.point_ids().map_or(0, |ids| ids.len()),
+        CollectionUpdateOperations::VectorOperation(op) => {
+            op.point_ids().map_or(0, |ids| ids.len())
+        }
+        CollectionUpdateOperations::PayloadOperation(op) => {
+            op.point_ids().map_or(0, |ids| ids.len())
+        }
+        CollectionUpdateOperations::FieldIndexOperation(_)
+        | CollectionUpdateOperations::VectorNameOperation(_) => 0,
+    }
+}
+
 /// Resolve the point set matched by `filter`, deduplicated and in a
 /// deterministic order.
 fn matched_ids(
@@ -441,5 +461,70 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[test]
+    fn resolved_point_count_counts_id_based_operations() {
+        // Field/index operations never touch points directly.
+        assert_eq!(
+            resolved_point_count(&CollectionUpdateOperations::FieldIndexOperation(
+                FieldIndexOperations::DeleteIndex("k".parse().unwrap())
+            )),
+            0
+        );
+
+        // DeletePoints carries its id list directly.
+        assert_eq!(
+            resolved_point_count(&CollectionUpdateOperations::PointOperation(
+                PointOperations::DeletePoints {
+                    ids: vec![1.into(), 2.into(), 3.into()],
+                }
+            )),
+            3
+        );
+
+        // SetPayload resolved by filter carries an explicit id list.
+        assert_eq!(
+            resolved_point_count(&CollectionUpdateOperations::PayloadOperation(
+                PayloadOps::SetPayload(SetPayloadOp {
+                    payload: payload_json! {"a": 1},
+                    points: Some(vec![1.into(), 2.into()]),
+                    filter: None,
+                    key: None,
+                })
+            )),
+            2
+        );
+
+        // ClearPayload carries its id list directly.
+        assert_eq!(
+            resolved_point_count(&CollectionUpdateOperations::PayloadOperation(
+                PayloadOps::ClearPayload {
+                    points: vec![1.into()],
+                }
+            )),
+            1
+        );
+
+        // DeleteVectors carries its id list directly.
+        assert_eq!(
+            resolved_point_count(&CollectionUpdateOperations::VectorOperation(
+                VectorOperations::DeleteVectors(vec![1.into(), 2.into()].into(), vec![])
+            )),
+            2
+        );
+
+        // No id list yet (e.g. unresolved by-filter) counts as zero.
+        assert_eq!(
+            resolved_point_count(&CollectionUpdateOperations::PayloadOperation(
+                PayloadOps::SetPayload(SetPayloadOp {
+                    payload: payload_json! {"a": 1},
+                    points: None,
+                    filter: Some(color_filter("red")),
+                    key: None,
+                })
+            )),
+            0
+        );
     }
 }

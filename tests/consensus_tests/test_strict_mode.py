@@ -1,7 +1,7 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode
+from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode, delete_points_by_filter, set_payload_by_filter
 from .utils import *
 
 logging.basicConfig(level=logging.DEBUG)
@@ -245,3 +245,90 @@ def test_write_rate_limiting_across_node(tmp_path: pathlib.Path):
             return
 
     raise AssertionError("rate limiter was never triggered")
+
+
+def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
+    # Single peer / single shard so the filter resolution is fully local.
+    n_peers = 1
+    n_shard = 1
+    n_replica = 1
+    peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, n_peers)
+
+    create_collection(
+        peer_urls[0],
+        collection=COLLECTION_NAME,
+        shard_number=n_shard,
+        replication_factor=n_replica,
+    )
+
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME, peer_api_uris=peer_urls
+    )
+
+    # Upsert points that all share the same payload value, so a single filter
+    # matches every one of them.
+    for i in range(20):
+        point = {
+            "id": i,
+            "vector": random_dense_vector(),
+            "payload": {"city": "Berlin"},
+        }
+        upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME).raise_for_status()
+
+    berlin_filter = {
+        "must": [{"key": "city", "match": {"value": "Berlin"}}],
+    }
+
+    # Enable the limit: at most 10 points per update-by-filter operation.
+    set_strict_mode(
+        peer_urls[0],
+        COLLECTION_NAME,
+        {
+            "enabled": True,
+            "max_update_by_filter_limit": 10,
+        },
+    )
+    wait_for_strict_mode_enabled(peer_urls[0], COLLECTION_NAME)
+
+    # A delete by filter matching all 20 points exceeds the limit.
+    res = delete_points_by_filter(peer_urls[0], berlin_filter, collection_name=COLLECTION_NAME)
+    assert not res.ok
+    assert "exceeding the configured limit of 10" in res.json()["status"]["error"]
+
+    # A set-payload by filter matching all 20 points is also rejected.
+    res = set_payload_by_filter(
+        peer_urls[0],
+        {"visited": True},
+        berlin_filter,
+        collection_name=COLLECTION_NAME,
+    )
+    assert not res.ok
+    assert "exceeding the configured limit of 10" in res.json()["status"]["error"]
+
+    # An explicit delete by ids is not filter-resolving, so it is allowed
+    # regardless of the limit.
+    r = requests.post(
+        f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points/delete?wait=true",
+        json={"points": list(range(20))},
+    )
+    assert_http_ok(r)
+
+    # With strict mode disabled, the same delete by filter that was rejected
+    # above (20 points > limit 10) is now allowed, proving the limit is tied to
+    # the enabled flag. Re-upsert the points first, since the id-based delete
+    # above removed them.
+    for i in range(20):
+        point = {
+            "id": i,
+            "vector": random_dense_vector(),
+            "payload": {"city": "Berlin"},
+        }
+        upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME).raise_for_status()
+
+    set_strict_mode(peer_urls[0], COLLECTION_NAME, {"enabled": False})
+    wait_for_strict_mode_disabled(peer_urls[0], COLLECTION_NAME)
+
+    res = delete_points_by_filter(
+        peer_urls[0], berlin_filter, collection_name=COLLECTION_NAME
+    )
+    assert_http_ok(res)

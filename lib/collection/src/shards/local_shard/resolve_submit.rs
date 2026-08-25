@@ -79,6 +79,17 @@ impl LocalShard {
             clock_tag,
         } = operation;
 
+        // Read the strict-mode config before taking the fence, so we don't hold
+        // the write lock while awaiting the config read.
+        let max_update_by_filter_limit = self
+            .collection_config
+            .read()
+            .await
+            .strict_mode_config
+            .as_ref()
+            .filter(|config| config.enabled == Some(true))
+            .and_then(|config| config.max_update_by_filter_limit);
+
         self.check_wal_disk_space().await?;
 
         // 1. Fence: block new submits; in-flight ones (holding `read`) have
@@ -108,6 +119,22 @@ impl LocalShard {
             resolve_operation(&segments, operation, &hw_acc.get_counter_cell())
         })
         .await??;
+
+        // Strict-mode guard: reject update-by-filter operations whose filter
+        // resolved to more point IDs than allowed, before they reach the WAL.
+        if let Some(limit) = max_update_by_filter_limit {
+            let resolved_count = shard::resolve::resolved_point_count(&resolved);
+            if resolved_count > limit {
+                return Err(CollectionError::strict_mode(
+                    format!(
+                        "Update by filter resolved to {resolved_count} points, \
+                         exceeding the configured limit of {limit}",
+                    ),
+                    "Narrow your filter so it matches at most `max_update_by_filter_limit` \
+                     points, or raise `max_update_by_filter_limit` in the strict mode config.",
+                ));
+            }
+        }
 
         // Guard against `is_filter_resolving` and `resolve_operation` drifting
         // apart: a resolved operation must never classify as filter-resolving,

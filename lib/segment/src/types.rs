@@ -1413,6 +1413,14 @@ pub struct StrictModeConfig {
     #[validate(range(min = 0))]
     pub max_payload_index_count: Option<usize>,
 
+    /// Max number of points an update operation that selects its targets by
+    /// filter (e.g. delete by filter, set payload by filter, delete vectors by
+    /// filter) may resolve to. Operations whose filter matches more points than
+    /// this limit are rejected before they are written to the WAL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_update_by_filter_limit: Option<usize>,
+
     /// Deprecated: use the node-wide quota config (`PUT /quotas`) instead, which
     /// caps the same resource for every collection. Scheduled for removal in
     /// 1.21.
@@ -1458,6 +1466,7 @@ impl Hash for StrictModeConfig {
             multivector_config,
             sparse_config,
             max_payload_index_count,
+            max_update_by_filter_limit,
             max_resident_memory_percent,
         } = self;
         enabled.hash(state);
@@ -1479,6 +1488,7 @@ impl Hash for StrictModeConfig {
         multivector_config.hash(state);
         sparse_config.hash(state);
         max_payload_index_count.hash(state);
+        max_update_by_filter_limit.hash(state);
         max_resident_memory_percent.hash(state);
     }
 }
@@ -1580,6 +1590,11 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_payload_index_count: Option<usize>,
 
+    /// Max number of points an update-by-filter operation may resolve to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub max_update_by_filter_limit: Option<usize>,
+
     /// Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)
     #[deprecated(
         since = "1.19.0",
@@ -1613,6 +1628,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             multivector_config,
             sparse_config,
             max_payload_index_count,
+            max_update_by_filter_limit,
             max_resident_memory_percent,
         } = config;
 
@@ -1637,6 +1653,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             multivector_config: multivector_config.map(StrictModeMultivectorConfigOutput::from),
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
             max_payload_index_count,
+            max_update_by_filter_limit,
             max_resident_memory_percent,
         }
     }
