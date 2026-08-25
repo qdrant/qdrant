@@ -1415,6 +1415,7 @@ impl From<Datatype> for VectorStorageDatatype {
 #[anonymize(false)]
 pub struct VectorParams {
     /// Size of a vectors used
+    #[schemars(range(min = 1, max = 65536))]
     #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
@@ -1952,5 +1953,36 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VectorParams;
+
+    /// The REST layer enforces `1..=65536` on `VectorParams.size` at runtime
+    /// via a custom validator, which does not contribute bounds to the
+    /// generated JSON schema. The explicit `#[schemars(range(...))]`
+    /// attribute must keep documenting that bound (see #9942).
+    #[test]
+    fn vector_params_size_schema_declares_enforced_bounds() {
+        let raw = serde_json::to_value(schemars::schema_for!(VectorParams)).expect("serializable");
+        let size_schema = &raw["properties"]["size"];
+        let max = size_schema
+            .get("maximum")
+            .and_then(serde_json::Value::as_f64);
+        let min = size_schema
+            .get("minimum")
+            .and_then(serde_json::Value::as_f64);
+        assert_eq!(
+            max,
+            Some(65536.0),
+            "VectorParams.size must document the enforced upper bound"
+        );
+        assert_eq!(
+            min,
+            Some(1.0),
+            "VectorParams.size must document the enforced lower bound"
+        );
     }
 }
