@@ -4,8 +4,8 @@ use common::bitmap_scan::BatchedBitmapScan;
 use common::bitvec::BitSlice;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
+use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
@@ -307,7 +307,7 @@ impl<'a> FilteredScorer<'a> {
 // We keep each scorer with its queue to reduce allocations and improve data locality.
 struct BatchSearch<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
-    pq: FixedLengthPriorityQueue<ScoredPointOffset>,
+    top_k: TopK,
 }
 
 pub struct BatchFilteredSearcher<'a> {
@@ -343,8 +343,8 @@ impl<'a> BatchFilteredSearcher<'a> {
                     }
                     None => vectors.build_raw_scorer(query, hardware_counter),
                 };
-                let pq = FixedLengthPriorityQueue::new(top);
-                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, pq })
+                let top_k = TopK::new(top);
+                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, top_k })
             })
             .collect::<Result<_, _>>()?;
         let filters =
@@ -378,7 +378,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                 .unwrap();
                 BatchSearch {
                     raw_scorer,
-                    pq: FixedLengthPriorityQueue::new(top),
+                    top_k: TopK::new(top),
                 }
             })
             .collect();
@@ -476,7 +476,7 @@ impl<'a> BatchFilteredSearcher<'a> {
 
         let results = scorer_batch
             .into_iter()
-            .map(|BatchSearch { pq, .. }| pq.into_sorted_vec())
+            .map(|BatchSearch { top_k, .. }| top_k.into_vec())
             .collect();
         Ok(results)
     }
@@ -513,11 +513,11 @@ impl<'a> BatchFilteredSearcher<'a> {
             }
 
             // Switching the loops improves batching performance, but slightly degrades single-query performance.
-            for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
+            for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
                 raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
 
                 for i in 0..chunk_size {
-                    pq.push(ScoredPointOffset {
+                    top_k.push(ScoredPointOffset {
                         idx: chunk[i],
                         score: scores_buffer[i],
                     });
@@ -528,7 +528,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         let results = self
             .scorer_batch
             .into_iter()
-            .map(|BatchSearch { pq, .. }| pq.into_sorted_vec())
+            .map(|BatchSearch { top_k, .. }| top_k.into_vec())
             .collect();
         Ok(results)
     }
@@ -550,10 +550,10 @@ fn score_chunk(
     if chunk.is_empty() {
         return Ok(());
     }
-    for BatchSearch { raw_scorer, pq } in scorer_batch {
+    for BatchSearch { raw_scorer, top_k } in scorer_batch {
         raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()]);
         for i in 0..chunk.len() {
-            pq.push(ScoredPointOffset {
+            top_k.push(ScoredPointOffset {
                 idx: chunk[i],
                 score: scores_buffer[i],
             });

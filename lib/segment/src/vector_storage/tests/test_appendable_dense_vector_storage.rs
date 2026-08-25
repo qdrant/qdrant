@@ -109,8 +109,11 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         .exactly_one()
         .unwrap();
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
-    assert_eq!(closest[0].idx, 4);
-    assert_eq!(closest[1].idx, 0);
+    // Points 0 and 4 both score 1.0 against this query; order among equal
+    // scores is unspecified, so assert the set rather than positions.
+    let mut ids = closest.iter().map(|p| p.idx).collect::<Vec<_>>();
+    ids.sort_unstable();
+    assert_eq!(ids, [0, 4]);
 
     // Delete all
     assert!(storage.delete_vector(0 as PointOffsetType).unwrap());
