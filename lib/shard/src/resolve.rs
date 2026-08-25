@@ -174,17 +174,7 @@ pub fn resolve_operation(
 /// points the operation would affect. Used by the strict-mode
 /// `max_update_by_filter_limit` check.
 pub fn resolved_point_count(operation: &CollectionUpdateOperations) -> usize {
-    match operation {
-        CollectionUpdateOperations::PointOperation(op) => op.point_ids().map_or(0, |ids| ids.len()),
-        CollectionUpdateOperations::VectorOperation(op) => {
-            op.point_ids().map_or(0, |ids| ids.len())
-        }
-        CollectionUpdateOperations::PayloadOperation(op) => {
-            op.point_ids().map_or(0, |ids| ids.len())
-        }
-        CollectionUpdateOperations::FieldIndexOperation(_)
-        | CollectionUpdateOperations::VectorNameOperation(_) => 0,
-    }
+    operation.point_ids().map_or(0, |ids| ids.len())
 }
 
 /// Resolve the point set matched by `filter`, deduplicated and in a
