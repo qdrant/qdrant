@@ -305,6 +305,41 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
     assert not res.ok
     assert "exceeding the configured limit of 10" in res.json()["status"]["error"]
 
+    # Conditional upserts and filtered vector updates also read segment state
+    # before they are written, but they only trim the point list the client
+    # sent: their size is a batch size, not a filter match count, so the limit
+    # must not apply to them.
+    berlin_points = [
+        {"id": i, "vector": random_dense_vector(), "payload": {"city": "Berlin"}}
+        for i in range(20)
+    ]
+
+    # Upsert with `update_filter`, 20 points > limit 10.
+    res = requests.put(
+        f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points?wait=true",
+        json={"points": berlin_points, "update_filter": berlin_filter},
+    )
+    assert_http_ok(res)
+
+    # `update_mode` takes the same path without carrying a filter at all.
+    res = requests.put(
+        f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points?wait=true",
+        json={"points": berlin_points, "update_mode": "update_only"},
+    )
+    assert_http_ok(res)
+
+    # Vector update with `update_filter`, 20 points > limit 10.
+    res = requests.put(
+        f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points/vectors?wait=true",
+        json={
+            "points": [
+                {"id": i, "vector": {"": random_dense_vector()}} for i in range(20)
+            ],
+            "update_filter": berlin_filter,
+        },
+    )
+    assert_http_ok(res)
+
     # An explicit delete by ids is not filter-resolving, so it is allowed
     # regardless of the limit.
     r = requests.post(

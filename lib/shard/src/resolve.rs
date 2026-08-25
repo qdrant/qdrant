@@ -73,6 +73,48 @@ pub fn is_filter_resolving(operation: &CollectionUpdateOperations) -> bool {
     }
 }
 
+/// Is this an "update by filter": an operation whose target point set is the
+/// result of scanning the collection with a filter?
+///
+/// Narrower than [`is_filter_resolving`]. A conditional upsert and a filtered
+/// `UpdateVectors` also read segment state, but they only trim a point list the
+/// client sent, so their resolved size is bounded by the request body rather
+/// than by how much the filter matches. Used by the strict-mode
+/// `max_update_by_filter_limit` check, which caps filter scans only.
+pub fn is_update_by_filter(operation: &CollectionUpdateOperations) -> bool {
+    match operation {
+        CollectionUpdateOperations::PointOperation(op) => match op {
+            PointOperations::DeletePointsByFilter(_) => true,
+            // Trims the client's own batch, so not a filter scan.
+            PointOperations::UpsertPointsConditional(_)
+            | PointOperations::UpsertPoints(_)
+            | PointOperations::UpsertPointsRaw(_)
+            | PointOperations::DeletePoints { .. }
+            | PointOperations::SyncPoints(_)
+            | PointOperations::SyncPointsRaw(_) => false,
+        },
+        CollectionUpdateOperations::VectorOperation(op) => match op {
+            VectorOperations::DeleteVectorsByFilter(_, _) => true,
+            // `update_filter` only trims the client's own batch.
+            VectorOperations::UpdateVectors(_) | VectorOperations::DeleteVectors(_, _) => false,
+        },
+        CollectionUpdateOperations::PayloadOperation(op) => match op {
+            // An explicit id list takes precedence over the filter on apply,
+            // so the filter only selects points when there is no id list.
+            PayloadOps::SetPayload(sp) | PayloadOps::OverwritePayload(sp) => {
+                sp.points.is_none() && sp.filter.is_some()
+            }
+            PayloadOps::DeletePayload(dp) => dp.points.is_none() && dp.filter.is_some(),
+            PayloadOps::ClearPayloadByFilter(_) => true,
+            PayloadOps::ClearPayload { .. } => false,
+        },
+        CollectionUpdateOperations::FieldIndexOperation(_)
+        | CollectionUpdateOperations::VectorNameOperation(_) => false,
+        #[cfg(feature = "staging")]
+        CollectionUpdateOperations::StagingOperation(_) => false,
+    }
+}
+
 /// Rewrite a filter/condition-resolving operation into its id-based
 /// equivalent by resolving the filter against current segment state.
 ///
@@ -451,6 +493,58 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[test]
+    fn is_update_by_filter_excludes_client_supplied_batches() {
+        let filter = color_filter("red");
+
+        // Filter scans: the point set comes from the collection.
+        assert!(is_update_by_filter(
+            &CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
+                filter.clone()
+            ))
+        ));
+        assert!(is_update_by_filter(
+            &CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayloadByFilter(
+                filter.clone()
+            ))
+        ));
+        assert!(is_update_by_filter(
+            &CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectorsByFilter(
+                filter.clone(),
+                vec![]
+            ))
+        ));
+        assert!(is_update_by_filter(
+            &CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload: payload_json! {"a": 1},
+                points: None,
+                filter: Some(filter.clone()),
+                key: None,
+            }))
+        ));
+
+        // State-reading, but the point set is the client's own batch: routed
+        // through resolution, yet not capped by `max_update_by_filter_limit`.
+        let conditional_upsert = CollectionUpdateOperations::PointOperation(
+            PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
+                points_op: PointInsertOperationsInternal::PointsList(vec![]),
+                condition: filter.clone(),
+                update_mode: None,
+            }),
+        );
+        assert!(is_filter_resolving(&conditional_upsert));
+        assert!(!is_update_by_filter(&conditional_upsert));
+
+        let filtered_update_vectors = CollectionUpdateOperations::VectorOperation(
+            VectorOperations::UpdateVectors(UpdateVectorsOp {
+                points: vec![],
+                update_filter: Some(filter),
+            }),
+        );
+        assert!(is_filter_resolving(&filtered_update_vectors));
+        assert!(!is_update_by_filter(&filtered_update_vectors));
     }
 
     #[test]

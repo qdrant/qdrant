@@ -90,6 +90,13 @@ impl LocalShard {
             .filter(|config| config.enabled == Some(true))
             .and_then(|config| config.max_update_by_filter_limit);
 
+        // Cap genuine filter scans only. `is_filter_resolving` also routes
+        // conditional upserts and filtered `UpdateVectors` here, but those
+        // resolve to a subset of the point list the client sent, so their size
+        // is a batch size and not a filter match count.
+        let max_update_by_filter_limit =
+            max_update_by_filter_limit.filter(|_| shard::resolve::is_update_by_filter(&operation));
+
         self.check_wal_disk_space().await?;
 
         // 1. Fence: block new submits; in-flight ones (holding `read`) have
