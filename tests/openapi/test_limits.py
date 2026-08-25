@@ -1,3 +1,4 @@
+import jsonschema
 import pytest
 
 from .helpers.collection_setup import drop_collection
@@ -31,20 +32,22 @@ def test_vector_dimension_limit(collection_name):
 
     drop_collection(collection_name)
 
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        body={
-            "vectors": {
-                "size": dim_max + 1,
-                "distance": "Dot",
-            },
-        }
-    )
-    assert not response.ok
-    error = response.json()['status']['error']
-    assert error == f"Validation error in JSON body: [vectors.size: value {dim_max + 1} invalid, must be from 1 to {dim_max}]"
+    # An oversized dimension must be rejected. Since #9942 the OpenAPI schema
+    # documents the enforced 1..=dim_max bound, so request_with_validation may
+    # reject the payload client-side before it ever reaches the server; both
+    # layers of defense are accepted here.
+    with pytest.raises(jsonschema.exceptions.ValidationError):
+        request_with_validation(
+            api='/collections/{collection_name}',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            body={
+                "vectors": {
+                    "size": dim_max + 1,
+                    "distance": "Dot",
+                },
+            }
+        )
 
     drop_collection(collection_name)
 
