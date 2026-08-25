@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
@@ -205,10 +206,8 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
-        let mut records_map = tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                segments,
+        let mut records_map = self
+            .scroll_records(
                 &point_ids,
                 &with_payload,
                 with_vector,
@@ -216,10 +215,8 @@ impl LocalShard {
                 timeout,
                 hw_measurement_acc,
                 deferred_behavior,
-            ),
-        )
-        .await
-        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))??;
+            )
+            .await?;
 
         drop(update_operation_lock);
 
@@ -414,11 +411,8 @@ impl LocalShard {
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
 
-        // Fetch with the requested vector and payload
-        let records_map = tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                segments,
+        let records_map = self
+            .scroll_records(
                 &point_ids,
                 &with_payload,
                 with_vector,
@@ -426,10 +420,8 @@ impl LocalShard {
                 timeout,
                 hw_measurement_acc,
                 deferred_behavior,
-            ),
-        )
-        .await
-        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))??;
+            )
+            .await?;
 
         drop(update_operation_lock);
 
@@ -572,10 +564,8 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
-        let records_map = tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                segments,
+        let records_map = self
+            .scroll_records(
                 &selected_points,
                 &with_payload,
                 with_vector,
@@ -583,13 +573,54 @@ impl LocalShard {
                 timeout,
                 hw_measurement_acc,
                 DeferredBehavior::VisibleOnly,
-            ),
-        )
-        .await
-        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))??;
+            )
+            .await?;
 
         drop(update_operation_lock);
 
         Ok(records_map.into_values().collect())
+    }
+
+    /// Records for scrolled ids; skips retrieval when neither payload nor vectors are requested.
+    #[allow(clippy::too_many_arguments)]
+    async fn scroll_records(
+        &self,
+        point_ids: &[ExtendedPointId],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<AHashMap<ExtendedPointId, RecordInternal>> {
+        if !with_payload.enable && !with_vector.is_enabled() {
+            let bare_record = |&id| {
+                let record = RecordInternal {
+                    id,
+                    payload: None,
+                    vector: None,
+                    shard_key: None,
+                    order_value: None,
+                };
+                (id, record)
+            };
+            return Ok(point_ids.iter().map(bare_record).collect());
+        }
+
+        tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                self.segments.clone(),
+                point_ids,
+                with_payload,
+                with_vector,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                deferred_behavior,
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))?
     }
 }

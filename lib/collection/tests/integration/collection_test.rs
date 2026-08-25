@@ -12,7 +12,7 @@ use collection::operations::point_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
-    UpdateStatus,
+    ScrollResult, UpdateStatus,
 };
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
@@ -504,6 +504,91 @@ async fn test_read_api_with_shards(shard_number: u32) {
 
     assert_eq!(result.next_page_offset, Some(2.into()));
     assert_eq!(result.points.len(), 2);
+}
+
+/// Scrolling without payload or vectors skips retrieval; the page must still match.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scroll_without_payload_or_vectors() {
+    const KEY: &str = "price";
+
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let batch = BatchPersisted {
+        ids: (0..6).map(u64::into).collect_vec(),
+        vectors: BatchVectorStructPersisted::Single(vec![vec![1.0, 0.0, 0.0, 0.0]; 6]),
+        payloads: Some(
+            (0..6)
+                .map(|i| Some(Payload(Map::from_iter([(KEY.to_string(), i.into())]))))
+                .collect(),
+        ),
+    };
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(batch),
+    ));
+    collection
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+    collection
+        .create_payload_index_with_wait(
+            KEY.parse().unwrap(),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            true,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    let order_by = OrderByInterface::Struct(OrderBy {
+        key: KEY.parse().unwrap(),
+        direction: Some(Direction::Desc),
+        start_from: None,
+    });
+    for order_by in [None, Some(order_by)] {
+        let scroll = |with_payload| {
+            collection.scroll_by(
+                ScrollRequestInternal {
+                    offset: None,
+                    limit: Some(4),
+                    filter: None,
+                    with_payload: Some(WithPayloadInterface::Bool(with_payload)),
+                    with_vector: false.into(),
+                    order_by: order_by.clone(),
+                },
+                None,
+                None,
+                &ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+        };
+        let full = scroll(true).await.unwrap();
+        let bare = scroll(false).await.unwrap();
+
+        assert_eq!(full.points.len(), 4);
+        assert!(full.points.iter().all(|point| point.payload.is_some()));
+        assert!(
+            bare.points
+                .iter()
+                .all(|point| point.payload.is_none() && point.vector.is_none())
+        );
+        assert_eq!(bare.next_page_offset, full.next_page_offset);
+        let page = |result: &ScrollResult| {
+            result
+                .points
+                .iter()
+                .map(|point| (point.id, point.order_value))
+                .collect_vec()
+        };
+        assert_eq!(page(&bare), page(&full));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
