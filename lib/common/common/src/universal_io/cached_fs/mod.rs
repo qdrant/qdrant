@@ -257,7 +257,18 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         });
 
         let mut open_extra = open_extra.unwrap_or_default();
-        if let Some(info) = self.file_info(path) {
+        if let Some(info) = self.files_info.as_ref() {
+            let Some(info) = info.get(path) else {
+                // The file was not listed, set NotFound eagerly.
+                files_prefetched.insert(
+                    path.to_path_buf(),
+                    ScheduledFile::Ready(Err(UniversalIoError::NotFound {
+                        path: path.to_path_buf(),
+                    })),
+                );
+                return;
+            };
+
             open_extra = open_extra.with_known_len(info.size);
         }
 

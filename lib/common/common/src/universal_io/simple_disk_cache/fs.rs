@@ -290,10 +290,14 @@ where
         let remote_extra = extra.remote_extra.clone().with_prevent_caching(true);
 
         let state = match populate {
-            Populate::Auto | Populate::No | Populate::Blocking => {
-                return self.open(path, options, extra);
-            }
-            Populate::PreferBackground => {
+            Populate::Auto | Populate::No => match extra.known_len {
+                Some(len) => State::ready(
+                    self.open_remote(&path, remote_extra.clone())?,
+                    LocalState::new(&local_path, len, options)?,
+                ),
+                None => State::Uninit,
+            },
+            Populate::PreferBackground | Populate::Blocking => {
                 let remote = self.open_remote(&path, remote_extra.clone())?;
                 let len = match extra.known_len {
                     Some(len) => len,
