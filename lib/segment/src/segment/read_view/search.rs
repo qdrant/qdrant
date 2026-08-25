@@ -62,13 +62,13 @@ where
         )
     }
 
-    /// Like [`Self::retrieve`], but for callers that already hold the internal
-    /// offsets alongside the external ids (e.g. search post-processing, where
-    /// offsets come straight from the vector index). Skips the per-point
-    /// external→internal resolution entirely.
+    /// Builds the records for points whose internal offsets the caller already
+    /// holds, e.g. search post-processing, where the offsets come straight from
+    /// the vector index.
     ///
-    /// `resolved_ids` and `resolved_offsets` must be parallel arrays;
-    /// deferred filtering, if required, must already be applied by the caller.
+    /// `resolved_ids` and `resolved_offsets` are parallel arrays: each id is read
+    /// from the offset at the same index. The caller owns visibility — every pair
+    /// it passes is read as given.
     fn retrieve_resolved(
         &self,
         resolved_ids: Vec<PointIdType>,
@@ -288,16 +288,21 @@ where
             },
         )?;
 
-        // The deferred cutoff is applied directly by offset: the offsets are
-        // already known here, so there is no need to resolve the external ids
-        // back into offsets (`retrieve`'s first stage) just to filter them.
-        let deferred_cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
+        // Deferred versions never reach post-processing — they are excluded in the
+        // search path itself — so the offsets the index reports are read as they are.
+        debug_assert!(
+            {
+                let cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
+                internal_result
+                    .iter()
+                    .all(|scored| !cutoff.is_some_and(|cutoff| scored.idx >= cutoff))
+            },
+            "search returned a deferred point, which a query must not see",
+        );
+
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
             .filter_map(|scored_point_offset| {
-                if deferred_cutoff.is_some_and(|cutoff| scored_point_offset.idx >= cutoff) {
-                    return None;
-                }
                 let point_id = external_ids.get(&scored_point_offset.idx).copied();
                 // This can happen if a point was modified between retrieving and post-processing,
                 // but this function locks the segment so it can't be modified during execution.
@@ -310,9 +315,8 @@ where
             })
             .unzip();
 
-        // The offsets ride along from the index — hand them to
-        // `retrieve_resolved`, so no per-point external→internal lookup
-        // happens on the search path.
+        // The offsets ride along from the index, so no per-point external->internal
+        // lookup happens on the search path.
         let point_offsets: Vec<_> = scored_offsets.iter().map(|scored| scored.idx).collect();
         let mut segment_records = self.retrieve_resolved(
             point_ids.clone(),
