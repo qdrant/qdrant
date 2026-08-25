@@ -32,12 +32,10 @@ def test_vector_dimension_limit(collection_name):
 
     drop_collection(collection_name)
 
-    # An oversized dimension must be rejected. Since #9942 the OpenAPI schema
-    # documents the enforced 1..=dim_max bound, so request_with_validation may
-    # reject the payload client-side before it ever reaches the server; both
-    # layers of defense are accepted here.
-    try:
-        response = request_with_validation(
+    # An oversized dimension must be rejected by the documented schema
+    # (see #9942): request_with_validation raises before sending.
+    with pytest.raises(jsonschema.exceptions.ValidationError):
+        request_with_validation(
             api='/collections/{collection_name}',
             method="PUT",
             path_params={'collection_name': collection_name},
@@ -47,16 +45,6 @@ def test_vector_dimension_limit(collection_name):
                     "distance": "Dot",
                 },
             }
-        )
-    except jsonschema.exceptions.ValidationError:
-        # Rejected by the documented schema before reaching the server.
-        pass
-    else:
-        assert response.status_code == 422
-        error = response.json()["status"]["error"]
-        assert error == (
-            f"Validation error in JSON body: "
-            f"[vectors.size: value {dim_max + 1} invalid, must be from 1 to {dim_max}]"
         )
 
     drop_collection(collection_name)
