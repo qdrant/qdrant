@@ -490,7 +490,7 @@ dependencies = [
  "chrono",
  "common",
  "itertools 0.15.0",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "prost 0.14.4",
  "prost-wkt-types",
@@ -1282,7 +1282,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "object_store",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "pprof",
  "proptest",
@@ -1376,7 +1376,7 @@ dependencies = [
  "nix 0.31.3",
  "num-traits",
  "num_cpus",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "ph",
  "procfs",
@@ -2065,7 +2065,7 @@ dependencies = [
  "fs-err",
  "itertools 0.15.0",
  "log",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "rand 0.10.2",
  "rayon",
@@ -4670,9 +4670,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "5.3.0"
+version = "5.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e"
+checksum = "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0"
 dependencies = [
  "bytemuck",
  "num-traits",
@@ -5623,7 +5623,7 @@ dependencies = [
  "log",
  "mockito",
  "nix 0.31.3",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "procfs",
  "prometheus",
@@ -5677,7 +5677,7 @@ version = "0.8.0"
 dependencies = [
  "ahash",
  "edge",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "segment",
  "serde_json",
@@ -5707,7 +5707,7 @@ dependencies = [
  "edge-py-codegen",
  "fnv",
  "indexmap 2.14.0",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "pyo3",
  "segment",
  "serde_json",
@@ -5739,7 +5739,7 @@ dependencies = [
  "fs-err",
  "num-traits",
  "num_threads",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "quantization",
  "rand 0.10.2",
@@ -6769,7 +6769,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "once_cell",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "posting_list",
  "pprof",
@@ -7091,7 +7091,7 @@ dependencies = [
  "indexmap 2.14.0",
  "itertools 0.15.0",
  "log",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "proptest",
  "prost 0.14.4",
@@ -7297,7 +7297,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "memmap2",
- "ordered-float 5.3.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "pprof",
  "rand 0.10.2",
