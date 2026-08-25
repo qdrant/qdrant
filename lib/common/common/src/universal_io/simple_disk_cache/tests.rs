@@ -980,6 +980,18 @@ mod tests_async {
                 async_reads: AtomicUsize::new(0),
             })
         }
+
+        async fn open_async(
+            &self,
+            path: PathBuf,
+            options: OpenOptions,
+            extra: Self::OpenExtra,
+        ) -> UioResult<Self::File> {
+            Ok(AsyncOnlyRemote {
+                inner: self.0.open_async(path, options, extra).await?,
+                async_reads: AtomicUsize::new(0),
+            })
+        }
     }
 
     impl UniversalRead for AsyncOnlyRemote {
