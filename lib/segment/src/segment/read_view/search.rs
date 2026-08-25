@@ -52,6 +52,33 @@ where
                 resolved_offsets.push(offset);
             },
         )?;
+        self.retrieve_resolved(
+            &resolved_ids,
+            &resolved_offsets,
+            with_payload,
+            with_vector,
+            hw_counter,
+            is_stopped,
+        )
+    }
+
+    /// Builds the records for points whose internal offsets the caller already
+    /// holds, e.g. search post-processing, where the offsets come straight from
+    /// the vector index.
+    ///
+    /// `resolved_ids` and `resolved_offsets` are parallel arrays: each id is read
+    /// from the offset at the same index. The caller owns visibility — every pair
+    /// it passes is read as given.
+    fn retrieve_resolved(
+        &self,
+        resolved_ids: &[PointIdType],
+        resolved_offsets: &[PointOffsetType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
 
         // One blank record per resolved point; `vectors` is `Some` only when
         // vectors were requested, so the `WithVector::Bool(false)` path needs
@@ -69,7 +96,7 @@ where
             .collect();
 
         for vector_name in self.requested_vector_names(with_vector) {
-            let keys = resolved_keys(&resolved_ids, &resolved_offsets, is_stopped);
+            let keys = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
             self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vector| {
                 if let Some(record) = records.get_mut(&id) {
                     record
@@ -149,7 +176,7 @@ where
         }
 
         let payloads =
-            self.requested_payloads_raw(resolved_ids, resolved_offsets, is_stopped, hw_counter)?;
+            self.requested_payloads_raw(&resolved_ids, &resolved_offsets, is_stopped, hw_counter)?;
         for (id, payload) in payloads {
             if let Some(record) = records.get_mut(&id) {
                 record.payload = Some(payload);
@@ -179,8 +206,8 @@ where
     /// already-resolved offsets. Empty when payload wasn't requested.
     fn requested_payloads(
         &self,
-        resolved_ids: Vec<ExtendedPointId>,
-        resolved_offsets: Vec<PointOffsetType>,
+        resolved_ids: &[ExtendedPointId],
+        resolved_offsets: &[PointOffsetType],
         with_payload: &WithPayload,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
@@ -190,7 +217,7 @@ where
         }
 
         let mut payloads = Vec::with_capacity(resolved_ids.len());
-        let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+        let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
 
         self.read_payloads::<Random, _>(
             point_offsets,
@@ -218,13 +245,13 @@ where
     /// payload".
     fn requested_payloads_raw(
         &self,
-        resolved_ids: Vec<ExtendedPointId>,
-        resolved_offsets: Vec<PointOffsetType>,
+        resolved_ids: &[ExtendedPointId],
+        resolved_offsets: &[PointOffsetType],
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(ExtendedPointId, RawPayload)>> {
         let mut payloads = Vec::with_capacity(resolved_ids.len());
-        let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+        let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
 
         self.read_payloads_raw::<Random, _>(
             point_offsets,
@@ -261,6 +288,18 @@ where
             },
         )?;
 
+        // Deferred versions never reach post-processing — they are excluded in the
+        // search path itself — so the offsets the index reports are read as they are.
+        debug_assert!(
+            {
+                let cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
+                internal_result
+                    .iter()
+                    .all(|scored| !cutoff.is_some_and(|cutoff| scored.idx >= cutoff))
+            },
+            "search returned a deferred point, which a query must not see",
+        );
+
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
             .filter_map(|scored_point_offset| {
@@ -276,13 +315,16 @@ where
             })
             .unzip();
 
-        let mut segment_records = self.retrieve(
+        // The offsets ride along from the index, so no per-point external->internal
+        // lookup happens on the search path.
+        let point_offsets: Vec<_> = scored_offsets.iter().map(|scored| scored.idx).collect();
+        let mut segment_records = self.retrieve_resolved(
             &point_ids,
+            &point_offsets,
             with_payload,
             with_vector,
             hw_counter,
             is_stopped,
-            DeferredBehavior::VisibleOnly,
         )?;
 
         let mut versions = AHashMap::with_capacity(scored_offsets.len());
