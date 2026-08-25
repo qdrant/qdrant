@@ -495,7 +495,7 @@ dependencies = [
  "prost 0.14.4",
  "prost-wkt-types",
  "rand 0.10.2",
- "schemars 0.8.22",
+ "schemars",
  "segment",
  "serde",
  "serde_json",
@@ -1291,7 +1291,7 @@ dependencies = [
  "ringbuffer",
  "rmp-serde",
  "rstest",
- "schemars 0.8.22",
+ "schemars",
  "segment",
  "semver",
  "serde",
@@ -1384,7 +1384,7 @@ dependencies = [
  "rand 0.10.2",
  "roaring",
  "rstest",
- "schemars 0.8.22",
+ "schemars",
  "self_cell",
  "semver",
  "serde",
@@ -1885,7 +1885,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
  "powerfmt",
- "serde_core",
 ]
 
 [[package]]
@@ -3714,7 +3713,7 @@ dependencies = [
  "dashmap",
  "http 1.5.0",
  "http-serde",
- "schemars 0.8.22",
+ "schemars",
  "serde",
  "serde_json",
  "serial_test",
@@ -3819,12 +3818,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819b44bc7c87d9117eb522f14d46e918add69ff12713c475946b0a29363ed1c2"
 dependencies = [
  "jiff-static",
- "jiff-tzdb-platform",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3836,21 +3833,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "jiff-tzdb"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "142bd39932ad231f10513df9ab62661fead8719872150b7ad02a2df79f4e141e"
-
-[[package]]
-name = "jiff-tzdb-platform"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8"
-dependencies = [
- "jiff-tzdb",
 ]
 
 [[package]]
@@ -4694,7 +4676,7 @@ dependencies = [
  "bytemuck",
  "num-traits",
  "rand 0.8.5",
- "schemars 0.8.22",
+ "schemars",
  "serde",
 ]
 
@@ -5655,7 +5637,7 @@ dependencies = [
  "rustls-pemfile",
  "rustls-pki-types",
  "rusty-hook",
- "schemars 0.8.22",
+ "schemars",
  "sealed_test",
  "segment",
  "serde",
@@ -6078,26 +6060,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce70a74e890531977d37e532c34d45e9055d2409ed08ddba14529471ed0be16"
 dependencies = [
  "bitflags 2.11.0",
-]
-
-[[package]]
-name = "ref-cast"
-version = "1.0.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f354300ae66f76f1c85c5f84693f0ce81d747e2c3f21a45fef496d89c960bf7d"
-dependencies = [
- "ref-cast-impl",
-]
-
-[[package]]
-name = "ref-cast-impl"
-version = "1.0.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7186006dcb21920990093f30e3dea63b7d6e977bf1256be20c3563a5db070da"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -6568,30 +6530,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "schemars"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd191f9397d57d581cddd31014772520aa448f65ef991055d7f61582c65165f"
-dependencies = [
- "dyn-clone",
- "ref-cast",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "schemars"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
-dependencies = [
- "dyn-clone",
- "ref-cast",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "schemars_derive"
 version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6800,7 +6738,7 @@ dependencies = [
  "rmp-serde",
  "roaring",
  "rstest",
- "schemars 0.8.22",
+ "schemars",
  "segment",
  "self_cell",
  "serde",
@@ -6994,11 +6932,7 @@ dependencies = [
  "bs58",
  "chrono",
  "hex",
- "indexmap 1.9.3",
- "indexmap 2.14.0",
  "jiff",
- "schemars 0.9.0",
- "schemars 1.2.1",
  "serde_core",
  "serde_json",
  "serde_with_macros",
@@ -7116,7 +7050,7 @@ dependencies = [
  "rand 0.10.2",
  "rmp-serde",
  "rstest",
- "schemars 0.8.22",
+ "schemars",
  "segment",
  "serde",
  "serde_cbor",
@@ -7319,7 +7253,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "rand 0.10.2",
- "schemars 0.8.22",
+ "schemars",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -7403,7 +7337,7 @@ dependencies = [
  "raft",
  "rand 0.10.2",
  "reqwest",
- "schemars 0.8.22",
+ "schemars",
  "segment",
  "semver",
  "serde",
