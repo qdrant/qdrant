@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
 
 use crate::mmap::AdviceSetting;
@@ -90,6 +92,7 @@ where
 
 enum ScheduledFile<S: 'static> {
     Future(Pin<Box<dyn Future<Output = UioResult<S>> + Send + 'static>>),
+    Ready(UioResult<S>),
     Unchanged,
 }
 
@@ -97,6 +100,7 @@ impl<S> Debug for ScheduledFile<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScheduledFile::Future(_) => write!(f, "Future"),
+            ScheduledFile::Ready(_) => write!(f, "Ready"),
             ScheduledFile::Unchanged => write!(f, "Unchanged"),
         }
     }
@@ -271,26 +275,51 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
     ) {
+        // Check if their file info is complete and didn't change.
+        if self
+            .previous_file_info(path)
+            .zip(self.file_info(path))
+            .is_some_and(|(previous, current)| previous.full_eq(current))
         {
-            let mut files_prefetched = self.files_prefetched.lock();
-
-            if files_prefetched.contains_key(path) {
-                return;
-            }
-
-            // Check if their file info is complete and didn't change.
-            if self
-                .previous_file_info(path)
-                .zip(self.file_info(path))
-                .is_some_and(|(previous, current)| previous.full_eq(current))
-            {
-                files_prefetched.insert(path.to_path_buf(), ScheduledFile::Unchanged);
-                return;
-            }
+            self.files_prefetched
+                .lock()
+                .entry(path.to_path_buf())
+                .or_insert(ScheduledFile::Unchanged);
+            return;
         }
 
         // Otherwise schedule normally
         self.schedule_open(path, open_arguments, open_extra)
+    }
+
+    fn schedule(
+        &self,
+        path: PathBuf,
+        fut: Pin<Box<dyn Future<Output = UioResult<Fs::File>> + Send + 'static>>,
+    ) {
+        self.files_prefetched
+            .lock()
+            .insert(path, ScheduledFile::Future(fut));
+    }
+
+    fn wait_all(&self) -> UioResult<()> {
+        let mut lock = self.files_prefetched.lock();
+        let futs = lock
+            .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
+            .map(|(path, scheduled)| {
+                if let ScheduledFile::Future(fut) = scheduled {
+                    async move { (path, fut.await) }
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        let results = self.runtime.block_on(futs.collect::<Vec<_>>());
+        for (path, result) in results {
+            lock.insert(path, ScheduledFile::Ready(result));
+        }
+        Ok(())
     }
 
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
@@ -381,6 +410,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         if let Some(file) = self.files_prefetched.lock().remove(path) {
             return match file {
                 ScheduledFile::Future(future) => self.runtime.block_on(future),
+                ScheduledFile::Ready(result) => result,
                 ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
                     path: path.to_owned(),
                     since: self.file_info(path).and_then(|info| info.last_modified),
@@ -428,6 +458,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         if let Some(file) = scheduled_file {
             return match file {
                 ScheduledFile::Future(future) => future.await,
+                ScheduledFile::Ready(result) => result,
                 ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
                     since: self.file_info(&path).and_then(|info| info.last_modified),
                     path,
