@@ -800,6 +800,7 @@ mod tests {
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         HnswGraph::<MmapFile>::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
+        cached_fs.wait_all().unwrap();
 
         // Everything `load_universal` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {

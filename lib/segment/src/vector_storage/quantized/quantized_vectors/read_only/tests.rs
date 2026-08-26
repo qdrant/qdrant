@@ -357,6 +357,7 @@ fn preopen_and_unlink(
     let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
     cached_fs.cache_file_info().unwrap();
     ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config, None).unwrap();
+    cached_fs.wait_all().unwrap();
 
     for entry in fs_err::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -602,6 +603,7 @@ fn reload_chunked_preserves_scores(preload: bool) {
         let mut cached_fs = CachedFs::new(MmapFs, quant_dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         ro.live_preload(&cached_fs).unwrap();
+        cached_fs.wait_all().unwrap();
 
         fs_err::remove_dir_all(quant_dir.path()).unwrap();
 

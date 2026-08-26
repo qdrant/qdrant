@@ -122,6 +122,7 @@ mod tests {
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        cached_fs.wait_all().unwrap();
 
         for file in fs_err::read_dir(dir.path()).unwrap() {
             fs_err::remove_file(file.unwrap().path()).unwrap();

@@ -724,6 +724,7 @@ mod tests {
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         preopen(&cached_fs, dir.path(), Populate::No).unwrap();
+        cached_fs.wait_all().unwrap();
 
         // Everything `open_ro` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {

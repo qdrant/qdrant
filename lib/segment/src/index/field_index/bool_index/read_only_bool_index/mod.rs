@@ -485,6 +485,7 @@ mod tests {
             )
             .unwrap()
         );
+        cached_fs.wait_all().unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
