@@ -1361,6 +1361,7 @@ pub struct StrictModeConfig {
 
     /// Max batchsize when upserting
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub upsert_max_batchsize: Option<usize>,
 
     /// Max batchsize when searching
@@ -1392,6 +1393,7 @@ pub struct StrictModeConfig {
 
     /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
     pub filter_max_conditions: Option<usize>,
 
     /// Max size of a condition, eg. items in `MatchAny`.
@@ -4924,6 +4926,38 @@ mod tests {
             ..Default::default()
         };
         params.validate().unwrap();
+    }
+
+    #[test]
+    fn test_strict_mode_config_rejects_zero_filter_max_conditions() {
+        let config = StrictModeConfig {
+            filter_max_conditions: Some(0),
+            ..Default::default()
+        };
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("filter_max_conditions"), "error was: {err}");
+
+        let config = StrictModeConfig {
+            filter_max_conditions: Some(1),
+            ..Default::default()
+        };
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_strict_mode_config_rejects_zero_upsert_max_batchsize() {
+        let config = StrictModeConfig {
+            upsert_max_batchsize: Some(0),
+            ..Default::default()
+        };
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("upsert_max_batchsize"), "error was: {err}");
+
+        let config = StrictModeConfig {
+            upsert_max_batchsize: Some(1),
+            ..Default::default()
+        };
+        config.validate().unwrap();
     }
 
     fn match_condition(key: &str, value: &str) -> Condition {
