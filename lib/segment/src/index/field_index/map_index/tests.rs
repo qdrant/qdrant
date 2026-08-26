@@ -389,15 +389,15 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
         );
     }
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1, &hw_counter).unwrap().collect();
     hits.sort();
     assert_eq!(hits, vec![0, 3]);
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).unwrap().collect();
     hits.sort();
     assert_eq!(hits, vec![0, 4]);
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3, &hw_counter).unwrap().collect();
     hits.sort();
     assert_eq!(hits, vec![3, 4]);
 }
@@ -460,7 +460,7 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         "id 4 should be live (beyond bitslice)"
     );
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).unwrap().collect();
     hits.sort();
     assert_eq!(hits, vec![3]);
 }
@@ -632,6 +632,7 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
             .filter(&condition, &hw_counter)
             .unwrap()
             .unwrap_or_else(|| panic!("prefix {prefix:?} must be served by the index"))
+            .map(|x| x.unwrap())
             .collect();
         result.sort_unstable();
         assert_eq!(result, expected, "prefix {prefix:?}");
@@ -743,6 +744,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
             .filter(&condition, &hw_counter)
             .unwrap()
             .unwrap_or_else(|| panic!("prefix {prefix:?} must be served by the index"))
+            .map(|x| x.unwrap())
             .collect();
         result.sort_unstable();
         assert_eq!(result, expected, "prefix {prefix:?}");

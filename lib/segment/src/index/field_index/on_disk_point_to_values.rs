@@ -535,10 +535,7 @@ pub(crate) fn corrupt_ranges_table(dir: &Path, points_count: u64) {
         bytes.extend_from_slice(&1u64.to_le_bytes());
     }
 
-    let mut file = fs_err::OpenOptions::new()
-        .write(true)
-        .open(&path)
-        .unwrap();
+    let mut file = fs_err::OpenOptions::new().write(true).open(&path).unwrap();
     file.seek(SeekFrom::Start(ranges_start)).unwrap();
     file.write_all(&bytes).unwrap();
 }
@@ -661,7 +658,10 @@ mod tests {
 
     #[test]
     fn test_corrupt_last_point_ranges_error_instead_of_underflow() {
-        let dir = Builder::new().prefix("corrupt_last_point").tempdir().unwrap();
+        let dir = Builder::new()
+            .prefix("corrupt_last_point")
+            .tempdir()
+            .unwrap();
         let values: &[&[i64]] = &[&[1, 2], &[3], &[4, 5, 6]];
         OnDiskPointToValues::<i64, <MmapFs as UniversalReadFs>::File>::build_from_iter(
             dir.path(),
@@ -695,16 +695,18 @@ mod tests {
         // Corrupted ranges: visiting the last point must error, not underflow.
         corrupt_ranges_table(dir.path(), values.len() as u64);
         let ppv = open();
-        assert!(ppv
-            .values_iter(last_point as PointOffsetType, ConditionedCounter::never())
-            .is_err());
-        assert!(ppv
-            .values_iter_batch(
+        assert!(
+            ppv.values_iter(last_point as PointOffsetType, ConditionedCounter::never())
+                .is_err()
+        );
+        assert!(
+            ppv.values_iter_batch(
                 std::iter::once(((), last_point as PointOffsetType)),
                 &DeletedBitVec::new(BitVec::repeat(false, values.len())),
                 ConditionedCounter::never(),
                 |_, _| {},
             )
-            .is_err());
+            .is_err()
+        );
     }
 }

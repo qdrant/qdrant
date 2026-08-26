@@ -1483,6 +1483,7 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
         .filter(&not_empty, &hw_counter)
         .unwrap()
         .expect("null index must answer is_empty filter")
+        .map(|x| x.unwrap())
         .collect();
     assert_eq!(
         with_values,

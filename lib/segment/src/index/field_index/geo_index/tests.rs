@@ -124,6 +124,7 @@ fn filtered_points(index: &GeoIndex, condition: &FieldCondition) -> Vec<PointOff
         .filter(condition, &hw_counter)
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .collect();
     points.sort_unstable();
     points
@@ -1406,10 +1407,18 @@ fn test_on_disk_filter_propagates_mmap_read_errors() {
         let hw_counter = HardwareCounterCell::new();
 
         builder.add_point(1, &[&json!(NYC)], &hw_counter).unwrap();
-        builder.add_point(2, &[&json!(BERLIN)], &hw_counter).unwrap();
-        builder.add_point(3, &[&json!(BERLIN)], &hw_counter).unwrap();
-        builder.add_point(4, &[&json!(POTSDAM)], &hw_counter).unwrap();
-        builder.add_point(5, &[&json!(POTSDAM)], &hw_counter).unwrap();
+        builder
+            .add_point(2, &[&json!(BERLIN)], &hw_counter)
+            .unwrap();
+        builder
+            .add_point(3, &[&json!(BERLIN)], &hw_counter)
+            .unwrap();
+        builder
+            .add_point(4, &[&json!(POTSDAM)], &hw_counter)
+            .unwrap();
+        builder
+            .add_point(5, &[&json!(POTSDAM)], &hw_counter)
+            .unwrap();
         builder.add_point(6, &[&json!(TOKYO)], &hw_counter).unwrap();
         builder.add_point(7, &[&json!(TOKYO)], &hw_counter).unwrap();
 
@@ -1422,6 +1431,7 @@ fn test_on_disk_filter_propagates_mmap_read_errors() {
             .filter(&condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(matches, vec![1]);
         drop(index);
@@ -1434,8 +1444,13 @@ fn test_on_disk_filter_propagates_mmap_read_errors() {
 
     let hw_acc = HwMeasurementAcc::new();
     let hw_counter = hw_acc.get_counter_cell();
+    let result: crate::common::operation_error::OperationResult<Vec<_>> = index
+        .filter(&condition, &hw_counter)
+        .unwrap()
+        .unwrap()
+        .collect();
     assert!(
-        index.filter(&condition, &hw_counter).is_err(),
+        result.is_err(),
         "filter must propagate the mmap read error instead of dropping points"
     );
 }

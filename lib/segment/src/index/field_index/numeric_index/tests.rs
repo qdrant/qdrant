@@ -16,10 +16,10 @@ use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::on_disk_point_to_values::corrupt_ranges_table;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
-use crate::index::field_index::on_disk_point_to_values::corrupt_ranges_table;
 use crate::json_path::JsonPath;
 use crate::types::{FieldCondition, FloatPayloadType, Memory, Range, RangeInterface};
 
@@ -173,6 +173,7 @@ fn cardinality_request(
         )
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .unique()
         .collect_vec();
 
@@ -889,6 +890,7 @@ fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
         .filter(&condition, &hw_counter)
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .collect_vec();
     assert_eq!(offsets, result);
 }
@@ -972,6 +974,7 @@ fn test_remove_reopen() {
         )
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .collect();
     hits.sort();
     assert_eq!(hits, vec![0, 2]);
@@ -1013,7 +1016,13 @@ fn test_integer_index_fractional_range_bounds() {
     let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
         let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
         let hw = HardwareCounterCell::new();
-        let mut ids: Vec<_> = index.inner().filter(&cond, &hw).unwrap().unwrap().collect();
+        let mut ids: Vec<_> = index
+            .inner()
+            .filter(&cond, &hw)
+            .unwrap()
+            .unwrap()
+            .map(|x| x.unwrap())
+            .collect();
         ids.sort();
         ids
     };
@@ -1084,6 +1093,7 @@ fn test_block_index_fallback_equivalence() {
                     )
                     .unwrap()
                     .unwrap()
+                    .map(|x| x.unwrap())
                     .collect_vec();
                 (estimation.min, estimation.exp, estimation.max, points)
             })
@@ -1260,7 +1270,10 @@ fn test_check_values_any_propagates_mmap_read_errors() {
 
     let hw_counter = HardwareCounterCell::new();
     assert!(
-        index.inner().check_values_any(0, |_| true, &hw_counter).is_err(),
+        index
+            .inner()
+            .check_values_any(0, |_| true, &hw_counter)
+            .is_err(),
         "corrupted ranges table must surface as an error"
     );
 
