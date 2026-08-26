@@ -1747,3 +1747,194 @@ async fn test_over_capacity_multivector_upsert_is_skipped_on_wal_replay() {
     )
     .await;
 }
+
+/// End-to-end crash recovery through the persisted pending changes of proxy segments.
+///
+/// A delete buffered in a proxy segment used to hold back acknowledging the WAL: the buffer was
+/// in memory only, so the delete had to stay replayable. With the pending changes log the flush
+/// persists the buffer, the WAL is acknowledged past the delete, and a restart recovers the
+/// delete from the log instead of the WAL.
+///
+/// This simulates the crash: buffer a delete in proxies, flush, acknowledge the WAL up to the
+/// flushed version, then drop the shard without ever propagating the proxies. On load the delete
+/// must come back through pending changes recovery — the WAL no longer holds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_proxy_pending_changes_crash_recovery() {
+    use shard::proxy_segment::UnsyncedProxySegment;
+
+    let _ = env_logger::builder().is_test(true).try_init();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+
+    let config = create_collection_config();
+    let collection_name = "test".to_string();
+
+    let update_runtime = Handle::current();
+    let current_runtime: AdaptiveSearchHandle = AdaptiveSearchHandle::current_for_tests();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Keep flushing and WAL acknowledging under the test's control
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Insert points; WAL indices: fake operation at 0, then one entry per upsert (1..=total)
+    let total_points = 10u64;
+    for i in 0..total_points {
+        let point = PointStructPersisted {
+            id: i.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await
+            .unwrap();
+    }
+
+    // Wrap every segment in a proxy, as the optimizer and snapshots do
+    {
+        let segments = shard.segments();
+        let segments_read = segments.upgradable_read();
+        let segment_ids = segments_read.segment_ids();
+        let mut proxies = Vec::new();
+        for segment_id in segment_ids {
+            let locked_segment = segments_read.get(segment_id).unwrap().clone();
+            proxies.push((
+                segment_id,
+                UnsyncedProxySegment::new(locked_segment).unwrap(),
+            ));
+        }
+        let mut segments_write = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_read);
+        for (segment_id, proxy) in proxies {
+            segments_write
+                .replace(segment_id, proxy.finalize())
+                .unwrap();
+        }
+    }
+
+    // Delete two points; all segments are proxies, so the deletes are only buffered in memory.
+    // The second delete exists because the WAL acknowledge never passes the very last entry, so
+    // the last operation is always replayed; the delete under test must not be the last one for
+    // this test to prove it is recovered from the pending changes log rather than the WAL.
+    let delete_op_num = total_points + 1;
+    for point_id in [3, 5] {
+        shard
+            .update(
+                delete_point_operation(point_id).into(),
+                WaitUntil::Visible,
+                None,
+                hw_acc.clone(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // Flushing persists the buffered deletes into the pending changes logs, so the full version
+    // including the deletes can be acknowledged in the WAL
+    let flushed_version = shard
+        .segments()
+        .read()
+        .flush_all(FlushMode::Sync, true)
+        .unwrap();
+    assert_eq!(
+        flushed_version,
+        delete_op_num + 1,
+        "proxy segments must not hold back the WAL acknowledge once flushed",
+    );
+
+    // A pending changes log must exist in at least one segment directory
+    let has_pending_changes_log = |segments_path: &std::path::Path| {
+        fs_err::read_dir(segments_path)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.path().is_dir())
+            .any(|entry| {
+                !segment::pending_changes::list_pending_changes_log_files(&entry.path()).is_empty()
+            })
+    };
+    let segments_path = LocalShard::segments_path(collection_dir.path());
+    assert!(has_pending_changes_log(&segments_path));
+
+    // "Crash": stop the shard while the proxies still hold the delete; they are never
+    // propagated into their wrapped segments
+    shard.stop_gracefully().await;
+
+    // Acknowledge the WAL up to the flushed version, as the flush worker does
+    {
+        let wal_path = LocalShard::wal_path(collection_dir.path());
+        let mut raw_wal: SerdeWal<String> =
+            SerdeWal::new(&wal_path, (&config.wal_config).into()).unwrap();
+        raw_wal.ack(flushed_version).unwrap();
+        assert!(
+            raw_wal.first_index() > delete_op_num,
+            "test setup must acknowledge the WAL past the first delete operation",
+        );
+    }
+
+    // "Restart": the delete is not in the WAL anymore, it must be recovered from the pending
+    // changes logs
+    let shard = LocalShard::load(
+        0,
+        collection_name,
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        false,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .unwrap();
+
+    let retrieved = shard
+        .retrieve(
+            Arc::new(PointRequestInternal {
+                ids: (0..total_points).map(PointIdType::from).collect(),
+                with_payload: None,
+                with_vector: WithVector::Bool(false),
+            }),
+            &WithPayload::default(),
+            &WithVector::Bool(false),
+            &current_runtime,
+            None,
+            hw_acc.clone(),
+            DeferredBehavior::VisibleOnly,
+        )
+        .await
+        .unwrap();
+    let retrieved_ids: Vec<_> = retrieved.iter().map(|point| point.id).collect();
+    assert!(
+        !retrieved_ids.contains(&3.into()),
+        "deleted point must stay deleted after restart: {retrieved_ids:?}",
+    );
+    assert!(!retrieved_ids.contains(&5.into()));
+    assert_eq!(retrieved_ids.len() as u64, total_points - 2);
+
+    // Recovery replayed and removed the pending changes logs
+    assert!(!has_pending_changes_log(&segments_path));
+}

@@ -454,6 +454,16 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
             ))
         })?;
 
+        // Replay pending changes persisted by proxy segments onto this segment, then remove
+        // them. Buffered proxy state that made it to disk does not hold back the WAL
+        // acknowledge, so it must be recovered here, before WAL replay.
+        segment::pending_changes::recover_pending_changes(&mut segment).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to recover pending proxy changes of segment {}: {err}",
+                segment_path.display(),
+            ))
+        })?;
+
         segments.add_new(segment);
     }
 

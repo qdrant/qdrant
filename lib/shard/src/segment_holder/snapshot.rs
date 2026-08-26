@@ -63,7 +63,7 @@ impl SegmentHolder {
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
             let segment = segments_lock.get(segment_id).unwrap();
-            let proxy = UnsyncedProxySegment::new(segment.clone());
+            let proxy = UnsyncedProxySegment::new(segment.clone())?;
 
             // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied

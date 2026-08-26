@@ -454,6 +454,11 @@ impl LocalShard {
 
                     segment.check_consistency_and_repair()?;
 
+                    // Replay pending changes persisted by proxy segments onto this segment, then
+                    // remove them. Buffered proxy state that made it to disk does not hold back
+                    // the WAL acknowledge, so it must be recovered here, before WAL replay.
+                    segment::pending_changes::recover_pending_changes(&mut segment)?;
+
                     if rebuild_payload_index {
                         segment.update_all_field_indices(
                             &payload_index_schema.read().schema.clone(),
