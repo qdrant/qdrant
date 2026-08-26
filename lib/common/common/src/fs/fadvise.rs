@@ -188,7 +188,7 @@ mod tests {
         let dir = Builder::new().prefix("fadvise").tempdir().unwrap();
         let path = dir.path().join("big.bin");
         let payload = vec![0u8; 256 * 1024];
-        std::fs::write(&path, &payload).unwrap();
+        fs_err::write(&path, &payload).unwrap();
         let mut file = OneshotFile::open(&path).expect("open should succeed on multipage file");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
@@ -202,7 +202,7 @@ mod tests {
     fn oneshot_file_open_is_repeatable() {
         let dir = Builder::new().prefix("fadvise").tempdir().unwrap();
         let path = dir.path().join("repeat.bin");
-        std::fs::write(&path, b"abcdefghij").unwrap();
+        fs_err::write(&path, b"abcdefghij").unwrap();
         for _ in 0..3 {
             let mut file = OneshotFile::open(&path).expect("open should succeed");
             let mut buf = Vec::new();
