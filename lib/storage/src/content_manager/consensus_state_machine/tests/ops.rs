@@ -1,7 +1,7 @@
 //! Explicit tests asserting behavior of individual consensus operations
 //! and tests for cases that `proptest` is unlikely to generate or reach
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use collection::operations::types::PeerMetadata;
 use segment::data_types::vector_name_config::*;
@@ -47,7 +47,7 @@ fn create_alias() {
         panic!("creating an alias should be accepted, got {outcome:?}");
     };
 
-    assert!(matches!(actions.as_slice(), [Action::SetAlias { .. }]));
+    assert_eq!(actions, vec![set_aliases(vec![("alias", COLLECTION)])]);
 
     let aliases = &machine.state().aliases;
 
@@ -68,7 +68,8 @@ fn create_alias_replay() {
         panic!("replay of an applied alias should be accepted, got {outcome:?}");
     };
 
-    assert!(matches!(actions.as_slice(), [Action::SetAlias { .. }]));
+    // The mapping already holds what the operation writes, so there is nothing to save
+    assert!(actions.is_empty());
 
     assert_eq!(machine.state(), &state, "replay should not change anything");
 }
@@ -138,7 +139,7 @@ fn delete_alias() {
         panic!("deleting an alias should be accepted, got {outcome:?}");
     };
 
-    assert!(matches!(actions.as_slice(), [Action::DeleteAlias { .. }]));
+    assert_eq!(actions, vec![remove_aliases(vec!["alias"])]);
 
     assert!(machine.state().aliases.get("alias").is_none());
 }
@@ -154,8 +155,8 @@ fn delete_alias_missing() {
         panic!("deleting an alias that does not exist should be accepted, got {outcome:?}");
     };
 
-    // Action is emitted even if state already matches
-    assert!(matches!(actions.as_slice(), [Action::DeleteAlias { .. }]));
+    // Nothing to remove, so nothing to save
+    assert!(actions.is_empty());
 
     assert_eq!(machine.state(), &state);
 }
@@ -174,7 +175,14 @@ fn rename_alias() {
         panic!("renaming an alias should be accepted, got {outcome:?}");
     };
 
-    assert!(matches!(actions.as_slice(), [Action::RenameAlias { .. }]));
+    // A rename resolves to the value it moves, and the alias it takes it from
+    assert_eq!(
+        actions,
+        vec![Action::UpdateAliases {
+            set: BTreeMap::from([("other".to_string(), COLLECTION.to_string())]),
+            remove: BTreeSet::from(["alias".to_string()]),
+        }]
+    );
 
     let aliases = &machine.state().aliases;
 
@@ -200,6 +208,25 @@ fn rename_alias_reject_missing() {
 }
 
 #[test]
+fn change_aliases_reject_missing_rename() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![
+        create_alias_action("new", COLLECTION),
+        rename_alias_action("missing", "other"),
+    ]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    // The action before the rename is validated, never emitted
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn change_aliases_in_order() {
     let state = cluster_state(Vec::new());
 
@@ -213,10 +240,8 @@ fn change_aliases_in_order() {
         panic!("renaming an alias the operation just created should be accepted, got {outcome:?}");
     };
 
-    assert!(matches!(
-        actions.as_slice(),
-        [Action::SetAlias { .. }, Action::RenameAlias { .. }],
-    ));
+    // The alias the operation creates and renames never reaches the mapping
+    assert_eq!(actions, vec![set_aliases(vec![("other", COLLECTION)])]);
 
     let aliases = &machine.state().aliases;
 
@@ -240,8 +265,7 @@ fn change_aliases_reject_whole_operation() {
         ApplyOutcome::Rejected(StorageError::NotFound { .. })
     ));
 
-    // `TableOfContent::update_aliases` saves each action as it goes,
-    // so it drops the alias and rejects the operation after that
+    // The delete before the failing action is validated, never emitted
     assert_eq!(machine.state(), &state);
 }
 
@@ -882,6 +906,23 @@ fn change_aliases_op(actions: Vec<AliasOperations>) -> ConsensusOperations {
     collection_meta_op(CollectionMetaOperations::ChangeAliases(
         ChangeAliasesOperation { actions },
     ))
+}
+
+fn set_aliases(aliases: Vec<(&str, &str)>) -> Action {
+    Action::UpdateAliases {
+        set: aliases
+            .into_iter()
+            .map(|(alias, collection)| (alias.to_string(), collection.to_string()))
+            .collect(),
+        remove: BTreeSet::new(),
+    }
+}
+
+fn remove_aliases(aliases: Vec<&str>) -> Action {
+    Action::UpdateAliases {
+        set: BTreeMap::new(),
+        remove: aliases.into_iter().map(String::from).collect(),
+    }
 }
 
 fn create_alias_action(alias: &str, collection: &str) -> AliasOperations {
