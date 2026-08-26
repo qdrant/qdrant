@@ -112,6 +112,11 @@ pub trait PayloadIndexRead {
     /// The iterator return uses RPITIT so each impl keeps its own zero-cost
     /// concrete chain. The id tracker is read from `&self`, so impls reach it
     /// through their own field rather than receiving a separate parameter.
+    ///
+    /// Items are fallible: evaluating a condition may read field-index storage
+    /// (e.g. an on-disk geo index), which can fail mid-iteration. Errors must
+    /// be propagated instead of silently dropping the point, or a corrupted
+    /// index would return incomplete filter results.
     fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
@@ -119,7 +124,7 @@ pub trait PayloadIndexRead {
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
+    ) -> OperationResult<impl Iterator<Item = OperationResult<PointOffsetType>> + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
