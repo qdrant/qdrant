@@ -178,6 +178,15 @@ impl PayloadIndexRead for PlainPayloadIndex {
         unimplemented!()
     }
 
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        _point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        _callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        unimplemented!()
+    }
+
     fn numeric_index_for(&self, _key: &PayloadKeyType) -> Option<impl NumericFieldIndexRead + '_> {
         // Plain index has no field indexes; the type tag is just a placeholder.
         None::<NumericFieldIndex<'_>>

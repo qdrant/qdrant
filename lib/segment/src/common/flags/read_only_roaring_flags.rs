@@ -5,7 +5,8 @@ use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkNotFound, OkUnchanged, OpenOptions, Populate, TypedStorage, UioResult,
+    UniversalRead, UniversalReadFs,
 };
 use roaring::RoaringBitmap;
 
@@ -63,7 +64,7 @@ fn open_options(populate: Populate) -> OpenOptions {
 fn read_status_len<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
-) -> OperationResult<usize> {
+) -> UioResult<usize> {
     let file = fs.open(
         status_file(directory),
         open_options(Populate::No),
@@ -159,6 +160,32 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) -> OperationResult<()> {
+        let directory = self.directory.as_path();
+
+        // Bitslice
+        let populate = if self.bitmap.get().is_some() {
+            Populate::PreferBackground
+        } else {
+            Populate::No
+        };
+
+        cached_fs.reschedule_prefetch(
+            &directory.join(FLAGS_FILE),
+            Some(open_options(populate)),
+            None,
+        )?;
+
+        // Status file.
+        cached_fs.reschedule_prefetch(
+            &status_file(directory),
+            Some(open_options(Populate::PreferBackground)),
+            None,
+        )?;
+
+        Ok(())
+    }
+
     /// Refresh to the current on-disk state.
     ///
     /// Deliberately *not* an impl of [`LiveReload`][1]: this storage holds
@@ -178,26 +205,31 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     ///
     /// [1]: crate::common::live_reload::LiveReload
     pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
-        let storage = StoredBitSlice::<S>::open(
+        if let Some(storage) = StoredBitSlice::<S>::open(
             fs,
             self.directory.join(FLAGS_FILE),
             open_options(Populate::No),
             Default::default(),
-        )?;
+        )
+        .ok_unchanged()?
+        {
+            if let Some(bitmap) = self.bitmap.get_mut() {
+                *bitmap = RoaringBitmap::from_sorted_iter(
+                    storage.iter_ones()?.map(|i| i as PointOffsetType),
+                )
+                .expect("iter_ones iterates in sorted order");
+            }
 
-        if let Some(bitmap) = self.bitmap.get_mut() {
-            *bitmap =
-                RoaringBitmap::from_sorted_iter(storage.iter_ones()?.map(|i| i as PointOffsetType))
-                    .expect("iter_ones iterates in sorted order");
+            self.storage = storage;
         }
-
-        self.storage = storage;
 
         // The logical length grows as points are appended; refresh it so
         // length-driven readers (the null index's `iter_falses`) stay correct.
         // Once the index exists its status file always does, so absence here is
         // a genuine not-found (segment removed mid-reload), not a lazy file.
-        self.len = read_status_len::<S>(fs, &self.directory)?;
+        if let Some(new_len) = read_status_len(fs, &self.directory).ok_unchanged()? {
+            self.len = new_len;
+        }
 
         Ok(())
     }

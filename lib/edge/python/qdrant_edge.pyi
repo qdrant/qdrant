@@ -129,6 +129,22 @@ class EdgeShard:
         """
         ...
 
+    def query_batch(self, queries: List["QueryRequest"]) -> List[List["ScoredPoint"]]:
+        """
+        Execute several queries as one planned batch.
+
+        Cheaper than calling `query` once per request: the batch is planned as a
+        whole, so its searches share one pass over the segments and queries that
+        differ only in their vector are scored together.
+
+        Args:
+            queries: The query requests to run together.
+
+        Returns:
+            One list of scored points per request, in the same order.
+        """
+        ...
+
     def search(self, search: "SearchRequest") -> List["ScoredPoint"]:
         """
         Execute a search against the shard.
@@ -2463,6 +2479,16 @@ class Expression(Enum):
         ...
 
     @staticmethod
+    def Max(exprs: List["Expression"]) -> "Expression":
+        """Create a maximum expression. Requires at least one operand."""
+        ...
+
+    @staticmethod
+    def Min(exprs: List["Expression"]) -> "Expression":
+        """Create a minimum expression. Requires at least one operand."""
+        ...
+
+    @staticmethod
     def Neg(expr: "Expression") -> "Expression":
         """Create a negation expression."""
         ...
@@ -2499,6 +2525,11 @@ class Expression(Enum):
     @staticmethod
     def Ln(expr: "Expression") -> "Expression":
         """Create a natural log expression."""
+        ...
+
+    @staticmethod
+    def Acosh(expr: "Expression") -> "Expression":
+        """Create an inverse hyperbolic cosine expression."""
         ...
 
     @staticmethod

@@ -34,6 +34,11 @@ pub struct FeatureFlags {
     /// When enabled, payload storage backend is decided based on `storage.performance.io_uring` option and payload storage type.
     pub async_payload_storage: bool,
 
+    /// Allow the batched io_uring-based HNSW graph search.
+    /// When disabled, the HNSW graph is *never* opened on io_uring.
+    /// When enabled, the graph backend is decided based on `storage.performance.io_uring` option and links placement.
+    pub async_hnsw_graph: bool,
+
     /// Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory)
     /// listing the shard's segments and their
     /// state, so out-of-process readers can discover segments without scanning the filesystem.
@@ -47,8 +52,32 @@ pub struct FeatureFlags {
     /// bitslices. Only gates writing: both formats are always readable.
     pub compact_bitmask: bool,
 
+    /// Create Blobstore-backed storages (payload storage, appendable field indexes, sparse
+    /// vectors) in the append-only Logstore mode. Gates creation only: an existing storage
+    /// keeps its persisted mode, and both modes are always readable.
+    ///
+    /// Implies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].
+    pub append_only_storages: bool,
+
+    /// Transfer points as storage-native bytes (raw points), for every collection rather than
+    /// only those whose vector storage would lose precision in a decode-encode round-trip
+    /// (TurboQuant).
+    ///
+    /// Read on the sending side only, where the transfer batch is prepared: nodes accept
+    /// raw points regardless.
+    pub transfer_raw_points: bool,
+
+    /// Send the payload of a raw point as the byte blob it is stored as, so the sending
+    /// node does not parse it and neither node builds a protobuf value tree for it. The
+    /// receiving node still parses the blob, once, when the operation is applied. Only has
+    /// an effect on points transferred raw, see [`Self::transfer_raw_points`].
+    ///
+    /// Read on the sending side only: nodes accept raw payloads regardless.
+    pub transfer_raw_payloads: bool,
+
     /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
-    /// [`Self::append_only_mutations`] and [`Self::compact_bitmask`].
+    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`] and
+    /// [`Self::append_only_storages`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     serverless_compatible: bool,
@@ -62,9 +91,13 @@ impl Default for FeatureFlags {
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
+            async_hnsw_graph: false,
             write_segment_manifest: false,
             append_only_mutations: false,
             compact_bitmask: false,
+            append_only_storages: false,
+            transfer_raw_points: false,
+            transfer_raw_payloads: false,
             serverless_compatible: false,
         }
     }
@@ -89,11 +122,17 @@ impl FeatureFlags {
             appendable_quantization: true,
             single_file_mmap_vector_storage: true,
             async_payload_storage: true,
+            async_hnsw_graph: true,
             write_segment_manifest: true,
-            // Deliberately not enabled by `all`: this is a test-only escape hatch that changes
-            // mutation semantics, and `all` is enabled in dev and e2e configs.
+            // Deliberately not enabled by `all`: these change mutation semantics and the
+            // persisted storage format, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
+            append_only_storages: false,
             compact_bitmask: true,
+            // Deliberately not enabled by `all`: a node only accepts these once it runs a
+            // version that understands them, so they can only be switched on a release later.
+            transfer_raw_points: false,
+            transfer_raw_payloads: false,
             serverless_compatible: false,
         }
     }
@@ -110,6 +149,12 @@ impl FeatureFlags {
             self.write_segment_manifest = true;
             self.append_only_mutations = true;
             self.compact_bitmask = true;
+            self.append_only_storages = true;
+        }
+
+        // Append-only storages cannot rewrite slots.
+        if self.append_only_storages {
+            self.append_only_mutations = true;
         }
 
         self
@@ -163,6 +208,7 @@ mod tests {
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
     }
 
     #[test]
@@ -177,5 +223,17 @@ mod tests {
         assert!(flags.write_segment_manifest);
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
+    }
+
+    #[test]
+    fn test_append_only_storages_forces_append_only_mutations() {
+        let flags = FeatureFlags {
+            append_only_storages: true,
+            ..Default::default()
+        }
+        .normalize();
+
+        assert!(flags.append_only_mutations);
     }
 }

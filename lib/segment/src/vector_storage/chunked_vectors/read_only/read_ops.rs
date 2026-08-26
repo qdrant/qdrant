@@ -15,18 +15,6 @@ use crate::vector_storage::{VectorOffset, VectorOffsetType};
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     #[inline]
-    pub(in crate::vector_storage::chunked_vectors) fn get_chunk_index(&self, key: usize) -> usize {
-        key / self.config.chunk_size_vectors
-    }
-
-    /// Returns the byte offset of the vector in the chunk
-    #[inline]
-    pub(in crate::vector_storage::chunked_vectors) fn get_chunk_offset(&self, key: usize) -> usize {
-        let chunk_vector_idx = key % self.config.chunk_size_vectors;
-        chunk_vector_idx * self.config.dim
-    }
-
-    #[inline]
     pub fn max_vector_size_bytes(&self) -> usize {
         self.config.chunk_size_bytes
     }
@@ -43,9 +31,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
 
     // returns how many vectors can be inserted starting from key
     pub fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize {
-        let start_key = start_key.as_();
-        let chunk_vector_idx = self.get_chunk_offset(start_key) / self.config.dim;
-        self.config.chunk_size_vectors - chunk_vector_idx
+        self.config.remaining_chunk_capacity(start_key.as_())
     }
 
     #[inline]
@@ -54,12 +40,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             return None;
         }
 
-        let chunk_idx = self.get_chunk_index(offset);
+        let chunk_idx = self.config.get_chunk_index(offset);
         if chunk_idx >= self.chunks.len() {
             return None;
         }
 
-        let element_offset = self.get_chunk_offset(offset);
+        let element_offset = self.config.get_chunk_offset(offset);
         let elements_length = count * self.config.dim;
         if element_offset + elements_length > self.config.chunk_size_vectors * self.config.dim {
             return None;

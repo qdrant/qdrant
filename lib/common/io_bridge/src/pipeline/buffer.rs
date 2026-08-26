@@ -151,7 +151,6 @@ async fn scatter_stream_into_buffer(
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use futures::StreamExt as _;
 
     use super::*;
 

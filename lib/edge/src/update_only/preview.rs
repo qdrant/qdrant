@@ -8,7 +8,7 @@
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalAppend, UniversalRead};
 use rayon::ThreadPool;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::apply::{locate_points, read_stored_points};
 use crate::update_only::batch::UpdateBatchPlan;
-use crate::update_only::holder::UpdateOnlySegmentHolder;
+use crate::update_only::holder::LookupSegmentHolder;
 
 /// A resolved batch: one entry per touched point, in first-touched order.
 pub struct UpdateBatchPreview {
@@ -56,8 +56,13 @@ pub enum PointAction {
     /// Left untouched: the stored copy is already at or beyond the batch's
     /// version, so re-applying would move the point backwards.
     Skip,
+    /// Left untouched: every operation naming the point was rejected by its
+    /// update mode — an `insert_only` upsert of a point that is already
+    /// there. Nothing is written and no slot is retired.
+    Rejected,
     /// An operation that can only modify an existing point named one that no
-    /// segment holds; there is nothing to write.
+    /// segment holds; there is nothing to write. An `update_only` upsert of a
+    /// point that does not exist lands here.
     Missing,
 }
 
@@ -67,7 +72,7 @@ pub enum PointAction {
 /// both [`UpdateOnlyEdgeShard::preview_batch`] and
 /// [`UpdateOnlyEdgeShard::apply_batch`].
 pub(super) fn resolve_batch<S: UniversalRead + 'static>(
-    segments: &UpdateOnlySegmentHolder<S>,
+    segments: &LookupSegmentHolder<S>,
     plan: UpdateBatchPlan,
     pool: &ThreadPool,
 ) -> OperationResult<Vec<PointPreview>> {
@@ -86,6 +91,7 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
             .map(|location| location.slots.clone())
             .unwrap_or_default();
 
+        let exists = current.is_some();
         // Already applied: the stored point is at or beyond this batch's
         // version, so re-applying would move it backwards.
         let already_applied = current
@@ -94,10 +100,19 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
 
         let action = if already_applied {
             PointAction::Skip
+        } else if !updates.applies_any(exists) {
+            // Every operation was rejected by its update mode. A rejected
+            // `update_only` upsert is the `Missing` case — an operation that
+            // can only modify an existing point, naming one that is not there.
+            if exists {
+                PointAction::Rejected
+            } else {
+                PointAction::Missing
+            }
         } else {
-            match updates.materialize(id, stored.remove(&id))? {
+            match updates.materialize(id, exists, stored.remove(&id))? {
                 Some(point) => PointAction::Store(Box::new(point)),
-                None if current.is_some() => PointAction::Delete,
+                None if exists => PointAction::Delete,
                 None => PointAction::Missing,
             }
         };
@@ -113,7 +128,7 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
     Ok(points)
 }
 
-impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     /// Resolve a batch without writing anything: what
     /// [`apply_batch`](Self::apply_batch) would do, reported per point.
     ///

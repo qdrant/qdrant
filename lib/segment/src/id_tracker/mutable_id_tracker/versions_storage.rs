@@ -1,3 +1,9 @@
+//! The point versions file: a dense array of one [`SeqNumberType`] per internal id, the entry for
+//! id `n` sitting at `n * VERSION_ELEMENT_SIZE`.
+//!
+//! Both write paths, [`store_version_changes`] here and the append-only writer in
+//! [`super::update_only`], go through the format definitions in this module.
+
 use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Seek, Write};
 use std::path::{Path, PathBuf};
@@ -15,25 +21,59 @@ const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
 pub(super) const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
+// Entries are written as `u64`, a change to `SeqNumberType` has to be made there too.
+const _: () = assert!(VERSION_ELEMENT_SIZE == size_of::<u64>() as u64);
+
 pub(super) fn versions_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_VERSIONS)
+}
+
+/// Write one version entry at the writer's current position.
+pub(super) fn write_version<W: Write>(mut writer: W, version: SeqNumberType) -> io::Result<()> {
+    writer.write_u64::<FileEndianess>(version)
+}
+
+/// Cut a partial trailing entry off a versions file of `file_len` bytes, leaving it ending on an
+/// entry boundary. A file already ending on one is not touched.
+///
+/// Dropping those bytes loses nothing: a torn entry is a slot nobody counted as committed. Leaving
+/// them would misplace every entry written after them.
+///
+/// `shrink_to` cuts the file down however its backend can: in place for [`store_version_changes`],
+/// by rewriting the file for the append-only writer, which has no truncate.
+pub(super) fn heal_versions_tail(
+    versions_path: &Path,
+    file_len: u64,
+    shrink_to: impl FnOnce(u64) -> OperationResult<()>,
+) -> OperationResult<()> {
+    let partial_tail = file_len % VERSION_ELEMENT_SIZE;
+    if partial_tail == 0 {
+        return Ok(());
+    }
+
+    log::warn!(
+        "Mutable ID tracker versions file ends with a partial entry ({partial_tail} bytes into a {VERSION_ELEMENT_SIZE}-byte slot), dropping it because the slot it belongs to was never committed: {}",
+        versions_path.display(),
+    );
+    shrink_to(file_len - partial_tail)?;
+
+    Ok(())
 }
 
 pub(super) fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let file = File::open(versions_path)?;
 
     let file_len = file.metadata()?.len();
-    if file_len % VERSION_ELEMENT_SIZE != 0 {
+    let partial_tail = file_len % VERSION_ELEMENT_SIZE;
+    if partial_tail != 0 {
         log::warn!(
-            "Mutable ID tracker versions file has partial trailing entry, ignoring last {} bytes (will be cleaned up on next flush)",
-            file_len % VERSION_ELEMENT_SIZE,
+            "Mutable ID tracker versions file has partial trailing entry, ignoring last {partial_tail} bytes (will be cleaned up on next flush)",
         );
     }
-    let version_count = file_len / VERSION_ELEMENT_SIZE;
 
     let mut reader = BufReader::new(file);
 
-    Ok((0..version_count)
+    Ok((0..file_len / VERSION_ELEMENT_SIZE)
         .map(|_| reader.read_u64::<FileEndianess>())
         .collect::<Result<_, _>>()?)
 }
@@ -54,18 +94,12 @@ pub(super) fn store_version_changes(
         .truncate(false)
         .open(versions_path)?;
 
-    // Truncate partial trailing entry if present (e.g. from a previous crash mid-write).
-    // Must be done before writing to prevent zero-fill from merging with partial bytes
-    // into a corrupt-but-complete-looking entry when extending the file.
-    let file_len = file.metadata()?.len();
-    let valid_len = (file_len / VERSION_ELEMENT_SIZE) * VERSION_ELEMENT_SIZE;
-    if file_len != valid_len {
-        log::warn!(
-            "Mutable ID tracker versions file has partial trailing entry ({} extra bytes), truncating",
-            file_len - valid_len,
-        );
-        file.set_len(valid_len)?;
-    }
+    // Heal a partial trailing entry (e.g. from a previous crash mid-write) before writing:
+    // the zero-fill of a later extension would otherwise merge with the partial bytes into
+    // a corrupt-but-complete-looking entry.
+    heal_versions_tail(versions_path, file.metadata()?.len(), |healthy_len| {
+        Ok(file.set_len(healthy_len)?)
+    })?;
 
     let mut writer = BufWriter::new(file);
 
@@ -125,7 +159,7 @@ where
         }
 
         // Write version and update position
-        writer.write_u64::<FileEndianess>(version)?;
+        write_version(&mut writer, version)?;
         position += VERSION_ELEMENT_SIZE;
     }
 

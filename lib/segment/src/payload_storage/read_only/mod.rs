@@ -7,7 +7,7 @@ use common::universal_io::UniversalRead;
 
 use crate::types::Payload;
 
-/// Read-only counterpart to [`super::mmap_payload_storage::MmapPayloadStorage`].
+/// Read-only counterpart to [`super::payload_storage_impl::PayloadStorageImpl`].
 ///
 /// Backed by a [`BlobstoreReader`] over generic [`UniversalRead`] instead of a
 /// writable [`blobstore::Blobstore`]. Unlike the read-only field indexes there

@@ -25,9 +25,9 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`NumericIndexInner`]: super::NumericIndexInner
 pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
     /// Hardware counter is used only by the mmap-backed variant; in-memory
-    /// variants ignore it. `Err` is returned if the mmap read fails so the
-    /// error is propagated to the caller instead of silently producing a
-    /// false negative.
+    /// variants ignore it. Returns an error if the underlying mmap read
+    /// fails, so a transient IO failure surfaces to the caller instead of
+    /// being silently reported as "no match".
     fn check_values_any(
         &self,
         idx: PointOffsetType,

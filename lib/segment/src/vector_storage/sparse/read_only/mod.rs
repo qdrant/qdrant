@@ -11,7 +11,7 @@ mod read_ops;
 #[derive(Debug)]
 pub struct ReadOnlySparseVectorStorage<S: UniversalRead> {
     storage: BlobstoreReader<StoredSparseVector, S>,
-    /// Flags marking deleted vectors.
+    /// Flags marking deleted vectors, since storage is append-only.
     deleted: InMemoryBitvecFlags,
     next_point_offset: usize,
 }
@@ -170,6 +170,20 @@ mod tests {
     /// After `live_reload`, the read-only view reflects appends and deletions.
     #[test]
     fn live_reload_picks_up_appends_and_deletions() {
+        reload_picks_up_appends_and_deletions(false);
+    }
+
+    /// Preload must stage every file the reload opens: after the preload the
+    /// backing files are deleted, so the reload can only succeed from the
+    /// prefetch pool (parked mmap handles keep reading deleted files on unix).
+    #[test]
+    fn live_preload_then_reload_picks_up_appends_and_deletions() {
+        reload_picks_up_appends_and_deletions(true);
+    }
+
+    fn reload_picks_up_appends_and_deletions(preload: bool) {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
         let dir = Builder::new().prefix("ro_sparse_reload").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
@@ -209,18 +223,24 @@ mod tests {
             writer.delete_vector(id).unwrap();
         }
         writer.flusher()().unwrap();
+        drop(writer);
 
         let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
             .map(|offset| offset as PointOffsetType)
             .collect();
-        reader
-            .live_reload(
-                &MmapFs,
-                &SortedSlice::new(&deleted_ids).unwrap(),
-                &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
-            )
-            .unwrap();
+        let deleted = SortedSlice::new(&deleted_ids).unwrap();
+        let new = SortedSlice::new(&new_ids).unwrap();
+        if preload {
+            let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+            cached_fs.cache_file_info().unwrap();
+            reader.live_preload(&cached_fs).unwrap();
+
+            fs_err::remove_dir_all(dir.path()).unwrap();
+
+            reader.live_reload(&cached_fs, &deleted, &new, &hw).unwrap();
+        } else {
+            reader.live_reload(&MmapFs, &deleted, &new, &hw).unwrap();
+        }
 
         assert_eq!(reader.total_vector_count(), first.len() + second.len());
         assert_eq!(reader.deleted_vector_count(), deleted_ids.len());

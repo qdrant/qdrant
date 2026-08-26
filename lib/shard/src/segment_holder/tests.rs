@@ -64,6 +64,7 @@ fn test_apply_to_appendable() {
             |point_id, _, _, _| {
                 moved_to_appendable.push(point_id);
             },
+            None,
             &HardwareCounterCell::new(),
         )
         .unwrap();
@@ -188,6 +189,7 @@ fn test_apply_and_move_old_versions(
                 Ok(true)
             },
             |point_id, _, _, _| processed_points2.push(point_id),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -279,6 +281,7 @@ fn test_cow_operation() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -343,6 +346,7 @@ fn test_cow_move_append_only_single_slot() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -462,6 +466,7 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
                 &[point_id],
                 |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
                 |_, _, _, _| {}, // no-op: a pure move
+                None,
                 &hw_counter,
             )
             .unwrap();
@@ -593,6 +598,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
                     VectorInternal::Dense(fresh_replace.clone()),
                 );
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -691,6 +697,7 @@ fn test_cow_move_delete_name_preserves_survivor() {
             |_, raw_vectors, _, _| {
                 raw_vectors.retain(|(name, _)| name != DROP);
             },
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -788,6 +795,7 @@ fn test_cow_move_allows_role_config_differences() {
             &[point_id],
             |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
             |_, _, _, _| {}, // no-op: a pure move
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2008,6 +2016,7 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
             |_, _, _, _| {},
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2175,6 +2184,7 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
             &[100.into()],
             |_, _| unreachable!("point is in non-appendable, should take CoW path"),
             |_, _, _, _| {},
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -2194,5 +2204,227 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
     assert!(
         non_app.point_version(100.into()).is_none(),
         "Point 100 should be deleted from the source"
+    );
+}
+
+/// Segment size as seen by the size cap.
+fn segment_size(holder: &SegmentHolder, segment_id: SegmentId) -> usize {
+    holder
+        .get(segment_id)
+        .unwrap()
+        .get()
+        .read()
+        .max_available_vectors_size_in_bytes()
+        .unwrap()
+}
+
+#[test]
+fn test_has_appendable_segment_with_capacity() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    assert!(
+        !holder.has_appendable_segment_with_capacity(None),
+        "Empty holder should have no capacity",
+    );
+
+    let segment_id = holder.add_new(build_segment_1(dir.path()));
+    let size = segment_size(&holder, segment_id);
+    assert!(size > 0, "Segment should have non-zero size");
+
+    assert!(holder.has_appendable_segment_with_capacity(None));
+    assert!(!holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size)));
+    assert!(holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size + 1)));
+
+    // A segment busy under a write lock cannot be measured and stays eligible
+    let locked_segment = holder.get(segment_id).unwrap().get();
+    let _write_guard = locked_segment.write();
+    assert!(holder.has_appendable_segment_with_capacity(NonZeroUsize::new(1)));
+}
+
+#[test]
+fn test_cow_move_prefers_appendable_segment_below_size_cap() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut source = build_segment_2(dir.path());
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    // The full segment is added first, `aloha_random_write` would pick it without the steering
+    let full_id = holder.add_new(build_segment_1(dir.path()));
+    let free_id = holder.add_new(empty_segment(dir.path()));
+    holder.add_new(source);
+
+    // Cap at the full segment's size, the strict comparison makes it ineligible
+    let full_size = segment_size(&holder, full_id);
+    assert!(full_size > 0, "Segment should have non-zero size");
+
+    let hw_counter = HardwareCounterCell::new();
+    holder
+        .apply_points_with_conditional_move(
+            100,
+            &[11.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            NonZeroUsize::new(full_size),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let free_segment = holder.get(free_id).unwrap().get();
+    assert!(
+        free_segment
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        "Moved point should land in the segment below the cap",
+    );
+
+    let full_segment = holder.get(full_id).unwrap().get();
+    assert!(
+        !full_segment
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        "Segment at the cap should not receive the point",
+    );
+}
+
+/// A deferred staging segment at the cap still takes the move when it is the only appendable
+/// segment, and the point stays visible through the retained source.
+#[test]
+fn test_cow_move_into_capped_deferred_staging_segment_keeps_point_visible() {
+    use crate::fixtures::build_segment_with_deferred_1;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let staging = build_segment_with_deferred_1(dir.path());
+
+    let mut source = empty_segment(dir.path());
+    source
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let source_id = holder.add_new(source);
+    let staging_id = holder.add_new(staging);
+
+    assert!(
+        holder
+            .get(staging_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_deferred_points(),
+        "Staging segment should hold deferred points",
+    );
+
+    // The staging segment is the only appendable one and it is at the cap,
+    // so the fallback picks it anyway
+    let staging_size = segment_size(&holder, staging_id);
+    assert!(staging_size > 0, "Segment should have non-zero size");
+
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            NonZeroUsize::new(staging_size),
+            &hw_counter,
+        )
+        .expect("Staging segment at the cap should still accept the move");
+
+    let staging_segment = holder.get(staging_id).unwrap().get();
+    let staging_segment = staging_segment.read();
+    let source_segment = holder.get(source_id).unwrap().get();
+    let source_segment = source_segment.read();
+
+    assert!(
+        staging_segment.point_version(100.into()).is_some(),
+        "Moved point should be in the staging segment",
+    );
+    assert!(
+        staging_segment.point_is_deferred(100.into()),
+        "Point past the deferred offset should land deferred",
+    );
+    assert!(
+        source_segment.point_version(100.into()).is_some(),
+        "Source should be kept while the destination copy is deferred",
+    );
+}
+
+/// With a segment below the cap available, the move goes there instead of the full deferred
+/// staging segment.
+#[test]
+fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
+    use crate::fixtures::build_segment_with_deferred_1;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // The staging segment is added first, `aloha_random_write` would pick it without the steering
+    let mut holder = SegmentHolder::default();
+    let staging_id = holder.add_new(build_segment_with_deferred_1(dir.path()));
+    let fresh_id = holder.add_new(empty_segment(dir.path()));
+
+    let mut source = empty_segment(dir.path());
+    source
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    source.appendable_flag = false;
+    let source_id = holder.add_new(source);
+
+    let staging_size = segment_size(&holder, staging_id);
+    assert!(staging_size > 0, "Segment should have non-zero size");
+
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            NonZeroUsize::new(staging_size),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let fresh_segment = holder.get(fresh_id).unwrap().get();
+    let fresh_segment = fresh_segment.read();
+    assert!(
+        fresh_segment.point_version(100.into()).is_some(),
+        "Moved point should land in the segment below the cap",
+    );
+    assert!(
+        !fresh_segment.point_is_deferred(100.into()),
+        "Point should be immediately visible, the fresh segment has no deferred offset",
+    );
+
+    let staging_segment = holder.get(staging_id).unwrap().get();
+    let staging_segment = staging_segment.read();
+    assert!(
+        staging_segment.point_version(100.into()).is_none(),
+        "Full staging segment should not receive the move",
+    );
+    assert!(
+        staging_segment.has_deferred_points(),
+        "Deferred backlog should be left intact",
+    );
+
+    let source_segment = holder.get(source_id).unwrap().get();
+    let source_segment = source_segment.read();
+    assert!(
+        source_segment.point_version(100.into()).is_none(),
+        "Source copy should be deleted, the destination copy is visible",
     );
 }

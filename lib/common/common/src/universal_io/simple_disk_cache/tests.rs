@@ -595,7 +595,7 @@ mod tests_mod {
     #[test]
     fn reopen_schedule_missing_from_snapshot_errors() {
         let scn = Scenario::new(BLOCK_SIZE);
-        let mut cache = scn.open::<R>(PREFILL);
+        let cache = scn.open::<R>(PREFILL);
 
         let err = cache.schedule_reopen(|_| None).unwrap_err();
         assert_matches!(err, UniversalIoError::NotFound { .. });

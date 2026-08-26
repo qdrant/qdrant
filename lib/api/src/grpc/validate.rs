@@ -10,6 +10,7 @@ use segment::data_types::index::validate_integer_index_params;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
+use crate::rest::schema::validate_non_empty_dense;
 
 const TIMESTAMP_MIN_SECONDS: i64 = -62_135_596_800; // 0001-01-01T00:00:00Z
 const TIMESTAMP_MAX_SECONDS: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
@@ -364,7 +365,7 @@ impl Validate for grpc::Vector {
 impl Validate for grpc::vector::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            grpc::vector::Vector::Dense(_dense) => Ok(()),
+            grpc::vector::Vector::Dense(dense) => validate_non_empty_dense(&dense.data),
             grpc::vector::Vector::Sparse(sparse) => sparse.validate(),
             grpc::vector::Vector::MultiDense(multi) => multi.validate(),
             grpc::vector::Vector::Document(_document) => Ok(()),
@@ -455,6 +456,8 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::DatetimeKey(_) => Ok(()),
             grpc::expression::Variant::Mult(mult_expression) => mult_expression.validate(),
             grpc::expression::Variant::Sum(sum_expression) => sum_expression.validate(),
+            grpc::expression::Variant::Max(max_expression) => max_expression.validate(),
+            grpc::expression::Variant::Min(min_expression) => min_expression.validate(),
             grpc::expression::Variant::Div(div_expression) => div_expression.validate(),
             grpc::expression::Variant::Neg(expression) => expression.validate(),
             grpc::expression::Variant::Abs(expression) => expression.validate(),
@@ -463,6 +466,7 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::Exp(expression) => expression.validate(),
             grpc::expression::Variant::Log10(expression) => expression.validate(),
             grpc::expression::Variant::Ln(expression) => expression.validate(),
+            grpc::expression::Variant::Acosh(expression) => expression.validate(),
             grpc::expression::Variant::ExpDecay(decay_params_expression) => {
                 decay_params_expression.validate()
             }
@@ -601,10 +605,25 @@ mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
+        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
-        GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request,
+        GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request, vector,
     };
+
+    #[test]
+    fn test_dense_vector_rejects_empty_data() {
+        // A non-empty dense vector passes, consistent with sparse/multi-dense.
+        let valid = vector::Vector::Dense(DenseVector {
+            data: vec![1.0, 2.0, 3.0],
+        });
+        assert!(valid.validate().is_ok());
+
+        // An empty dense vector must be rejected the same way empty sparse and
+        // multi-dense vectors already are; otherwise it reaches storage code
+        // that assumes non-zero length (see qdrant/qdrant#9045, #7967).
+        let empty = vector::Vector::Dense(DenseVector { data: vec![] });
+        assert!(empty.validate().is_err());
+    }
 
     #[test]
     fn test_geo_field_condition_rejects_out_of_range_coordinates() {
@@ -685,15 +704,26 @@ mod tests {
             "good collection request should not error on validation"
         );
 
-        // Collection name validation must not be strict on non-creation
+        // Collection name validation must not be strict on non-creation. On Windows a
+        // backslash is a path separator, so there the same name is a path — it is rejected,
+        // Collection name validation must not be strict on non-creation.
+        // Backslash is a path separator on Windows and rejected in collection names there,
+        // so that `no\path` can't be interpreted as a path (see `check_plain_dir_name`).
         let bad_request = UpdateCollection {
             collection_name: "no\\path".into(),
             ..Default::default()
         };
-        assert!(
-            bad_request.validate().is_ok(),
-            "good collection request should not error on validation"
-        );
+        if cfg!(windows) {
+            assert!(
+                bad_request.validate().is_err(),
+                "backslash collection name is a path on Windows and must error on validation"
+            );
+        } else {
+            assert!(
+                bad_request.validate().is_ok(),
+                "good collection request should not error on validation"
+            );
+        }
 
         // Collection name validation must not be strict on non-creation
         let bad_request = UpdateCollection {

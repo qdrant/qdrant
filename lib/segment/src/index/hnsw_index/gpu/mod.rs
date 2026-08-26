@@ -211,28 +211,28 @@ mod tests {
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();
         for search_vector in &test.search_vectors {
-            let scorer = test.vector_holder.scorer(search_vector.clone());
+            let mut scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_gpu = graph
                 .search(
                     top,
                     ef,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    graph.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();
 
-            let scorer = test.vector_holder.scorer(search_vector.clone());
+            let mut scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_cpu = ref_graph
                 .search(
                     top,
                     ef,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    ref_graph.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();

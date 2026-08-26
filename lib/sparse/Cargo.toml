@@ -26,7 +26,6 @@ memmap2 = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
 ordered-float = { workspace = true }
 rand = { workspace = true }
 validator = { workspace = true }
@@ -38,11 +37,12 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 indicatif = { workspace = true }
 sha2 = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
+tempfile = { workspace = true }
 zerocopy = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]

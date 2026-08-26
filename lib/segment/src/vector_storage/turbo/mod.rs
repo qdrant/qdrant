@@ -18,6 +18,7 @@ pub mod multi_turbo;
 pub mod read_only;
 pub(crate) mod shared;
 pub mod turbo_vector_storage;
+pub mod update_only;
 
 pub use self::appendable_turbo_vector_storage::{
     AppendableMmapTurboVectorStorage, open_appendable_turbo_vector_storage,

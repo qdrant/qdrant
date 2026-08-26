@@ -160,10 +160,24 @@ pub trait CachedReadFs: UniversalReadFs {
     /// fail with `NotFound` without touching the underlying filesystem.
     fn cache_file_info(&mut self) -> UioResult<()>;
 
+    /// Rotate the cache file info, keeping it as the previous snapshot.
+    fn rotate_cache_file_info(&mut self);
+
     /// Open `path` in the background and park the handle in the prefetch
     /// pool, to be consumed by a later [`UniversalReadFs::open`] of the same
     /// path. Idempotent per path while the handle is unconsumed.
     fn schedule_prefetch(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Self::OpenExtra>,
+    ) -> UioResult<()>;
+
+    /// Schedule a prefetch for a file that has been opened already.
+    ///
+    /// This will force `Self::open` to return `UnchangedOpen` error if the file
+    /// did not change its `FileInfo` in between snapshots.
+    fn reschedule_prefetch(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,

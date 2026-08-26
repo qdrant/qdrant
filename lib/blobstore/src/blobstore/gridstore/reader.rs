@@ -71,7 +71,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         populate: Populate,
     ) -> Result<()> {
         // schedule tracker
-        Tracker::<S>::preopen(fs, base_path, populate)?;
+        let tracker_path = Tracker::<S>::tracker_file_name(base_path);
+        Tracker::<S>::preopen(fs, &tracker_path, populate)?;
 
         // schedule pages
         Pages::preopen(fs, base_path, populate)
@@ -218,6 +219,12 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         self.view().get_storage_size_bytes()
     }
 
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+        self.tracker.live_preload(fs)?;
+        self.pages.live_preload(fs, self.populate)?;
+        Ok(())
+    }
+
     /// This method reloads the Gridstore data from "disk", so that
     /// it should make newly written data is readable.
     ///
@@ -230,7 +237,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// tracker file is mutated in place and carries no reliable
     /// cheaply-readable change signal, so there is no "nothing changed"
     /// fast path. Both refreshes are cheap for non-populated readers.
-    pub(crate) fn live_reload(&mut self, fs: &S::Fs) -> Result<()> {
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
         self.tracker.live_reload(fs)?;
         self.pages.live_reload(fs, self.populate)?;
 

@@ -74,6 +74,9 @@ storage:
     # Number of WAL segments to create ahead of actual data requirement
     wal_segments_ahead: 0
 
+    # Number of closed WAL segments to keep
+    wal_retain_closed: 1
+
   # Normal node - receives all updates and answers all queries
   node_type: "Normal"
 
@@ -319,7 +322,8 @@ service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 
-  # Number of parallel workers used for serving the api. If 0 - equal to the number of available cores.
+  # Number of parallel workers used for serving the api.
+  # If 0 - available cores minus one, with a minimum of 1.
   # If missing - Same as storage.max_search_threads
   max_workers: 0
 
@@ -329,9 +333,22 @@ service:
   # HTTP(S) port to bind the service on
   http_port: 6333
 
+  # Keep-alive timeout for incoming HTTP connections in seconds.
+  # Default: 5
+  # http_keep_alive_timeout_sec: 5
+
+  # Timeout for reading HTTP request data from clients in seconds.
+  # Default: 5
+  # http_client_request_timeout_sec: 5
+
+  # Timeout for client disconnect handling in seconds.
+  # Default: 5
+  # http_client_disconnect_timeout_sec: 5
+
   # gRPC port to bind the service on.
-  # If `null` - gRPC is disabled. Default: null
-  # Comment to disable gRPC:
+  # If `null` - gRPC is disabled. Default: 6334
+  # Commenting this key in an overlay does not disable gRPC; the base config
+  # still supplies 6334. Set `null` to disable.
   grpc_port: 6334
 
   # Enable CORS headers in REST API.

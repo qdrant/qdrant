@@ -28,8 +28,8 @@ use crate::types::{PointIdType, SeqNumberType};
 /// The mappings and versions files may be absent: the writer only creates them once it flushes the
 /// first point (an empty file is never written), exactly as
 /// [`MutableIdTracker::open`](crate::id_tracker::mutable_id_tracker::MutableIdTracker::open)
-/// tolerates. A missing file is treated as an empty storage; the retained [`Self::fs`] lets the
-/// handle be opened lazily once the file appears.
+/// tolerates. A missing file is treated as an empty storage; the handle is opened lazily through
+/// the fs passed to [`Self::live_reload`] once the file appears.
 ///
 /// The mapping only ever contains *committed* points. The writer flushes mappings before data
 /// before versions, so a point is fully written only once its version is present. An insert read
@@ -37,9 +37,6 @@ use crate::types::{PointIdType, SeqNumberType};
 /// flushed, and only then linked into [`Self::mappings`].
 pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     segment_path: PathBuf,
-    /// Filesystem handle, retained so the mappings/versions files can be opened lazily once the
-    /// writer creates them (they are absent while empty).
-    fs: S::Fs,
     internal_to_version: Vec<SeqNumberType>,
     mappings: PointMappings,
 
@@ -49,6 +46,16 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// written). Each is linked in once its offset is covered by the versions file, or dropped if
     /// a delete for it arrives first.
     pending_inserts: HashMap<PointIdType, PointOffsetType>,
+
+    /// Highest slot any insert in the mappings log has ever claimed, `None` while the log has
+    /// claimed none. This is the slot a writer resumes above.
+    ///
+    /// Neither structure above can answer that: [`Self::mappings`] holds only committed points, and
+    /// [`Self::pending_inserts`] drops an entry as soon as a delete for its external id arrives, so
+    /// an `Insert(p, n)` followed by a `Delete(p)` leaves slot `n` claimed on disk yet named nowhere
+    /// else. Its data may be half-written, so handing it out again would write a second point over
+    /// the remains of the first.
+    max_claimed_internal_id: Option<PointOffsetType>,
 
     /// Byte offset up to which the mappings log has been consumed.
     ///

@@ -3,6 +3,7 @@
 use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::gcp::{GoogleCloudStorage, GoogleCloudStorageBuilder};
 
+use crate::append::{AppendContext, ComposeAppend};
 use crate::backend::BlobBackend;
 
 /// Connection parameters for [`GoogleCloudStorage`]. Fed into
@@ -52,5 +53,11 @@ impl BlobBackend for GoogleCloudStorage {
 
     fn kind() -> UniversalKind {
         UniversalKind::Gcs
+    }
+
+    fn append_context(config: &Self::Config) -> UioResult<Option<AppendContext>> {
+        Ok(Some(AppendContext::Compose(ComposeAppend::new(
+            config.bucket.clone(),
+        ))))
     }
 }

@@ -1,7 +1,10 @@
 mod cached_fs;
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(any(test, feature = "testing"))))]
 #[expect(dead_code, reason = "Not yet used")]
 mod disk_cache;
+
+#[cfg(all(not(target_os = "windows"), any(test, feature = "testing")))]
+pub mod disk_cache;
 mod error;
 #[cfg(target_os = "linux")]
 mod io_uring;
@@ -19,8 +22,8 @@ pub mod conformance;
 #[cfg(test)]
 mod tests;
 
-pub use self::cached_fs::{CachedFs, CachedReadFsContext};
-pub use self::error::{IsNotFound, OkNotFound, UniversalIoError};
+pub use self::cached_fs::{CachedFs, CachedReadFsContext, FileInfo};
+pub use self::error::{IsNotFound, OkNotFound, OkUnchanged, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra, is_io_uring_supported};
 pub use self::mmap::{MmapFile, MmapFs};

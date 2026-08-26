@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 pub(crate) use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
@@ -273,11 +274,27 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
 }
 
 impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+        match self {
+            ReadOnlyFieldIndex::IntIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::GeoIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::BoolIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::NullIndex(index) => index.live_preload(fs),
+        }
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,

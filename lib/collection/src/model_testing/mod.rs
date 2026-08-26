@@ -727,11 +727,14 @@ pub async fn run(
             // the `drop` below wouldn't actually close the collection (releasing its files) until
             // the task ends — and reopening the same dir with the old collection still open is
             // unsafe.
+            log::info!("op:{i} restart: drain_snapshot");
             drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
             // Newest-clocks recovery point must survive the close+reopen exactly; captured here
             // (snapshot drained, op loop idle) and compared after the reload below. See
             // [`verify::assert_clocks_match`] for why both mismatch directions are bugs.
+            log::info!("op:{i} restart: collect_clock_ticks");
             let pre_clocks = verify::collect_clock_ticks(&collection).await;
+            log::info!("op:{i} restart: stop_gracefully");
             collection.stop_gracefully().await;
             // `into_inner` makes the invariant checked, not assumed: if any background task still
             // holds an `Arc` clone here, panic loudly instead of reopening the same dir while the
@@ -740,13 +743,16 @@ pub async fn run(
                 Arc::into_inner(collection)
                     .expect("collection still referenced at restart (undrained background task?)"),
             );
+            log::info!("op:{i} restart: reopen");
             collection =
                 Arc::new(fixture::reopen_collection(&collection_dir, &snapshots_dir).await);
             // `Collection::load` returns before tail-of-WAL ops queued to the
             // update worker have been applied — that's an intentional fast-start
             // feature. Wait for the queue to drain so the scroll below observes
             // all WAL-replayed state.
+            log::info!("op:{i} restart: wait_for_pending_updates");
             verify::wait_for_pending_updates(&collection).await;
+            log::info!("op:{i} restart: scroll + verify");
             let live = verify::collect_model_from_collection(&collection).await;
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
             // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
@@ -817,6 +823,7 @@ pub async fn run(
         eprintln!("model_testing: verifying live state...");
     }
     log::debug!("all ops applied, verifying live collection against model");
+    log::info!("live: scroll + verify");
     let live = verify::collect_model_from_collection(&collection).await;
     let (live_extra, live_missing) = verify::id_diff(&live, &model);
     let (mut segments, mut optimized) = verify::run_summary(&collection).await;
@@ -838,6 +845,7 @@ pub async fn run(
     // not have triggered), when the optimizer is intentionally disabled, or when we
     // already observed optimization earlier in the run (counter resets on restart).
     if !interrupted && !disable_optimizer && !optimizer_ran_during_run {
+        log::info!("live: wait_for_optimizer");
         verify::wait_for_optimizer(&collection).await;
         (segments, optimized) = verify::run_summary(&collection).await;
     }
@@ -853,19 +861,24 @@ pub async fn run(
     }
     // Finish any background snapshot before closing (it holds an `Arc` clone — see the restart
     // path), then close and reopen and re-verify — mirrors blobstore tests.rs:488-516.
+    log::info!("reload: drain_snapshot");
     drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;
+    log::info!("reload: stop_gracefully");
     collection.stop_gracefully().await;
     // Checked close-before-reopen, same as the mid-run restart path.
     drop(
         Arc::into_inner(collection)
             .expect("collection still referenced at final reload (undrained background task?)"),
     );
+    log::info!("reload: reopen");
     let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
     // Same reason as the mid-run restart above — drain deferred WAL ops before scrolling.
+    log::info!("reload: wait_for_pending_updates");
     verify::wait_for_pending_updates(&collection).await;
 
+    log::info!("reload: scroll + verify");
     let reloaded = verify::collect_model_from_collection(&collection).await;
     let (reload_extra, reload_missing) = verify::id_diff(&reloaded, &model);
     trace.reload_verify(
@@ -920,8 +933,8 @@ async fn drain_snapshot(
     }
 }
 
-/// Skipped on Windows because it is too slow
-#[cfg(not(target_os = "windows"))]
+/// Linux-only: too slow on Windows and macOS CI
+#[cfg(target_os = "linux")]
 #[cfg(test)]
 mod tests {
     use super::*;

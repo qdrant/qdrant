@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use blobstore::config::{
-    Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
-    GridstoreConfig, StorageConfig,
+    Compression, CreateOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES,
 };
 use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
@@ -17,8 +16,8 @@ use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
@@ -72,9 +71,11 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(
+        let deleted = BitvecFlags::open_or_create(
             MmapFs,
-            DynamicStoredFlags::open(&MmapFs, &deleted_path, populate)?,
+            &deleted_path,
+            FlagsMode::from_feature_flags(),
+            populate,
         )?;
 
         let deleted_count = deleted.count_trues();
@@ -99,10 +100,9 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         fs::create_dir_all(&storage_dir)?;
-        let storage_options = StorageConfig::Mutable(GridstoreConfig {
+        let storage_options = crate::common::blobstore_config::storage_config(CreateOptions {
             page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
             block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
-            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
             // Don't use built-in compression, as we will use bitpacking instead
             compression: Compression::None,
         });
@@ -119,9 +119,11 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = BitvecFlags::new(
+        let deleted = BitvecFlags::open_or_create(
             MmapFs,
-            DynamicStoredFlags::open(&MmapFs, &deleted_path, Populate::from(populate))?,
+            &deleted_path,
+            FlagsMode::from_feature_flags(),
+            Populate::from(populate),
         )?;
 
         Ok(Self {
@@ -163,10 +165,11 @@ impl MmapSparseVectorStorage {
                 &StoredSparseVector::from(vector),
                 hw_counter.ref_vector_io_write_counter(),
             )?;
-        } else {
+        } else if (key as usize) < self.next_point_offset {
             // delete vector
             self.storage.delete_value(key)?;
         }
+        // else: nothing was ever stored at this key, nothing to delete
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
 

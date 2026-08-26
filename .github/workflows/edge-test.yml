@@ -62,7 +62,7 @@ jobs:
 
       - name: Install mold
         if: runner.os == 'Linux'
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
 
       - name: Enable mold
         if: runner.os == 'Linux'
@@ -84,7 +84,7 @@ jobs:
         uses: ./.github/actions/setup-just
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install tools
         run: |
@@ -95,7 +95,7 @@ jobs:
         uses: ./.github/actions/setup-qdrant
 
       - name: Restore Rust build cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: edge
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget

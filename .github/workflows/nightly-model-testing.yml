@@ -21,6 +21,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUST_LOG: info
   OP_NUM: 200000
   SHARD_COUNT: 2
   RESTART_PROBABILITY: 0.001
@@ -49,7 +50,7 @@ jobs:
           # ref (e.g. the PR merge ref). github.ref_name would be "<pr>/merge" here,
           # which checkout wrongly resolves as a branch and fails to fetch.
           ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           # Save only on the nightly run (scheduled events run in the default-branch
           # context, so its cache is restorable by all branches). dispatch/PR runs
@@ -73,6 +74,10 @@ jobs:
           INPUT_OP_NUM: ${{ inputs.op_num }}
           INPUT_SEED: ${{ inputs.seed }}
         run: |
+          # The commit actually under test. `github.sha` is the default branch (master) on a
+          # scheduled run, but the checkout above forces `dev`, so reporting `github.sha` points
+          # the failure issue at code that was never run.
+          echo "TESTED_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           if [ -n "$INPUT_OP_NUM" ]; then
             echo "OP_NUM=$INPUT_OP_NUM" >> "$GITHUB_ENV"
           fi
@@ -84,6 +89,7 @@ jobs:
         shell: bash
       # Both runs reuse the single binary built above and share the same seed.
       - name: Run model testing (async scorer)
+        id: async_scorer
         run: |
           target/perf/model_testing \
             --seed "$SEED" \
@@ -96,6 +102,7 @@ jobs:
         shell: bash
         timeout-minutes: 300
       - name: Run model testing (no io_uring)
+        id: no_io_uring
         # Run even if the async-scorer pass failed, so both signals are collected.
         if: ${{ !cancelled() }}
         run: |
@@ -108,6 +115,27 @@ jobs:
             --on-disk
         shell: bash
         timeout-minutes: 300
+      # Which of the two passes broke is the first thing triage needs: one failing while the
+      # other survives the same seed points at the io_uring read path (or rules it out), and
+      # every failure so far has split that way. Rendered here rather than in the issue template
+      # so the template stays a plain fill-in-the-blanks form.
+      - name: Describe which passes failed
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          ASYNC: ${{ steps.async_scorer.conclusion }}
+          PLAIN: ${{ steps.no_io_uring.conclusion }}
+        run: |
+          if [ "$ASYNC" = failure ] && [ "$PLAIN" = failure ]; then
+            summary="both passes"
+          elif [ "$ASYNC" = failure ]; then
+            summary="async scorer only (no io_uring passed the same seed)"
+          elif [ "$PLAIN" = failure ]; then
+            summary="no io_uring only (async scorer passed the same seed)"
+          else
+            summary="neither pass, the job broke around them (async=$ASYNC, no-io_uring=$PLAIN)"
+          fi
+          echo "FAILED_PASSES=$summary" >> "$GITHUB_ENV"
+        shell: bash
       # Only alert for unattended nightly failures; dispatch/PR runs are watched live.
       - name: Open issue on failure
         if: ${{ failure() && github.event_name == 'schedule' }}
@@ -118,7 +146,8 @@ jobs:
           SEED: ${{ env.SEED }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          SHA: ${{ github.sha }}
+          # Falls back to github.sha if we failed before resolving the checked-out commit.
+          SHA: ${{ env.TESTED_SHA || github.sha }}
         with:
           filename: .github/ISSUE_TEMPLATE/model_testing_failure.md
           update_existing: true

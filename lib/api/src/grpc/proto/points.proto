@@ -976,6 +976,12 @@ message Expression {
     DecayParamsExpression gauss_decay = 18;
     // Linear decay
     DecayParamsExpression lin_decay = 19;
+    // Inverse hyperbolic cosine
+    Expression acosh = 20;
+    // Maximum
+    MaxExpression max = 21;
+    // Minimum
+    MinExpression min = 22;
   }
 }
 
@@ -990,6 +996,14 @@ message MultExpression {
 
 message SumExpression {
   repeated Expression sum = 1;
+}
+
+message MaxExpression {
+  repeated Expression max = 1;
+}
+
+message MinExpression {
+  repeated Expression min = 1;
 }
 
 message DivExpression {

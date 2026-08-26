@@ -118,7 +118,7 @@ where
 
     #[inline]
     fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
-        &mut self,
+        &self,
         get_file_info: F,
     ) -> UioResult<()> {
         self.0.schedule_reopen(get_file_info)

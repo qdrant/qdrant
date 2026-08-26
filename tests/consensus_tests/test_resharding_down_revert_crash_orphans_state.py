@@ -92,18 +92,34 @@ def test_scale_down_revert_crash_orphans_resharding_state(tmp_path: pathlib.Path
     )
 
     receiver_idx = peer_ids.index(receiver_peer)
-    victim_idx = next(i for i in range(3) if i != receiver_idx)
-    survivor_idx = next(i for i in range(3) if i not in (receiver_idx, victim_idx))
-    survivor_uri = peer_uris[survivor_idx]
-
-    # The staging crash fires on the peer whose working dir holds this marker.
-    (peer_dirs[victim_idx] / "crash_on_scale_down_revert").write_text("")
+    live_idxs = [i for i in range(3) if i != receiver_idx]
+    live_ids = {peer_ids[i] for i in live_idxs}
 
     # Kill the receiver; failing updates to its shard-0 replica make failure detection
     # propose SetReplicaState(Dead), whose gate aborts resharding on the live peers.
     receiver_proc = peer_procs[receiver_idx]
     processes.remove(receiver_proc)
     receiver_proc.kill()
+
+    # Crash the follower, never the leader, and wait out the election the receiver's
+    # death may have triggered first. The staging crash fires *inside* the apply of the
+    # `Dead` entry while raft messages leave through an async send queue, so a crashing
+    # leader takes the append carrying the new commit index down with it: the other live
+    # peer is left holding that entry appended but uncommitted, and as one voter out of
+    # three it can never commit it — so it would never abort, and the wait below would
+    # hang until the peers are restarted.
+    def leader_is_live_and_agreed() -> bool:
+        leaders = {get_leader(peer_uris[i]) for i in live_idxs}
+        return len(leaders) == 1 and leaders <= live_ids
+
+    wait_for(leader_is_live_and_agreed, wait_for_timeout=60)
+
+    survivor_idx = peer_ids.index(get_leader(peer_uris[live_idxs[0]]))
+    victim_idx = next(i for i in live_idxs if i != survivor_idx)
+    survivor_uri = peer_uris[survivor_idx]
+
+    # The staging crash fires on the peer whose working dir holds this marker.
+    (peer_dirs[victim_idx] / "crash_on_scale_down_revert").write_text("")
 
     stop = threading.Event()
 

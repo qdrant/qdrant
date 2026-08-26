@@ -2,13 +2,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::MmapFs;
+use common::flags::feature_flags;
+use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::graph::{HnswGraph, HnswLinksStorage};
+#[cfg(test)]
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -47,7 +51,7 @@ pub struct HNSWIndex {
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    graph: GraphLayers,
+    graph: HnswGraph<HnswLinksStorage>,
     searches_telemetry: HNSWSearchesTelemetry,
     is_on_disk: bool,
 }
@@ -72,51 +76,19 @@ impl HNSWIndex {
             hnsw_config,
         } = args;
 
-        let config_path = HnswGraphConfig::get_config_path(path);
-        let config = match HnswGraphConfig::load_universal(&MmapFs, &config_path)? {
-            Some(config) => config,
-            None => {
-                let vector_storage = vector_storage.borrow();
-                let available_vectors = vector_storage.available_vector_count();
-                let full_scan_threshold = vector_storage
-                    .size_of_available_vectors_in_bytes()
-                    .checked_div(available_vectors)
-                    .and_then(|avg_vector_size| {
-                        hnsw_config
-                            .full_scan_threshold
-                            .saturating_mul(BYTES_IN_KB)
-                            .checked_div(avg_vector_size)
-                    })
-                    .unwrap_or(1);
-
-                HnswGraphConfig::new(
-                    hnsw_config.m,
-                    hnsw_config.ef_construct,
-                    full_scan_threshold,
-                    hnsw_config.max_indexing_threads,
-                    hnsw_config.payload_m,
-                    available_vectors,
-                )
-            }
-        };
+        let config = load_or_derive_config(&MmapFs, path, &hnsw_config, &vector_storage)?;
 
         let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
 
-        // Effective placement of the graph links: the `memory` parameter (falling back to the
-        // deprecated `on_disk` flag), degraded at load time by the node-wide low-memory mode.
-        let memory = hnsw_config.memory_placement().clamp_to_low_memory();
+        let (memory, residency) = graph_residency(&hnsw_config, None);
         let is_on_disk = memory.is_on_disk();
 
-        let residency = match memory {
-            // Keep the links cold: lazily loaded from disk, cached with usage
-            Memory::Cold => GraphLinksResidency::Cold,
-            // Pre-populate the links into the page cache on load
-            Memory::Cached => GraphLinksResidency::Cached,
-            // Materialize the links on heap, so they are never evicted by cache pressure
-            Memory::Pinned => GraphLinksResidency::Pinned,
-        };
-
-        let graph = GraphLayers::load(path, residency, do_convert)?;
+        let with_uring = use_io_uring(
+            IoUringFallback::Mmap,
+            memory,
+            feature_flags().async_hnsw_graph,
+        );
+        let graph = HnswGraph::open(path, residency, do_convert, with_uring)?;
 
         Ok(HNSWIndex {
             id_tracker,
@@ -146,7 +118,7 @@ impl HNSWIndex {
 
     #[cfg(test)]
     pub(super) fn graph(&self) -> &GraphLayers {
-        &self.graph
+        self.graph.as_direct().unwrap()
     }
 
     pub fn get_quantized_vectors(&self) -> Arc<AtomicRefCell<Option<QuantizedVectors>>> {
@@ -194,4 +166,66 @@ impl HNSWIndex {
             f(read_view)
         })
     }
+}
+
+fn load_or_derive_config(
+    fs: &impl UniversalReadFs,
+    path: &Path,
+    hnsw_config: &HnswConfig,
+    vector_storage: &AtomicRefCell<impl VectorStorageRead>,
+) -> OperationResult<HnswGraphConfig> {
+    let config_path = HnswGraphConfig::get_config_path(path);
+    if let Some(config) = HnswGraphConfig::load_universal(fs, &config_path)? {
+        return Ok(config);
+    }
+
+    let vector_storage = vector_storage.borrow();
+    let available_vectors = vector_storage.available_vector_count();
+    let full_scan_threshold = vector_storage
+        .size_of_available_vectors_in_bytes()
+        .checked_div(available_vectors)
+        .and_then(|avg_vector_size| {
+            hnsw_config
+                .full_scan_threshold
+                .saturating_mul(BYTES_IN_KB)
+                .checked_div(avg_vector_size)
+        })
+        .unwrap_or(1);
+
+    Ok(HnswGraphConfig::new(
+        hnsw_config.m,
+        hnsw_config.ef_construct,
+        full_scan_threshold,
+        hnsw_config.max_indexing_threads,
+        hnsw_config.payload_m,
+        available_vectors,
+    ))
+}
+
+/// Effective placement of the graph links and their residency: the `memory`
+/// parameter (falling back to the deprecated `on_disk` flag), degraded at load
+/// time by the node-wide low-memory mode.
+///
+/// A `populate_override` (from a request-specific
+/// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) demotes the
+/// residency (see [`Memory::with_populate_override`]) — the graph links support
+/// every residency over the same files, so even a `pinned` graph can be demoted
+/// to a lazy cold view. The returned [`Memory`] stays config-derived: it
+/// describes the configuration, not the per-open placement.
+fn graph_residency(
+    hnsw_config: &HnswConfig,
+    populate_override: Option<Populate>,
+) -> (Memory, GraphLinksResidency) {
+    let memory = hnsw_config.memory_placement().clamp_to_low_memory();
+
+    let residency = match memory.with_populate_override(populate_override) {
+        // Keep the links cold: lazily loaded from disk, cached with usage
+        Memory::Cold => GraphLinksResidency::Cold,
+        // Pre-populate the links into the page cache on load
+        Memory::Cached => GraphLinksResidency::Cached,
+        // Materialize the links on heap, so they are never evicted by cache pressure
+        Memory::Pinned => GraphLinksResidency::Pinned,
+    };
+
+    (memory, residency)
 }

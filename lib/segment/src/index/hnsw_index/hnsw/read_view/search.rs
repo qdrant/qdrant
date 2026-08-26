@@ -1,6 +1,7 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
@@ -8,7 +9,9 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::hnsw_index::graph_layers::{GraphLayersWithVectors, SearchAlgorithm};
+use crate::index::hnsw_index::GraphWithVectorsScorers;
+use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
+use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
@@ -20,12 +23,13 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query::DiscoverQuery;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
+impl<'a, I, V, Q, P, S> HNSWIndexReadView<'a, I, V, Q, P, S>
 where
     I: IdTrackerRead,
     V: VectorStorageRead + RawScorerBuilder,
     Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
+    S: UniversalRead,
 {
     pub(super) fn search_with_graph(
         &self,
@@ -123,15 +127,18 @@ where
                 return Ok(None);
             };
 
-            Ok(Some(self.graph.search_with_vectors(
+            Ok(Some(self.graph.search(GraphSearchArgs {
                 top,
-                std::cmp::max(ef, oversampled_top),
-                &link_scorer_filtered,
-                &link_scorer_filtered_bytes,
-                base_scorer_bytes,
+                ef: std::cmp::max(ef, oversampled_top),
+                algorithm: SearchAlgorithm::Hnsw,
+                scorers: SearchScorers::WithVectors(GraphWithVectorsScorers {
+                    links: &link_scorer_filtered,
+                    links_bytes: &link_scorer_filtered_bytes,
+                    base: base_scorer_bytes,
+                }),
                 custom_entry_points,
-                &vector_query_context.is_stopped(),
-            )?))
+                is_stopped: &is_stopped,
+            })?))
         };
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
@@ -148,14 +155,14 @@ where
                 filter_context,
             )?;
 
-            let search_result = self.graph.search(
-                oversampled_top,
+            let search_result = self.graph.search(GraphSearchArgs {
+                top: oversampled_top,
                 ef,
                 algorithm,
-                points_scorer,
+                scorers: SearchScorers::Regular(points_scorer),
                 custom_entry_points,
-                &is_stopped,
-            )?;
+                is_stopped: &is_stopped,
+            })?;
 
             postprocess_search_result(
                 search_result,
@@ -207,22 +214,69 @@ where
             .collect()
     }
 
-    fn search_plain_iterator_batched(
+    pub(super) fn search_plain_batched(
         &self,
         query_vectors: &[&QueryVector],
-        points: impl Iterator<Item = PointOffsetType>,
+        filtered_points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let is_stopped = vector_query_context.is_stopped();
+        let batch_filtered_searcher =
+            self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?;
+        let search_results = batch_filtered_searcher.peek_top_iter(filtered_points, &is_stopped)?;
+        self.postprocess_plain_batch(
+            search_results,
+            query_vectors,
+            top,
+            params,
+            vector_query_context,
+        )
+    }
+
+    pub(super) fn search_plain_unfiltered_batched(
+        &self,
+        query_vectors: &[&QueryVector],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let is_stopped = vector_query_context.is_stopped();
+        let batch_filtered_searcher =
+            self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?;
+        // Scan candidates by combining the deletion bitmaps word by word
+        // instead of feeding `iter_internal()` into `peek_top_iter` — the
+        // per-id enumeration dominates unfiltered full scans.
+        let (total_points, mapping_deleted) =
+            self.id_tracker.point_mappings().internal_scan_masks();
+        let search_results = batch_filtered_searcher.peek_top_visible(
+            Some(total_points),
+            mapping_deleted,
+            BitSlice::empty(),
+            &is_stopped,
+        )?;
+        self.postprocess_plain_batch(
+            search_results,
+            query_vectors,
+            top,
+            params,
+            vector_query_context,
+        )
+    }
+
+    fn construct_plain_batch_searcher<'b>(
+        &'b self,
+        query_vectors: &[&QueryVector],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &'b VectorQueryContext<'b>,
+    ) -> OperationResult<BatchFilteredSearcher<'b>> {
         let deleted_points = vector_query_context
             .deleted_points()
             .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
-
-        let is_stopped = vector_query_context.is_stopped();
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
-
-        let batch_filtered_searcher = construct_batch_searcher(
+        construct_batch_searcher(
             query_vectors,
             self.vector_storage,
             self.quantized_vectors,
@@ -231,8 +285,17 @@ where
             params,
             vector_query_context.hardware_counter(),
             None,
-        )?;
-        let mut search_results = batch_filtered_searcher.peek_top_iter(points, &is_stopped)?;
+        )
+    }
+
+    fn postprocess_plain_batch(
+        &self,
+        mut search_results: Vec<Vec<ScoredPointOffset>>,
+        query_vectors: &[&QueryVector],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
                 std::mem::take(search_result),
@@ -246,34 +309,6 @@ where
             )?;
         }
         Ok(search_results)
-    }
-
-    pub(super) fn search_plain_batched(
-        &self,
-        vectors: &[&QueryVector],
-        filtered_points: impl Iterator<Item = PointOffsetType>,
-        top: usize,
-        params: Option<&SearchParams>,
-        vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        self.search_plain_iterator_batched(
-            vectors,
-            filtered_points,
-            top,
-            params,
-            vector_query_context,
-        )
-    }
-
-    pub(super) fn search_plain_unfiltered_batched(
-        &self,
-        vectors: &[&QueryVector],
-        top: usize,
-        params: Option<&SearchParams>,
-        vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let ids_iterator = self.id_tracker.point_mappings().iter_internal();
-        self.search_plain_iterator_batched(vectors, ids_iterator, top, params, vector_query_context)
     }
 
     pub(super) fn search_vectors_plain(

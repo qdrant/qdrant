@@ -937,6 +937,8 @@ pub enum Expression {
     DatetimeKey(DatetimeKeyExpression),
     Mult(MultExpression),
     Sum(SumExpression),
+    Max(MaxExpression),
+    Min(MinExpression),
     Neg(NegExpression),
     Abs(AbsExpression),
     Div(DivExpression),
@@ -945,6 +947,7 @@ pub enum Expression {
     Exp(ExpExpression),
     Log10(Log10Expression),
     Ln(LnExpression),
+    Acosh(AcoshExpression),
     LinDecay(LinDecayExpression),
     ExpDecay(ExpDecayExpression),
     GaussDecay(GaussDecayExpression),
@@ -983,6 +986,20 @@ pub struct MultExpression {
 pub struct SumExpression {
     #[validate(nested)]
     pub sum: Vec<Expression>,
+}
+
+/// Largest of the given expressions. Requires at least one operand.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct MaxExpression {
+    #[validate(nested)]
+    pub max: Vec<Expression>,
+}
+
+/// Smallest of the given expressions. Requires at least one operand.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct MinExpression {
+    #[validate(nested)]
+    pub min: Vec<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -1047,6 +1064,12 @@ pub struct Log10Expression {
 pub struct LnExpression {
     #[validate(nested)]
     pub ln: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct AcoshExpression {
+    #[validate(nested)]
+    pub acosh: Box<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

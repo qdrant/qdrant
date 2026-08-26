@@ -4,6 +4,7 @@ pub(super) mod inner;
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
+pub mod update_only;
 
 pub use self::inner::InMemoryGeoIndex;
 use crate::types::RawGeoPoint;

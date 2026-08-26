@@ -770,7 +770,10 @@ impl LocalShard {
 
         // Cap the number of WAL entries to move to the update queue size,
         // since the update queue is limited and must hold all pending operations.
-        let update_queue_size = self.update_sender.load().capacity();
+        // Use the total configured buffer (`max_capacity`), not the currently
+        // available slots (`capacity`), which is what `update_queue_length` below
+        // treats as the total too.
+        let update_queue_size = self.update_sender.load().max_capacity();
         let to = cmp::max(
             to,
             last_wal_index.saturating_sub(update_queue_size as u64 - 1),
@@ -845,6 +848,16 @@ impl LocalShard {
         // operations, so a name that is created and used within the replay window stays valid.
         let mut valid_vector_names = self.collection_config.read().await.params.vector_names();
 
+        // Steer replayed copy-on-write moves with the same size cap live updates use, so replay
+        // picks the same class of destination. A deferred destination keeps the source point
+        // alive while a plain one deletes it, and a mismatch with what the live apply did could
+        // resurrect stale source data after recovery.
+        let max_segment_size_bytes = self
+            .optimizers
+            .load()
+            .first()
+            .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
+
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
@@ -876,6 +889,7 @@ impl LocalShard {
                 update.operation,
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
+                max_segment_size_bytes,
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {

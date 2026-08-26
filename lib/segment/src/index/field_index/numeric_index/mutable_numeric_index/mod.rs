@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use blobstore::config::{DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig, StorageConfig};
+use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
 use blobstore::{Blob, Blobstore};
 
 use super::Encodable;
@@ -10,16 +10,16 @@ use crate::index::field_index::numeric_point::{Numericable, Point};
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
+pub mod update_only;
 
-/// Default options for Gridstore storage
-pub(super) const fn default_gridstore_options<T: Sized>() -> StorageConfig {
+/// Default options for the backing storage
+pub(super) fn storage_options<T: Sized>() -> StorageConfig {
     let block_size = size_of::<T>();
-    StorageConfig::Mutable(GridstoreConfig {
+    crate::common::blobstore_config::storage_config(CreateOptions {
         // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
         page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size of numeric values in index
         block_size_bytes: block_size,
-        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         // Compressing numeric values is unreasonable
         compression: blobstore::config::Compression::None,
     })

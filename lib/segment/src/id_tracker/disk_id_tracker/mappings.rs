@@ -108,6 +108,10 @@ impl<'a, S: UniversalRead> DiskMappingsRef<'a, S> {
         self.deleted
     }
 
+    pub fn total_point_count(self) -> usize {
+        self.reader.total_point_count() as usize
+    }
+
     pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
         self.reader
             .iter_from(None)

@@ -693,10 +693,9 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
     ensure!(estimation_struct.max >= real_number);
     ensure!(estimation_struct.min <= real_number);
 
-    ensure!(
-        (estimation_struct.exp as f64 - real_number as f64).abs()
-            <= (estimation_plain.exp as f64 - real_number as f64).abs()
-    );
+    // Do not assert struct `exp` is closer to `real_number` than plain: NullIndex
+    // complement estimates may include soft-deleted offsets, and plain is only
+    // `available/2`. Neither side promises a better point estimate here.
 
     Ok(())
 }

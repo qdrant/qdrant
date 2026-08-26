@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
+use common::universal_io::CachedFs;
 use uuid::Uuid;
 
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
@@ -47,6 +48,12 @@ pub struct ReadOnlySegment<S: UniversalReadExt + 'static> {
     /// the next reload folds in fresh changes and replays the union — components
     /// can't drift out of sync. Empty once everything is in sync.
     pub pending_reload: AtomicRefCell<LiveReloadResult>,
+
+    /// Caching filesystem retained from open: [`live_preload`](ReadOnlySegment::live_preload)
+    /// re-snapshots its listing and stages into its prefetch pool, [`live_reload`](ReadOnlySegment::live_reload)
+    /// consumes what was staged. Retaining it gives unchanged-detection a previous
+    /// listing to compare against — the open-time one for the first reload.
+    pub(crate) reload_fs: AtomicRefCell<CachedFs<S::Fs>>,
 
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,

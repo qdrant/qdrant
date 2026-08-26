@@ -277,6 +277,12 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         );
         self.persisted_count = count;
     }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+        self.file
+            .schedule_reopen(|path| fs.cached_file_info(path))?;
+        Ok(())
+    }
 }
 
 /// A mapping count read from the tracker file that is not visible to reads yet.
@@ -872,7 +878,6 @@ mod tests {
             vec![Some(pointer(2)), Some(pointer(3)),]
         );
         assert_eq!(tracker.get_range::<Random>(7..9).unwrap(), vec![None, None]);
-        #[allow(clippy::reversed_empty_ranges)]
         let empty = tracker.get_range::<Random>(3..3).unwrap();
         assert!(empty.is_empty());
     }

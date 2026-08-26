@@ -15,16 +15,16 @@ use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQu
 use segment::data_types::segment_record::SegmentRecordRaw;
 use segment::data_types::vectors::QueryVector;
 use segment::types::{
-    Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, VectorName,
-    WithPayload, WithPayloadInterface, WithVector,
+    Filter, Indexes, PointIdType, ScoredPoint, SegmentConfig, VectorName, WithPayload, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::query::query_context::{fill_query_context, init_query_context};
-use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blocking};
-use shard::search::CoreSearchRequestBatch;
+use shard::search::{
+    BatchSearchParams, CoreSearchRequestBatch, SearchBatchGroup, group_search_batches,
+};
 use shard::search_result_aggregator::BatchResultAggregator;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio_util::task::AbortOnDropHandle;
@@ -82,7 +82,7 @@ impl SegmentsSearcher {
     /// # Arguments
     /// * `search_result` - `[segment_size x batch_size]`
     /// * `limits` - `[batch_size]` - how many results to return for each batched request
-    /// * `further_searches` - `[segment_size x batch_size]` - whether we can search further in the segment
+    /// * `further_results` - `[segment_size x batch_size]` - whether we can search further in the segment
     ///
     /// Returns batch results aggregated by `[batch_size]` and list of queries, grouped by segment to re-run
     pub(crate) fn process_search_result_step1(
@@ -421,11 +421,9 @@ impl SegmentsSearcher {
     /// Byte-blob analogue of [`Self::retrieve`]: returns vectors as
     /// storage-native bytes ([`SegmentRecordRaw`]), avoiding a lossy
     /// quantization round-trip when relocating points during shard transfer.
-    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve_raw(
         segments: LockedSegmentHolder,
         points: &[PointIdType],
-        with_payload: &WithPayload,
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
@@ -436,14 +434,12 @@ impl SegmentsSearcher {
         let points = runtime_handle.spawn_blocking({
             let segments = segments.clone();
             let points = points.to_vec();
-            let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
             move || {
                 retrieve_raw_blocking(
                     segments,
                     &points,
-                    &with_payload,
                     &with_vector,
                     timeout,
                     &is_stopped,
@@ -570,41 +566,6 @@ impl SegmentsSearcher {
     }
 }
 
-#[derive(PartialEq, Default, Debug)]
-pub enum SearchType {
-    #[default]
-    Nearest,
-    RecommendBestScore,
-    RecommendSumScores,
-    Discover,
-    Context,
-    FeedbackNaive,
-}
-
-impl From<&QueryEnum> for SearchType {
-    fn from(query: &QueryEnum) -> Self {
-        match query {
-            QueryEnum::Nearest(_) => Self::Nearest,
-            QueryEnum::RecommendBestScore(_) => Self::RecommendBestScore,
-            QueryEnum::RecommendSumScores(_) => Self::RecommendSumScores,
-            QueryEnum::Discover(_) => Self::Discover,
-            QueryEnum::Context(_) => Self::Context,
-            QueryEnum::FeedbackNaive(_) => Self::FeedbackNaive,
-        }
-    }
-}
-
-#[derive(PartialEq, Default, Debug)]
-struct BatchSearchParams<'a> {
-    pub search_type: SearchType,
-    pub vector_name: &'a VectorName,
-    pub filter: Option<&'a Filter>,
-    pub with_payload: WithPayload,
-    pub with_vector: WithVector,
-    pub top: usize,
-    pub params: Option<&'a SearchParams>,
-}
-
 /// Returns suggested search sampling size for a given number of points and required limit.
 fn sampling_limit(
     limit: usize,
@@ -643,7 +604,7 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 /// * `segment` - Locked segment to search in
 /// * `request` - Batch of search requests
 /// * `use_sampling` - If true, try to use probabilistic sampling
-/// * `query_context` - Additional context for the search
+/// * `segment_query_context` - Additional context for the search
 ///
 /// # Returns
 ///
@@ -667,58 +628,17 @@ fn search_in_segment(
 
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
     let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // if segment have more points to return
-    let mut vectors_batch: Vec<QueryVector> = vec![];
-    let mut prev_params = BatchSearchParams::default();
 
-    for search_query in &request.searches {
-        let with_payload_interface = search_query
-            .with_payload
-            .as_ref()
-            .unwrap_or(&WithPayloadInterface::Bool(false));
+    for group in group_search_batches(&request.searches) {
+        let SearchBatchGroup {
+            params,
+            query_vectors,
+        } = group;
 
-        let params = BatchSearchParams {
-            search_type: search_query.query.as_ref().into(),
-            vector_name: search_query.query.get_vector_name(),
-            filter: search_query.filter.as_ref(),
-            with_payload: WithPayload::from(with_payload_interface),
-            with_vector: search_query.with_vector.clone().unwrap_or_default(),
-            top: search_query.limit + search_query.offset,
-            params: search_query.params.as_ref(),
-        };
-
-        let query = search_query.query.clone().into();
-
-        // same params enables batching (cmp expensive on large filters)
-        if params == prev_params {
-            vectors_batch.push(query);
-        } else {
-            // different params means different batches
-            // execute what has been batched so far
-            if !vectors_batch.is_empty() {
-                let (mut res, mut further) = execute_batch_search(
-                    &segment,
-                    &vectors_batch,
-                    &prev_params,
-                    use_sampling,
-                    segment_query_context,
-                    timeout,
-                )?;
-                further_results.append(&mut further);
-                result.append(&mut res);
-                vectors_batch.clear()
-            }
-            // start new batch for current search query
-            vectors_batch.push(query);
-            prev_params = params;
-        }
-    }
-
-    // run last batch if any
-    if !vectors_batch.is_empty() {
         let (mut res, mut further) = execute_batch_search(
             &segment,
-            &vectors_batch,
-            &prev_params,
+            &query_vectors,
+            &params,
             use_sampling,
             segment_query_context,
             timeout,

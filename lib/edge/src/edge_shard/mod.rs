@@ -9,13 +9,14 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ::wal::WalOptions;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::ReadSegmentEntry as _;
-use segment::segment_constructor::{load_segment, normalize_segment_dir};
-use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH, segment_manifest_path};
+use segment::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry as _};
+use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
+use shard::files::{SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::segment_holder::{FlushMode, SegmentHolder};
@@ -44,7 +45,6 @@ pub struct EdgeShard {
     search_pool: Arc<rayon::ThreadPool>,
 }
 
-const WAL_PATH: &str = "wal";
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
@@ -64,7 +64,7 @@ impl EdgeShard {
         config.save(path)?;
 
         let mut segments = SegmentHolder::default();
-        ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
+        ensure_appendable_segment(&mut segments, &segments_path, &config)?;
 
         let search_pool = build_segment_pool(
             "edge-search",
@@ -141,7 +141,7 @@ impl EdgeShard {
             }
         };
 
-        ensure_appendable_segment(&mut segments, path, &segments_path, &config)?;
+        ensure_appendable_segment(&mut segments, &segments_path, &config)?;
 
         let search_pool = build_segment_pool(
             "edge-search",
@@ -462,7 +462,6 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
 
 fn ensure_appendable_segment(
     segments: &mut SegmentHolder,
-    path: &Path,
     segments_path: &Path,
     config: &EdgeConfig,
 ) -> OperationResult<()> {
@@ -470,21 +469,22 @@ fn ensure_appendable_segment(
         return Ok(());
     }
 
-    let payload_index_schema_path = path.join(PAYLOAD_INDEX_CONFIG_FILE);
-    let payload_index_schema = SaveOnDisk::load_or_init_default(&payload_index_schema_path)
-        .map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to initialize payload index schema file {}: {err}",
-                payload_index_schema_path.display(),
-            ))
-        })?;
+    // Edge has no shard-level index schema; the segments are the source of truth. Seed the new
+    // segment with the union of indexes present in the loaded ones, like the optimizer does for
+    // its CoW segment via `replicate_field_indexes`.
+    let indexed_fields: HashMap<_, _> = segments
+        .iter()
+        .flat_map(|(_, segment)| segment.get().read().get_indexed_fields())
+        .collect();
 
-    segments.create_appendable_segment(
-        segments_path,
-        config.plain_segment_config(),
-        Arc::new(payload_index_schema),
-        None,
-    )?;
+    let (mut segment, token) =
+        build_segment(segments_path, &config.plain_segment_config(), None, true)?;
+    let hw_counter = HardwareCounterCell::disposable();
+    for (key, schema) in &indexed_fields {
+        segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+    }
+    segments.sync_segment_manifest(Some(token))?;
+    segments.add_new(segment);
 
     debug_assert!(segments.has_appendable_segment());
     Ok(())

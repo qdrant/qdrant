@@ -1,9 +1,10 @@
+use std::borrow::Cow;
 use std::io;
 use std::path::Path;
 
 use roaring::RoaringBitmap;
 
-use super::format::{BitmaskHeader, Encoding, HEADER_SIZE};
+use super::format::{BitmaskHeader, Encoding, HEADER_SIZE, MAX_LOGICAL_LEN};
 use crate::universal_io::{UioResult, UniversalIoError, UniversalWriteFileOps};
 
 /// Atomically persist a bitmask of `logical_len` bits whose set positions are
@@ -17,21 +18,34 @@ pub fn save_bitmask(
     logical_len: u64,
     ones: RoaringBitmap,
 ) -> UioResult<()> {
+    let bytes = bitmask_file_bytes(logical_len, Cow::Owned(ones))?;
+    fs.atomic_save(path, &bytes)
+}
+
+/// Encode a bitmask of `logical_len` bits whose set positions are `ones` into
+/// the complete file image: header plus the cheapest payload encoding.
+///
+/// A borrowed mask is serialized as-is; the caller run-optimizes it in place
+/// beforehand to keep this path clone-free.
+pub(super) fn bitmask_file_bytes(
+    logical_len: u64,
+    ones: Cow<'_, RoaringBitmap>,
+) -> UioResult<Vec<u8>> {
     validate(logical_len, &ones)?;
 
     let (polarity, mut minority) = minority_polarity(logical_len, ones);
-    minority.optimize();
+    if let Cow::Owned(minority) = &mut minority {
+        minority.optimize();
+    }
 
-    let dense_payload_len = logical_len.div_ceil(u64::from(u8::BITS));
-    let bytes = if (minority.serialized_size() as u64) < dense_payload_len {
-        roaring_file_bytes(logical_len, polarity, &minority)?
+    let dense_bits_len = logical_len.div_ceil(u64::from(u8::BITS));
+    if (minority.serialized_size() as u64) < dense_bits_len {
+        roaring_file_bytes(logical_len, polarity, &minority)
     } else {
         // Even the minority polarity does not compress below raw bits: store
         // them densely, so the compact format is never larger than the mask.
-        dense_file_bytes(logical_len, polarity, &minority)
-    };
-
-    fs.atomic_save(path, &bytes)
+        Ok(dense_file_bytes(logical_len, polarity, &minority))
+    }
 }
 
 fn validate(logical_len: u64, ones: &RoaringBitmap) -> UioResult<()> {
@@ -39,7 +53,7 @@ fn validate(logical_len: u64, ones: &RoaringBitmap) -> UioResult<()> {
         UniversalIoError::Io(io::Error::new(io::ErrorKind::InvalidInput, message))
     };
 
-    if logical_len > u64::from(u32::MAX) + 1 {
+    if logical_len > MAX_LOGICAL_LEN {
         return Err(invalid(format!(
             "bitmask of {logical_len} bits exceeds the u32 position space"
         )));
@@ -58,14 +72,17 @@ fn validate(logical_len: u64, ones: &RoaringBitmap) -> UioResult<()> {
 
 /// Reduce to whichever bit value is the minority: the set positions as-is, or
 /// their complement within `0..logical_len`.
-fn minority_polarity(logical_len: u64, ones: RoaringBitmap) -> (Encoding, RoaringBitmap) {
+fn minority_polarity(
+    logical_len: u64,
+    ones: Cow<'_, RoaringBitmap>,
+) -> (Encoding, Cow<'_, RoaringBitmap>) {
     if ones.len().saturating_mul(2) <= logical_len {
         (Encoding::RoaringOnes, ones)
     } else {
         let mut zeros = RoaringBitmap::new();
         zeros.insert_range(0..=(logical_len - 1) as u32);
-        zeros -= ones;
-        (Encoding::RoaringZeros, zeros)
+        zeros -= &*ones;
+        (Encoding::RoaringZeros, Cow::Owned(zeros))
     }
 }
 

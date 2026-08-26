@@ -4,8 +4,8 @@ use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
-use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
+use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::ReadOnlyImmutableTurboVectorStorage;
 use crate::common::operation_error::OperationResult;

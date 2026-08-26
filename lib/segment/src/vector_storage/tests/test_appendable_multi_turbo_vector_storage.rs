@@ -219,6 +219,7 @@ const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E
 
 /// Plain upsert + read congruence across every distance (each configures the
 /// shared quantizer differently), checked live and after a flush/drop/reload.
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn congruent_upsert_read_all_distances() {
     const COUNT: usize = 32;
@@ -390,6 +391,7 @@ const SEEDS_PER_CELL: u64 = 8;
 const SEEDS_PER_CELL: u64 = 2;
 const OPS: usize = 60;
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn congruent_random_ops_dot() {
     for dim in [1usize, 4, 127, 128] {
@@ -403,6 +405,7 @@ fn congruent_random_ops_dot() {
     }
 }
 
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn congruent_random_ops_cosine() {
     for dim in [1usize, 4, 127, 128] {

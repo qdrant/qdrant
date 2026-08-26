@@ -65,6 +65,8 @@ pub enum ParsedExpression {
     // Nested
     Mult(Vec<ParsedExpression>),
     Sum(Vec<ParsedExpression>),
+    Max(Vec<ParsedExpression>),
+    Min(Vec<ParsedExpression>),
     Div {
         left: Box<ParsedExpression>,
         right: Box<ParsedExpression>,
@@ -79,6 +81,7 @@ pub enum ParsedExpression {
     Exp(Box<ParsedExpression>),
     Log10(Box<ParsedExpression>),
     Ln(Box<ParsedExpression>),
+    Acosh(Box<ParsedExpression>),
     Abs(Box<ParsedExpression>),
     Decay {
         kind: DecayKind,
@@ -165,6 +168,10 @@ impl ParsedExpression {
 
     pub fn new_ln(expression: ParsedExpression) -> Self {
         ParsedExpression::Ln(Box::new(expression))
+    }
+
+    pub fn new_acosh(expression: ParsedExpression) -> Self {
+        ParsedExpression::Acosh(Box::new(expression))
     }
 
     pub fn new_payload_id(path: JsonPath) -> Self {

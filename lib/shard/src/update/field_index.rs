@@ -20,7 +20,7 @@ pub fn create_field_index(
         });
     };
 
-    segments.apply_segments(|write_segment| {
+    segments.apply_segments_with_id(|segment_id, write_segment| {
         write_segment.with_upgraded(|segment| {
             segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)
         })?;
@@ -42,7 +42,9 @@ pub fn create_field_index(
         let already_indexed =
             write_segment.get_indexed_fields().get(field_name) == Some(field_schema);
         if !already_indexed {
-            segments.with_flush_serialized(|| write_segment.flush(true))?;
+            // Also flushes the destinations of pending copy-on-write moves out of this
+            // segment first; see `SegmentHolder::flush_segment_with_cow_destinations`.
+            segments.flush_segment_with_cow_destinations(segment_id, &**write_segment)?;
         }
 
         let (schema, indexes) =

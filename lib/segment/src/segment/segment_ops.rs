@@ -423,10 +423,10 @@ impl Segment {
     ///   sees the point's vectors as a raw-bytes snapshot plus an empty
     ///   decoded overlay, and the payload as an owned snapshot, and modifies
     ///   them in memory; the helper writes the result at a fresh internal id
-    ///   and tombstones the old one. Exception: a slot written by the
-    ///   current operation (its version equals `op_num`) is mutated in
-    ///   place — it is not durable yet, so cloning it would only chain
-    ///   dead slots for multi-step point writes.
+    ///   and tombstones the old one. Every call clones, a slot is never
+    ///   mutated once written — whole points are written in one operation
+    ///   (see [`SegmentEntry::upsert_moved_point`]), so a multi-step write
+    ///   is a caller paying a slot per step.
     ///
     /// Both closures return the op-specific result bool (e.g. "was anything
     /// deleted"). The version-recording offset is chosen automatically:
@@ -452,21 +452,7 @@ impl Segment {
             &mut Payload,
         ) -> OperationResult<bool>,
     {
-        // A slot whose version already equals `op_num` was written by the
-        // current operation (an earlier step of a multi-step point write,
-        // e.g. the upsert preceding this set_full_payload). It cannot be
-        // durable yet: the segment write lock is held across the whole
-        // operation, so no flush — and hence no read-only follower — can
-        // have observed it, and a crash discards it (versions flush last,
-        // WAL replay re-applies the whole operation). Mutating it in place
-        // is therefore invisible to readers and avoids cloning the point
-        // once per step.
-        let same_op_slot = self
-            .id_tracker
-            .borrow()
-            .internal_version(existing_internal_id)
-            .is_some_and(|slot_version| slot_version == op_num);
-        let append_only = self.is_append_only() && !same_op_slot;
+        let append_only = self.is_append_only();
         self.handle_point_version_and_failure(
             op_num,
             point_id,
@@ -495,7 +481,7 @@ impl Segment {
     /// # Arguments
     ///
     /// * `op_num` - sequential operation of the current operation
-    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
+    /// * `operation` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
     ///   and optionally new offset of the changed point.
     ///
     /// # Result
@@ -550,7 +536,7 @@ impl Segment {
     /// * `point_id` - external id of the point the operation targets; used for error correlation.
     /// * `op_point_offset` - If point offset is specified, handler will use point version for comparison.
     ///   Otherwise, it will be applied without version checks.
-    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
+    /// * `operation` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
     ///
     /// # Result
     ///
@@ -669,11 +655,25 @@ impl Segment {
         Ok(applied)
     }
 
+    /// `op_num` is only used to bump the payload-storage entry in
+    /// `Segment::version_tracker`, so pass `None` when there is no
+    /// associated operation (e.g. repair on load).
     pub fn delete_point_internal(
         &mut self,
         internal_id: PointOffsetType,
+        op_num: Option<SeqNumberType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        if self.is_append_only_delete() {
+            // Tombstone-only: leave the payload row and field-index postings
+            // at `internal_id` in place so the on-disk structures stay
+            // append-only. Readers filter the tombstone via the id tracker's
+            // deleted bitslice (see
+            // `PointMappingsRefEnum::filter_deferred_and_deleted`). Payload
+            // storage is untouched, so the version tracker is not bumped.
+            return self.id_tracker.borrow_mut().drop_internal(internal_id);
+        }
+
         // Mark point as deleted, drop mapping
         self.payload_index
             .borrow_mut()
@@ -685,6 +685,9 @@ impl Segment {
         // the point sits at or above the deferred threshold, with double-delete
         // protection inside `PointMappings::drop`.
         id_tracker.drop_internal(internal_id)?;
+        drop(id_tracker);
+
+        self.version_tracker.set_payload(op_num);
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data
@@ -699,18 +702,6 @@ impl Segment {
         // }
 
         Ok(())
-    }
-
-    /// Append-only counterpart to [`Segment::delete_point_internal`]: only
-    /// touches the id tracker, leaving the payload row and field-index
-    /// postings at `internal_id` in place. Readers filter the tombstone
-    /// via the id tracker's deleted bitslice (see
-    /// `PointMappingsRefEnum::filter_deferred_and_deleted`).
-    pub fn delete_point_tombstone_only(
-        &mut self,
-        internal_id: PointOffsetType,
-    ) -> OperationResult<()> {
-        self.id_tracker.borrow_mut().drop_internal(internal_id)
     }
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
@@ -793,7 +784,7 @@ impl Segment {
             );
 
             for internal_id in ids_to_clean {
-                self.delete_point_internal(internal_id, &disposable_hw_counter)?;
+                self.delete_point_internal(internal_id, None, &disposable_hw_counter)?;
             }
 
             self.flush(true)?;

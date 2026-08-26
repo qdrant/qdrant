@@ -39,6 +39,7 @@ anyhow = { workspace = true }
 object_store = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
+tap = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
@@ -69,10 +70,10 @@ atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.33.1"
+geo = { version = "0.33.1", default-features = false }
 geohash = "0.13.2"
 num-traits = { workspace = true }
-num-derive = "0.4.2"
+num-derive = "0.5.1"
 num-cmp = "0.1.0"
 once_cell = "1.21"
 rand = { workspace = true }
@@ -91,14 +92,14 @@ siphasher = "1.0.3"
 smallvec = { workspace = true }
 strum = { workspace = true }
 byteorder = { workspace = true }
-tap = { workspace = true }
+stumpalo = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory
 # (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
-charabia = { version = "0.9.9", default-features = false, features = [
+sysinfo = { workspace = true }
+charabia = { version = "0.10.0", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
@@ -120,10 +121,9 @@ macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.5"
 procfs = { version = "0.18", default-features = false }
 
 [[bench]]

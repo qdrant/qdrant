@@ -15,6 +15,11 @@ pub enum UniversalKind {
     IoUring,
     DiskCache,
     SimpleDiskCache,
+    /// Combined remote-blob + local-mirror handle with locally-buffered
+    /// appends (`io_bridge`'s `CachedBlobFile`). Reads are served like
+    /// [`SimpleDiskCache`](Self::SimpleDiskCache); appends become remotely
+    /// durable only when the flusher runs.
+    CachedBlob,
     S3,
     Gcs,
     Azure,
@@ -29,7 +34,9 @@ impl UniversalKind {
     /// or a remote object store.
     pub fn is_in_ram_or_mmap(self) -> bool {
         match self {
-            UniversalKind::Mmap | UniversalKind::SimpleDiskCache => true,
+            UniversalKind::Mmap | UniversalKind::SimpleDiskCache | UniversalKind::CachedBlob => {
+                true
+            }
             UniversalKind::IoUring
             | UniversalKind::DiskCache
             | UniversalKind::S3
@@ -45,6 +52,7 @@ impl UniversalKind {
             UniversalKind::IoUring
             | UniversalKind::DiskCache
             | UniversalKind::SimpleDiskCache
+            | UniversalKind::CachedBlob
             | UniversalKind::S3
             | UniversalKind::Gcs
             | UniversalKind::Azure
@@ -111,6 +119,7 @@ impl Populate {
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
     pub writeable: bool,
+    // Not needed for one shot reeds
     pub need_sequential: bool,
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Populate,
@@ -239,6 +248,9 @@ pub struct ListedFile {
     /// Last modification time, when the backend exposes one (local
     /// filesystems, object stores); `None` otherwise.
     pub last_modified: Option<std::time::SystemTime>,
+    /// Entity tag, when the backend exposes one (object stores); `None`
+    /// otherwise.
+    pub etag: Option<String>,
 }
 
 pub type ByteOffset = u64;

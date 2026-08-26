@@ -623,11 +623,9 @@ impl LocalShard {
     /// Byte-blob analogue of [`ShardOperation::retrieve`] for an explicit id set:
     /// returns storage-native raw vector bytes for shard transfer. Preserves
     /// input id order and silently drops ids not found (like `retrieve`).
-    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve_raw(
         &self,
         ids: &[ExtendedPointId],
-        with_payload: &WithPayload,
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
@@ -640,7 +638,6 @@ impl LocalShard {
             SegmentsSearcher::retrieve_raw(
                 self.segments.clone(),
                 ids,
-                with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -668,7 +665,6 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -680,7 +676,6 @@ impl LocalShard {
         self.internal_scroll_by_id_raw(
             offset,
             limit,
-            with_payload_interface,
             with_vector,
             filter,
             search_runtime_handle,

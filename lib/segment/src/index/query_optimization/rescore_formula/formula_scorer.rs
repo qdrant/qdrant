@@ -169,6 +169,22 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(acc + value)
             }),
+            ParsedExpression::Max(expressions) => {
+                expressions
+                    .iter()
+                    .try_fold(PreciseScore::NEG_INFINITY, |acc, expr| {
+                        let value = self.eval_expression(expr, point_id)?;
+                        Ok(acc.max(value))
+                    })
+            }
+            ParsedExpression::Min(expressions) => {
+                expressions
+                    .iter()
+                    .try_fold(PreciseScore::INFINITY, |acc, expr| {
+                        let value = self.eval_expression(expr, point_id)?;
+                        Ok(acc.min(value))
+                    })
+            }
             ParsedExpression::Div {
                 left,
                 right,
@@ -248,6 +264,16 @@ impl FormulaScorer<'_> {
                 }
                 Err(OperationError::NonFiniteNumber {
                     expression: format!("ln({value}) = {ln_value}"),
+                })
+            }
+            ParsedExpression::Acosh(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                let acosh_value = value.acosh();
+                if acosh_value.is_finite() {
+                    return Ok(acosh_value);
+                }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("acosh({value}) = {acosh_value}"),
                 })
             }
             ParsedExpression::Abs(expr) => {
@@ -439,7 +465,75 @@ mod tests {
     #[case(ParsedExpression::new_div(
         ParsedExpression::Constant(PreciseScoreOrdered::from(10.0)), ParsedExpression::new_score_id(0), None
     ), 10.0 / 1.0)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
+    ]), 85.0)]
+    // A single operand is returned as-is
+    #[case(ParsedExpression::Max(vec![ParsedExpression::new_score_id(1)]), 2.0)]
+    // `min` over the same mixed operands picks the smallest instead of the largest
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
+    ]), 1.0)]
+    #[case(ParsedExpression::Min(vec![ParsedExpression::new_score_id(1)]), 2.0)]
+    // Negative operands: min must not be confused by magnitude
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-10.0)),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-2.0)),
+    ]), -10.0)]
+    // Datetimes evaluate to seconds, so `min` picks the older of two dates.
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2026-01-01".parse().unwrap())),
+    ]), "2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)]
+    // Nested sub-expressions are evaluated before comparing
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Mult(vec![
+            ParsedExpression::Constant(PreciseScoreOrdered::from(3.0)),
+            ParsedExpression::new_score_id(0),
+        ]),
+        ParsedExpression::new_score_id(1),
+    ]), 2.0)]
+    // max and min of the same single operand agree
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(7.5)),
+    ]), 7.5)]
+    // Negative operands: max must not be confused by magnitude
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-10.0)),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-2.0)),
+    ]), -2.0)]
+    // Datetimes evaluate to seconds, so `max` picks the more recent of two dates. This is how
+    // you'd score on "whichever of these timestamps is newer".
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2026-01-01".parse().unwrap())),
+    ]), "2026-01-01".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)]
+    // Nested sub-expressions are evaluated before comparing
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Mult(vec![
+            ParsedExpression::Constant(PreciseScoreOrdered::from(3.0)),
+            ParsedExpression::new_score_id(0),
+        ]),
+        ParsedExpression::new_score_id(1),
+    ]), 3.0)]
     #[case(ParsedExpression::new_neg(ParsedExpression::Constant(PreciseScoreOrdered::from(10.0))), -10.0)]
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(1.0))),
+        0.0
+    )]
+    // acosh(cosh(2)) == 2
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(
+            3.7621956910836314
+        ))),
+        2.0
+    )]
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
         GeoPoint::new_unchecked(-100.43383200156751, 25.717877679163667), JsonPath::new(GEO_FIELD_NAME)
@@ -469,6 +563,36 @@ mod tests {
     #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0) = -inf" }"#)]
     #[case(
         ParsedExpression::new_ln(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        0.0
+    )]
+    // A failing operand must fail the whole expression, not be quietly passed over in favour of
+    // a finite sibling. Checked with the failure both before and after the finite operand:
+    // `mult` short-circuits on zero and so can skip evaluating later operands, and `max` must
+    // not grow a similar shortcut that would swallow an error.
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+    ]), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+    ]), 0.0)]
+    // Same for `min`, with the failure on either side of the finite operand.
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+    ]), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+    ]), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "acosh(0.5) = NaN" }"#)]
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(0.5))),
         0.0
     )]
     #[test]

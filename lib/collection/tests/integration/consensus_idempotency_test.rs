@@ -9,100 +9,14 @@
 //! `test_resharding_replay.py`); here we cover what a single process can drive
 //! deterministically.
 
-use async_trait::async_trait;
 use collection::operations::cluster_ops::ReshardingDirection;
-use collection::operations::types::{CollectionError, CollectionResult};
-use collection::shards::CollectionId;
+use collection::operations::types::CollectionError;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
-use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::{
-    ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
-};
 use tempfile::Builder;
 use uuid::Uuid;
 
-use crate::common::simple_collection_fixture;
-
-/// `Collection::start_resharding` never touches its `ShardTransferConsensus`
-/// argument (the resharding driver is disabled), so every method can be a stub.
-struct NoopReshardingConsensus;
-
-#[async_trait]
-impl ShardTransferConsensus for NoopReshardingConsensus {
-    fn this_peer_id(&self) -> PeerId {
-        0
-    }
-
-    fn peers(&self) -> Vec<PeerId> {
-        vec![0]
-    }
-
-    fn consensus_commit_term(&self) -> (u64, u64) {
-        (0, 0)
-    }
-
-    fn recovered_switch_to_partial(
-        &self,
-        _transfer_config: &ShardTransfer,
-        _collection_id: CollectionId,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-
-    async fn start_shard_transfer(
-        &self,
-        _transfer_config: ShardTransfer,
-        _collection_id: CollectionId,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-
-    async fn restart_shard_transfer(
-        &self,
-        _transfer_config: ShardTransfer,
-        _collection_id: CollectionId,
-        _default_method: ShardTransferMethod,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-
-    async fn abort_shard_transfer(
-        &self,
-        _transfer: ShardTransferKey,
-        _collection_id: CollectionId,
-        _reason: &str,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-
-    async fn set_shard_replica_set_state(
-        &self,
-        _peer_id: Option<PeerId>,
-        _collection_id: CollectionId,
-        _shard_id: ShardId,
-        _state: ReplicaState,
-        _from_state: Option<ReplicaState>,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-
-    async fn commit_read_hashring(
-        &self,
-        _collection_id: CollectionId,
-        _reshard_key: ReshardKey,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-
-    async fn commit_write_hashring(
-        &self,
-        _collection_id: CollectionId,
-        _reshard_key: ReshardKey,
-    ) -> CollectionResult<()> {
-        unimplemented!("not exercised by start_resharding")
-    }
-}
+use crate::common::{NoopReshardingConsensus, simple_collection_fixture};
 
 /// [audit-B] Setting a resharding-*up* replica `Dead` aborts the resharding
 /// first (dropping the shard) and then converges: the shard is gone, the

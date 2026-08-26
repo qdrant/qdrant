@@ -8,7 +8,10 @@ use crate::bitvec::BitSlice;
 
 pub(super) const MAGIC: [u8; 4] = *b"QBMK";
 pub(super) const VERSION: u32 = 1;
-pub(super) const HEADER_SIZE: usize = size_of::<BitmaskHeader>();
+pub const HEADER_SIZE: usize = size_of::<BitmaskHeader>();
+
+/// Maximum logical length: every bit position must be representable as `u32`.
+pub(super) const MAX_LOGICAL_LEN: u64 = 1 << 32;
 
 /// How the payload following the header encodes the mask.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

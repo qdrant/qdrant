@@ -77,7 +77,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - for what collection do we recommend
-    /// * `request` - [`RecommendRequestBatch`]
+    /// * `requests` - [`RecommendRequestBatch`]
     ///
     /// # Result
     ///

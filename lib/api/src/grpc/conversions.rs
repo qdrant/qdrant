@@ -25,7 +25,8 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{
-    DateTimePayloadType, FloatPayloadType, VectorStorageDatatype, default_quantization_ignore_value,
+    DateTimePayloadType, FloatPayloadType, RawPayload, VectorStorageDatatype,
+    default_quantization_ignore_value,
 };
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
@@ -69,7 +70,8 @@ use crate::grpc::qdrant::{
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
-    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
+    DivExpression, GeoDistance, MaxExpression, MinExpression, MultExpression, PowExpression,
+    SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, ShardKeysResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -3631,6 +3633,18 @@ fn unparse_expression(
                 .map(|expr| unparse_expression(expr, conditions))
                 .collect(),
         }),
+        ParsedExpression::Max(exprs) => Variant::Max(MaxExpression {
+            max: exprs
+                .into_iter()
+                .map(|expr| unparse_expression(expr, conditions))
+                .collect(),
+        }),
+        ParsedExpression::Min(exprs) => Variant::Min(MinExpression {
+            min: exprs
+                .into_iter()
+                .map(|expr| unparse_expression(expr, conditions))
+                .collect(),
+        }),
         ParsedExpression::Neg(expr) => {
             Variant::Neg(Box::new(unparse_expression(*expr, conditions)))
         }
@@ -3657,6 +3671,9 @@ fn unparse_expression(
             Variant::Log10(Box::new(unparse_expression(*expr, conditions)))
         }
         ParsedExpression::Ln(expr) => Variant::Ln(Box::new(unparse_expression(*expr, conditions))),
+        ParsedExpression::Acosh(expr) => {
+            Variant::Acosh(Box::new(unparse_expression(*expr, conditions)))
+        }
         ParsedExpression::Abs(expr) => {
             Variant::Abs(Box::new(unparse_expression(*expr, conditions)))
         }
@@ -3700,6 +3717,36 @@ impl From<Modifier> for grpc::Modifier {
         match value {
             Modifier::None => grpc::Modifier::None,
             Modifier::Idf => grpc::Modifier::Idf,
+        }
+    }
+}
+
+impl From<RawPayload> for grpc::RawPayload {
+    fn from(value: RawPayload) -> Self {
+        let RawPayload { payload_bytes } = value;
+
+        Self {
+            payload_bytes,
+            // A blob only ever comes from storage, which keeps payloads as serde_json.
+            encoding: grpc::RawPayloadEncoding::JsonBytes as i32,
+        }
+    }
+}
+
+impl TryFrom<grpc::RawPayload> for RawPayload {
+    type Error = Status;
+
+    fn try_from(value: grpc::RawPayload) -> Result<Self, Self::Error> {
+        let grpc::RawPayload {
+            payload_bytes,
+            encoding,
+        } = value;
+
+        let encoding = grpc::RawPayloadEncoding::try_from(encoding)
+            .map_err(|_| Status::invalid_argument("Unknown raw payload encoding"))?;
+
+        match encoding {
+            grpc::RawPayloadEncoding::JsonBytes => Ok(Self { payload_bytes }),
         }
     }
 }

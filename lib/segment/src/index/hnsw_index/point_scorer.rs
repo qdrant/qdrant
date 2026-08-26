@@ -1,10 +1,11 @@
 use std::sync::atomic::AtomicBool;
 
+use common::bitmap_scan::BatchedBitmapScan;
 use common::bitvec::BitSlice;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
+use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use smallvec::SmallVec;
 
@@ -137,8 +138,8 @@ impl ConditionChecker for ScorerFilters<'_> {
 }
 
 pub struct FilteredBytesScorer<'a> {
-    scorer_bytes: &'a dyn QueryScorerBytes,
-    filters: &'a ScorerFilters<'a>,
+    pub(super) scorer_bytes: &'a dyn QueryScorerBytes,
+    pub(super) filters: &'a ScorerFilters<'a>,
 }
 
 impl<'a> FilteredBytesScorer<'a> {
@@ -312,7 +313,7 @@ impl<'a> FilteredScorer<'a> {
 // We keep each scorer with its queue to reduce allocations and improve data locality.
 struct BatchSearch<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
-    pq: FixedLengthPriorityQueue<ScoredPointOffset>,
+    top_k: TopK,
 }
 
 pub struct BatchFilteredSearcher<'a> {
@@ -348,8 +349,8 @@ impl<'a> BatchFilteredSearcher<'a> {
                     }
                     None => vectors.build_raw_scorer(query, hardware_counter),
                 };
-                let pq = FixedLengthPriorityQueue::new(top);
-                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, pq })
+                let top_k = TopK::new(top);
+                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, top_k })
             })
             .collect::<Result<_, _>>()?;
         let filters =
@@ -383,7 +384,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                 .unwrap();
                 BatchSearch {
                     raw_scorer,
-                    pq: FixedLengthPriorityQueue::new(top),
+                    top_k: TopK::new(top),
                 }
             })
             .collect();
@@ -425,6 +426,67 @@ impl<'a> BatchFilteredSearcher<'a> {
         self.peek_top_iter(iter, is_stopped)
     }
 
+    /// Full-scan counterpart of [`Self::peek_top_iter`]: scores every point that
+    /// is unflagged in the deletion bitmaps and in `mapping_deleted` / `shadowed`,
+    /// and below `cutoff` (when `Some`). Callers obtain those three arguments from
+    /// `PointMappingsRefEnum::visible_scan_masks`; the word-wise harvest via
+    /// [`BatchedBitmapScan`] is what makes this beat the per-id iterator path on
+    /// full scans over mostly-live segments.
+    pub fn peek_top_visible(
+        self,
+        cutoff: Option<PointOffsetType>,
+        mapping_deleted: &BitSlice,
+        shadowed: &BitSlice,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        // A whole harvested 64-point block must fit into one scoring chunk.
+        const { assert!(VECTOR_READ_BATCH_SIZE >= 64) };
+
+        let Self {
+            mut scorer_batch,
+            filters,
+        } = self;
+
+        // Ignore points without an entry in `point_deleted` (absent entries count as
+        // deleted, see `NotDeletedChecker`) and points at or above the deferred cutoff.
+        let mut point_count = filters.deleted.point_deleted.len();
+        if let Some(cutoff) = cutoff {
+            point_count = point_count.min(cutoff as usize);
+        }
+
+        let mut scan = BatchedBitmapScan::new(
+            point_count,
+            [
+                filters.deleted.point_deleted,
+                filters.deleted.vec_deleted,
+                mapping_deleted,
+                shadowed,
+            ],
+        );
+
+        let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
+        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+        loop {
+            let n = scan.next_chunk(&mut chunk);
+            if n == 0 {
+                break;
+            }
+            check_process_stopped(is_stopped)?;
+            score_chunk(
+                &filters,
+                &mut scorer_batch,
+                &mut chunk[..n],
+                &mut scores_buffer,
+            )?;
+        }
+
+        let results = scorer_batch
+            .into_iter()
+            .map(|BatchSearch { top_k, .. }| top_k.into_vec())
+            .collect();
+        Ok(results)
+    }
+
     /// This function expects deferred points to be already filtered from the iterator.
     pub fn peek_top_iter(
         mut self,
@@ -457,11 +519,11 @@ impl<'a> BatchFilteredSearcher<'a> {
             }
 
             // Switching the loops improves batching performance, but slightly degrades single-query performance.
-            for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
+            for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
                 raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
 
                 for i in 0..chunk_size {
-                    pq.push(ScoredPointOffset {
+                    top_k.push(ScoredPointOffset {
                         idx: chunk[i],
                         score: scores_buffer[i],
                     });
@@ -472,8 +534,166 @@ impl<'a> BatchFilteredSearcher<'a> {
         let results = self
             .scorer_batch
             .into_iter()
-            .map(|BatchSearch { pq, .. }| pq.into_sorted_vec())
+            .map(|BatchSearch { top_k, .. }| top_k.into_vec())
             .collect();
         Ok(results)
+    }
+}
+
+/// Score one harvested chunk against every scorer and push into its queue.
+/// Applies `filter_context` if present; the deletion bitmaps were already folded into the harvest masks by the caller.
+fn score_chunk(
+    filters: &ScorerFilters<'_>,
+    scorer_batch: &mut [BatchSearch<'_>],
+    chunk: &mut [PointOffsetType],
+    scores_buffer: &mut [ScoreType; VECTOR_READ_BATCH_SIZE],
+) -> OperationResult<()> {
+    let n = match &filters.filter_context {
+        Some(f) => f.check_batched(chunk, Select::Matches, Rest::Discard)?,
+        None => chunk.len(),
+    };
+    let chunk = &chunk[..n];
+    if chunk.is_empty() {
+        return Ok(());
+    }
+    for BatchSearch { raw_scorer, top_k } in scorer_batch {
+        raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()]);
+        for i in 0..chunk.len() {
+            top_k.push(ScoredPointOffset {
+                idx: chunk[i],
+                score: scores_buffer[i],
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use common::bitvec::{BitSliceExt as _, BitVec};
+    use rand::rngs::StdRng;
+    use rand::{RngExt, SeedableRng};
+
+    use super::*;
+    use crate::types::Distance;
+    use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
+
+    fn random_mask(rng: &mut StdRng, len: usize, rate: f64) -> BitVec {
+        let mut mask = BitVec::repeat(false, len);
+        for i in 0..len {
+            if rng.random_bool(rate) {
+                mask.set(i, true);
+            }
+        }
+        mask
+    }
+
+    /// [`BatchFilteredSearcher::peek_top_visible`] must reproduce the iterator
+    /// path exactly for every combination of deletion bitmaps (including
+    /// lengths that are not word multiples and differ from the point count),
+    /// extra masks, and deferred cutoff.
+    #[test]
+    fn peek_top_visible_matches_iter_reference() {
+        const TOTAL: usize = 300;
+        const DIM: usize = 4;
+        const TOP: usize = 20;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut storage = new_volatile_dense_vector_storage(DIM, Distance::Dot);
+        for i in 0..TOTAL {
+            let vector: Vec<f32> = (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
+            storage
+                .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                .unwrap();
+        }
+        for i in 0..TOTAL {
+            if rng.random_bool(0.15) {
+                storage.delete_vector(i as PointOffsetType).unwrap();
+            }
+        }
+
+        let queries: Vec<QueryVector> = (0..2)
+            .map(|_| {
+                let v: Vec<f32> = (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
+                v.as_slice().into()
+            })
+            .collect();
+
+        let empty = BitVec::new();
+        let all_live = BitVec::repeat(false, TOTAL);
+        let mut dead_prefix = BitVec::repeat(false, TOTAL);
+        for i in 0..200 {
+            dead_prefix.set(i, true);
+        }
+
+        // (point_deleted, mapping_deleted, shadowed, cutoff)
+        let cases: Vec<(BitVec, BitVec, BitVec, Option<PointOffsetType>)> = vec![
+            // All alive, no extra bitmaps, no cutoff — the fully-live block
+            // fast path.
+            (all_live.clone(), empty.clone(), empty.clone(), None),
+            // Empty point_deleted bitmap: everything counts as deleted.
+            (BitVec::new(), empty.clone(), empty.clone(), None),
+            // Random deletions everywhere; extra bitmaps shorter and longer
+            // than the point count.
+            (
+                random_mask(&mut rng, TOTAL, 0.3),
+                random_mask(&mut rng, 100, 0.5),
+                random_mask(&mut rng, 400, 0.2),
+                None,
+            ),
+            // point_deleted shorter than the storage: tail points excluded.
+            (
+                random_mask(&mut rng, 250, 0.1),
+                empty.clone(),
+                empty.clone(),
+                None,
+            ),
+            // Deferred cutoff mid-word, at zero, and beyond the range.
+            (
+                random_mask(&mut rng, TOTAL, 0.2),
+                random_mask(&mut rng, TOTAL, 0.1),
+                empty.clone(),
+                Some(150),
+            ),
+            (all_live.clone(), empty.clone(), empty.clone(), Some(0)),
+            (all_live.clone(), empty.clone(), empty.clone(), Some(1000)),
+            // Exactly one word.
+            (
+                random_mask(&mut rng, 64, 0.4),
+                empty.clone(),
+                empty.clone(),
+                None,
+            ),
+            // Long fully-dead stretch before the live region.
+            (dead_prefix, empty.clone(), empty.clone(), None),
+        ];
+
+        for (case_idx, (point_deleted, mapping_deleted, shadowed, cutoff)) in
+            cases.iter().enumerate()
+        {
+            let visible =
+                BatchFilteredSearcher::new_for_test(&queries, &storage, point_deleted, TOP)
+                    .peek_top_visible(*cutoff, mapping_deleted, shadowed, &DEFAULT_STOPPED)
+                    .unwrap();
+
+            // Reference: the same visibility predicate applied id by id
+            // through the iterator path (`peek_top_iter` re-checks the
+            // deletion bitmaps itself via `check_vector`).
+            let bound = cutoff.map_or(usize::MAX, |c| c as usize);
+            let ids = (0..TOTAL as PointOffsetType).filter(|&id| {
+                (id as usize) < bound
+                    && !mapping_deleted.get_bit(id as usize).unwrap_or(false)
+                    && !shadowed.get_bit(id as usize).unwrap_or(false)
+            });
+            let reference =
+                BatchFilteredSearcher::new_for_test(&queries, &storage, point_deleted, TOP)
+                    .peek_top_iter(ids, &DEFAULT_STOPPED)
+                    .unwrap();
+
+            assert_eq!(visible, reference, "case {case_idx}");
+        }
     }
 }

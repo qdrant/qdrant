@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
@@ -503,6 +504,7 @@ impl IoBackend {
             common::universal_io::UniversalKind::IoUring => Some(Self::IoUring),
             common::universal_io::UniversalKind::DiskCache
             | common::universal_io::UniversalKind::SimpleDiskCache
+            | common::universal_io::UniversalKind::CachedBlob
             | common::universal_io::UniversalKind::S3
             | common::universal_io::UniversalKind::Gcs
             | common::universal_io::UniversalKind::Azure
@@ -2939,6 +2941,42 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 params.kind(),
             )),
         }
+    }
+}
+
+/// Byte-blob analogue of [`Payload`]: the whole payload object as a single
+/// encoded blob, tagged with its encoding.
+///
+/// Read from storage by `retrieve_raw` and shipped as-is, so it is parsed once: when the
+/// receiving node applies the point.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
+pub struct RawPayload {
+    /// A compact byte string rather than the serde default of an integer sequence, which
+    /// is what the WAL would otherwise store.
+    ///
+    /// The helper is named through a `use` import rather than a full path: Qdrant Edge's
+    /// amalgamation rewrites paths in code but cannot see into attribute strings.
+    #[serde(with = "raw_bytes_serde")]
+    pub payload_bytes: Vec<u8>,
+}
+
+impl RawPayload {
+    /// Wrap payload bytes read from storage, which are plain uncompressed
+    /// serde_json.
+    pub fn from_storage_bytes(payload_bytes: Vec<u8>) -> Self {
+        Self { payload_bytes }
+    }
+
+    /// Parse the blob into a [`Payload`].
+    ///
+    /// Reported as user error, so an operation carrying a bad blob is skipped on WAL
+    /// replay rather than failing recovery.
+    pub fn decode(&self) -> OperationResult<Payload> {
+        serde_json::from_slice(&self.payload_bytes).map_err(|err| {
+            OperationError::MalformedPayloadBlob {
+                description: format!("Malformed raw payload blob: {err}"),
+            }
+        })
     }
 }
 

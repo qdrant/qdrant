@@ -262,11 +262,15 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::Uninitialized { description } => {
             Status::internal(format!("Uninitialized: {description}"))
         }
+        UniversalIoError::UnchangedOpen { .. } => Status::internal(e.to_string()),
         UniversalIoError::Bincode(e) => Status::internal(format!("Bincode error: {e}")),
         UniversalIoError::BytemuckCast(e) => Status::internal(format!("Bytemuck cast error: {e}")),
         UniversalIoError::ZerocopySize(e) => Status::internal(e),
         UniversalIoError::QueueIsFull => Status::internal(e.to_string()),
         UniversalIoError::AppendOffsetConflict { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::AppendRewriteRequired { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::AppendEntityTooSmall { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::AppendEtagMismatch { .. } => Status::aborted(e.to_string()),
         UniversalIoError::S3(_)
         | UniversalIoError::S3Config { .. }
         | UniversalIoError::TaskPanicked(_) => Status::internal(e.to_string()),

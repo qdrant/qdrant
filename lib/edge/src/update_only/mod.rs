@@ -7,13 +7,20 @@
 //!
 //! * a batch is folded before it is applied: a point is read at most once and
 //!   written at most once, however many operations named it;
-//! * only the components a write needs are opened, and every lookup is one
-//!   batched pass per component over the whole point set;
-//! * there is no WAL: a batch is durable when the storages are flushed.
+//! * writers are opened once, at shard open, next to the segments they resume
+//!   from; the store components only on the first point actually stored. Every
+//!   lookup is one batched pass per component over the whole point set;
+//! * there is no WAL: a batch is durable when the storages are flushed;
+//! * an upsert's `update_mode` is honored off the same lookup: whether a point
+//!   exists is what locating it already answers, so `insert_only` costs
+//!   nothing beyond a plain upsert — and less, since the points it rejects are
+//!   never read. A conditional upsert carrying a real filter is rejected:
+//!   evaluating one needs payload indexes the writer never fetches.
 //!
 //! Storage is append-only throughout. Updating a point appends it in full and
-//! tombstones its old slot; a deletion writes nothing but the deleted-points
-//! bitmask.
+//! retires its old copy; a deletion writes no point data at all — it records
+//! a retirement in the appendable segment's mappings log, or marks the
+//! deleted-points bitmask of an immutable one.
 //!
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
@@ -22,19 +29,23 @@ mod batch;
 mod holder;
 mod lifecycle;
 mod preview;
+#[cfg(test)]
+mod tests;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::universal_io::UniversalRead;
+use common::universal_io::UniversalAppend;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
+use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::SegmentConfig;
 use uuid::Uuid;
 
-pub use self::apply::UpdateBatchOutcome;
+pub use self::apply::{PointApplyKind, PointApplyRecord, UpdateBatchOutcome};
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
-use self::holder::UpdateOnlySegmentHolder;
+use self::holder::LookupSegmentHolder;
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
 
 /// A batch writer over the segments of one shard directory, generic over the
@@ -43,14 +54,17 @@ pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview
 /// Compared to [`EdgeShard`](crate::EdgeShard), there is no WAL, no
 /// optimizers, and no `EdgeConfig` — the write target's own segment config is
 /// the only configuration a write needs.
-pub struct UpdateOnlyEdgeShard<S: UniversalRead + 'static> {
+pub struct UpdateOnlyEdgeShard<S: UniversalAppend + 'static> {
     path: PathBuf,
-    /// Backend the segments were opened on, and the one their appends go
-    /// through. Unread until the writer can create the appendable segment a
-    /// fresh directory needs.
-    #[expect(dead_code)]
+    /// Backend the segments were opened on; live-reloads their lookup
+    /// halves after a batch writes to them.
     fs: S::Fs,
-    segments: RwLock<UpdateOnlySegmentHolder<S>>,
+    segments: RwLock<LookupSegmentHolder<S>>,
+    /// One writer per segment, opened at shard open from the state its
+    /// [`LookupSegment`](segment::segment::update_only::LookupSegment)
+    /// observed — which also decided whether the segment accepts appends or
+    /// deletes only.
+    writers: HashMap<Uuid, UpdateOnlySegmentEnum<S>>,
     /// Thread pool the per-segment work of a batch runs on: on a remote
     /// backend each segment's reads block on the network, so segments are
     /// visited in parallel.
@@ -67,7 +81,7 @@ pub struct SegmentConfigInfo {
     pub config: SegmentConfig,
 }
 
-impl<S: UniversalRead + 'static> UpdateOnlyEdgeShard<S> {
+impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     pub fn path(&self) -> &Path {
         &self.path
     }

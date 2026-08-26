@@ -97,6 +97,15 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
+    /// Iterate over the internal IDs at or above the mapping's deferred
+    /// threshold, excluding soft-deleted points — the tail complement of
+    /// [`Self::iter_internal_visible`]. Empty when the mapping has no deferred threshold.
+    pub fn iter_deferred(self) -> impl Iterator<Item = PointOffsetType> + 'a {
+        let (total, deleted) = self.internal_scan_masks();
+        let start = self.deferred_internal_id().unwrap_or(total);
+        (start..total).filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false))
+    }
+
     /// Iterate over all internal IDs, with deferred filtering selected by
     /// `deferred_behavior`. See [`PointMappings::iter_internal_with_behavior`]
     /// for the per-mode contract.
@@ -192,6 +201,38 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
             Err(err) => Some(Err(err)),
             Ok(id) => visible(id).then_some(Ok(id)),
         })
+    }
+
+    /// Word-scan form of [`Self::filter_deferred_and_deleted`] with
+    /// [`DeferredBehavior::VisibleOnly`], for full-range scans.  Returns
+    /// `(cutoff, mapping_deleted, shadowed)`: a point is visible iff its id
+    /// is below the cutoff (when `Some`) and its bit is unset in both
+    /// bitslices.  Callers OR the bitslices into a word-level liveness
+    /// harvest (see `BatchFilteredSearcher::peek_top_visible`) instead of
+    /// filtering ids one at a time.
+    ///
+    /// Branches mirror [`Self::filter_deferred_and_deleted`]: without a
+    /// deferred cutoff the shadowed-actives bitslice applies (it is empty
+    /// unless deferred mutations exist); with a cutoff only the deleted
+    /// bitslice and the cutoff itself apply.
+    pub fn visible_scan_masks(self) -> (Option<PointOffsetType>, &'a BitSlice, &'a BitSlice) {
+        match DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id()) {
+            None => (None, self.deleted(), self.shadowed()),
+            Some(cutoff) => (Some(cutoff), self.deleted(), BitSlice::empty()),
+        }
+    }
+
+    /// Mask form of [`Self::iter_internal`]: an id is in the iteration iff it
+    /// is below the returned total point count and unset in the deleted
+    /// bitslice. Unlike [`Self::visible_scan_masks`], no deferred or
+    /// shadowed-active filtering applies.
+    pub fn internal_scan_masks(self) -> (PointOffsetType, &'a BitSlice) {
+        let total = match self {
+            PointMappingsRefEnum::Plain(m) => m.total_point_count(),
+            PointMappingsRefEnum::Compressed(m) => m.total_point_count(),
+            PointMappingsRefEnum::Disk(m) => m.total_point_count(),
+        };
+        (total as PointOffsetType, self.deleted())
     }
 
     /// Iterate starting from a given ID, with deferred filtering selected by

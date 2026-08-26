@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use roaring::RoaringBitmap;
 
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
@@ -21,9 +21,9 @@ mod read_ops;
 /// condition checker / faceting) is shared with the writable variants via
 /// [`BoolIndexRead`][4].
 ///
-/// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
-/// can reopen the bitslice and apply only the changed positions, instead of
-/// re-materializing the bitmaps from scratch.
+/// Each [`ReadOnlyFlags`] retains its backend `S` so a [`LiveReload`][5]
+/// can reopen the backing files and resync, instead of re-materializing the
+/// bitmaps from scratch.
 ///
 /// [1]: super::mutable_bool_index::MutableBoolIndex
 /// [2]: super::immutable_bool_index::ImmutableBoolIndex
@@ -37,7 +37,7 @@ pub struct ReadOnlyBoolIndex<S: UniversalReadExt> {
     ///
     /// Deriving them eagerly would force both bitmaps to materialize at open,
     /// scanning each flags file end to end — exactly what the lazy
-    /// [`ReadOnlyRoaringFlags`] bitmap exists to avoid. [`LiveReload`][1]
+    /// [`ReadOnlyFlags`] bitmap exists to avoid. [`LiveReload`][1]
     /// refreshes them in place if they are present, and leaves them unset
     /// otherwise.
     ///
@@ -59,9 +59,9 @@ pub(super) struct BoolCounts {
 
 pub(super) struct ReadOnlyStorage<S: UniversalReadExt> {
     /// Points which have at least one `true` value
-    pub(super) trues_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) trues_flags: ReadOnlyFlags<S>,
     /// Points which have at least one `false` value
-    pub(super) falses_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) falses_flags: ReadOnlyFlags<S>,
 }
 
 impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
@@ -124,6 +124,7 @@ mod tests {
         CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
     };
     use itertools::Itertools as _;
+    use rstest::rstest;
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -232,17 +233,16 @@ mod tests {
     /// in-memory bitmap in place, or — when nothing has materialized it yet —
     /// leave it alone and let the eventual scan read the updated file. Both must
     /// land on the same state, so both are exercised.
-    #[test]
-    fn live_reload_matches_fresh_open_materialized() {
-        live_reload_matches_fresh_open(true);
-    }
+    #[rstest]
+    #[case(true, false)]
+    #[case(true, true)]
+    #[case(false, false)]
+    fn live_reload_matches_fresh_open(
+        #[case] materialize_before_reload: bool,
+        #[case] preload: bool,
+    ) {
+        use common::universal_io::{CachedFs, CachedReadFs};
 
-    #[test]
-    fn live_reload_matches_fresh_open_lazy() {
-        live_reload_matches_fresh_open(false);
-    }
-
-    fn live_reload_matches_fresh_open(materialize_before_reload: bool) {
         let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
@@ -291,9 +291,16 @@ mod tests {
         index.add_point(1100, &[&json!(true)], &hw_counter).unwrap();
         index.flusher()().unwrap();
 
+        // `CachedFs` passes opens through until a snapshot is taken, so the
+        // non-preload path reloads over it untouched.
+        let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
+        if preload {
+            cached_fs.cache_file_info().unwrap();
+            reloaded.live_preload(&cached_fs).unwrap();
+        }
         reloaded
             .live_reload(
-                &fs,
+                &cached_fs,
                 &SortedSlice::new(&[1, 2]).unwrap(),
                 &SortedSlice::new(&[6, 7, 1100]).unwrap(),
                 &hw_counter,

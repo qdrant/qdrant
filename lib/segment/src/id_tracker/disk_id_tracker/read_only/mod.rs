@@ -73,10 +73,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         Ok(self.deleted_full.get().expect("just set"))
     }
 
-    /// Whether the full deleted set has been materialized. Test-only: used to
-    /// assert that read-by-id lookups do not trigger a full load.
-    #[cfg(test)]
-    pub(crate) fn deleted_full_materialized(&self) -> bool {
-        self.deleted_full.get().is_some()
+    /// The full deleted set, if already materialized; never triggers the load.
+    pub fn deleted_full_if_materialized(&self) -> Option<&BitVec> {
+        self.deleted_full.get()
     }
 }

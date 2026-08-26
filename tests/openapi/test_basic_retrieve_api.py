@@ -20,6 +20,15 @@ def test_points_retrieve(collection_name):
     assert response.ok
 
     response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 2},
+        query_params={'timeout': 1},
+    )
+    assert response.ok
+    assert response.json()['result']['id'] == 2
+
+    response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="POST",
         path_params={'collection_name': collection_name},

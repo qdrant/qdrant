@@ -123,6 +123,7 @@ pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
                 path: entry.path(),
                 size: metadata.len(),
                 last_modified: metadata.modified().ok(),
+                etag: None,
             });
         }
     }
@@ -141,6 +142,7 @@ pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
                     path: entry.path(),
                     size: metadata.len(),
                     last_modified: metadata.modified().ok(),
+                    etag: None,
                 });
             }
         }

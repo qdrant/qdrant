@@ -26,9 +26,22 @@ use crate::read_only::{
 use crate::read_view::EdgeShardRead;
 use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
 
-const VECTOR_NAME: &str = "edge-ro-test-vector";
+pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
 
-fn test_config() -> EdgeConfig {
+/// Initialize the process-global feature flags the way a serverless
+/// deployment runs, which is what every edge shard serves in production.
+///
+/// Feature flags are first-init-wins for the whole process, so every fixture
+/// in this binary initializes the same set to stay deterministic regardless
+/// of test order. The field is private, set through the same route a config
+/// file takes.
+pub(crate) fn init_serverless_feature_flags() {
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+}
+
+pub(crate) fn test_config() -> EdgeConfig {
+    init_serverless_feature_flags();
     EdgeConfig {
         on_disk_payload: Some(false),
         vectors: HashMap::from([(
@@ -53,7 +66,7 @@ fn test_config() -> EdgeConfig {
     }
 }
 
-fn point(id: u64) -> PointStructPersisted {
+pub(crate) fn point(id: u64) -> PointStructPersisted {
     PointStructPersisted {
         id: ExtendedPointId::NumId(id),
         vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
@@ -64,21 +77,21 @@ fn point(id: u64) -> PointStructPersisted {
     }
 }
 
-fn upsert(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
+pub(crate) fn upsert(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
     let points = ids.into_iter().map(point).collect::<Vec<_>>();
     shard
         .update(PointOperation(UpsertPoints(PointsList(points))))
         .unwrap();
 }
 
-fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
+pub(crate) fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
     let ids = ids.into_iter().map(ExtendedPointId::NumId).collect();
     shard.update(PointOperation(DeletePoints { ids })).unwrap();
 }
 
 /// Open a follower that discovers segments by scanning the directory (no manifest required) — used
 /// by the read/refresh tests, whose leaders don't write a manifest.
-fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
+pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
     ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         path,
@@ -89,7 +102,7 @@ fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
     .unwrap()
 }
 
-fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
+pub(crate) fn exact_count(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
     follower.count(CountRequest::new()).unwrap()
 }
 
@@ -98,7 +111,7 @@ fn leader_exact_count(leader: &EdgeShard) -> usize {
 }
 
 /// Scrolled point ids (sorted) visible to the follower.
-fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<ExtendedPointId> {
+pub(crate) fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<ExtendedPointId> {
     let (records, _) = follower
         .scroll(
             ScrollRequestBuilder::new()
@@ -113,7 +126,7 @@ fn scrolled_ids(follower: &ReadOnlyEdgeShard<MmapFile>) -> Vec<ExtendedPointId> 
 }
 
 /// Assert each id is retrievable from the follower with its expected vector `[id as f32]`.
-fn assert_follower_vectors(follower: &ReadOnlyEdgeShard<MmapFile>, ids: &[u64]) {
+pub(crate) fn assert_follower_vectors(follower: &ReadOnlyEdgeShard<MmapFile>, ids: &[u64]) {
     let point_ids = ids
         .iter()
         .map(|id| ExtendedPointId::NumId(*id))
@@ -493,15 +506,10 @@ fn manifest_enumerator_requires_manifest() {
 /// its segments, and a follower opened over the same directory loads through it.
 #[test]
 fn leader_writes_manifest_and_follower_loads_it() {
-    let mut flags = FeatureFlags::default();
-    flags.write_segment_manifest = true;
-    init_feature_flags(flags);
-
-    // Another test in this process may have initialized flags first; the assertions below only hold
-    // with the flag enabled.
-    if !common::flags::feature_flags().write_segment_manifest {
-        return;
-    }
+    // Serverless mode implies `write_segment_manifest`, which the assertions
+    // below rely on.
+    init_serverless_feature_flags();
+    assert!(common::flags::feature_flags().write_segment_manifest);
 
     let dir = tempfile::Builder::new()
         .prefix("edge-ro-manifest-write")

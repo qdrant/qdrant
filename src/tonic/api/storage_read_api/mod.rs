@@ -101,6 +101,7 @@ where
                      path,
                      size,
                      last_modified,
+                     etag: _,
                  }| {
                     path.strip_prefix(&base).ok().map(|rel| {
                         // Always use forward slashes in gRPC responses regardless of OS.

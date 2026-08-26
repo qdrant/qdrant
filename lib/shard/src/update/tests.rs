@@ -7,14 +7,15 @@ use segment::entry::ReadSegmentEntry as _;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::payload_json;
 use segment::types::{
-    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, ValueVariants,
+    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, PointIdType,
+    ValueVariants,
 };
 use tempfile::Builder;
 
 use crate::fixtures::{
     build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
 };
-use crate::operations::point_ops::PointStructRawPersisted;
+use crate::operations::point_ops::{PointStructRawPersisted, RawVectorsPersisted};
 use crate::segment_holder::{FlushMode, SegmentHolder};
 use crate::update::{
     clear_payload_by_filter, create_field_index, delete_payload_by_filter, delete_points_by_filter,
@@ -85,7 +86,6 @@ fn retrieve_raw_record(
     segment
         .retrieve_raw(
             &[point_id.into()],
-            &segment::types::WithPayload::from(true),
             &segment::types::WithVector::Bool(true),
             &hw_counter,
             &is_stopped,
@@ -93,6 +93,24 @@ fn retrieve_raw_record(
         )
         .unwrap()
         .remove(&point_id.into())
+}
+
+/// A stored record turned into a point ready to apply, with the blob already decoded.
+fn incoming_raw_point(
+    record: segment::data_types::segment_record::SegmentRecordRaw,
+) -> PointStructRawPersisted {
+    let mut point = PointStructRawPersisted::from(record);
+    point.decode_payload_raw().unwrap();
+    point
+}
+
+/// The payload a raw record carries, parsed; `None` when the point has none
+/// stored or stores an empty one.
+fn stored_payload(
+    record: &segment::data_types::segment_record::SegmentRecordRaw,
+) -> Option<segment::types::Payload> {
+    let payload = record.payload.as_ref()?.decode().unwrap();
+    (!payload.is_empty()).then_some(payload)
 }
 
 #[test]
@@ -117,15 +135,17 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
             id: 1.into(),
             vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
             payload: Some(payload.clone()),
+            payload_raw: None,
         },
         PointStructRawPersisted {
             id: 100.into(),
             vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
             payload: None,
+            payload_raw: None,
         },
     ];
 
-    let updated = upsert_points_raw(&holder, 100, points.iter(), &hw_counter).unwrap();
+    let updated = upsert_points_raw(&holder, 100, &points, None, &hw_counter).unwrap();
     assert_eq!(updated, 1);
 
     {
@@ -146,9 +166,43 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
     }
 
     let record = retrieve_raw_record(&holder, sid_app, 1).unwrap();
-    assert_eq!(record.payload, Some(payload));
+    assert_eq!(stored_payload(&record), Some(payload));
     let record = retrieve_raw_record(&holder, sid_app, 100).unwrap();
-    assert_eq!(record.payload.filter(|p| !p.is_empty()), None);
+    assert_eq!(stored_payload(&record), None);
+}
+
+/// Applying reads the parsed payload, so a point that still holds a blob would be
+/// stored with no payload at all. Both raw entry points refuse it instead.
+#[test]
+fn test_apply_refuses_an_undecoded_payload_blob() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+
+    let points = [PointStructRawPersisted {
+        id: PointIdType::from(1),
+        vectors: RawVectorsPersisted::from(vec![(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            [1.0f32, 2.0, 3.0, 4.0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect(),
+        )]),
+        payload: None,
+        payload_raw: Some(segment::types::RawPayload::from_storage_bytes(
+            br#"{"city":"Berlin"}"#.to_vec(),
+        )),
+    }];
+
+    assert!(upsert_points_raw(&holder, 100, &points, None, &hw_counter).is_err());
+    assert!(sync_points_raw(&holder, 101, None, None, &points, None, &hw_counter).is_err());
+
+    assert!(
+        retrieve_raw_record(&holder, holder.iter().next().unwrap().0, 1).is_none(),
+        "a refused point must not be stored at all",
+    );
 }
 
 #[test]
@@ -160,7 +214,7 @@ fn test_sync_points_raw() {
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(segment);
 
-    let point_2 = PointStructRawPersisted::from(retrieve_raw_record(&holder, sid, 2).unwrap());
+    let point_2 = incoming_raw_point(retrieve_raw_record(&holder, sid, 2).unwrap());
     let point_2_version_before = holder
         .get(sid)
         .unwrap()
@@ -168,7 +222,7 @@ fn test_sync_points_raw() {
         .read()
         .point_version(2.into());
 
-    let mut point_3 = PointStructRawPersisted::from(retrieve_raw_record(&holder, sid, 3).unwrap());
+    let mut point_3 = incoming_raw_point(retrieve_raw_record(&holder, sid, 3).unwrap());
     let changed_bytes: Vec<u8> = [9.0f32, 8.0, 7.0, 6.0]
         .iter()
         .flat_map(|v| v.to_le_bytes())
@@ -179,6 +233,7 @@ fn test_sync_points_raw() {
         id: 100.into(),
         vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into(),
         payload: None,
+        payload_raw: None,
     };
 
     let (deleted, new, updated) = sync_points_raw(
@@ -187,6 +242,7 @@ fn test_sync_points_raw() {
         None,
         None,
         &[point_2, point_3, point_100],
+        None,
         &hw_counter,
     )
     .unwrap();
@@ -381,7 +437,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
     let filter = city_filter("Amsterdam");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
     let updated =
-        set_payload_by_filter(&holder, 10, &payload, &filter, &None, &hw_counter).unwrap();
+        set_payload_by_filter(&holder, 10, &payload, &filter, &None, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -407,7 +463,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
     let filter = city_filter("Berlin");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
     let updated =
-        set_payload_by_filter(&holder, 10, &payload, &filter, &None, &hw_counter).unwrap();
+        set_payload_by_filter(&holder, 10, &payload, &filter, &None, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -451,7 +507,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
-    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, &hw_counter).unwrap();
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -476,7 +532,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
-    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, &hw_counter).unwrap();
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -519,7 +575,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
     holder.add_new(appendable);
 
     let filter = city_filter("Amsterdam");
-    let updated = clear_payload_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -543,7 +599,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
     let sid_app = holder.add_new(appendable);
 
     let filter = city_filter("Berlin");
-    let updated = clear_payload_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -587,7 +643,8 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, &hw_counter).unwrap();
+    let updated =
+        overwrite_payload_by_filter(&holder, 10, &payload, &filter, None, &hw_counter).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -612,7 +669,8 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, &hw_counter).unwrap();
+    let updated =
+        overwrite_payload_by_filter(&holder, 10, &payload, &filter, None, &hw_counter).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -657,7 +715,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
     let filter = city_filter("Amsterdam");
     let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
     let deleted =
-        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, &hw_counter).unwrap();
+        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None, &hw_counter).unwrap();
 
     assert!(deleted > 0, "Should have deleted at least one vector");
 }
@@ -683,7 +741,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
     let filter = city_filter("Berlin");
     let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
     let deleted =
-        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, &hw_counter).unwrap();
+        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None, &hw_counter).unwrap();
 
     assert_eq!(
         deleted, 0,
@@ -794,7 +852,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     seed(&mut in_place);
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(in_place);
-    upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
+    upsert_points(&holder, 101, [&incoming], None, &hw_counter).unwrap();
     let segment = holder.get(sid).unwrap().get();
     check(&*segment.read(), "in-place");
 
@@ -809,7 +867,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     let mut holder = SegmentHolder::default();
     holder.add_new(source);
     let sid = holder.add_new(destination);
-    upsert_points(&holder, 101, [&incoming], &hw_counter).unwrap();
+    upsert_points(&holder, 101, [&incoming], None, &hw_counter).unwrap();
     let segment = holder.get(sid).unwrap().get();
     check(&*segment.read(), "CoW move");
 }
@@ -898,5 +956,87 @@ fn create_field_index_pins_pending_payload_state() {
     assert!(
         hits.is_empty(),
         "filtered reads must agree with payload storage: the row was cleared",
+    );
+}
+
+/// The pre-build flush of `create_field_index` durably advances a segment past the
+/// delete halves of its pending copy-on-write moves. The destinations of those moves
+/// must be durable at or beyond the moves FIRST: otherwise the moves' WAL entries stop
+/// being replayable (the durable pre-image is deleted while the only current copy sits
+/// in the unflushed destination) and a graceful close loses the points. The destination
+/// cannot be relied on to flush itself during the same pass: the `already_indexed`
+/// short-circuit skips its flush, e.g. when it is proxy-wrapped by a running
+/// optimization and the proxy reports the field as present. Root cause of the nightly
+/// model-testing reload divergence (#10095).
+#[test]
+fn create_field_index_flushes_cow_destinations_before_source() {
+    use segment::entry::NonAppendableSegmentEntry as _;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+
+    use crate::update::set_payload;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let key: PayloadKeyType = "color".parse().unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let mut source = build_segment_1(dir.path()); // points 1-5, version 6
+    source.appendable_flag = false;
+    let mut destination = empty_segment(dir.path());
+    // The destination already carries the index, so its own pre-build flush below is
+    // skipped by the `already_indexed` short-circuit; only the dependency-aware flush
+    // of the source's visit can cover it.
+    destination
+        .create_field_index(7, &key, Some(&schema), &hw_counter)
+        .unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let source_id = holder.add_new(source);
+    let destination_id = holder.add_new(destination);
+
+    // Durable baseline.
+    holder.flush_all(FlushMode::Sync, true).unwrap();
+
+    // Op 100 modifies point 1, which lives in the non-appendable source: the
+    // copy-on-write arm upserts the updated point into the destination, deletes it from
+    // the source, and records the flush dependency edge.
+    let payload = payload_json! {"other": "value"};
+    let moved = set_payload(
+        &holder,
+        100,
+        &payload,
+        &[1.into()],
+        &None,
+        None,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(moved, 1);
+
+    create_field_index(&holder, 200, &key, Some(&schema), &hw_counter).unwrap();
+
+    let source_persisted = holder
+        .get(source_id)
+        .unwrap()
+        .get()
+        .read()
+        .persistent_version();
+    let destination_persisted = holder
+        .get(destination_id)
+        .unwrap()
+        .get()
+        .read()
+        .persistent_version();
+
+    assert!(
+        source_persisted >= 100,
+        "the source's pre-build flush must cover the move's delete half to arm the \
+         hazard, got {source_persisted}",
+    );
+    assert!(
+        destination_persisted >= 100,
+        "the move's destination must be durable at or beyond the move once the source \
+         flushed past it; anything lower durably deletes the WAL replay pre-image while \
+         the only remaining copy is memory-only, got {destination_persisted}",
     );
 }

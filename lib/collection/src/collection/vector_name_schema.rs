@@ -137,7 +137,7 @@ fn sparse_config_to_params(config: &SparseVectorConfig) -> SparseVectorParams {
 /// a conflicting kind (dense vs. sparse). This guards against silently overwriting the
 /// stored schema with a different one while shards keep the old one — shard-level
 /// `CreateVectorName` is idempotent and will not re-apply the new config.
-fn add_vector_to_config(
+pub fn add_vector_to_config(
     params: &mut crate::config::CollectionParams,
     vector_name: &VectorNameBuf,
     config: &VectorNameConfig,
@@ -227,7 +227,7 @@ fn sparse_schema_matches(existing: &SparseVectorParams, config: &SparseVectorCon
         && existing_datatype == datatype.map(storage_datatype_to_collection)
 }
 
-fn remove_vector_from_config(
+pub fn remove_vector_from_config(
     params: &mut crate::config::CollectionParams,
     vector_name: &VectorNameBuf,
 ) {

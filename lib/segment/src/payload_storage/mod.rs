@@ -11,5 +11,6 @@ pub mod query_checker;
 pub mod read_only;
 #[cfg(test)]
 mod tests;
+pub mod update_only;
 
 pub use payload_storage_base::*;

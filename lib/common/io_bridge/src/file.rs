@@ -6,8 +6,8 @@ use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    ByteOffset, Flusher, Item, UioResult, UniversalAppend, UniversalFlush, UniversalIoError,
-    UniversalKind, UniversalRead, UserData,
+    ByteOffset, Flusher, Item, UioResult, UniversalFlush, UniversalIoError, UniversalKind,
+    UniversalRead, UserData,
 };
 
 use crate::fs::BlobFs;
@@ -184,7 +184,17 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
     /// One append RPC at exactly `offset`; the backend itself validates the
     /// offset against the current object size (the compare-and-swap), so no
     /// local length tracking is needed.
-    fn append_bytes(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
+    ///
+    /// `expected_etag`, when provided, is the entity tag the caller last
+    /// observed for the object (from a listing, or tracked across its own
+    /// appends); it travels to the backend as a server-side precondition —
+    /// see [`AsyncAppend::append`] for which operations can honor it.
+    pub fn append_bytes(
+        &self,
+        offset: ByteOffset,
+        data: Bytes,
+        expected_etag: Option<String>,
+    ) -> UioResult<()> {
         if data.is_empty() {
             return Ok(());
         }
@@ -197,36 +207,15 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
         }
 
         self.runtime
-            .block_on(self.inner.append(&self.path, offset, data))
+            .block_on(self.inner.append(&self.path, offset, data, expected_etag))
             .map(drop)
     }
 }
 
-impl<A: AsyncAppend + Clone> UniversalAppend for BlobFile<A> {
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
-        self.append_bytes(offset, Bytes::copy_from_slice(bytemuck::cast_slice(data)))
-    }
-
-    fn append_batch<'a, T: bytemuck::Pod>(
-        &mut self,
-        offset: ByteOffset,
-        items: impl IntoIterator<Item = &'a [T]>,
-    ) -> UioResult<()> {
-        // Concatenate into a single buffer so the whole batch lands in one
-        // request.
-        let slices: Vec<&[u8]> = items
-            .into_iter()
-            .map(|item| bytemuck::cast_slice(item))
-            .collect();
-        let total: usize = slices.iter().map(|slice| slice.len()).sum();
-        let mut buffer = Vec::with_capacity(total);
-        for slice in slices {
-            buffer.extend_from_slice(slice);
-        }
-
-        self.append_bytes(offset, Bytes::from(buffer))
-    }
-}
+// Deliberately no `UniversalAppend` impl: the append-capable universal-IO
+// citizen for object stores is `CachedBlobFile`, which drives this handle
+// through `append_bytes` and supplies its tracked etag. A raw `BlobFile`
+// append through the trait would bypass that guard.
 
 #[cfg(test)]
 mod tests {
@@ -496,19 +485,31 @@ mod tests {
     }
 
     impl AsyncAppend for MutableMockSource {
+        fn append_support(&self) -> crate::AppendSupport {
+            crate::AppendSupport::Always
+        }
+
         fn append(
             &self,
             path: &Path,
             offset: u64,
             data: Bytes,
+            expected_etag: Option<String>,
         ) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             self.append_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut guard = self.store.lock().unwrap();
-            // Validate the offset before materializing anything: a rejected
-            // append must not leave an empty object behind.
+            // A content-derived etag, honored like a real store's
+            // precondition.
+            let current_etag = guard
+                .as_ref()
+                .map(|object| format!("etag-{}", object.len()));
+            // Validate the preconditions before materializing anything: a
+            // rejected append must not leave an empty object behind.
             let current_len = guard.as_ref().map_or(0, |object| object.len() as u64);
-            let result = if current_len == offset {
+            let result = if expected_etag.is_some() && expected_etag != current_etag {
+                Err(UniversalIoError::AppendEtagMismatch { path: path.into() })
+            } else if current_len == offset {
                 let object = guard.get_or_insert_with(Vec::new);
                 object.extend_from_slice(&data);
                 Ok(object.len() as u64)
@@ -529,45 +530,31 @@ mod tests {
     #[test]
     fn append_creates_missing_object() {
         let source = MutableMockSource::default();
-        let mut file = mutable_file(&source);
+        let file = mutable_file(&source);
 
         // A rejected stale append must not materialize the object.
         let err = BridgeRuntime::global()
-            .block_on(source.append(Path::new("obj"), 5, Bytes::from_static(b"x")))
+            .block_on(source.append(Path::new("obj"), 5, Bytes::from_static(b"x"), None))
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
         assert!(source.content().is_none());
 
-        file.append(0, b"abc".as_slice()).unwrap();
-        file.append(3, b"de".as_slice()).unwrap();
+        file.append_bytes(0, Bytes::from_static(b"abc"), None)
+            .unwrap();
+        file.append_bytes(3, Bytes::from_static(b"de"), None)
+            .unwrap();
         assert_eq!(source.content().unwrap(), b"abcde");
         assert_eq!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).unwrap(), 5);
     }
 
     #[test]
-    fn append_batch_is_a_single_request() {
-        let source = MutableMockSource::default();
-        let mut file = mutable_file(&source);
-
-        file.append(0, b"start".as_slice()).unwrap();
-        let batch: [&[u8]; 3] = [b"ab", b"cd", b"ef"];
-        file.append_batch(5, batch).unwrap();
-
-        let append_calls = source
-            .append_calls
-            .load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(append_calls, 2);
-        assert_eq!(source.content().unwrap(), b"startabcdef");
-    }
-
-    #[test]
     fn empty_append_succeeds_without_request() {
         let source = MutableMockSource::default();
-        let mut file = mutable_file(&source);
+        let file = mutable_file(&source);
 
-        file.append(0, b"abc".as_slice()).unwrap();
-        file.append::<u8>(3, &[]).unwrap();
-        file.append_batch::<u8>(3, std::iter::empty()).unwrap();
+        file.append_bytes(0, Bytes::from_static(b"abc"), None)
+            .unwrap();
+        file.append_bytes(3, Bytes::new(), None).unwrap();
 
         let append_calls = source
             .append_calls
@@ -581,27 +568,65 @@ mod tests {
     #[test]
     fn append_conflict_recovery() {
         let source = MutableMockSource::default();
-        let mut first = mutable_file(&source);
-        let mut second = mutable_file(&source);
+        let first = mutable_file(&source);
+        let second = mutable_file(&source);
 
-        first.append(0, b"aaa".as_slice()).unwrap();
-        second.append(3, b"bbb".as_slice()).unwrap();
+        first
+            .append_bytes(0, Bytes::from_static(b"aaa"), None)
+            .unwrap();
+        second
+            .append_bytes(3, Bytes::from_static(b"bbb"), None)
+            .unwrap();
 
-        let err = first.append(3, b"ccc".as_slice()).unwrap_err();
+        let err = first
+            .append_bytes(3, Bytes::from_static(b"ccc"), None)
+            .unwrap_err();
         assert!(matches!(
             err,
             UniversalIoError::AppendOffsetConflict { offset: 3, .. }
         ));
 
         let eof = <BlobFile<_> as UniversalRead>::len::<u8>(&first).unwrap();
-        first.append(eof, b"ccc".as_slice()).unwrap();
+        first
+            .append_bytes(eof, Bytes::from_static(b"ccc"), None)
+            .unwrap();
         assert_eq!(source.content().unwrap(), b"aaabbbccc");
+    }
+
+    /// The expected etag travels to the backend as a precondition: a
+    /// matching etag lets the append through, a stale one (or a missing
+    /// object) rejects it without mutating anything.
+    #[test]
+    fn append_bytes_passes_the_expected_etag_precondition() {
+        let source = MutableMockSource::default();
+        let file = mutable_file(&source);
+
+        // No object yet: an expected etag cannot match anything.
+        let err = file
+            .append_bytes(0, Bytes::from_static(b"abc"), Some("etag-0".to_string()))
+            .unwrap_err();
+        assert!(matches!(err, UniversalIoError::AppendEtagMismatch { .. }));
+        assert!(source.content().is_none());
+
+        file.append_bytes(0, Bytes::from_static(b"abc"), None)
+            .unwrap();
+
+        // The current etag: the append proceeds.
+        file.append_bytes(3, Bytes::from_static(b"de"), Some("etag-3".to_string()))
+            .unwrap();
+
+        // The previous etag is stale now: rejected, nothing lands.
+        let err = file
+            .append_bytes(5, Bytes::from_static(b"f"), Some("etag-3".to_string()))
+            .unwrap_err();
+        assert!(matches!(err, UniversalIoError::AppendEtagMismatch { .. }));
+        assert_eq!(source.content().unwrap(), b"abcde");
     }
 
     #[test]
     fn append_requires_writeable_open() {
         let fs = BlobFs::new(MutableMockSource::default(), BridgeRuntime::global());
-        let mut file = fs
+        let file = fs
             .open(
                 "obj",
                 OpenOptions {
@@ -612,36 +637,36 @@ mod tests {
             )
             .unwrap();
 
-        assert!(file.append(0, b"x".as_slice()).is_err());
+        assert!(
+            file.append_bytes(0, Bytes::from_static(b"x"), None)
+                .is_err()
+        );
     }
 
     #[test]
     fn append_flusher_is_a_no_op() {
         let source = MutableMockSource::default();
-        let mut file = mutable_file(&source);
+        let file = mutable_file(&source);
 
-        file.append(0, b"abc".as_slice()).unwrap();
+        file.append_bytes(0, Bytes::from_static(b"abc"), None)
+            .unwrap();
         (file.flusher())().unwrap();
     }
 
     #[test]
-    fn blob_fs_write_file_ops_round_trip() {
-        use common::universal_io::{UniversalReadFileOps as _, UniversalWriteFileOps as _};
+    fn blob_fs_write_ops_round_trip() {
+        use common::universal_io::UniversalReadFileOps as _;
 
         let source = MutableMockSource::default();
         let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
         let path = Path::new("obj");
 
         assert!(!fs.exists(path).unwrap());
-        fs.create(path, 0).unwrap();
+        fs.create(path).unwrap();
         assert!(fs.exists(path).unwrap());
 
         fs.atomic_save(path, b"xyz").unwrap();
         assert_eq!(source.content().unwrap(), b"xyz");
-
-        // Directory ops are no-ops for object stores.
-        fs.create_dir(Path::new("dir")).unwrap();
-        fs.remove_dir(Path::new("dir")).unwrap();
 
         fs.remove(path).unwrap();
         assert!(!fs.exists(path).unwrap());

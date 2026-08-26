@@ -6572,7 +6572,7 @@ pub struct Formula {
 pub struct Expression {
     #[prost(
         oneof = "expression::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22"
     )]
     #[validate(nested)]
     pub variant: ::core::option::Option<expression::Variant>,
@@ -6638,6 +6638,15 @@ pub mod expression {
         /// Linear decay
         #[prost(message, tag = "19")]
         LinDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
+        /// Inverse hyperbolic cosine
+        #[prost(message, tag = "20")]
+        Acosh(::prost::alloc::boxed::Box<super::Expression>),
+        /// Maximum
+        #[prost(message, tag = "21")]
+        Max(super::MaxExpression),
+        /// Minimum
+        #[prost(message, tag = "22")]
+        Min(super::MinExpression),
     }
 }
 #[derive(serde::Serialize)]
@@ -6663,6 +6672,22 @@ pub struct SumExpression {
     #[prost(message, repeated, tag = "1")]
     #[validate(nested)]
     pub sum: ::prost::alloc::vec::Vec<Expression>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaxExpression {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub max: ::prost::alloc::vec::Vec<Expression>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MinExpression {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub min: ::prost::alloc::vec::Vec<Expression>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -13798,6 +13823,41 @@ pub struct WaitOnConsensusCommitResponse {
     pub ok: bool,
 }
 #[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetConsensusAppliedLogRequest {}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AppliedConsensusEntry {
+    /// Raft log index of the entry
+    #[prost(uint64, tag = "1")]
+    pub index: u64,
+    /// Raft term the entry was proposed in
+    #[prost(uint64, tag = "2")]
+    pub term: u64,
+    /// Wall clock when the entry finished applying, milliseconds since the Unix epoch
+    #[prost(uint64, tag = "3")]
+    pub applied_at_ms: u64,
+    /// How long this single entry took to apply, in milliseconds
+    #[prost(uint64, tag = "4")]
+    pub took_ms: u64,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetConsensusAppliedLogResponse {
+    /// Recently applied entries, oldest first
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<AppliedConsensusEntry>,
+    /// Wall clock on the responding peer, milliseconds since the Unix epoch
+    #[prost(uint64, tag = "2")]
+    pub now_ms: u64,
+    /// Entries committed but not yet applied on the responding peer
+    #[prost(uint64, tag = "3")]
+    pub pending_operations: u64,
+    /// Highest entry index the responding peer has applied, from its consensus state
+    #[prost(uint64, optional, tag = "4")]
+    pub last_applied_index: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAuditLogRequest {
     /// ISO-8601 start time (inclusive), omit for no lower bound
@@ -14041,6 +14101,33 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetQuotaUsage"));
             self.inner.unary(req, path, codec).await
         }
+        /// Get the log of recently applied consensus entries from this peer
+        pub async fn get_consensus_applied_log(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetConsensusAppliedLogRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusAppliedLogResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetConsensusAppliedLog",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.QdrantInternal", "GetConsensusAppliedLog"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -14094,6 +14181,14 @@ pub mod qdrant_internal_server {
             request: tonic::Request<super::GetQuotaUsageRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetQuotaUsageResponse>,
+            tonic::Status,
+        >;
+        /// Get the log of recently applied consensus entries from this peer
+        async fn get_consensus_applied_log(
+            &self,
+            request: tonic::Request<super::GetConsensusAppliedLogRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusAppliedLogResponse>,
             tonic::Status,
         >;
     }
@@ -14389,6 +14484,55 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetQuotaUsageSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.QdrantInternal/GetConsensusAppliedLog" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetConsensusAppliedLogSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetConsensusAppliedLogRequest>
+                    for GetConsensusAppliedLogSvc<T> {
+                        type Response = super::GetConsensusAppliedLogResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetConsensusAppliedLogRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_consensus_applied_log(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetConsensusAppliedLogSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

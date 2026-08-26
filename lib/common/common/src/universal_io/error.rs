@@ -47,11 +47,35 @@ impl IsNotFound for UniversalIoError {
             | Self::OutOfBounds { .. }
             | Self::InvalidFileIndex { .. }
             | Self::Uninitialized { .. }
+            | Self::UnchangedOpen { .. }
             | Self::QueueIsFull
             | Self::AppendOffsetConflict { .. }
+            | Self::AppendRewriteRequired { .. }
+            | Self::AppendEntityTooSmall { .. }
+            | Self::AppendEtagMismatch { .. }
             | Self::S3(_)
             | Self::S3Config { .. }
             | Self::TaskPanicked(_) => false,
+        }
+    }
+}
+
+pub trait OkUnchanged {
+    type Ok;
+    type Error;
+
+    fn ok_unchanged(self) -> Result<Option<Self::Ok>, Self::Error>;
+}
+
+impl<T> OkUnchanged for Result<T, UniversalIoError> {
+    type Ok = T;
+    type Error = UniversalIoError;
+
+    fn ok_unchanged(self) -> Result<Option<T>, UniversalIoError> {
+        match self {
+            Ok(t) => Ok(Some(t)),
+            Err(UniversalIoError::UnchangedOpen { .. }) => Ok(None),
+            Err(err) => Err(err),
         }
     }
 }
@@ -81,6 +105,12 @@ pub enum UniversalIoError {
     #[error("path {path} not found")]
     NotFound { path: PathBuf },
 
+    #[error("Did not open a new instance of {path} because it didn't change since {since:?}")]
+    UnchangedOpen {
+        path: PathBuf,
+        since: Option<std::time::SystemTime>,
+    },
+
     #[error("elements range {start}..{end} is out of bounds, file contains {elements} elements")]
     OutOfBounds {
         start: u64,
@@ -104,6 +134,25 @@ pub enum UniversalIoError {
     #[error("append offset conflict at {path}: expected end-of-file offset {offset}")]
     AppendOffsetConflict { path: PathBuf, offset: u64 },
 
+    /// A native append was rejected because the object reached the store's
+    /// cap on appended blocks; the object can only keep growing through a
+    /// whole-object rewrite.
+    #[error("append to {path} rejected: appended-block limit reached, rewrite required")]
+    AppendRewriteRequired { path: PathBuf },
+
+    /// A server-side multipart rewrite was rejected because a copied part
+    /// is below the store's minimum part size; the object can only be
+    /// rebuilt by uploading it whole.
+    #[error("multipart rewrite of {path} rejected: below the store's minimum part size")]
+    AppendEntityTooSmall { path: PathBuf },
+
+    /// The append was rejected because the object's entity tag no longer
+    /// matches the one the caller last observed: the object was replaced
+    /// behind the caller's back, which the end-of-file offset check alone
+    /// cannot detect when the lengths happen to coincide.
+    #[error("append to {path} rejected: entity tag mismatch, the object was replaced")]
+    AppendEtagMismatch { path: PathBuf },
+
     #[error("S3 object store error: {0}")]
     S3(#[source] Box<dyn std::error::Error + Send + Sync>),
 
@@ -115,6 +164,78 @@ pub enum UniversalIoError {
 }
 
 impl UniversalIoError {
+    pub fn is_append_offset_conflict(&self) -> bool {
+        match self {
+            Self::AppendOffsetConflict { .. } => true,
+            Self::Io(_)
+            | Self::Mmap(_)
+            | Self::Bincode(_)
+            | Self::BytemuckCast(_)
+            | Self::ZerocopySize(_)
+            | Self::IoUringNotSupported(_)
+            | Self::NotFound { .. }
+            | Self::OutOfBounds { .. }
+            | Self::InvalidFileIndex { .. }
+            | Self::Uninitialized { .. }
+            | Self::QueueIsFull
+            | Self::AppendRewriteRequired { .. }
+            | Self::AppendEntityTooSmall { .. }
+            | Self::AppendEtagMismatch { .. }
+            | Self::S3(_)
+            | Self::S3Config { .. }
+            | Self::UnchangedOpen { .. }
+            | Self::TaskPanicked(_) => false,
+        }
+    }
+
+    pub fn is_append_rewrite_required(&self) -> bool {
+        match self {
+            Self::AppendRewriteRequired { .. } => true,
+            Self::Io(_)
+            | Self::Mmap(_)
+            | Self::Bincode(_)
+            | Self::BytemuckCast(_)
+            | Self::ZerocopySize(_)
+            | Self::IoUringNotSupported(_)
+            | Self::NotFound { .. }
+            | Self::OutOfBounds { .. }
+            | Self::InvalidFileIndex { .. }
+            | Self::Uninitialized { .. }
+            | Self::QueueIsFull
+            | Self::AppendOffsetConflict { .. }
+            | Self::AppendEntityTooSmall { .. }
+            | Self::AppendEtagMismatch { .. }
+            | Self::S3(_)
+            | Self::S3Config { .. }
+            | Self::UnchangedOpen { .. }
+            | Self::TaskPanicked(_) => false,
+        }
+    }
+
+    pub fn is_append_entity_too_small(&self) -> bool {
+        match self {
+            Self::AppendEntityTooSmall { .. } => true,
+            Self::Io(_)
+            | Self::Mmap(_)
+            | Self::Bincode(_)
+            | Self::BytemuckCast(_)
+            | Self::ZerocopySize(_)
+            | Self::IoUringNotSupported(_)
+            | Self::NotFound { .. }
+            | Self::OutOfBounds { .. }
+            | Self::InvalidFileIndex { .. }
+            | Self::Uninitialized { .. }
+            | Self::QueueIsFull
+            | Self::AppendOffsetConflict { .. }
+            | Self::AppendRewriteRequired { .. }
+            | Self::AppendEtagMismatch { .. }
+            | Self::S3(_)
+            | Self::S3Config { .. }
+            | Self::UnchangedOpen { .. }
+            | Self::TaskPanicked(_) => false,
+        }
+    }
+
     pub fn extract_not_found(err: io::Error, path: impl Into<PathBuf>) -> Self {
         #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match err.kind() {

@@ -2,7 +2,7 @@ use blobstore::Blob;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
@@ -16,11 +16,19 @@ impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default + 'static,
 where
     Vec<T>: Blob,
 {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+        match self {
+            Self::Appendable(index) => index.live_preload(fs),
+            Self::Immutable(index) => index.live_preload(fs),
+            Self::OnDisk(index) => index.live_preload(fs),
+        }
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,

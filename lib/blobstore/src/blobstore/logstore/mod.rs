@@ -15,7 +15,7 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
-    Populate, UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData,
+    OkNotFound as _, Populate, UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData,
 };
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
@@ -141,6 +141,31 @@ where
         })
     }
 
+    /// Opens an existing append-only storage, or initializes a new one, creating `base_path` if
+    /// it is not there yet. Depends on the existence of the config file, like
+    /// [`Blobstore::open_or_create`](super::Blobstore::open_or_create).
+    ///
+    /// In case of opening, it ignores the `config_if_create` parameter. A storage created in
+    /// mutable mode is rejected, the two modes persist incompatible file formats.
+    pub fn open_or_create(
+        fs: S::Fs,
+        base_path: PathBuf,
+        config_if_create: LogstoreConfig,
+        populate: Populate,
+    ) -> Result<Self> {
+        match super::reader::read_config(&fs, &base_path).ok_not_found()? {
+            Some(StorageConfig::AppendOnly(config)) => Self::open(fs, base_path, config, populate),
+            Some(StorageConfig::Mutable(_)) => Err(BlobstoreError::unsupported_operation(format!(
+                "storage at {} was created in mutable mode, it cannot be opened append-only",
+                base_path.display(),
+            ))),
+            None => {
+                fs.create_dir(&base_path)?;
+                Self::new(fs, base_path, config_if_create)
+            }
+        }
+    }
+
     /// Open an existing storage at the given path, with the already read config.
     pub(super) fn open(
         fs: S::Fs,
@@ -182,7 +207,7 @@ where
     /// rejected, the storage is append-only.
     ///
     /// Always returns false on success, as values can never be updated.
-    pub(super) fn put_value(
+    pub fn put_value(
         &mut self,
         point_offset: PointOffset,
         value: &V,
@@ -431,7 +456,7 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
     /// and syncs them, then does the same for the pending mappings in the tracker file. This
     /// order guarantees that a mapping on disk never points at value data that is not durable
     /// yet.
-    pub(super) fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> Flusher {
         // Only values and mappings put up to this point are persisted, puts made during the
         // flush stay buffered for the next flush. The two watermarks are consistent with each
         // other: puts take &mut self, so no put can happen between capturing them.

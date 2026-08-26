@@ -62,7 +62,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
-    /// * `max_threads` - Max allowed threads for kmeans and encodind process
+    /// * `max_kmeans_threads` - Max allowed threads for kmeans and encodind process
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
@@ -362,9 +362,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
 
         // find random subset of data as random non-intersected indexes
-        let permutor = permutation_iterator::Permutor::new(count as u64);
         let mut selected_vectors: Vec<usize> =
-            permutor.map(|i| i as usize).take(sample_size).collect();
+            rand::seq::index::sample(&mut rand::rng(), count, sample_size).into_vec();
         if stopped.load(Ordering::Relaxed) {
             return Err(EncodingError::Stopped);
         }

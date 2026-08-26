@@ -271,13 +271,29 @@ pub fn get_max_segment_size_kb(
 }
 
 /// Build deferred points threshold in bytes when `prevent_unoptimized` is true.
+///
+/// The threshold is clamped to an explicitly configured `max_segment_size`, since a segment past
+/// the threshold keeps deferring points until optimized and would otherwise be allowed to grow
+/// beyond the size cap. Disabled indexing (`usize::MAX`) is left alone.
 pub fn get_deferred_points_threshold_bytes(
     prevent_unoptimized: Option<bool>,
     indexing_threshold_kb: usize,
+    max_segment_size_kb: Option<usize>,
 ) -> Option<NonZeroUsize> {
-    (prevent_unoptimized == Some(true))
-        .then(|| indexing_threshold_kb.saturating_mul(BYTES_IN_KB))
-        .and_then(NonZeroUsize::new)
+    if prevent_unoptimized != Some(true) {
+        return None;
+    }
+
+    // A zero cap means uncapped, like everywhere else the cap is read.
+    let mut threshold_kb = indexing_threshold_kb;
+    if let Some(max_segment_size_kb) = max_segment_size_kb
+        && max_segment_size_kb > 0
+        && indexing_threshold_kb != usize::MAX
+    {
+        threshold_kb = threshold_kb.min(max_segment_size_kb);
+    }
+
+    NonZeroUsize::new(threshold_kb.saturating_mul(BYTES_IN_KB))
 }
 
 #[cfg(test)]
@@ -285,6 +301,37 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn deferred_threshold_is_clamped_to_max_segment_size() {
+        let kb = |kb: usize| NonZeroUsize::new(kb * BYTES_IN_KB);
+        let disabled_indexing = NonZeroUsize::new(usize::MAX.saturating_mul(BYTES_IN_KB));
+
+        // (prevent_unoptimized, indexing_threshold_kb, max_segment_size_kb, expected)
+        let cases = [
+            (None, 10_000, Some(1_000), None),
+            (Some(false), 10_000, Some(1_000), None),
+            (Some(true), 10_000, Some(256_000), kb(10_000)),
+            (Some(true), 100_000, Some(1_000), kb(1_000)),
+            // `None` and zero cap both mean uncapped
+            (Some(true), 100_000, None, kb(100_000)),
+            (Some(true), 100_000, Some(0), kb(100_000)),
+            // disabled indexing is not clamped
+            (Some(true), usize::MAX, Some(1_000), disabled_indexing),
+        ];
+
+        for (prevent_unoptimized, indexing_threshold_kb, max_segment_size_kb, expected) in cases {
+            assert_eq!(
+                get_deferred_points_threshold_bytes(
+                    prevent_unoptimized,
+                    indexing_threshold_kb,
+                    max_segment_size_kb,
+                ),
+                expected,
+                "{prevent_unoptimized:?} / {indexing_threshold_kb} / {max_segment_size_kb:?}",
+            );
+        }
+    }
 
     #[test]
     fn live_vector_names_provider_reads_current_state() {

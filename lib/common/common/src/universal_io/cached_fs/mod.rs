@@ -18,6 +18,33 @@ pub struct FileInfo {
     pub size: u64,
     /// Last modification time, when the listing backend exposes one
     pub last_modified: Option<std::time::SystemTime>,
+    /// Entity tag, when the listing backend exposes one (object stores)
+    pub etag: Option<String>,
+}
+
+impl FileInfo {
+    /// Return true if both `FileInfo` have all data and it's equal.
+    pub fn full_eq(&self, other: &FileInfo) -> bool {
+        let Self {
+            size,
+            last_modified: Some(last_modified),
+            etag: Some(etag),
+        } = self
+        else {
+            return false;
+        };
+
+        let Self {
+            size: other_size,
+            last_modified: Some(other_last_modified),
+            etag: Some(other_etag),
+        } = other
+        else {
+            return false;
+        };
+
+        size == other_size && last_modified == other_last_modified && etag == other_etag
+    }
 }
 
 /// Read-only filesystem wrapper that snapshots the file listing and serves
@@ -50,7 +77,9 @@ pub struct CachedFs<Fs: UniversalReadFs> {
     /// `None` until [`CachedFs::cache_file_info`] takes the listing
     /// snapshot; the wrapper forwards to `fs` until then.
     files_info: Option<HashMap<PathBuf, FileInfo>>,
-    files_prefetched: Arc<Mutex<HashMap<PathBuf, Fs::File>>>,
+    /// Previous listing snapshot.
+    previous_files_info: Option<HashMap<PathBuf, FileInfo>>,
+    files_prefetched: Arc<Mutex<HashMap<PathBuf, Option<Fs::File>>>>,
 }
 
 /// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
@@ -62,12 +91,14 @@ impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
             fs,
             prefix_path,
             files_info,
+            previous_files_info,
             files_prefetched,
         } = self;
         Self {
             fs: fs.clone(),
             prefix_path: prefix_path.clone(),
             files_info: files_info.clone(),
+            previous_files_info: previous_files_info.clone(),
             files_prefetched: files_prefetched.clone(),
         }
     }
@@ -79,6 +110,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
             fs,
             prefix_path: prefix_path.to_path_buf(),
             files_info: None,
+            previous_files_info: None,
             files_prefetched: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -96,6 +128,11 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
     /// File info from the snapshot; `None` before [`CachedFs::cache_file_info`].
     pub fn file_info(&self, path: &Path) -> Option<&FileInfo> {
         self.files_info.as_ref()?.get(path)
+    }
+
+    /// Previous file info from the snapshot; `None` before [`CachedFs::cache_file_info`] is called twice.
+    pub fn previous_file_info(&self, path: &Path) -> Option<&FileInfo> {
+        self.previous_files_info.as_ref()?.get(path)
     }
 
     /// Files matching `prefix_path` in the snapshot; empty before
@@ -131,12 +168,14 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
                 path: path.clone(),
                 size: info.size,
                 last_modified: info.last_modified,
+                etag: info.etag.clone(),
             })
             .collect()
     }
 }
 
 impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
+    /// Take a LIST snapshot of the filesystem and drop prefetched files.
     fn cache_file_info(&mut self) -> UioResult<()> {
         // List all files
         let list = self.fs.list_files(&self.prefix_path)?;
@@ -148,10 +187,12 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
                      path,
                      size,
                      last_modified,
+                     etag,
                  }| {
                     let info = FileInfo {
                         size,
                         last_modified,
+                        etag,
                     };
                     (path, info)
                 },
@@ -159,8 +200,14 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             .collect();
 
         self.files_info = Some(files_info);
+        self.files_prefetched.lock().clear();
 
         Ok(())
+    }
+
+    fn rotate_cache_file_info(&mut self) {
+        self.previous_files_info = self.files_info.take();
+        self.files_prefetched.lock().clear();
     }
 
     fn schedule_prefetch(
@@ -188,9 +235,37 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         }
 
         let file = self.fs.open(path, open_options, open_extra)?;
-        files_prefetched.insert(path.to_path_buf(), file);
+        files_prefetched.insert(path.to_path_buf(), Some(file));
 
         Ok(())
+    }
+
+    fn reschedule_prefetch(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Fs::OpenExtra>,
+    ) -> UioResult<()> {
+        {
+            let mut files_prefetched = self.files_prefetched.lock();
+
+            if files_prefetched.contains_key(path) {
+                return Ok(());
+            }
+
+            // Check if their file info is complete and didn't change.
+            if self
+                .previous_file_info(path)
+                .zip(self.file_info(path))
+                .is_some_and(|(previous, current)| previous.full_eq(current))
+            {
+                files_prefetched.insert(path.to_path_buf(), None);
+                return Ok(());
+            }
+        }
+
+        // Otherwise schedule normally
+        self.schedule_prefetch(path, open_arguments, open_extra)
     }
 
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
@@ -235,12 +310,14 @@ impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
             fs,
             prefix_path,
             files_info,
+            previous_files_info,
             files_prefetched,
         } = self;
         f.debug_struct("CachedReadFs")
             .field("fs", fs)
             .field("prefix_path", prefix_path)
             .field("files_info", files_info)
+            .field("previous_files_info", previous_files_info)
             .field("files_prefetched", &*files_prefetched.lock())
             .finish()
     }
@@ -270,7 +347,13 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         }
 
         if let Some(file) = self.files_prefetched.lock().remove(path) {
-            return Ok(file);
+            return match file {
+                Some(file) => Ok(file),
+                None => Err(UniversalIoError::UnchangedOpen {
+                    path: path.to_owned(),
+                    since: self.file_info(path).and_then(|info| info.last_modified),
+                }),
+            };
         }
 
         // With a snapshot, unlisted paths fail locally — probing for

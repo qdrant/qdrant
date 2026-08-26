@@ -53,14 +53,10 @@ mod tests {
     use tempfile::Builder;
 
     use super::super::chunks::chunk_name;
+    use super::super::test_utils::{append_range, make_vec};
+    use super::super::update_only::UpdateOnlyChunkedVectors;
     use super::*;
     use crate::common::live_reload::LiveReload;
-    use crate::vector_storage::VectorOffsetType;
-    use crate::vector_storage::chunked_vectors::ChunkedVectors;
-
-    fn make_vec(seed: usize, dim: usize) -> Vec<f32> {
-        (0..dim).map(|i| (seed * dim + i) as f32).collect()
-    }
 
     /// A read-only view picks up writer-appended vectors after `live_reload`.
     #[test]
@@ -69,21 +65,9 @@ mod tests {
         let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let first: Vec<Vec<f32>> = (0..100).map(|s| make_vec(s, DIM)).collect();
-        let second: Vec<Vec<f32>> = (100..250).map(|s| make_vec(s, DIM)).collect();
-
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            dir.path(),
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
-        for vector in &first {
-            writer.push(vector.as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -93,30 +77,174 @@ mod tests {
             Populate::No,
         )
         .unwrap();
-        assert_eq!(reader.len(), first.len());
+        assert_eq!(reader.len(), 100);
 
         // Append more through the writer, then reload the read-only view.
-        for vector in &second {
-            writer.push(vector.as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        append_range(&mut writer, 100, 100..250, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
 
-        assert_eq!(reader.len(), first.len() + second.len());
-        let got = reader
-            .get::<Random>(first.len() as VectorOffsetType)
-            .unwrap();
-        assert_eq!(got.as_ref(), second[0].as_slice());
+        assert_eq!(reader.len(), 250);
+        let got = reader.get::<Random>(100).unwrap();
+        assert_eq!(got.as_ref(), make_vec(100, DIM).as_slice());
     }
 
-    /// Case-5 regression of the live-reload staleness audit: chunk files are
-    /// preallocated to full size, so appended vectors are in-place writes
-    /// within the existing file length. A reader over a caching backend that
-    /// fetched a block straddling the old tail (any read near the tail pulls
-    /// a 16KiB block extending into then-unwritten space) would keep serving
-    /// those stale bytes for vectors appended later into that block —
+    /// Preload must stage every file the reload opens: after the preload the
+    /// backing files are deleted, so the reload can only succeed from the
+    /// prefetch pool (parked mmap handles keep reading deleted files on unix).
+    #[cfg(unix)]
+    #[test]
+    fn live_preload_then_reload_sees_appended_vectors() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_preload").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+
+        append_range(&mut writer, 100, 100..250, DIM, &hw);
+        drop(writer);
+
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+
+        for file in fs_err::read_dir(dir.path()).unwrap() {
+            fs_err::remove_file(file.unwrap().path()).unwrap();
+        }
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 250);
+        let got = reader.get::<Random>(100).unwrap();
+        assert_eq!(got.as_ref(), make_vec(100, DIM).as_slice());
+    }
+
+    /// Growth starting exactly at a chunk boundary leaves the last held chunk
+    /// untouched while the length changed: it is fully committed, so preload
+    /// and reload skip it, keeping the current handle and adopting only the
+    /// new chunk.
+    #[test]
+    fn live_preload_unchanged_last_chunk_keeps_handle() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        const DIM: usize = 32; // 4096 vectors per test chunk
+        let dir = Builder::new().prefix("chunked_boundary").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..4096, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 4096);
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+
+        // First cycle: no previous snapshot, staging parks fresh handles.
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        // Growth lands entirely in a new chunk; chunk 0 stays untouched.
+        append_range(&mut writer, 4096, 4096..4196, DIM, &hw);
+
+        // Second cycle: chunk 0 is rescheduled and unchanged -> sentinel.
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 4196);
+        for offset in [0, 4095, 4096, 4195] {
+            assert_eq!(
+                reader.get::<Random>(offset).unwrap().as_ref(),
+                make_vec(offset, DIM).as_slice(),
+                "vector {offset} mismatch after reload",
+            );
+        }
+    }
+
+    /// Writer recovery (`ensure_chunk_lengths`) can remove uncommitted
+    /// trailing chunk files: a reader that opened while such a file existed
+    /// must drop its handle on reload instead of re-opening the deleted file,
+    /// and refresh the chunk holding the watermark rather than the last held.
+    #[cfg(unix)] // recovery deletes a chunk file the reader holds mapped
+    #[test]
+    fn live_reload_drops_chunks_removed_by_writer_recovery() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_shrink").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        // Crash leftover: a chunk file past the committed watermark.
+        fs_err::write(chunk_name(dir.path(), 1), vec![7u8; 128]).unwrap();
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+        assert_eq!(reader.chunks.len(), 2, "leftover chunk is listed and held");
+
+        // The next batch trusts the watermark: it removes the leftover chunk,
+        // then lands in chunk 0.
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
+        drop(writer);
+
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        LiveReload::live_preload(&reader, &cached_fs).unwrap();
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 150);
+        assert_eq!(reader.chunks.len(), 1, "removed trailing chunk is dropped");
+        for offset in [0, 99, 100, 149] {
+            assert_eq!(
+                reader.get::<Random>(offset).unwrap().as_ref(),
+                make_vec(offset, DIM).as_slice(),
+                "vector {offset} mismatch after reload",
+            );
+        }
+    }
+
+    /// Case-5 regression of the live-reload staleness audit: a reader over a
+    /// caching backend that fetched a block straddling the old tail (any read
+    /// near the tail pulls a 16KiB block covering space appended into later)
+    /// would keep serving those stale bytes for vectors landing in that block —
     /// `live_reload` must re-open the last held chunk, not keep the handle.
     /// This drives it over `DiskCacheFs`, where the failure actually
     /// reproduces (mmap readers are read-through and can't catch it).
@@ -140,18 +268,9 @@ mod tests {
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            &dir,
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
-        for s in 0..100 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, &dir, DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
             config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
@@ -168,17 +287,14 @@ mod tests {
         .unwrap();
         assert_eq!(reader.len(), 100);
 
-        // Read the tail vector: the fetched block extends past it into
-        // then-unwritten space — the stale bytes this test must escape are
-        // now in the reader's local cache.
+        // Read the tail vector: the fetched block ends at the old tail —
+        // the stale bytes this test must escape are now in the reader's
+        // local cache.
         let got = reader.get::<Random>(99).unwrap();
         assert_eq!(got.as_ref(), make_vec(99, DIM).as_slice());
 
         // Append into that same block region, then reload.
-        for s in 100..150 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&cache_fs, &empty, &empty, &hw).unwrap();
@@ -205,18 +321,9 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            dir.path(),
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
-        for s in 0..4000 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..4000, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -229,10 +336,8 @@ mod tests {
         assert_eq!(reader.len(), 4000);
         assert_eq!(reader.chunks.len(), 1);
 
-        for s in 4000..9000 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        // Straddles two chunk boundaries: fills chunk 0, spans 1, starts 2.
+        append_range(&mut writer, 4000, 4000..9000, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
         reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
@@ -264,18 +369,9 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer = ChunkedVectors::<f32, MmapFile>::open(
-            MmapFs,
-            dir.path(),
-            DIM,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
-        for s in 0..100 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        let mut writer =
+            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
             &MmapFs,
@@ -292,10 +388,7 @@ mod tests {
         );
 
         // Grow within the same chunk so the reload takes the slow path.
-        for s in 100..150 {
-            writer.push(make_vec(s, DIM).as_slice(), &hw).unwrap();
-        }
-        writer.flusher()().unwrap();
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
 
         // Inject a transient error: chunk 0 still exists but cannot be opened.
         let chunk_file = chunk_name(dir.path(), 0);

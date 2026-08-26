@@ -31,8 +31,10 @@ pub use requests::{
     CountRequest, FacetRequest, GroupRequest, Prefetch, QueryRequest, RetrieveRequest,
     ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
+pub use shard::files::WAL_PATH;
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 pub use update_only::{
-    PointAction, PointCopy, PointPreview, PointUpdates, SegmentConfigInfo, UpdateBatchOutcome,
-    UpdateBatchPlan, UpdateBatchPreview, UpdateOnlyEdgeShard,
+    PointAction, PointApplyKind, PointApplyRecord, PointCopy, PointPreview, PointUpdates,
+    SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan, UpdateBatchPreview,
+    UpdateOnlyEdgeShard,
 };

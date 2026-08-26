@@ -32,6 +32,7 @@ use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use super::errors::StorageError;
+use crate::content_manager::consensus::applied_log::{AppliedEntryRing, AppliedLog};
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -50,6 +51,13 @@ pub mod prelude {
 
 /// Allow us updating our peer metadata once every 60 seconds
 const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Log a warning if applying a single consensus entry takes longer than this.
+///
+/// Applying is synchronous and inline, so for that long the peer sends no heartbeats, reports no
+/// ticks and applies no further entry — it also keeps serving requests against the replica set
+/// state as it was before the entry.
+const SLOW_APPLY_REPORT_THRESHOLD: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
@@ -107,6 +115,8 @@ pub struct ConsensusManager<C: CollectionContainer> {
     message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
     /// Last time we attempted to update the peer metadata
     next_peer_metadata_update_attempt: Mutex<Instant>,
+    /// Recently applied entries, for `/profiler/consensus_lag`. Diagnostics only.
+    applied_log: AppliedEntryRing,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -150,7 +160,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }),
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
+            applied_log: Default::default(),
         })
+    }
+
+    /// Snapshot of the recently applied entries on this peer, oldest first.
+    pub fn applied_log(&self) -> AppliedLog {
+        // Read the apply queue before taking the ring, so the two locks never nest.
+        let (pending_operations, last_applied_index) = {
+            let persistent = self.persistent.read();
+            (
+                persistent.unapplied_entities_count(),
+                persistent.last_applied_entry(),
+            )
+        };
+        self.applied_log
+            .snapshot(pending_operations, last_applied_index)
     }
 
     pub fn report_snapshot(
@@ -361,6 +386,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
+            let apply_started = Instant::now();
             let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
                 false
@@ -406,6 +432,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     }
                 }
             };
+            let apply_duration = apply_started.elapsed();
+            if apply_duration >= SLOW_APPLY_REPORT_THRESHOLD {
+                log::warn!(
+                    "Slow consensus entry: applying {entry_index} took {apply_duration:.2?}, \
+                     stalling the consensus thread for that long",
+                );
+            }
+
             if stop_consensus {
                 return Ok(stop_consensus);
             }
@@ -413,6 +447,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
+            self.applied_log.record(&entry, apply_duration);
         }
         Ok(false) // do not stop consensus
     }
@@ -786,16 +821,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     /// Wait and block until consensus reaches a `term` and actually applies the `commit`.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if we have diverged commit/term for example.
+    /// Returns `false` if we have diverged commit/term for example, or if `timeout` elapsed first.
+    #[must_use]
     pub async fn wait_for_consensus_commit(
         &self,
         commit: u64,
         term: u64,
         consensus_tick: Duration,
         timeout: Duration,
-    ) -> Result<(), ()> {
+    ) -> bool {
         let start = Instant::now();
 
         // TODO: naive approach with spinlock for waiting on commit/term, find better way
@@ -805,20 +839,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             // Okay if on the same term and have at least the specified commit
             let is_ok = current_term == term && current_commit >= commit;
             if is_ok {
-                return Ok(());
+                return true;
             }
 
             // Fail if on a newer term
             let is_fail = current_term > term;
             if is_fail {
-                return Err(());
+                return false;
             }
 
             tokio::time::sleep(consensus_tick).await
         }
 
         // Fail on timeout
-        Err(())
+        false
     }
 
     /// Send operation to the consensus thread and listen for the result.

@@ -19,7 +19,7 @@
 //!   ┌───────────────────────────────────────────────────────────────────────┐
 //!   │ GraphLinks  (links.rs) — public handle, a self_cell of:               │
 //!   │                                                                       │
-//!   │   owner:  GraphLinksEnum (storage.rs)   dependent: GraphLinksView<'_> │
+//!   │   owner:  GraphLinksEnum (links.rs)     dependent: GraphLinksView<'_> │
 //!   │           ├─ Ram(Vec<u8>)                          (view.rs)          │
 //!   │           └─ Universal(                  zero-copy parse that BORROWS │
 //!   │                Box<dyn GraphLinksStorage>)  the owner's bytes; every  │
@@ -34,9 +34,9 @@
 //!
 //! | file           | responsibility                                                       |
 //! |----------------|----------------------------------------------------------------------|
-//! | [`links`]      | [`GraphLinks`] — public handle pairing owned bytes with a parsed view |
-//! | [`storage`]    | `GraphLinksEnum` + `GraphLinksStorage`: RAM vs. universal-IO backing  |
+//! | [`links`]      | [`GraphLinks`] + `GraphLinksEnum` — public handle pairing owned bytes (RAM vs. universal-IO) with a parsed view |
 //! | [`view`]       | `GraphLinksView` — zero-copy parser/accessor over the bytes           |
+//! | [`links_file`] | [`GraphLinksFile`] — batched universal-IO reader                      |
 //! | [`serializer`] | [`serialize_graph_links`] — edges → serialized bytes                  |
 //! | [`header`]     | on-disk header structs shared by the serializer and the view         |
 //! | [`format`]     | [`GraphLinksFormat`] / [`GraphLinksFormatParam`] format selectors     |
@@ -77,16 +77,18 @@
 mod format;
 mod header;
 mod links;
+mod links_file;
 mod serializer;
-mod storage;
 mod vectors;
 mod view;
+mod view_utils;
 
 #[cfg(test)]
 mod tests;
 
 pub use format::{GraphLinksFormat, GraphLinksFormatParam};
 pub use links::{GraphLinks, GraphLinksResidency};
+pub use links_file::GraphLinksFile;
 pub use serializer::serialize_graph_links;
 pub use vectors::{GraphLinksVectors, GraphLinksVectorsLayout, StorageGraphLinksVectors};
 pub use view::LinksIterator;

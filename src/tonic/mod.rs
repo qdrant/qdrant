@@ -135,7 +135,15 @@ pub fn init(
 
         log::info!("Qdrant gRPC listening on {grpc_port}");
 
-        let mut server = Server::builder();
+        let mut server = Server::builder()
+            // Use a high limit for pending accept reset streams.
+            // We can have a huge number of reset/dropped HTTP2 streams when there are
+            // a lot of clients dropping connections. This internally causes a
+            // GOAWAY/ENHANCE_YOUR_CALM error.
+            // We prefer to keep more pending reset streams even though this may be expensive,
+            // versus an internal error that is very hard to handle.
+            // More info: <https://github.com/qdrant/qdrant/issues/1907>
+            .http2_max_pending_accept_reset_streams(Some(1024));
 
         if settings.service.enable_tls {
             log::info!("TLS enabled for gRPC API (TTL not supported)");

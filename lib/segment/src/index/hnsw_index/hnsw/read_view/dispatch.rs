@@ -1,5 +1,6 @@
 use common::condition_checker::ConditionChecker;
 use common::types::ScoredPointOffset;
+use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
@@ -14,12 +15,13 @@ use crate::types::{Filter, QuantizationSearchParams, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
-impl<'a, I, V, Q, P> HNSWIndexReadView<'a, I, V, Q, P>
+impl<'a, I, V, Q, P, S> HNSWIndexReadView<'a, I, V, Q, P, S>
 where
     I: IdTrackerRead,
     V: VectorStorageRead + RawScorerBuilder,
     Q: QuantizedVectorsRead,
     P: PayloadIndexRead,
+    S: UniversalRead,
 {
     pub(crate) fn search(
         &self,

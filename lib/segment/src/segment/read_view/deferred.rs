@@ -51,17 +51,13 @@ where
     }
 
     pub fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let Some(deferred_from) = self.deferred_internal_id() else {
-            return vec![];
-        };
         if self.deferred_point_count() == 0 {
             return vec![];
         }
 
-        let mappings = self.id_tracker.point_mappings();
-        mappings
-            .iter_internal()
-            .skip_while(|&internal_id| internal_id < deferred_from)
+        self.id_tracker
+            .point_mappings()
+            .iter_deferred()
             .filter_map(|internal_id| self.id_tracker.external_id(internal_id))
             .collect()
     }

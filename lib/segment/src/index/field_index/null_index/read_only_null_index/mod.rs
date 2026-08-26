@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::universal_io::UniversalRead;
 
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::index::payload_config::IndexMutability;
 
 mod lifecycle;
@@ -16,9 +16,9 @@ mod read_ops;
 /// bound to [`UniversalRead`][3] only — no buffer, no flusher, no write path. Query logic (filter / cardinality / condition checker) is
 /// shared with the writable variant via the [`NullIndexRead`][4] trait.
 ///
-/// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
-/// can reopen the bitslice and apply only the changed positions on reload,
-/// instead of re-materializing the bitmaps from scratch.
+/// Each [`ReadOnlyFlags`] retains its backend `S` so a [`LiveReload`][5]
+/// can reopen the backing files and resync on reload, instead of
+/// re-materializing the bitmaps from scratch.
 ///
 /// [1]: super::mutable_null_index::MutableNullIndex
 /// [2]: super::immutable_null_index::ImmutableNullIndex
@@ -33,9 +33,9 @@ pub struct ReadOnlyNullIndex<S: UniversalRead> {
 
 pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     /// Points which have at least one value
-    pub(super) has_values_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) has_values_flags: ReadOnlyFlags<S>,
     /// Points which have null values
-    pub(super) is_null_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) is_null_flags: ReadOnlyFlags<S>,
 }
 
 impl<S: UniversalRead> ReadOnlyNullIndex<S> {

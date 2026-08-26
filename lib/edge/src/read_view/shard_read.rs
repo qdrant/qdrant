@@ -64,6 +64,15 @@ pub trait EdgeShardRead: sealed::Sealed {
 
     fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>>;
 
+    /// Execute several [`QueryRequest`]s as one planned batch.
+    ///
+    /// Cheaper than running the same requests one by one: the batch is planned as a whole, so its
+    /// leaf searches share a single pass over the segments, and leaves that differ only in their
+    /// query vector are pushed down to each segment as one multi-vector search.
+    ///
+    /// Returns one result list per request, in request order.
+    fn query_batch(&self, requests: Vec<QueryRequest>) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
     fn scroll(
         &self,
         request: ScrollRequest,
@@ -97,6 +106,10 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
 
     fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         view(self).query(request.into())
+    }
+
+    fn query_batch(&self, requests: Vec<QueryRequest>) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        view(self).query_batch(requests.into_iter().map(Into::into).collect())
     }
 
     fn scroll(

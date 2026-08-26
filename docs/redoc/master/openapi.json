@@ -4225,6 +4225,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -6766,6 +6776,7 @@
             "description": "Size of a vectors used",
             "type": "integer",
             "format": "uint64",
+            "maximum": 65536,
             "minimum": 1
           },
           "distance": {
@@ -11839,6 +11850,11 @@
             "default": true,
             "type": "boolean"
           },
+          "async_hnsw_graph": {
+            "description": "Allow the batched io_uring-based HNSW graph search. When disabled, the HNSW graph is *never* opened on io_uring. When enabled, the graph backend is decided based on `storage.performance.io_uring` option and links placement.",
+            "default": false,
+            "type": "boolean"
+          },
           "write_segment_manifest": {
             "description": "Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory) listing the shard's segments and their state, so out-of-process readers can discover segments without scanning the filesystem.",
             "default": false,
@@ -11854,8 +11870,23 @@
             "default": false,
             "type": "boolean"
           },
+          "append_only_storages": {
+            "description": "Create Blobstore-backed storages (payload storage, appendable field indexes, sparse vectors) in the append-only Logstore mode. Gates creation only: an existing storage keeps its persisted mode, and both modes are always readable.\n\nImplies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].",
+            "default": false,
+            "type": "boolean"
+          },
+          "transfer_raw_points": {
+            "description": "Transfer points as storage-native bytes (raw points), for every collection rather than only those whose vector storage would lose precision in a decode-encode round-trip (TurboQuant).\n\nRead on the sending side only, where the transfer batch is prepared: nodes accept raw points regardless.",
+            "default": false,
+            "type": "boolean"
+          },
+          "transfer_raw_payloads": {
+            "description": "Send the payload of a raw point as the byte blob it is stored as, so the sending node does not parse it and neither node builds a protobuf value tree for it. The receiving node still parses the blob, once, when the operation is applied. Only has an effect on points transferred raw, see [`Self::transfer_raw_points`].\n\nRead on the sending side only: nodes accept raw payloads regardless.",
+            "default": false,
+            "type": "boolean"
+          },
           "serverless_compatible": {
-            "description": "Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`], [`Self::append_only_mutations`] and [`Self::compact_bitmask`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
+            "description": "Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`] and [`Self::append_only_storages`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
             "type": "boolean"
           }
@@ -11903,6 +11934,7 @@
       "RunningEnvironmentTelemetry": {
         "type": "object",
         "required": [
+          "container_runtime",
           "cpu_flags",
           "is_docker"
         ],
@@ -11917,6 +11949,9 @@
           },
           "is_docker": {
             "type": "boolean"
+          },
+          "container_runtime": {
+            "$ref": "#/components/schemas/ContainerRuntime"
           },
           "cores": {
             "type": "integer",
@@ -11965,6 +12000,16 @@
             "nullable": true
           }
         }
+      },
+      "ContainerRuntime": {
+        "description": "Container runtime Qdrant is running under (`none` if bare metal).",
+        "type": "string",
+        "enum": [
+          "none",
+          "docker",
+          "kubernetes",
+          "other"
+        ]
       },
       "CpuEndian": {
         "type": "string",
@@ -14188,7 +14233,7 @@
             "format": "uri"
           },
           "priority": {
-            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
+            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery it will be synchronized from other replicas.",
             "default": null,
             "anyOf": [
               {
@@ -15227,6 +15272,12 @@
             "$ref": "#/components/schemas/SumExpression"
           },
           {
+            "$ref": "#/components/schemas/MaxExpression"
+          },
+          {
+            "$ref": "#/components/schemas/MinExpression"
+          },
+          {
             "$ref": "#/components/schemas/NegExpression"
           },
           {
@@ -15249,6 +15300,9 @@
           },
           {
             "$ref": "#/components/schemas/LnExpression"
+          },
+          {
+            "$ref": "#/components/schemas/AcoshExpression"
           },
           {
             "$ref": "#/components/schemas/LinDecayExpression"
@@ -15331,6 +15385,36 @@
         ],
         "properties": {
           "sum": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "MaxExpression": {
+        "description": "Largest of the given expressions. Requires at least one operand.",
+        "type": "object",
+        "required": [
+          "max"
+        ],
+        "properties": {
+          "max": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "MinExpression": {
+        "description": "Smallest of the given expressions. Requires at least one operand.",
+        "type": "object",
+        "required": [
+          "min"
+        ],
+        "properties": {
+          "min": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Expression"
@@ -15457,6 +15541,17 @@
         ],
         "properties": {
           "ln": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "AcoshExpression": {
+        "type": "object",
+        "required": [
+          "acosh"
+        ],
+        "properties": {
+          "acosh": {
             "$ref": "#/components/schemas/Expression"
           }
         }

@@ -1,6 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
@@ -9,18 +10,50 @@ use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::index::UniversalReadExt;
 
 impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
+    /// Stage every component's next [`Self::live_reload`] under shared access:
+    /// re-snapshot the retained caching filesystem's listing, then schedule
+    /// every fetch the reload will need. Fetches go in flight as scheduled.
+    pub fn live_preload(&self) -> OperationResult<()> {
+        let Self {
+            uuid: _,
+            segment_path: _,
+            id_tracker,
+            vector_data,
+            payload_index,
+            payload_storage,
+            pending_reload: _,
+            reload_fs,
+            segment_type: _,
+            segment_config: _,
+        } = self;
+
+        let mut reload_fs = reload_fs.borrow_mut();
+        // perf: one LIST per segment per refresh; could be a single shard-prefix
+        // LIST partitioned into the per-segment snapshots.
+        reload_fs.cache_file_info()?;
+        let fs = &*reload_fs;
+
+        id_tracker.borrow().live_preload(fs)?;
+        payload_storage.borrow().live_preload(fs)?;
+        payload_index.borrow().live_preload(fs)?;
+        for vector_data in vector_data.values() {
+            vector_data.live_preload(fs)?;
+        }
+        Ok(())
+    }
+
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).
+    ///
+    /// Must follow a [`Self::live_preload`]: opens resolve against (and consume)
+    /// what it staged, and files that appeared since its listing snapshot are
+    /// not visible.
     ///
     /// Draining the id-tracker advances its internal state and cannot be replayed,
     /// so the delta is accumulated into `pending_reload` and only cleared once
     /// every component has reloaded successfully. If a component fails mid-way the
     /// delta is retained, and a later reload folds in the tracker's new changes and
     /// replays the union — no component is left drifting on a partial reload.
-    pub fn live_reload(
-        &mut self,
-        fs: &S::Fs,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         let Self {
             uuid: _,
             segment_path: _,
@@ -29,9 +62,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_index,
             payload_storage,
             pending_reload,
+            reload_fs,
             segment_type: _,
             segment_config: _,
         } = self;
+
+        let fs = &mut *reload_fs.get_mut();
 
         // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
@@ -61,23 +97,41 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             }
         }
 
-        // Every component is now in sync; discard the applied delta.
+        // Every component is now in sync; discard the applied delta and rotate
+        // file info.
         *pending = LiveReloadResult::default();
+        fs.rotate_cache_file_info();
 
         Ok(())
     }
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
+    /// Stage this vector's next [`Self::live_reload`]. Shared access only.
+    fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+        let Self {
+            vector_index,
+            vector_storage,
+            quantized_vectors,
+        } = self;
+
+        vector_storage.borrow().live_preload(fs)?;
+        vector_index.borrow().live_preload(fs)?;
+        if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
+            quantized_vectors.live_preload(fs)?;
+        }
+        Ok(())
+    }
+
     /// Refresh this vector's storage, index and quantized vectors to the current
     /// on-disk state.
     ///
     /// `Self` is destructured so that every component is covered: adding a field
     /// without reloading it won't compile. Each component mutates through its own
     /// `Arc<AtomicRefCell<_>>`, so `&self` is enough — no `&mut` is needed.
-    fn live_reload(
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &self,
-        fs: &S::Fs,
+        fs: &Fs,
         deleted: &SortedSlice<'_, PointOffsetType>,
         inserted: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,

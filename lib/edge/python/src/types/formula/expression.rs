@@ -45,6 +45,14 @@ impl FromPyObject<'_, '_> for PyExpression {
                 ExpressionInternal::Sum(PyExpression::peel_vec(exprs))
             }
 
+            PyExpressionInterface::Max { exprs } => {
+                ExpressionInternal::Max(PyExpression::peel_vec(exprs))
+            }
+
+            PyExpressionInterface::Min { exprs } => {
+                ExpressionInternal::Min(PyExpression::peel_vec(exprs))
+            }
+
             PyExpressionInterface::Neg { expr } => ExpressionInternal::Neg(expr.into_box()),
 
             PyExpressionInterface::Div {
@@ -67,6 +75,7 @@ impl FromPyObject<'_, '_> for PyExpression {
             PyExpressionInterface::Exp { expr } => ExpressionInternal::Exp(expr.into_box()),
             PyExpressionInterface::Log10 { expr } => ExpressionInternal::Log10(expr.into_box()),
             PyExpressionInterface::Ln { expr } => ExpressionInternal::Ln(expr.into_box()),
+            PyExpressionInterface::Acosh { expr } => ExpressionInternal::Acosh(expr.into_box()),
             PyExpressionInterface::Abs { expr } => ExpressionInternal::Abs(expr.into_box()),
 
             PyExpressionInterface::Decay {
@@ -123,6 +132,14 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 exprs: PyExpression::wrap_vec(exprs),
             },
 
+            ExpressionInternal::Max(exprs) => PyExpressionInterface::Max {
+                exprs: PyExpression::wrap_vec(exprs),
+            },
+
+            ExpressionInternal::Min(exprs) => PyExpressionInterface::Min {
+                exprs: PyExpression::wrap_vec(exprs),
+            },
+
             ExpressionInternal::Neg(expr) => PyExpressionInterface::Neg {
                 expr: Boxed::from_box(expr),
             },
@@ -155,6 +172,10 @@ impl<'py> IntoPyObject<'py> for PyExpression {
             },
 
             ExpressionInternal::Ln(expr) => PyExpressionInterface::Ln {
+                expr: Boxed::from_box(expr),
+            },
+
+            ExpressionInternal::Acosh(expr) => PyExpressionInterface::Acosh {
                 expr: Boxed::from_box(expr),
             },
 
@@ -213,6 +234,14 @@ impl Repr for PyExpression {
                 ("Sum", &[("exprs", &PyExpression::wrap_slice(exprs))])
             }
 
+            ExpressionInternal::Max(exprs) => {
+                ("Max", &[("exprs", &PyExpression::wrap_slice(exprs))])
+            }
+
+            ExpressionInternal::Min(exprs) => {
+                ("Min", &[("exprs", &PyExpression::wrap_slice(exprs))])
+            }
+
             ExpressionInternal::Neg(expr) => ("Neg", &[("expr", PyExpression::wrap_ref(expr))]),
 
             ExpressionInternal::Div {
@@ -241,6 +270,7 @@ impl Repr for PyExpression {
             ExpressionInternal::Exp(expr) => ("Exp", &[("expr", PyExpression::wrap_ref(expr))]),
             ExpressionInternal::Log10(expr) => ("Log10", &[("expr", PyExpression::wrap_ref(expr))]),
             ExpressionInternal::Ln(expr) => ("Ln", &[("expr", PyExpression::wrap_ref(expr))]),
+            ExpressionInternal::Acosh(expr) => ("Acosh", &[("expr", PyExpression::wrap_ref(expr))]),
             ExpressionInternal::Abs(expr) => ("Abs", &[("expr", PyExpression::wrap_ref(expr))]),
 
             ExpressionInternal::Decay {

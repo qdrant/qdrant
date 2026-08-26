@@ -235,6 +235,8 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             self.prevent_unoptimized,
+            self.optimizers.clone(),
+            self.payload_index_schema.clone(),
             optimization_finished_receiver,
             applied_seq_handler,
             cancel,

@@ -23,14 +23,14 @@ jobs:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
         save-if: ${{ github.ref == 'refs/heads/dev' }}
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install mold
-      uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+      uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
     - name: Enable mold on Linux
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
@@ -44,6 +44,13 @@ jobs:
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
       run: cargo build --workspace --tests --locked
+    # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
+    # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
+    # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
+    - name: Put test temp files on tmpfs
+      if: matrix.os == 'ubuntu-latest'
+      run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
+      shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci --locked

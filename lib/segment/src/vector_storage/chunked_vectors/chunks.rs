@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
-    OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite,
+    ListedFile, OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead,
+    UniversalReadFileOps, UniversalReadFs, UniversalWrite,
 };
 
 use super::config::{MMAP_CHUNKS_PATTERN_END, MMAP_CHUNKS_PATTERN_START};
@@ -47,6 +47,26 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
     read_chunks_from(fs, directory, 0, advice, populate, writeable)
 }
 
+/// List the chunk files under `directory`, keyed by chunk id.
+pub(super) fn list_chunk_files(
+    fs: &impl UniversalReadFileOps,
+    directory: &Path,
+) -> Result<AHashMap<usize, ListedFile>, UniversalIoError> {
+    let mut chunks_files = AHashMap::new();
+    for listed in fs.list_files(&chunks_prefix(directory))? {
+        let chunk_id = listed
+            .path
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .and_then(check_mmap_file_name_pattern);
+
+        if let Some(chunk_id) = chunk_id {
+            chunks_files.insert(chunk_id, listed);
+        }
+    }
+    Ok(chunks_files)
+}
+
 /// Open chunk files with id `>= start_chunk_id`, in ascending order.
 pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
@@ -56,28 +76,19 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
     populate: Populate,
     writeable: bool,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
-    let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
-    for listed in fs.list_files(&chunks_prefix(directory))? {
-        let path = listed.path;
-        let chunk_id = path
-            .file_name()
-            .and_then(|file_name| file_name.to_str())
-            .and_then(check_mmap_file_name_pattern);
-
-        if let Some(chunk_id) = chunk_id {
-            chunks_files.insert(chunk_id, path);
-        }
-    }
-
+    let mut chunks_files = list_chunk_files(fs, directory)?;
     let num_chunks = chunks_files.len();
     let mut result = Vec::with_capacity(num_chunks.saturating_sub(start_chunk_id));
     for chunk_id in start_chunk_id..num_chunks {
-        let chunk_path = chunks_files.remove(&chunk_id).ok_or_else(|| {
-            UniversalIoError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Missing chunk {chunk_id} in {}", directory.display(),),
-            ))
-        })?;
+        let chunk_path = chunks_files
+            .remove(&chunk_id)
+            .ok_or_else(|| {
+                UniversalIoError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Missing chunk {chunk_id} in {}", directory.display(),),
+                ))
+            })?
+            .path;
 
         let chunk = TypedStorage::open(
             fs,

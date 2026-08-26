@@ -5,7 +5,7 @@ use common::universal_io::UniversalRead;
 
 use super::super::read_ops::{self, NullIndexRead};
 use super::ReadOnlyNullIndex;
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
@@ -15,7 +15,7 @@ use crate::index::field_index::{
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> NullIndexRead for ReadOnlyNullIndex<S> {
-    type Flags = ReadOnlyRoaringFlags<S>;
+    type Flags = ReadOnlyFlags<S>;
 
     fn has_values_flags(&self) -> &Self::Flags {
         &self.storage.has_values_flags

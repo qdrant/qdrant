@@ -1,9 +1,14 @@
 use common::defaults::thread_count_for_hnsw;
+use point_scorer::{FilteredBytesScorer, FilteredScorer};
+
+use crate::vector_storage::query_scorer::QueryScorerBytes;
 
 pub mod build_condition_checker;
 mod config;
 mod entry_points;
+mod graph;
 pub mod graph_layers;
+mod graph_layers_batched;
 pub mod graph_layers_builder;
 mod graph_layers_healer;
 pub mod graph_links;
@@ -14,6 +19,16 @@ mod search_context;
 
 #[cfg(feature = "gpu")]
 pub mod gpu;
+
+/// Scorers used for search over [CompressedWithVectors] format.
+///
+/// [CompressedWithVectors]: graph_links::GraphLinksFormat::CompressedWithVectors
+#[derive(Clone, Copy)]
+pub struct GraphWithVectorsScorers<'a> {
+    pub links: &'a FilteredScorer<'a>,
+    pub links_bytes: &'a FilteredBytesScorer<'a>,
+    pub base: &'a dyn QueryScorerBytes,
+}
 
 /// Maximum number of links per level.
 #[derive(Debug, Clone, Copy)]

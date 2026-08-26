@@ -8,6 +8,7 @@ mod tests;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
@@ -32,8 +33,8 @@ use segment::entry::{
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf,
-    WithPayload, WithVector,
+    ExtendedPointId, Payload, PointIdType, RawPayload, SegmentConfig, SeqNumberType, VectorNameBuf,
+    WithVector,
 };
 use smallvec::SmallVec;
 
@@ -430,6 +431,75 @@ impl SegmentHolder {
         self.appendable_segments.keys().copied().collect()
     }
 
+    /// Whether `segment` is smaller than `max_segment_size_bytes`.
+    ///
+    /// A segment that cannot be measured right now counts as having capacity, the size cap is
+    /// best effort.
+    fn segment_has_capacity(segment: &LockedSegment, max_segment_size_bytes: NonZeroUsize) -> bool {
+        let segment_arc = segment.get();
+        let Some(segment) = segment_arc.try_read() else {
+            return true;
+        };
+        match segment.max_available_vectors_size_in_bytes() {
+            Ok(size) => size < max_segment_size_bytes.get(),
+            Err(err) => {
+                log::error!("Failed to get segment size, ignoring: {err}");
+                true
+            }
+        }
+    }
+
+    /// Return appendable segment IDs smaller than `max_segment_size_bytes`, sorted by IDs.
+    fn eligible_appendable_segments_ids(
+        &self,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> Vec<SegmentId> {
+        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
+            return self.appendable_segments_ids();
+        };
+
+        self.appendable_segments
+            .iter()
+            .filter(|(_, segment)| Self::segment_has_capacity(segment, max_segment_size_bytes))
+            .map(|(segment_id, _)| *segment_id)
+            .collect()
+    }
+
+    /// Whether at least one appendable segment is smaller than `max_segment_size_bytes`.
+    /// Also `false` when there is no appendable segment at all.
+    pub fn has_appendable_segment_with_capacity(
+        &self,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> bool {
+        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
+            return !self.appendable_segments.is_empty();
+        };
+
+        self.appendable_segments
+            .values()
+            .any(|segment| Self::segment_has_capacity(segment, max_segment_size_bytes))
+    }
+
+    /// Candidate destinations for copy-on-write moves, computed lazily on the first move and
+    /// kept in `cache` for the rest of the call.
+    ///
+    /// Falls back to all appendable segments when none is below the cap, a write must not fail
+    /// for lack of capacity.
+    fn cow_destination_candidates<'a>(
+        &self,
+        cache: &'a mut Option<Vec<SegmentId>>,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> &'a [SegmentId] {
+        cache.get_or_insert_with(|| {
+            let eligible = self.eligible_appendable_segments_ids(max_segment_size_bytes);
+            if eligible.is_empty() {
+                self.appendable_segments_ids()
+            } else {
+                eligible
+            }
+        })
+    }
+
     /// Return non-appendable segment IDs sorted by IDs
     pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.non_appendable_segments.keys().copied().collect()
@@ -793,9 +863,19 @@ impl SegmentHolder {
             &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
+        self.apply_segments_with_id(|_id, segment| f(segment))
+    }
+
+    pub fn apply_segments_with_id<F>(&self, mut f: F) -> OperationResult<usize>
+    where
+        F: FnMut(
+            SegmentId,
+            &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
+        ) -> OperationResult<bool>,
+    {
         let mut processed_segments = 0;
-        for (_id, segment) in self.iter() {
-            let is_applied = f(&mut segment.get().upgradable_read())?;
+        for (id, segment) in self.iter() {
+            let is_applied = f(id, &mut segment.get().upgradable_read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -990,6 +1070,7 @@ impl SegmentHolder {
         ids: &[PointIdType],
         mut point_operation: F,
         mut point_cow_operation: G,
+        max_segment_size_bytes: Option<NonZeroUsize>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
@@ -1001,8 +1082,7 @@ impl SegmentHolder {
             &mut Payload,
         ),
     {
-        // Choose random appendable segment from this
-        let appendable_segments = self.appendable_segments_ids();
+        let mut destination_cache: Option<Vec<SegmentId>> = None;
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
         let stopped = AtomicBool::new(false);
@@ -1021,7 +1101,10 @@ impl SegmentHolder {
                 point_operation(point_id, write_segment)?
             } else {
                 self.aloha_random_write(
-                    &appendable_segments,
+                    self.cow_destination_candidates(
+                        &mut destination_cache,
+                        max_segment_size_bytes,
+                    ),
                     |appendable_idx, appendable_write_segment| {
                         // If we are moving point from one segment to another,
                         // we must guarantee, that data in new segment will be persisted before
@@ -1045,10 +1128,6 @@ impl SegmentHolder {
                         let mut record = write_segment
                             .retrieve_raw(
                                 &[point_id],
-                                &WithPayload {
-                                    enable: true,
-                                    payload_selector: None,
-                                },
                                 &WithVector::Bool(true),
                                 hw_counter,
                                 &stopped,
@@ -1060,7 +1139,14 @@ impl SegmentHolder {
                             })?;
 
                         let mut raw_vectors = record.vectors.take().unwrap_or_default();
-                        let mut payload = record.payload.take().unwrap_or_default();
+                        // The `SetPayload` callback below merges into the parsed
+                        // payload, so a stored blob is decoded here.
+                        let mut payload = record
+                            .payload
+                            .as_ref()
+                            .map(RawPayload::decode)
+                            .transpose()?
+                            .unwrap_or_default();
                         let mut updated_vectors = NamedVectors::default();
 
                         point_cow_operation(

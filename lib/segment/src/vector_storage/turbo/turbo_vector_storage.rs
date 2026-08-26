@@ -21,14 +21,14 @@ use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
-use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 use crate::common::Flusher;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
@@ -164,13 +164,11 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
         populate: bool,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
-        let deleted = BitvecFlags::new(
+        let deleted = BitvecFlags::open_or_create(
             MmapFs,
-            DynamicStoredFlags::open(
-                &MmapFs,
-                &path.join(DELETED_DIR_PATH),
-                Populate::from(populate),
-            )?,
+            &path.join(DELETED_DIR_PATH),
+            FlagsMode::from_feature_flags(),
+            Populate::from(populate),
         )?;
         let deleted_count = deleted.count_trues();
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];

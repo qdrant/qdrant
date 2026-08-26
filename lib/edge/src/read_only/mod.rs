@@ -19,12 +19,12 @@ mod load;
 mod refresh;
 mod shard_read;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 
@@ -61,6 +61,10 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a
     /// later [`refresh`](Self::refresh) discovers load with the same placement.
     load_profile: Option<LoadProfile>,
+    /// Serializes [`refresh`](Self::refresh)es: concurrent refreshes would
+    /// duplicate the listing and load work, and could clear each other's staged
+    /// prefetches between a segment's preload and apply.
+    refresh_lock: Mutex<()>,
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {

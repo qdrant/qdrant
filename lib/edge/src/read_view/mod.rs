@@ -59,8 +59,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         F: Fn(&H) -> OperationResult<R> + Send + Sync,
         R: Send,
     {
-        self.pool
-            .install(|| self.segments.par_iter().map(f).collect())
+        if self.pool.current_num_threads() <= 1 {
+            self.segments.iter().map(f).collect()
+        } else {
+            self.pool
+                .install(|| self.segments.par_iter().map(f).collect())
+        }
     }
 }
 

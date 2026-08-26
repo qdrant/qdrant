@@ -1,18 +1,24 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyNullIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
 
 impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) -> OperationResult<()> {
+        self.storage.has_values_flags.live_preload(cached_fs)?;
+        self.storage.is_null_flags.live_preload(cached_fs)?;
+        Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,

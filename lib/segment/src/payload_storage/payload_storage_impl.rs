@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use blobstore::config::{GridstoreConfig, StorageConfig};
+use blobstore::config::CreateOptions;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
@@ -65,7 +65,7 @@ where
         let storage = Blobstore::new(
             S::Fs::default(),
             path,
-            StorageConfig::Mutable(GridstoreConfig::DEFAULT),
+            crate::common::blobstore_config::storage_config(CreateOptions::DEFAULT),
         )?;
 
         if populate {
@@ -140,6 +140,19 @@ where
                 let payload = payload.unwrap_or_default();
                 callback(user_data, payload)
             },
+            hw_counter.payload_io_read_counter(),
+        )
+    }
+
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, _, bytes| callback(user_data, bytes),
             hw_counter.payload_io_read_counter(),
         )
     }

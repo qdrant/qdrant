@@ -23,6 +23,10 @@ service QdrantInternal {
 
   // Get how much of its resource quota this peer is using
   rpc GetQuotaUsage(GetQuotaUsageRequest) returns (GetQuotaUsageResponse) {}
+
+  // Get the log of recently applied consensus entries from this peer
+  rpc GetConsensusAppliedLog(GetConsensusAppliedLogRequest)
+      returns (GetConsensusAppliedLogResponse) {}
 }
 
 message GetConsensusCommitRequest {}
@@ -46,6 +50,30 @@ message WaitOnConsensusCommitRequest {
 message WaitOnConsensusCommitResponse {
   // False if commit/term is diverged and never reached or if timed out.
   bool ok = 1;
+}
+
+message GetConsensusAppliedLogRequest {}
+
+message AppliedConsensusEntry {
+  // Raft log index of the entry
+  uint64 index = 1;
+  // Raft term the entry was proposed in
+  uint64 term = 2;
+  // Wall clock when the entry finished applying, milliseconds since the Unix epoch
+  uint64 applied_at_ms = 3;
+  // How long this single entry took to apply, in milliseconds
+  uint64 took_ms = 4;
+}
+
+message GetConsensusAppliedLogResponse {
+  // Recently applied entries, oldest first
+  repeated AppliedConsensusEntry entries = 1;
+  // Wall clock on the responding peer, milliseconds since the Unix epoch
+  uint64 now_ms = 2;
+  // Entries committed but not yet applied on the responding peer
+  uint64 pending_operations = 3;
+  // Highest entry index the responding peer has applied, from its consensus state
+  optional uint64 last_applied_index = 4;
 }
 
 message GetAuditLogRequest {

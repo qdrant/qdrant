@@ -758,7 +758,6 @@ fn zero_vector_size_rejected_at_load() {
         .expect("vec field exists")
         .size = 0;
 
-    #[allow(clippy::err_expect)]
     let err = EdgeShard::load(path, Some(config))
         .err()
         .expect("load with size=0 should be rejected, not crash the engine");
@@ -999,7 +998,6 @@ fn oversized_hnsw_params_rejected_not_allocated() {
     ] {
         let dir = tempfile::tempdir().expect("tempdir failed");
         let path = dir.path().to_string_lossy().into_owned();
-        #[allow(clippy::err_expect)]
         let err = EdgeShard::load(path, Some(make(hnsw)))
             .err()
             .unwrap_or_else(|| panic!("{label}: load should be rejected, not allocated"));
@@ -1217,7 +1215,6 @@ fn nested_prefetch(depth: u32) -> qdrant_edge_ffi::Prefetch {
 /// Assert that `upsert_points` rejects `vector` eagerly (at the constructor,
 /// before any shard is involved) with `InvalidArgument`.
 fn assert_vector_rejected(vector: Vector) {
-    #[allow(clippy::err_expect)]
     let err = UpdateOperation::upsert_points(
         vec![Point {
             id: PointId::NumId { value: 1 },
@@ -2760,6 +2757,179 @@ fn formula_rescoring_boosts_by_payload() {
     );
 }
 
+/// `max` against a dominating constant pins every score to that constant. Asserting the exact
+/// value distinguishes `max` from `sum`, which would instead add the constant to each score.
+#[test]
+fn formula_max_clamps_scores_to_a_floor() {
+    use qdrant_edge_ffi::{Expression, Prefetch, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.1, 0.1, 0.1]),
+            payload: None,
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.09, 0.09, 0.09, 0.09]),
+            payload: None,
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    const FLOOR: f32 = 42.0;
+
+    let expression = Expression::max(vec![
+        Expression::variable("$score".to_string()),
+        Expression::constant(FLOOR).expect("constant build failed"),
+    ])
+    .expect("expression build failed");
+
+    let hits = shard
+        .query(QueryRequest {
+            limit: 2,
+            offset: None,
+            query: Some(ScoringQuery::Formula {
+                expression,
+                defaults: HashMap::new(),
+            }),
+            prefetches: vec![Prefetch {
+                limit: 10,
+                query: Some(ScoringQuery::Vector {
+                    query: Query::Nearest {
+                        vector: NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                        using: Some("vec".to_string()),
+                    },
+                }),
+                prefetches: vec![],
+                filter: None,
+                score_threshold: None,
+                params: None,
+            }],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("formula query failed");
+
+    assert_eq!(hits.len(), 2, "both points should be re-scored");
+    for hit in &hits {
+        assert_eq!(
+            hit.score, FLOOR,
+            "every score is below the floor, so max must return the floor itself"
+        );
+    }
+}
+
+/// An empty `max` has no identity element to fall back on, so building the query must fail rather
+/// than score every point with -infinity.
+#[test]
+fn formula_empty_max_is_rejected() {
+    use qdrant_edge_ffi::Expression;
+
+    let err = Expression::max(vec![]).expect_err("empty max must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
+/// `min` against a dominated constant pins every score to that constant, the mirror of the `max`
+/// floor test. A negative ceiling also distinguishes `min` from `sum`, which would instead
+/// subtract from each score.
+#[test]
+fn formula_min_clamps_scores_to_a_ceiling() {
+    use qdrant_edge_ffi::{Expression, Prefetch, QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+
+    let points = vec![
+        Point {
+            id: PointId::NumId { value: 1 },
+            vector: named_vec([0.1, 0.1, 0.1, 0.1]),
+            payload: None,
+        },
+        Point {
+            id: PointId::NumId { value: 2 },
+            vector: named_vec([0.09, 0.09, 0.09, 0.09]),
+            payload: None,
+        },
+    ];
+    let op = UpdateOperation::upsert_points(points, None, None).expect("upsert failed");
+    shard.update(op).expect("update failed");
+
+    const CEILING: f32 = -42.0;
+
+    let expression = Expression::min(vec![
+        Expression::variable("$score".to_string()),
+        Expression::constant(CEILING).expect("constant build failed"),
+    ])
+    .expect("expression build failed");
+
+    let hits = shard
+        .query(QueryRequest {
+            limit: 2,
+            offset: None,
+            query: Some(ScoringQuery::Formula {
+                expression,
+                defaults: HashMap::new(),
+            }),
+            prefetches: vec![Prefetch {
+                limit: 10,
+                query: Some(ScoringQuery::Vector {
+                    query: Query::Nearest {
+                        vector: NamedVector::Dense {
+                            values: vec![0.1, 0.1, 0.1, 0.1],
+                        },
+                        using: Some("vec".to_string()),
+                    },
+                }),
+                prefetches: vec![],
+                filter: None,
+                score_threshold: None,
+                params: None,
+            }],
+            with_vector: None,
+            with_payload: None,
+            filter: None,
+            score_threshold: None,
+            params: None,
+        })
+        .expect("formula query failed");
+
+    assert_eq!(hits.len(), 2, "both points should be re-scored");
+    for hit in &hits {
+        assert_eq!(
+            hit.score, CEILING,
+            "every score is above the ceiling, so min must return the ceiling itself"
+        );
+    }
+}
+
+/// An empty `min` is rejected for the same reason as an empty `max`: no identity element, so it
+/// would otherwise score every point with +infinity.
+#[test]
+fn formula_empty_min_is_rejected() {
+    use qdrant_edge_ffi::Expression;
+
+    let err = Expression::min(vec![]).expect_err("empty min must be rejected");
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
 /// Grouped query: one group per category, best hit each.
 #[test]
 fn query_groups_returns_one_group_per_key() {
@@ -2867,7 +3037,6 @@ fn create_and_delete_named_vector_field() {
     // Size bound is enforced at the boundary.
     // `.err().expect()` rather than `.expect_err()`: the Ok type involves a
     // non-`Debug` UniFFI object, so `expect_err` does not compile.
-    #[allow(clippy::err_expect)]
     let err = UpdateOperation::create_dense_vector("bad".to_string(), 0, Distance::Dot, None, None)
         .err()
         .expect("size 0 must be rejected");
@@ -3110,7 +3279,6 @@ fn lifecycle_additions_work() {
     // `create` on an occupied path must fail; on a fresh path it must work.
     // `.err().expect()`: see note above — the Ok type is a non-`Debug`
     // UniFFI object.
-    #[allow(clippy::err_expect)]
     let err = EdgeShard::create(path_string, make_config())
         .err()
         .expect("create over an existing shard must fail");
@@ -4089,6 +4257,79 @@ fn search_matrix_relates_samples() {
             "each sample must have 1..=2 neighbours within the sampled set"
         );
     }
+}
+
+/// `query_batch` returns one result list per request, in request order, and each list matches
+/// what the same request returns on its own.
+#[test]
+fn query_batch_matches_individual_queries() {
+    use qdrant_edge_ffi::{QueryRequest, ScoringQuery};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let nearest = |limit: u64, values: Vec<f32>| QueryRequest {
+        prefetches: Vec::new(),
+        query: Some(ScoringQuery::Vector {
+            query: Query::Nearest {
+                vector: NamedVector::Dense { values },
+                using: Some("vec".to_string()),
+            },
+        }),
+        limit,
+        offset: None,
+        filter: None,
+        params: None,
+        with_vector: None,
+        with_payload: None,
+        score_threshold: None,
+    };
+
+    let requests = vec![
+        nearest(1, vec![0.5, 0.5, 0.5, 0.5]),
+        // Same params as above, so both are pushed down as one batched segment search.
+        nearest(1, vec![0.9, 0.1, 0.1, 0.1]),
+        nearest(2, vec![0.5, 0.5, 0.5, 0.5]),
+    ];
+
+    let batches = shard
+        .query_batch(requests.clone())
+        .expect("query_batch failed");
+
+    assert_eq!(batches.len(), 3);
+    assert_eq!(batches[0].len(), 1);
+    assert_eq!(batches[1].len(), 1);
+    assert_eq!(batches[2].len(), 2);
+
+    let num_ids = |points: &[qdrant_edge_ffi::types::ScoredPoint]| -> Vec<u64> {
+        points
+            .iter()
+            .map(|point| match &point.id {
+                PointId::NumId { value } => *value,
+                PointId::Uuid { value } => panic!("unexpected UUID PointId: {value:?}"),
+            })
+            .collect()
+    };
+
+    for (batch, request) in batches.iter().zip(requests) {
+        let individual = shard.query(request).expect("query failed");
+        assert_eq!(num_ids(batch), num_ids(&individual));
+    }
+}
+
+/// An empty batch is valid and yields no result lists.
+#[test]
+fn query_batch_empty_returns_empty() {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let path = dir.path().to_string_lossy().into_owned();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let batches = shard.query_batch(Vec::new()).expect("query_batch failed");
+
+    assert!(batches.is_empty());
 }
 
 // ── Payload schema in info() ──────────────────────────────────────────────────

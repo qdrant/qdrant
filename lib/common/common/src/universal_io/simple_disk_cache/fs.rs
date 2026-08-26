@@ -30,6 +30,8 @@ pub struct DiskCacheFsOpenExtra<RemoteExtra: OpenExtra> {
     remote_extra: RemoteExtra,
     /// The length of the file, if known
     known_len: Option<u64>,
+    /// Entity tag of the remote object, if known
+    known_etag: Option<String>,
 }
 
 impl<RemoteExtra: OpenExtra> OpenExtra for DiskCacheFsOpenExtra<RemoteExtra> {
@@ -41,6 +43,15 @@ impl<RemoteExtra: OpenExtra> OpenExtra for DiskCacheFsOpenExtra<RemoteExtra> {
         Self {
             remote_extra: self.remote_extra,
             known_len: Some(known_len),
+            known_etag: self.known_etag,
+        }
+    }
+
+    fn with_known_etag(self, known_etag: Option<String>) -> Self {
+        Self {
+            remote_extra: self.remote_extra,
+            known_len: self.known_len,
+            known_etag,
         }
     }
 }
@@ -90,6 +101,12 @@ where
 }
 
 impl<R: UniversalRead> DiskCacheFs<R> {
+    /// Wrap an already-built remote filesystem handle. The config-driven
+    /// path is [`UniversalReadFileOps::from_context`].
+    pub fn new(config: Arc<DiskCacheConfig>, remote_fs: R::Fs) -> Self {
+        Self { config, remote_fs }
+    }
+
     fn open_remote(
         &self,
         path: impl AsRef<Path>,
@@ -245,6 +262,7 @@ where
             local_path,
             options,
             state,
+            extra.known_etag,
         );
 
         if matches!(populate, Populate::Blocking) {

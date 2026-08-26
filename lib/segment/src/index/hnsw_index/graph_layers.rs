@@ -33,22 +33,20 @@ use std::sync::atomic::AtomicBool;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::{
-    CachedReadFs, MmapFs, OpenOptions, Populate, UniversalReadFs, read_bin_via,
-};
+use common::universal_io::{MmapFs, UniversalReadFs, read_bin_via};
 use fs_err as fs;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use super::HnswM;
 use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksResidency};
+use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
-use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer, ScorerFilters};
+use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::vector_storage::RawScorer;
@@ -503,28 +501,9 @@ impl GraphLayers {
         self.links.point_level(point_id)
     }
 
-    fn get_entry_point(
-        &self,
-        filters: &ScorerFilters,
-        custom_entry_points: Option<&[PointOffsetType]>,
-    ) -> Option<EntryPoint> {
-        // Try to get it from custom entry points
-        custom_entry_points
-            .and_then(|custom_entry_points| {
-                custom_entry_points
-                    .iter()
-                    .filter(|&&point_id| filters.check_vector(point_id))
-                    .map(|&point_id| {
-                        let level = self.point_level(point_id);
-                        EntryPoint { point_id, level }
-                    })
-                    .max_by_key(|ep| ep.level)
-            })
-            .or_else(|| {
-                // Otherwise use normal entry points
-                self.entry_points
-                    .get_entry_point(|point_id| filters.check_vector(point_id))
-            })
+    #[cfg(any(test, feature = "testing"))]
+    pub fn unfiltered_entry_point(&self) -> EntryPoint {
+        self.entry_points.get_entry_point(|_| true).unwrap()
     }
 
     pub fn search(
@@ -532,64 +511,51 @@ impl GraphLayers {
         top: usize,
         ef: usize,
         algorithm: SearchAlgorithm,
-        mut points_scorer: FilteredScorer,
-        custom_entry_points: Option<&[PointOffsetType]>,
+        points_scorer: &mut FilteredScorer,
+        entry_point: EntryPoint,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let Some(entry_point) = self.get_entry_point(points_scorer.filters(), custom_entry_points)
-        else {
-            return Ok(Vec::default());
-        };
-
         let zero_level_entry = self.search_entry(
             entry_point.point_id,
             entry_point.level,
             0,
-            &mut points_scorer,
+            points_scorer,
             is_stopped,
         )?;
         let ef = max(ef, top);
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
-                self.search_on_level(zero_level_entry, 0, ef, &mut points_scorer, is_stopped)
+                self.search_on_level(zero_level_entry, 0, ef, points_scorer, is_stopped)
             }
             SearchAlgorithm::Acorn => {
-                self.search_on_level_acorn(zero_level_entry, 0, ef, &mut points_scorer, is_stopped)
+                self.search_on_level_acorn(zero_level_entry, 0, ef, points_scorer, is_stopped)
             }
         }?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn search_with_vectors(
         &self,
         top: usize,
         ef: usize,
-        links_scorer: &FilteredScorer,
-        links_scorer_bytes: &FilteredBytesScorer,
-        base_scorer: &dyn QueryScorerBytes,
-        custom_entry_points: Option<&[PointOffsetType]>,
+        scorers: GraphWithVectorsScorers,
+        entry_point: EntryPoint,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let Some(entry_point) = self.get_entry_point(links_scorer.filters(), custom_entry_points)
-        else {
-            return Ok(Vec::default());
-        };
-
         let zero_level_entry = self.search_entry_with_vectors(
             entry_point.point_id,
             entry_point.level,
             0,
-            links_scorer.raw_scorer(),
-            links_scorer_bytes,
+            scorers.links.raw_scorer(),
+            scorers.links_bytes,
             is_stopped,
         )?;
         let nearest = self.search_on_level_with_vectors(
             zero_level_entry,
             0,
             max(top, ef),
-            links_scorer_bytes,
-            base_scorer,
+            scorers.links_bytes,
+            scorers.base,
             is_stopped,
         )?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
@@ -614,10 +580,6 @@ impl GraphLayers {
             GraphLayers::get_path(path),
             GraphLayers::get_links_path(path, self.links.format()),
         ]
-    }
-
-    pub fn num_points(&self) -> usize {
-        self.links.num_points()
     }
 
     /// Heap RAM held by the graph links, in bytes.
@@ -650,43 +612,22 @@ impl GraphLayers {
         Self::load_universal(&MmapFs, dir, residency)
     }
 
-    /// Schedule background prefetch of the files [`Self::load_universal`] will
-    /// read: the graph data plus whichever links format is present, probed in
-    /// the same order as the load.
-    pub fn preopen_universal(
-        fs: &impl CachedReadFs,
+    /// Format of the links file present in `dir`, probed in the same order as
+    /// [`Self::load_universal`] reads it.
+    pub(super) fn probe_links_format(
+        fs: &impl UniversalReadFs,
         dir: &Path,
-        residency: GraphLinksResidency,
-    ) -> OperationResult<()> {
-        // Graph data
-        fs.schedule_prefetch(&Self::get_path(dir), None, None)?;
-
-        // The load reads `Cached` links with a *blocking* populate and
-        // materializes `Pinned` links into heap; at prefetch time both become
-        // a background populate so the fetch overlaps the rest of the open.
-        // `Cold` links stay unpopulated, matching the load.
-        let populate = match residency {
-            GraphLinksResidency::Cold => Populate::No,
-            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => Populate::PreferBackground,
-        };
-        let options = OpenOptions {
-            populate,
-            ..GraphLinks::open_options(residency)
-        };
-
-        // Links
+    ) -> OperationResult<Option<GraphLinksFormat>> {
         for format in [
             GraphLinksFormat::CompressedWithVectors,
             GraphLinksFormat::Compressed,
             GraphLinksFormat::Plain,
         ] {
-            let path = Self::get_links_path(dir, format);
-            if fs.exists(&path)? {
-                fs.schedule_prefetch(&path, Some(options), None)?;
-                break;
+            if fs.exists(&Self::get_links_path(dir, format))? {
+                return Ok(Some(format));
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Load purely through universal IO, without the format conversion path of
@@ -722,17 +663,9 @@ impl GraphLayers {
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        for format in [
-            GraphLinksFormat::CompressedWithVectors,
-            GraphLinksFormat::Compressed,
-            GraphLinksFormat::Plain,
-        ] {
-            let path = GraphLayers::get_links_path(dir, format);
-            if fs.exists(&path)? {
-                return GraphLinks::load_universal(fs, &path, format, residency);
-            }
-        }
-        Err(OperationError::service_error("No links file found"))
+        let format = Self::probe_links_format(fs, dir)?
+            .ok_or_else(|| OperationError::service_error("No links file found"))?;
+        GraphLinks::load_universal(fs, &Self::get_links_path(dir, format), format, residency)
     }
 
     /// Convert the "plain" format into the "compressed" format.
@@ -793,26 +726,11 @@ impl GraphLayers {
         )
         .unwrap();
     }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        self.links.populate()?;
-        Ok(())
-    }
-
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let Self {
-            hnsw_m: _,
-            links,
-            entry_points: _,
-            visited_pool: _,
-        } = self;
-        links.clear_cache()?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use common::universal_io::MmapFile;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
@@ -821,6 +739,7 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
+    use crate::index::hnsw_index::graph::HnswGraph;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
@@ -880,7 +799,7 @@ mod tests {
         // Same order as the segment open path: snapshot, then preopen, then load.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
-        GraphLayers::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
+        HnswGraph::<MmapFile>::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
 
         // Everything `load_universal` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {
@@ -900,7 +819,7 @@ mod tests {
         vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let scorer = vector_storage.scorer(query.to_owned());
+        let mut scorer = vector_storage.scorer(query.to_owned());
 
         let ef = 16;
         graph
@@ -908,8 +827,8 @@ mod tests {
                 top,
                 ef,
                 SearchAlgorithm::Hnsw,
-                scorer,
-                None,
+                &mut scorer,
+                graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap()
