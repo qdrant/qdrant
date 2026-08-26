@@ -5,7 +5,7 @@ use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::iterator_ext::IteratorExt;
-use common::types::DeferredBehavior;
+use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
@@ -83,23 +83,26 @@ where
             .payload_index
             .estimate_cardinality(condition, hw_counter)?;
 
-        let internal_ids = self.payload_index.iter_filtered_points(
-            condition,
-            &cardinality_estimation,
-            hw_counter,
-            is_stopped,
-            deferred_behavior,
-        )?;
-
         if limit == Some(0) {
             return Ok(vec![]);
         }
 
-        // The candidate set is fully drained either way: feed the whole
-        // iterator into one batch pass and let the IO layer pipeline the
-        // lookups. With a limit, only the `limit` smallest ids are kept
-        // (mirrors `peek_top_smallest_iterable`, which cannot consume a
-        // callback-fed stream).
+        // The candidate set is fully drained either way: resolve field-index
+        // read failures first, then feed the whole set into one batch pass and
+        // let the IO layer pipeline the lookups. With a limit, only the
+        // `limit` smallest ids are kept (mirrors `peek_top_smallest_iterable`,
+        // which cannot consume a callback-fed stream).
+        let internal_ids: Vec<PointOffsetType> = self
+            .payload_index
+            .iter_filtered_points(
+                condition,
+                &cardinality_estimation,
+                hw_counter,
+                is_stopped,
+                deferred_behavior,
+            )?
+            .collect::<OperationResult<_>>()?;
+
         let mut page: Vec<PointIdType> = Vec::new();
         let mut top = limit.map(FixedLengthPriorityQueue::new);
         self.id_tracker

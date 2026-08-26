@@ -300,8 +300,8 @@ where
                 is_stopped,
                 // No deferred filtering here since it's HNSW index.
                 DeferredBehavior::WithDeferred,
-            )
-            .map(|it| it.collect())?;
+            )?
+            .collect::<OperationResult<_>>()?;
         self.search_plain_batched(
             vectors,
             filtered_points.into_iter(),

@@ -41,6 +41,7 @@ where
         let cardinality_estimation = self
             .payload_index
             .estimate_cardinality(condition, hw_counter)?;
+        // Resolve field-index read failures before sampling.
         let ids_iterator = self
             .payload_index
             .iter_filtered_points(
@@ -50,6 +51,8 @@ where
                 is_stopped,
                 DeferredBehavior::VisibleOnly,
             )?
+            .collect::<OperationResult<Vec<_>>>()?
+            .into_iter()
             .filter_map(|internal_id| self.id_tracker.external_id(internal_id));
 
         let mut rng = rand::rng();

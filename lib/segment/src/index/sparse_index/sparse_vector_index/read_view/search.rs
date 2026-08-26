@@ -246,6 +246,11 @@ where
         match filter {
             Some(filter) => {
                 let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
+                // TODO(uio): this is called from the sparse graph-search loop,
+                // where per-point fallibility can't be propagated without a
+                // structural refactor. A field index read failure here (e.g. a
+                // corrupted on-disk geo index) is silently treated as a
+                // non-match instead of surfacing.
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check_infallible(idx)
                 };

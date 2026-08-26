@@ -75,6 +75,12 @@ impl<'a> ScorerFilters<'a> {
 
     /// Return true if vector satisfies current search context for given point:
     /// exists, not deleted, and satisfies filter context.
+    ///
+    /// TODO(uio): this is called from the hot HNSW graph loop, where per-point
+    /// fallibility can't be propagated without a structural refactor. A field
+    /// index read failure here (e.g. a corrupted on-disk geo index) is silently
+    /// treated as a non-match. Prefer [`Self::check`] once graph search can
+    /// thread errors.
     pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
         self.deleted.check_infallible(point_id)
             && self
