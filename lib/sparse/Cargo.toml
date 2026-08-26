@@ -37,7 +37,7 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 indicatif = { workspace = true }
 sha2 = { workspace = true }

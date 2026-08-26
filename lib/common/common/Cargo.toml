@@ -58,7 +58,7 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
 static_assertions = "1.1.0"
