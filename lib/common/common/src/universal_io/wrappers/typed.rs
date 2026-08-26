@@ -75,7 +75,7 @@ where
     pub fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &mut self,
         get_file_info: F,
-    ) -> UioResult<()> {
+    ) -> UioResult<impl Future<Output = ()>> {
         self.inner.live_preload(get_file_info)
     }
 

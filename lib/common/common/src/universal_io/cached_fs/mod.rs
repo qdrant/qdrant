@@ -279,7 +279,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         let scheduled = futures::executor::block_on(async move {
             match futures::poll!(fut.as_mut()) {
                 Poll::Ready(file) => ScheduledFile::Ready(file),
-                Poll::Pending => ScheduledFile::Future(Box::pin(fut)),
+                Poll::Pending => ScheduledFile::Future(fut),
             }
         });
         files_prefetched.insert(path.to_path_buf(), scheduled);

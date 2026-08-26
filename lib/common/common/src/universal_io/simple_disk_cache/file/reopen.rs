@@ -8,12 +8,15 @@
 use std::io::{self, ErrorKind};
 use std::path::Path;
 
+use futures::FutureExt;
+use futures::future::{BoxFuture, Shared};
+
 use super::{DiskCache, ScheduledReopen, State};
 use crate::generic_consts::Sequential;
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::simple_disk_cache::pipeline::REMOTE_READ_ALIGNMENT;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, block_aligned_fetch};
-use crate::universal_io::{OwnedPipeline, Populate, UioResult, UniversalIoError, UniversalRead};
+use crate::universal_io::{Populate, UioResult, UniversalIoError, UniversalRead};
 
 impl<R> DiskCache<R>
 where
@@ -26,7 +29,7 @@ where
         }
 
         // If not previously done, schedule and wait blockingly
-        self.live_preload_with_len(None)?;
+        futures::executor::block_on(self.live_preload_with_len(None)?);
         self.resolve_pending_reload()?;
 
         Ok(())
@@ -61,27 +64,28 @@ where
                 local.resize(&self.local_path, target_len)?;
             }
             ScheduledReopen::Tail {
-                mut pipeline,
+                future,
+                mut data,
+                blocks_range,
                 target_len,
             } => {
-                let fetched = pipeline.wait()?;
+                futures::executor::block_on(future);
+                let (new_remote, fetched) = data
+                    .try_recv()
+                    .expect("sender is never dropped before sending")
+                    .expect("data should be available, and no other consumer exists")?;
 
-                // resize only after pipeline.wait() returns Ok
+                // resize only after the fetch succeeded
                 local.resize(&self.local_path, target_len)?;
 
-                match fetched {
-                    Some((blocks_range, bytes)) if !bytes.is_empty() => {
-                        // SAFETY: `bytes` covers `blocks_range` exactly
-                        // (clamped to EOF)
-                        unsafe { local.write_mmap_bytes(&bytes, blocks_range) }
-                    }
-                    // Nothing landed: the resize still makes the length visible,
-                    // and the new blocks fault in on demand.
-                    Some(_) | None => {}
+                if !fetched.is_empty() {
+                    // SAFETY: `fetched` covers `blocks_range` exactly
+                    // (clamped to EOF)
+                    unsafe { local.write_mmap_bytes(&fetched, blocks_range) }
                 }
 
-                // replace remote with the one from the owned pipeline
-                *remote = pipeline.into_inner();
+                // replace remote with the one that fetched the tail
+                *remote = new_remote;
             }
         }
 
@@ -91,16 +95,15 @@ where
     pub(super) fn live_preload_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<()> {
+    ) -> UioResult<Shared<BoxFuture<'static, ()>>> {
         let Some(file_info) = get_file_info(&self.remote_path) else {
             return Err(UniversalIoError::NotFound {
                 path: self.remote_path.clone(),
             });
         };
-
-        self.live_preload_with_len(Some(file_info.size))?;
+        let fut = self.live_preload_with_len(Some(file_info.size))?;
         self.set_etag(file_info.etag);
-        Ok(())
+        Ok(fut)
     }
 
     /// Body of [`UniversalRead::live_preload`].
@@ -111,7 +114,10 @@ where
     /// apply.
     ///
     /// [`UniversalRead::live_preload`]: crate::universal_io::UniversalRead::live_preload
-    pub(super) fn live_preload_with_len(&self, known_len: Option<u64>) -> UioResult<()> {
+    pub(super) fn live_preload_with_len(
+        &self,
+        known_len: Option<u64>,
+    ) -> UioResult<Shared<BoxFuture<'static, ()>>> {
         // Wait for scheduled prefill, if any.
         //
         // warn: this will do a length request if uninit, but when using a
@@ -130,7 +136,7 @@ where
 
         let local_len = local.mmap().len::<u8>()?;
 
-        // If we don't have a known length, reopen the remote to tell the new length.
+        // If we don't have a known length, reload the remote to tell the new length.
         let remote_len = match known_len {
             Some(known_len) => known_len,
             None => {
@@ -149,16 +155,27 @@ where
             )));
         }
 
-        // Check if staged length has grown
-        if scheduled_reopen
-            .as_ref()
-            .is_some_and(|r| r.target_len() == Some(remote_len))
+        // Already staged at this length: reuse the staged fetch's signal so
+        // the caller still observes its completion.
+        if let Some(scheduled) = scheduled_reopen.as_ref()
+            && scheduled.target_len() == Some(remote_len)
         {
-            return Ok(());
+            let future = match scheduled {
+                ScheduledReopen::Tail {
+                    future,
+                    data: _,
+                    blocks_range: _,
+                    target_len: _,
+                } => future.clone(),
+                ScheduledReopen::Unchanged | ScheduledReopen::Resize { target_len: _ } => {
+                    async {}.boxed().shared()
+                }
+            };
+            return Ok(future);
         }
 
-        let new_scheduled_reopen = if remote_len == local_len {
-            ScheduledReopen::Unchanged
+        if remote_len == local_len {
+            *scheduled_reopen = Some(ScheduledReopen::Unchanged);
         } else {
             match self.open_options.populate {
                 Populate::Blocking | Populate::PreferBackground => {
@@ -169,28 +186,42 @@ where
 
                     // Fresh remote handle
                     let new_remote = self.open_remote()?;
-                    let mut pipeline = OwnedPipeline::new(new_remote)?;
-                    // FIXME: check can_schedule in a loop?
-                    pipeline.schedule::<Sequential>(
-                        blocks_range,
-                        byte_range,
-                        REMOTE_READ_ALIGNMENT,
-                    )?;
+                    let (tx, rx) = futures::channel::oneshot::channel();
+                    let future = {
+                        async move {
+                            let fetch = || async {
+                                Ok(new_remote
+                                    .read_bytes_async(byte_range, Sequential, REMOTE_READ_ALIGNMENT)
+                                    .await?
+                                    .try_cast_bytemuck::<u8>()?
+                                    .into_owned())
+                            };
+                            let result = fetch().await.map(|fetched| (new_remote, fetched));
 
-                    ScheduledReopen::Tail {
-                        pipeline,
+                            tx.send(result).ok();
+                        }
+                        .boxed()
+                        .shared()
+                    };
+
+                    *scheduled_reopen = Some(ScheduledReopen::Tail {
                         target_len: remote_len,
-                    }
+                        future: future.clone(),
+                        data: rx,
+                        blocks_range,
+                    });
+
+                    return Ok(future);
                 }
                 // No prefetch for lazy population
-                Populate::Auto | Populate::No | Populate::Partial(_) => ScheduledReopen::Resize {
-                    target_len: remote_len,
-                },
+                Populate::Auto | Populate::No | Populate::Partial(_) => {
+                    *scheduled_reopen = Some(ScheduledReopen::Resize {
+                        target_len: remote_len,
+                    });
+                }
             }
         };
 
-        *scheduled_reopen = Some(new_scheduled_reopen);
-
-        Ok(())
+        Ok(async {}.boxed().shared())
     }
 }

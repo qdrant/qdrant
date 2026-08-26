@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
 use super::DiskCacheRemote;
@@ -107,11 +108,14 @@ pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     /// `target_len` and lets the new blocks fault in on demand.
     Resize { target_len: u64 },
     /// Populated (`Blocking` / `PreferBackground`): the appended tail is
-    /// already in flight on a clone of the remote; apply resizes, drains it
-    /// and writes it. Holds exactly one read, whose user data is the block
-    /// range it covers, as in [`State::PartialPrefill`].
+    /// already in flight on a fresh remote handle; apply resizes, drains it
+    /// and writes it. `future` drives the fetch (clones of it may be polled
+    /// externally); `data` receives the fetched bytes and the handle once
+    /// `future` completes.
     Tail {
-        pipeline: OwnedPipeline<R, Range<u32>>,
+        future: Shared<BoxFuture<'static, ()>>,
+        data: futures::channel::oneshot::Receiver<UioResult<(R, Vec<u8>)>>,
+        blocks_range: Range<u32>,
         target_len: u64,
     },
 }
@@ -125,7 +129,9 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
             ScheduledReopen::Resize { target_len }
             | ScheduledReopen::Tail {
                 target_len,
-                pipeline: _,
+                data: _,
+                future: _,
+                blocks_range: _,
             } => Some(*target_len),
         }
     }

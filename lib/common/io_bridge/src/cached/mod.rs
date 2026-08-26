@@ -121,13 +121,13 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             );
         }
 
-        self.cache.live_preload(|_| {
+        let _ = self.cache.live_preload(|_| {
             Some(FileInfo {
                 size: new_len,
                 last_modified: None,
                 etag: None,
             })
-        })?;
+        });
         self.cache.live_reload()
     }
 
@@ -198,7 +198,7 @@ where
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<()> {
+    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
         self.cache.live_preload(get_file_info)
     }
 

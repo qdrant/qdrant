@@ -495,8 +495,8 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
     }
 
     fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
-        self.file
-            .live_preload(|path| fs.cached_file_info(path))?;
+        #[expect(unused_must_use)] // todo(uio): remove after propagating future
+        self.file.live_preload(|path| fs.cached_file_info(path))?;
         Ok(())
     }
 

@@ -130,7 +130,7 @@ where
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<()> {
+    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
         self.0.live_preload(get_file_info)
     }
 

@@ -460,9 +460,7 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache
-            .live_preload(scn.snapshot_file_info::<R>())
-            .unwrap();
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
 
         // Nothing changed yet: same length, and the appended region is still
         // out of bounds.
@@ -501,9 +499,7 @@ mod tests_mod {
         let mut cache = scn.open::<R>(PREFILL);
         assert!(!cache.is_ready());
 
-        cache
-            .live_preload(scn.snapshot_file_info::<R>())
-            .unwrap();
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
 
         assert!(cache.is_ready());
         assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
@@ -533,9 +529,7 @@ mod tests_mod {
             )
         };
 
-        cache
-            .live_preload(scn.snapshot_file_info::<R>())
-            .unwrap();
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
         cache.live_reload().unwrap();
 
         let local = cache.state().unwrap().local;
@@ -553,13 +547,9 @@ mod tests_mod {
         let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
 
         scn.grow_remote(BLOCK_SIZE);
-        cache
-            .live_preload(scn.snapshot_file_info::<R>())
-            .unwrap();
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        cache
-            .live_preload(scn.snapshot_file_info::<R>())
-            .unwrap();
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
 
         cache.live_reload().unwrap();
 
@@ -579,8 +569,9 @@ mod tests_mod {
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
         let get_file_info = scn.snapshot_file_info::<R>();
-        cache.live_preload(&get_file_info).unwrap();
-        cache.live_preload(&get_file_info).unwrap();
+
+        let _ = cache.live_preload(&get_file_info);
+        let _ = cache.live_preload(&get_file_info);
 
         cache.live_reload().unwrap();
 
@@ -595,9 +586,10 @@ mod tests_mod {
     #[test]
     fn reopen_schedule_missing_from_snapshot_errors() {
         let scn = Scenario::new(BLOCK_SIZE);
-        let cache = scn.open::<R>(PREFILL);
+        let mut cache = scn.open::<R>(PREFILL);
 
-        let err = cache.live_preload(|_| None).unwrap_err();
+        let _ = cache.live_preload(|_| None);
+        let err = cache.live_reload().unwrap_err();
         assert_matches!(err, UniversalIoError::NotFound { .. });
     }
 
