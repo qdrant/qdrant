@@ -55,10 +55,6 @@ pub struct ReadOnlySegment<S: UniversalReadExt + 'static> {
     /// listing to compare against — the open-time one for the first reload.
     pub(crate) reload_fs: AtomicRefCell<CachedFs<S::Fs>>,
 
-    /// The runtime used for lifecycle operations such as reload.
-    #[expect(dead_code)]
-    pub(crate) lifecycle_runtime: Arc<tokio::runtime::Runtime>,
-
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,

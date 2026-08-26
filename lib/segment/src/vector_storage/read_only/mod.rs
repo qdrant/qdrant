@@ -310,11 +310,10 @@ mod tests {
 
     /// Build a per-directory `CachedFs` with the listing snapshot taken, the
     /// way the segment open path does before `preopen`.
-    fn snapshot_cached_fs(dir: &Path) -> (CachedFs<MmapFs>, tokio::runtime::Runtime) {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut cached_fs = CachedFs::new(MmapFs, dir, runtime.handle().clone()).unwrap();
+    fn snapshot_cached_fs(dir: &Path) -> CachedFs<MmapFs> {
+        let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
         cached_fs.cache_file_info().unwrap();
-        (cached_fs, runtime)
+        cached_fs
     }
 
     /// `preopen` must schedule exactly the files `open` goes on to consume.
@@ -351,7 +350,7 @@ mod tests {
         }
 
         let config = dense_config(VectorStorageType::ChunkedMmap, None);
-        let (cached_fs, _runtime) = snapshot_cached_fs(dir.path());
+        let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
@@ -399,7 +398,7 @@ mod tests {
         }
 
         let config = dense_config(VectorStorageType::Mmap, None);
-        let (cached_fs, _runtime) = snapshot_cached_fs(dir.path());
+        let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
@@ -462,7 +461,7 @@ mod tests {
             VectorStorageType::ChunkedMmap,
             Some(MultiVectorConfig::default()),
         );
-        let (cached_fs, _runtime) = snapshot_cached_fs(dir.path());
+        let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.

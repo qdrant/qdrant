@@ -23,7 +23,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_storage,
             pending_reload: _,
             reload_fs,
-            lifecycle_runtime: _,
             segment_type: _,
             segment_config: _,
         } = self;
@@ -64,7 +63,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_storage,
             pending_reload,
             reload_fs,
-            lifecycle_runtime: _,
             segment_type: _,
             segment_config: _,
         } = self;

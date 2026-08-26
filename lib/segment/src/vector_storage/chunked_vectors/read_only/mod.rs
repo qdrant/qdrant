@@ -119,8 +119,7 @@ mod tests {
         append_range(&mut writer, 100, 100..250, DIM, &hw);
         drop(writer);
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut cached_fs = CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         LiveReload::live_preload(&reader, &cached_fs).unwrap();
 
@@ -163,8 +162,7 @@ mod tests {
         assert_eq!(reader.len(), 4096);
 
         let empty = SortedSlice::new(&[]).unwrap();
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut cached_fs = CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
 
         // First cycle: no previous snapshot, staging parks fresh handles.
         cached_fs.cache_file_info().unwrap();
@@ -225,8 +223,7 @@ mod tests {
         append_range(&mut writer, 100, 100..150, DIM, &hw);
         drop(writer);
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut cached_fs = CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         LiveReload::live_preload(&reader, &cached_fs).unwrap();
 

@@ -87,7 +87,6 @@ where
     /// Previous listing snapshot.
     previous_files_info: Option<HashMap<PathBuf, FileInfo>>,
     files_prefetched: Arc<Mutex<HashMap<PathBuf, ScheduledFile<Fs::File>>>>,
-    runtime: tokio::runtime::Handle,
 }
 
 enum ScheduledFile<S: 'static> {
@@ -117,7 +116,6 @@ impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
             files_info,
             previous_files_info,
             files_prefetched,
-            runtime,
         } = self;
         Self {
             fs: fs.clone(),
@@ -125,20 +123,18 @@ impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
             files_info: files_info.clone(),
             previous_files_info: previous_files_info.clone(),
             files_prefetched: files_prefetched.clone(),
-            runtime: runtime.clone(),
         }
     }
 }
 
 impl<Fs: UniversalReadFs> CachedFs<Fs> {
-    pub fn new(fs: Fs, prefix_path: &Path, runtime: tokio::runtime::Handle) -> UioResult<Self> {
+    pub fn new(fs: Fs, prefix_path: &Path) -> UioResult<Self> {
         Ok(Self {
             fs,
             prefix_path: prefix_path.to_path_buf(),
             files_info: None,
             previous_files_info: None,
             files_prefetched: Arc::new(Mutex::new(HashMap::new())),
-            runtime,
         })
     }
 
@@ -326,7 +322,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             })
             .collect::<FuturesUnordered<_>>();
 
-        let results = self.runtime.block_on(futs.collect::<Vec<_>>());
+        let results = futures::executor::block_on(futs.collect::<Vec<_>>());
         for (path, result) in results {
             lock.insert(path, ScheduledFile::Ready(result));
         }
@@ -344,19 +340,14 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
 pub struct CachedReadFsContext<C> {
     pub inner: C,
     pub prefix_path: PathBuf,
-    pub runtime: tokio::runtime::Handle,
 }
 
 impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
     type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
 
     fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
-        let CachedReadFsContext {
-            inner,
-            prefix_path,
-            runtime,
-        } = context;
-        Self::new(Fs::from_context(inner)?, &prefix_path, runtime)
+        let CachedReadFsContext { inner, prefix_path } = context;
+        Self::new(Fs::from_context(inner)?, &prefix_path)
     }
 
     fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
@@ -382,7 +373,6 @@ impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
             files_info,
             previous_files_info,
             files_prefetched,
-            runtime,
         } = self;
         f.debug_struct("CachedReadFs")
             .field("fs", fs)
@@ -390,7 +380,6 @@ impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
             .field("files_info", files_info)
             .field("previous_files_info", previous_files_info)
             .field("files_prefetched", &*files_prefetched.lock())
-            .field("runtime", runtime)
             .finish()
     }
 }
@@ -420,7 +409,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
 
         if let Some(file) = self.files_prefetched.lock().remove(path) {
             return match file {
-                ScheduledFile::Future(future) => self.runtime.block_on(future),
+                ScheduledFile::Future(future) => futures::executor::block_on(future),
                 ScheduledFile::Ready(result) => result,
                 ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
                     path: path.to_owned(),

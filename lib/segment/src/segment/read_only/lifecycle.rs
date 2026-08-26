@@ -38,9 +38,8 @@ use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 fn build_cached_fs<Fs: UniversalReadFs>(
     fs: &Fs,
     segment_path: &Path,
-    runtime: tokio::runtime::Handle,
 ) -> OperationResult<CachedFs<Fs>> {
-    let mut cached_fs = CachedFs::new(fs.clone(), segment_path, runtime.clone())?;
+    let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
@@ -97,9 +96,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
-        // TODO(uio): share runtime with other segments?
-        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
-        let cached_fs = build_cached_fs(fs, segment_path, runtime.handle().clone())?;
+        let cached_fs = build_cached_fs(fs, segment_path)?;
         let (segment_config, payload_config) =
             Self::first_preopen(&cached_fs, segment_path, load_profile)?;
         Self::open_via(
@@ -110,7 +107,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_config,
             uuid,
             deferred_internal_id,
-            runtime,
             load_profile,
         )
     }
@@ -213,7 +209,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         payload_config: PayloadConfig,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
-        runtime: Arc<tokio::runtime::Runtime>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
         if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
@@ -330,7 +325,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             payload_storage,
             pending_reload: AtomicRefCell::new(Default::default()),
             reload_fs: AtomicRefCell::new(fs),
-            lifecycle_runtime: runtime,
             segment_type,
             segment_config: config,
         })

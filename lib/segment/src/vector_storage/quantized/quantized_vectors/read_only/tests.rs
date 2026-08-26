@@ -338,7 +338,7 @@ fn preopen_and_unlink(
     quantization_config: &QuantizationConfig,
     multivector: bool,
     on_disk: bool,
-) -> (CachedFs<MmapFs>, tokio::runtime::Runtime) {
+) -> CachedFs<MmapFs> {
     // Segment-side config of the quantized vector, as `first_preopen` has it.
     let vector_config = VectorDataConfig {
         size: DIMS,
@@ -354,8 +354,7 @@ fn preopen_and_unlink(
         datatype: None,
     };
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let mut cached_fs = CachedFs::new(MmapFs, dir, runtime.handle().clone()).unwrap();
+    let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
     cached_fs.cache_file_info().unwrap();
     ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config, None).unwrap();
 
@@ -368,7 +367,7 @@ fn preopen_and_unlink(
         }
     }
 
-    (cached_fs, runtime)
+    cached_fs
 }
 
 /// `preopen` must schedule exactly the files `open` goes on to consume; see
@@ -407,7 +406,7 @@ fn preopen_then_open_through_cached_fs(
     )
     .unwrap();
 
-    let (cached_fs, _runtime) = preopen_and_unlink(quant_dir.path(), &config, false, on_disk);
+    let cached_fs = preopen_and_unlink(quant_dir.path(), &config, false, on_disk);
 
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &cached_fs,
@@ -482,7 +481,7 @@ fn preopen_then_open_multivector_through_cached_fs(
     )
     .unwrap();
 
-    let (cached_fs, _runtime) = preopen_and_unlink(quant_dir.path(), &config, true, on_disk);
+    let cached_fs = preopen_and_unlink(quant_dir.path(), &config, true, on_disk);
 
     let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
         &cached_fs,
@@ -600,9 +599,7 @@ fn reload_chunked_preserves_scores(preload: bool) {
 
     let empty = SortedSlice::new(&[]).unwrap();
     if preload {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut cached_fs =
-            CachedFs::new(MmapFs, quant_dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, quant_dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         ro.live_preload(&cached_fs).unwrap();
 

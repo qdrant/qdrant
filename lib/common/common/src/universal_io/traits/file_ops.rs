@@ -149,6 +149,9 @@ pub trait UniversalReadFs: UniversalReadFileOps {
         extra: Self::OpenExtra,
     ) -> UioResult<Self::File>;
 
+    /// Open a file, and populate it asynchronously.
+    ///
+    /// Must not depend on ambient async context; capture any runtime by value.
     fn open_async(
         &self,
         path: PathBuf,

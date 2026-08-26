@@ -691,7 +691,6 @@ mod tests {
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let hw_counter = HardwareCounterCell::new();
-        let runtime = tokio::runtime::Runtime::new().unwrap();
 
         let mut builder = InvertedIndexBuilder::new();
         builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
@@ -722,7 +721,7 @@ mod tests {
         .unwrap();
 
         // Same order as the segment open path: snapshot, then preopen, then open.
-        let mut cached_fs = CachedFs::new(MmapFs, dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         preopen(&cached_fs, dir.path(), Populate::No).unwrap();
 

@@ -38,7 +38,6 @@ struct Scenario {
     remote_path: PathBuf,
     data: Vec<u8>,
     config: Arc<DiskCacheConfig>,
-    runtime: tokio::runtime::Runtime,
 }
 
 impl Scenario {
@@ -60,7 +59,6 @@ impl Scenario {
             _tmp: tmp,
             remote_path,
             data,
-            runtime: tokio::runtime::Runtime::new().unwrap(),
             config: Arc::new(DiskCacheConfig::new(remote_dir, local_dir).unwrap()),
         }
     }
@@ -145,12 +143,7 @@ impl Scenario {
         R: DiskCacheRemote,
         <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
     {
-        let mut cached_fs = CachedFs::new(
-            self.fs::<R>(),
-            &self.remote_path,
-            self.runtime.handle().clone(),
-        )
-        .unwrap();
+        let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
         cached_fs.cache_file_info().unwrap();
         move |path| cached_fs.file_info(path).cloned()
     }

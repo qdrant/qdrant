@@ -242,8 +242,6 @@ mod tests {
     ) {
         use common::universal_io::{CachedFs, CachedReadFs};
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-
         let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
@@ -294,8 +292,7 @@ mod tests {
 
         // `CachedFs` passes opens through until a snapshot is taken, so the
         // non-preload path reloads over it untouched.
-        let mut cached_fs =
-            CachedFs::new(fs.clone(), dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
         if preload {
             cached_fs.cache_file_info().unwrap();
             reloaded.live_preload(&cached_fs).unwrap();
@@ -476,11 +473,9 @@ mod tests {
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let runtime = tokio::runtime::Runtime::new().unwrap();
 
         // Same order as the segment open path: snapshot, then preopen, then open.
-        let mut cached_fs =
-            CachedFs::new(fs.clone(), dir.path(), runtime.handle().clone()).unwrap();
+        let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         assert!(
             ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(
@@ -522,7 +517,7 @@ mod tests {
         // An absent index: `preopen` reports it rather than erroring on the
         // missing status file, and schedules nothing for `open` to consume.
         let empty = TempDir::with_prefix("read_only_bool_index_preopen_empty").unwrap();
-        let mut empty_fs = CachedFs::new(fs, empty.path(), runtime.handle().clone()).unwrap();
+        let mut empty_fs = CachedFs::new(fs, empty.path()).unwrap();
         empty_fs.cache_file_info().unwrap();
         assert!(
             !ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(
