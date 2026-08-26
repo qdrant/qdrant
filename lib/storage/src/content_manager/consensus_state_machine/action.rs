@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
@@ -31,18 +33,11 @@ pub enum Action {
         field_name: PayloadKeyType,
     },
 
-    SetAlias {
-        alias: String,
-        collection: CollectionId,
-    },
-
-    DeleteAlias {
-        alias: String,
-    },
-
-    RenameAlias {
-        old_alias: String,
-        new_alias: String,
+    /// Every change the operation makes to the alias mapping, as absolute writes.
+    /// The applier saves the mapping once, so the whole operation lands or none of it does.
+    UpdateAliases {
+        set: BTreeMap<String, CollectionId>,
+        remove: BTreeSet<String>,
     },
 
     SetPeerMetadata {
@@ -71,9 +66,7 @@ impl Action {
             | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
             // Change the alias mapping, a peer or the cluster, none of which is a collection
-            Action::SetAlias { .. }
-            | Action::DeleteAlias { .. }
-            | Action::RenameAlias { .. }
+            Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => None,

@@ -71,24 +71,14 @@ impl ClusterState {
                 state.payload_index_schema.schema.remove(field_name);
             }
 
-            Action::SetAlias { alias, collection } => {
-                self.aliases.insert(alias.clone(), collection.clone());
-            }
+            Action::UpdateAliases { set, remove } => {
+                for alias in remove {
+                    self.aliases.remove(alias);
+                }
 
-            Action::DeleteAlias { alias } => {
-                self.aliases.remove(alias);
-            }
-
-            Action::RenameAlias {
-                old_alias,
-                new_alias,
-            } => {
-                let renamed = self.aliases.rename(old_alias, new_alias.clone());
-
-                debug_assert!(
-                    renamed,
-                    "action renames alias {old_alias}, which is not in the state",
-                );
+                for (alias, collection) in set {
+                    self.aliases.insert(alias.clone(), collection.clone());
+                }
             }
 
             Action::SetPeerMetadata { peer_id, metadata } => {

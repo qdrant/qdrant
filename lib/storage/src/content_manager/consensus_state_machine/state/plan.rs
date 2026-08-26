@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use collection::collection::vector_name_schema;
 use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
@@ -55,16 +57,33 @@ impl ClusterState {
         }])
     }
 
-    /// Plan alias actions in order, each one reading what the actions before it did.
-    ///
-    /// `TableOfContent::update_aliases` validates and saves one action at a time, so an action
-    /// rejected in the middle keeps the ones before it. Here the whole operation is validated
-    /// first, and a rejected operation changes nothing.
     pub fn plan_change_aliases(&self, op: &ChangeAliasesOperation) -> StorageResult<Actions> {
         let ChangeAliasesOperation { actions } = op;
 
+        // TODO:
+        //
+        // This is intentionally different from `TableOfContent::update_aliases`.
+        //
+        // `ToC::update_aliases` validates and applies `actions` one by one,
+        // and `AliasPersistence` writes the mapping on every insert, remove and rename.
+        // So if an `AliasOperation` in the middle of the list is rejected, every action
+        // before it is applied and persisted, and every action after it never runs.
+        //
+        // `plan_change_aliases` validates all `actions` first, and emits a single
+        // `UpdateAliases` action, which the applier has to write in one go. So either all
+        // `actions` apply, or none of them do.
+        //
+        // E.g., take a list of two actions:
+        // the first creates alias `new`, the second renames alias `missing`, which does not exist.
+        //
+        // `ToC::update_aliases` would create alias `new`, then return an error.
+        // `plan_change_aliases` would return an error *before* creating alias `new`.
+        //
+        // `ToC::update_aliases` has to validate all `actions` up front, and write the mapping
+        // once, to match. Rejecting a replay of an applied operation is only safe when nothing
+        // of it is left behind.
+
         let mut aliases = self.aliases.clone();
-        let mut planned = Actions::new();
 
         for action in actions {
             match action {
@@ -74,25 +93,20 @@ impl ClusterState {
                         alias_name,
                     } = &action.create_alias;
 
-                    // Collection has to exist under this name: an alias of an alias is rejected
+                    // `collection_name` must name a collection, not an alias
                     if !self.has_collection(collection_name) {
                         return Err(StorageError::not_found(format!(
-                            "Collection `{collection_name}` doesn't exist!"
+                            "Collection `{collection_name}` does not exist"
                         )));
                     }
 
                     if self.has_collection(alias_name) {
                         return Err(StorageError::already_exists(format!(
-                            "Collection `{alias_name}` already exists!"
+                            "Collection `{alias_name}` already exists"
                         )));
                     }
 
                     aliases.insert(alias_name.clone(), collection_name.clone());
-
-                    planned.push(Action::SetAlias {
-                        alias: alias_name.clone(),
-                        collection: collection_name.clone(),
-                    });
                 }
 
                 AliasOperations::DeleteAlias(action) => {
@@ -100,10 +114,6 @@ impl ClusterState {
 
                     // Deleting an alias that does not exist is a no-op, not an error
                     aliases.remove(alias_name);
-
-                    planned.push(Action::DeleteAlias {
-                        alias: alias_name.clone(),
-                    });
                 }
 
                 AliasOperations::RenameAlias(action) => {
@@ -112,23 +122,37 @@ impl ClusterState {
                         new_alias_name,
                     } = &action.rename_alias;
 
-                    // Rename reads the alias it removes, so a replay of an operation whose rename
-                    // landed is rejected, and the actions after the rename never apply
                     if !aliases.rename(old_alias_name, new_alias_name.clone()) {
                         return Err(StorageError::not_found(format!(
-                            "Alias {old_alias_name} does not exists!"
+                            "Alias {old_alias_name} does not exist"
                         )));
                     }
-
-                    planned.push(Action::RenameAlias {
-                        old_alias: old_alias_name.clone(),
-                        new_alias: new_alias_name.clone(),
-                    });
                 }
             }
         }
 
-        Ok(planned)
+        // Emit what the actions add up to, so that replay of an applied operation writes the
+        // same values, and an operation that changes nothing writes nothing
+
+        let set: BTreeMap<_, _> = aliases
+            .iter()
+            .filter(|(alias, collection)| self.aliases.get(alias) != Some(collection))
+            .map(|(alias, collection)| (alias.clone(), collection.clone()))
+            .collect();
+
+        let remove: BTreeSet<_> = self
+            .aliases
+            .iter()
+            .map(|(alias, _)| alias)
+            .filter(|alias| aliases.get(alias).is_none())
+            .cloned()
+            .collect();
+
+        if set.is_empty() && remove.is_empty() {
+            return Ok(Actions::new());
+        }
+
+        Ok(vec![Action::UpdateAliases { set, remove }])
     }
 
     pub fn plan_create_payload_index(&self, op: &CreatePayloadIndex) -> StorageResult<Actions> {
