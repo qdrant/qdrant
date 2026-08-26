@@ -35,7 +35,6 @@ mod read_ops;
 /// [4]: super::on_disk_geo_index::OnDiskGeoIndex
 /// [5]: super::GeoIndex::new_gridstore
 /// [6]: super::GeoIndex::new_mmap
-#[allow(clippy::large_enum_variant)]
 pub enum ReadOnlyGeoIndex<S: UniversalRead> {
     /// Loads into RAM from appendable Gridstore storage format.
     Appendable(ReadOnlyAppendableGeoIndex<S>),

@@ -175,7 +175,6 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     /// placement — a demoted pinned placement opens the lazy mmap loaders over the same
     /// flat files instead of the RAM ones, and a demoted cached placement skips the
     /// page-cache priming.
-    #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
