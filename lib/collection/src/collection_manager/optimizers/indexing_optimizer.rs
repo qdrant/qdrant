@@ -1237,4 +1237,123 @@ mod tests {
             "tails crossing the boundary together must be merged without a partner"
         );
     }
+
+    /// With several vector fields, per-segment maxima can alternate between
+    /// fields, so their sum overstates every individual field's merged size.
+    /// A tail merge is planned only when some actual field crosses its own
+    /// full-scan boundary.
+    #[test]
+    fn test_sub_full_scan_tails_multi_vector_alternating() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dim = 256; // f32 => 1 KB per vector
+
+        let vector_data_config = VectorDataConfig {
+            size: dim,
+            distance: Distance::Dot,
+            storage_type: VectorStorageType::default(),
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        };
+        let segment_config = SegmentConfig {
+            vector_data: HashMap::from([
+                (VECTOR1_NAME.to_owned(), vector_data_config.clone()),
+                (VECTOR2_NAME.to_owned(), vector_data_config),
+            ]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        };
+
+        let hw_counter = HardwareCounterCell::new();
+        let mut rnd = rng();
+        let mut next_id = 0u64;
+        // A frozen segment holding `n1` vectors in the first field and `n2`
+        // in the second (each point carries a single named vector).
+        let mut make_frozen = |n1: u64, n2: u64| {
+            let (mut segment, _) = build_segment(dir.path(), &segment_config, None, true).unwrap();
+            for (name, count) in [(VECTOR1_NAME, n1), (VECTOR2_NAME, n2)] {
+                for _ in 0..count {
+                    let mut vectors = NamedVectors::default();
+                    vectors.insert(
+                        name.to_owned(),
+                        VectorInternal::Dense(random_vector(&mut rnd, dim)),
+                    );
+                    next_id += 1;
+                    segment
+                        .upsert_point(100, next_id.into(), vectors, &hw_counter)
+                        .unwrap();
+                }
+            }
+            segment.appendable_flag = false;
+            segment
+        };
+
+        // full_scan_threshold = 10 KB for both fields.
+        let build_optimizer = || {
+            let collection_params = CollectionParams {
+                vectors: VectorsConfig::Multi(BTreeMap::from([
+                    (
+                        VECTOR1_NAME.to_owned(),
+                        VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+                    ),
+                    (
+                        VECTOR2_NAME.to_owned(),
+                        VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+                    ),
+                ])),
+                ..CollectionParams::empty()
+            };
+            let hnsw_config = HnswConfig {
+                full_scan_threshold: 10,
+                ..Default::default()
+            };
+            new_indexing_optimizer(
+                5,
+                OptimizerThresholds {
+                    max_segment_size_kb: 100_000,
+                    memmap_threshold_kb: 1_000_000,
+                    indexing_threshold_kb: 1_000_000,
+                    deferred_internal_id: None,
+                },
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                collection_params,
+                hnsw_config,
+                HnswGlobalConfig::default(),
+                None,
+            )
+        };
+
+        // Alternating largest fields: (6 KB, 1 KB) and (1 KB, 6 KB). The sum
+        // of per-segment maxima (12 KB) crosses the 10 KB boundary, but both
+        // merged fields end up at 7 KB — still scanned in full, so nothing
+        // must be planned.
+        let mut holder = SegmentHolder::default();
+        holder.add_new(make_frozen(6, 1));
+        holder.add_new(make_frozen(1, 6));
+        let locked_holder = LockedSegmentHolder::new(holder);
+        let plans = build_optimizer().plan_optimizations_for_test(&locked_holder);
+        assert!(
+            plans.is_empty(),
+            "no single field crosses its boundary — the merge must not be planned"
+        );
+
+        // The same shapes leaning on the same field: (6 KB, 1 KB) twice. The
+        // first field adds up to 12 KB and crosses, so the tails are merged.
+        let mut holder = SegmentHolder::default();
+        let tails = [
+            holder.add_new(make_frozen(6, 1)),
+            holder.add_new(make_frozen(6, 1)),
+        ];
+        let locked_holder = LockedSegmentHolder::new(holder);
+        let plans = build_optimizer().plan_optimizations_for_test(&locked_holder);
+        let batch = plans.into_iter().exactly_one().unwrap();
+        assert_eq!(
+            batch.iter().sorted().collect_vec(),
+            tails.iter().sorted().collect_vec(),
+            "tails crossing the boundary in one field must be merged"
+        );
+    }
 }
