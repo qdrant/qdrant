@@ -35,7 +35,6 @@ mod read_ops;
 /// [4]: crate::index::field_index::map_index::read_only::ReadOnlyMapIndex
 /// [5]: super::read_ops
 /// [6]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
-#[allow(clippy::large_enum_variant)]
 pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
     /// Loads into RAM from appendable storage format
     Appendable(ReadOnlyAppendableFullTextIndex<S>),
