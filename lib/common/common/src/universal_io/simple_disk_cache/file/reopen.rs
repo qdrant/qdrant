@@ -1,9 +1,9 @@
-//! [`Reopen`] the local mirror after the (append-only) remote has grown,
+//! [`live_reload`] the local mirror after the (append-only) remote has grown,
 //! either in one blocking step or split into a schedule and an apply phase
-//! ([`schedule_reopen`]).
+//! ([`live_preload`]).
 //!
-//! [`reopen`]: crate::universal_io::UniversalRead::reopen
-//! [`schedule_reopen`]: crate::universal_io::UniversalRead::schedule_reopen
+//! [`live_reload`]: crate::universal_io::UniversalRead::live_reload
+//! [`live_preload`]: crate::universal_io::UniversalRead::live_preload
 
 use std::io::{self, ErrorKind};
 use std::path::Path;
@@ -19,23 +19,23 @@ impl<R> DiskCache<R>
 where
     R: DiskCacheRemote,
 {
-    /// Body of [`UniversalRead::reopen`](crate::universal_io::UniversalRead::reopen).
+    /// Body of [`UniversalRead::live_reload`](crate::universal_io::UniversalRead::live_reload).
     pub(super) fn reopen_impl(&mut self) -> UioResult<()> {
-        if self.resolve_pending_reopen()? {
+        if self.resolve_pending_reload()? {
             return Ok(());
         }
 
         // If not previously done, schedule and wait blockingly
-        self.schedule_reopen_with_len(None)?;
-        self.resolve_pending_reopen()?;
+        self.live_preload_with_len(None)?;
+        self.resolve_pending_reload()?;
 
         Ok(())
     }
 
-    // Apply whatever `schedule_reopen` staged, if anything.
+    // Apply whatever `live_preload` staged, if anything.
     //
     // Returns `true` if a pending reopen was resolved, `false` otherwise.
-    fn resolve_pending_reopen(&mut self) -> UioResult<bool> {
+    fn resolve_pending_reload(&mut self) -> UioResult<bool> {
         let State::Ready {
             remote,
             local,
@@ -56,7 +56,7 @@ where
             ScheduledReopen::Unchanged => {}
             ScheduledReopen::Resize { target_len } => {
                 // reopen remote, so we can read up to the new length.
-                remote.reopen()?;
+                remote.live_reload()?;
 
                 local.resize(&self.local_path, target_len)?;
             }
@@ -88,7 +88,7 @@ where
         Ok(true)
     }
 
-    pub(super) fn schedule_reopen_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
+    pub(super) fn live_preload_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
     ) -> UioResult<()> {
@@ -98,20 +98,20 @@ where
             });
         };
 
-        self.schedule_reopen_with_len(Some(file_info.size))?;
+        self.live_preload_with_len(Some(file_info.size))?;
         self.set_etag(file_info.etag);
         Ok(())
     }
 
-    /// Body of [`UniversalRead::schedule_reopen`].
+    /// Body of [`UniversalRead::live_preload`].
     ///
     /// Records what the next [`reopen_impl`](Self::reopen_impl) must do and,
     /// for populated files, puts the tail fetch in flight — without waiting on
     /// it and without touching the mirror, so readers see no change until the
     /// apply.
     ///
-    /// [`UniversalRead::schedule_reopen`]: crate::universal_io::UniversalRead::schedule_reopen
-    pub(super) fn schedule_reopen_with_len(&self, known_len: Option<u64>) -> UioResult<()> {
+    /// [`UniversalRead::live_preload`]: crate::universal_io::UniversalRead::live_preload
+    pub(super) fn live_preload_with_len(&self, known_len: Option<u64>) -> UioResult<()> {
         // Wait for scheduled prefill, if any.
         //
         // warn: this will do a length request if uninit, but when using a
@@ -134,7 +134,7 @@ where
         let remote_len = match known_len {
             Some(known_len) => known_len,
             None => {
-                remote.reopen()?;
+                remote.live_reload()?;
                 remote.len::<u8>()?
             }
         };

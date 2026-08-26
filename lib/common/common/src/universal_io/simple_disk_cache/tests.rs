@@ -135,7 +135,7 @@ impl Scenario {
         &self.data[range.start as usize..range.end as usize]
     }
 
-    /// A `get_file_info` for `schedule_reopen`, backed by a `CachedFs`
+    /// A `get_file_info` for `live_preload`, backed by a `CachedFs`
     /// listing snapshot taken now — the schedule-phase view of the remote.
     /// Take a fresh one after growing the remote, as a refresh pass would.
     fn snapshot_file_info<R>(&self) -> impl Fn(&Path) -> Option<FileInfo>
@@ -366,7 +366,7 @@ mod tests_mod {
             )
         };
 
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         let local = if PREFILL {
             // in case of Populate::PreferBackground, we need to await for
@@ -408,7 +408,7 @@ mod tests_mod {
             crate::universal_io::UniversalIoError::OutOfBounds { .. },
         );
 
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         let bytes = cache
             .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
@@ -434,7 +434,7 @@ mod tests_mod {
         // Grow remote past the old tail block boundary.
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         // Read covers both the originally-partial range [BLOCK_SIZE..old_len)
         // and the newly-grown tail [old_len..BLOCK_SIZE*2). Without the
@@ -461,7 +461,7 @@ mod tests_mod {
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
         cache
-            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .live_preload(scn.snapshot_file_info::<R>())
             .unwrap();
 
         // Nothing changed yet: same length, and the appended region is still
@@ -472,7 +472,7 @@ mod tests_mod {
             .unwrap_err();
         assert_matches!(err, UniversalIoError::OutOfBounds { .. });
 
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
         // A populated cache staged the tail fetch, so the appended block is
@@ -502,7 +502,7 @@ mod tests_mod {
         assert!(!cache.is_ready());
 
         cache
-            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .live_preload(scn.snapshot_file_info::<R>())
             .unwrap();
 
         assert!(cache.is_ready());
@@ -510,7 +510,7 @@ mod tests_mod {
 
         // A later reopen (nothing staged — the length didn't grow) must
         // leave the mirror alone.
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
         assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
 
         let bytes = cache.read_whole::<u8>().unwrap();
@@ -534,9 +534,9 @@ mod tests_mod {
         };
 
         cache
-            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .live_preload(scn.snapshot_file_info::<R>())
             .unwrap();
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         let local = cache.state().unwrap().local;
         assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
@@ -554,14 +554,14 @@ mod tests_mod {
 
         scn.grow_remote(BLOCK_SIZE);
         cache
-            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .live_preload(scn.snapshot_file_info::<R>())
             .unwrap();
         let new_data = scn.grow_remote(BLOCK_SIZE);
         cache
-            .schedule_reopen(scn.snapshot_file_info::<R>())
+            .live_preload(scn.snapshot_file_info::<R>())
             .unwrap();
 
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
         let bytes = cache.read_whole::<u8>().unwrap();
@@ -579,10 +579,10 @@ mod tests_mod {
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
         let get_file_info = scn.snapshot_file_info::<R>();
-        cache.schedule_reopen(&get_file_info).unwrap();
-        cache.schedule_reopen(&get_file_info).unwrap();
+        cache.live_preload(&get_file_info).unwrap();
+        cache.live_preload(&get_file_info).unwrap();
 
-        cache.reopen().unwrap();
+        cache.live_reload().unwrap();
 
         assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
         let bytes = cache.read_whole::<u8>().unwrap();
@@ -597,7 +597,7 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE);
         let cache = scn.open::<R>(PREFILL);
 
-        let err = cache.schedule_reopen(|_| None).unwrap_err();
+        let err = cache.live_preload(|_| None).unwrap_err();
         assert_matches!(err, UniversalIoError::NotFound { .. });
     }
 
@@ -1003,8 +1003,8 @@ mod tests_async {
             Self: 'a,
             U: UserData;
 
-        fn reopen(&mut self) -> UioResult<()> {
-            self.inner.reopen()
+        fn live_reload(&mut self) -> UioResult<()> {
+            self.inner.live_reload()
         }
 
         fn read_bytes<P: AccessPattern>(

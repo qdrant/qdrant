@@ -60,15 +60,15 @@ where
         R: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         self.reopen_impl()
     }
 
-    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+    fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
     ) -> UioResult<()> {
-        self.schedule_reopen_impl(get_file_info)
+        self.live_preload_impl(get_file_info)
     }
 
     fn read_bytes<P: AccessPattern>(

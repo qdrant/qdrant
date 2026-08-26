@@ -79,8 +79,8 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         })
     }
 
-    pub fn reopen(&mut self) -> UioResult<()> {
-        self.storage.reopen()?;
+    pub fn live_reload(&mut self) -> UioResult<()> {
+        self.storage.live_reload()?;
         self.element_len = self.storage.len()?;
         Ok(())
     }

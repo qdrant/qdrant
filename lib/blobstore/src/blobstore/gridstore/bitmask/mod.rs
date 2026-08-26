@@ -210,7 +210,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
         create_and_ensure_length(&self.path, new_length)?;
 
-        self.bitslice.reopen()?;
+        self.bitslice.live_reload()?;
 
         let current_bit_len = self.bitslice.bit_len() as usize;
 

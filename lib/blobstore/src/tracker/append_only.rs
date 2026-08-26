@@ -246,7 +246,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
             "live reload must only be used on read-only instances",
         );
 
-        self.file.reopen()?;
+        self.file.live_reload()?;
         let len = self.file.len::<u8>()?;
         let new_count = count_from_len(len)?;
 
@@ -275,7 +275,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
 
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
         self.file
-            .schedule_reopen(|path| fs.cached_file_info(path))?;
+            .live_preload(|path| fs.cached_file_info(path))?;
         Ok(())
     }
 }
@@ -411,7 +411,7 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
             // landed before; adopt them as persisted. Any other length means the file was
             // modified outside this writer.
             Err(UniversalIoError::AppendOffsetConflict { .. }) => {
-                self.file.reopen()?;
+                self.file.live_reload()?;
                 let len = self.file.len::<u8>()?;
                 if len != end {
                     return Err(BlobstoreError::service_error(format!(

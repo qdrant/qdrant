@@ -154,7 +154,7 @@ impl UniversalRead for CachedSlice {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         // TODO: revise if this is the best way to reopen
         *self = CachedSlice::open(&self.controller, &self.path)
             .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;

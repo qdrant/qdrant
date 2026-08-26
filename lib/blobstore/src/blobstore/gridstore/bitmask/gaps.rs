@@ -160,7 +160,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         create_and_ensure_length(&self.path, new_length_in_bytes)?;
 
-        self.slice_store.reopen()?;
+        self.slice_store.live_reload()?;
 
         debug_assert_eq!(self.len()? - prev_len, data.len());
 

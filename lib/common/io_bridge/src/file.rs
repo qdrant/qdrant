@@ -98,7 +98,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         Ok(())
     }
 

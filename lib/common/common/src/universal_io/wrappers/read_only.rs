@@ -122,16 +122,16 @@ where
         U: UserData;
 
     #[inline]
-    fn reopen(&mut self) -> UioResult<()> {
-        self.0.reopen()
+    fn live_reload(&mut self) -> UioResult<()> {
+        self.0.live_reload()
     }
 
     #[inline]
-    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+    fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
     ) -> UioResult<()> {
-        self.0.schedule_reopen(get_file_info)
+        self.0.live_preload(get_file_info)
     }
 
     #[inline]

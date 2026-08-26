@@ -70,7 +70,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         ] {
             match file {
                 Some(file) => {
-                    file.schedule_reopen(|p| fs.cached_file_info(p))
+                    file.live_preload(|p| fs.cached_file_info(p))
                         .ok_not_found()?;
                 }
                 None => {
@@ -83,7 +83,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
     /// Consume mapping and version changes appended to storage since the last reload.
     ///
-    /// File handles are refreshed via [`UniversalRead::reopen`] so data appended by the writer
+    /// File handles are refreshed via [`UniversalRead::live_reload`] so data appended by the writer
     /// becomes visible; not-yet-opened files are opened lazily through `fs` (a caching wrapper's
     /// prefetch pool serves these opens when staged). Both result lists are sorted ascending.
     ///
@@ -168,7 +168,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
                 // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
                 // an empty file.
-                file.reopen().ok_not_found()?;
+                file.live_reload().ok_not_found()?;
             }
             None => {
                 self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
@@ -226,7 +226,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
                 // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
                 // an empty file (no committed versions).
-                versions_file.reopen().ok_not_found()?;
+                versions_file.live_reload().ok_not_found()?;
             }
             None => {
                 self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;

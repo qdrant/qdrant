@@ -496,21 +496,21 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
 
     fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
         self.file
-            .schedule_reopen(|path| fs.cached_file_info(path))?;
+            .live_preload(|path| fs.cached_file_info(path))?;
         Ok(())
     }
 
-    /// Reopen the page file handle and reload its length, making newly appended value data
+    /// Reload the page file handle and reload its length, making newly appended value data
     /// visible to reads and the reported storage size.
     ///
-    /// The reopen is a no-op for backends that read the file directly, those see newly appended
+    /// The reload is a no-op for backends that read the file directly, those see newly appended
     /// data without it.
     fn live_reload(&mut self) -> Result<()> {
         debug_assert!(
             self.pending.is_empty(),
             "live reload must only be used on read-only instances",
         );
-        self.file.reopen()?;
+        self.file.live_reload()?;
         self.persisted_len = self.file.len::<u8>()?;
         Ok(())
     }
@@ -590,7 +590,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
             // landed before; adopt them as persisted. Any other length means the file was
             // modified outside this writer.
             Err(UniversalIoError::AppendOffsetConflict { .. }) => {
-                self.file.reopen()?;
+                self.file.live_reload()?;
                 let len = self.file.len::<u8>()?;
                 if len != end {
                     return Err(BlobstoreError::service_error(format!(

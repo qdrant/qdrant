@@ -26,7 +26,7 @@ use crate::universal_io::{ByteOffset, UioResult};
 ///   rejected with [`AppendOffsetConflict`] and nothing is written — so a
 ///   duplicate of an append that already landed conflicts instead of
 ///   appending twice. To recover from a conflict, re-check the length
-///   ([`len`], after [`reopen`] on a stale handle) to learn where the file
+///   ([`len`], after [`live_reload`] on a stale handle) to learn where the file
 ///   actually ends before appending anew.
 /// - Single logical writer: exactly one handle appends to a given file at a
 ///   time. With concurrent appenders, object-store backends reject
@@ -34,10 +34,10 @@ use crate::universal_io::{ByteOffset, UioResult};
 ///   non-atomically, so an out-of-contract concurrent grow can land data
 ///   past the validated offset (never overwriting existing bytes).
 /// - After `Ok`, this handle's [`len`]/reads observe the appended bytes.
-///   Other handles (including clones) must [`reopen`] first. For mmap-backed
+///   Other handles (including clones) must [`live_reload`] first. For mmap-backed
 ///   handles this is a hard requirement rather than staleness: an append may
 ///   move the shared mapping, so any later read through a clone that has not
-///   [`reopen`]ed is undefined behavior (see [`MmapFile`]).
+///   [`live_reload`]ed is undefined behavior (see [`MmapFile`]).
 /// - Durability: local backends require running [`UniversalFlush::flusher`];
 ///   object-store backends are durable when `append` returns `Ok` (their
 ///   flusher is a no-op).
@@ -63,7 +63,7 @@ use crate::universal_io::{ByteOffset, UioResult};
 /// [`UniversalWrite`]: super::UniversalWrite
 /// [`UniversalWrite::write`]: super::UniversalWrite::write
 /// [`len`]: UniversalRead::len
-/// [`reopen`]: UniversalRead::reopen
+/// [`live_reload`]: UniversalRead::live_reload
 pub trait UniversalAppend:
     UniversalRead<Fs: UniversalWriteFileOps<AppendFile = Self>> + UniversalFlush
 {

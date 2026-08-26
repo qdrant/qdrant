@@ -58,9 +58,9 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// underlying file larger, so reopening can account for this growth.
     ///
     /// This may be a no-op in some implementations.
-    fn reopen(&mut self) -> UioResult<()>;
+    fn live_reload(&mut self) -> UioResult<()>;
 
-    /// Stage the work that the next [`reopen`](Self::reopen) must do, reading
+    /// Stage the work that the next [`live_reload`](Self::reopen) must do, reading
     /// the file's current length via `get_file_info` — typically backed by a
     /// [`CachedReadFs`] listing snapshot. The implementation resolves its own
     /// path, so there is nothing to mispair.
@@ -77,7 +77,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     ///
     /// [`CachedReadFs`]: crate::universal_io::CachedReadFs
     /// [`DiskCache`]: crate::universal_io::DiskCache
-    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+    fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
     ) -> UioResult<()> {

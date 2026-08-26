@@ -19,7 +19,7 @@ mod reopen;
 /// A lazily-populated local mirror of an append-only remote file.
 ///
 /// The remote's existing bytes are assumed to be immutable for the lifetime
-/// of the file: it may grow externally (picked up by [`reopen`]), but never
+/// of the file: it may grow externally (picked up by [`live_reload`]), but never
 /// shrink or change in place. This type implements [`UniversalRead`] only —
 /// appends are deliberately not supported through the cache (append
 /// directly to the backing storage instead), and random-offset writes stay
@@ -55,9 +55,9 @@ where
     /// Fast-path gate: `true` when `state` is [`State::Ready`].
     pub(super) is_ready: AtomicBool,
     /// Entity tag of the remote object, as last known: seeded from the open
-    /// extras, refreshed by [`schedule_reopen`] and [`set_etag`](Self::set_etag).
+    /// extras, refreshed by [`live_preload`] and [`set_etag`](Self::set_etag).
     ///
-    /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+    /// [`live_preload`]: UniversalRead::live_preload
     etag: Mutex<Option<String>>,
 }
 
@@ -71,13 +71,13 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     Ready {
         remote: R,
         local: LocalState,
-        /// What the next [`reopen`] must do. Staged by [`schedule_reopen`],
-        /// consumed (reset to [`ScheduledReopen::No`]) by [`reopen`]. Only
+        /// What the next [`live_reload`] must do. Staged by [`live_preload`],
+        /// consumed (reset to [`ScheduledReopen::No`]) by [`live_reload`]. Only
         /// touched under `&mut self`, and `ReadyRef` borrows just
         /// `remote`/`local`, so staging never disturbs the served state.
         ///
-        /// [`reopen`]: UniversalRead::reopen
-        /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+        /// [`live_reload`]: UniversalRead::live_reload
+        /// [`live_preload`]: UniversalRead::live_preload
         scheduled_reopen: Option<ScheduledReopen<R>>,
     },
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
@@ -91,8 +91,8 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     },
 }
 
-/// The obligation of the next [`reopen`](UniversalRead::reopen), staged ahead
-/// of time by [`schedule_reopen`](UniversalRead::schedule_reopen).
+/// The obligation of the next [`live_reload`](UniversalRead::live_reload), staged ahead
+/// of time by [`live_preload`](UniversalRead::live_preload).
 ///
 /// Staging deliberately leaves the mirror alone: its length keeps matching its
 /// persisted content until the apply, so readers observe nothing in between

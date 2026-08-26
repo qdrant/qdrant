@@ -190,7 +190,7 @@ impl UniversalRead for MmapFile {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         let old_len = self.len as u64;
         let new_len = fs_err::File::open(self.path())
             .map_err(|err| UniversalIoError::extract_not_found(err, self.path()))?
@@ -393,7 +393,7 @@ impl MmapFile {
     /// Grow the mapping to `new_len` without consulting the filesystem: the
     /// caller already knows the file's new length (an append it just made,
     /// or a `set_len` it just issued), so the `open`+`fstat`+`close` of a
-    /// full [`reopen`](UniversalRead::reopen) is skipped. Unlike a reopen,
+    /// full [`live_reload`](UniversalRead::live_reload) is skipped. Unlike a reopen,
     /// the non-Linux re-mmap never re-populates: growth is mapping
     /// maintenance, and re-faulting the whole file would make each append
     /// O(file size) for handles opened with [`Populate::Blocking`].
