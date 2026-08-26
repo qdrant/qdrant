@@ -310,7 +310,11 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
     }
 
     fn wait_all(&self) -> UioResult<()> {
+        let instant = std::time::Instant::now();
         let mut lock = self.files_prefetched.lock();
+        log::info!("waited on lock for {}ms", instant.elapsed().as_millis());
+        let instant = std::time::Instant::now();
+
         let futs = lock
             .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
             .map(|(path, scheduled)| {
@@ -326,6 +330,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         for (path, result) in results {
             lock.insert(path, ScheduledFile::Ready(result));
         }
+        log::info!("wait_all took {}ms", instant.elapsed().as_millis());
         Ok(())
     }
 

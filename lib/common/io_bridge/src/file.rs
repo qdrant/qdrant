@@ -133,11 +133,27 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         _access_pattern: P,
         align: usize,
     ) -> UioResult<ACow<'_>> {
+        let started = std::time::Instant::now();
+        log::trace!(
+            target: crate::LATENCY_LOG_TARGET,
+            "scheduled async read of {}, {:?}",
+            self.path.display(),
+            range
+        );
+
         let buf = self
             .runtime
             .handle()
             .spawn(read_into_byte_buffer::<A>(self, range, align))
             .await??;
+
+        log::trace!(
+            target: crate::LATENCY_LOG_TARGET,
+            "waited async read of {}, {:?} bytes took {}ms",
+            self.path.display(),
+            buf.len(),
+            started.elapsed().as_millis()
+        );
         Ok(ACow::Owned(buf))
     }
 
