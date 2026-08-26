@@ -39,6 +39,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         for vector_data in vector_data.values() {
             vector_data.live_preload(fs)?;
         }
+
+        // Pin the staged files before the writer can churn them: reload then
+        // consumes ready handles and never races the filesystem.
+        fs.wait_all()?;
         Ok(())
     }
 

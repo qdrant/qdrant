@@ -321,8 +321,9 @@ mod tests {
     /// Merely opening after a `preopen` proves nothing: `CachedFs` falls back
     /// to a plain inner open for any path that was never scheduled, so a
     /// scheduled-vs-opened path mismatch would still yield a correct storage.
-    /// To make the prefetch pool the *only* possible source, the storage files
-    /// are unlinked between `preopen` and `open`: the already-open handles
+    /// To make the prefetch pool the *only* possible source, `wait_all`
+    /// materializes the scheduled opens (the sequence the segment open runs)
+    /// and the storage files are then unlinked before `open`: the handles
     /// parked in the pool stay readable, while any fallback open hits
     /// `NotFound`.
     #[test]
@@ -352,6 +353,7 @@ mod tests {
         let config = dense_config(VectorStorageType::ChunkedMmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
+        cached_fs.wait_all().unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [
@@ -400,6 +402,7 @@ mod tests {
         let config = dense_config(VectorStorageType::Mmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
+        cached_fs.wait_all().unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for file_name in [
@@ -463,6 +466,7 @@ mod tests {
         );
         let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
+        cached_fs.wait_all().unwrap();
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [

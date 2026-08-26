@@ -211,6 +211,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
+        fs.wait_all()?;
+
         if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written last, so
             // its absence means the segment vanished mid-open (or was never completed) —

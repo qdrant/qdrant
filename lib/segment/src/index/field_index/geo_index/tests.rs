@@ -1345,6 +1345,7 @@ fn test_block_index_preopen() {
         OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
             .unwrap()
     );
+    cached_fs.wait_all().unwrap();
 
     // The sidecar reads of `open` must now come from the prefetch pool.
     fs_err::remove_file(&counts_sidecar).unwrap();
