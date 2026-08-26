@@ -9,13 +9,14 @@
 //! | `sampling_selective_filter_*`          | tag    | seq <  9%  | sampling → filter iter|
 //! | `sampling_broad_filter_*`              | tag    | seq < 95%  | sampling → facet iter |
 //!
-//! The sampling → filter iter plan needs more points than the others: a filter
-//! selective enough to prefer filter iter (< 10% of candidate mass) is also
-//! selective enough for the strategy veto to fall back to full, *unless* the
-//! segment is much larger than the sampling budget — the veto keeps sampling
-//! only while selectivity ≥ √(sample_target / available_points). That window
-//! opens around 150k points here (see `N_FILTER_ITER`), so that one test uses a
-//! larger fixture.
+//! The sampling → filter iter plan needs care: a filter selective enough to
+//! prefer filter iter (< 10% of candidate mass) is also selective enough for
+//! the strategy veto to fall back to full, *unless* the segment is much larger
+//! than the sampling budget — the veto keeps sampling only while selectivity
+//! ≥ √(sample_target / available_points). With the production floor
+//! (`sample_target = 1000`) that window only opens around 150k points. The
+//! selective-filter test therefore pins a smaller `sample_target` via
+//! [`SampleTargetOverride`] so the same window fits in a ~20k-point fixture.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -34,6 +35,7 @@ use crate::entry::entry_point::{
 use crate::json_path::JsonPath;
 use crate::payload_json;
 use crate::segment::Segment;
+use crate::segment::read_view::facet::SampleTargetOverride;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
@@ -235,26 +237,35 @@ fn sampling_broad_filter_walks_facet_index() {
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }
 
-/// Points for the sampling → filter iter test. The veto keeps sampling only
-/// while selectivity ≥ √(sample_target / N), so reaching filter iter (< 10%)
-/// needs N well above the sampling budget; an `f = 9%` filter lands in the
-/// [√(1000/N), 10%) window with margin (boundary ≈ 7.1% here). Verified
-/// empirically: the crossover first appears around N = 150k.
-#[cfg(not(windows))]
-const N_FILTER_ITER: usize = 200_000;
+/// Fixture size for sampling → filter iter. With [`SAMPLE_TARGET_FILTER_ITER`]
+/// the veto boundary is √(50/20000) ≈ 5%, so `f = 9%` sits in the
+/// [√(sample_target/N), 10%) window with margin.
+const N_FILTER_ITER: usize = 20_000;
+
+/// Pinned sampling budget for [`sampling_selective_filter_iterates_filter`].
+/// Production uses `max(limit * 10, 1000)`; a lower budget is what lets this
+/// plan fit in [`N_FILTER_ITER`] points instead of ~200k.
+const SAMPLE_TARGET_FILTER_ITER: usize = 50;
 
 /// sampling → filter iter — the plan only the bench otherwise reaches. `seq <
 /// 9%` is selective enough for phase 2 to prefer iterating the merged filter,
 /// yet broad enough to clear the sampling→full veto at this scale.
-#[cfg(not(windows))]
 #[test]
 fn sampling_selective_filter_iterates_filter() {
+    let _override = SampleTargetOverride::new(SAMPLE_TARGET_FILTER_ITER);
     let (_dir, segment) = build_segment_n(N_FILTER_ITER);
     let filter = seq_below(N_FILTER_ITER * 9 / 100);
 
     let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
 
     assert!(!hits.is_empty());
-    assert!(hits.len() < N_FILTER_ITER);
+    // Sampling must have engaged: a full scan of the 9% filter would return
+    // one hit per matching point (~1800 unique tags).
+    assert!(
+        hits.len() <= SAMPLE_TARGET_FILTER_ITER,
+        "expected sampling budget {}, got {} hits",
+        SAMPLE_TARGET_FILTER_ITER,
+        hits.len()
+    );
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }

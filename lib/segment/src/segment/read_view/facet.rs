@@ -42,6 +42,58 @@ const MIN_SAMPLE_TARGET: usize = 1000;
 /// any new candidate value before we give up.
 const MAX_NO_NEW_POINTS: usize = 4096;
 
+/// Per-request sampling budget: `max(limit * OVERSAMPLE_FACTOR, MIN_SAMPLE_TARGET)`.
+///
+/// Under `cfg(test)` this can be overridden so behavioural tests can open the
+/// sampling→filter-iter selectivity window without a 100k+ point fixture (see
+/// [`SampleTargetOverride`]).
+fn sample_target_for(limit: usize) -> usize {
+    #[cfg(test)]
+    if let Some(override_target) = SampleTargetOverride::get() {
+        return override_target;
+    }
+    MIN_SAMPLE_TARGET.max(limit.saturating_mul(OVERSAMPLE_FACTOR))
+}
+
+/// Test-only RAII guard that pins [`sample_target_for`] to a fixed budget.
+///
+/// Needed because the sampling→full veto keeps sampling only while filter
+/// selectivity ≥ √(sample_target / N). With the production floor of 1000 that
+/// forces N ≳ 150k to also land below the 10% filter-iter threshold.
+#[cfg(test)]
+pub(crate) struct SampleTargetOverride {
+    _private: (),
+}
+
+#[cfg(test)]
+impl SampleTargetOverride {
+    std::thread_local! {
+        static CURRENT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    }
+
+    pub(crate) fn new(sample_target: usize) -> Self {
+        Self::CURRENT.with(|c| {
+            assert!(
+                c.get().is_none(),
+                "nested SampleTargetOverride is not supported"
+            );
+            c.set(Some(sample_target));
+        });
+        Self { _private: () }
+    }
+
+    fn get() -> Option<usize> {
+        Self::CURRENT.with(|c| c.get())
+    }
+}
+
+#[cfg(test)]
+impl Drop for SampleTargetOverride {
+    fn drop(&mut self) {
+        Self::CURRENT.with(|c| c.set(None));
+    }
+}
+
 /// Build a `field MATCH ANY [candidates]` filter.
 fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> Filter {
     let mut strings: Vec<String> = Vec::new();
@@ -113,7 +165,7 @@ where
         }
 
         let facet_index = self.facet_index_for(&request.key)?;
-        let sample_target = MIN_SAMPLE_TARGET.max(request.limit.saturating_mul(OVERSAMPLE_FACTOR));
+        let sample_target = sample_target_for(request.limit);
 
         // Sampling pays off when there are many more unique values than requested,
         // and the filter (if any) is broad enough for random draws to be cheap.
