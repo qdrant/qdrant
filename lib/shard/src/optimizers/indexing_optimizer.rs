@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::ReadSegmentEntry as _;
@@ -116,6 +117,109 @@ impl IndexingOptimizer {
     pub fn threshold_config_mut_for_test(&mut self) -> &mut OptimizerThresholds {
         &mut self.thresholds_config
     }
+
+    /// The indexing optimizer normally builds indexes for segments that have
+    /// grown past the indexing threshold. This is a special case going the
+    /// other way: non-appendable segments below the HNSW full-scan boundary
+    /// are scanned in full by every search request, so we merge them into a
+    /// bigger segment to give their points a usable HNSW graph. Merging only
+    /// ever reduces the segment count, and the result lands above the
+    /// boundary, so this converges.
+    fn plan_sub_full_scan_tail_merges(&self, planner: &mut OptimizationPlanner) {
+        // While the segment count is above the target, the merge optimizer is
+        // still coalescing small segments and picks the tails up itself.
+        if planner.expected_segments_number() > self.default_segments_number {
+            return;
+        }
+
+        let max_segment_size_bytes = self
+            .thresholds_config
+            .max_segment_size_kb
+            .saturating_mul(BYTES_IN_KB);
+
+        let mut candidates = planner
+            .remaining()
+            .iter()
+            .map(|(&segment_id, segment)| {
+                let size = segment
+                    .read()
+                    .max_available_vectors_size_in_bytes()
+                    .unwrap_or_default();
+                (segment_id, size)
+            })
+            .collect_vec();
+        candidates.sort_by_key(|(_segment_id, size)| *size);
+
+        // `size` above is the LARGEST vector field of a segment
+        // (`max_available_vectors_size_in_bytes`), so pair it with the
+        // SMALLEST per-field threshold: a segment qualifies as a tail only
+        // when even its biggest field stays under the lowest boundary.
+        // That is the conservative half of the comparison — it may leave
+        // some multi-vector tails unmerged, but never merges a segment
+        // that no index would full-scan.
+        let full_scan_bytes = self
+            .segment_optimizer_config
+            .dense_vector
+            .values()
+            .map(|cfg| cfg.hnsw_config.full_scan_threshold)
+            .min()
+            .unwrap_or(0)
+            .saturating_mul(BYTES_IN_KB);
+        // Only frozen (non-appendable) segments qualify as tails: appendable
+        // segments are still receiving writes and will grow past the
+        // boundary or be optimized on their own.
+        // Sizes ride along with the ids: the running sum is needed right
+        // below, and recovering it from `candidates` afterwards would mean
+        // looking up every id again.
+        let tails = candidates
+            .iter()
+            .filter(|&&(segment_id, size)| {
+                size > 0
+                    && size < full_scan_bytes
+                    && planner
+                        .remaining()
+                        .get(&segment_id)
+                        .is_some_and(|segment| !segment.read().is_appendable())
+            })
+            .scan(0, |size_sum, &(segment_id, size)| {
+                *size_sum += size;
+                (*size_sum < max_segment_size_bytes).then_some((segment_id, size))
+            })
+            .collect_vec();
+        if tails.is_empty() {
+            return;
+        }
+        let tails_size: usize = tails.iter().map(|&(_, size)| size).sum();
+        let mut batch = tails
+            .iter()
+            .map(|&(segment_id, _)| segment_id)
+            .collect_vec();
+        let mut batch_size = tails_size;
+        // Merge the tails into the smallest regular segment when one
+        // fits, so the result lands above the full-scan boundary.
+        if let Some(&(segment_id, size)) = candidates.iter().find(|&&(segment_id, size)| {
+            size >= full_scan_bytes
+                && tails_size.saturating_add(size) < max_segment_size_bytes
+                && planner
+                    .remaining()
+                    .get(&segment_id)
+                    .is_some_and(|segment| !segment.read().is_appendable())
+        }) {
+            batch.push(segment_id);
+            batch_size = batch_size.saturating_add(size);
+        }
+        // Plan only when the merged result actually crosses the boundary
+        // (with a partner that holds by construction; tails alone must add up
+        // to it). Merging keeps the scanned point count the same, so a batch
+        // that stays below the boundary would reduce the segment count —
+        // possibly far below the target — without making anything searchable
+        // by graph. In particular, when `full_scan_threshold` exceeds
+        // `max_segment_size` no segment can ever cross, and this plans
+        // nothing at all.
+        if batch.len() >= 2 && batch_size >= full_scan_bytes {
+            planner.plan(batch);
+        }
+    }
 }
 
 impl SegmentOptimizer for IndexingOptimizer {
@@ -208,6 +312,8 @@ impl SegmentOptimizer for IndexingOptimizer {
 
             planner.plan(vec![selected_segment_id]);
         }
+
+        self.plan_sub_full_scan_tail_merges(planner);
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
