@@ -109,6 +109,7 @@ mod tests {
                 .filter(&red, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 2],
         );
@@ -117,6 +118,7 @@ mod tests {
                 .filter(&blue, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![2],
         );

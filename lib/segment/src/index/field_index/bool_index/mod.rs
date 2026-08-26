@@ -115,7 +115,8 @@ impl PayloadFieldIndexRead for BoolIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         read_ops::filter(self, condition, hw_counter)
     }
 
@@ -468,6 +469,7 @@ mod tests {
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
 
@@ -475,6 +477,7 @@ mod tests {
             .filter(&match_bool(true), &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
 
@@ -508,6 +511,7 @@ mod tests {
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
@@ -517,12 +521,14 @@ mod tests {
             .filter(&match_bool(true), &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
         let point_offsets = index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         assert!(point_offsets.is_empty());
     }

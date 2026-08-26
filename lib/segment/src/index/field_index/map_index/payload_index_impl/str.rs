@@ -17,7 +17,6 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
-use crate::index::field_index::map_index::IdIter;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
@@ -56,7 +55,8 @@ impl PayloadFieldIndexRead for MapIndex<str> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter_impl(self, condition, hw_counter)
     }
 
@@ -99,7 +99,8 @@ where
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter_impl(self, condition, hw_counter)
     }
 
@@ -137,43 +138,50 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<IdIter<'a>>> {
-    let result: Option<IdIter<'a>> = match &condition.r#match {
-        Some(Match::Value(MatchValue { value })) => match value {
-            ValueVariants::String(keyword) => {
-                Some(Box::new(index.get_iterator(keyword.as_str(), hw_counter)))
-            }
-            ValueVariants::Integer(_) => None,
-            ValueVariants::Bool(_) => None,
-        },
-        Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-            AnyVariants::Strings(keywords) => {
-                Some(index.iter_for_values(keywords.iter().map(AsRef::as_ref), hw_counter)?)
-            }
-            AnyVariants::Integers(integers) => {
-                if integers.is_empty() {
-                    Some(Box::new(iter::empty()))
-                } else {
-                    None
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
+    let result: Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> =
+        match &condition.r#match {
+            Some(Match::Value(MatchValue { value })) => match value {
+                ValueVariants::String(keyword) => Some(Box::new(
+                    index.get_iterator(keyword.as_str(), hw_counter)?.map(Ok),
+                )),
+                ValueVariants::Integer(_) => None,
+                ValueVariants::Bool(_) => None,
+            },
+            Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
+                AnyVariants::Strings(keywords) => Some(Box::new(
+                    index
+                        .iter_for_values(keywords.iter().map(AsRef::as_ref), hw_counter)?
+                        .map(Ok),
+                )),
+                AnyVariants::Integers(integers) => {
+                    if integers.is_empty() {
+                        Some(Box::new(iter::empty()))
+                    } else {
+                        None
+                    }
+                }
+            },
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(keywords) => {
+                    Some(Box::new(index.except_set(keywords, hw_counter)?.map(Ok)))
+                }
+                AnyVariants::Integers(_) => None,
+            },
+            Some(Match::Prefix(MatchPrefix { prefix })) => {
+                // `None` when this index instance has no prefix structure — the
+                // caller then falls back to the generic (slow) condition check.
+                match index.prefix_keys_with_counts(prefix, hw_counter)? {
+                    Some(keys) => Some(Box::new(
+                        index
+                            .iter_for_values(keys.into_iter().map(|(key, _count)| key), hw_counter)?
+                            .map(Ok),
+                    )),
+                    None => None,
                 }
             }
-        },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(keywords) => Some(index.except_set(keywords, hw_counter)?),
-            AnyVariants::Integers(_) => None,
-        },
-        Some(Match::Prefix(MatchPrefix { prefix })) => {
-            // `None` when this index instance has no prefix structure — the
-            // caller then falls back to the generic (slow) condition check.
-            match index.prefix_keys_with_counts(prefix, hw_counter)? {
-                Some(keys) => Some(
-                    index.iter_for_values(keys.into_iter().map(|(key, _count)| key), hw_counter)?,
-                ),
-                None => None,
-            }
-        }
-        _ => None,
-    };
+            _ => None,
+        };
 
     Ok(result)
 }

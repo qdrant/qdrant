@@ -27,13 +27,18 @@ pub trait PayloadFieldIndexRead {
     /// [`RoaringFlagsRead::get_bitmap`](crate::common::flags::roaring_flags::RoaringFlagsRead::get_bitmap).
     fn count_indexed_points(&self) -> OperationResult<usize>;
 
-    /// Get iterator over points fitting given `condition`
-    /// Return `None` if condition does not match the index type
+    /// Get iterator over points fitting given `condition`.
+    /// Return `None` if condition does not match the index type.
+    ///
+    /// The iterator yields `OperationResult`s: on-disk index variants may fail
+    /// to read their backing data mid-iteration (e.g. a corrupted mmap file),
+    /// and those errors are propagated to the caller instead of being silently
+    /// treated as "no match". In-memory variants always yield `Ok`.
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>;
 
     /// Return estimation of amount of points which satisfy given condition.
     /// Returns `Ok(None)` if the condition does not match the index type

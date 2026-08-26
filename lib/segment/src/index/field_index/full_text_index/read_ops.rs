@@ -171,7 +171,8 @@ impl PayloadFieldIndexRead for FullTextIndex {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter(self, condition, hw_counter)
     }
 
@@ -230,12 +231,14 @@ impl FullTextIndex {
 }
 
 /// Body for [`PayloadFieldIndexRead::filter`]. Shared between [`FullTextIndex`]
-/// and `ReadOnlyFullTextIndex<S>`.
+/// and `ReadOnlyFullTextIndex<S>`. Items are wrapped in `Ok`: the inverted
+/// index reads all matching postings eagerly (see `FullTextIndexRead::filter_query`),
+/// so iteration itself is infallible.
 pub fn filter<'a, T: FullTextIndexRead>(
     index: &'a T,
     condition: &FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
     let Some(r#match) = &condition.r#match else {
         return Ok(None);
     };
@@ -252,10 +255,14 @@ pub fn filter<'a, T: FullTextIndexRead>(
     }?;
 
     let Some(parsed_query) = parsed_query_opt else {
-        return Ok(Some(Box::new(std::iter::empty())));
+        return Ok(Some(Box::new(std::iter::empty::<
+            OperationResult<PointOffsetType>,
+        >())));
     };
 
-    Ok(Some(index.filter_query(parsed_query, hw_counter)?))
+    Ok(Some(Box::new(
+        index.filter_query(parsed_query, hw_counter)?.map(Ok),
+    )))
 }
 
 /// Body for [`PayloadFieldIndexRead::estimate_cardinality`]. Shared.

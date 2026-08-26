@@ -197,6 +197,7 @@ mod tests {
                 .filter(&match_bool(false), &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![1, 2, 3, 5, 6, 10],
         );
@@ -205,6 +206,7 @@ mod tests {
                 .filter(&match_bool(true), &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 2, 3, 4, 6, 11],
         );
@@ -313,21 +315,25 @@ mod tests {
             .filter(&match_bool(true), &hw)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let reloaded_false = reloaded
             .filter(&match_bool(false), &hw)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let fresh_true = fresh
             .filter(&match_bool(true), &hw)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let fresh_false = fresh
             .filter(&match_bool(false), &hw)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
 
         // Exact cardinality reads the cached `trues_count` / `falses_count`, so
@@ -493,6 +499,7 @@ mod tests {
                 .filter(&match_bool(true), &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 2],
         );
@@ -501,6 +508,7 @@ mod tests {
                 .filter(&match_bool(false), &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![1, 2],
         );

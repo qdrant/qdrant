@@ -136,37 +136,33 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         }
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
-        match self.storage.value_to_points.unbatched_get(value) {
-            Ok(Some(values)) => {
+        match self.storage.value_to_points.unbatched_get(value)? {
+            Some(values) => {
                 // We're iterating over the whole (mmapped) slice
                 hw_counter
                     .payload_index_io_read_counter()
                     .incr_delta(size_of_val(values.as_slice()) + READ_ENTRY_OVERHEAD);
 
                 let deleted = &self.storage.deleted;
-                Box::new(
+                Ok(Box::new(
                     values
                         .into_iter()
                         .filter(move |idx| deleted.is_active(*idx)),
-                )
+                ))
             }
-            Ok(None) => {
+            None => {
                 hw_counter
                     .payload_index_io_read_counter()
                     .incr_delta(READ_ENTRY_OVERHEAD);
 
-                Box::new(iter::empty())
-            }
-            Err(err) => {
-                debug_assert!(
-                    false,
-                    "Error while getting iterator for value {value:?}: {err:?}",
-                );
-                log::error!("Error while getting iterator for value {value:?}: {err:?}");
-                Box::new(iter::empty())
+                Ok(Box::new(iter::empty()))
             }
         }
     }
