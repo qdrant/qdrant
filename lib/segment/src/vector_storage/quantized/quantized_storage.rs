@@ -126,7 +126,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
                 // The gathered `vectors` are borrowed straight from the mmap,
                 // so nothing has touched the bytes yet; without prefetch the
                 // scorer stalls on DRAM at the start of every cold vector.
-                for vector in vectors.iter().take(far) {
+                for vector in vectors.iter().take(far).skip(near) {
                     prefetch_slice_l2(vector);
                 }
                 for vector in vectors.iter().take(near) {

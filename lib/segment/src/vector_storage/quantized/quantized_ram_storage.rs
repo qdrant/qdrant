@@ -134,18 +134,20 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) {
-        // Dense-ascending batches stream; the hardware prefetcher already
-        // covers them and software prefetch is pure overhead.
-        let (near, far) = prefetch_windows(self.vectors.vector_size_bytes());
+        // Tiny batches gain nothing from hints, and dense-ascending batches
+        // stream — the hardware prefetcher already covers them and software
+        // prefetch is pure overhead.
         if offsets.len() <= MAX_UNPREFETCHED_BATCH || is_read_with_prefetch_efficient(offsets) {
             default_for_each_batch(self, offsets, callback);
             return;
         }
 
         // Heap-resident vectors have the same random-access DRAM latency as
-        // the mmap-backed storage; prefetch a couple of vectors ahead of the
-        // scorer to hide it.
-        for &offset in offsets.iter().take(far) {
+        // the mmap-backed storage; prefetch up to `far` vectors ahead of the
+        // scorer to hide it. Warm-up fills the initial windows: the first
+        // `near` vectors go straight to L1, the rest of the far window to L2.
+        let (near, far) = prefetch_windows(self.vectors.vector_size_bytes());
+        for &offset in offsets.iter().take(far).skip(near) {
             prefetch_slice_l2(self.vectors.get(offset as VectorOffsetType));
         }
         for &offset in offsets.iter().take(near) {
