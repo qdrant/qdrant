@@ -421,7 +421,6 @@ impl SegmentsSearcher {
     /// Byte-blob analogue of [`Self::retrieve`]: returns vectors as
     /// storage-native bytes ([`SegmentRecordRaw`]), avoiding a lossy
     /// quantization round-trip when relocating points during shard transfer.
-    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve_raw(
         segments: LockedSegmentHolder,
         points: &[PointIdType],

@@ -878,7 +878,6 @@ mod tests {
             vec![Some(pointer(2)), Some(pointer(3)),]
         );
         assert_eq!(tracker.get_range::<Random>(7..9).unwrap(), vec![None, None]);
-        #[allow(clippy::reversed_empty_ranges)]
         let empty = tracker.get_range::<Random>(3..3).unwrap();
         assert!(empty.is_empty());
     }
