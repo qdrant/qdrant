@@ -102,7 +102,7 @@ rustls-pki-types = "1.14.0"
 rustls-pemfile = "2.2.0"
 prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
-jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0", default-features = false, features = ["rust_crypto"] }
 tempfile = { workspace = true }
 
 # Consensus related crates
@@ -221,6 +221,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 core_affinity = "0.8.3"
 criterion = "0.8.2"
 data-encoding = "2.11.0"
+duplicate = { version = "2.0.1", default-features = false }
 ecow = { version = "0.3.0", features = ["serde"] }
 env_logger = "0.11"
 fnv = "1.0"
@@ -255,7 +256,7 @@ ordered-float = { version = "5.3.0", features = ["serde", "schemars", "bytemuck"
 rayon = "1.12.0"
 parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }
 ph = "0.8.5"
-pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.15.0", default-features = false, features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 prost = "0.14.0"
 prost-types = "0.14.0"
@@ -294,7 +295,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 stumpalo = "1.0.0"
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tap = "1.0.1"
-tar = "0.4.46"
+tar = { version = "0.4.46", default-features = false }
 tempfile = "3.27.0"
 tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
 tokio = { version = "1.52.3", features = ["full"] }

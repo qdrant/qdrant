@@ -70,7 +70,7 @@ atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.33.1"
+geo = { version = "0.33.1", default-features = false }
 geohash = "0.13.2"
 num-traits = { workspace = true }
 num-derive = "0.5.1"
@@ -121,7 +121,7 @@ macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18", default-features = false }
