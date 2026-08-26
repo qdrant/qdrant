@@ -1,5 +1,7 @@
 //! Correctness and replay-safety properties that must hold for every consensus operation
 
+use std::ops::Deref as _;
+
 use proptest::prelude::*;
 
 use super::prop::*;
@@ -125,23 +127,49 @@ fn apply(state: &ClusterState, operation: &ConsensusOperations) -> ApplyOutcome 
 
 /// Whether replay of `operation` is allowed to end up anywhere but the goal state.
 ///
-/// `RenameAlias` reads the alias it removes, so replaying an operation whose rename landed either
-/// rejects it, leaving the actions after the rename unapplied, or renames the alias that a later
-/// action put back. `TableOfContent::update_aliases` behaves the same way, and the machine
-/// reproduces it. A lone rename converges: its rejection comes after the last action.
+/// A rename is the one alias action that is not an absolute write: it reads the alias it consumes.
+/// The whole operation applies in one write, so a replay that cannot find one of those aliases
+/// rejects and changes nothing, which leaves the state the first run reached.
+///
+/// It diverges when every rename finds its alias again, because a later action of the same
+/// operation put it back. Renaming `prod` to `prod_old` and then pointing `prod` at another
+/// collection is that shape: the replay renames the new `prod`, and both names end up on it.
+/// Telling the two runs apart needs something that records the operation as applied.
 fn replay_may_diverge(operation: &ConsensusOperations) -> bool {
     let ConsensusOperations::CollectionMeta(operation) = operation else {
         return false;
     };
 
-    let CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation { actions }) = &**operation
-    else {
+    let CollectionMetaOperations::ChangeAliases(operation) = operation.deref() else {
         return false;
     };
 
-    let renames = actions
-        .iter()
-        .any(|action| matches!(action, AliasOperations::RenameAlias(_)));
+    let ChangeAliasesOperation { actions } = operation;
 
-    renames && actions.len() > 1
+    let renames = actions.iter().enumerate().filter_map(|(idx, action)| {
+        let AliasOperations::RenameAlias(action) = action else {
+            return None;
+        };
+
+        Some((idx, &action.rename_alias.old_alias_name))
+    });
+
+    let mut renames = renames.peekable();
+
+    // An operation without a rename converges, and `all` of nothing is true
+    renames.peek().is_some()
+        && renames.all(|(idx, renamed)| {
+            actions[idx + 1..]
+                .iter()
+                .any(|action| creates_alias(action, renamed))
+        })
+}
+
+/// Whether `action` makes `alias` name a collection
+fn creates_alias(action: &AliasOperations, alias: &str) -> bool {
+    match action {
+        AliasOperations::CreateAlias(action) => action.create_alias.alias_name == alias,
+        AliasOperations::RenameAlias(action) => action.rename_alias.new_alias_name == alias,
+        AliasOperations::DeleteAlias(_) => false,
+    }
 }
