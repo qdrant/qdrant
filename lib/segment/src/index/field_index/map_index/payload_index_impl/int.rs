@@ -50,7 +50,8 @@ impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter_impl(self, condition, hw_counter)
     }
 
@@ -93,7 +94,8 @@ where
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter_impl(self, condition, hw_counter)
     }
 
@@ -130,33 +132,36 @@ fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-    let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> = match &condition.r#match {
-        Some(Match::Value(MatchValue { value })) => match value {
-            ValueVariants::String(_) => None,
-            ValueVariants::Integer(integer) => {
-                Some(Box::new(index.get_iterator(integer, hw_counter)))
-            }
-            ValueVariants::Bool(_) => None,
-        },
-        Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-            AnyVariants::Strings(keywords) => {
-                if keywords.is_empty() {
-                    Some(Box::new(std::iter::empty()))
-                } else {
-                    None
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
+    let result: Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> =
+        match &condition.r#match {
+            Some(Match::Value(MatchValue { value })) => match value {
+                ValueVariants::String(_) => None,
+                ValueVariants::Integer(integer) => {
+                    Some(Box::new(index.get_iterator(integer, hw_counter)?.map(Ok)))
                 }
-            }
-            AnyVariants::Integers(integers) => {
-                Some(index.iter_for_values(integers.iter(), hw_counter)?)
-            }
-        },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(_) => None,
-            AnyVariants::Integers(integers) => Some(index.except_set(integers, hw_counter)?),
-        },
-        _ => None,
-    };
+                ValueVariants::Bool(_) => None,
+            },
+            Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
+                AnyVariants::Strings(keywords) => {
+                    if keywords.is_empty() {
+                        Some(Box::new(std::iter::empty()))
+                    } else {
+                        None
+                    }
+                }
+                AnyVariants::Integers(integers) => Some(Box::new(
+                    index.iter_for_values(integers.iter(), hw_counter)?.map(Ok),
+                )),
+            },
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(_) => None,
+                AnyVariants::Integers(integers) => {
+                    Some(Box::new(index.except_set(integers, hw_counter)?.map(Ok)))
+                }
+            },
+            _ => None,
+        };
 
     Ok(result)
 }

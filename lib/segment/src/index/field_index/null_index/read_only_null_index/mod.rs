@@ -138,6 +138,7 @@ mod tests {
                 .filter(&is_null, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 1],
         );
@@ -146,6 +147,7 @@ mod tests {
                 .filter(&is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![1, 3],
         );
@@ -156,6 +158,7 @@ mod tests {
                 .filter(&is_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 2],
         );
@@ -274,31 +277,37 @@ mod tests {
             .filter(&is_null, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let reloaded_not_empty = reloaded
             .filter(&is_not_empty, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let reloaded_empty = reloaded
             .filter(&is_empty, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let fresh_null = fresh
             .filter(&is_null, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let fresh_not_empty = fresh
             .filter(&is_not_empty, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
         let fresh_empty = fresh
             .filter(&is_empty, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect_vec();
 
         // Parity with the authoritative re-open …

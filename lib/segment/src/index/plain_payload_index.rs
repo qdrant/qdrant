@@ -220,7 +220,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
+    ) -> OperationResult<impl Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
         let filter_context = self.filter_context(filter, hw_counter)?;
         // `self.id_tracker` is an `Arc<AtomicRefCell<_>>`, so the mapping borrow is
         // local; collect eagerly to detach the iterator from the borrow.
@@ -232,7 +232,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
             .stop_if(is_stopped)
             .try_filter(|id| filter_context.check(*id))
             .collect::<OperationResult<_>>()?;
-        Ok(matched.into_iter())
+        Ok(matched.into_iter().map(Ok))
     }
 }
 

@@ -56,6 +56,8 @@ where
                 is_stopped,
                 deferred_behavior,
             )?
+            .collect::<OperationResult<Vec<_>>>()?
+            .into_iter()
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has.
                 numeric_index

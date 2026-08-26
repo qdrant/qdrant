@@ -54,7 +54,8 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter_impl(self, condition, hw_counter)
     }
 
@@ -97,7 +98,8 @@ where
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         filter_impl(self, condition, hw_counter)
     }
 
@@ -134,62 +136,69 @@ fn filter_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     index: &'a T,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-    let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> = match &condition.r#match {
-        Some(Match::Value(MatchValue { value })) => match value {
-            ValueVariants::String(uuid_string) => {
-                let Ok(uuid) = Uuid::from_str(uuid_string) else {
-                    return Ok(None);
-                };
-                Some(Box::new(index.get_iterator(&uuid.as_u128(), hw_counter)))
-            }
-            ValueVariants::Integer(_) => None,
-            ValueVariants::Bool(_) => None,
-        },
-        Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-            AnyVariants::Strings(uuids_string) => {
-                let Ok(uuids) = uuids_string
-                    .iter()
-                    .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                    .collect::<Result<IndexSet<u128>, _>>()
-                else {
-                    return Ok(None);
-                };
-
-                Some(index.iter_for_values(uuids.into_iter(), hw_counter)?)
-            }
-            AnyVariants::Integers(integers) => {
-                if integers.is_empty() {
-                    Some(Box::new(iter::empty()))
-                } else {
-                    None
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
+    let result: Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>> =
+        match &condition.r#match {
+            Some(Match::Value(MatchValue { value })) => match value {
+                ValueVariants::String(uuid_string) => {
+                    let Ok(uuid) = Uuid::from_str(uuid_string) else {
+                        return Ok(None);
+                    };
+                    Some(Box::new(
+                        index.get_iterator(&uuid.as_u128(), hw_counter)?.map(Ok),
+                    ))
                 }
-            }
-        },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(uuids_string) => {
-                let Ok(excluded_uuids) = uuids_string
-                    .iter()
-                    .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                    .collect::<Result<IndexSet<u128>, _>>()
-                else {
-                    return Ok(None);
-                };
-                let mut points = IndexSet::new();
-                index.for_each_value(|key| {
-                    if !excluded_uuids.contains(key) {
-                        index.get_iterator(key, hw_counter).for_each(|p| {
-                            points.insert(p);
-                        });
+                ValueVariants::Integer(_) => None,
+                ValueVariants::Bool(_) => None,
+            },
+            Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
+                AnyVariants::Strings(uuids_string) => {
+                    let Ok(uuids) = uuids_string
+                        .iter()
+                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                        .collect::<Result<IndexSet<u128>, _>>()
+                    else {
+                        return Ok(None);
+                    };
+
+                    Some(Box::new(
+                        index
+                            .iter_for_values(uuids.into_iter(), hw_counter)?
+                            .map(Ok),
+                    ))
+                }
+                AnyVariants::Integers(integers) => {
+                    if integers.is_empty() {
+                        Some(Box::new(iter::empty()))
+                    } else {
+                        None
                     }
-                    Ok(())
-                })?;
-                Some(Box::new(points.into_iter()))
-            }
-            AnyVariants::Integers(_) => None,
-        },
-        _ => None,
-    };
+                }
+            },
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(uuids_string) => {
+                    let Ok(excluded_uuids) = uuids_string
+                        .iter()
+                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                        .collect::<Result<IndexSet<u128>, _>>()
+                    else {
+                        return Ok(None);
+                    };
+                    let mut points = IndexSet::new();
+                    index.for_each_value(|key| {
+                        if !excluded_uuids.contains(key) {
+                            index.get_iterator(key, hw_counter)?.for_each(|p| {
+                                points.insert(p);
+                            });
+                        }
+                        Ok(())
+                    })?;
+                    Some(Box::new(points.into_iter().map(Ok)))
+                }
+                AnyVariants::Integers(_) => None,
+            },
+            _ => None,
+        };
 
     Ok(result)
 }

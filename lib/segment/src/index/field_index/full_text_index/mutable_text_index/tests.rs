@@ -78,6 +78,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(search_res, vec![0, 4]);
 
@@ -86,6 +87,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(search_res, vec![2]);
 
@@ -94,6 +96,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(search_res, vec![4]);
 
@@ -143,6 +146,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(search_res, vec![0]);
 
@@ -151,6 +155,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(search_res, vec![0, 1, 3, 4]);
 
@@ -161,6 +166,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert!(search_res.is_empty());
         assert_eq!(index.count_indexed_points().unwrap(), 3);
@@ -171,6 +177,7 @@ fn test_full_text_indexing() {
             .filter(&filter_condition, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         assert_eq!(search_res, vec![1, 4]);
         assert_eq!(index.count_indexed_points().unwrap(), 2);

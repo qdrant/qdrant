@@ -621,6 +621,8 @@ fn condition_points(
             stopped,
             DeferredBehavior::WithDeferred,
         )?
+        .collect::<OperationResult<Vec<_>>>()?
+        .into_iter()
         .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
         .collect())
     })

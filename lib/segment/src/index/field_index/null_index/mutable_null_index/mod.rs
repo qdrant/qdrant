@@ -100,11 +100,13 @@ mod tests {
             .filter(&filter_is_null, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
         let not_empty_values: Vec<_> = null_index
             .filter(&filter_is_not_empty, &hw_counter)
             .unwrap()
             .unwrap()
+            .map(|x| x.unwrap())
             .collect();
 
         let is_empty_values: Vec<_> = (0..n)

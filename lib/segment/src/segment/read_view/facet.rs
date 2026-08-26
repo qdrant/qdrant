@@ -186,7 +186,7 @@ where
                     is_stopped,
                     DeferredBehavior::VisibleOnly,
                 )?
-                .collect();
+                .collect::<OperationResult<RoaringBitmap>>()?;
             let probe = FilterProbe::Precomputed(bitmap);
 
             // Check each values' points against the filter, count total per value.
@@ -288,13 +288,17 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let mut hits = HashMap::new();
-        let points = self.payload_index.iter_filtered_points(
-            filter,
-            cardinality,
-            hw_counter,
-            is_stopped,
-            DeferredBehavior::VisibleOnly,
-        )?;
+        let points = self
+            .payload_index
+            .iter_filtered_points(
+                filter,
+                cardinality,
+                hw_counter,
+                is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )?
+            .collect::<OperationResult<Vec<_>>>()?
+            .into_iter();
         facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
             iter.for_each(|value| {
                 let value = value.to_owned();
@@ -475,6 +479,8 @@ where
                     is_stopped,
                     DeferredBehavior::VisibleOnly,
                 )?
+                .collect::<OperationResult<Vec<_>>>()?
+                .into_iter()
                 .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
             facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
                 values.extend(iter.map(|v| v.to_owned()));

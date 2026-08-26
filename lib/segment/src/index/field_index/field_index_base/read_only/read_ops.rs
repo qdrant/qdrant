@@ -43,7 +43,8 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
         &'a self,
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         match self {
             ReadOnlyFieldIndex::IntIndex(idx) => idx.filter(condition, hw_counter),
             ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.filter(condition, hw_counter),

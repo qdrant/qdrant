@@ -111,7 +111,7 @@ pub trait NullIndexRead {
 pub(super) fn filter<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &'a FieldCondition,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
     let FieldCondition {
         key: _,
         r#match: _,
@@ -128,31 +128,42 @@ pub(super) fn filter<'a, N: NullIndexRead>(
     let is_null_flags = null_index.is_null_flags();
     let total_point_count = null_index.total_point_count();
 
-    let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = if let Some(is_empty) = is_empty {
-        if *is_empty {
-            // Return points that don't have values
-            Box::new(has_values_flags.iter_falses()?.chain({
-                let end = has_values_flags.len() as PointOffsetType;
-                end..total_point_count as u32
-            }))
+    let iter: Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> =
+        if let Some(is_empty) = is_empty {
+            if *is_empty {
+                // Return points that don't have values
+                Box::new(
+                    has_values_flags
+                        .iter_falses()?
+                        .chain({
+                            let end = has_values_flags.len() as PointOffsetType;
+                            end..total_point_count as u32
+                        })
+                        .map(Ok),
+                )
+            } else {
+                // Return points that have values
+                Box::new(has_values_flags.iter_trues()?.map(Ok))
+            }
+        } else if let Some(is_null) = is_null {
+            if *is_null {
+                // Return points that have null values
+                Box::new(is_null_flags.iter_trues()?.map(Ok))
+            } else {
+                // Return points that don't have null values
+                Box::new(
+                    is_null_flags
+                        .iter_falses()?
+                        .chain({
+                            let end = is_null_flags.len() as PointOffsetType;
+                            end..total_point_count as u32
+                        })
+                        .map(Ok),
+                )
+            }
         } else {
-            // Return points that have values
-            Box::new(has_values_flags.iter_trues()?)
-        }
-    } else if let Some(is_null) = is_null {
-        if *is_null {
-            // Return points that have null values
-            Box::new(is_null_flags.iter_trues()?)
-        } else {
-            // Return points that don't have null values
-            Box::new(is_null_flags.iter_falses()?.chain({
-                let end = is_null_flags.len() as PointOffsetType;
-                end..total_point_count as u32
-            }))
-        }
-    } else {
-        return Ok(None);
-    };
+            return Ok(None);
+        };
 
     Ok(Some(iter))
 }

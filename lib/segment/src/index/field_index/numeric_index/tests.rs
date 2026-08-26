@@ -2,6 +2,7 @@ use std::path::Path;
 
 use blobstore::Blob;
 use common::bitvec::{BitSlice, BitVec};
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -15,6 +16,7 @@ use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::on_disk_point_to_values::corrupt_ranges_table;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
@@ -171,6 +173,7 @@ fn cardinality_request(
         )
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .unique()
         .collect_vec();
 
@@ -887,6 +890,7 @@ fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
         .filter(&condition, &hw_counter)
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .collect_vec();
     assert_eq!(offsets, result);
 }
@@ -970,6 +974,7 @@ fn test_remove_reopen() {
         )
         .unwrap()
         .unwrap()
+        .map(|x| x.unwrap())
         .collect();
     hits.sort();
     assert_eq!(hits, vec![0, 2]);
@@ -1011,7 +1016,13 @@ fn test_integer_index_fractional_range_bounds() {
     let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
         let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
         let hw = HardwareCounterCell::new();
-        let mut ids: Vec<_> = index.inner().filter(&cond, &hw).unwrap().unwrap().collect();
+        let mut ids: Vec<_> = index
+            .inner()
+            .filter(&cond, &hw)
+            .unwrap()
+            .unwrap()
+            .map(|x| x.unwrap())
+            .collect();
         ids.sort();
         ids
     };
@@ -1082,6 +1093,7 @@ fn test_block_index_fallback_equivalence() {
                     )
                     .unwrap()
                     .unwrap()
+                    .map(|x| x.unwrap())
                     .collect_vec();
                 (estimation.min, estimation.exp, estimation.max, points)
             })
@@ -1214,4 +1226,63 @@ fn test_block_index_preopen() {
     .unwrap()
     .unwrap();
     assert!(index.storage.pairs_block_index.is_none());
+}
+
+/// A read failure in the on-disk `check_values_any` must surface as an error
+/// instead of being silently treated as a non-match. The ranges table of
+/// `point_to_values.bin` is corrupted so every values read fails its bounds
+/// check; the error must propagate through both the raw
+/// `NumericIndexRead::check_values_any` and the public `ConditionChecker::check`.
+#[test]
+fn test_check_values_any_propagates_mmap_read_errors() {
+    let (temp_dir, index) = random_index(10, 2, IndexType::Mmap);
+
+    // Sanity: a healthy on-disk index serves the check.
+    let hw_counter = HardwareCounterCell::new();
+    assert_eq!(
+        index.inner().check_values_any(0, |_| true, &hw_counter),
+        Ok(true),
+    );
+
+    let condition = FieldCondition::new_range(
+        JsonPath::new("unused"),
+        Range {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(OrderedFloat(100.0f64)),
+        },
+    );
+
+    // Sanity: the public `ConditionChecker` path works too.
+    {
+        let checker = index
+            .condition_checker(&condition, HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
+        assert!(checker.check(0).unwrap());
+    }
+    drop(index);
+
+    corrupt_ranges_table(temp_dir.path(), 10);
+
+    let index = open_index_from_disk(temp_dir.path(), IndexType::Mmap, &empty_deleted());
+
+    let hw_counter = HardwareCounterCell::new();
+    assert!(
+        index
+            .inner()
+            .check_values_any(0, |_| true, &hw_counter)
+            .is_err(),
+        "corrupted ranges table must surface as an error"
+    );
+
+    let checker = index
+        .condition_checker(&condition, HwMeasurementAcc::new())
+        .unwrap()
+        .unwrap();
+    assert!(
+        checker.check(0).is_err(),
+        "check() must propagate the mmap read error"
+    );
 }

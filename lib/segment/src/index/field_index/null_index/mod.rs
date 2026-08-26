@@ -108,7 +108,8 @@ impl PayloadFieldIndexRead for NullIndex {
         &'a self,
         condition: &'a FieldCondition,
         _hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
+    {
         read_ops::filter(self, condition)
     }
 

@@ -425,3 +425,272 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         }
     }
 }
+
+/// A field-index read failure must surface even when the failing index is a
+/// *non-primary* clause of a combined filter. `iter_filtered_points` joins the
+/// primary clause (here the more selective integer range) and evaluates the
+/// remaining conditions per point; the geo radius is such a per-point check, so
+/// a corrupted on-disk geo index must turn the whole query into an `Err` instead
+/// of silently dropping the point.
+#[test]
+fn combined_filter_propagates_non_primary_geo_read_errors() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use atomic_refcell::AtomicRefCell;
+    use ordered_float::OrderedFloat;
+
+    use super::{IndexLoadMode, StorageType, StructPayloadIndex};
+    use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
+    use crate::fixtures::payload_fixtures::{GEO_KEY, INT_KEY};
+    use crate::index::PayloadIndex;
+    use crate::index::field_index::index_selector::map_dir;
+    use crate::index::field_index::on_disk_point_to_values::corrupt_ranges_table;
+    use crate::payload_json;
+    use crate::payload_storage::PayloadStorage;
+    use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+    use crate::types::{GeoPoint, GeoRadius, Range};
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let geo_key = JsonPath::from_str(GEO_KEY).unwrap();
+    let int_key = JsonPath::from_str(INT_KEY).unwrap();
+
+    // 8 points (internal ids 0..7). The NYC cluster has 3 points, the `int < 5`
+    // range matches 2 of them, so the range is the primary clause and the geo
+    // radius (matching 3 points) is evaluated per point.
+    let payload_for = |id: u32| -> Payload {
+        match id {
+            0 | 1 => payload_json! {
+                "geo": {"lon": -74.0, "lat": 40.75},
+                "int": id,
+            },
+            2 => payload_json! {
+                "geo": {"lon": -74.0, "lat": 40.75},
+                "int": 100,
+            },
+            _ => payload_json! {
+                "geo": {"lon": 139.7, "lat": 35.7},
+                "int": 100,
+            },
+        }
+    };
+
+    let mut payload_storage = InMemoryPayloadStorage::default();
+    for id in 0..8 {
+        payload_storage
+            .set(id, &payload_for(id), &hw_counter)
+            .unwrap();
+    }
+    let payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(8)));
+
+    let combined_filter = || Filter {
+        must: Some(vec![
+            Condition::Field(FieldCondition::new_range(
+                int_key.clone(),
+                Range {
+                    lt: Some(OrderedFloat(5.0)),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )),
+            Condition::Field(FieldCondition::new_geo_radius(
+                geo_key.clone(),
+                GeoRadius {
+                    center: GeoPoint::new(-74.0, 40.75).unwrap(),
+                    radius: OrderedFloat(50_000.0),
+                },
+            )),
+        ]),
+        ..Filter::default()
+    };
+
+    let geo_dir = {
+        let mut index = StructPayloadIndex::open(
+            payload_storage,
+            id_tracker,
+            HashMap::new(),
+            dir.path(),
+            StorageType::NonAppendable,
+            IndexLoadMode::CreateIfMissing,
+        )
+        .unwrap();
+
+        index
+            .set_indexed(&int_key, PayloadSchemaType::Integer, &hw_counter)
+            .unwrap();
+        index
+            .set_indexed(&geo_key, PayloadSchemaType::Geo, &hw_counter)
+            .unwrap();
+
+        // Sanity on the healthy index: both must conditions hold for ids 0 and 1.
+        let hits = index
+            .with_view(|view| {
+                view.query_points(&combined_filter(), &hw_counter, &AtomicBool::new(false))
+            })
+            .unwrap();
+        assert_eq!(hits, vec![0, 1]);
+
+        let geo_dir = map_dir(dir.path(), &geo_key);
+        assert!(
+            geo_dir.join("point_to_values.bin").exists(),
+            "the on-disk geo index must persist its point-to-values file",
+        );
+        drop(index);
+        geo_dir
+    };
+
+    // Corrupt the geo ranges table so every values read fails its bounds check.
+    corrupt_ranges_table(&geo_dir, 8);
+
+    // Reopen from the (corrupted) files: the on-disk geo index must load, and
+    // the non-primary per-point check must surface the read error.
+    let payload_storage = Arc::new(AtomicRefCell::new(InMemoryPayloadStorage::default().into()));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(8)));
+    let index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        StorageType::NonAppendable,
+        IndexLoadMode::LoadExisting,
+    )
+    .unwrap();
+
+    let result = index.with_view(|view| {
+        view.query_points(&combined_filter(), &hw_counter, &AtomicBool::new(false))
+    });
+    assert!(
+        result.is_err(),
+        "a corrupted non-primary geo clause must surface as an error",
+    );
+}
+
+/// A healthy (in-memory) set of field indexes must never yield `Err` items from
+/// `iter_filtered_points`, whichever clauses are primary and which are checked
+/// per point. Guards against the fallible refactor accidentally turning
+/// infallible index reads into errors on the common path.
+#[test]
+fn iter_filtered_points_yields_only_ok_on_healthy_indexes() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use atomic_refcell::AtomicRefCell;
+    use common::types::DeferredBehavior;
+    use ordered_float::OrderedFloat;
+
+    use super::{IndexLoadMode, StorageType, StructPayloadIndex};
+    use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
+    use crate::fixtures::payload_fixtures::{BOOL_KEY, GEO_KEY, INT_KEY, STR_KEY};
+    use crate::index::PayloadIndex;
+    use crate::payload_json;
+    use crate::payload_storage::PayloadStorage;
+    use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+    use crate::types::{GeoPoint, GeoRadius, Range, ValueVariants};
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Even ids have str="foo", odd ids have str="bar".
+    // Points 0-2 are in NYC; points 3-7 are in Tokyo.
+    let payload_for = |id: u32| -> Payload {
+        payload_json! {
+            "str": if id % 2 == 0 { "foo" } else { "bar" },
+            "int": id % 10,
+            "bool": true,
+            "geo": {"lon": -74.0, "lat": 40.75},
+        }
+    };
+
+    let mut payload_storage = InMemoryPayloadStorage::default();
+    for id in 0..8 {
+        payload_storage
+            .set(id, &payload_for(id), &hw_counter)
+            .unwrap();
+    }
+    let payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(8)));
+
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
+    )
+    .unwrap();
+
+    // Build 4 different index types (keyword, integer, bool, geo).
+    for (key, schema) in [
+        (STR_KEY, PayloadSchemaType::Keyword),
+        (INT_KEY, PayloadSchemaType::Integer),
+        (BOOL_KEY, PayloadSchemaType::Bool),
+        (GEO_KEY, PayloadSchemaType::Geo),
+    ] {
+        index
+            .set_indexed(&key.parse().unwrap(), schema, &hw_counter)
+            .unwrap();
+    }
+
+    // `int < 3` matches 3 points (ids 0, 1, 2); `str == "foo"` matches 4
+    // (even ids).  Together: ids 0 and 2.  The numeric range is the primary
+    // clause; the keyword, bool, and geo conditions are checked per point.
+    let filter = Filter {
+        must: Some(vec![
+            Condition::Field(FieldCondition::new_range(
+                INT_KEY.parse().unwrap(),
+                Range {
+                    lt: Some(OrderedFloat(3.0)),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )),
+            Condition::Field(FieldCondition::new_match(
+                STR_KEY.parse().unwrap(),
+                Match::new_value(ValueVariants::String("foo".into())),
+            )),
+            Condition::Field(FieldCondition::new_match(
+                BOOL_KEY.parse().unwrap(),
+                Match::new_value(ValueVariants::Bool(true)),
+            )),
+            Condition::Field(FieldCondition::new_geo_radius(
+                GEO_KEY.parse().unwrap(),
+                GeoRadius {
+                    center: GeoPoint::new(-74.0, 40.75).unwrap(),
+                    radius: OrderedFloat(50_000.0),
+                },
+            )),
+        ]),
+        ..Filter::default()
+    };
+
+    let (items, hits) = index.with_view(|view| {
+        let cardinality = view.estimate_cardinality(&filter, &hw_counter).unwrap();
+        let items: Vec<_> = view
+            .iter_filtered_points(
+                &filter,
+                &cardinality,
+                &hw_counter,
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+            .collect();
+        let hits = view
+            .query_points(&filter, &hw_counter, &AtomicBool::new(false))
+            .unwrap();
+        (items, hits)
+    });
+
+    assert!(
+        items.iter().all(|item| item.is_ok()),
+        "healthy field indexes must not yield errors: {items:?}",
+    );
+    let resolved: Vec<_> = items.into_iter().map(|item| item.unwrap()).collect();
+    assert_eq!(resolved, hits);
+    assert_eq!(hits, vec![0, 2], "int < 3 ∧ str == foo over ids 0..=7",);
+}

@@ -88,7 +88,7 @@ where
                 is_stopped,
                 DeferredBehavior::VisibleOnly,
             )?
-            .collect();
+            .collect::<OperationResult<Vec<_>>>()?;
         Ok(result)
     }
 
@@ -157,7 +157,7 @@ where
         hw_counter: &'b HardwareCounterCell,
         is_stopped: &'b AtomicBool,
         deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
+    ) -> OperationResult<impl Iterator<Item = OperationResult<PointOffsetType>> + 'b> {
         let point_mappings = self.id_tracker.point_mappings();
 
         if query_cardinality.primary_clauses.is_empty() {
@@ -167,7 +167,7 @@ where
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .stop_if(is_stopped)
-                .filter(move |i| optimized_filter.check_infallible(*i));
+                .try_filter(move |i| optimized_filter.check(*i));
 
             Ok(EitherVariant::A(matched_points))
         } else {
@@ -191,8 +191,15 @@ where
                 // the mapping, so deferred filtering must be applied to them explicitly.
                 // Each primary iterator (and the flattened stream) can yield items in
                 // non-sorted order depending on the field-index type and primary condition.
+                //
+                // Field-index iterators may fail mid-iteration (e.g. a corrupted mmap
+                // read); keep those `Err` items in the stream so they surface at the
+                // consumer instead of silently dropping matching points. `is_stopped`
+                // is honoured between pulls, so a timed-out query stops reading the
+                // index. Errors pass through the visited-dedup unchanged, since an
+                // `Err` tells us nothing about which point was read.
                 let joined_primary_iterator = point_mappings
-                    .filter_deferred_and_deleted(
+                    .filter_deferred_and_deleted_fallible(
                         primary_iterators.into_iter().flatten(),
                         deferred_behavior,
                     )
@@ -201,16 +208,24 @@ where
                 return Ok(if all_conditions_are_primary {
                     // All conditions are primary clauses,
                     // We can avoid post-filtering
-                    let iter = joined_primary_iterator
-                        .filter(move |&id| !visited_list.check_and_update_visited(id));
+                    let iter = joined_primary_iterator.filter_map(move |item| match item {
+                        Err(err) => Some(Err(err)),
+                        Ok(id) if visited_list.check_and_update_visited(id) => None,
+                        Ok(id) => Some(Ok(id)),
+                    });
                     EitherVariant::B(iter)
                 } else {
                     // Some conditions are primary clauses, some are not
                     let optimized_filter =
                         self.optimized_filter(filter, deferred_behavior, hw_counter)?;
-                    let iter = joined_primary_iterator.filter(move |&id| {
-                        !visited_list.check_and_update_visited(id)
-                            && optimized_filter.check_infallible(id)
+                    let iter = joined_primary_iterator.filter_map(move |item| match item {
+                        Err(err) => Some(Err(err)),
+                        Ok(id) if visited_list.check_and_update_visited(id) => None,
+                        Ok(id) => match optimized_filter.check(id) {
+                            Ok(true) => Some(Ok(id)),
+                            Ok(false) => None,
+                            Err(err) => Some(Err(err)),
+                        },
                     });
                     EitherVariant::C(iter)
                 });
@@ -227,10 +242,8 @@ where
                 .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
                     i.cpu_counter()
                 })
-                .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id)
-                        && optimized_filter.check_infallible(id)
-                });
+                .filter(move |&id| !visited_list.check_and_update_visited(id))
+                .try_filter(move |id| optimized_filter.check(*id));
 
             Ok(EitherVariant::D(iter))
         }

@@ -133,12 +133,14 @@ where
 /// Point iterator for a `match`/`range` field condition.
 ///
 /// Returns `Ok(None)` when the condition is not one a numeric index can
-/// serve.
+/// serve. Items are wrapped in `Ok`: numeric-range reads fail eagerly while
+/// building the iterator (see `values_range`), so iteration itself is
+/// infallible.
 pub(super) fn filter<'a, T, I>(
     index: &'a I,
     condition: &FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     I: NumericIndexRead<T>,
@@ -153,7 +155,9 @@ where
             let value = T::from_u128(uuid.as_u128());
             let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
             let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
-            return Ok(Some(Box::new(index.values_range(start, end, hw_counter)?)));
+            return Ok(Some(Box::new(
+                index.values_range(start, end, hw_counter)?.map(Ok),
+            )));
         }
     }
 
@@ -175,11 +179,11 @@ where
         return Ok(Some(Box::new(std::iter::empty())));
     }
 
-    Ok(Some(Box::new(index.values_range(
-        start_bound,
-        end_bound,
-        hw_counter,
-    )?)))
+    Ok(Some(Box::new(
+        index
+            .values_range(start_bound, end_bound, hw_counter)?
+            .map(Ok),
+    )))
 }
 
 /// Cardinality estimation for a `match`/`range` field condition.

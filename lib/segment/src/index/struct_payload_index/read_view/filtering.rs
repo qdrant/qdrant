@@ -51,7 +51,8 @@ where
         &'q self,
         condition: &'q PrimaryCondition,
         hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'q>>> {
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'q>>>
+    {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
                 let Some(field_indexes) = self.field_indexes.get(&field_condition.key) else {
@@ -64,9 +65,9 @@ where
                     })
                     .transpose()
             }
-            PrimaryCondition::Ids(ids) => {
-                Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
-            }
+            PrimaryCondition::Ids(ids) => Ok(Some(Box::new(
+                ids.resolved_point_offsets.iter().copied().map(Ok),
+            ))),
             PrimaryCondition::HasVector(_) => Ok(None),
         }
     }

@@ -167,11 +167,16 @@ where
         self.map.get(value).map(|p| p.len() as usize)
     }
 
-    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
-        self.map
+    fn get_iterator(
+        &self,
+        value: &N,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>> {
+        Ok(self
+            .map
             .get(value)
             .map(|ids| Box::new(ids.iter()) as IdIter)
-            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
+            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>())))
     }
 
     fn for_each_value(&self, mut f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {

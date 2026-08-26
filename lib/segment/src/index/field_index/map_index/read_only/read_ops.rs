@@ -116,7 +116,11 @@ where
         }
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>> {
         match self {
             ReadOnlyMapIndex::Appendable(index) => index.get_iterator(value, hw_counter),
             ReadOnlyMapIndex::Immutable(index) => index.get_iterator(value, hw_counter),

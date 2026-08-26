@@ -52,7 +52,11 @@ where
         self.in_memory_index.get_count_for_value(value, hw_counter)
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>> {
         self.in_memory_index.get_iterator(value, hw_counter)
     }
 

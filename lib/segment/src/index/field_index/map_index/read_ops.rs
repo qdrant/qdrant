@@ -72,7 +72,14 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
 
     fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize>;
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_>;
+    /// Iterator over point ids holding `value`. Reading the posting may fail
+    /// (e.g. on a corrupted on-disk index), which is surfaced as `Err` instead
+    /// of silently returning an empty iterator.
+    fn get_iterator(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>>;
 
     fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()>;
 
@@ -136,7 +143,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     ) -> OperationResult<()> {
         for value in values {
             let value = value.borrow();
-            let mut ids = self.get_iterator(value, hw_counter);
+            let mut ids = self.get_iterator(value, hw_counter)?;
             f(value, &mut ids)?;
         }
         Ok(())
@@ -148,11 +155,11 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         values: impl Iterator<Item = V> + 'a,
         hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<IdIter<'a>> {
-        Ok(Box::new(
-            values
-                .flat_map(move |value| self.get_iterator(value.borrow(), hw_counter))
-                .unique(),
-        ))
+        let mut iterators = Vec::new();
+        for value in values {
+            iterators.push(self.get_iterator(value.borrow(), hw_counter)?);
+        }
+        Ok(Box::new(iterators.into_iter().flatten().unique()))
     }
 
     fn match_cardinality(
@@ -239,7 +246,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         let mut points = IndexSet::<PointOffsetType>::new();
         self.for_each_value(|key| {
             if !excluded.contains(key.borrow()) {
-                self.get_iterator(key.borrow(), hw_counter).for_each(|p| {
+                self.get_iterator(key.borrow(), hw_counter)?.for_each(|p| {
                     points.insert(p);
                 });
             }
@@ -377,7 +384,11 @@ where
         }
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>> {
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
             MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),

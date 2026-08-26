@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
@@ -223,47 +224,57 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
     condition: &FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
     if let Some(geo_bounding_box) = &condition.geo_bounding_box {
         let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_bounding_box;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(filter_geo_points(
+            geo,
+            geo.iterator(geo_hashes)?,
+            hw_counter,
+            move |geo_point| geo_condition_copy.check_point(geo_point),
+        )));
     }
 
     if let Some(geo_radius) = &condition.geo_radius {
         let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_radius;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(filter_geo_points(
+            geo,
+            geo.iterator(geo_hashes)?,
+            hw_counter,
+            move |geo_point| geo_condition_copy.check_point(geo_point),
+        )));
     }
 
     if let Some(geo_polygon) = &condition.geo_polygon {
         let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = geo_polygon.convert();
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(filter_geo_points(
+            geo,
+            geo.iterator(geo_hashes)?,
+            hw_counter,
+            move |geo_point| geo_condition_copy.check_point(geo_point),
+        )));
     }
 
     Ok(None)
+}
+
+/// Lazily filter candidate points by a geo condition.
+///
+/// The on-disk variant reads `point_to_values.bin` while checking each
+/// candidate; a read failure is surfaced as `Err` instead of silently dropping
+/// the point as a false negative. The iterator is lazy: no candidate is
+/// evaluated until the consumer pulls, so a discarded or timed-out query does
+/// no wasted work.
+fn filter_geo_points<'a, G: GeoIndexRead + ?Sized>(
+    geo: &'a G,
+    points: Box<dyn Iterator<Item = PointOffsetType> + 'a>,
+    hw_counter: &'a HardwareCounterCell,
+    check_fn: impl Fn(&GeoPoint) -> bool + 'a,
+) -> Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a> {
+    Box::new(points.try_filter(move |&point| geo.check_values_any(point, hw_counter, &check_fn)))
 }
 
 pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(

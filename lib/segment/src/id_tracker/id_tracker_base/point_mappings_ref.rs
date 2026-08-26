@@ -6,6 +6,7 @@ use itertools::Either;
 use self_cell::self_cell;
 
 use super::tracker_enum::IdTrackerEnum;
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::disk_id_tracker::mappings::DiskMappingsRef;
 use crate::id_tracker::point_mappings::PointMappings;
@@ -128,15 +129,9 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
-    /// Wrap an iterator of internal IDs so that soft-deleted points and (when
-    /// requested) points at or above the mapping's deferred threshold are
-    /// excluded.
-    ///
-    /// Intended for iterators sourced outside the mapping (e.g. field-index
-    /// outputs) where neither the deleted bitslice nor the deferred threshold
-    /// are applied implicitly. The bitslice check guards against stale
-    /// postings for tombstoned internal IDs (a single bit test per element,
-    /// negligible overhead).
+    /// Deferred/deleted visibility predicate shared by
+    /// [`Self::filter_deferred_and_deleted`] and
+    /// [`Self::filter_deferred_and_deleted_fallible`].
     ///
     /// For [`DeferredBehavior::VisibleOnly`] — points at or above the cutoff are
     /// dropped on top of the deleted check.
@@ -146,6 +141,34 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
     /// is what gives the WithDeferred consumer a one-yield-per-external
     /// guarantee in the presence of append-only mutations into a deferred
     /// segment.
+    fn deferred_visible_predicate(
+        self,
+        deferred_behavior: DeferredBehavior,
+    ) -> Box<dyn Fn(PointOffsetType) -> bool + 'a> {
+        let deleted = self.deleted();
+        match deferred_behavior.apply(self.deferred_internal_id()) {
+            None => {
+                let shadowed = self.shadowed();
+                Box::new(move |id| {
+                    !deleted.get_bit(id as usize).unwrap_or(false)
+                        && !shadowed.get_bit(id as usize).unwrap_or(false)
+                })
+            }
+            Some(cutoff) => {
+                Box::new(move |id| id < cutoff && !deleted.get_bit(id as usize).unwrap_or(false))
+            }
+        }
+    }
+
+    /// Wrap an iterator of internal IDs so that soft-deleted points and (when
+    /// requested) points at or above the mapping's deferred threshold are
+    /// excluded.
+    ///
+    /// Intended for iterators sourced outside the mapping (e.g. field-index
+    /// outputs) where neither the deleted bitslice nor the deferred threshold
+    /// are applied implicitly. The bitslice check guards against stale
+    /// postings for tombstoned internal IDs (a single bit test per element,
+    /// negligible overhead).
     pub fn filter_deferred_and_deleted<I>(
         self,
         iter: I,
@@ -154,21 +177,30 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
     where
         I: Iterator<Item = PointOffsetType>,
     {
-        let deleted = self.deleted();
-        match deferred_behavior.apply(self.deferred_internal_id()) {
-            None => {
-                let shadowed = self.shadowed();
-                Either::Left(iter.filter(move |&id| {
-                    !deleted.get_bit(id as usize).unwrap_or(false)
-                        && !shadowed.get_bit(id as usize).unwrap_or(false)
-                }))
-            }
-            Some(cutoff) => {
-                Either::Right(iter.filter(move |&id| {
-                    id < cutoff && !deleted.get_bit(id as usize).unwrap_or(false)
-                }))
-            }
-        }
+        let visible = self.deferred_visible_predicate(deferred_behavior);
+        iter.filter(move |&id| visible(id))
+    }
+
+    /// Fallible counterpart of [`Self::filter_deferred_and_deleted`] for
+    /// iterators sourced from field indexes.
+    ///
+    /// Field-index iterators may fail reading their backing storage
+    /// mid-iteration (e.g. a corrupted mmap file). Those `Err` items are
+    /// propagated unchanged instead of silently dropping the point as a
+    /// false negative.
+    pub fn filter_deferred_and_deleted_fallible<I>(
+        self,
+        iter: I,
+        deferred_behavior: DeferredBehavior,
+    ) -> impl Iterator<Item = OperationResult<PointOffsetType>>
+    where
+        I: Iterator<Item = OperationResult<PointOffsetType>>,
+    {
+        let visible = self.deferred_visible_predicate(deferred_behavior);
+        iter.filter_map(move |item| match item {
+            Err(err) => Some(Err(err)),
+            Ok(id) => visible(id).then_some(Ok(id)),
+        })
     }
 
     /// Word-scan form of [`Self::filter_deferred_and_deleted`] with

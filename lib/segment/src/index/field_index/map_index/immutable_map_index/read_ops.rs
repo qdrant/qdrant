@@ -63,11 +63,15 @@ where
             .map(|entry| entry.count as usize)
     }
 
-    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(
+        &self,
+        value: &N,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<IdIter<'_>> {
         if let Some(entry) = self.value_to_points.get(value) {
-            Box::new(self.get_entry_iterator(entry))
+            Ok(Box::new(self.get_entry_iterator(entry)))
         } else {
-            Box::new(iter::empty::<PointOffsetType>())
+            Ok(Box::new(iter::empty::<PointOffsetType>()))
         }
     }
 

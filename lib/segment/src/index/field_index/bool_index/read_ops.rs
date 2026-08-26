@@ -217,7 +217,7 @@ pub(super) fn filter<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &'a FieldCondition,
     hw_counter: &'a HardwareCounterCell,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+) -> OperationResult<Option<Box<dyn Iterator<Item = OperationResult<PointOffsetType>> + 'a>>> {
     match &condition.r#match {
         Some(Match::Value(MatchValue {
             value: ValueVariants::Bool(value),
@@ -229,7 +229,7 @@ pub(super) fn filter<'a, N: BoolIndexRead>(
             };
             let iter = bitmap
                 .iter()
-                .map(|x| x as PointOffsetType)
+                .map(|x| Ok(x as PointOffsetType))
                 .measure_hw_with_acc_and_fraction(
                     hw_counter.new_accumulator(),
                     u8::BITS as usize,

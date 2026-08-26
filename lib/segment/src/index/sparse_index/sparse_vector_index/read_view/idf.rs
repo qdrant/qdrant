@@ -176,6 +176,9 @@ where
             DeferredBehavior::VisibleOnly,
         )?;
         for point_offset in points_iter {
+            // Field-index iterators may fail mid-iteration (e.g. a corrupted
+            // mmap read); propagate instead of silently dropping the point.
+            let point_offset = point_offset?;
             // The deleted-vector bitvec grows lazily; an out-of-bounds bit
             // means the vector was never marked deleted.
             let has_vector = !deleted_vectors

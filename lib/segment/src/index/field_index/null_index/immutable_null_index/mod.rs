@@ -63,6 +63,7 @@ mod tests {
                 .filter(&filter_is_null, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 1],
         );
@@ -71,6 +72,7 @@ mod tests {
                 .filter(&filter_is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![1, 3],
         );
@@ -97,6 +99,7 @@ mod tests {
                 .filter(&filter_is_null, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0],
         );
@@ -105,6 +108,7 @@ mod tests {
                 .filter(&filter_is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![3],
         );
@@ -131,6 +135,7 @@ mod tests {
                 .filter(&filter_is_null, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0],
         );
@@ -139,6 +144,7 @@ mod tests {
                 .filter(&filter_is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![3],
         );
@@ -165,6 +171,7 @@ mod tests {
                 .filter(&filter_is_null, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0],
         );
@@ -173,6 +180,7 @@ mod tests {
                 .filter(&filter_is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec()
                 .is_empty(),
         );
@@ -199,6 +207,7 @@ mod tests {
                 .filter(&filter_is_null, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0],
         );
@@ -207,6 +216,7 @@ mod tests {
                 .filter(&filter_is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec()
                 .is_empty(),
         );
@@ -264,6 +274,7 @@ mod tests {
                 .filter(&filter_is_not_empty, &hw_counter)
                 .unwrap()
                 .unwrap()
+                .map(|x| x.unwrap())
                 .collect_vec(),
             vec![0, 2],
         );
