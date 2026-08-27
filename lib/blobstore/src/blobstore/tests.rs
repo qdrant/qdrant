@@ -1904,8 +1904,11 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
 /// Merely opening after a preopen proves nothing: `CachedFs` falls back to a regular open for
 /// paths that were never scheduled. Instead, delete the backend-read files after the preopen —
 /// the open can then only succeed if it is served from the prefetch pool.
+#[tokio::test]
 #[rstest]
-fn test_preopen_schedules_files_for_open(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
+async fn test_preopen_schedules_files_for_open(
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
+) {
     use common::universal_io::{
         CachedFs, CachedReadFs, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
     };
@@ -1932,7 +1935,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Mutable, Mode::AppendOnl
         Populate::No,
     )
     .unwrap();
-    cached_fs.wait_all();
+    cached_fs.wait_all().await;
 
     // Delete everything `open` reads through the backend. The append-only tracker is read
     // directly from disk, not through the backend, so it must stay.

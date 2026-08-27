@@ -35,19 +35,15 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         reload_fs.cache_file_info()?;
         let fs = &*reload_fs;
 
-        let mut futs = id_tracker.borrow().live_preload(fs)?;
-        futs.extend(payload_storage.borrow().live_preload(fs)?);
-        futs.extend(payload_index.borrow().live_preload(fs)?);
+        let mut preloads = id_tracker.borrow().live_preload(fs)?;
+        preloads.extend(payload_storage.borrow().live_preload(fs)?);
+        preloads.extend(payload_index.borrow().live_preload(fs)?);
         for vector_data in vector_data.values() {
-            futs.extend(vector_data.live_preload(fs)?);
+            preloads.extend(vector_data.live_preload(fs)?);
         }
 
-        // Pin the staged files before the writer can churn them: reload then
-        // consumes ready handles and never races the filesystem.
-        fs.wait_all();
-        // perf: the tail fetches only start draining once wait_all is done;
-        // both pools could be driven together.
-        futures::executor::block_on(join_all(futs));
+        // Complete all IO before returning
+        futures::executor::block_on(async { futures::join!(fs.wait_all(), join_all(preloads)) });
         Ok(())
     }
 

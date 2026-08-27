@@ -315,9 +315,10 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             .insert(path, ScheduledFile::Future(fut));
     }
 
-    fn wait_all(&self) {
-        let mut lock = self.files_prefetched.lock();
-        let futs = lock
+    async fn wait_all(&self) {
+        let futs = self
+            .files_prefetched
+            .lock()
             .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
             .filter_map(|(path, scheduled)| match scheduled {
                 ScheduledFile::Future(fut) => Some(async move { (path, fut.await) }),
@@ -325,7 +326,8 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             })
             .collect::<FuturesUnordered<_>>();
 
-        let results = futures::executor::block_on(futs.collect::<Vec<_>>());
+        let results = futs.collect::<Vec<_>>().await;
+        let mut lock = self.files_prefetched.lock();
         for (path, result) in results {
             lock.insert(path, ScheduledFile::Ready(result));
         }
