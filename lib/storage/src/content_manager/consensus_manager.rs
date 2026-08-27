@@ -807,6 +807,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             // check that the exact same operation is not already in-flight
             match on_apply_lock.entry(operation.clone()) {
                 Entry::Occupied(e) => {
+                    debug_assert!(
+                        e.get().receiver_count() > 0,
+                        "Consensus operation must have at least one receiver, does forget_operation_awaiter() work correctly?",
+                    );
+
                     // subscribe to existing sender for faster feedback
                     receiver = e.get().subscribe()
                 }
