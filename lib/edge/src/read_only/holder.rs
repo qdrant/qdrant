@@ -38,6 +38,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegmentHolder<S> {
         self.by_uuid.contains_key(uuid)
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.by_uuid.len()
+    }
+
     pub(crate) fn uuids(&self) -> Vec<Uuid> {
         self.by_uuid.keys().copied().collect()
     }
