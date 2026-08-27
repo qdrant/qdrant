@@ -851,19 +851,20 @@ impl StorageSegmentEntry for ProxySegment {
     }
 
     fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher> {
-        let wrapped_flusher = self.wrapped_segment.get().read().flusher(force, up_to);
+        // Persist our pending changes before passing the flush along to the wrapped segment
         let pending_changes_flusher = self.pending_changes.flusher(self.version);
+        let wrapped_flusher = self.wrapped_segment.get().read().flusher(force, up_to);
 
-        match (wrapped_flusher, pending_changes_flusher) {
+        match (pending_changes_flusher, wrapped_flusher) {
             (None, None) => None,
-            (wrapped_flusher, pending_changes_flusher) => Some(Box::new(move || {
-                if let Some(wrapped_flusher) = wrapped_flusher {
-                    wrapped_flusher()?;
-                }
+            (pending_changes_flusher, wrapped_flusher) => Some(Box::new(move || {
                 if let Some(pending_changes_flusher) = pending_changes_flusher
                     && feature_flags().persist_proxy_segments
                 {
                     pending_changes_flusher()?;
+                }
+                if let Some(wrapped_flusher) = wrapped_flusher {
+                    wrapped_flusher()?;
                 }
                 Ok(())
             })),
