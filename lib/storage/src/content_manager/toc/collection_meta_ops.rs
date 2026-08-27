@@ -622,10 +622,7 @@ impl TableOfContent {
             ShardTransferOperations::RecoveryToPartial(transfer)
             | ShardTransferOperations::SnapshotRecovered(transfer) => {
                 // Validate transfer exists
-                transfer::helpers::validate_transfer_exists(
-                    &transfer,
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer).await?;
 
                 let collection = self.get_collection_unchecked(&collection_id).await?;
 
