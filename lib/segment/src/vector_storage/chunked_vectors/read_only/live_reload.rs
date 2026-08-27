@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkUnchanged, TypedStorage, UniversalRead, UniversalReadFs,
 };
+use futures::future::BoxFuture;
 
 use super::super::chunks::{chunk_name, chunk_open_options, list_chunk_files, read_chunks_from};
 use super::super::config::{read_status_len, status_file};
@@ -14,7 +15,10 @@ use crate::common::operation_error::OperationResult;
 impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVectors<T, S> {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         // Status is the change signal, let reload skip reloading if this didn't change.
         fs.reschedule_open(&status_file(&self.directory), None, None);
 
@@ -43,7 +47,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
                 None,
             );
         }
-        Ok(())
+        Ok(Vec::new())
     }
 
     /// Refresh the chunks that can have gained vectors since the last load; a

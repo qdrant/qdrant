@@ -8,6 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs};
+use futures::future::BoxFuture;
 
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
@@ -74,12 +75,16 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
 impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+        let mut futs = Vec::new();
         for field_index in self.field_indexes.values().flatten() {
-            field_index.live_preload(fs)?;
+            futs.extend(field_index.live_preload(fs)?);
         }
 
-        Ok(())
+        Ok(futs)
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(

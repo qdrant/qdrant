@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use futures::future::BoxFuture;
 use roaring::RoaringBitmap;
 
 use super::mode::FlagsMode;
@@ -76,12 +77,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs),
             ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs),
         };
-        Ok(())
+        Ok(Vec::new())
     }
 
     fn live_reload<Fs: UniversalReadFs<File = Self::File>>(

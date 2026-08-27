@@ -2,6 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs};
+use futures::future::{BoxFuture, join_all};
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
@@ -11,8 +12,9 @@ use crate::index::UniversalReadExt;
 
 impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// Stage every component's next [`Self::live_reload`] under shared access:
-    /// re-snapshot the retained caching filesystem's listing, then schedule
-    /// every fetch the reload will need. Fetches go in flight as scheduled.
+    /// re-snapshot the retained caching filesystem's listing, schedule every
+    /// fetch the reload will need, then drive them all to completion — so the
+    /// reload only applies ready data.
     pub fn live_preload(&self) -> OperationResult<()> {
         let Self {
             uuid: _,
@@ -33,16 +35,19 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         reload_fs.cache_file_info()?;
         let fs = &*reload_fs;
 
-        id_tracker.borrow().live_preload(fs)?;
-        payload_storage.borrow().live_preload(fs)?;
-        payload_index.borrow().live_preload(fs)?;
+        let mut futs = id_tracker.borrow().live_preload(fs)?;
+        futs.extend(payload_storage.borrow().live_preload(fs)?);
+        futs.extend(payload_index.borrow().live_preload(fs)?);
         for vector_data in vector_data.values() {
-            vector_data.live_preload(fs)?;
+            futs.extend(vector_data.live_preload(fs)?);
         }
 
         // Pin the staged files before the writer can churn them: reload then
         // consumes ready handles and never races the filesystem.
         fs.wait_all();
+        // perf: the tail fetches only start draining once wait_all is done;
+        // both pools could be driven together.
+        futures::executor::block_on(join_all(futs));
         Ok(())
     }
 
@@ -112,19 +117,22 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
 
 impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
     /// Stage this vector's next [`Self::live_reload`]. Shared access only.
-    fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+    fn live_preload(
+        &self,
+        fs: &impl CachedReadFs<File = S>,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         let Self {
             vector_index,
             vector_storage,
             quantized_vectors,
         } = self;
 
-        vector_storage.borrow().live_preload(fs)?;
-        vector_index.borrow().live_preload(fs)?;
+        let mut futs = vector_storage.borrow().live_preload(fs)?;
+        futs.extend(vector_index.borrow().live_preload(fs)?);
         if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
-            quantized_vectors.live_preload(fs)?;
+            futs.extend(quantized_vectors.live_preload(fs)?);
         }
-        Ok(())
+        Ok(futs)
     }
 
     /// Refresh this vector's storage, index and quantized vectors to the current

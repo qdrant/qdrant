@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use ahash::{HashMap, HashSet};
 use common::generic_consts::AccessPattern;
@@ -270,16 +271,18 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         &self,
         fs: &Fs,
         populate: Populate,
-    ) -> Result<()> {
+    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
         let page_list: HashMap<_, _> = fs
             .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
             .map(|listed| (listed.path, listed.size))
             .collect();
 
+        let mut futs = Vec::new();
+
         // Reload pages
         for page in &self.pages {
-            page.live_preload(fs)?;
+            futs.push(page.live_preload(fs)?);
         }
 
         // Load new pages
@@ -294,7 +297,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 None,
             );
         }
-        Ok(())
+        Ok(futs)
     }
 }
 
@@ -494,10 +497,13 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             })
     }
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
-        #[expect(unused_must_use)] // todo(uio): remove after propagating future
-        self.file.live_preload(|path| fs.cached_file_info(path))?;
-        Ok(())
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> Result<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
+        Ok(Box::pin(
+            self.file.live_preload(|path| fs.cached_file_info(path))?,
+        ))
     }
 
     /// Reload the page file handle and reload its length, making newly appended value data
