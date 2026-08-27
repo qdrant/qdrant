@@ -629,24 +629,39 @@ fn test_proxy_segment_flush() {
         .unwrap();
 
     let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
+    let wrapped_segment_dir = locked_wrapped_segment.get().read().data_path();
 
     let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone());
 
     let flushed_version_1 = proxy_segment.flush(false).unwrap();
+    assert_eq!(flushed_version_1, proxy_segment.version());
 
     proxy_segment
         .delete_point(100, 2.into(), &HardwareCounterCell::new())
         .unwrap();
 
+    // The pending delete is not persisted yet, so it caps the persistent version
+    assert_eq!(proxy_segment.persistent_version(), flushed_version_1);
+
     let flushed_version_2 = proxy_segment.flush(false).unwrap();
 
-    assert_eq!(flushed_version_2, flushed_version_1);
+    // Flushing persisted the pending delete into the pending changes log, so the proxy is fully
+    // persisted and does not hold back acknowledging the WAL
+    assert_eq!(flushed_version_2, 100);
+    assert_eq!(flushed_version_2, proxy_segment.version());
+    assert!(
+        segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0).is_file(),
+        "flush must persist pending changes log into the wrapped segment directory",
+    );
 
-    let version_after_delete = proxy_segment.version();
-
-    // We can never fully persist proxy segment, as list of deleted points is always in-memory only.
-    // So we have to keep WAL for deleted points.
-    assert!(version_after_delete > flushed_version_2);
+    // An operation that buffers nothing (delete of an absent point) must not cap the persistent
+    // version either
+    proxy_segment
+        .delete_point(101, 12345.into(), &HardwareCounterCell::new())
+        .unwrap();
+    let flushed_version_3 = proxy_segment.flush(false).unwrap();
+    assert_eq!(flushed_version_3, 101);
+    assert_eq!(flushed_version_3, proxy_segment.version());
 }
 
 #[test]
