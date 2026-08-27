@@ -72,14 +72,17 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             partial @ Populate::Partial(_) => partial,
         };
 
-        Ok(fs
-            .schedule_open(
-                &directory.join(COMPACT_FLAGS_FILE),
-                Some(open_options(populate)),
-                None,
-            )
-            .ok_not_found()?
-            .is_some())
+        if !fs.exists(&directory.join(COMPACT_FLAGS_FILE))? {
+            return Ok(false);
+        }
+
+        fs.schedule_open(
+            &directory.join(COMPACT_FLAGS_FILE),
+            Some(open_options(populate)),
+            None,
+        );
+
+        Ok(true)
     }
 
     /// Open persisted flags read-only, retaining the bitmask handle for the
@@ -129,7 +132,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) -> OperationResult<()> {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {
         let directory = self.directory.as_path();
         let populate = if self.bitmap.get().is_some() {
             Populate::PreferBackground
@@ -140,8 +143,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             &directory.join(COMPACT_FLAGS_FILE),
             Some(open_options(populate)),
             None,
-        )?;
-        Ok(())
+        );
     }
 
     /// Refresh to the current on-disk state.

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use once_cell::sync::OnceCell;
 
 use super::read_view::HNSWIndexReadView;
@@ -101,9 +101,8 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         hnsw_config: &HnswConfig,
         populate_override: Option<Populate>,
     ) -> OperationResult<()> {
-        // Graph config; may legitimately be absent (`open` derives defaults).
-        fs.schedule_open(&HnswGraphConfig::get_config_path(path), None, None)
-            .ok_not_found()?;
+        // Graph config
+        fs.schedule_open(&HnswGraphConfig::get_config_path(path), None, None);
 
         // Graph data and links
         let (_memory, residency) = graph_residency(hnsw_config, populate_override);

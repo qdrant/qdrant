@@ -64,7 +64,7 @@ impl MultivectorOffsetsStorageRam {
             path,
             Some(Self::open_options(Populate::PreferBackground)),
             None,
-        )?;
+        );
         Ok(())
     }
 
@@ -176,13 +176,8 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
     ///
     /// The offsets are read lazily; `populate` warms the parked handle for
     /// the `cached` memory placement.
-    pub fn preopen(
-        fs: &impl CachedReadFs<File = S>,
-        path: &Path,
-        populate: Populate,
-    ) -> OperationResult<()> {
-        fs.schedule_open(path, Some(Self::open_options(populate)), None)?;
-        Ok(())
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path, populate: Populate) {
+        fs.schedule_open(path, Some(Self::open_options(populate)), None);
     }
 
     /// Open the offsets file read-only through the provided [`UniversalRead`] filesystem.

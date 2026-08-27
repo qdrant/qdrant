@@ -6,8 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedFs, CachedReadFs, OkNotFound as _, Populate, UniversalRead, UniversalReadFs,
-    read_json_via,
+    CachedFs, CachedReadFs, Populate, UniversalRead, UniversalReadFs, read_json_via,
 };
 
 use super::LookupSegment;
@@ -46,9 +45,7 @@ fn build_cached_fs<Fs: UniversalReadFs>(
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
-        cached_fs
-            .schedule_open(&segment_path.join(file_name), None, None)
-            .ok_not_found()?;
+        cached_fs.schedule_open(&segment_path.join(file_name), None, None);
     }
 
     cached_fs.cache_file_info()?;

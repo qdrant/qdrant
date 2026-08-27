@@ -64,7 +64,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 &path,
                 Some(AppendOnlyPage::<S>::open_options(populate, false)),
                 None,
-            )?;
+            );
         }
         Ok(())
     }
@@ -292,7 +292,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 &path,
                 Some(AppendOnlyPage::<S>::open_options(populate, false)),
                 None,
-            )?;
+            );
         }
         Ok(())
     }

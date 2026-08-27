@@ -16,7 +16,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
 
     fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
         // Status is the change signal, let reload skip reloading if this didn't change.
-        fs.reschedule_open(&status_file(&self.directory), None, None)?;
+        fs.reschedule_open(&status_file(&self.directory), None, None);
 
         let num_files = list_chunk_files(fs, &self.directory)?.len();
 
@@ -29,7 +29,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
                 &chunk_name(&self.directory, last_chunk),
                 Some(chunk_open_options(self.advice, self.populate, false)),
                 None,
-            )?;
+            );
             last_chunk + 1
         } else {
             last_chunk
@@ -41,7 +41,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
                 &chunk_name(&self.directory, chunk_id),
                 Some(chunk_open_options(self.advice, self.populate, false)),
                 None,
-            )?;
+            );
         }
         Ok(())
     }

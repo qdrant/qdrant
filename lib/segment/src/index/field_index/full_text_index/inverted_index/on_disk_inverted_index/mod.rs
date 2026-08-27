@@ -9,8 +9,8 @@ use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
-    UniversalRead, UniversalReadFs, UserData,
+    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
+    UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -156,35 +156,31 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     ) -> OperationResult<bool> {
         // Postings.
         let postings_path = path.join(POSTINGS_FILE);
-        if fs
-            .schedule_open(
-                &postings_path,
-                Some(Self::open_options(
-                    populate,
-                    AdviceSetting::Advice(Advice::Normal),
-                )),
-                None,
-            )
-            .ok_not_found()?
-            .is_none()
-        {
-            // If postings don't exist, assume the index doesn't exist on disk
+        if !fs.exists(&postings_path)? {
             return Ok(false);
         }
+        fs.schedule_open(
+            &postings_path,
+            Some(Self::open_options(
+                populate,
+                AdviceSetting::Advice(Advice::Normal),
+            )),
+            None,
+        );
 
         // Vocabulary
         UniversalHashMap::<str, TokenId, S>::preopen(
             fs,
             &path.join(VOCAB_FILE),
             Self::open_options(populate, AdviceSetting::Global),
-        )?;
+        );
 
         // Point to tokens count
         fs.schedule_open(
             &path.join(POINT_TO_TOKENS_COUNT_FILE),
             Some(Self::open_options(populate, AdviceSetting::Global)),
             None,
-        )?;
+        );
 
         // "No tokens" mask
         preopen_deleted_mask(
@@ -192,7 +188,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             path,
             DELETED_POINTS_FILE,
             Self::open_options(Populate::PreferBackground, AdviceSetting::Global),
-        )?;
+        );
 
         Ok(true)
     }

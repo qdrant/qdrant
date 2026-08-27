@@ -30,15 +30,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Either file may not exist yet — the writer only creates them once it
     /// flushes the first point, and [`open`](Self::open) treats a missing file
     /// as an empty storage — so absence is tolerated here too.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) {
         let options = Self::open_options();
 
-        fs.schedule_open(&mappings_path(segment_path), Some(options), None)
-            .ok_not_found()?;
-        fs.schedule_open(&versions_path(segment_path), Some(options), None)
-            .ok_not_found()?;
-
-        Ok(())
+        fs.schedule_open(&mappings_path(segment_path), Some(options), None);
+        fs.schedule_open(&versions_path(segment_path), Some(options), None);
     }
 
     /// Open a read-only view over the appendable ID tracker data at `segment_path`, threading every

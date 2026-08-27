@@ -177,16 +177,9 @@ where
         Ok(())
     }
 
-    pub fn preopen(
-        fs: &impl CachedReadFs<File = S>,
-        dir: &Path,
-        populate: Populate,
-    ) -> OperationResult<()> {
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: &Path, populate: Populate) {
         let file_name = dir.join(POINT_TO_VALUES_PATH);
-
-        fs.schedule_open(&file_name, Some(Self::open_options(populate)), None)?;
-
-        Ok(())
+        fs.schedule_open(&file_name, Some(Self::open_options(populate)), None);
     }
 
     pub fn open(

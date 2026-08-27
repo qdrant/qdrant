@@ -165,32 +165,25 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     ) -> OperationResult<bool> {
         // Stats
         let stats_path = path.join(STATS_PATH);
-        if fs
-            .schedule_open(&stats_path, None, None)
-            .ok_not_found()?
-            .is_none()
-        {
+        if !fs.exists(&stats_path)? {
             // If stats file doesn't exist, assume the index doesn't exist on disk
             return Ok(false);
         }
+        fs.schedule_open(&stats_path, None, None);
 
         // Geohash counts, points map, and point-id list
         let options = Self::open_options(populate);
-        fs.schedule_open(&path.join(COUNTS_PER_HASH), Some(options), None)?;
-        fs.schedule_open(&path.join(POINTS_MAP), Some(options), None)?;
-        fs.schedule_open(&path.join(POINTS_MAP_IDS), Some(options), None)?;
+        fs.schedule_open(&path.join(COUNTS_PER_HASH), Some(options), None);
+        fs.schedule_open(&path.join(POINTS_MAP), Some(options), None);
+        fs.schedule_open(&path.join(POINTS_MAP_IDS), Some(options), None);
 
         // Block indexes over the two sorted arrays; optional, absent on old
         // segments
-        let _ = fs
-            .schedule_open(&path.join(COUNTS_PER_HASH_BLOCK_INDEX), None, None)
-            .ok_not_found()?;
-        let _ = fs
-            .schedule_open(&path.join(POINTS_MAP_BLOCK_INDEX), None, None)
-            .ok_not_found()?;
+        fs.schedule_open(&path.join(COUNTS_PER_HASH_BLOCK_INDEX), None, None);
+        fs.schedule_open(&path.join(POINTS_MAP_BLOCK_INDEX), None, None);
 
         // Point to values
-        OnDiskPointToValues::<GeoPoint, S>::preopen(fs, path, populate)?;
+        OnDiskPointToValues::<GeoPoint, S>::preopen(fs, path, populate);
 
         // "No values" mask
         preopen_deleted_mask(
@@ -198,7 +191,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             path,
             DELETED_PATH,
             Self::open_options(Populate::PreferBackground),
-        )?;
+        );
 
         Ok(true)
     }

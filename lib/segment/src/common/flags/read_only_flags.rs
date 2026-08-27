@@ -80,7 +80,8 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs),
             ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs),
-        }
+        };
+        Ok(())
     }
 
     fn live_reload<Fs: UniversalReadFs<File = Self::File>>(

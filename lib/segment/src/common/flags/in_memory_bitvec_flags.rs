@@ -72,21 +72,21 @@ impl InMemoryBitvecFlags {
                     &status_file(directory),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
-                )?;
+                );
 
                 // Bitslice
                 fs.schedule_open(
                     &directory.join(FLAGS_FILE),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
-                )?;
+                );
             }
             FlagsMode::Compact => {
                 fs.schedule_open(
                     &directory.join(COMPACT_FLAGS_FILE),
                     Some(compact_open_options(Populate::PreferBackground)),
                     None,
-                )?;
+                );
             }
         }
         Ok(())
@@ -105,19 +105,19 @@ impl InMemoryBitvecFlags {
                     &status_file(directory),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
-                )?;
+                );
                 fs.reschedule_open(
                     &directory.join(FLAGS_FILE),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
-                )?;
+                );
             }
             FlagsMode::Compact => {
                 fs.reschedule_open(
                     &directory.join(COMPACT_FLAGS_FILE),
                     Some(compact_open_options(Populate::PreferBackground)),
                     None,
-                )?;
+                );
             }
         }
         Ok(())

@@ -69,12 +69,13 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             (&self.mappings_file, mappings_path(&self.segment_path)),
         ] {
             match file {
-                Some(file) => file
-                    .schedule_reopen(|p| fs.cached_file_info(p))
-                    .ok_not_found()?,
-                None => fs
-                    .schedule_open(&path, Some(options), None)
-                    .ok_not_found()?,
+                Some(file) => {
+                    file.schedule_reopen(|p| fs.cached_file_info(p))
+                        .ok_not_found()?;
+                }
+                None => {
+                    fs.schedule_open(&path, Some(options), None);
+                }
             };
         }
         Ok(())
