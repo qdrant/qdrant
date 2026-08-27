@@ -615,10 +615,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
-                transfer::helpers::validate_transfer_exists(
-                    &transfer.key(),
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer.key()).await?;
 
                 collection.finish_shard_transfer(transfer, None).await?;
             }

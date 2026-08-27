@@ -38,6 +38,20 @@ impl Collection {
             .check_transfer_exists(transfer_key)
     }
 
+    /// Validate that a transfer with the given key exists, to prevent double handling
+    pub async fn validate_transfer_exists(
+        &self,
+        transfer_key: &ShardTransferKey,
+    ) -> CollectionResult<()> {
+        if !self.check_transfer_exists(transfer_key).await {
+            return Err(CollectionError::bad_request(format!(
+                "There is no transfer for shard {} from {} to {}",
+                transfer_key.shard_id, transfer_key.from, transfer_key.to,
+            )));
+        }
+        Ok(())
+    }
+
     async fn is_prevent_unoptimized(&self) -> bool {
         self.effective_optimizers_config()
             .await
