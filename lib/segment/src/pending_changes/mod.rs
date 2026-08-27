@@ -8,12 +8,15 @@
 //!
 //! Persisting the pending changes means a proxy segment does not hold back acknowledging the WAL:
 //! everything the proxy buffers is durable once flushed, so on a restart the buffered state does
-//! not need to be recovered by replaying the WAL. All operations are version gated, so replaying
+//! not need to be recovered by replaying the WAL. Instead of reconstructing proxy segments on
+//! restart, the pending changes log is replayed directly onto the actual segment before regular
+//! WAL replay (see [`recover_pending_changes`]). All operations are version gated, so replaying
 //! an entry the segment already applied is a no-op, and replaying a stale file is harmless.
 //!
 //! Proxy segments can be layered (an optimization and a snapshot both proxy the same segment).
 //! Each layer persists into its own log file: the inner most layer gets no suffix, each layer
-//! above it gets its level as a numeric suffix.
+//! above it gets its level as a numeric suffix. On restart the files are replayed inner most
+//! first, matching the order in which the layers received their operations.
 
 mod change;
 mod index_changes;
@@ -24,7 +27,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
+use fs_err as fs;
 use parking_lot::Mutex;
 
 pub use self::change::{DeletedPoints, PendingChange, ProxyDeletedPoint, ProxyIndexChange};
@@ -34,8 +39,10 @@ pub use self::log_file::{
 };
 pub use self::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vector_name_config::VectorNameConfig;
+use crate::entry::entry_point::{NonAppendableSegmentEntry, StorageSegmentEntry as _};
+use crate::segment::Segment;
 use crate::types::{PayloadKeyType, PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
 
 /// Manages the pending changes of a single proxy segment layer.
@@ -49,9 +56,9 @@ use crate::types::{PayloadKeyType, PointIdType, SegmentConfig, SeqNumberType, Ve
 /// The log file deliberately outlives the component: when a proxy segment is unwrapped its
 /// buffered changes are propagated to the wrapped segment in memory, but deleting the log before
 /// the wrapped segment has flushed those changes would not be crash safe. The file is cleaned up
-/// on restart and when the segment directory is dropped, and a new proxy on the same segment
-/// adopts and appends to it (see [`Self::open`]). Replaying a stale file is safe because all
-/// operations are version gated.
+/// on restart (see [`recover_pending_changes`]) and when the segment directory is dropped, and a
+/// new proxy on the same segment adopts and appends to it (see [`Self::open`]). Replaying a stale
+/// file is safe because all operations are version gated.
 #[derive(Debug)]
 pub struct PendingChanges {
     /// Points which should no longer be used from the wrapped segment.
@@ -114,7 +121,8 @@ impl PendingChanges {
     ///
     /// This restores the buffered state of the proxy layer that wrote the file, as if every entry
     /// were registered again in order. Use this only when the entries are *not* applied to the
-    /// wrapped segment; the regular restart path replays them onto the segment directly instead.
+    /// wrapped segment; the regular restart path replays them onto the segment directly instead
+    /// (see [`recover_pending_changes`]).
     pub fn load(segment_path: &Path, level: usize) -> OperationResult<Self> {
         Self::open_impl(segment_path, level, true)
     }
@@ -353,4 +361,114 @@ impl PendingChanges {
             Ok(())
         }))
     }
+}
+
+/// Apply a single pending change to the given segment, through the regular version-gated segment
+/// operations.
+pub fn apply_change<S>(segment: &mut S, change: &PendingChange) -> OperationResult<()>
+where
+    S: NonAppendableSegmentEntry + ?Sized,
+{
+    // Internal operation, no need to measure hardware IO
+    let hw_counter = HardwareCounterCell::disposable();
+
+    match change {
+        PendingChange::DeletePoint { point_id, versions } => {
+            // Note:
+            // The delete may have an older version than the point currently has in the segment.
+            // Such deletes are ignored because the point in the segment is considered to be
+            // newer. This is possible because different proxy segments can share state through a
+            // common write segment.
+            // See: <https://github.com/qdrant/qdrant/pull/7208>
+            segment.delete_point(versions.operation_version, *point_id, &hw_counter)?;
+        }
+        PendingChange::IndexChange { field_name, change } => match change {
+            ProxyIndexChange::Create(schema, version) => {
+                segment.create_field_index(*version, field_name, Some(schema), &hw_counter)?;
+            }
+            ProxyIndexChange::Delete(version) => {
+                segment.delete_field_index(*version, field_name)?;
+            }
+            ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
+                segment.delete_field_index_if_incompatible(*version, field_name, schema)?;
+            }
+        },
+        PendingChange::VectorNameChange {
+            vector_name,
+            intent,
+        } => match intent {
+            IntendedVector::Absent { version } => {
+                segment.delete_vector_name(*version, vector_name)?;
+            }
+            IntendedVector::Present {
+                config,
+                version,
+                supersedes_wrapped,
+            } => {
+                if *supersedes_wrapped {
+                    // `create_vector_name` is idempotent and would silently keep the segment's
+                    // stale storage. Clear it first so the new schema actually takes effect.
+                    segment.delete_vector_name(*version, vector_name)?;
+                }
+                segment.create_vector_name(*version, vector_name, config)?;
+            }
+        },
+    }
+
+    Ok(())
+}
+
+/// Recover pending changes left on disk by proxy segments, before regular WAL replay
+///
+/// If the segment directory holds pending changes log files, the proxy segments that wrote them
+/// did not propagate their buffered state into this segment before the process stopped. Instead
+/// of reconstructing the proxies, replay all logged operations directly onto the segment: inner
+/// most layer first, each file in append order. All operations are version gated, so entries the
+/// segment already applied (e.g. because a proxy did propagate before unwrapping, leaving the
+/// file behind) are silently skipped.
+///
+/// The segment is force-flushed afterwards, making the replayed operations durable, and only then
+/// are the log files removed. Must be called before regular WAL replay, which recovers everything
+/// past what segments (including these logs) have durably applied.
+///
+/// This is necessary because proxy changes that are persisted on disk are also acknowledged in the
+/// WAL. It means that on restart we expect all those changes to be visible in the segment to get a
+/// consistent read view. Since the processes that required a proxy are not running anymore we
+/// don't reconstruct the proxies, instead we just apply the changes directly to the segment.
+///
+/// Returns the number of replayed log entries.
+pub fn recover_pending_changes(segment: &mut Segment) -> OperationResult<usize> {
+    let log_files = list_pending_changes_log_files(&segment.segment_path);
+    if log_files.is_empty() {
+        return Ok(0);
+    }
+
+    let mut replayed = 0;
+    for path in &log_files {
+        let loaded = log_file::load_changes(path)?;
+        log::info!(
+            "Replaying {} pending proxy changes onto segment ({})",
+            loaded.changes.len(),
+            path.display(),
+        );
+        for change in &loaded.changes {
+            apply_change(segment, change).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to replay pending change from {}: {err}",
+                    path.display(),
+                ))
+            })?;
+        }
+        replayed += loaded.changes.len();
+    }
+
+    // Persist the replayed operations before removing the log files; a crash in between just
+    // means the files are replayed again, which is a version-gated no-op
+    segment.flush(true)?;
+
+    for path in log_files {
+        fs::remove_file(path)?;
+    }
+
+    Ok(replayed)
 }
