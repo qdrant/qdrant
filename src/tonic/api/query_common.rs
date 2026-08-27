@@ -264,15 +264,13 @@ pub async fn search_groups(
     routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchGroupsResponse>, Status> {
-    let search_groups_request = search_point_groups.clone().try_into()?;
+    // Take the few fields needed here before converting, to avoid cloning the whole request
+    let collection_name = search_point_groups.collection_name.clone();
+    let read_consistency = search_point_groups.read_consistency;
+    let timeout = search_point_groups.timeout;
+    let shard_key_selector = search_point_groups.shard_key_selector.clone();
 
-    let SearchPointGroups {
-        collection_name,
-        read_consistency,
-        timeout,
-        shard_key_selector,
-        ..
-    } = search_point_groups;
+    let search_groups_request = search_point_groups.try_into()?;
 
     let toc = toc_provider
         .check_strict_mode(
