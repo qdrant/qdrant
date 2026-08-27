@@ -52,9 +52,9 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<UriStr>, tonic::Status> {
-        let addresses = self.consensus_state.peer_address_by_id();
-        let uri = addresses
-            .get(&request.get_ref().id)
+        let uri = self
+            .consensus_state
+            .peer_address(request.get_ref().id)
             .ok_or_else(|| Status::internal("Peer not found"))?;
         Ok(Response::new(UriStr {
             uri: uri.to_string(),
