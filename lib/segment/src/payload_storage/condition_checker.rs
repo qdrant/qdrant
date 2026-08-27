@@ -1,10 +1,13 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use ordered_float::OrderedFloat;
 use serde_json::Value;
 
+use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
     GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
@@ -17,6 +20,51 @@ use crate::types::{
 /// For sets smaller than this threshold iterating outperforms hashing.
 /// For more information see <https://github.com/qdrant/qdrant/pull/3525>.
 pub const INDEXSET_ITER_THRESHOLD: usize = 13;
+
+/// Default tokenizer for unindexed text/phrase filters. Matches
+/// [`TextIndexParams::default`] (Word tokenizer, lowercase on).
+static DEFAULT_UNINDEXED_TEXT_TOKENIZER: LazyLock<Tokenizer> =
+    LazyLock::new(|| Tokenizer::new_from_text_index_params(&TextIndexParams::default()));
+
+fn collect_unindexed_document_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    DEFAULT_UNINDEXED_TEXT_TOKENIZER.tokenize(TokenizerTextKind::Document, text, |token| {
+        tokens.push(token.into_owned());
+    });
+    tokens
+}
+
+fn collect_unindexed_query_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    DEFAULT_UNINDEXED_TEXT_TOKENIZER.tokenize(TokenizerTextKind::Query, text, |token| {
+        tokens.push(token.into_owned());
+    });
+    tokens
+}
+
+fn unindexed_text_match(stored: &str, query: &str) -> bool {
+    let document_tokens = collect_unindexed_document_tokens(stored);
+    let query_tokens = collect_unindexed_query_tokens(query);
+    if query_tokens.is_empty() {
+        return false;
+    }
+    query_tokens.iter().all(|query_token| {
+        document_tokens
+            .iter()
+            .any(|document_token| document_token == query_token)
+    })
+}
+
+fn unindexed_phrase_match(stored: &str, phrase: &str) -> bool {
+    let document_tokens = collect_unindexed_document_tokens(stored);
+    let phrase_tokens = collect_unindexed_query_tokens(phrase);
+    if phrase_tokens.is_empty() {
+        return false;
+    }
+    document_tokens
+        .windows(phrase_tokens.len())
+        .any(|window| window == phrase_tokens.as_slice())
+}
 
 pub trait ValueChecker {
     fn check_match(&self, payload: &Value) -> bool;
@@ -171,16 +219,22 @@ impl ValueChecker for Match {
                 }
                 _ => false,
             },
-            Match::Text(MatchText { text }) | Match::Phrase(MatchPhrase { phrase: text }) => {
-                match payload {
-                    Value::String(stored) => stored.contains(text),
-                    Value::Null
-                    | Value::Bool(_)
-                    | Value::Number(_)
-                    | Value::Array(_)
-                    | Value::Object(_) => false,
-                }
-            }
+            Match::Text(MatchText { text }) => match payload {
+                Value::String(stored) => unindexed_text_match(stored, text),
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => false,
+            },
+            Match::Phrase(MatchPhrase { phrase }) => match payload {
+                Value::String(stored) => unindexed_phrase_match(stored, phrase),
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => false,
+            },
             Match::TextAny(MatchTextAny { text_any }) => match payload {
                 Value::String(stored) => text_any
                     .split_whitespace()

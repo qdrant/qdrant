@@ -621,6 +621,7 @@ impl SegmentBuilder {
 
             id_tracker.mapping_flusher()()?;
             id_tracker.versions_flusher()()?;
+            check_process_stopped(stopped)?;
             let id_tracker_arc = Arc::new(AtomicRefCell::new(id_tracker));
 
             let mut quantized_vectors = Self::update_quantization(
@@ -664,6 +665,7 @@ impl SegmentBuilder {
 
                 vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
             }
+            check_process_stopped(stopped)?;
 
             let payload_index_path = get_payload_index_path(temp_dir.path());
 
@@ -700,6 +702,7 @@ impl SegmentBuilder {
 
             // Arc permit to share it with each vector store
             let permit = Arc::new(permit);
+            check_process_stopped(stopped)?;
 
             progress_vector_index.start();
             for (vector_name, vector_config) in &segment_config.vector_data {

@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
+use common::prefetch::{
+    MAX_UNPREFETCHED_BATCH, prefetch_slice, prefetch_slice_l2, prefetch_windows,
+};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
 use fs_err as fs;
@@ -13,6 +16,7 @@ use quantization::encoded_storage::default_for_each_batch;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::vector_storage::VectorOffsetType;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 
 #[derive(Debug)]
@@ -128,9 +132,42 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
     fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-        callback: impl FnMut(usize, Cow<'_, [u8]>),
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) {
-        default_for_each_batch(self, offsets, callback);
+        // Tiny batches gain nothing from hints, and dense-ascending batches
+        // stream — the hardware prefetcher already covers them and software
+        // prefetch is pure overhead.
+        if offsets.len() <= MAX_UNPREFETCHED_BATCH || is_read_with_prefetch_efficient(offsets) {
+            default_for_each_batch(self, offsets, callback);
+            return;
+        }
+
+        // Heap-resident vectors have the same random-access DRAM latency as
+        // the mmap-backed storage; prefetch up to `far` vectors ahead of the
+        // scorer to hide it. Warm-up fills the initial windows: the first
+        // `near` vectors go straight to L1, the rest of the far window to L2.
+        let (near, far) = prefetch_windows(self.vectors.vector_size_bytes());
+        for &offset in offsets.iter().take(far).skip(near) {
+            prefetch_slice_l2(self.vectors.get(offset as VectorOffsetType));
+        }
+        for &offset in offsets.iter().take(near) {
+            prefetch_slice(self.vectors.get(offset as VectorOffsetType));
+        }
+
+        for (index, &offset) in offsets.iter().enumerate() {
+            if far > 0
+                && let Some(&upcoming) = offsets.get(index + far)
+            {
+                prefetch_slice_l2(self.vectors.get(upcoming as VectorOffsetType));
+            }
+            if let Some(&upcoming) = offsets.get(index + near) {
+                prefetch_slice(self.vectors.get(upcoming as VectorOffsetType));
+            }
+            callback(
+                index,
+                Cow::Borrowed(self.vectors.get(offset as VectorOffsetType)),
+            );
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
