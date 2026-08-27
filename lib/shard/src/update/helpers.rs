@@ -77,16 +77,36 @@ pub(crate) fn points_by_filter(
     filter: &Filter,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointIdType>> {
+    let points = points_by_filter_capped(segments, filter, None, hw_counter)?;
+    Ok(points.expect("an uncapped filter scan always resolves"))
+}
+
+/// Same as [`points_by_filter`], but returns `None` as soon as the match set
+/// provably exceeds `cap`, without materialising the whole set.
+///
+/// Each segment scan stops after `cap + 1` ids. Ids are unique within one
+/// segment, so a single segment hitting that bound proves the deduplicated
+/// union exceeds `cap`. If a segment holds deferred points, some of those
+/// matches may be stale copies that the deferred corner case excludes, so
+/// the scan is redone unbounded before deciding.
+pub(crate) fn points_by_filter_capped(
+    segments: &SegmentHolder,
+    filter: &Filter,
+    cap: Option<usize>,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<Option<Vec<PointIdType>>> {
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
+    let per_segment_limit = cap.map(|cap| cap.saturating_add(1));
     let mut has_deferred = false;
+    let mut cap_hit = false;
     let per_segment_points: AHashMap<SegmentId, Vec<PointIdType>> = segments
         .iter()
         .map(|(segment_id, segment)| {
             let segment = segment.get().read();
             let point_ids = segment.read_filtered(
                 None,
-                None,
+                per_segment_limit,
                 Some(filter),
                 &is_stopped,
                 hw_counter,
@@ -94,9 +114,19 @@ pub(crate) fn points_by_filter(
                 DeferredBehavior::WithDeferred,
             )?;
             has_deferred |= segment.has_deferred_points();
+            cap_hit |= per_segment_limit.is_some_and(|limit| point_ids.len() >= limit);
             Ok((segment_id, point_ids))
         })
         .collect::<OperationResult<_>>()?;
+
+    if cap_hit {
+        if !has_deferred {
+            return Ok(None);
+        }
+        let cap = cap.expect("cap_hit implies a cap");
+        let points = points_by_filter(segments, filter, hw_counter)?;
+        return Ok((points.len() <= cap).then_some(points));
+    }
 
     let mut affected_points: Vec<PointIdType> = per_segment_points
         .values()
@@ -112,7 +142,7 @@ pub(crate) fn points_by_filter(
         }
     }
 
-    Ok(affected_points)
+    Ok(Some(affected_points))
 }
 
 pub(super) fn check_unprocessed_points(

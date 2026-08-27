@@ -24,7 +24,7 @@ use crate::operations::vector_ops::{UpdateVectorsOp, VectorOperations};
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, VectorNameOperations};
 use crate::segment_holder::SegmentHolder;
 use crate::update::{
-    points_by_filter, retain_conditional_upsert_points, select_excluded_by_filter_ids,
+    points_by_filter_capped, retain_conditional_upsert_points, select_excluded_by_filter_ids,
 };
 
 /// Does this operation decide its target point set by reading current segment
@@ -73,48 +73,6 @@ pub fn is_filter_resolving(operation: &CollectionUpdateOperations) -> bool {
     }
 }
 
-/// Is this an "update by filter": an operation whose target point set is the
-/// result of scanning the collection with a filter?
-///
-/// Narrower than [`is_filter_resolving`]. A conditional upsert and a filtered
-/// `UpdateVectors` also read segment state, but they only trim a point list the
-/// client sent, so their resolved size is bounded by the request body rather
-/// than by how much the filter matches. Used by the strict-mode
-/// `max_update_by_filter_limit` check, which caps filter scans only.
-pub fn is_update_by_filter(operation: &CollectionUpdateOperations) -> bool {
-    match operation {
-        CollectionUpdateOperations::PointOperation(op) => match op {
-            PointOperations::DeletePointsByFilter(_) => true,
-            // Trims the client's own batch, so not a filter scan.
-            PointOperations::UpsertPointsConditional(_)
-            | PointOperations::UpsertPoints(_)
-            | PointOperations::UpsertPointsRaw(_)
-            | PointOperations::DeletePoints { .. }
-            | PointOperations::SyncPoints(_)
-            | PointOperations::SyncPointsRaw(_) => false,
-        },
-        CollectionUpdateOperations::VectorOperation(op) => match op {
-            VectorOperations::DeleteVectorsByFilter(_, _) => true,
-            // `update_filter` only trims the client's own batch.
-            VectorOperations::UpdateVectors(_) | VectorOperations::DeleteVectors(_, _) => false,
-        },
-        CollectionUpdateOperations::PayloadOperation(op) => match op {
-            // An explicit id list takes precedence over the filter on apply,
-            // so the filter only selects points when there is no id list.
-            PayloadOps::SetPayload(sp) | PayloadOps::OverwritePayload(sp) => {
-                sp.points.is_none() && sp.filter.is_some()
-            }
-            PayloadOps::DeletePayload(dp) => dp.points.is_none() && dp.filter.is_some(),
-            PayloadOps::ClearPayloadByFilter(_) => true,
-            PayloadOps::ClearPayload { .. } => false,
-        },
-        CollectionUpdateOperations::FieldIndexOperation(_)
-        | CollectionUpdateOperations::VectorNameOperation(_) => false,
-        #[cfg(feature = "staging")]
-        CollectionUpdateOperations::StagingOperation(_) => false,
-    }
-}
-
 /// Rewrite a filter/condition-resolving operation into its id-based
 /// equivalent by resolving the filter against current segment state.
 ///
@@ -122,17 +80,29 @@ pub fn is_update_by_filter(operation: &CollectionUpdateOperations) -> bool {
 /// unchanged. The rewritten form only uses pre-existing operation variants,
 /// so the WAL format is unaffected.
 ///
+/// `max_by_filter_points` caps genuine filter scans only (the strict-mode
+/// `max_update_by_filter_limit`): operations whose target set is the result
+/// of scanning the collection with a filter. Returns `None` as soon as such a
+/// scan provably matches more points than the cap, without materialising the
+/// full match set. A conditional upsert and a filtered `UpdateVectors` also
+/// read segment state, but they only trim a point list the client sent, so
+/// their size is bounded by the request body and they are never capped.
+///
 /// See the module docs for the ordering contract callers must uphold.
 pub fn resolve_operation(
     segments: &SegmentHolder,
     operation: CollectionUpdateOperations,
+    max_by_filter_points: Option<usize>,
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<CollectionUpdateOperations> {
+) -> OperationResult<Option<CollectionUpdateOperations>> {
+    let cap = max_by_filter_points;
     let resolved = match operation {
         CollectionUpdateOperations::PointOperation(op) => {
             CollectionUpdateOperations::PointOperation(match op {
                 PointOperations::DeletePointsByFilter(filter) => {
-                    let ids = matched_ids(segments, &filter, hw_counter)?;
+                    let Some(ids) = matched_ids(segments, &filter, cap, hw_counter)? else {
+                        return Ok(None);
+                    };
                     PointOperations::DeletePoints { ids }
                 }
                 PointOperations::UpsertPointsConditional(op) => {
@@ -148,7 +118,9 @@ pub fn resolve_operation(
         CollectionUpdateOperations::VectorOperation(op) => {
             CollectionUpdateOperations::VectorOperation(match op {
                 VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-                    let ids = matched_ids(segments, &filter, hw_counter)?;
+                    let Some(ids) = matched_ids(segments, &filter, cap, hw_counter)? else {
+                        return Ok(None);
+                    };
                     VectorOperations::DeleteVectors(ids.into(), vector_names)
                 }
                 VectorOperations::UpdateVectors(update) => {
@@ -175,10 +147,16 @@ pub fn resolve_operation(
         CollectionUpdateOperations::PayloadOperation(op) => {
             CollectionUpdateOperations::PayloadOperation(match op {
                 PayloadOps::SetPayload(sp) => {
-                    PayloadOps::SetPayload(resolve_set_payload(segments, sp, hw_counter)?)
+                    let Some(sp) = resolve_set_payload(segments, sp, cap, hw_counter)? else {
+                        return Ok(None);
+                    };
+                    PayloadOps::SetPayload(sp)
                 }
                 PayloadOps::OverwritePayload(sp) => {
-                    PayloadOps::OverwritePayload(resolve_set_payload(segments, sp, hw_counter)?)
+                    let Some(sp) = resolve_set_payload(segments, sp, cap, hw_counter)? else {
+                        return Ok(None);
+                    };
+                    PayloadOps::OverwritePayload(sp)
                 }
                 PayloadOps::DeletePayload(dp) => {
                     let DeletePayloadOp {
@@ -186,7 +164,11 @@ pub fn resolve_operation(
                         points,
                         filter,
                     } = dp;
-                    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
+                    let Some(points) =
+                        resolve_points_or_filter(segments, points, filter, cap, hw_counter)?
+                    else {
+                        return Ok(None);
+                    };
                     PayloadOps::DeletePayload(DeletePayloadOp {
                         keys,
                         points,
@@ -194,7 +176,9 @@ pub fn resolve_operation(
                     })
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
-                    let points = matched_ids(segments, &filter, hw_counter)?;
+                    let Some(points) = matched_ids(segments, &filter, cap, hw_counter)? else {
+                        return Ok(None);
+                    };
                     PayloadOps::ClearPayload { points }
                 }
                 op @ PayloadOps::ClearPayload { .. } => op,
@@ -206,46 +190,40 @@ pub fn resolve_operation(
         op @ CollectionUpdateOperations::StagingOperation(_) => op,
     };
 
-    Ok(resolved)
-}
-
-/// Number of point IDs an already-resolved (id-based) operation will touch.
-///
-/// Every filter-resolving update is rewritten to an id-based operation before
-/// it reaches the WAL (see [`resolve_operation`]), so this counts exactly the
-/// points the operation would affect. Used by the strict-mode
-/// `max_update_by_filter_limit` check.
-pub fn resolved_point_count(operation: &CollectionUpdateOperations) -> usize {
-    operation.point_ids().map_or(0, |ids| ids.len())
+    Ok(Some(resolved))
 }
 
 /// Resolve the point set matched by `filter`, deduplicated and in a
-/// deterministic order.
+/// deterministic order. `None` if it provably exceeds `cap`.
 fn matched_ids(
     segments: &SegmentHolder,
     filter: &segment::types::Filter,
+    cap: Option<usize>,
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<Vec<PointIdType>> {
+) -> OperationResult<Option<Vec<PointIdType>>> {
     // `points_by_filter` flattens per-segment matches, so a point with copies
     // in several segments can appear more than once.
-    let mut ids = points_by_filter(segments, filter, hw_counter)?;
+    let Some(mut ids) = points_by_filter_capped(segments, filter, cap, hw_counter)? else {
+        return Ok(None);
+    };
     ids.sort_unstable();
     ids.dedup();
-    Ok(ids)
+    Ok(Some(ids))
 }
 
 /// Resolve the `(points, filter)` pair of a payload operation. An explicit id
 /// list takes precedence over the filter on apply, so a filter only resolves
-/// when there is no id list.
+/// when there is no id list. The outer `None` means the filter exceeded `cap`.
 fn resolve_points_or_filter(
     segments: &SegmentHolder,
     points: Option<Vec<PointIdType>>,
     filter: Option<segment::types::Filter>,
+    cap: Option<usize>,
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<Option<Vec<PointIdType>>> {
+) -> OperationResult<Option<Option<Vec<PointIdType>>>> {
     match (points, filter) {
-        (None, Some(filter)) => Ok(Some(matched_ids(segments, &filter, hw_counter)?)),
-        (points, _) => Ok(points),
+        (None, Some(filter)) => Ok(matched_ids(segments, &filter, cap, hw_counter)?.map(Some)),
+        (points, _) => Ok(Some(points)),
     }
 }
 
@@ -270,21 +248,24 @@ fn resolve_conditional_upsert(
 fn resolve_set_payload(
     segments: &SegmentHolder,
     operation: SetPayloadOp,
+    cap: Option<usize>,
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<SetPayloadOp> {
+) -> OperationResult<Option<SetPayloadOp>> {
     let SetPayloadOp {
         payload,
         points,
         filter,
         key,
     } = operation;
-    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
-    Ok(SetPayloadOp {
+    let Some(points) = resolve_points_or_filter(segments, points, filter, cap, hw_counter)? else {
+        return Ok(None);
+    };
+    Ok(Some(SetPayloadOp {
         payload,
         points,
         filter: None,
         key,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -342,9 +323,11 @@ mod tests {
             CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
                 filter.clone(),
             )),
+            None,
             &hw_counter,
         )
-        .unwrap();
+        .unwrap()
+        .expect("uncapped");
 
         let CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }) =
             &resolved
@@ -392,7 +375,9 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation, None, &hw_counter)
+            .unwrap()
+            .expect("uncapped");
 
         let CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(points_op)) =
             resolved
@@ -416,7 +401,9 @@ mod tests {
                 key: None,
             }));
 
-        let resolved = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation, None, &hw_counter)
+            .unwrap()
+            .expect("uncapped");
 
         let CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(sp)) = resolved
         else {
@@ -443,8 +430,95 @@ mod tests {
         });
         assert!(!is_filter_resolving(&operation));
 
-        let resolved = resolve_operation(&holder, operation.clone(), &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation.clone(), None, &hw_counter)
+            .unwrap()
+            .expect("uncapped");
         assert_eq!(resolved, operation);
+    }
+
+    #[test]
+    fn resolve_caps_filter_scans_only() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let holder = build_holder(dir.path());
+
+        let filter = color_filter("blue");
+        let mut matches = points_by_filter(&holder, &filter, &hw_counter).unwrap();
+        matches.sort_unstable();
+        matches.dedup();
+        assert!(matches.len() > 1);
+
+        let delete_by_filter = CollectionUpdateOperations::PointOperation(
+            PointOperations::DeletePointsByFilter(filter.clone()),
+        );
+
+        // Exactly at the cap passes, one below rejects.
+        let resolved = resolve_operation(
+            &holder,
+            delete_by_filter.clone(),
+            Some(matches.len()),
+            &hw_counter,
+        )
+        .unwrap()
+        .expect("match count equal to the cap must pass");
+        assert_eq!(
+            resolved,
+            CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+                ids: matches.clone()
+            })
+        );
+        assert!(
+            resolve_operation(
+                &holder,
+                delete_by_filter,
+                Some(matches.len() - 1),
+                &hw_counter
+            )
+            .unwrap()
+            .is_none()
+        );
+
+        // A payload filter with no id list is a filter scan too.
+        let set_payload =
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload: payload_json! {"a": 1},
+                points: None,
+                filter: Some(filter.clone()),
+                key: None,
+            }));
+        assert!(
+            resolve_operation(&holder, set_payload, Some(0), &hw_counter)
+                .unwrap()
+                .is_none()
+        );
+
+        // State-reading, but the point set is the client's own batch: never capped.
+        let conditional_upsert = CollectionUpdateOperations::PointOperation(
+            PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
+                points_op: PointInsertOperationsInternal::PointsList(vec![
+                    point(1, payload_json! {"color": "blue"}),
+                    point(2, payload_json! {"color": "blue"}),
+                ]),
+                condition: filter.clone(),
+                update_mode: None,
+            }),
+        );
+        assert!(
+            resolve_operation(&holder, conditional_upsert, Some(0), &hw_counter)
+                .unwrap()
+                .is_some()
+        );
+        let filtered_update_vectors = CollectionUpdateOperations::VectorOperation(
+            VectorOperations::UpdateVectors(UpdateVectorsOp {
+                points: vec![],
+                update_filter: Some(filter),
+            }),
+        );
+        assert!(
+            resolve_operation(&holder, filtered_update_vectors, Some(0), &hw_counter)
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]
@@ -493,122 +567,5 @@ mod tests {
                 }
             ))
         ));
-    }
-
-    #[test]
-    fn is_update_by_filter_excludes_client_supplied_batches() {
-        let filter = color_filter("red");
-
-        // Filter scans: the point set comes from the collection.
-        assert!(is_update_by_filter(
-            &CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
-                filter.clone()
-            ))
-        ));
-        assert!(is_update_by_filter(
-            &CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayloadByFilter(
-                filter.clone()
-            ))
-        ));
-        assert!(is_update_by_filter(
-            &CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectorsByFilter(
-                filter.clone(),
-                vec![]
-            ))
-        ));
-        assert!(is_update_by_filter(
-            &CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
-                payload: payload_json! {"a": 1},
-                points: None,
-                filter: Some(filter.clone()),
-                key: None,
-            }))
-        ));
-
-        // State-reading, but the point set is the client's own batch: routed
-        // through resolution, yet not capped by `max_update_by_filter_limit`.
-        let conditional_upsert = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
-                points_op: PointInsertOperationsInternal::PointsList(vec![]),
-                condition: filter.clone(),
-                update_mode: None,
-            }),
-        );
-        assert!(is_filter_resolving(&conditional_upsert));
-        assert!(!is_update_by_filter(&conditional_upsert));
-
-        let filtered_update_vectors = CollectionUpdateOperations::VectorOperation(
-            VectorOperations::UpdateVectors(UpdateVectorsOp {
-                points: vec![],
-                update_filter: Some(filter),
-            }),
-        );
-        assert!(is_filter_resolving(&filtered_update_vectors));
-        assert!(!is_update_by_filter(&filtered_update_vectors));
-    }
-
-    #[test]
-    fn resolved_point_count_counts_id_based_operations() {
-        // Field/index operations never touch points directly.
-        assert_eq!(
-            resolved_point_count(&CollectionUpdateOperations::FieldIndexOperation(
-                FieldIndexOperations::DeleteIndex("k".parse().unwrap())
-            )),
-            0
-        );
-
-        // DeletePoints carries its id list directly.
-        assert_eq!(
-            resolved_point_count(&CollectionUpdateOperations::PointOperation(
-                PointOperations::DeletePoints {
-                    ids: vec![1.into(), 2.into(), 3.into()],
-                }
-            )),
-            3
-        );
-
-        // SetPayload resolved by filter carries an explicit id list.
-        assert_eq!(
-            resolved_point_count(&CollectionUpdateOperations::PayloadOperation(
-                PayloadOps::SetPayload(SetPayloadOp {
-                    payload: payload_json! {"a": 1},
-                    points: Some(vec![1.into(), 2.into()]),
-                    filter: None,
-                    key: None,
-                })
-            )),
-            2
-        );
-
-        // ClearPayload carries its id list directly.
-        assert_eq!(
-            resolved_point_count(&CollectionUpdateOperations::PayloadOperation(
-                PayloadOps::ClearPayload {
-                    points: vec![1.into()],
-                }
-            )),
-            1
-        );
-
-        // DeleteVectors carries its id list directly.
-        assert_eq!(
-            resolved_point_count(&CollectionUpdateOperations::VectorOperation(
-                VectorOperations::DeleteVectors(vec![1.into(), 2.into()].into(), vec![])
-            )),
-            2
-        );
-
-        // No id list yet (e.g. unresolved by-filter) counts as zero.
-        assert_eq!(
-            resolved_point_count(&CollectionUpdateOperations::PayloadOperation(
-                PayloadOps::SetPayload(SetPayloadOp {
-                    payload: payload_json! {"a": 1},
-                    points: None,
-                    filter: Some(color_filter("red")),
-                    key: None,
-                })
-            )),
-            0
-        );
     }
 }

@@ -80,7 +80,8 @@ impl LocalShard {
         } = operation;
 
         // Read the strict-mode config before taking the fence, so we don't hold
-        // the write lock while awaiting the config read.
+        // the write lock while awaiting the config read. The cap applies to
+        // genuine filter scans only, see `resolve_operation`.
         let max_update_by_filter_limit = self
             .collection_config
             .read()
@@ -89,13 +90,6 @@ impl LocalShard {
             .as_ref()
             .filter(|config| config.enabled == Some(true))
             .and_then(|config| config.max_update_by_filter_limit);
-
-        // Cap genuine filter scans only. `is_filter_resolving` also routes
-        // conditional upserts and filtered `UpdateVectors` here, but those
-        // resolve to a subset of the point list the client sent, so their size
-        // is a batch size and not a filter match count.
-        let max_update_by_filter_limit =
-            max_update_by_filter_limit.filter(|_| shard::resolve::is_update_by_filter(&operation));
 
         self.check_wal_disk_space().await?;
 
@@ -118,30 +112,32 @@ impl LocalShard {
         })?;
 
         // 3. Resolve the filter against segment state and rewrite the
-        // operation to its id-based form.
+        // operation to its id-based form. Strict mode rejects update-by-filter
+        // operations whose filter matches more points than allowed, before
+        // they reach the WAL and without materialising the whole match set.
         let segments = self.segments.clone();
         let hw_acc = hw_measurement_acc.clone();
         let resolved = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
-            resolve_operation(&segments, operation, &hw_acc.get_counter_cell())
+            resolve_operation(
+                &segments,
+                operation,
+                max_update_by_filter_limit,
+                &hw_acc.get_counter_cell(),
+            )
         })
         .await??;
-
-        // Strict-mode guard: reject update-by-filter operations whose filter
-        // resolved to more point IDs than allowed, before they reach the WAL.
-        if let Some(limit) = max_update_by_filter_limit {
-            let resolved_count = shard::resolve::resolved_point_count(&resolved);
-            if resolved_count > limit {
-                return Err(CollectionError::strict_mode(
-                    format!(
-                        "Update by filter resolved to {resolved_count} points, \
-                         exceeding the configured limit of {limit}",
-                    ),
-                    "Narrow your filter so it matches at most `max_update_by_filter_limit` \
-                     points, or raise `max_update_by_filter_limit` in the strict mode config.",
-                ));
-            }
-        }
+        let Some(resolved) = resolved else {
+            let limit = max_update_by_filter_limit.unwrap_or_default();
+            return Err(CollectionError::strict_mode(
+                format!(
+                    "Update by filter matches more than {limit} points, \
+                     exceeding the configured limit of {limit}",
+                ),
+                "Narrow your filter so it matches at most `max_update_by_filter_limit` \
+                 points, or raise `max_update_by_filter_limit` in the strict mode config.",
+            ));
+        };
 
         // Guard against `is_filter_resolving` and `resolve_operation` drifting
         // apart: a resolved operation must never classify as filter-resolving,
