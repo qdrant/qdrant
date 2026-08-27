@@ -109,6 +109,17 @@ pub fn unwrap_proxy(
                     log::warn!("Attempt to unwrap raw segment! Should not happen.");
                 }
                 LockedSegment::Proxy(proxy_segment) => {
+                    // The wrapped segment is put back into the segment holder, so all changes
+                    // buffered in the proxy must be propagated into it first. Failing to
+                    // propagate loses in-memory state, but is recovered on restart: the
+                    // persisted pending changes log stays behind and is replayed then, and
+                    // everything past it is replayed from the WAL.
+                    if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+                        log::error!(
+                            "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
+                        );
+                    }
+
                     let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
                     segments_lock.replace(proxy_id, wrapped_segment)?;
                 }
