@@ -23,6 +23,9 @@ mod index_changes;
 mod log_file;
 mod vector_name_changes;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
