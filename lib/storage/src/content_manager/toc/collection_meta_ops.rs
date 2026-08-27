@@ -532,16 +532,17 @@ impl TableOfContent {
                     .await?;
             }
             ShardTransferOperations::Restart(transfer_restart) => {
-                let transfers: HashSet<transfer::ShardTransfer> =
-                    collection.state().await.transfers;
-
                 let transfer_key = transfer_restart.key();
 
                 // The record must exist. A restart updates the record in place, never
                 // removing it, so a missing record means a stale duplicate restart —
                 // reject it. A restart to an unchanged method is not rejected here; it
                 // is an idempotent no-op inside `restart_shard_transfer`.
-                let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
+                let Some(old_transfer) = collection
+                    .shards_holder()
+                    .read()
+                    .await
+                    .get_transfer(&transfer_key)
                 else {
                     return Err(StorageError::bad_request(format!(
                         "There is no transfer for shard {} from {} to {}",

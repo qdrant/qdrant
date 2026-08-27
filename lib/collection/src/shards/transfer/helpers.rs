@@ -20,7 +20,7 @@ pub fn validate_transfer_exists(
     Ok(())
 }
 
-pub fn get_transfer(
+fn get_transfer(
     transfer_key: &ShardTransferKey,
     current_transfers: &HashSet<ShardTransfer>,
 ) -> Option<ShardTransfer> {
