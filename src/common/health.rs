@@ -354,13 +354,15 @@ impl Task {
         let mut unhealthy_shards = HashSet::new();
 
         for collection_pass in &collections {
-            let state = match self.toc.get_collection(collection_pass).await {
-                Ok(collection) => collection.state().await,
-                Err(_) => continue,
+            let Ok(collection) = self.toc.get_collection(collection_pass).await else {
+                continue;
             };
 
-            for (&shard, info) in state.shards.iter() {
-                let Some(state) = info.replicas.get(&this_peer_id) else {
+            let shards_holder = collection.shards_holder();
+            let shards_holder = shards_holder.read().await;
+
+            for (shard, replica_set) in shards_holder.get_shards() {
+                let Some(state) = replica_set.peer_state(this_peer_id) else {
                     continue;
                 };
 
