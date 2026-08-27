@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools as _;
+use serde::{Deserialize, Serialize};
 
 use crate::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
@@ -45,7 +46,7 @@ impl CustomIdCheckerCondition for AlwaysFalseChecker {
 /// stale storage from the wrapped segment. The intent representation keeps
 /// enough information that the apply path can clear that stale storage before
 /// installing the new schema.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IntendedVector {
     /// The vector should exist with this configuration once the proxy drains.
     Present {
