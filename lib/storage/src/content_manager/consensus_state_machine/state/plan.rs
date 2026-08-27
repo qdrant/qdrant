@@ -70,18 +70,14 @@ impl ClusterState {
         // before it is applied and persisted, and every action after it never runs.
         //
         // `plan_change_aliases` validates all `actions` first, and emits a single
-        // `UpdateAliases` action, which the applier has to write in one go. So either all
-        // `actions` apply, or none of them do.
+        // `UpdateAliases` action, which the applier has to write in one go.
+        // So either all `actions` apply, or none of them do.
         //
         // E.g., take a list of two actions:
         // the first creates alias `new`, the second renames alias `missing`, which does not exist.
         //
         // `ToC::update_aliases` would create alias `new`, then return an error.
         // `plan_change_aliases` would return an error *before* creating alias `new`.
-        //
-        // `ToC::update_aliases` has to validate all `actions` up front, and write the mapping
-        // once, to match. Rejecting a replay of an applied operation is only safe when nothing
-        // of it is left behind.
 
         let mut aliases = self.aliases.clone();
 
@@ -130,9 +126,6 @@ impl ClusterState {
                 }
             }
         }
-
-        // Emit what the actions add up to, so that replay of an applied operation writes the
-        // same values, and an operation that changes nothing writes nothing
 
         let set: BTreeMap<_, _> = aliases
             .iter()

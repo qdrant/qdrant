@@ -125,16 +125,23 @@ fn apply(state: &ClusterState, operation: &ConsensusOperations) -> ApplyOutcome 
     state_machine(state.clone()).apply(operation)
 }
 
-/// Whether replay of `operation` is allowed to end up anywhere but the goal state.
+/// Operations that are not fully idempotent, and may diverge on replay.
 ///
-/// A rename is the one alias action that is not an absolute write: it reads the alias it consumes.
-/// The whole operation applies in one write, so a replay that cannot find one of those aliases
-/// rejects and changes nothing, which leaves the state the first run reached.
+/// `RenameAlias` is not idempotent: it moves whatever the alias points at,
+/// so a second run moves whatever the first run left under that name.
 ///
-/// It diverges when every rename finds its alias again, because a later action of the same
-/// operation put it back. Renaming `prod` to `prod_old` and then pointing `prod` at another
-/// collection is that shape: the replay renames the new `prod`, and both names end up on it.
-/// Telling the two runs apart needs something that records the operation as applied.
+/// E.g., take a list of two actions: the first renames alias `prod` to `prod_old`,
+/// the second creates alias `prod` for collection `new`.
+///
+/// Starting from `{ prod: old }`, the first run leaves `{ prod_old: old, prod: new }`.
+/// A replay renames the `prod` the first run created, and leaves `{ prod_old: new, prod: new }`.
+///
+/// This only happens if the alias still exists after the first run:
+/// a later action created an alias with the same name, or renamed another alias to it.
+/// If it does not exist, the whole operation is rejected and aliases stay unchanged.
+///
+/// If the operation renames multiple aliases, then *all* of them have to exist.
+/// If any one is missing, then the whole operation is rejected.
 fn replay_may_diverge(operation: &ConsensusOperations) -> bool {
     let ConsensusOperations::CollectionMeta(operation) = operation else {
         return false;
@@ -146,26 +153,33 @@ fn replay_may_diverge(operation: &ConsensusOperations) -> bool {
 
     let ChangeAliasesOperation { actions } = operation;
 
-    let renames = actions.iter().enumerate().filter_map(|(idx, action)| {
-        let AliasOperations::RenameAlias(action) = action else {
-            return None;
-        };
+    let mut renames = actions
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, action)| {
+            let AliasOperations::RenameAlias(action) = action else {
+                return None;
+            };
 
-        Some((idx, &action.rename_alias.old_alias_name))
-    });
+            let alias = &action.rename_alias.old_alias_name;
+            let rest = &actions[idx + 1..];
 
-    let mut renames = renames.peekable();
-
-    // An operation without a rename converges, and `all` of nothing is true
-    renames.peek().is_some()
-        && renames.all(|(idx, renamed)| {
-            actions[idx + 1..]
-                .iter()
-                .any(|action| creates_alias(action, renamed))
+            Some((alias, rest))
         })
+        .peekable();
+
+    // If operation does not do any renames, it should be idempotent
+    let has_renames = renames.peek().is_some();
+
+    // If operation does not recreate *all* renamed aliases, it should be rejected on replay
+    // without changing anything which is idempotent
+    let recreates_all_renamed_aliases =
+        renames.all(|(alias, rest)| rest.iter().any(|action| creates_alias(action, alias)));
+
+    has_renames && recreates_all_renamed_aliases
 }
 
-/// Whether `action` makes `alias` name a collection
+/// Checks if `action` creates `alias`
 fn creates_alias(action: &AliasOperations, alias: &str) -> bool {
     match action {
         AliasOperations::CreateAlias(action) => action.create_alias.alias_name == alias,
