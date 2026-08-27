@@ -1,4 +1,3 @@
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Display;
@@ -754,42 +753,23 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         persistent.save()
     }
 
-    /// Deregister a caller that gave up waiting for `operation` to be applied.
-    ///
-    /// The map owns the only `Sender` for an operation, and callers proposing an identical
-    /// operation deduplicate onto it instead of proposing again. Removing the entry closes the
-    /// channel for every other waiter, so one caller's timeout would fail their still in-flight
-    /// operation with `Channel sender dropped`. Only drop the entry once no receiver is left.
-    fn forget_operation_awaiter(&self, operation: &ConsensusOperations) {
-        let mut on_apply_lock = self.on_consensus_op_apply.lock();
-        let no_waiters_left = on_apply_lock
-            .get(operation)
-            .is_some_and(|sender| sender.receiver_count() == 0);
-        if no_waiters_left {
-            on_apply_lock.remove(operation);
-        }
-    }
-
     async fn await_receiver(
         &self,
         mut receiver: Receiver<Result<bool, StorageError>>,
         wait_timeout: Duration,
         operation: &ConsensusOperations,
     ) -> Result<bool, StorageError> {
-        let timeout_res = match tokio::time::timeout(wait_timeout, receiver.recv()).await {
-            Ok(res) => res,
-            Err(_elapsed) => {
-                // Drop our receiver before deciding whether anyone else still waits on it
-                drop(receiver);
-                self.forget_operation_awaiter(operation);
-                return Err(StorageError::service_error(format!(
-                    "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                    wait_timeout.as_secs_f64(),
-                )));
-            }
+        let Ok(receiver_res) = tokio::time::timeout(wait_timeout, receiver.recv()).await else {
+            forget_operation_awaiter(&mut self.on_consensus_op_apply.lock(), operation, receiver);
+
+            return Err(StorageError::service_error(format!(
+                "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
+                wait_timeout.as_secs_f64(),
+            )));
         };
+
         // 2 possible errors to forward: channel sender dropped OR operation failed
-        timeout_res.map_err(|err| {
+        receiver_res.map_err(|err| {
             StorageError::service_error(format!("Error occurred while waiting for consensus operation. Channel sender dropped ({err})"))
         })?
     }
@@ -799,31 +779,28 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         operations: Vec<ConsensusOperations>,
         wait_timeout: Option<Duration>,
     ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
-        // Register the awaiters eagerly: the caller submits the operations only after this call
-        // returns, so the receivers must already be in place by then. The guard deregisters them
-        // again whenever we stop waiting, including when the caller drops this future without
-        // ever polling it.
+        // Register the awaiters eagerly, before the caller proposes the operation that triggers
+        // them: the awaited operations are emitted as a side effect of applying that one, and can
+        // land before this future is first polled. The guard deregisters them again whenever we
+        // stop waiting, including when the caller drops this future without ever polling it.
         let mut awaiters = OperationAwaiters::register(self, operations);
 
         async move {
-            let results = {
-                let await_for_all = join_all(awaiters.awaiters.iter_mut().map(|(_, r)| r.recv()));
-                tokio::time::timeout(
-                    wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
-                    await_for_all,
-                )
-                .await?
-            };
+            let await_for_all = join_all(awaiters.receivers_mut().map(|r| r.recv()));
+            let results = tokio::time::timeout(
+                wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
+                await_for_all,
+            )
+            .await?;
 
             for result in results {
                 match result {
-                    Ok(response_res) => match response_res {
-                        Ok(_) => {}
-                        Err(err) => return Ok(Err(err)),
-                    },
-                    Err(recv_error) => return Ok(Err(recv_error.into())),
+                    Ok(Ok(_)) => (),
+                    Ok(Err(err)) => return Ok(Err(err)),
+                    Err(err) => return Ok(Err(err.into())),
                 }
             }
+
             Ok(Ok(()))
         }
     }
@@ -1032,6 +1009,33 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 }
 
+/// The awaiter map, keyed by the operation each caller is waiting for.
+type OnConsensusOpApply =
+    HashMap<ConsensusOperations, broadcast::Sender<Result<bool, StorageError>>>;
+
+/// Deregister a caller that gave up waiting for `operation` to be applied.
+///
+/// The map owns the only `Sender` for an operation, and callers proposing an identical operation
+/// deduplicate onto it instead of proposing again. Removing the entry closes the channel for
+/// every other waiter, so one caller's timeout would fail their still in-flight operation with
+/// `Channel sender dropped`. Only drop the entry once no receiver is left.
+///
+/// Takes the map already locked and drops `receiver` while it is held, so a caller registering in
+/// between never finds an entry nobody is waiting on and subscribes to it anyway.
+fn forget_operation_awaiter(
+    on_apply_lock: &mut OnConsensusOpApply,
+    operation: &ConsensusOperations,
+    receiver: Receiver<Result<bool, StorageError>>,
+) {
+    drop(receiver);
+    let no_waiters_left = on_apply_lock
+        .get(operation)
+        .is_some_and(|sender| sender.receiver_count() == 0);
+    if no_waiters_left {
+        on_apply_lock.remove(operation);
+    }
+}
+
 /// Awaiters registered for a batch of consensus operations, deregistered again on drop.
 ///
 /// The map owns the only `Sender` per operation, so an entry whose receivers are all gone is
@@ -1046,43 +1050,57 @@ struct OperationAwaiters<'a, C: CollectionContainer> {
 
 impl<'a, C: CollectionContainer> OperationAwaiters<'a, C> {
     fn register(consensus: &'a ConsensusManager<C>, operations: Vec<ConsensusOperations>) -> Self {
-        let mut awaiters = Vec::with_capacity(operations.len());
+        // Collected into the guard as we go, so giving up part way still deregisters the rest
+        let mut this = Self {
+            consensus,
+            awaiters: Vec::with_capacity(operations.len()),
+        };
+
         for operation in operations {
-            // one-shot broadcast channel
-            let (sender, mut receiver) = broadcast::channel(1);
             let mut on_apply_lock = consensus.on_consensus_op_apply.lock();
             // check that the exact same operation is not already in-flight
-            match on_apply_lock.entry(operation.clone()) {
-                Entry::Occupied(e) => {
+            let receiver = match on_apply_lock.get(&operation) {
+                Some(existing_sender) => {
                     debug_assert!(
-                        e.get().receiver_count() > 0,
-                        "Consensus operation must have at least one receiver, does forget_operation_awaiter() work correctly?",
+                        existing_sender.receiver_count() > 0,
+                        "Consensus operation must have at least one receiver, \
+                         does forget_operation_awaiter() work correctly?",
                     );
 
                     // subscribe to existing sender for faster feedback
-                    receiver = e.get().subscribe()
+                    existing_sender.subscribe()
                 }
-                Entry::Vacant(e) => {
-                    // insert new sender
-                    e.insert(sender);
+                None => {
+                    // one-shot broadcast channel
+                    let (sender, receiver) = broadcast::channel(1);
+                    on_apply_lock.insert(operation.clone(), sender);
+                    receiver
                 }
             };
+            drop(on_apply_lock);
+
             // Keep the key around so we can deregister again
-            awaiters.push((operation, receiver));
+            this.awaiters.push((operation, receiver));
         }
-        Self {
-            consensus,
-            awaiters,
-        }
+
+        this
+    }
+
+    fn receivers_mut(&mut self) -> impl Iterator<Item = &mut Receiver<Result<bool, StorageError>>> {
+        self.awaiters.iter_mut().map(|(_, receiver)| receiver)
     }
 }
 
 impl<C: CollectionContainer> Drop for OperationAwaiters<'_, C> {
     fn drop(&mut self) {
+        if self.awaiters.is_empty() {
+            return;
+        }
+        // One lock for the whole batch: creating a collection registers an awaiter per replica,
+        // and this runs on the mutex the consensus thread needs for every entry it applies
+        let mut on_apply_lock = self.consensus.on_consensus_op_apply.lock();
         for (operation, receiver) in self.awaiters.drain(..) {
-            // Our receiver must be gone before we check whether anyone else is still waiting
-            drop(receiver);
-            self.consensus.forget_operation_awaiter(&operation);
+            forget_operation_awaiter(&mut on_apply_lock, &operation, receiver);
         }
     }
 }
