@@ -623,13 +623,15 @@ fn finish_optimization(
     // `SegmentHolder::register_post_flush_action`.
     //
     // This cap has to be tracked at the holder level because the proxy can no longer
-    // impose it. While a proxy was a member of the holder it pinned the WAL acknowledge for
-    // free: its `persistent_version` reported the wrapped source's durable point while its
-    // `version` climbed with every propagated change, so `flush_all` saw unsaved work and
-    // capped the ack there. The `swap_new` above evicted the proxies, so that contribution is
-    // gone from the holder's flush accounting even though the source files it protected are
-    // still on disk. `register_segment_drop` re-expresses the same pin independently of segment
-    // membership, snapshotting each proxy's final `persistent_version` as `ack_pin`.
+    // impose it. While a proxy was a member of the holder, `flush_all` accounted for it like any
+    // other segment: its `persistent_version` covers the wrapped source's durable point plus
+    // whatever the proxy persisted into its pending changes log, and anything buffered past that
+    // showed up as unsaved work capping the ack. The `swap_new` above evicted the proxies, so
+    // that contribution is gone from the holder's flush accounting even though the source files
+    // (and their pending changes logs) it protected are still on disk, while the optimized
+    // segment holding the same operations is not durable yet. `register_segment_drop`
+    // re-expresses the same pin independently of segment membership, snapshotting each proxy's
+    // final `persistent_version` as `ack_pin`.
     for proxy in proxies {
         let ack_pin = proxy.get().read().persistent_version();
         read_segment_holder.register_segment_drop(optimized_segment_version, ack_pin, proxy);

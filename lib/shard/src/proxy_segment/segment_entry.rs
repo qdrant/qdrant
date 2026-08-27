@@ -834,17 +834,46 @@ impl StorageSegmentEntry for ProxySegment {
     }
 
     fn persistent_version(&self) -> SeqNumberType {
-        self.wrapped_segment.get().read().persistent_version()
+        // Everything this proxy buffers at or below the persisted pending changes version is
+        // durable in the pending changes log, on top of whatever the wrapped segment persisted
+        // itself. Reporting it here is what allows the WAL to be acknowledged past operations
+        // that only live in this proxy: on a restart the log is replayed onto the segment
+        // instead of replaying the WAL.
+        cmp::max(
+            self.wrapped_segment.get().read().persistent_version(),
+            self.pending_changes.persisted_version(),
+        )
     }
 
     fn flusher(&self, force: bool) -> Option<Flusher> {
-        let wrapped_segment = self.wrapped_segment.get();
-        let wrapped_segment_guard = wrapped_segment.read();
-        wrapped_segment_guard.flusher(force)
+        // Persist our pending changes before passing the flush along to the wrapped segment
+        let pending_changes_flusher = self.pending_changes.flusher(self.version);
+        let wrapped_flusher = self.wrapped_segment.get().read().flusher(force);
+
+        match (pending_changes_flusher, wrapped_flusher) {
+            (None, None) => None,
+            (pending_changes_flusher, wrapped_flusher) => Some(Box::new(move || {
+                if let Some(pending_changes_flusher) = pending_changes_flusher {
+                    pending_changes_flusher()?;
+                }
+                if let Some(wrapped_flusher) = wrapped_flusher {
+                    wrapped_flusher()?;
+                }
+                Ok(())
+            })),
+        }
     }
 
     fn drop_data(self) -> OperationResult<()> {
-        self.wrapped_segment.drop_data()
+        let ProxySegment {
+            wrapped_segment,
+            pending_changes,
+            ..
+        } = self;
+        // Drop the pending changes first: this waits for any in-flight pending changes flusher,
+        // so it cannot append to the segment directory while it is being deleted
+        drop(pending_changes);
+        wrapped_segment.drop_data()
     }
 
     fn data_path(&self) -> PathBuf {
