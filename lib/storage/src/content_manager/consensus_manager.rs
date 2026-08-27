@@ -238,7 +238,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn peers(&self) -> Vec<PeerId> {
         self.persistent
             .read()
-            .peer_address_by_id()
+            .peer_address_by_id
+            .read()
             .keys()
             .copied()
             .collect()
