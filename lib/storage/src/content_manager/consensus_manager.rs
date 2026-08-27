@@ -729,13 +729,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn peer_has_shards(&self, peer_id: PeerId) -> bool {
-        self.toc
-            .collections_snapshot()
-            .collections
-            .values()
-            .flat_map(|state| state.shards.values())
-            .flat_map(|shard_info| shard_info.replicas.keys())
-            .any(|&id| id == peer_id)
+        self.toc.peer_has_shards(peer_id)
     }
 
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
@@ -1523,6 +1517,10 @@ mod tests {
             _peer_id: PeerId,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
+        }
+
+        fn peer_has_shards(&self, _peer_id: PeerId) -> bool {
+            false
         }
 
         fn sync_local_state(&self) -> Result<(), crate::content_manager::errors::StorageError> {
