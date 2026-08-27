@@ -1,6 +1,5 @@
 pub mod segment_entry;
 pub mod snapshot_entry;
-mod vector_name_changes;
 
 #[cfg(test)]
 mod tests;
@@ -11,14 +10,14 @@ use ahash::AHashMap;
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use itertools::Itertools as _;
 use segment::common::operation_error::OperationResult;
+pub use segment::pending_changes::{
+    DeletedPoints, IntendedVector, ProxyDeletedPoint, ProxyIndexChange, ProxyIndexChanges,
+    ProxyVectorNameChanges,
+};
 use segment::types::*;
 
-pub use self::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
 use crate::locked_segment::LockedSegment;
-
-pub type DeletedPoints = AHashMap<PointIdType, ProxyDeletedPoint>;
 
 /// This object is a wrapper around read-only segment.
 ///
@@ -364,83 +363,5 @@ impl ProxySegment {
 
     pub fn get_vector_name_changes(&self) -> &ProxyVectorNameChanges {
         &self.changed_vector_names
-    }
-}
-
-/// Point persion information of points to delete from a wrapped proxy segment.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ProxyDeletedPoint {
-    /// Version the point had in the wrapped segment when the delete was scheduled.
-    /// We use it to determine if some other proxy segment should move the point again with
-    /// `move_if_exists` if it has newer point data.
-    pub local_version: SeqNumberType,
-    /// Version of the operation that caused the delete to be scheduled.
-    /// We use it for the delete operations when propagating them to the wrapped or optimized
-    /// segment.
-    pub operation_version: SeqNumberType,
-}
-
-#[derive(Debug, Default)]
-pub struct ProxyIndexChanges {
-    changes: AHashMap<PayloadKeyType, ProxyIndexChange>,
-}
-
-impl ProxyIndexChanges {
-    pub fn insert(&mut self, key: PayloadKeyType, change: ProxyIndexChange) {
-        self.changes.insert(key, change);
-    }
-
-    pub fn remove(&mut self, key: &PayloadKeyType) {
-        self.changes.remove(key);
-    }
-
-    pub fn len(&self) -> usize {
-        self.changes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.changes.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.changes.clear();
-    }
-
-    /// Iterate over proxy index changes in order of version.
-    ///
-    /// Index changes must be applied in order because changes with an old version will silently be
-    /// rejected.
-    pub fn iter_ordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
-        self.changes
-            .iter()
-            .sorted_by_key(|(_, change)| change.version())
-    }
-
-    /// Iterate over proxy index changes in arbitrary order.
-    pub fn iter_unordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
-        self.changes.iter()
-    }
-
-    pub fn merge(&mut self, other: &Self) {
-        for (key, change) in &other.changes {
-            self.changes.insert(key.clone(), change.clone());
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ProxyIndexChange {
-    Create(PayloadFieldSchema, SeqNumberType),
-    Delete(SeqNumberType),
-    DeleteIfIncompatible(SeqNumberType, PayloadFieldSchema),
-}
-
-impl ProxyIndexChange {
-    pub fn version(&self) -> SeqNumberType {
-        match self {
-            ProxyIndexChange::Create(_, version) => *version,
-            ProxyIndexChange::Delete(version) => *version,
-            ProxyIndexChange::DeleteIfIncompatible(version, _) => *version,
-        }
     }
 }
