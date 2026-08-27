@@ -1,4 +1,4 @@
-//! Pending vector-schema changes recorded in a [`super::ProxySegment`].
+//! Pending vector-schema changes recorded in a proxy segment.
 //!
 //! See [`IntendedVector`] for the rationale behind the intent representation
 //! and [`ProxyVectorNameChanges`] for the per-proxy buffer.
@@ -8,11 +8,12 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools as _;
-use segment::data_types::vector_name_config::{
+
+use crate::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
-use segment::index::field_index::CardinalityEstimation;
-use segment::types::{
+use crate::index::field_index::CardinalityEstimation;
+use crate::types::{
     Condition, CustomIdCheckerCondition, ExtendedPointId, Filter, SegmentConfig, SeqNumberType,
     SparseVectorDataConfig, VectorDataConfig, VectorName, VectorNameBuf, WithVector,
 };
@@ -34,7 +35,7 @@ impl CustomIdCheckerCondition for AlwaysFalseChecker {
     }
 }
 
-/// Desired end-state of a single named vector inside a [`super::ProxySegment`].
+/// Desired end-state of a single named vector inside a proxy segment.
 ///
 /// `ProxyVectorNameChanges` records, for each name touched in the proxy, the
 /// final state we want the wrapped/optimised segment to converge to once the
