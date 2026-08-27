@@ -808,7 +808,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let mut proxies = Vec::new();
     for sg in input_segments.iter() {
-        let proxy = UnsyncedProxySegment::new(sg.clone());
+        let proxy = UnsyncedProxySegment::new(sg.clone())?;
         // Wrapped segment is fresh, so it has no operations
         // Operation with number 0 will be applied
         if let Some(extra_cow_segment) = &extra_cow_segment_opt {

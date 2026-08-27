@@ -95,7 +95,7 @@ fn test_proxy_deleted_mask_resync_after_race_window_write() {
 
         // Keep a handle so we can write to the wrapped segment around the proxy lifecycle.
         let wrapped_handle = original_segment.clone();
-        let proxy = UnsyncedProxySegment::new(original_segment);
+        let proxy = UnsyncedProxySegment::new(original_segment).unwrap();
         (proxy, wrapped_handle)
     };
 
