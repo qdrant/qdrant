@@ -390,6 +390,20 @@ impl TableOfContent {
             .collect()
     }
 
+    /// Number of collections the given access has access to
+    pub async fn collections_count(&self, access: &Access) -> usize {
+        self.collections
+            .read()
+            .await
+            .keys()
+            .filter(|name| {
+                access
+                    .check_collection_access(name, AccessRequirements::new())
+                    .is_ok()
+            })
+            .count()
+    }
+
     async fn all_collections_with_access_requirements(
         &self,
         access: &Access,
