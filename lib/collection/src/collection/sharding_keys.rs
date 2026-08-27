@@ -222,10 +222,9 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .get_shard_key_to_ids_mapping()
-            .get(shard_key)
-            .map(|ids| ids.iter().cloned().collect())
-            .ok_or_else(|| {
+            .get_shard_ids_by_key(shard_key)
+            .map(|ids| ids.into_iter().collect())
+            .map_err(|_| {
                 CollectionError::bad_input(format!(
                     "Shard key {shard_key} does not exist for collection {}",
                     self.name()
