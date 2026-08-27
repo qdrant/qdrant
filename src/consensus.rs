@@ -1522,11 +1522,7 @@ impl RaftMessageSender {
     }
 
     async fn uri(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
-        let uri = self
-            .consensus_state
-            .peer_address_by_id()
-            .get(&peer_id)
-            .cloned();
+        let uri = self.consensus_state.peer_address(peer_id);
 
         match uri {
             Some(uri) => Ok(uri),

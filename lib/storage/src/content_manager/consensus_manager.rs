@@ -901,6 +901,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.persistent.read().peer_address_by_id()
     }
 
+    pub fn peer_address(&self, peer_id: PeerId) -> Option<Uri> {
+        self.persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .get(&peer_id)
+            .cloned()
+    }
+
     pub fn peer_count(&self) -> usize {
         self.persistent.read().peer_address_by_id.read().len()
     }
