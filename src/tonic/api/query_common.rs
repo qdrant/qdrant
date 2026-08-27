@@ -433,15 +433,13 @@ pub async fn recommend_groups(
     routing_token: Option<RoutingToken>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
-    let recommend_groups_request = recommend_point_groups.clone().try_into()?;
+    // Take the few fields needed here before converting, to avoid cloning the whole request
+    let collection_name = recommend_point_groups.collection_name.clone();
+    let read_consistency = recommend_point_groups.read_consistency;
+    let timeout = recommend_point_groups.timeout;
+    let shard_key_selector = recommend_point_groups.shard_key_selector.clone();
 
-    let RecommendPointGroups {
-        collection_name,
-        read_consistency,
-        timeout,
-        shard_key_selector,
-        ..
-    } = recommend_point_groups;
+    let recommend_groups_request = recommend_point_groups.try_into()?;
 
     let toc = toc_provider
         .check_strict_mode(
