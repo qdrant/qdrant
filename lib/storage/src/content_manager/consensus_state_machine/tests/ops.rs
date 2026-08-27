@@ -1002,6 +1002,10 @@ fn drop_payload_index_op(field: &str) -> ConsensusOperations {
     ))
 }
 
+fn field_name(field: &str) -> PayloadKeyType {
+    field.parse().expect("valid field name")
+}
+
 fn update_peer_metadata_op(peer_id: PeerId, version: &str) -> ConsensusOperations {
     ConsensusOperations::UpdatePeerMetadata {
         peer_id,
@@ -1034,8 +1038,4 @@ fn quota_config(enabled: bool) -> QuotaConfig {
         max_disk_usage_percent: None,
         release_margin_percent: None,
     }
-}
-
-fn field_name(field: &str) -> PayloadKeyType {
-    field.parse().expect("valid field name")
 }

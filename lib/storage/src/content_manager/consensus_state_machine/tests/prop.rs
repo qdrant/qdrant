@@ -56,70 +56,26 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
     collections.prop_flat_map(|collections| {
         let names = collections.keys().cloned().collect();
 
-        (
+        let state = (
             Just(collections),
             arb_aliases(names),
             arb_peer_metadata_by_id(),
             arb_cluster_metadata(),
             proptest::option::of(arb_quota_config()),
-        )
-            .prop_map(
-                |(collections, aliases, peer_metadata_by_id, cluster_metadata, quota_config)| {
-                    ClusterState {
-                        peer_metadata_by_id,
-                        collections,
-                        aliases,
-                        cluster_metadata,
-                        quota_config,
-                        ..Default::default()
-                    }
-                },
-            )
-    })
-}
+        );
 
-fn arb_peer_metadata_by_id() -> impl Strategy<Value = PeerMetadataById> {
-    proptest::collection::hash_map(arb_peer_id(), arb_peer_metadata(), 0..3)
-}
+        state.prop_map(|state| {
+            let (collections, aliases, peer_metadata_by_id, cluster_metadata, quota_config) = state;
 
-fn arb_peer_id() -> impl Strategy<Value = PeerId> {
-    proptest::sample::select(PEER_IDS)
-}
-
-fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
-    proptest::sample::select(PEER_VERSIONS)
-        .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
-}
-
-/// Cluster metadata never holds a null value: that is how a key is removed
-fn arb_cluster_metadata() -> impl Strategy<Value = HashMap<String, serde_json::Value>> {
-    proptest::collection::hash_map(arb_metadata_key(), arb_metadata_value(), 0..2)
-}
-
-fn arb_metadata_key() -> impl Strategy<Value = String> {
-    proptest::sample::select(METADATA_KEYS).prop_map(String::from)
-}
-
-fn arb_metadata_value() -> impl Strategy<Value = serde_json::Value> {
-    prop_oneof![
-        Just(serde_json::json!("eu")),
-        Just(serde_json::json!(2)),
-        Just(serde_json::json!(true)),
-    ]
-}
-
-/// Quota config varying two of its fields: no covered operation reads any of them
-fn arb_quota_config() -> impl Strategy<Value = QuotaConfig> {
-    let enabled = proptest::bool::ANY;
-    let max_resident_memory_percent = proptest::option::of(Just(90));
-
-    (enabled, max_resident_memory_percent).prop_map(|(enabled, max_resident_memory_percent)| {
-        QuotaConfig {
-            enabled,
-            max_resident_memory_percent,
-            max_disk_usage_percent: None,
-            release_margin_percent: None,
-        }
+            ClusterState {
+                collections,
+                aliases,
+                peer_metadata_by_id,
+                cluster_metadata,
+                quota_config,
+                ..Default::default()
+            }
+        })
     })
 }
 
@@ -158,6 +114,51 @@ fn arb_aliases(collections: Vec<CollectionId>) -> impl Strategy<Value = AliasMap
         }
 
         mapping
+    })
+}
+
+fn arb_peer_metadata_by_id() -> impl Strategy<Value = PeerMetadataById> {
+    proptest::collection::hash_map(arb_peer_id(), arb_peer_metadata(), 0..3)
+}
+
+fn arb_peer_id() -> impl Strategy<Value = PeerId> {
+    proptest::sample::select(PEER_IDS)
+}
+
+fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
+    proptest::sample::select(PEER_VERSIONS)
+        .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
+}
+
+/// Cluster metadata never holds a null value: that is how a key is removed
+fn arb_cluster_metadata() -> impl Strategy<Value = HashMap<String, serde_json::Value>> {
+    proptest::collection::hash_map(arb_metadata_key(), arb_metadata_value(), 0..2)
+}
+
+fn arb_metadata_key() -> impl Strategy<Value = String> {
+    proptest::sample::select(METADATA_KEYS).prop_map(String::from)
+}
+
+fn arb_metadata_value() -> impl Strategy<Value = serde_json::Value> {
+    prop_oneof![
+        Just(serde_json::json!("text")),
+        Just(serde_json::json!(42)),
+        Just(serde_json::json!(true)),
+    ]
+}
+
+/// Quota config varying two of its fields: no covered operation reads any of them
+fn arb_quota_config() -> impl Strategy<Value = QuotaConfig> {
+    let enabled = proptest::bool::ANY;
+    let max_resident_memory_percent = proptest::option::of(Just(90));
+
+    (enabled, max_resident_memory_percent).prop_map(|(enabled, max_resident_memory_percent)| {
+        QuotaConfig {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent: None,
+            release_margin_percent: None,
+        }
     })
 }
 

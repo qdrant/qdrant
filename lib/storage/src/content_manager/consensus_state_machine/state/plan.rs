@@ -178,9 +178,8 @@ impl ClusterState {
         }])
     }
 
-    /// Metadata is an absolute value, so a peer that already has it needs no action.
-    /// Nothing to validate: any peer can report any metadata.
     pub fn plan_update_peer_metadata(&self, peer_id: PeerId, metadata: &PeerMetadata) -> Actions {
+        // Check if operation is already applied
         if self.peer_metadata_by_id.get(&peer_id) == Some(metadata) {
             return Actions::new();
         }
@@ -191,11 +190,10 @@ impl ClusterState {
         }]
     }
 
-    /// Null value removes the key, so the goal state is reached when the key is gone.
-    /// Nothing to validate: any key can hold any value.
     pub fn plan_update_cluster_metadata(&self, key: &str, value: &serde_json::Value) -> Actions {
         let current = self.cluster_metadata.get(key);
 
+        // Check if operation is already applied
         let applied = match value.is_null() {
             true => current.is_none(),
             false => current == Some(value),
@@ -206,14 +204,14 @@ impl ClusterState {
         }
 
         vec![Action::SetClusterMetadataKey {
-            key: key.to_string(),
+            key: key.into(),
             value: value.clone(),
         }]
     }
 
-    /// Emitted even when the config matches: `QuotaManager::set_config` also drops the limit
-    /// verdicts it recorded, so an operator raising a limit is served right away
-    pub fn plan_set_quota_config(&self, config: &QuotaConfig) -> Actions {
-        vec![Action::SetQuotaConfig { config: *config }]
+    pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> Actions {
+        // `QuotaManager::set_config` additionally clears exceeded-quota flags,
+        // so we always emit the action, even if the config is the same
+        vec![Action::SetQuotaConfig { config }]
     }
 }
