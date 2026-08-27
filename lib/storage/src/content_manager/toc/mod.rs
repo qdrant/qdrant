@@ -635,13 +635,13 @@ impl TableOfContent {
 
     pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
-            let state = collection.state().await;
-            if state
-                .shards
-                .into_values()
-                .flat_map(|shard_info| shard_info.replicas.into_keys())
-                .any(|x| x == peer_id)
-            {
+            let shards_holder = collection.shards_holder();
+            let has_shards = shards_holder
+                .read()
+                .await
+                .all_shards()
+                .any(|replica_set| replica_set.peer_state(peer_id).is_some());
+            if has_shards {
                 return true;
             }
         }
