@@ -94,10 +94,13 @@ impl Raft for RaftService {
         // shards, remove the old peer first so the new one can take its place.
         let existing_peer_id = self
             .consensus_state
-            .peer_address_by_id()
-            .into_iter()
-            .find(|(id, peer_uri)| *peer_uri == uri && *id != peer.id)
-            .map(|(id, _)| id);
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .iter()
+            .find(|(id, peer_uri)| **peer_uri == uri && **id != peer.id)
+            .map(|(id, _)| *id);
 
         if let Some(old_peer_id) = existing_peer_id {
             let consensus_state = self.consensus_state.clone();
