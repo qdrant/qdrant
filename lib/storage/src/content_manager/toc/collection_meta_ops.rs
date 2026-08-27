@@ -627,12 +627,11 @@ impl TableOfContent {
                 let collection = self.get_collection_unchecked(&collection_id).await?;
 
                 let current_state = collection
-                    .state()
+                    .shards_holder()
+                    .read()
                     .await
-                    .shards
-                    .get(&transfer.shard_id)
-                    .and_then(|info| info.replicas.get(&transfer.to))
-                    .copied();
+                    .get_shard(transfer.shard_id)
+                    .and_then(|replica_set| replica_set.peer_state(transfer.to));
 
                 let Some(current_state) = current_state else {
                     return Err(StorageError::bad_input(format!(
