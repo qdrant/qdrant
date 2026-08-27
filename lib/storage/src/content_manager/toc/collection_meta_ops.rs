@@ -678,10 +678,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
-                transfer::helpers::validate_transfer_exists(
-                    &transfer,
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer).await?;
                 log::warn!("Aborting shard transfer: {reason}");
                 collection
                     .abort_shard_transfer_and_resharding(transfer)

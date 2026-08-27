@@ -6,20 +6,6 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 
-pub fn validate_transfer_exists(
-    transfer_key: &ShardTransferKey,
-    current_transfers: &HashSet<ShardTransfer>,
-) -> CollectionResult<()> {
-    if !current_transfers.iter().any(|t| &t.key() == transfer_key) {
-        return Err(CollectionError::bad_request(format!(
-            "There is no transfer for shard {} from {} to {}",
-            transfer_key.shard_id, transfer_key.from, transfer_key.to,
-        )));
-    }
-
-    Ok(())
-}
-
 fn get_transfer(
     transfer_key: &ShardTransferKey,
     current_transfers: &HashSet<ShardTransfer>,
