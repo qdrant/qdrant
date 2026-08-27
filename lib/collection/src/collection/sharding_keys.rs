@@ -173,9 +173,9 @@ impl Collection {
     }
 
     pub async fn drop_shard_key(&self, shard_key: ShardKey) -> CollectionResult<()> {
-        let state = self.state().await;
+        let sharding_method = self.shards_holder.read().await.get_sharding_method();
 
-        match state.config.params.sharding_method.unwrap_or_default() {
+        match sharding_method {
             ShardingMethod::Custom => {}
             ShardingMethod::Auto => {
                 return Err(CollectionError::bad_request(format!(
