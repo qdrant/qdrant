@@ -766,27 +766,36 @@ fn set_quota_config_replay() {
 #[cfg(feature = "staging")]
 #[test]
 fn test_slow_down() {
-    let operation = CollectionMetaOperations::TestSlowDown(TestSlowDown {
+    let operation = TestSlowDown {
         peer_id: Some(PEER_ID),
         duration_ms: 10,
-    });
+    };
 
-    staging_operation_changes_nothing(operation);
+    let actions = staging_operation_changes_nothing(CollectionMetaOperations::TestSlowDown(
+        operation.clone(),
+    ));
+
+    assert_eq!(actions, vec![Action::TestSlowDown(operation)]);
 }
 
 #[cfg(feature = "staging")]
 #[test]
 fn test_transient_error() {
-    let operation = CollectionMetaOperations::TestTransientError(TestTransientError {
+    let operation = TestTransientError {
         peer_id: Some(PEER_ID),
         failure_probability_percent: 100,
-    });
+    };
 
-    staging_operation_changes_nothing(operation);
+    let actions = staging_operation_changes_nothing(CollectionMetaOperations::TestTransientError(
+        operation.clone(),
+    ));
+
+    assert_eq!(actions, vec![Action::TestTransientError(operation)]);
 }
 
+/// The action a staging operation emits only has an effect outside `ClusterState`
 #[cfg(feature = "staging")]
-fn staging_operation_changes_nothing(operation: CollectionMetaOperations) {
+fn staging_operation_changes_nothing(operation: CollectionMetaOperations) -> Vec<Action> {
     let state = cluster_state(Vec::new());
 
     let mut machine = state_machine(state.clone());
@@ -796,8 +805,9 @@ fn staging_operation_changes_nothing(operation: CollectionMetaOperations) {
         panic!("a staging operation should be accepted, got {outcome:?}");
     };
 
-    assert!(actions.is_empty());
     assert_eq!(machine.state(), &state);
+
+    actions
 }
 
 #[test]

@@ -96,6 +96,10 @@ impl ClusterState {
             Action::SetQuotaConfig { config } => {
                 self.quota_config = Some(*config);
             }
+
+            // Sleep on a peer, or fail at random. Neither changes the state.
+            #[cfg(feature = "staging")]
+            Action::TestSlowDown(_) | Action::TestTransientError(_) => {}
         }
     }
 

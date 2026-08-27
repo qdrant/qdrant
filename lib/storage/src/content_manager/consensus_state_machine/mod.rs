@@ -129,10 +129,16 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_drop_payload_index(operation))
             }
 
-            // Sleeps on a peer, or fails at random. Neither changes the state.
+            // Sleeps on a peer, or fails at random. The roll is not deterministic, so it
+            // belongs to the applier, not to planning.
             #[cfg(feature = "staging")]
-            CollectionMetaOperations::TestSlowDown(_)
-            | CollectionMetaOperations::TestTransientError(_) => ApplyOutcome::Accepted(Vec::new()),
+            CollectionMetaOperations::TestSlowDown(operation) => {
+                ApplyOutcome::Accepted(vec![Action::TestSlowDown(operation.clone())])
+            }
+            #[cfg(feature = "staging")]
+            CollectionMetaOperations::TestTransientError(operation) => {
+                ApplyOutcome::Accepted(vec![Action::TestTransientError(operation.clone())])
+            }
         }
     }
 }
