@@ -1200,8 +1200,7 @@ impl LocalShard {
                 // TODO: snapshotting also creates temp proxy segments. should differentiate.
                 let has_special_segment = segments
                     .iter()
-                    // `size_info` carries `segment_type` and cannot fail.
-                    .map(|(_, segment)| segment.get().read().size_info().segment_type)
+                    .map(|(_, segment)| segment.get().read().segment_type())
                     .any(|segment_type| segment_type == SegmentType::Special);
                 if has_special_segment {
                     Some((ShardStatus::Yellow, OptimizersStatus::Ok))
