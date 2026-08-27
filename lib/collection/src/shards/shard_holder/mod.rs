@@ -881,7 +881,7 @@ impl ShardHolder {
             // Check that at least one active replica per shard exists
             let target_shards_active = target_replicas
                 .iter()
-                .all(|replica_set| !replica_set.active_shards(false).is_empty());
+                .all(|replica_set| replica_set.has_active_shard());
 
             if target_replicas.is_empty() {
                 return if let Some(fallback_shard_ids) = fallback_shard_ids {
