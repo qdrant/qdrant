@@ -219,15 +219,11 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     32, // ef
     70., // min_acc out of 100
 )]
-#[cfg_attr(
-    target_os = "windows",
-    test_attr(ignore = "slow on Windows, not OS-specific")
-)]
-#[case::nearest_turbo_turbo_manhattan(
+#[case::nearest_turbo_turbo_euclid(
     QueryVariant::Nearest,
     VectorStorageDatatype::Turbo4,
     QuantizationVariant::Turbo,
-    Distance::Manhattan,
+    Distance::Euclid,
     32, // dim
     32, // ef
     70., // min_acc out of 100

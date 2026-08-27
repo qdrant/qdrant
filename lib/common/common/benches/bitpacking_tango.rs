@@ -9,9 +9,7 @@ use itertools::Itertools as _;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng as _};
 use tango_bench::metrics::WallClock;
-use tango_bench::{
-    Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks, tango_main,
-};
+use tango_bench::{Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks};
 use zerocopy::IntoBytes;
 
 type Bencher = tango_bench::Bencher<WallClock>;
@@ -207,4 +205,3 @@ tango_benchmarks!(
     benchmarks_bitpacking_links(),
     benchmarks_ordered()
 );
-tango_main!();

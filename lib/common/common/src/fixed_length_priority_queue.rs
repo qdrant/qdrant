@@ -46,16 +46,26 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// If the queue if full, replaces the smallest value and returns it.
     pub fn push(&mut self, value: T) -> Option<T> {
         if !self.is_full() {
-            self.heap.push(Reverse(value));
-            return None;
+            return self.fill(value);
         }
 
-        let mut x = self.heap.peek_mut().unwrap();
-        let mut value = Reverse(value);
-        if x.0 < value.0 {
-            std::mem::swap(&mut *x, &mut value);
+        // Reject without ever constructing the `PeekMut` guard, whose `Drop` sifts the heap.
+        if self.heap.peek().expect("full queue is not empty").0 >= value {
+            return Some(value);
         }
+
+        let mut x = self.heap.peek_mut().expect("full queue is not empty");
+        let mut value = Reverse(value);
+        std::mem::swap(&mut *x, &mut value);
         Some(value.0)
+    }
+
+    /// The `push` path taken only while the queue is not full yet, kept out of line so that
+    /// the hot rejection path does not carry its register pressure.
+    #[inline(never)]
+    fn fill(&mut self, value: T) -> Option<T> {
+        self.heap.push(Reverse(value));
+        None
     }
 
     /// Consumes the [`FixedLengthPriorityQueue`] and returns a vector

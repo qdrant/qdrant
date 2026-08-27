@@ -170,6 +170,7 @@ impl OptimizersConfig {
         get_deferred_points_threshold_bytes(
             self.prevent_unoptimized,
             self.get_indexing_threshold_kb(),
+            self.max_segment_size,
         )
     }
 }

@@ -58,11 +58,11 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
 static_assertions = "1.1.0"
-tango-bench = "0.7.2"
+tango-bench = "0.8.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7.12"
@@ -95,4 +95,8 @@ harness = false
 
 [[bench]]
 name = "universal_io"
+harness = false
+
+[[bench]]
+name = "fixed_length_priority_queue"
 harness = false

@@ -1,5 +1,6 @@
 //! Point syncs: replace a point range with the given set, plain and raw.
 
+use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
@@ -31,9 +32,18 @@ pub fn sync_points(
     from_id: Option<PointIdType>,
     to_id: Option<PointIdType>,
     points: &[PointStructPersisted],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)> {
-    sync_points_impl(segments, op_num, from_id, to_id, points, hw_counter)
+    sync_points_impl(
+        segments,
+        op_num,
+        from_id,
+        to_id,
+        points,
+        max_segment_size_bytes,
+        hw_counter,
+    )
 }
 
 /// Same as [`sync_points`], but for points carrying raw vector bytes verbatim.
@@ -43,10 +53,19 @@ pub fn sync_points_raw(
     from_id: Option<PointIdType>,
     to_id: Option<PointIdType>,
     points: &[PointStructRawPersisted],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)> {
     super::upsert::ensure_payloads_decoded(points)?;
-    sync_points_impl(segments, op_num, from_id, to_id, points, hw_counter)
+    sync_points_impl(
+        segments,
+        op_num,
+        from_id,
+        to_id,
+        points,
+        max_segment_size_bytes,
+        hw_counter,
+    )
 }
 
 /// A point struct that can be compared against its stored counterpart, to
@@ -84,6 +103,7 @@ fn sync_points_impl<P>(
     from_id: Option<PointIdType>,
     to_id: Option<PointIdType>,
     points: &[P],
+    max_segment_size_bytes: Option<NonZeroUsize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)>
 where
@@ -138,7 +158,13 @@ where
     });
 
     // 5. Upsert points which differ from the stored ones
-    let num_replaced = upsert_points_impl(segments, op_num, points_to_update, hw_counter)?;
+    let num_replaced = upsert_points_impl(
+        segments,
+        op_num,
+        points_to_update,
+        max_segment_size_bytes,
+        hw_counter,
+    )?;
     debug_assert!(
         num_replaced <= num_updated,
         "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})",

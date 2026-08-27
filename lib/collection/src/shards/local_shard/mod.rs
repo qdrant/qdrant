@@ -848,6 +848,16 @@ impl LocalShard {
         // operations, so a name that is created and used within the replay window stays valid.
         let mut valid_vector_names = self.collection_config.read().await.params.vector_names();
 
+        // Steer replayed copy-on-write moves with the same size cap live updates use, so replay
+        // picks the same class of destination. A deferred destination keeps the source point
+        // alive while a plain one deletes it, and a mismatch with what the live apply did could
+        // resurrect stale source data after recovery.
+        let max_segment_size_bytes = self
+            .optimizers
+            .load()
+            .first()
+            .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
+
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
@@ -879,6 +889,7 @@ impl LocalShard {
                 update.operation,
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
+                max_segment_size_bytes,
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
@@ -1189,8 +1200,7 @@ impl LocalShard {
                 // TODO: snapshotting also creates temp proxy segments. should differentiate.
                 let has_special_segment = segments
                     .iter()
-                    // `size_info` carries `segment_type` and cannot fail.
-                    .map(|(_, segment)| segment.get().read().size_info().segment_type)
+                    .map(|(_, segment)| segment.get().read().segment_type())
                     .any(|segment_type| segment_type == SegmentType::Special);
                 if has_special_segment {
                     Some((ShardStatus::Yellow, OptimizersStatus::Ok))

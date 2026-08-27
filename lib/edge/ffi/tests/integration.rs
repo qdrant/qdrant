@@ -758,7 +758,6 @@ fn zero_vector_size_rejected_at_load() {
         .expect("vec field exists")
         .size = 0;
 
-    #[allow(clippy::err_expect)]
     let err = EdgeShard::load(path, Some(config))
         .err()
         .expect("load with size=0 should be rejected, not crash the engine");
@@ -999,7 +998,6 @@ fn oversized_hnsw_params_rejected_not_allocated() {
     ] {
         let dir = tempfile::tempdir().expect("tempdir failed");
         let path = dir.path().to_string_lossy().into_owned();
-        #[allow(clippy::err_expect)]
         let err = EdgeShard::load(path, Some(make(hnsw)))
             .err()
             .unwrap_or_else(|| panic!("{label}: load should be rejected, not allocated"));
@@ -1217,7 +1215,6 @@ fn nested_prefetch(depth: u32) -> qdrant_edge_ffi::Prefetch {
 /// Assert that `upsert_points` rejects `vector` eagerly (at the constructor,
 /// before any shard is involved) with `InvalidArgument`.
 fn assert_vector_rejected(vector: Vector) {
-    #[allow(clippy::err_expect)]
     let err = UpdateOperation::upsert_points(
         vec![Point {
             id: PointId::NumId { value: 1 },
@@ -3040,7 +3037,6 @@ fn create_and_delete_named_vector_field() {
     // Size bound is enforced at the boundary.
     // `.err().expect()` rather than `.expect_err()`: the Ok type involves a
     // non-`Debug` UniFFI object, so `expect_err` does not compile.
-    #[allow(clippy::err_expect)]
     let err = UpdateOperation::create_dense_vector("bad".to_string(), 0, Distance::Dot, None, None)
         .err()
         .expect("size 0 must be rejected");
@@ -3283,7 +3279,6 @@ fn lifecycle_additions_work() {
     // `create` on an occupied path must fail; on a fresh path it must work.
     // `.err().expect()`: see note above — the Ok type is a non-`Debug`
     // UniFFI object.
-    #[allow(clippy::err_expect)]
     let err = EdgeShard::create(path_string, make_config())
         .err()
         .expect("create over an existing shard must fail");

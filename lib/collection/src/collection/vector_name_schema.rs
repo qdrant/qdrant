@@ -227,7 +227,7 @@ fn sparse_schema_matches(existing: &SparseVectorParams, config: &SparseVectorCon
         && existing_datatype == datatype.map(storage_datatype_to_collection)
 }
 
-fn remove_vector_from_config(
+pub fn remove_vector_from_config(
     params: &mut crate::config::CollectionParams,
     vector_name: &VectorNameBuf,
 ) {

@@ -313,7 +313,7 @@ mod tests {
         let CollectionUpdateOperations::PointOperation(op) = resolved else {
             unreachable!()
         };
-        process_point_operation(&holder, 100, op, &hw_counter).unwrap();
+        process_point_operation(&holder, 100, op, None, &hw_counter).unwrap();
         delete_points_by_filter(&twin_holder, 100, &filter, &hw_counter).unwrap();
 
         let remaining = points_by_filter(&holder, &filter, &hw_counter).unwrap();

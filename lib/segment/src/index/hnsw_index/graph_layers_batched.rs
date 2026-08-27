@@ -163,7 +163,6 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
     /// Batched version of
     /// [`super::graph_layers::GraphLayersWithVectors::search_entry_with_vectors`].
-    #[allow(clippy::too_many_arguments)]
     fn search_entry_with_vectors(
         &self,
         entry_point: EntryPoint,
