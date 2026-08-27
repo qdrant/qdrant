@@ -799,59 +799,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         operations: Vec<ConsensusOperations>,
         wait_timeout: Option<Duration>,
     ) -> impl Future<Output = Result<Result<(), StorageError>, Elapsed>> {
-        let mut receivers = vec![];
-        for operation in operations {
-            // one-shot broadcast channel
-            let (sender, mut receiver) = broadcast::channel(1);
-            let mut on_apply_lock = self.on_consensus_op_apply.lock();
-            // check that the exact same operation is not already in-flight
-            match on_apply_lock.entry(operation.clone()) {
-                Entry::Occupied(e) => {
-                    debug_assert!(
-                        e.get().receiver_count() > 0,
-                        "Consensus operation must have at least one receiver, does forget_operation_awaiter() work correctly?",
-                    );
-
-                    // subscribe to existing sender for faster feedback
-                    receiver = e.get().subscribe()
-                }
-                Entry::Vacant(e) => {
-                    // insert new sender
-                    e.insert(sender);
-                }
-            };
-            // Keep the key around so we can deregister on timeout
-            receivers.push((operation, receiver));
-        }
+        // Register the awaiters eagerly: the caller submits the operations only after this call
+        // returns, so the receivers must already be in place by then. The guard deregisters them
+        // again whenever we stop waiting, including when the caller drops this future without
+        // ever polling it.
+        let mut awaiters = OperationAwaiters::register(self, operations);
 
         async move {
-            let timeout_res = {
-                let await_for_all =
-                    join_all(receivers.iter_mut().map(|(_, receiver)| receiver.recv()));
+            let results = {
+                let await_for_all = join_all(awaiters.awaiters.iter_mut().map(|(_, r)| r.recv()));
                 tokio::time::timeout(
                     wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
                     await_for_all,
                 )
-                .await
+                .await?
             };
 
-            let results = match timeout_res {
-                Ok(results) => results,
-                Err(elapsed) => {
-                    let (operations, our_receivers): (Vec<_>, Vec<_>) =
-                        receivers.into_iter().unzip();
-                    // Our receivers must be gone before we check whether anyone else is
-                    // still waiting on these operations
-                    drop(our_receivers);
-                    for operation in &operations {
-                        self.forget_operation_awaiter(operation);
-                    }
-                    return Err(elapsed);
-                }
-            };
-
-            // Every receiver resolved, and whoever resolves an operation takes its entry out
-            // of the map first, so there is nothing left to deregister on the paths below.
             for result in results {
                 match result {
                     Ok(response_res) => match response_res {
@@ -1066,6 +1029,61 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
         *self.next_peer_metadata_update_attempt.lock() =
             Instant::now() + CONSENSUS_PEER_METADATA_UPDATE_INTERVAL;
+    }
+}
+
+/// Awaiters registered for a batch of consensus operations, deregistered again on drop.
+///
+/// The map owns the only `Sender` per operation, so an entry whose receivers are all gone is
+/// dead weight: later callers deduplicate onto it and then never hear back. Tying deregistration
+/// to the guard covers every way of giving up, including the caller dropping the future returned
+/// by [`ConsensusManager::await_for_multiple_operations`] without ever polling it.
+struct OperationAwaiters<'a, C: CollectionContainer> {
+    consensus: &'a ConsensusManager<C>,
+    /// One receiver per operation, keyed by the operation so we can deregister it again.
+    awaiters: Vec<(ConsensusOperations, Receiver<Result<bool, StorageError>>)>,
+}
+
+impl<'a, C: CollectionContainer> OperationAwaiters<'a, C> {
+    fn register(consensus: &'a ConsensusManager<C>, operations: Vec<ConsensusOperations>) -> Self {
+        let mut awaiters = Vec::with_capacity(operations.len());
+        for operation in operations {
+            // one-shot broadcast channel
+            let (sender, mut receiver) = broadcast::channel(1);
+            let mut on_apply_lock = consensus.on_consensus_op_apply.lock();
+            // check that the exact same operation is not already in-flight
+            match on_apply_lock.entry(operation.clone()) {
+                Entry::Occupied(e) => {
+                    debug_assert!(
+                        e.get().receiver_count() > 0,
+                        "Consensus operation must have at least one receiver, does forget_operation_awaiter() work correctly?",
+                    );
+
+                    // subscribe to existing sender for faster feedback
+                    receiver = e.get().subscribe()
+                }
+                Entry::Vacant(e) => {
+                    // insert new sender
+                    e.insert(sender);
+                }
+            };
+            // Keep the key around so we can deregister again
+            awaiters.push((operation, receiver));
+        }
+        Self {
+            consensus,
+            awaiters,
+        }
+    }
+}
+
+impl<C: CollectionContainer> Drop for OperationAwaiters<'_, C> {
+    fn drop(&mut self) {
+        for (operation, receiver) in self.awaiters.drain(..) {
+            // Our receiver must be gone before we check whether anyone else is still waiting
+            drop(receiver);
+            self.consensus.forget_operation_awaiter(&operation);
+        }
     }
 }
 
@@ -1627,6 +1645,39 @@ mod tests {
             assert!(
                 !on_apply_lock.contains_key(operation),
                 "awaiter leaked after the batch timed out: {operation:?}",
+            );
+        }
+    }
+
+    /// The awaiters are registered before the future is polled, because the caller submits the
+    /// operations only once they are in place. `Dispatcher::submit_collection_meta_op` then drops
+    /// the future unpolled whenever proposing the operation itself fails, so dropping it must
+    /// deregister them too. Otherwise a rejected operation leaves a dead entry behind that the
+    /// next identical request deduplicates onto and never hears back from.
+    #[tokio::test]
+    async fn multiple_operations_dropped_unpolled_removes_own_awaiters() {
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let (consensus_state, _) = setup_storages(vec![], dir.path());
+
+        let operations = vec![
+            ConsensusOperations::RemovePeer(1),
+            ConsensusOperations::RemovePeer(2),
+        ];
+
+        let awaiter = consensus_state
+            .await_for_multiple_operations(operations.clone(), Some(Duration::from_millis(10)));
+        assert_eq!(
+            consensus_state.on_consensus_op_apply.lock().len(),
+            operations.len(),
+            "awaiters must be registered before the future is polled",
+        );
+        drop(awaiter);
+
+        let on_apply_lock = consensus_state.on_consensus_op_apply.lock();
+        for operation in &operations {
+            assert!(
+                !on_apply_lock.contains_key(operation),
+                "awaiter leaked after the batch was dropped unpolled: {operation:?}",
             );
         }
     }
