@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Poll;
 
+use futures::StreamExt;
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
 
 use crate::mmap::AdviceSetting;
@@ -89,7 +91,7 @@ where
 }
 
 enum ScheduledFile<S: 'static> {
-    Future(Pin<Box<dyn Future<Output = UioResult<S>> + Send + 'static>>),
+    Future(BoxFuture<'static, UioResult<S>>),
     Ready(UioResult<S>),
     Unchanged,
 }
@@ -279,26 +281,44 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
     ) {
+        // Check if their file info is complete and didn't change.
+        if self
+            .previous_file_info(path)
+            .zip(self.file_info(path))
+            .is_some_and(|(previous, current)| previous.full_eq(current))
         {
-            let mut files_prefetched = self.files_prefetched.lock();
-
-            if files_prefetched.contains_key(path) {
-                return;
-            }
-
-            // Check if their file info is complete and didn't change.
-            if self
-                .previous_file_info(path)
-                .zip(self.file_info(path))
-                .is_some_and(|(previous, current)| previous.full_eq(current))
-            {
-                files_prefetched.insert(path.to_path_buf(), ScheduledFile::Unchanged);
-                return;
-            }
+            self.files_prefetched
+                .lock()
+                .entry(path.to_path_buf())
+                .or_insert(ScheduledFile::Unchanged);
+            return;
         }
 
         // Otherwise schedule normally
         self.schedule_open(path, open_arguments, open_extra)
+    }
+
+    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
+        self.files_prefetched
+            .lock()
+            .insert(path, ScheduledFile::Future(fut));
+    }
+
+    fn wait_all(&self) -> UioResult<()> {
+        let mut lock = self.files_prefetched.lock();
+        let futs = lock
+            .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
+            .filter_map(|(path, scheduled)| match scheduled {
+                ScheduledFile::Future(fut) => Some(async move { (path, fut.await) }),
+                ScheduledFile::Ready(_) | ScheduledFile::Unchanged => None,
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        let results = futures::executor::block_on(futs.collect::<Vec<_>>());
+        for (path, result) in results {
+            lock.insert(path, ScheduledFile::Ready(result));
+        }
+        Ok(())
     }
 
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
