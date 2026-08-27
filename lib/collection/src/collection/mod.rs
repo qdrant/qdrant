@@ -370,11 +370,7 @@ impl Collection {
         let shards_holder = self.shards_holder.read().await;
 
         let sharding_method = shards_holder.get_sharding_method();
-        let shard_keys = shards_holder
-            .get_shard_key_to_ids_mapping()
-            .keys()
-            .cloned()
-            .collect();
+        let shard_keys = shards_holder.shard_keys();
 
         (sharding_method, shard_keys)
     }

@@ -173,6 +173,11 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
+    /// All shard keys in the shard key mapping
+    pub fn shard_keys(&self) -> Vec<ShardKey> {
+        self.key_mapping.read().iter_shard_keys().cloned().collect()
+    }
+
     pub fn get_sharding_method(&self) -> ShardingMethod {
         self.sharding_method
     }
