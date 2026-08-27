@@ -1,7 +1,7 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode, delete_points_by_filter, set_payload_by_filter
+from .fixtures import create_collection, create_field_index, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode, delete_points_by_filter, set_payload_by_filter
 from .utils import *
 
 logging.basicConfig(level=logging.DEBUG)
@@ -248,9 +248,10 @@ def test_write_rate_limiting_across_node(tmp_path: pathlib.Path):
 
 
 def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
-    # Single peer / single shard so the filter resolution is fully local.
+    # Two shards: the limit applies to the estimated match count across all
+    # shards of the request, not per shard.
     n_peers = 1
-    n_shard = 1
+    n_shard = 2
     n_replica = 1
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, n_peers)
 
@@ -265,18 +266,27 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
         collection_name=COLLECTION_NAME, peer_api_uris=peer_urls
     )
 
-    # Upsert points that all share the same payload value, so a single filter
-    # matches every one of them.
-    for i in range(20):
-        point = {
+    # The match count is estimated from payload indexes, so index the keys
+    # the filters below use.
+    create_field_index(peer_urls[0], COLLECTION_NAME, "city", "keyword")
+    create_field_index(peer_urls[0], COLLECTION_NAME, "tier", "keyword")
+
+    # All 20 points share the same city; the first 10 share a tier.
+    berlin_points = [
+        {
             "id": i,
             "vector": random_dense_vector(),
-            "payload": {"city": "Berlin"},
+            "payload": {"city": "Berlin", "tier": "a" if i < 10 else "b"},
         }
-        upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME).raise_for_status()
+        for i in range(20)
+    ]
+    upsert_points(peer_urls[0], berlin_points, collection_name=COLLECTION_NAME).raise_for_status()
 
     berlin_filter = {
         "must": [{"key": "city", "match": {"value": "Berlin"}}],
+    }
+    tier_a_filter = {
+        "must": [{"key": "tier", "match": {"value": "a"}}],
     }
 
     # Enable the limit: at most 10 points per update-by-filter operation.
@@ -292,7 +302,7 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
 
     # A delete by filter matching all 20 points exceeds the limit.
     res = delete_points_by_filter(peer_urls[0], berlin_filter, collection_name=COLLECTION_NAME)
-    assert not res.ok
+    assert res.status_code == 400
     assert "exceeding the configured limit of 10" in res.json()["status"]["error"]
 
     # A set-payload by filter matching all 20 points is also rejected.
@@ -302,18 +312,22 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
         berlin_filter,
         collection_name=COLLECTION_NAME,
     )
-    assert not res.ok
+    assert res.status_code == 400
     assert "exceeding the configured limit of 10" in res.json()["status"]["error"]
+
+    # Matching exactly the limit is allowed.
+    res = set_payload_by_filter(
+        peer_urls[0],
+        {"visited": True},
+        tier_a_filter,
+        collection_name=COLLECTION_NAME,
+    )
+    assert_http_ok(res)
 
     # Conditional upserts and filtered vector updates also read segment state
     # before they are written, but they only trim the point list the client
     # sent: their size is a batch size, not a filter match count, so the limit
     # must not apply to them.
-    berlin_points = [
-        {"id": i, "vector": random_dense_vector(), "payload": {"city": "Berlin"}}
-        for i in range(20)
-    ]
-
     # Upsert with `update_filter`, 20 points > limit 10.
     res = requests.put(
         f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points?wait=true",
@@ -352,13 +366,7 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
     # above (20 points > limit 10) is now allowed, proving the limit is tied to
     # the enabled flag. Re-upsert the points first, since the id-based delete
     # above removed them.
-    for i in range(20):
-        point = {
-            "id": i,
-            "vector": random_dense_vector(),
-            "payload": {"city": "Berlin"},
-        }
-        upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME).raise_for_status()
+    upsert_points(peer_urls[0], berlin_points, collection_name=COLLECTION_NAME).raise_for_status()
 
     set_strict_mode(peer_urls[0], COLLECTION_NAME, {"enabled": False})
     wait_for_strict_mode_disabled(peer_urls[0], COLLECTION_NAME)

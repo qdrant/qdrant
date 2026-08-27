@@ -79,18 +79,6 @@ impl LocalShard {
             clock_tag,
         } = operation;
 
-        // Read the strict-mode config before taking the fence, so we don't hold
-        // the write lock while awaiting the config read. The cap applies to
-        // genuine filter scans only, see `resolve_operation`.
-        let max_update_by_filter_limit = self
-            .collection_config
-            .read()
-            .await
-            .strict_mode_config
-            .as_ref()
-            .filter(|config| config.enabled == Some(true))
-            .and_then(|config| config.max_update_by_filter_limit);
-
         self.check_wal_disk_space().await?;
 
         // 1. Fence: block new submits; in-flight ones (holding `read`) have
@@ -112,32 +100,14 @@ impl LocalShard {
         })?;
 
         // 3. Resolve the filter against segment state and rewrite the
-        // operation to its id-based form. Strict mode rejects update-by-filter
-        // operations whose filter matches more points than allowed, before
-        // they reach the WAL and without materialising the whole match set.
+        // operation to its id-based form.
         let segments = self.segments.clone();
         let hw_acc = hw_measurement_acc.clone();
         let resolved = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
-            resolve_operation(
-                &segments,
-                operation,
-                max_update_by_filter_limit,
-                &hw_acc.get_counter_cell(),
-            )
+            resolve_operation(&segments, operation, &hw_acc.get_counter_cell())
         })
         .await??;
-        let Some(resolved) = resolved else {
-            let limit = max_update_by_filter_limit.unwrap_or_default();
-            return Err(CollectionError::strict_mode(
-                format!(
-                    "Update by filter matches more than {limit} points, \
-                     exceeding the configured limit of {limit}",
-                ),
-                "Narrow your filter so it matches at most `max_update_by_filter_limit` \
-                 points, or raise `max_update_by_filter_limit` in the strict mode config.",
-            ));
-        };
 
         // Guard against `is_filter_resolving` and `resolve_operation` drifting
         // apart: a resolved operation must never classify as filter-resolving,

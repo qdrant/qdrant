@@ -7604,7 +7604,7 @@
             "nullable": true
           },
           "max_update_by_filter_limit": {
-            "description": "Max number of points an update-by-filter operation may resolve to.",
+            "description": "Max number of points an update operation that selects its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may affect. The match count is estimated from payload indexes when the request is received, before the operation is dispatched to any shard; requests exceeding the limit are rejected.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -10027,7 +10027,7 @@
             "nullable": true
           },
           "max_update_by_filter_limit": {
-            "description": "Max number of points an update operation that selects its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may resolve to. Operations whose filter matches more points than this limit are rejected before they are written to the WAL.",
+            "description": "Max number of points an update operation that selects its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may affect. The match count is estimated from payload indexes when the request is received, before the operation is dispatched to any shard; requests exceeding the limit are rejected.",
             "type": "integer",
             "format": "uint",
             "minimum": 1,

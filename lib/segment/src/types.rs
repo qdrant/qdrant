@@ -1415,8 +1415,9 @@ pub struct StrictModeConfig {
 
     /// Max number of points an update operation that selects its targets by
     /// filter (e.g. delete by filter, set payload by filter, delete vectors by
-    /// filter) may resolve to. Operations whose filter matches more points than
-    /// this limit are rejected before they are written to the WAL.
+    /// filter) may affect. The match count is estimated from payload indexes
+    /// when the request is received, before the operation is dispatched to
+    /// any shard; requests exceeding the limit are rejected.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
     pub max_update_by_filter_limit: Option<usize>,
@@ -1590,7 +1591,11 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_payload_index_count: Option<usize>,
 
-    /// Max number of points an update-by-filter operation may resolve to.
+    /// Max number of points an update operation that selects its targets by
+    /// filter (e.g. delete by filter, set payload by filter, delete vectors by
+    /// filter) may affect. The match count is estimated from payload indexes
+    /// when the request is received, before the operation is dispatched to
+    /// any shard; requests exceeding the limit are rejected.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub max_update_by_filter_limit: Option<usize>,
