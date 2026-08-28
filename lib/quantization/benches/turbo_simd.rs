@@ -94,6 +94,14 @@ impl VectorPool {
         let idx = self.indices[cursor % self.indices.len()] as usize;
         &self.buf[idx * self.packed_bytes..(idx + 1) * self.packed_bytes]
     }
+
+    /// The `run_idx`-th run of `len` consecutive vectors, in storage order.
+    #[inline]
+    fn run(&self, run_idx: usize, len: usize) -> &[u8] {
+        let run_bytes = len * self.packed_bytes;
+        let start = (run_idx % (self.indices.len() / len)) * run_bytes;
+        &self.buf[start..start + run_bytes]
+    }
 }
 
 fn make_query(dim: usize) -> Vec<f32> {
@@ -219,6 +227,78 @@ fn bench_dotprod_cold(c: &mut Criterion) {
     dotprod_cold::<4, 2>(c, "query2bit_dotprod_cold", DIMS_2BIT);
     dotprod_cold::<8, 1>(c, "query1bit_dotprod_cold", DIMS_1BIT);
     dotprod_cold::<8, 2>(c, "query1bit_wide_dotprod_cold", DIMS_1BIT);
+}
+
+/// Vectors per `dotprod_batch` call in the scan benchmark — the scoring
+/// chunk of an exhaustive search.
+const SCAN_RUN: usize = 512;
+
+/// Sequential-scan benchmark at the width packing `PLANES` codes per byte:
+/// a hot query against a contiguous pool ≫ cache, scored in runs of
+/// [`SCAN_RUN`] consecutive vectors — the shape of an exhaustive search over
+/// a segment, streaming from DRAM.  Vectors sit at the TurboQuant stride
+/// (packed codes plus an `f32` of extras).  `per_vector` calls `dotprod` on
+/// every vector of the run; `batch` hands the whole run to `dotprod_batch`.
+fn dotprod_scan<const PLANES: usize, const QUERY_BYTES: usize>(
+    c: &mut Criterion,
+    group: &str,
+    default_dims: &[usize],
+) {
+    let mut group = c.benchmark_group(group);
+    for dim in dims(default_dims) {
+        let q = make_query(dim);
+        let query = QuerySimd::<PLANES, QUERY_BYTES>::new(&q);
+        let packed_bytes = dim / PLANES;
+        let stride = packed_bytes + size_of::<f32>();
+        let pool = VectorPool::with_packed_bytes(stride, 7);
+
+        group.throughput(Throughput::Elements((SCAN_RUN * dim) as u64));
+
+        group.bench_with_input(BenchmarkId::new("per_vector", dim), &dim, |b, _| {
+            let mut out = vec![0.0f32; SCAN_RUN];
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let run = pool.run(cursor, SCAN_RUN);
+                cursor = cursor.wrapping_add(1);
+                for (v, out) in out.iter_mut().enumerate() {
+                    *out = query.dotprod(&run[v * stride..][..packed_bytes]);
+                }
+                black_box(&out);
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("batch", dim), &dim, |b, _| {
+            let mut out = vec![0.0f32; SCAN_RUN];
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let run = pool.run(cursor, SCAN_RUN);
+                cursor = cursor.wrapping_add(1);
+                query.dotprod_batch(black_box(run), stride, &mut out);
+                black_box(&out);
+            });
+        });
+    }
+    group.finish();
+}
+
+/// Scan dims: powers of two plus each width's odd-block-count dim with a
+/// maximal tail (see `DIMS_{4,2,1}BIT`).
+fn bench_dotprod_scan(c: &mut Criterion) {
+    dotprod_scan::<2, 2>(
+        c,
+        "query4bit_dotprod_scan",
+        &[64, 128, 256, 512, 1024, 1534, 1536],
+    );
+    dotprod_scan::<4, 2>(
+        c,
+        "query2bit_dotprod_scan",
+        &[64, 128, 256, 512, 1024, 1532, 1536],
+    );
+    dotprod_scan::<8, 1>(
+        c,
+        "query1bit_dotprod_scan",
+        &[64, 128, 256, 512, 1024, 1528, 1536],
+    );
 }
 
 /// Benchmarks [`score_4bit_internal`] (both vectors already PQ-encoded, both
@@ -593,6 +673,7 @@ fn bench_score_2bit_cold(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_dotprod_cold,
+    bench_dotprod_scan,
     bench_score_cold,
     bench_score_2bit_cold,
     bench_score_1bit_cold,

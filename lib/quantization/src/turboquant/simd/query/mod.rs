@@ -240,6 +240,40 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         self.postprocess(self.dotprod_raw_best(vector))
     }
 
+    /// Batch counterpart of [`Self::dotprod`] for vectors stored `stride`
+    /// bytes apart in one contiguous `data` slice: `out[v]` ← score of the
+    /// vector at `data[v * stride..]`.  Scoring a contiguous run in one call
+    /// lets the kernels amortize their per-call setup and share the query
+    /// loads across vectors.
+    ///
+    /// # Panics
+    /// Panics if `stride` is shorter than an encoded vector or `data` is too
+    /// short for `out.len()` vectors.
+    pub fn dotprod_batch(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        let Some(last) = out.len().checked_sub(1) else {
+            return;
+        };
+        assert!(
+            stride >= self.vector_bytes && data.len() >= last * stride + self.vector_bytes,
+            "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_batch: {} vectors of {} bytes at stride \
+             {stride} don't fit into {} data bytes",
+            out.len(),
+            self.vector_bytes,
+            data.len(),
+        );
+
+        self.dotprod_batch_per_vector(data, stride, out);
+    }
+
+    /// [`Self::dotprod_batch`] as a plain loop over [`Self::dotprod`], for
+    /// backends without a batch kernel.
+    fn dotprod_batch_per_vector(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        for (v, out) in out.iter_mut().enumerate() {
+            let vector = &data[v * stride..][..self.vector_bytes];
+            *out = self.postprocess(self.dotprod_raw_best(vector));
+        }
+    }
+
     /// Float reconstruction of a raw integer dot product.
     #[inline]
     fn postprocess(&self, dot_raw: i64) -> f32 {
@@ -353,8 +387,11 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
-    use super::super::shared::{encode_to_nearest_centroid, pack_codes, sample_normal_vec};
+    use super::super::shared::{
+        encode_to_nearest_centroid, pack_codes, random_bytes, sample_normal_vec,
+    };
     use super::QuerySimd;
+    use super::shared::{parity_dims, random_inputs};
     use crate::turboquant::TQBits;
 
     /// The width packing `PLANES` codes per byte.
@@ -484,5 +521,40 @@ mod tests {
         simd_noise_below_pq_noise::<4, 2>();
         simd_noise_below_pq_noise::<8, 1>();
         simd_noise_below_pq_noise::<8, 2>();
+    }
+
+    /// `dotprod_batch` must reproduce per-vector `dotprod` bit-exactly on
+    /// the host's backend: every parity dim, a stride equal to and larger
+    /// than the encoded vector, and counts leaving every group remainder.
+    fn dotprod_batch_matches_dotprod<const PLANES: usize, const QUERY_BYTES: usize>() {
+        let mut rng = StdRng::seed_from_u64(11);
+        for dim in parity_dims::<PLANES>() {
+            let (query, _) = random_inputs::<PLANES, QUERY_BYTES>(&mut rng, dim);
+            let vector_bytes = dim / PLANES;
+            for stride in [vector_bytes, vector_bytes + 4] {
+                for count in [1, 3, 4, 11] {
+                    let data = random_bytes(&mut rng, count * stride);
+                    let expected: Vec<f32> = (0..count)
+                        .map(|v| query.dotprod(&data[v * stride..][..vector_bytes]))
+                        .collect();
+                    let mut actual = vec![0.0; count];
+                    query.dotprod_batch(&data, stride, &mut actual);
+                    assert_eq!(
+                        expected, actual,
+                        "PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} dim={dim} stride={stride} \
+                         count={count}"
+                    );
+                }
+            }
+            query.dotprod_batch(&[], vector_bytes, &mut []);
+        }
+    }
+
+    #[test]
+    fn test_dotprod_batch_matches_dotprod() {
+        dotprod_batch_matches_dotprod::<2, 2>();
+        dotprod_batch_matches_dotprod::<4, 2>();
+        dotprod_batch_matches_dotprod::<8, 1>();
+        dotprod_batch_matches_dotprod::<8, 2>();
     }
 }
