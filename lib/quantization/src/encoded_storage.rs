@@ -71,6 +71,26 @@ pub trait EncodedStorage: EncodedStorageWrite {
         callback: impl FnMut(usize, Cow<'_, [u8]>),
     );
 
+    /// Invoke `callback(first, count, bytes)` over `offsets` split into runs
+    /// the storage serves from one contiguous slice: `bytes` holds the
+    /// concatenated vectors of `offsets[first..first + count]`.  Runs cover
+    /// `offsets` in order, so a sequential scan over consecutive offsets
+    /// resolves storage internals (chunk lookups, reads) once per run rather
+    /// than once per vector.
+    ///
+    /// The default serves every vector as its own run; storages with
+    /// contiguous regions should override it to coalesce consecutive offsets
+    /// (see [`for_each_consecutive_run`]).
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        for (index, &offset) in offsets.iter().enumerate() {
+            callback(index, 1, self.get_vector_data(offset));
+        }
+    }
+
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf>;
@@ -83,6 +103,29 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
 ) {
     for (index, &offset) in offsets.iter().enumerate() {
         callback(index, this.get_vector_data(offset));
+    }
+}
+
+/// Run detection shared by [`EncodedStorage::for_each_run`] implementations:
+/// splits `offsets` into maximal runs of consecutive ids and invokes
+/// `emit(first, start, len)` per run, where `first` indexes into `offsets`.
+///
+/// Runs are not capped: a storage serves whatever region a run covers, even
+/// one straddling its internal chunk boundary.
+pub fn for_each_consecutive_run(
+    offsets: &[PointOffsetType],
+    mut emit: impl FnMut(usize, PointOffsetType, usize),
+) {
+    let mut first = 0;
+    while first < offsets.len() {
+        let start = offsets[first];
+        let mut len = 1;
+        while first + len < offsets.len() && offsets[first + len] == start + len as PointOffsetType
+        {
+            len += 1;
+        }
+        emit(first, start, len);
+        first += len;
     }
 }
 
@@ -249,6 +292,18 @@ impl EncodedStorage for TestEncodedStorage {
         default_for_each_batch(self, offsets, callback);
     }
 
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        for_each_consecutive_run(offsets, |first, start, len| {
+            let begin = start as usize * self.quantized_vector_size.get();
+            let end = begin + len * self.quantized_vector_size.get();
+            callback(first, len, Cow::Borrowed(&self.data[begin..end]));
+        });
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         if let Some(ref path) = self.path {
             vec![path.clone()]
@@ -349,5 +404,52 @@ mod tests {
         let storage = storage_with_stride(260, 0);
         // With no stored vectors there is nothing to check, so any size is accepted.
         validate_storage_vector_size(&storage, 999).unwrap();
+    }
+
+    /// Runs must cover `offsets` in order, split only at non-consecutive ids.
+    #[test]
+    fn consecutive_runs_split_at_gaps() {
+        let collect = |offsets: &[u32]| {
+            let mut runs = Vec::new();
+            for_each_consecutive_run(offsets, |first, start, len| {
+                runs.push((first, start, len));
+            });
+            runs
+        };
+
+        // Split at gaps only, however long the consecutive stretch.
+        assert_eq!(
+            collect(&[0, 1, 2, 5, 6, 9]),
+            vec![(0, 0, 3), (3, 5, 2), (5, 9, 1)],
+        );
+        assert_eq!(collect(&[0, 1, 2, 3, 4, 5, 6, 7]), vec![(0, 0, 8)]);
+        // Descending and scattered ids degrade to singleton runs.
+        assert_eq!(collect(&[4, 3, 2]), vec![(0, 4, 1), (1, 3, 1), (2, 2, 1)]);
+        assert_eq!(collect(&[]), vec![]);
+    }
+
+    /// The test storage's runs must hand out exactly the bytes of the
+    /// vectors they cover.
+    #[test]
+    fn test_storage_runs_match_vectors() {
+        let stride = 3;
+        let mut builder = TestEncodedStorageBuilder::new(None, stride);
+        for i in 0..10u8 {
+            builder.push_vector_data(&[i, i, i]).unwrap();
+        }
+        let storage = builder.build().unwrap();
+
+        let mut runs = Vec::new();
+        storage.for_each_run(&[2, 3, 4, 8, 9, 1], |first, len, bytes| {
+            runs.push((first, len, bytes.into_owned()));
+        });
+        assert_eq!(
+            runs,
+            vec![
+                (0, 3, vec![2, 2, 2, 3, 3, 3, 4, 4, 4]),
+                (3, 2, vec![8, 8, 8, 9, 9, 9]),
+                (5, 1, vec![1, 1, 1]),
+            ],
+        );
     }
 }
