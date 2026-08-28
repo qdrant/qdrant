@@ -129,7 +129,8 @@ pub fn init(application_version: &str) -> Dial9Guard {
         );
     } else {
         log::error!(
-            "dial9: recorder not connected after init (trace_dir={trace_dir});              check DiskBuffer / cpu-profiling permissions; telemetry inactive"
+            "dial9: recorder not connected after init (trace_dir={trace_dir}); \
+             check DiskBuffer / cpu-profiling permissions; telemetry inactive"
         );
     }
 

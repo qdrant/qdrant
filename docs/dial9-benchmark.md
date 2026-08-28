@@ -400,3 +400,44 @@ No polls >= 393.92ms.
 ```
 
 </details>
+
+## Remaining long polls (post spawn_blocking)
+
+After moving the first fsync islands off the update workers, dial9 still surfaces a few short OFF-CPU polls. Classification from `/tmp/dial9-spawn-blocking/diagnose.txt`:
+
+### 1. Collection create — real remaining `fsync` (actionable)
+
+- Spawn: `dispatcher.rs:275` → `toc.perform_collection_meta_op` → `create_collection`
+- Durations: ~6–9ms OFF-CPU
+- Stacks:
+  - `CollectionVersion::save` / `CollectionConfigInternal::save` (`collection/mod.rs` ~L184–185)
+  - `ShardConfig::save` (`replica_set/mod.rs` ~L207)
+  - `SaveOnDisk` replica-state write in `set_replica_state` / `ShardReplicaSet::build`
+- These still run on the async general runtime during create. Wrap the save cluster in `spawn_blocking` (or one blocking helper covering create-finalize).
+
+### 2. Flush worker shutdown — `SegmentHolder` drop (actionable, was the 131ms critical)
+
+- Spawn: `update_handler.rs:252` → `flush_worker_fn`
+- Duration: **131ms** critical in the short end-of-run segment
+- Not flush `fsync`. Sched stacks show:
+  - `posix_fadvise` / `madvise` / `munmap` via `MmapFile::clear_ram_cache` → `Segment::drop` → `SegmentHolder::drop`
+- Happens when the flush-worker future drops its last `LockedSegmentHolder` Arc at stop/shutdown, so heavy mmap teardown runs on the async worker.
+- Fix: drop the holder on a blocking pool (`spawn_blocking(|| drop(segments))` before return), or ensure another owner keeps the Arc alive until after the worker exits.
+
+### 3. Optimization worker — scheduler yield (benign)
+
+- Spawn: `update_handler.rs:197` → `optimization_worker_fn`
+- ~5.6ms OFF-CPU with `__sched_yield` while spawning rayon HNSW link work
+- Other threads are on-CPU in `GraphLayersBuilder::link_new_point` — expected, not disk.
+
+### 4. Point update fan-out await (benign / noisy)
+
+- Spawn: `point_ops.rs:234` → `update_runtime.spawn(updates.collect()).await`
+- ~5.5ms OFF-CPU without `fsync` stacks (scheduling / waiting on shard update tasks while HNSW runs elsewhere)
+- Not a sync-island bug; threshold is relative to a low p99.
+
+### Priority
+
+1. Flush-worker `SegmentHolder` drop (largest, critical red-flag)
+2. Collection-create config/`ShardConfig`/`replica_state` saves
+3. Ignore yield / JoinSet awaits unless they grow under load
