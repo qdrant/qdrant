@@ -421,6 +421,26 @@ where
     Ok(())
 }
 
+/// Whether persisted pending proxy changes are replayed onto a segment when it is loaded.
+///
+/// See [`recover_pending_changes`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PersistedProxyChanges {
+    /// Replay all persisted pending proxy changes onto the segment and remove their log files.
+    ///
+    /// The default: on a regular load this recovers the buffered state of proxies that did not
+    /// propagate it into the segment before the process stopped.
+    #[default]
+    Replay,
+    /// Do not replay persisted pending proxy changes, leave the segment and the log files
+    /// untouched.
+    ///
+    /// For segment files that mirror those of another writer, such as a partial snapshot
+    /// recovered from it: replaying would mutate the segment files and remove the logs, making
+    /// the local copy diverge from what the writer's manifest describes.
+    Ignore,
+}
+
 /// Recover pending changes left on disk by proxy segments, before regular WAL replay
 ///
 /// If the segment directory holds pending changes log files, the proxy segments that wrote them
@@ -439,11 +459,29 @@ where
 /// consistent read view. Since the processes that required a proxy are not running anymore we
 /// don't reconstruct the proxies, instead we just apply the changes directly to the segment.
 ///
+/// With [`PersistedProxyChanges::Ignore`] nothing is replayed and the log files are left as they
+/// are; see there for when that is appropriate.
+///
 /// Returns the number of replayed log entries.
-pub fn recover_pending_changes(segment: &mut Segment) -> OperationResult<usize> {
+pub fn recover_pending_changes(
+    segment: &mut Segment,
+    persisted_proxy_changes: PersistedProxyChanges,
+) -> OperationResult<usize> {
     let log_files = list_pending_changes_log_files(&segment.segment_path);
     if log_files.is_empty() {
         return Ok(0);
+    }
+
+    match persisted_proxy_changes {
+        PersistedProxyChanges::Replay => {}
+        PersistedProxyChanges::Ignore => {
+            log::debug!(
+                "Ignoring {} persisted pending proxy changes log(s) of segment {}, not replaying them",
+                log_files.len(),
+                segment.segment_path.display(),
+            );
+            return Ok(0);
+        }
     }
 
     let mut replayed = 0;

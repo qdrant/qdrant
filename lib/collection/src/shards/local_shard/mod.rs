@@ -49,6 +49,7 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
+use segment::pending_changes::PersistedProxyChanges;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
@@ -458,7 +459,10 @@ impl LocalShard {
                     // Buffered proxy state that made it to disk doesn't hold back the WAL
                     // acknowledge, so it must be recovered here before WAL replay to create a
                     // consistent view of the segment.
-                    segment::pending_changes::recover_pending_changes(&mut segment)?;
+                    segment::pending_changes::recover_pending_changes(
+                        &mut segment,
+                        PersistedProxyChanges::Replay,
+                    )?;
 
                     if rebuild_payload_index {
                         segment.update_all_field_indices(

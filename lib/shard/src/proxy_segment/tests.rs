@@ -762,7 +762,11 @@ fn test_pending_changes_recovered_on_restart() {
     // Before recovery the segment does not know about the buffered operations
     assert!(segment.has_point(2.into(), DeferredBehavior::VisibleOnly));
 
-    let replayed = segment::pending_changes::recover_pending_changes(&mut segment).unwrap();
+    let replayed = segment::pending_changes::recover_pending_changes(
+        &mut segment,
+        segment::pending_changes::PersistedProxyChanges::Replay,
+    )
+    .unwrap();
     assert_eq!(replayed, 2);
 
     assert!(!segment.has_point(2.into(), DeferredBehavior::VisibleOnly));
@@ -885,7 +889,11 @@ fn test_double_proxy_pending_changes_levels() {
     )
     .unwrap();
 
-    let replayed = segment::pending_changes::recover_pending_changes(&mut segment).unwrap();
+    let replayed = segment::pending_changes::recover_pending_changes(
+        &mut segment,
+        segment::pending_changes::PersistedProxyChanges::Replay,
+    )
+    .unwrap();
     assert_eq!(replayed, 2);
 
     assert!(!segment.has_point(2.into(), DeferredBehavior::VisibleOnly));
