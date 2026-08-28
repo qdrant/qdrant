@@ -1,8 +1,12 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use futures::future::join_all;
+use parking_lot::RwLock;
 use rayon::ThreadPool;
 use rayon::prelude::*;
+use segment::common::operation_error::OperationResult;
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
@@ -61,6 +65,52 @@ where
                     None
                 }
             })
+            .collect()
+    })
+}
+
+/// Live-reload the given segments in two phases — stage every fetch under
+/// shared access (`live_preload`), then apply under exclusive access
+/// (`live_reload`) — so the exclusive phase never waits on IO.
+///
+/// Like [`load_segments_parallel`], the IO is driven to completion on the
+/// calling thread; `pool` only runs the staging and the CPU-bound apply.
+/// A failed preload is benign (warn): its reload still runs and surfaces
+/// anything real. Returns each segment's reload result, in input order.
+pub(crate) fn reload_segments_parallel<S>(
+    pool: &ThreadPool,
+    segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
+    hw_counter: &HardwareCounterCell,
+) -> Vec<(Uuid, OperationResult<()>)>
+where
+    S: UniversalReadExt + 'static,
+    S::Fs: Send + Sync + Clone + 'static,
+{
+    let io_futures = pool.install(|| {
+        segments
+            .par_iter()
+            .filter_map(|(uuid, segment)| match segment.read().live_preload() {
+                Ok(future) => Some(future),
+                Err(err) => {
+                    log::warn!("live_preload of segment {uuid} failed: {err}");
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    });
+
+    futures::executor::block_on(join_all(io_futures));
+
+    let reloads: Vec<_> = segments
+        .into_iter()
+        // The counter cell is not `Sync`, so fork one per reload outside the
+        // pool; forks drain into the shared accumulator on drop.
+        .map(|(uuid, segment)| (uuid, segment, hw_counter.fork()))
+        .collect();
+    pool.install(|| {
+        reloads
+            .into_par_iter()
+            .map(|(uuid, segment, hw)| (uuid, segment.write().live_reload(&hw)))
             .collect()
     })
 }
