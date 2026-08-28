@@ -10,13 +10,24 @@ mod update;
 
 use std::fmt::Display;
 
+use api::rest::ShardKeySelector;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 pub use shard::operation_rate_cost;
 
-use super::types::{CollectionError, CollectionResult};
+use super::shard_selector_internal::ShardSelectorInternal;
+use super::types::{CollectionError, CollectionResult, CountRequestInternal};
 use crate::collection::Collection;
+
+/// The filter an update operation selects its target points with, when that
+/// target set is the result of scanning the collection rather than a point
+/// list the client sent.
+pub struct UpdateByFilter<'a> {
+    pub filter: &'a Filter,
+    pub shard_key: Option<&'a ShardKeySelector>,
+}
 
 // Creates a new `VerificationPass` without actually verifying anything.
 // This is useful in situations where we don't need to check for strict mode, but still
@@ -70,6 +81,14 @@ pub trait StrictModeVerification {
     /// if the filter is used for filtered-UPDATES like delete by payload.
     /// For read only filters implement `request_indexed_filter_read`!
     fn indexed_filter_write(&self) -> Option<&Filter>;
+
+    /// Implement this for update operations that select their targets by
+    /// scanning the collection with a filter (delete by filter, set payload by
+    /// filter, ...). Gates the `max_update_by_filter_limit` check; operations
+    /// that only trim a client-supplied point list must return `None`.
+    fn update_by_filter(&self) -> Option<UpdateByFilter<'_>> {
+        None
+    }
 
     fn request_exact(&self) -> Option<bool>;
 
@@ -160,6 +179,61 @@ pub trait StrictModeVerification {
         Ok(())
     }
 
+    /// Rejects update-by-filter operations whose filter is estimated to match
+    /// more points than `max_update_by_filter_limit`.
+    ///
+    /// The match count is estimated from payload indexes across the selected
+    /// shards (the same estimate as an inexact count request), so it is
+    /// evaluated once per request before the operation is dispatched to any
+    /// shard. Like the other strict mode checks it is a request-time guard,
+    /// not a transactional invariant: concurrent writes can move the real
+    /// match count after the check.
+    #[allow(async_fn_in_trait)]
+    async fn check_update_by_filter_limit(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        let Some(limit) = strict_mode_config.max_update_by_filter_limit else {
+            return Ok(());
+        };
+        let Some(UpdateByFilter { filter, shard_key }) = self.update_by_filter() else {
+            return Ok(());
+        };
+
+        let shard_selection = shard_key
+            .cloned()
+            .map_or(ShardSelectorInternal::All, ShardSelectorInternal::from);
+        let request = CountRequestInternal {
+            filter: Some(filter.clone()),
+            exact: false,
+        };
+        let estimated = collection
+            .count(
+                request,
+                None,
+                None,
+                &shard_selection,
+                None,
+                HwMeasurementAcc::disposable(),
+            )
+            .await?
+            .count;
+
+        if estimated > limit {
+            return Err(CollectionError::strict_mode(
+                format!(
+                    "Update by filter matches an estimated {estimated} points, \
+                     exceeding the configured limit of {limit}",
+                ),
+                "Narrow your filter so it matches at most `max_update_by_filter_limit` \
+                 points, or raise `max_update_by_filter_limit` in the strict mode config.",
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Does the verification of all configured parameters. Only implement this function if you know what
     /// you are doing. In most cases implementing `check_custom` is sufficient.
     #[allow(async_fn_in_trait)]
@@ -171,6 +245,8 @@ pub trait StrictModeVerification {
         self.check_custom(collection, strict_mode_config).await?;
         self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
+        self.check_update_by_filter_limit(collection, strict_mode_config)
+            .await?;
         self.check_request_exact(strict_mode_config)?;
         self.check_search_params(collection, strict_mode_config)
             .await?;
@@ -394,16 +470,22 @@ mod test {
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
     use common::budget::ResourceBudget;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::payload_json;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
     };
-    use tempfile::Builder;
+    use tempfile::{Builder, TempDir};
 
     use super::StrictModeVerification;
     use crate::collection::{Collection, RequestShardTransfer};
     use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
-    use crate::operations::point_ops::{FilterSelector, PointsSelector};
+    use crate::operations::CollectionUpdateOperations;
+    use crate::operations::payload_ops::SetPayload;
+    use crate::operations::point_ops::{
+        FilterSelector, PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+        PointsSelector, VectorStructPersisted, WriteOrdering,
+    };
     use crate::operations::shared_storage_config::SharedStorageConfig;
     use crate::operations::types::{
         CollectionError, CountRequestInternal, DiscoverRequestInternal, SearchRequest,
@@ -412,6 +494,7 @@ mod test {
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::channel_service::ChannelService;
     use crate::shards::collection_shard_distribution::CollectionShardDistribution;
+    use crate::shards::replica_set::replica_set_state::ReplicaState;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 
     const UNINDEXED_KEY: &str = "key";
@@ -429,6 +512,70 @@ mod test {
         test_request_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_by_filter_limit() {
+        let strict_mode_config = StrictModeConfig {
+            enabled: Some(true),
+            max_update_by_filter_limit: Some(2),
+            ..Default::default()
+        };
+        let collection = fixture_collection(&strict_mode_config).await;
+        // Shard 0 is the only shard; activate its local replica for writes.
+        collection
+            .set_shard_replica_state(0, 0, ReplicaState::Active, None)
+            .await
+            .expect("failed to activate replica");
+
+        let points = (1..=3)
+            .map(|id| PointStructPersisted {
+                id: id.into(),
+                vector: VectorStructPersisted::Named(Default::default()),
+                payload: Some(payload_json! {"num": 123}),
+            })
+            .collect();
+        collection
+            .update_from_client_simple(
+                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                    PointInsertOperationsInternal::PointsList(points),
+                )),
+                true,
+                None,
+                WriteOrdering::default(),
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .expect("failed to upsert points");
+
+        // Three indexed matches exceed the limit of two.
+        let over_limit = PointsSelector::FilterSelector(FilterSelector {
+            filter: filter_fixture(INDEXED_KEY),
+            shard_key: None,
+        });
+        assert_strict_mode_error(over_limit, &collection).await;
+
+        // Same filter, but an explicit id list takes precedence on apply, so
+        // this is not a filter scan and must not be capped.
+        let with_ids = SetPayload {
+            payload: payload_json! {"a": 1},
+            points: Some(vec![1.into()]),
+            filter: Some(filter_fixture(INDEXED_KEY)),
+            shard_key: None,
+            key: None,
+        };
+        assert_strict_mode_success(with_ids, &collection).await;
+
+        // A filter with no matches stays under the limit.
+        let no_match = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            INDEXED_KEY.try_into().unwrap(),
+            Match::new_value(ValueVariants::Integer(0)),
+        )));
+        let under_limit = PointsSelector::FilterSelector(FilterSelector {
+            filter: no_match,
+            shard_key: None,
+        });
+        assert_strict_mode_success(under_limit, &collection).await;
     }
 
     async fn test_query_limit(collection: &Collection) {
@@ -711,7 +858,22 @@ mod test {
         }
     }
 
-    async fn fixture() -> Collection {
+    /// A collection plus the temp dirs backing it, so on-disk writes (point
+    /// upserts, replica state changes) keep working for the test's lifetime.
+    struct CollectionFixture {
+        collection: Collection,
+        _dirs: (TempDir, TempDir),
+    }
+
+    impl std::ops::Deref for CollectionFixture {
+        type Target = Collection;
+
+        fn deref(&self) -> &Collection {
+            &self.collection
+        }
+    }
+
+    async fn fixture() -> CollectionFixture {
         let strict_mode_config = StrictModeConfig {
             enabled: Some(true),
             max_timeout: Some(3),
@@ -729,7 +891,7 @@ mod test {
         fixture_collection(&strict_mode_config).await
     }
 
-    async fn fixture_collection(strict_mode_config: &StrictModeConfig) -> Collection {
+    async fn fixture_collection(strict_mode_config: &StrictModeConfig) -> CollectionFixture {
         let wal_config = WalConfig::default();
         let collection_params = CollectionParams::empty();
 
@@ -782,7 +944,10 @@ mod test {
             .await
             .expect("failed to create payload index");
 
-        collection
+        CollectionFixture {
+            collection,
+            _dirs: (collection_dir, snapshots_path),
+        }
     }
 
     pub fn dummy_on_replica_failure() -> ChangePeerFromState {

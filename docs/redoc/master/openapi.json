@@ -7603,6 +7603,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "max_update_by_filter_limit": {
+            "description": "Max number of points an update operation that selects its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may affect. The match count is estimated from payload indexes when the request is received, before the operation is dispatched to any shard; requests exceeding the limit are rejected.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "max_resident_memory_percent": {
             "description": "Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
             "deprecated": true,
@@ -10017,6 +10024,13 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "max_update_by_filter_limit": {
+            "description": "Max number of points an update operation that selects its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may affect. The match count is estimated from payload indexes when the request is received, before the operation is dispatched to any shard; requests exceeding the limit are rejected.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
             "nullable": true
           },
           "max_resident_memory_percent": {
