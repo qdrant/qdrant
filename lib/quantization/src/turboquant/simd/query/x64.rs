@@ -430,7 +430,31 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             self.vector_bytes,
         );
 
-        unsafe { Self::reduce_avx2(self.accumulate_avx2(vector.as_ptr())) }
+        unsafe { self.reduce_avx2(self.accumulate_avx2(vector.as_ptr())) }
+    }
+
+    /// Batch counterpart of [`Self::dotprod_raw_avx2`] with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (asserted there).
+    ///
+    /// Unlike the VNNI kernel this one scores vectors one at a time: its
+    /// loop-carried chain is a single `vpaddd` per accumulator (the
+    /// `maddubs → madd` products hang off the loads), so the accumulator
+    /// pairs already keep the pipeline full, and interleaving vectors only
+    /// adds register pressure on the 16 YMM registers — measured 10–15 %
+    /// slower with groups of two or four on Zen 4 at the 4-bit width.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`; `data` must hold `out.len()` vectors at
+    /// `stride`.
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn dotprod_batch_avx2(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        unsafe {
+            for (v, out) in out.iter_mut().enumerate() {
+                let acc = self.accumulate_avx2(data.as_ptr().add(v * stride));
+                *out = self.postprocess(self.reduce_avx2(acc));
+            }
+        }
     }
 
     /// Block loop of the AVX2 kernels over the vector at `data`.
@@ -466,14 +490,23 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         }
     }
 
-    /// Raw dot product from one vector's accumulators.
+    /// Raw dot product from one vector's accumulators: the fused reduction
+    /// whenever the vector is short enough for its lane bound, otherwise
+    /// one reduction per query byte.
     ///
     /// # Safety
     /// CPU must support `avx2`.
     #[inline]
     #[target_feature(enable = "avx2")]
-    unsafe fn reduce_avx2(acc: Acc256<QUERY_BYTES>) -> i64 {
-        unsafe { Self::combine_bytes(acc.fold().map(|total| i64::from(hsum_i32_avx2(total)))) }
+    unsafe fn reduce_avx2(&self, acc: Acc256<QUERY_BYTES>) -> i64 {
+        unsafe {
+            let totals = acc.fold();
+            if self.vector_bytes <= Self::FUSED_REDUCTION_MAX_BYTES {
+                reduce_fused_256::<PLANES, QUERY_BYTES>(totals)
+            } else {
+                Self::combine_bytes(totals.map(|total| i64::from(hsum_i32_avx2(total))))
+            }
+        }
     }
 
     /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+) over the query planes: one ZMM
@@ -833,11 +866,10 @@ mod tests {
         }
     }
 
-    /// The AVX-512 batch kernel must reproduce the scalar reference for
-    /// every parity dim (interleaved groups and the per-vector remainder,
-    /// both reduction paths) at a stride equal to and larger than the
-    /// vector.
-    fn batch_avx512_vnni_matches_scalar<const PLANES: usize, const QUERY_BYTES: usize>() {
+    /// The batch kernels must reproduce the scalar reference for every
+    /// parity dim (interleaved groups and the per-vector remainder, both
+    /// reduction paths) at a stride equal to and larger than the vector.
+    fn batch_kernels_match_scalar<const PLANES: usize, const QUERY_BYTES: usize>() {
         let mut rng = StdRng::seed_from_u64(7);
         for dim in parity_dims::<PLANES>().chain(fused_bound_dims::<PLANES, QUERY_BYTES>()) {
             let (query, _) = random_inputs::<PLANES, QUERY_BYTES>(&mut rng, dim);
@@ -850,25 +882,30 @@ mod tests {
                         query.postprocess(query.dotprod_raw(&data[v * stride..][..vector_bytes]))
                     })
                     .collect();
-                let mut actual = vec![0.0; count];
-                unsafe { query.dotprod_batch_avx512_vnni(&data, stride, &mut actual) };
-                assert_eq!(
-                    expected, actual,
-                    "PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} dim={dim} stride={stride}"
-                );
+                let tag =
+                    format!("PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} dim={dim} stride={stride}");
+                unsafe {
+                    if std::is_x86_feature_detected!("avx2") {
+                        let mut actual = vec![0.0; count];
+                        query.dotprod_batch_avx2(&data, stride, &mut actual);
+                        assert_eq!(expected, actual, "{tag}: avx2 batch");
+                    }
+                    if has_avx512_vnni() {
+                        let mut actual = vec![0.0; count];
+                        query.dotprod_batch_avx512_vnni(&data, stride, &mut actual);
+                        assert_eq!(expected, actual, "{tag}: avx512_vnni batch");
+                    }
+                }
             }
         }
     }
 
     #[test]
-    fn test_batch_avx512_vnni_matches_scalar() {
-        if !has_avx512_vnni() {
-            return;
-        }
-        batch_avx512_vnni_matches_scalar::<2, 2>();
-        batch_avx512_vnni_matches_scalar::<4, 2>();
-        batch_avx512_vnni_matches_scalar::<8, 1>();
-        batch_avx512_vnni_matches_scalar::<8, 2>();
+    fn test_batch_kernels_match_scalar() {
+        batch_kernels_match_scalar::<2, 2>();
+        batch_kernels_match_scalar::<4, 2>();
+        batch_kernels_match_scalar::<8, 1>();
+        batch_kernels_match_scalar::<8, 2>();
     }
 
     /// The fused reduction at its exact lane bound under the heaviest load
@@ -881,20 +918,25 @@ mod tests {
         for sign in [1.0_f32, -1.0] {
             let query = QuerySimd::<PLANES, QUERY_BYTES>::new(&vec![sign; bytes * PLANES]);
             let scalar = query.dotprod_raw(&vector);
-            let vnni512 = unsafe { query.dotprod_raw_avx512_vnni(&vector) };
-            assert_eq!(
-                scalar, vnni512,
-                "PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} sign={sign}: avx512_vnni fused \
-                 reduction overflowed"
-            );
+            let tag = format!("PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} sign={sign}");
+            unsafe {
+                if std::is_x86_feature_detected!("avx2") {
+                    let avx2 = query.dotprod_raw_avx2(&vector);
+                    assert_eq!(scalar, avx2, "{tag}: avx2 fused reduction overflowed");
+                }
+                if has_avx512_vnni() {
+                    let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
+                    assert_eq!(
+                        scalar, vnni512,
+                        "{tag}: avx512_vnni fused reduction overflowed"
+                    );
+                }
+            }
         }
     }
 
     #[test]
     fn test_fused_reduction_bound_worst_case() {
-        if !has_avx512_vnni() {
-            return;
-        }
         fused_reduction_bound_worst_case::<2, 2>();
         fused_reduction_bound_worst_case::<4, 2>();
         fused_reduction_bound_worst_case::<8, 2>();

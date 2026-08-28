@@ -281,6 +281,19 @@ fn dotprod_scan<const PLANES: usize, const QUERY_BYTES: usize>(
         // Per-backend rows, so the batch kernels can be compared on one host.
         #[cfg(target_arch = "x86_64")]
         {
+            if std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(BenchmarkId::new("batch_avx2", dim), &dim, |b, _| {
+                    let mut out = vec![0.0f32; SCAN_RUN];
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let run = pool.run(cursor, SCAN_RUN);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { query.dotprod_batch_avx2(black_box(run), stride, &mut out) };
+                        black_box(&out);
+                    });
+                });
+            }
+
             if std::is_x86_feature_detected!("avx512f")
                 && std::is_x86_feature_detected!("avx512bw")
                 && std::is_x86_feature_detected!("avx512vnni")
