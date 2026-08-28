@@ -495,26 +495,76 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             self.vector_bytes,
         );
 
-        unsafe { Self::reduce_avx512(self.accumulate_avx512(vector.as_ptr())) }
+        unsafe {
+            let [acc] = self.accumulate_avx512::<1>(vector.as_ptr(), 0);
+            self.reduce_avx512(acc)
+        }
     }
 
-    /// Block loop of the AVX-512 kernels over the vector at `data`.
+    /// Batch counterpart of [`Self::dotprod_raw_avx512_vnni`] with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (asserted there).
+    ///
+    /// Vectors up to [`INTERLEAVE_MAX_BYTES`] are scored in groups of
+    /// [`GROUP_512`]: the group shares each query block load and its tail
+    /// mask, and its independent accumulators keep `VPDPBUSD` saturated
+    /// while the per-vector reductions overlap with the next group's loads.
+    /// Longer vectors keep the one-vector-at-a-time walk: the group reads
+    /// [`GROUP_512`] interleaved byte streams, which hardware prefetchers
+    /// stream far worse than a single sequential one once each vector spans
+    /// more than a couple of cache lines.
     ///
     /// # Safety
     /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`; `data` must
-    /// be readable for `self.vector_bytes` bytes.
+    /// hold `out.len()` vectors at `stride`.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    pub unsafe fn dotprod_batch_avx512_vnni(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        unsafe {
+            let mut v = 0;
+            if self.vector_bytes <= INTERLEAVE_MAX_BYTES {
+                let (groups, _) = out.as_chunks_mut::<GROUP_512>();
+                for group in groups {
+                    let accs =
+                        self.accumulate_avx512::<GROUP_512>(data.as_ptr().add(v * stride), stride);
+                    for (out, acc) in group.iter_mut().zip(accs) {
+                        *out = self.postprocess(self.reduce_avx512(acc));
+                    }
+                    v += GROUP_512;
+                }
+            }
+            for out in &mut out[v..] {
+                let [acc] = self.accumulate_avx512::<1>(data.as_ptr().add(v * stride), stride);
+                *out = self.postprocess(self.reduce_avx512(acc));
+                v += 1;
+            }
+        }
+    }
+
+    /// Block loop of the AVX-512 kernels over `N` vectors stored `stride`
+    /// bytes apart starting at `data`.  Every query block is loaded once and
+    /// folded into all `N` accumulator sets.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`; `data` must
+    /// be readable for `(N - 1) * stride + self.vector_bytes` bytes.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
-    unsafe fn accumulate_avx512(&self, data: *const u8) -> Acc512<QUERY_BYTES> {
+    unsafe fn accumulate_avx512<const N: usize>(
+        &self,
+        data: *const u8,
+        stride: usize,
+    ) -> [Acc512<QUERY_BYTES>; N] {
         unsafe {
-            let mut acc = Acc512::zero();
+            let mut accs = [Acc512::zero(); N];
 
             let full_blocks = self.vector_bytes / BLOCK_512;
             for block in 0..full_blocks {
                 let offset = block * BLOCK_512;
                 let query = QueryBlock512::load(&self.planes, offset);
-                let codes = _mm512_loadu_si512(data.add(offset).cast::<__m512i>());
-                acc.accumulate(codes, query);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    let codes = _mm512_loadu_si512(data.add(v * stride + offset).cast::<__m512i>());
+                    acc.accumulate(codes, query);
+                }
             }
 
             let tail = self.vector_bytes % BLOCK_512;
@@ -522,27 +572,133 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
                 let offset = full_blocks * BLOCK_512;
                 let query = QueryBlock512::load(&self.planes, offset);
                 let mask: __mmask64 = (1 << tail) - 1;
-                let codes = _mm512_maskz_loadu_epi8(mask, data.add(offset).cast::<i8>());
-                acc.accumulate(codes, query);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    let codes =
+                        _mm512_maskz_loadu_epi8(mask, data.add(v * stride + offset).cast::<i8>());
+                    acc.accumulate(codes, query);
+                }
             }
 
-            acc
+            accs
         }
     }
 
-    /// Raw dot product from one vector's accumulators.
+    /// Raw dot product from one vector's accumulators: the fused reduction
+    /// whenever the vector is short enough for its lane bound, otherwise
+    /// one reduction per query byte.
     ///
     /// # Safety
-    /// CPU must support `avx512f`.
+    /// CPU must support `avx512f` and `avx512bw`.
     #[inline]
-    #[target_feature(enable = "avx512f")]
-    unsafe fn reduce_avx512(acc: Acc512<QUERY_BYTES>) -> i64 {
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn reduce_avx512(&self, acc: Acc512<QUERY_BYTES>) -> i64 {
         unsafe {
-            Self::combine_bytes(
-                acc.fold()
-                    .map(|total| i64::from(_mm512_reduce_add_epi32(total))),
-            )
+            let totals = acc.fold();
+            if self.vector_bytes <= Self::FUSED_REDUCTION_MAX_BYTES {
+                reduce_fused_512::<PLANES, QUERY_BYTES>(totals)
+            } else {
+                Self::combine_bytes(totals.map(|total| i64::from(_mm512_reduce_add_epi32(total))))
+            }
         }
+    }
+
+    /// Longest encoded vector (bytes) the fused reduction accepts — see
+    /// [`fused_reduction_max_bytes`].
+    const FUSED_REDUCTION_MAX_BYTES: usize = fused_reduction_max_bytes::<PLANES, QUERY_BYTES>();
+}
+
+/// Vectors per interleaved group of the AVX-512 batch kernel: 4 × 4
+/// accumulators plus the query block, codebook and mask fit the 32 ZMM
+/// registers without spilling.
+const GROUP_512: usize = 4;
+
+/// Longest encoded vector (bytes) the AVX-512 batch kernel scores in
+/// interleaved groups: four cache lines per vector.  Measured streaming
+/// from DRAM on Zen 4 at the 4-bit width: grouping is 10 % faster than the
+/// per-vector walk at dim 512 and twice as slow at dim 1024.
+const INTERLEAVE_MAX_BYTES: usize = 4 * BLOCK_512;
+
+/// Longest encoded vector (bytes) [`reduce_fused_256`] accepts at a width.
+///
+/// Per packed byte, its `PLANES` codes add at most `PLANES · c_max · K/2`
+/// to the folded lane of each query byte holding it, so `(1 + K)` times
+/// that to the fused lane (`low + K · high`).  The reduction folds to four
+/// i32 lanes before widening, each holding a quarter of the bytes:
+/// `bytes / 4 · per_byte ≤ i32::MAX`.  A one-byte query has no `K · high`
+/// term and cannot overflow the fold within any real dim.
+const fn fused_reduction_max_bytes<const PLANES: usize, const QUERY_BYTES: usize>() -> usize {
+    if QUERY_BYTES == 1 {
+        return usize::MAX;
+    }
+    let encoding = encoding(PLANES);
+    let mut c_max = 0;
+    let mut k = 0;
+    while k < (1 << (8 / PLANES)) {
+        if encoding.codebook[k] as usize > c_max {
+            c_max = encoding.codebook[k] as usize;
+        }
+        k += 1;
+    }
+    let radix = encoding.query_high_coef as usize;
+    let per_byte = PLANES * c_max * (radix / 2) * (1 + radix);
+    4 * (i32::MAX as usize) / per_byte
+}
+
+/// `Σ_b K^b · Σ totals[b]` with the horizontal reductions fused into one:
+/// the high lanes are shifted by `log2(K)` and added to the low lanes up
+/// front, leaving a single tree reduction that widens to i64 before its
+/// last two adds.
+///
+/// # Safety
+/// CPU must support `avx2`; the totals must come from a vector within the
+/// width's [`fused_reduction_max_bytes`].
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn reduce_fused_256<const PLANES: usize, const QUERY_BYTES: usize>(
+    totals: [__m256i; QUERY_BYTES],
+) -> i64 {
+    let mut combined = totals[0];
+    if QUERY_BYTES == 2 {
+        // The radix is a power of two (128 or 256); the shift is an immediate.
+        let high = totals[1];
+        let scaled = match const { encoding(PLANES).query_high_coef } {
+            128 => _mm256_slli_epi32(high, 7),
+            _ => _mm256_slli_epi32(high, 8),
+        };
+        combined = _mm256_add_epi32(combined, scaled);
+    }
+    let fold_128 = _mm_add_epi32(
+        _mm256_castsi256_si128(combined),
+        _mm256_extracti128_si256(combined, 1),
+    );
+    let wide = _mm256_cvtepi32_epi64(fold_128);
+    let pair = _mm_add_epi64(
+        _mm256_castsi256_si128(wide),
+        _mm256_extracti128_si256(wide, 1),
+    );
+    let total = _mm_add_epi64(pair, _mm_unpackhi_epi64(pair, pair));
+    _mm_cvtsi128_si64(total)
+}
+
+/// [`reduce_fused_256`] for ZMM accumulators: folds each to 256 bits first,
+/// which halves the lanes and doubles their values — the per-byte bound
+/// behind [`fused_reduction_max_bytes`] is unchanged.
+///
+/// # Safety
+/// CPU must support `avx512f`; the totals must come from a vector within
+/// the width's [`fused_reduction_max_bytes`].
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn reduce_fused_512<const PLANES: usize, const QUERY_BYTES: usize>(
+    totals: [__m512i; QUERY_BYTES],
+) -> i64 {
+    unsafe {
+        reduce_fused_256::<PLANES, QUERY_BYTES>(totals.map(|total| {
+            _mm256_add_epi32(
+                _mm512_castsi512_si256(total),
+                _mm512_extracti64x4_epi64(total, 1),
+            )
+        }))
     }
 }
 
@@ -569,6 +725,7 @@ mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
+    use super::super::super::shared::random_bytes;
     use super::super::QuerySimd;
     use super::super::shared::{parity_dims, random_inputs};
 
@@ -651,5 +808,95 @@ mod tests {
         saturation_safety_64k::<4, 2>();
         saturation_safety_64k::<8, 1>();
         saturation_safety_64k::<8, 2>();
+    }
+
+    /// The derivation behind the fused-reduction bound, checked against
+    /// the hand-derived 4-bit value: `2 · 255 · 64 · 129 = 4 210 560` per
+    /// byte, `4 · i32::MAX / 4 210 560 = 2040`.
+    #[test]
+    fn test_fused_reduction_bound() {
+        assert_eq!(QuerySimd::<2, 2>::FUSED_REDUCTION_MAX_BYTES, 2040);
+        assert_eq!(QuerySimd::<4, 2>::FUSED_REDUCTION_MAX_BYTES, 1020);
+        assert_eq!(QuerySimd::<8, 2>::FUSED_REDUCTION_MAX_BYTES, 255);
+        assert_eq!(QuerySimd::<8, 1>::FUSED_REDUCTION_MAX_BYTES, usize::MAX);
+    }
+
+    /// Vector lengths (bytes) at and just past a width's fused-reduction
+    /// bound, so both reduction paths are exercised; none for a one-byte
+    /// query, which always fuses.
+    fn fused_bound_dims<const PLANES: usize, const QUERY_BYTES: usize>() -> Vec<usize> {
+        let bound = QuerySimd::<PLANES, QUERY_BYTES>::FUSED_REDUCTION_MAX_BYTES;
+        if bound == usize::MAX {
+            Vec::new()
+        } else {
+            vec![bound * PLANES, (bound + 1) * PLANES]
+        }
+    }
+
+    /// The AVX-512 batch kernel must reproduce the scalar reference for
+    /// every parity dim (interleaved groups and the per-vector remainder,
+    /// both reduction paths) at a stride equal to and larger than the
+    /// vector.
+    fn batch_avx512_vnni_matches_scalar<const PLANES: usize, const QUERY_BYTES: usize>() {
+        let mut rng = StdRng::seed_from_u64(7);
+        for dim in parity_dims::<PLANES>().chain(fused_bound_dims::<PLANES, QUERY_BYTES>()) {
+            let (query, _) = random_inputs::<PLANES, QUERY_BYTES>(&mut rng, dim);
+            let vector_bytes = dim / PLANES;
+            for stride in [vector_bytes, vector_bytes + 4] {
+                let count = 11;
+                let data = random_bytes(&mut rng, count * stride);
+                let expected: Vec<f32> = (0..count)
+                    .map(|v| {
+                        query.postprocess(query.dotprod_raw(&data[v * stride..][..vector_bytes]))
+                    })
+                    .collect();
+                let mut actual = vec![0.0; count];
+                unsafe { query.dotprod_batch_avx512_vnni(&data, stride, &mut actual) };
+                assert_eq!(
+                    expected, actual,
+                    "PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} dim={dim} stride={stride}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_batch_avx512_vnni_matches_scalar() {
+        if !has_avx512_vnni() {
+            return;
+        }
+        batch_avx512_vnni_matches_scalar::<2, 2>();
+        batch_avx512_vnni_matches_scalar::<4, 2>();
+        batch_avx512_vnni_matches_scalar::<8, 1>();
+        batch_avx512_vnni_matches_scalar::<8, 2>();
+    }
+
+    /// The fused reduction at its exact lane bound under the heaviest load
+    /// it can see — every query dim at the extreme `q_signed` (both signs),
+    /// every code at the max-magnitude codebook slot — must still match the
+    /// i64 scalar reference.
+    fn fused_reduction_bound_worst_case<const PLANES: usize, const QUERY_BYTES: usize>() {
+        let bytes = QuerySimd::<PLANES, QUERY_BYTES>::FUSED_REDUCTION_MAX_BYTES;
+        let vector = vec![0xFF_u8; bytes];
+        for sign in [1.0_f32, -1.0] {
+            let query = QuerySimd::<PLANES, QUERY_BYTES>::new(&vec![sign; bytes * PLANES]);
+            let scalar = query.dotprod_raw(&vector);
+            let vnni512 = unsafe { query.dotprod_raw_avx512_vnni(&vector) };
+            assert_eq!(
+                scalar, vnni512,
+                "PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} sign={sign}: avx512_vnni fused \
+                 reduction overflowed"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fused_reduction_bound_worst_case() {
+        if !has_avx512_vnni() {
+            return;
+        }
+        fused_reduction_bound_worst_case::<2, 2>();
+        fused_reduction_bound_worst_case::<4, 2>();
+        fused_reduction_bound_worst_case::<8, 2>();
     }
 }

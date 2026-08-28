@@ -262,7 +262,11 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             data.len(),
         );
 
-        self.dotprod_batch_per_vector(data, stride, out);
+        match self.backend {
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx512Vnni => unsafe { self.dotprod_batch_avx512_vnni(data, stride, out) },
+            _ => self.dotprod_batch_per_vector(data, stride, out),
+        }
     }
 
     /// [`Self::dotprod_batch`] as a plain loop over [`Self::dotprod`], for
