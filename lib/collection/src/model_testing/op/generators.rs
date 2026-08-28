@@ -202,6 +202,16 @@ pub(super) fn random_slice(rng: &mut impl Rng) -> (NonZeroU32, u32) {
     (total, index)
 }
 
+/// Flush interval for `Op::SetFlushInterval`, in seconds. The range mirrors what operators
+/// realistically configure: the shipped default is 5s (see `config/config.yaml`), and tuned
+/// deployments trade durability for write throughput anywhere between 1s and 30s. `0` is
+/// excluded on purpose: it makes the flush worker spin without sleeping (the CLI's
+/// `--flush-interval-sec` rejects it for the same reason).
+pub(super) fn random_flush_interval_sec(rng: &mut impl Rng) -> u64 {
+    const INTERVALS: &[u64] = &[1, 2, 5, 10, 30];
+    *INTERVALS.choose(rng).unwrap()
+}
+
 /// A filter selector for paginated scroll: no filter, `num == X`, `tag == X`, a `has_id`
 /// matcher, a `has_vector` matcher over a currently-active vector name, a `url` prefix
 /// matcher, a deterministic `slice` of the id space, or composed `num` ∧ `slice`.

@@ -32,6 +32,10 @@
 //! with the op events that follow it (the archive is discarded — no recovery). It draws no rng, so
 //! it doesn't perturb the op stream.
 //!
+//! A `SetFlushInterval` op line changes the flush cadence from that point on, so the `Header`'s
+//! `flush_interval_sec` is the run's *initial* value, not necessarily the one in effect at the
+//! failing op.
+//!
 //! `extra` = ids the engine has that the model doesn't.
 //! `missing` = ids the model has that the engine doesn't.
 //! When the run is clean both arrays are empty.
@@ -363,6 +367,9 @@ fn op_payload(op: &Op) -> Value {
         }),
         // The op events that follow a `CreateSnapshot` ran concurrently with the background capture.
         Op::CreateSnapshot => json!({}),
+        // The flush cadence in effect for the op events that follow, until the next
+        // `SetFlushInterval` (the value is persisted, so restarts don't reset it).
+        Op::SetFlushInterval(sec) => json!({ "flush_interval_sec": sec }),
     }
 }
 

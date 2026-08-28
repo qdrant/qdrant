@@ -7,12 +7,12 @@ use std::num::NonZeroU32;
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
 use generators::{
-    random_direction, random_distinct_ids, random_distinct_points, random_existing_ids, random_num,
-    random_partial_named_vectors, random_payload, random_payload_key, random_payload_keys,
-    random_point, random_prefetch, random_query_for_name, random_recommend_strategy,
-    random_scroll_filter, random_slice, random_tag, random_update_mode, random_url_prefix_probe,
-    random_vector_name, random_vector_name_subset, random_with_payload, random_with_vector,
-    upsert_fallback,
+    random_direction, random_distinct_ids, random_distinct_points, random_existing_ids,
+    random_flush_interval_sec, random_num, random_partial_named_vectors, random_payload,
+    random_payload_key, random_payload_keys, random_point, random_prefetch, random_query_for_name,
+    random_recommend_strategy, random_scroll_filter, random_slice, random_tag, random_update_mode,
+    random_url_prefix_probe, random_vector_name, random_vector_name_subset, random_with_payload,
+    random_with_vector, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -243,6 +243,15 @@ pub(super) enum Op {
     /// verification ops + final reload catch that). Handled in the run loop (not `apply`) because it
     /// spawns a task against shared collection state.
     CreateSnapshot,
+    /// Change the collection's `flush_interval_sec` mid-run, through the same path a user's
+    /// `update_collection` takes: persist the optimizer-config diff, then recreate the
+    /// optimizers (and with them the per-shard update/flush workers) in the background.
+    ///
+    /// Not a data op: the model is untouched and every verification op must keep passing. What it
+    /// perturbs is the *flush cadence*, which decides how much of the workload is still WAL-only
+    /// when a restart hits, plus the worker stop/start race in `on_optimizer_config_update`.
+    /// The new value is persisted to `config.json`, so it survives the run's restarts.
+    SetFlushInterval(u64),
 }
 
 /// A single prefetch source for `QueryFusion`: a Nearest sub-query over one vector name, with its
@@ -312,7 +321,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 39;
+    const N: usize = 40;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -355,6 +364,7 @@ impl Swarm {
         "ScrollFilteredByUrlPrefix",
         "CreateSnapshot",
         "CountBySlice",
+        "SetFlushInterval",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -363,6 +373,14 @@ impl Swarm {
     /// is just removing it from `FORCE_OFF`.
     //
     // Currently in `FORCE_OFF` (known-broken):
+    // - SetFlushInterval (39): with the optimizer on, the config update makes stale point state
+    //   visible within a few ops (a count coming out too high, an ordered scroll returning an id
+    //   whose `num` the model has since changed, a filtered search returning a non-matching
+    //   point). Narrowed to `recreate_optimizers_background`: persisting the diff but skipping the
+    //   recreation is clean across 16 firings, `--disable-optimizer` is clean, and dropping both
+    //   collection calls while leaving the op in the stream (identical rng draws) is clean on the
+    //   seeds that otherwise fail. It also reproduces with `--restart-probability 0`, so it is not
+    //   an artifact of the harness's own close/reopen. Re-enable once that's fixed.
     // - CreateVectorName / DeleteVectorName (22, 23): (1) proxy-segment schema race (optimizer-on)
     //   → "missing / Not existing vector name"; (2) DeleteVectorName vs. storage incoherence
     //   (fires without the optimizer too) — `delete_named_vector` updates `CollectionParams` but
@@ -410,6 +428,9 @@ impl Swarm {
         // blocking thread, so keep the weight modest.
         2, // CreateSnapshot
         4, // CountBySlice
+        // Config change: cheap in itself, but it restarts every shard's update workers, so keep
+        // it rare enough that the workload isn't dominated by worker churn.
+        1, // SetFlushInterval
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -419,7 +440,7 @@ impl Swarm {
     /// Indices kept disabled in every swarm config: known-broken ops (see `BASE`).
     // DeleteByFilter (3) was here for https://github.com/qdrant/qdrant/issues/9575 — re-enabled
     // once filter ops are resolved to concrete ids before the WAL append.
-    const FORCE_OFF: [usize; 2] = [22, 23]; // CreateVectorName, DeleteVectorName
+    const FORCE_OFF: [usize; 3] = [22, 23, 39]; // CreateVectorName, DeleteVectorName, SetFlushInterval
 
     /// Index of the snapshot op (`CreateSnapshot`), masked off when `disable_snapshots` is set.
     /// Must stay aligned with `NAMES`/`BASE`.
@@ -771,6 +792,7 @@ impl Op {
                 let (total, index) = random_slice(rng);
                 Op::CountBySlice { total, index }
             }
+            39 => Op::SetFlushInterval(random_flush_interval_sec(rng)),
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -818,6 +840,7 @@ impl Op {
             Op::ScrollPaged { .. } => "ScrollPaged",
             Op::QueryFusion { .. } => "QueryFusion",
             Op::CreateSnapshot => "CreateSnapshot",
+            Op::SetFlushInterval(_) => "SetFlushInterval",
         }
     }
 }
