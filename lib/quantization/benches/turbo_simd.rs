@@ -3,9 +3,8 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use quantization::encoded_vectors_binary::BitsStoreType;
 use quantization::turboquant::simd::{
-    Query1bitSimd, Query2bitSimd, Query4bitSimd, score_1bit_internal, score_1bit_internal_scalar,
-    score_2bit_internal, score_2bit_internal_scalar, score_4bit_internal,
-    score_4bit_internal_scalar,
+    Query1bitSimd, QuerySimd, score_1bit_internal, score_1bit_internal_scalar, score_2bit_internal,
+    score_2bit_internal_scalar, score_4bit_internal, score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
@@ -32,8 +31,21 @@ const DIMS_2BIT: &[usize] = &[128, 1532, 1536]; // 1532 = 95 chunks (odd) + 12-d
 const DIMS_1BIT: &[usize] = &[128, 1528, 1536]; // 1528 = 11 blocks (odd) + 120-dim tail
 
 /// Pool size ≫ L2. Indices are shuffled so the hardware prefetcher can't stream
-/// vectors into cache — each iteration pays a real DRAM fetch.
+/// vectors into cache — each iteration pays a real DRAM fetch.  Override with
+/// `TURBO_SIMD_POOL_KB` to measure hot kernels (a pool that fits L1).
 const POOL_BYTES: usize = 64 * 1024 * 1024;
+
+fn pool_bytes() -> usize {
+    match std::env::var("TURBO_SIMD_POOL_KB") {
+        Ok(kb) => {
+            kb.trim()
+                .parse::<usize>()
+                .expect("TURBO_SIMD_POOL_KB: not a size")
+                * 1024
+        }
+        Err(_) => POOL_BYTES,
+    }
+}
 
 struct VectorPool {
     buf: Vec<u8>,
@@ -44,7 +56,7 @@ struct VectorPool {
 
 impl VectorPool {
     fn with_packed_bytes(packed_bytes: usize, seed: u64) -> Self {
-        let count = (POOL_BYTES / packed_bytes).max(1024);
+        let count = (pool_bytes() / packed_bytes).max(64);
         let mut rng = SmallRng::seed_from_u64(seed);
         let buf: Vec<u8> = (0..count * packed_bytes)
             .map(|_| rng.random_range(0..=u8::MAX))
@@ -88,12 +100,29 @@ fn make_query(dim: usize) -> Vec<f32> {
     (0..dim).map(|_| rng.random_range(-1.0_f32..1.0)).collect()
 }
 
-fn bench_dotprod_cold(c: &mut Criterion) {
-    let mut group = c.benchmark_group("query4bit_dotprod_cold");
-    for &dim in DIMS_4BIT {
+/// Dims for a bench group: the built-in list, or `TURBO_SIMD_DIMS` (comma
+/// separated) to narrow or widen a run.
+fn dims(default: &[usize]) -> Vec<usize> {
+    match std::env::var("TURBO_SIMD_DIMS") {
+        Ok(list) => list
+            .split(',')
+            .map(|dim| dim.trim().parse().expect("TURBO_SIMD_DIMS: not a dim"))
+            .collect(),
+        Err(_) => default.to_vec(),
+    }
+}
+
+/// Cold-cache query-vs-vector dotprod at the width packing `PLANES` codes
+/// per byte: a hot encoded query against data vectors drawn from a shuffled
+/// pool ≫ cache, so every call pays a real DRAM fetch — the HNSW scoring
+/// pattern.  `scalar` is the reference kernel, `dotprod` the public path
+/// (best backend + float reconstruction), the rest the individual backends.
+fn dotprod_cold<const PLANES: usize>(c: &mut Criterion, group: &str, default_dims: &[usize]) {
+    let mut group = c.benchmark_group(group);
+    for dim in dims(default_dims) {
         let q = make_query(dim);
-        let query = Query4bitSimd::new(&q);
-        let pool = VectorPool::new_4bit(dim, 7);
+        let query = QuerySimd::<PLANES>::new(&q);
+        let pool = VectorPool::with_packed_bytes(dim / PLANES, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
 
@@ -106,10 +135,6 @@ fn bench_dotprod_cold(c: &mut Criterion) {
             });
         });
 
-        // Full public path: `dotprod_raw_best` (best SIMD backend) + the
-        // `sum_codebook_over_vector` bias correction + `as f32` reconstruction.
-        // This is what a real caller pays.  Comparing against the best raw
-        // backend for the current CPU shows the bias-correction overhead.
         group.bench_with_input(BenchmarkId::new("dotprod", dim), &dim, |b, _| {
             let mut cursor = 0usize;
             b.iter(|| {
@@ -182,6 +207,12 @@ fn bench_dotprod_cold(c: &mut Criterion) {
         }
     }
     group.finish();
+}
+
+fn bench_dotprod_cold(c: &mut Criterion) {
+    dotprod_cold::<2>(c, "query4bit_dotprod_cold", DIMS_4BIT);
+    dotprod_cold::<4>(c, "query2bit_dotprod_cold", DIMS_2BIT);
+    dotprod_cold::<8>(c, "query1bit_dotprod_cold", DIMS_1BIT);
 }
 
 /// Benchmarks [`score_4bit_internal`] (both vectors already PQ-encoded, both
@@ -446,99 +477,6 @@ fn encode_bq_scalar8bits(query: &[f32]) -> Vec<u8> {
     encoded
 }
 
-/// Cold-cache query-vs-vector dotprod for 2-bit PQ.  Mirrors
-/// [`bench_dotprod_cold`] for 4-bit — a hot `Query2bitSimd` against cold
-/// data vectors drawn from a shuffled 64 MB pool.
-fn bench_dotprod_2bit_cold(c: &mut Criterion) {
-    let mut group = c.benchmark_group("query2bit_dotprod_cold");
-    for &dim in DIMS_2BIT {
-        let q = make_query(dim);
-        let query = Query2bitSimd::new(&q);
-        let pool = VectorPool::new_2bit(dim, 7);
-
-        group.throughput(Throughput::Elements(dim as u64));
-
-        group.bench_with_input(BenchmarkId::new("scalar", dim), &dim, |b, _| {
-            let mut cursor = 0usize;
-            b.iter(|| {
-                let v = pool.vector(cursor);
-                cursor = cursor.wrapping_add(1);
-                black_box(&query).dotprod_raw(black_box(v))
-            });
-        });
-
-        group.bench_with_input(BenchmarkId::new("dotprod", dim), &dim, |b, _| {
-            let mut cursor = 0usize;
-            b.iter(|| {
-                let v = pool.vector(cursor);
-                cursor = cursor.wrapping_add(1);
-                black_box(&query).dotprod(black_box(v))
-            });
-        });
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            group.bench_with_input(BenchmarkId::new("neon", dim), &dim, |b, _| {
-                let mut cursor = 0usize;
-                b.iter(|| {
-                    let v = pool.vector(cursor);
-                    cursor = cursor.wrapping_add(1);
-                    unsafe { black_box(&query).dotprod_raw_neon(black_box(v)) }
-                });
-            });
-
-            if std::arch::is_aarch64_feature_detected!("dotprod") && dim.is_multiple_of(32) {
-                group.bench_with_input(BenchmarkId::new("neon_sdot", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_neon_sdot(black_box(v)) }
-                    });
-                });
-            }
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-                group.bench_with_input(BenchmarkId::new("sse", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_sse(black_box(v)) }
-                    });
-                });
-            }
-            if std::is_x86_feature_detected!("avx2") {
-                group.bench_with_input(BenchmarkId::new("avx2", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_avx2(black_box(v)) }
-                    });
-                });
-            }
-            if std::is_x86_feature_detected!("avx512f")
-                && std::is_x86_feature_detected!("avx512bw")
-                && std::is_x86_feature_detected!("avx512vnni")
-            {
-                group.bench_with_input(BenchmarkId::new("avx512_vnni", dim), &dim, |b, _| {
-                    let mut cursor = 0usize;
-                    b.iter(|| {
-                        let v = pool.vector(cursor);
-                        cursor = cursor.wrapping_add(1);
-                        unsafe { black_box(&query).dotprod_raw_avx512_vnni(black_box(v)) }
-                    });
-                });
-            }
-        }
-    }
-    group.finish();
-}
-
 /// Cold-cache vector-vs-vector score for 2-bit PQ.  Mirrors
 /// [`bench_score_cold`] for 4-bit.
 fn bench_score_2bit_cold(c: &mut Criterion) {
@@ -640,7 +578,6 @@ criterion_group!(
     benches,
     bench_dotprod_cold,
     bench_score_cold,
-    bench_dotprod_2bit_cold,
     bench_score_2bit_cold,
     bench_score_1bit_cold,
     bench_query1bit_vs_bq_hot,
