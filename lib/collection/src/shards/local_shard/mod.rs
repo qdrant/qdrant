@@ -371,6 +371,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         rebuild_payload_index: bool,
+        persisted_proxy_changes: PersistedProxyChanges,
         update_runtime: Handle,
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
@@ -459,9 +460,11 @@ impl LocalShard {
                     // Buffered proxy state that made it to disk doesn't hold back the WAL
                     // acknowledge, so it must be recovered here before WAL replay to create a
                     // consistent view of the segment.
+                    // Skipped when loading a mirror of another writer's segment files, such as a
+                    // recovered partial snapshot, which must not diverge from the writer's.
                     segment::pending_changes::recover_pending_changes(
                         &mut segment,
-                        PersistedProxyChanges::Replay,
+                        persisted_proxy_changes,
                     )?;
 
                     if rebuild_payload_index {

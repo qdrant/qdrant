@@ -20,6 +20,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
+use segment::pending_changes::PersistedProxyChanges;
 use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey, StrictModeConfig};
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::{
@@ -304,6 +305,7 @@ impl ShardReplicaSet {
                     shared_storage_config.clone(),
                     payload_index_schema.clone(),
                     true,
+                    PersistedProxyChanges::Replay,
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
