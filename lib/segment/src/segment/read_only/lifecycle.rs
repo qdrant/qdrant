@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -91,19 +91,31 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
-        let cached_fs = build_cached_fs(fs, segment_path)?;
-        let (segment_config, payload_config) =
-            Self::first_preopen(&cached_fs, segment_path, load_profile)?;
-        Self::open_via(
-            cached_fs,
+        Self::schedule_open(fs, segment_path, uuid, deferred_internal_id, load_profile)?.finish(fs)
+    }
+
+    /// Stage an open without assembling the segment: take the listing snapshot
+    /// and put every fetch the open needs in flight. Callers opening many
+    /// segments overlap their IO ([`StagedSegmentOpen::wait`]) before
+    /// assembling each one ([`StagedSegmentOpen::finish`]).
+    pub fn schedule_open<'a>(
+        fs: &S::Fs,
+        segment_path: &Path,
+        uuid: Uuid,
+        deferred_internal_id: Option<PointOffsetType>,
+        load_profile: Option<&'a LoadProfile>,
+    ) -> OperationResult<StagedSegmentOpen<'a, S>> {
+        let fs = build_cached_fs(fs, segment_path)?;
+        let (config, payload_config) = Self::first_preopen(&fs, segment_path, load_profile)?;
+        Ok(StagedSegmentOpen {
             fs,
-            segment_path,
-            segment_config,
-            payload_config,
+            segment_path: segment_path.to_path_buf(),
             uuid,
             deferred_internal_id,
+            config,
+            payload_config,
             load_profile,
-        )
+        })
     }
 
     /// Schedule the prefetch of every file the segment's components will open,
@@ -325,6 +337,50 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             segment_type,
             segment_config: config,
         })
+    }
+}
+
+/// An open staged by [`ReadOnlySegment::schedule_open`]: prefetches in flight,
+/// segment not yet assembled.
+pub struct StagedSegmentOpen<'a, S: UniversalReadExt + 'static> {
+    fs: CachedFs<S::Fs>,
+    segment_path: PathBuf,
+    uuid: Uuid,
+    deferred_internal_id: Option<PointOffsetType>,
+    config: SegmentConfig,
+    payload_config: PayloadConfig,
+    load_profile: Option<&'a LoadProfile>,
+}
+
+impl<'a, S: UniversalReadExt + 'static> StagedSegmentOpen<'a, S> {
+    /// Drive the staged fetches to completion. Detached (`use<S>`), so many
+    /// segments' waits can be collected and awaited together.
+    pub fn wait(&self) -> impl Future<Output = ()> + Send + 'static + use<S> {
+        self.fs.wait_all()
+    }
+
+    /// Assemble the segment from the staged handles. Fetches not already
+    /// resolved via [`Self::wait`] are driven to completion here.
+    pub fn finish(self, raw_fs: &S::Fs) -> OperationResult<ReadOnlySegment<S>> {
+        let Self {
+            fs,
+            segment_path,
+            uuid,
+            deferred_internal_id,
+            config,
+            payload_config,
+            load_profile,
+        } = self;
+        ReadOnlySegment::open_via(
+            fs,
+            raw_fs,
+            &segment_path,
+            config,
+            payload_config,
+            uuid,
+            deferred_internal_id,
+            load_profile,
+        )
     }
 }
 
