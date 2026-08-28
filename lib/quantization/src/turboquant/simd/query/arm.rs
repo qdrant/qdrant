@@ -7,7 +7,7 @@
 
 use core::arch::aarch64::*;
 
-use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding};
+use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding, tail_block};
 
 /// Packed data bytes per NEON block: one 128-bit register of codes.
 const BLOCK_128: usize = 16;
@@ -223,8 +223,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             if tail > 0 {
                 let offset = full_blocks * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                let mut block = [0u8; BLOCK_128];
-                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                let block = tail_block::<BLOCK_128>(data.add(offset), tail);
                 acc.accumulate_mull(vld1q_u8(block.as_ptr()), query);
             }
 
@@ -276,8 +275,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             if tail > 0 {
                 let offset = full_blocks * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                let mut block = [0u8; BLOCK_128];
-                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                let block = tail_block::<BLOCK_128>(data.add(offset), tail);
                 acc.accumulate_sdot(vld1q_u8(block.as_ptr()), query);
             }
 

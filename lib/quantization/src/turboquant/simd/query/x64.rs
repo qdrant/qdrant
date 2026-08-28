@@ -8,7 +8,7 @@
 
 use core::arch::x86_64::*;
 
-use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding};
+use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding, tail_block};
 
 /// Packed data bytes per SSE block: one XMM of codes.
 const BLOCK_128: usize = 16;
@@ -402,8 +402,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             if tail > 0 {
                 let offset = full_blocks * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                let mut block = [0u8; BLOCK_128];
-                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                let block = tail_block::<BLOCK_128>(data.add(offset), tail);
                 let codes = _mm_loadu_si128(block.as_ptr().cast::<__m128i>());
                 acc.accumulate(codes, query);
             }
@@ -480,8 +479,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             if tail > 0 {
                 let offset = full_blocks * BLOCK_256;
                 let query = QueryBlock256::load(&self.planes, offset);
-                let mut block = [0u8; BLOCK_256];
-                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                let block = tail_block::<BLOCK_256>(data.add(offset), tail);
                 let codes = _mm256_loadu_si256(block.as_ptr().cast::<__m256i>());
                 acc.accumulate(codes, query);
             }

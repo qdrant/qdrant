@@ -95,6 +95,44 @@ const fn encoding(planes: usize) -> Encoding {
 /// 64 bytes).  Every query plane is padded to a multiple of it.
 const PLANE_BLOCK: usize = 64;
 
+/// The last `len` (`< N`) packed bytes of a vector at `data`, zero-padded to
+/// a full block so a kernel can run its regular block step on them: the
+/// padding lanes meet the planes' zero padding and contribute nothing.
+///
+/// The copy proceeds in power-of-two pieces of constant size rather than one
+/// `len`-byte copy, which the compiler would turn into a `memcpy` call (plus
+/// a `memset` for the rest) — a call that also forces the accumulators out
+/// of their registers around it.  `len` is the same for every vector of a
+/// query, so the piece branches predict perfectly.
+///
+/// # Safety
+/// `data` must be readable for `len` bytes.
+#[inline]
+#[cfg(any(
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", target_feature = "neon")
+))]
+unsafe fn tail_block<const N: usize>(data: *const u8, len: usize) -> [u8; N] {
+    debug_assert!(N.is_power_of_two() && len < N);
+    let mut block = [0; N];
+    let mut copied = 0;
+    let mut piece = N / 2;
+    while piece > 0 {
+        if len & piece != 0 {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    data.add(copied),
+                    block.as_mut_ptr().add(copied),
+                    piece,
+                );
+            }
+            copied += piece;
+        }
+        piece /= 2;
+    }
+    block
+}
+
 /// Query bytes regrouped by code position — the layout the SIMD kernels
 /// consume.
 ///
