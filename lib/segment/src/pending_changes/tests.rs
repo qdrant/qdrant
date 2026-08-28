@@ -402,7 +402,7 @@ fn test_recover_pending_changes() {
     // The segment itself never saw the operations
     assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
 
-    let replayed = recover_pending_changes(&mut segment).unwrap();
+    let replayed = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert_eq!(replayed, 2);
 
     assert!(!segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
@@ -413,7 +413,10 @@ fn test_recover_pending_changes() {
     assert!(list_pending_changes_log_files(&segment_dir).is_empty());
 
     // Running again is a no-op
-    assert_eq!(recover_pending_changes(&mut segment).unwrap(), 0);
+    assert_eq!(
+        recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap(),
+        0
+    );
 
     // Deleting a point again with the same version is silently skipped
     assert!(
@@ -421,6 +424,40 @@ fn test_recover_pending_changes() {
             .delete_point(segment_version + 1, 2.into(), &hw_counter)
             .unwrap()
     );
+}
+
+#[test]
+fn test_recover_ignore_leaves_log_untouched() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment(dir.path());
+    let segment_dir = segment.data_path();
+    let segment_version = segment.version();
+
+    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    pending_changes.register_delete_point(
+        2.into(),
+        ProxyDeletedPoint {
+            local_version: 2,
+            operation_version: segment_version + 1,
+        },
+    );
+    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    let log_path = pending_changes.log_path().to_path_buf();
+    let log_len = fs::metadata(&log_path).unwrap().len();
+    drop(pending_changes);
+
+    // Ignoring must neither touch the segment nor the log file
+    let replayed = recover_pending_changes(&mut segment, PersistedProxyChanges::Ignore).unwrap();
+    assert_eq!(replayed, 0);
+    assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert_eq!(segment.version(), segment_version);
+    assert_eq!(fs::metadata(&log_path).unwrap().len(), log_len);
+
+    // A later replaying load still recovers the change
+    let replayed = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+    assert_eq!(replayed, 1);
+    assert!(!segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert!(!log_path.is_file());
 }
 
 #[test]
@@ -450,7 +487,7 @@ fn test_recover_stale_log_is_noop() {
     let point_count = segment.available_point_count();
 
     // Replaying the stale log must not change anything, and must clean up the file
-    recover_pending_changes(&mut segment).unwrap();
+    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert_eq!(segment.available_point_count(), point_count);
     assert_eq!(segment.version(), op_version);
     assert!(list_pending_changes_log_files(&segment_dir).is_empty());
@@ -495,7 +532,7 @@ fn test_recover_multiple_levels_in_order() {
     outer.flusher(segment_version + 4).unwrap()().unwrap();
     drop(outer);
 
-    let replayed = recover_pending_changes(&mut segment).unwrap();
+    let replayed = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert_eq!(replayed, 4);
 
     assert!(!segment.has_point(1.into(), common::types::DeferredBehavior::VisibleOnly));
@@ -528,7 +565,7 @@ fn test_recover_vector_name_changes() {
     pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
     drop(pending_changes);
 
-    recover_pending_changes(&mut segment).unwrap();
+    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
 
     assert!(
         segment
