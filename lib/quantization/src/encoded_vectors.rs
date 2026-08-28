@@ -69,6 +69,26 @@ pub trait EncodedVectors: Sized {
         hw_counter: &HardwareCounterCell,
     ) -> f32;
 
+    /// Score a batch: `scores[i]` ← score of `query` against point
+    /// `offsets[i]`.
+    ///
+    /// The default is the per-vector loop the scorers have always run.
+    /// Implementations can batch harder — resolve contiguous storage runs
+    /// once and score each run with a single kernel call instead of paying
+    /// the per-point machinery for every vector.
+    fn score_points(
+        &self,
+        query: &Self::EncodedQuery,
+        offsets: &[PointOffsetType],
+        scores: &mut [f32],
+        hw_counter: &HardwareCounterCell,
+    ) {
+        debug_assert_eq!(offsets.len(), scores.len());
+        self.for_each_batch(offsets, |i, vector| {
+            scores[i] = self.score(query, &vector, hw_counter);
+        });
+    }
+
     fn score_internal(
         &self,
         i: PointOffsetType,
