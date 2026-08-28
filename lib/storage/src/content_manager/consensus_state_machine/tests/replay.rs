@@ -1,12 +1,15 @@
 //! Correctness and replay-safety properties that must hold for every consensus operation
 
+use std::collections::HashSet;
 use std::ops::Deref as _;
 
 use proptest::prelude::*;
 
 use super::prop::*;
 use super::*;
-use crate::content_manager::collection_meta_ops::{AliasOperations, ChangeAliasesOperation};
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, ChangeAliasesOperation, RenameAlias,
+};
 
 proptest! {
     /// Accepted operation changes the state only through its own actions.
@@ -136,12 +139,23 @@ fn apply(state: &ClusterState, operation: &ConsensusOperations) -> ApplyOutcome 
 /// Starting from `{ prod: old }`, the first run leaves `{ prod_old: old, prod: new }`.
 /// A replay renames the `prod` the first run created, and leaves `{ prod_old: new, prod: new }`.
 ///
-/// This only happens if the alias still exists after the first run:
-/// a later action created an alias with the same name, or renamed another alias to it.
-/// If it does not exist, the whole operation is rejected and aliases stay unchanged.
+/// A replay diverges only if renamed alias is recreated:
+/// by a later action of the operation, or by an earlier action during the replay itself.
+/// A create recreates the alias it names, a rename recreates the alias it renames to.
+/// Otherwise replay rejects the whole operation, and aliases stay unchanged.
 ///
-/// If the operation renames multiple aliases, then *all* of them have to exist.
-/// If any one is missing, then the whole operation is rejected.
+/// If the operation renames multiple aliases, then *all* of them have to be recreated.
+/// If any one is not, then the whole operation is rejected.
+///
+/// And one of the renames has to move a value from the current state.
+/// A create always writes the same value, a rename moves whatever the alias holds.
+/// So if an action creates an alias and a later action renames it, both runs move that value:
+/// `[create prod, prod → prod_old, prod_old → archive]` always converges.
+/// But `[prod → prod_old, create prod]` renames what the state holds, and may diverge.
+///
+/// This check is an approximate heuristic, and marks some operations that never diverge
+/// as "may diverge", such as `[prod_old → prod, prod → prod_old]`,
+/// which puts every alias back where it started.
 fn replay_may_diverge(operation: &ConsensusOperations) -> bool {
     let ConsensusOperations::CollectionMeta(operation) = operation else {
         return false;
@@ -153,37 +167,31 @@ fn replay_may_diverge(operation: &ConsensusOperations) -> bool {
 
     let ChangeAliasesOperation { actions } = operation;
 
-    let mut renames = actions
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, action)| {
-            let AliasOperations::RenameAlias(action) = action else {
-                return None;
-            };
+    let mut renames_pre_existing = false;
+    let mut renamed = HashSet::new();
+    let mut created = HashSet::new();
 
-            let alias = &action.rename_alias.old_alias_name;
-            let rest = &actions[idx + 1..];
+    for action in actions {
+        match action {
+            AliasOperations::RenameAlias(action) => {
+                let RenameAlias {
+                    old_alias_name,
+                    new_alias_name,
+                } = &action.rename_alias;
 
-            Some((alias, rest))
-        })
-        .peekable();
+                renames_pre_existing |= !created.contains(old_alias_name);
 
-    // If operation does not do any renames, it should be idempotent
-    let has_renames = renames.peek().is_some();
+                renamed.insert(old_alias_name);
+                created.insert(new_alias_name);
+            }
 
-    // If operation does not recreate *all* renamed aliases, it should be rejected on replay
-    // without changing anything which is idempotent
-    let recreates_all_renamed_aliases =
-        renames.all(|(alias, rest)| rest.iter().any(|action| creates_alias(action, alias)));
+            AliasOperations::CreateAlias(action) => {
+                created.insert(&action.create_alias.alias_name);
+            }
 
-    has_renames && recreates_all_renamed_aliases
-}
-
-/// Checks if `action` creates `alias`
-fn creates_alias(action: &AliasOperations, alias: &str) -> bool {
-    match action {
-        AliasOperations::CreateAlias(action) => action.create_alias.alias_name == alias,
-        AliasOperations::RenameAlias(action) => action.rename_alias.new_alias_name == alias,
-        AliasOperations::DeleteAlias(_) => false,
+            AliasOperations::DeleteAlias(_) => (),
+        }
     }
+
+    renames_pre_existing && renamed.is_subset(&created)
 }

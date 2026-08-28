@@ -210,7 +210,7 @@ fn arb_collection_name(names: Vec<String>) -> impl Strategy<Value = String> {
 }
 
 fn arb_change_aliases(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
-    let actions = proptest::collection::vec(arb_alias_operation(collections), 1..3);
+    let actions = proptest::collection::vec(arb_alias_operation(collections), 1..=4);
 
     actions.prop_map(|actions| {
         CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation { actions })
