@@ -95,6 +95,11 @@ impl ErrorCorrection {
     }
 }
 
+/// Vectors per sub-run of [`TurboQuantizer::score_precomputed_batch`]: 64
+/// vectors of up to 512 bytes stay in L1 between the kernel pass and the
+/// extras pass.
+const SCORE_SUB_RUN: usize = 64;
+
 impl TurboQuantizer {
     /// Heap memory owned by the quantizer: the rotation tables and, in TQ+
     /// mode, the per-coordinate error-correction vectors. Resident in RAM
@@ -612,17 +617,24 @@ impl TurboQuantizer {
         let codes_len = stride.checked_sub(extras_len).unwrap_or_else(|| {
             panic!("score_precomputed_batch: stride {stride} < extras {extras_len}")
         });
-        match &query.data {
-            EncodedQueryTQData::Bits1(q) => q.dotprod_batch(data, stride, scores),
-            EncodedQueryTQData::Bits1Wide(q) => q.dotprod_batch(data, stride, scores),
-            EncodedQueryTQData::Bits2(q) => q.dotprod_batch(data, stride, scores),
-            EncodedQueryTQData::Bits4(q) => q.dotprod_batch(data, stride, scores),
-        }
 
-        for (v, score) in scores.iter_mut().enumerate() {
-            let extras =
-                TqVectorExtras::from_bytes(&data[v * stride + codes_len..(v + 1) * stride]);
-            *score = self.score_from_raw_dot(query, *score, &extras);
+        // Two passes per sub-run — the kernel over the codes, then the extras
+        // — sized so the sub-run's bytes are still in L1 for the second pass;
+        // one pair of passes over a long run would refetch the extras from L2.
+        for (sub_run, scores) in scores.chunks_mut(SCORE_SUB_RUN).enumerate() {
+            let data = &data[sub_run * SCORE_SUB_RUN * stride..];
+            match &query.data {
+                EncodedQueryTQData::Bits1(q) => q.dotprod_batch(data, stride, scores),
+                EncodedQueryTQData::Bits1Wide(q) => q.dotprod_batch(data, stride, scores),
+                EncodedQueryTQData::Bits2(q) => q.dotprod_batch(data, stride, scores),
+                EncodedQueryTQData::Bits4(q) => q.dotprod_batch(data, stride, scores),
+            }
+
+            for (v, score) in scores.iter_mut().enumerate() {
+                let extras =
+                    TqVectorExtras::from_bytes(&data[v * stride + codes_len..(v + 1) * stride]);
+                *score = self.score_from_raw_dot(query, *score, &extras);
+            }
         }
     }
 
