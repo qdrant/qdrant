@@ -1121,6 +1121,10 @@ pub struct StrictModeConfig {
     /// Max number of payload indexes in a collection
     #[prost(uint64, optional, tag = "19")]
     pub max_payload_index_count: ::core::option::Option<u64>,
+    /// Max number of points an update operation that selects its targets by filter may affect, estimated from payload indexes when the request is received
+    #[prost(uint64, optional, tag = "23")]
+    #[validate(range(min = 1))]
+    pub max_update_by_filter_limit: ::core::option::Option<u64>,
     /// Deprecated: memory is node-wide, use the global quota config instead. Removal planned for 1.21.
     /// Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
     /// Delete-style operations are still allowed so memory can be freed.

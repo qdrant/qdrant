@@ -9,7 +9,7 @@ use segment::types::{
     VectorNameBuf,
 };
 
-use super::{StrictModeVerification, check_limit_opt};
+use super::{StrictModeVerification, UpdateByFilter, check_limit_opt};
 use crate::collection::Collection;
 use crate::common::collection_size_stats::CollectionSizeAtomicStats;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
@@ -51,6 +51,16 @@ impl StrictModeVerification for PointsSelector {
         }
     }
 
+    fn update_by_filter(&self) -> Option<UpdateByFilter<'_>> {
+        match self {
+            PointsSelector::FilterSelector(selector) => Some(UpdateByFilter {
+                filter: &selector.filter,
+                shard_key: selector.shard_key.as_ref(),
+            }),
+            PointsSelector::PointIdsSelector(_) => None,
+        }
+    }
+
     fn query_limit(&self) -> Option<usize> {
         None
     }
@@ -69,6 +79,17 @@ impl StrictModeVerification for PointsSelector {
 }
 
 impl StrictModeVerification for DeleteVectors {
+    fn update_by_filter(&self) -> Option<UpdateByFilter<'_>> {
+        // An explicit id list takes precedence over the filter on apply.
+        if self.points.is_some() {
+            return None;
+        }
+        Some(UpdateByFilter {
+            filter: self.filter.as_ref()?,
+            shard_key: self.shard_key.as_ref(),
+        })
+    }
+
     fn query_limit(&self) -> Option<usize> {
         None
     }
@@ -113,6 +134,17 @@ impl StrictModeVerification for SetPayload {
         self.filter.as_ref()
     }
 
+    fn update_by_filter(&self) -> Option<UpdateByFilter<'_>> {
+        // An explicit id list takes precedence over the filter on apply.
+        if self.points.is_some() {
+            return None;
+        }
+        Some(UpdateByFilter {
+            filter: self.filter.as_ref()?,
+            shard_key: self.shard_key.as_ref(),
+        })
+    }
+
     fn query_limit(&self) -> Option<usize> {
         None
     }
@@ -133,6 +165,17 @@ impl StrictModeVerification for SetPayload {
 impl StrictModeVerification for DeletePayload {
     fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
+    }
+
+    fn update_by_filter(&self) -> Option<UpdateByFilter<'_>> {
+        // An explicit id list takes precedence over the filter on apply.
+        if self.points.is_some() {
+            return None;
+        }
+        Some(UpdateByFilter {
+            filter: self.filter.as_ref()?,
+            shard_key: self.shard_key.as_ref(),
+        })
     }
 
     fn query_limit(&self) -> Option<usize> {
