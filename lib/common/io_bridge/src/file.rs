@@ -127,6 +127,20 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(ACow::Owned(buf))
     }
 
+    async fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        let buf = self
+            .runtime
+            .handle()
+            .spawn(read_into_byte_buffer::<A>(self, range, align))
+            .await??;
+        Ok(ACow::Owned(buf))
+    }
+
     fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         let buf = self
             .runtime

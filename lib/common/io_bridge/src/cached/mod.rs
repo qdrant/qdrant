@@ -211,6 +211,15 @@ where
         self.cache.read_bytes(range, access_pattern, align)
     }
 
+    fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> impl Future<Output = UioResult<ACow<'_>>> {
+        self.cache.read_bytes_async(range, access_pattern, align)
+    }
+
     fn read_whole<T: common::universal_io::Item>(&self) -> UioResult<std::borrow::Cow<'_, [T]>> {
         self.cache.read_whole()
     }

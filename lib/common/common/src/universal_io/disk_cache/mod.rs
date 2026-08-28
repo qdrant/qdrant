@@ -162,6 +162,16 @@ impl UniversalRead for CachedSlice {
         Ok(self.get_range_bytes(start..end, align)?)
     }
 
+    async fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        // TODO(uio): implement real async
+        self.read_bytes(range, access_pattern, align)
+    }
+
     fn len<T>(&self) -> UioResult<u64> {
         Ok(Self::len::<T>(self) as u64)
     }
