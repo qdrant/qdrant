@@ -594,17 +594,10 @@ impl LocalShard {
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<ExtendedPointId, RecordInternal>> {
         if !with_payload.enable && !with_vector.is_enabled() {
-            let bare_record = |&id| {
-                let record = RecordInternal {
-                    id,
-                    payload: None,
-                    vector: None,
-                    shard_key: None,
-                    order_value: None,
-                };
-                (id, record)
-            };
-            return Ok(point_ids.iter().map(bare_record).collect());
+            return Ok(point_ids
+                .iter()
+                .map(|&id| (id, RecordInternal::new_empty(id)))
+                .collect());
         }
 
         tokio::time::timeout(
