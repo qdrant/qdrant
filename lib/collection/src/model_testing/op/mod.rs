@@ -251,15 +251,6 @@ pub(super) enum Op {
     /// perturbs is the *flush cadence*, which decides how much of the workload is still WAL-only
     /// when a restart hits, plus the worker stop/start race in `on_optimizer_config_update`.
     /// The new value is persisted to `config.json`, so it survives the run's restarts.
-    ///
-    /// KNOWN FAILING, and deliberately left enabled: with the optimizer on, stale point state
-    /// becomes visible within a few firings (a count coming out too high, an ordered scroll
-    /// returning an id whose `num` the model has since changed, a filtered search returning a
-    /// non-matching point). It is narrowed to `recreate_optimizers_background` rather than to this
-    /// op: persisting the diff but skipping the recreation is clean across 16 firings,
-    /// `--disable-optimizer` is clean, and dropping both collection calls while leaving the op in
-    /// the stream is clean on the seeds that otherwise fail. It reproduces on a single shard with
-    /// `--restart-probability 0`, so it needs neither multiple shards nor a close/reopen.
     SetFlushInterval(u64),
 }
 
