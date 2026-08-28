@@ -379,11 +379,10 @@ fn bench_score_1bit_cold(c: &mut Criterion) {
 /// Query-against-data benchmarks: a single hot query is scored against cold
 /// 1-bit PQ data vectors.  Mirrors the HNSW scoring pattern.
 ///
-/// Compares our `Query1bitSimd<{8,12,16}>` (signed bit-plane transpose +
-/// AND-popcount) against the existing BQ `Scalar8bits` path
+/// Compares `Query1bitSimd` (16-bit query halves against a two-entry
+/// codebook) against the existing BQ `Scalar8bits` path
 /// (`BitsStoreType::xor_popcnt_scalar` with `bits_count=8`) — BQ stays at
 /// 8 bits (its only supported scalar width) and serves as the baseline.
-/// 12/16 rows show the linear cost of widening the query.
 fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
     let mut group = c.benchmark_group("query1bit_vs_bq_scalar8bits");
     let mut rng_seed = SmallRng::seed_from_u64(42);
@@ -393,37 +392,17 @@ fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
             .map(|_| rng_seed.random_range(-1.0_f32..1.0))
             .collect();
 
-        let q_our_8 = Query1bitSimd::<8>::new(&query_floats);
-        let q_our_12 = Query1bitSimd::<12>::new(&query_floats);
-        let q_our_16 = Query1bitSimd::<16>::new(&query_floats);
+        let query = Query1bitSimd::new(&query_floats);
         let q_bq = encode_bq_scalar8bits(&query_floats);
 
         group.throughput(Throughput::Elements(dim as u64));
 
-        group.bench_with_input(BenchmarkId::new("query1bit_8bit", dim), &dim, |b, _| {
+        group.bench_with_input(BenchmarkId::new("query1bit", dim), &dim, |b, _| {
             let mut cursor = 0usize;
             b.iter(|| {
                 let v = pool.vector(cursor);
                 cursor = cursor.wrapping_add(1);
-                q_our_8.dotprod(black_box(v))
-            });
-        });
-
-        group.bench_with_input(BenchmarkId::new("query1bit_12bit", dim), &dim, |b, _| {
-            let mut cursor = 0usize;
-            b.iter(|| {
-                let v = pool.vector(cursor);
-                cursor = cursor.wrapping_add(1);
-                q_our_12.dotprod(black_box(v))
-            });
-        });
-
-        group.bench_with_input(BenchmarkId::new("query1bit_16bit", dim), &dim, |b, _| {
-            let mut cursor = 0usize;
-            b.iter(|| {
-                let v = pool.vector(cursor);
-                cursor = cursor.wrapping_add(1);
-                q_our_16.dotprod(black_box(v))
+                query.dotprod(black_box(v))
             });
         });
 

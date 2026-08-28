@@ -3,22 +3,21 @@
 //! Every `query{N}bit` submodule exposes two public entry points:
 //!
 //! * [`Query{N}bitSimd`](query4bit::Query4bitSimd) — a rotation-applied query
-//!   precomputed for fast asymmetric scoring (original-query × PQ-vector).
-//!   `dotprod(vector)` dispatches to the best SIMD backend available on the
-//!   host CPU.  The 2- and 4-bit widths score through the shared
-//!   [`query::QuerySimd`] kernels; the 1-bit width still carries its own.
+//!   precomputed for fast asymmetric scoring (original-query × PQ-vector):
+//!   the shared [`query::QuerySimd`] kernels instantiated at the width, which
+//!   dispatch to the best SIMD backend available on the host CPU.
 //! * [`score_{N}bit_internal`](query4bit::score_4bit_internal) — dot product of
 //!   two already-encoded PQ vectors (symmetric scoring), same runtime dispatch.
 //!
-//! Available SIMD backends per bit-width:
+//! Available SIMD backends:
 //!
-//! | Bits | x86_64                                        | aarch64              |
-//! |------|-----------------------------------------------|----------------------|
-//! |  1   | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3         | NEON                 |
-//! |  2   | AVX-512 VNNI, AVX2, SSE4.1+SSSE3              | NEON + SDOT, NEON    |
-//! |  4   | AVX-512 VNNI, AVX2, SSE4.1+SSSE3              | NEON + SDOT, NEON    |
+//! | Path              | x86_64                                | aarch64           |
+//! |-------------------|---------------------------------------|-------------------|
+//! | asymmetric, 1/2/4 | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
+//! | symmetric, 1      | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3 | NEON              |
+//! | symmetric, 2/4    | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
 //!
-//! On any other target the scalar reference kernels in each module take over.
+//! On any other target the scalar reference kernels take over.
 
 pub mod hadamard;
 pub mod query;
@@ -28,9 +27,10 @@ pub mod query4bit;
 
 /// Best multiply-accumulate backend the host CPU supports, in preference
 /// order AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar.  Shared by
-/// every kernel built on `u8 × i8` products (the 2- and 4-bit paths);
-/// resolve it once with [`SimdBackend::detect`] and dispatch on the value, so a
-/// scoring loop doesn't re-run CPU feature detection per vector.
+/// every kernel built on `u8 × i8` / `i8 × i8` products (the asymmetric
+/// paths of every width and the symmetric 2- and 4-bit paths); resolve it
+/// once with [`SimdBackend::detect`] and dispatch on the value, so a scoring
+/// loop doesn't re-run CPU feature detection per vector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SimdBackend {
     #[cfg(target_arch = "x86_64")]
