@@ -74,6 +74,19 @@ mod tests {
             let dot_simd = unsafe { neon_dot_similarity_half(&v1, &v2) };
             let dot = dot_similarity_half(&v1, &v2);
             assert!((dot_simd - dot).abs() / dot.abs() < 0.0005);
+            // Regression test: https://github.com/qdrant/qdrant/issues/10350
+            // Dot 256.0*256.0 = 65536 overflows f16. The NEON kernel must accumulate in f32 to stay
+            // consistent with the scalar path; an f16 accumulator would saturate
+            // to +inf and serialise the score as JSON null.
+            let v1_ovf_f32: Vec<f32> = vec![256.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            let v2_ovf_f32: Vec<f32> = vec![256.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            let v1_ovf: Vec<f16> = v1_ovf_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let v2_ovf: Vec<f16> = v2_ovf_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let dot_simd_ovf = unsafe { neon_dot_similarity_half(&v1_ovf, &v2_ovf) };
+            let dot_ovf = dot_similarity_half(&v1_ovf, &v2_ovf);
+            assert!(dot_simd_ovf.is_finite(), "NEON dot.rs must not overflow f16 accumulation");
+            assert!((dot_simd_ovf - dot_ovf).abs() / dot_ovf.abs() < 0.0005);
+
         } else {
             println!("neon test skipped");
         }

@@ -74,6 +74,19 @@ mod tests {
             let euclid_simd = unsafe { neon_euclid_similarity_half(&v1, &v2) };
             let euclid = euclid_similarity_half(&v1, &v2);
             assert!((euclid_simd - euclid).abs() / euclid.abs() < 0.0005);
+            // Regression test: https://github.com/qdrant/qdrant/issues/10350
+            // Euclid 256.0^2 = 65536 overflows f16 (max 65504). The NEON kernel must accumulate in f32 to stay
+            // consistent with the scalar path; an f16 accumulator would saturate
+            // to +inf and serialise the score as JSON null.
+            let v1_ovf_f32: Vec<f32> = vec![256.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            let v2_ovf_f32: Vec<f32> = vec![0.0; 32];
+            let v1_ovf: Vec<f16> = v1_ovf_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let v2_ovf: Vec<f16> = v2_ovf_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let euclid_simd_ovf = unsafe { neon_euclid_similarity_half(&v1_ovf, &v2_ovf) };
+            let euclid_ovf = euclid_similarity_half(&v1_ovf, &v2_ovf);
+            assert!(euclid_simd_ovf.is_finite(), "NEON euclid.rs must not overflow f16 accumulation");
+            assert!((euclid_simd_ovf - euclid_ovf).abs() / euclid_ovf.abs() < 0.0005);
+
         } else {
             println!("neon test skipped");
         }
