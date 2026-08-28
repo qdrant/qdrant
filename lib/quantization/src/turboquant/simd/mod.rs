@@ -24,6 +24,55 @@ pub mod query1bit;
 pub mod query2bit;
 pub mod query4bit;
 
+/// Best multiply-accumulate backend the host CPU supports, in preference
+/// order AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar.  Shared by
+/// every kernel built on `u8 × i8` products (the 2- and 4-bit paths);
+/// resolve it once with [`SimdBackend::detect`] and dispatch on the value, so a
+/// scoring loop doesn't re-run CPU feature detection per vector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SimdBackend {
+    #[cfg(target_arch = "x86_64")]
+    Avx512Vnni,
+    #[cfg(target_arch = "x86_64")]
+    Avx2,
+    #[cfg(target_arch = "x86_64")]
+    Sse,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    NeonSdot,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    Neon,
+    Scalar,
+}
+
+impl SimdBackend {
+    pub(crate) fn detect() -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                return SimdBackend::Avx512Vnni;
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                return SimdBackend::Avx2;
+            }
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                return SimdBackend::Sse;
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                return SimdBackend::NeonSdot;
+            }
+            return SimdBackend::Neon;
+        }
+        #[allow(unreachable_code)]
+        SimdBackend::Scalar
+    }
+}
+
 // Re-exports below include the runtime-dispatching entry points used by the
 // crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
 // scalar-reference and arch-specific kernels the benchmarks at

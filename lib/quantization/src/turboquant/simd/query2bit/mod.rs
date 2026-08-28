@@ -14,6 +14,8 @@
 //!    Two such lookups (even / odd centroid of each pair), zipped, give a
 //!    natural-order `int8x16` of 16 centroid bytes per 4 packed data bytes.
 
+use super::SimdBackend;
+
 /// `max|c|` over `CENTROIDS_2BIT` — the extreme centroid magnitude.
 const CODEBOOK_ABS_MAX: f32 = 1.510;
 
@@ -130,6 +132,9 @@ pub struct Query2bitSimd {
     /// `CODEBOOK_OFFSET · Σ q_signed[j]` — subtracted from `dot_raw` to
     /// recover the true signed dot.  `0` on aarch64 (signed codebook).
     bias_correction: i64,
+    /// SIMD backend resolved once at construction, so scoring doesn't re-run
+    /// CPU feature detection for every vector.
+    backend: SimdBackend,
 }
 
 impl Query2bitSimd {
@@ -199,6 +204,7 @@ impl Query2bitSimd {
             tail_dims: tail_dims as u8,
             postprocess_scale: 1.0 / (q_scale * CODEBOOK_SCALE),
             bias_correction: CODEBOOK_OFFSET * sum_q_signed,
+            backend: SimdBackend::detect(),
         }
     }
 
@@ -214,8 +220,8 @@ impl Query2bitSimd {
     /// lane `k ∈ 0..=3`).  `vector.len()` must equal `ceil(dim * 2 / 8)` —
     /// full chunks first, then the tail bytes covering `tail_dims`.
     ///
-    /// Dispatches at runtime to the best SIMD backend available on the host
-    /// CPU (AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar).
+    /// Dispatches to the SIMD backend resolved at construction (see
+    /// [`SimdBackend`]).
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
         let dot_raw = self.dotprod_raw_best(vector);
         self.postprocess_scale * (dot_raw - self.bias_correction) as f32
@@ -223,30 +229,19 @@ impl Query2bitSimd {
 
     #[inline]
     fn dotprod_raw_best(&self, vector: &[u8]) -> i64 {
-        #[cfg(target_arch = "x86_64")]
-        {
-            if std::is_x86_feature_detected!("avx512f")
-                && std::is_x86_feature_detected!("avx512bw")
-                && std::is_x86_feature_detected!("avx512vnni")
-            {
-                return unsafe { self.dotprod_raw_avx512_vnni(vector) };
-            }
-            if std::is_x86_feature_detected!("avx2") {
-                return unsafe { self.dotprod_raw_avx2(vector) };
-            }
-            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-                return unsafe { self.dotprod_raw_sse(vector) };
-            }
+        match self.backend {
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx512Vnni => unsafe { self.dotprod_raw_avx512_vnni(vector) },
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx2 => unsafe { self.dotprod_raw_avx2(vector) },
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Sse => unsafe { self.dotprod_raw_sse(vector) },
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            SimdBackend::NeonSdot => unsafe { self.dotprod_raw_neon_sdot(vector) },
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            SimdBackend::Neon => unsafe { self.dotprod_raw_neon(vector) },
+            SimdBackend::Scalar => self.dotprod_raw(vector),
         }
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            if std::arch::is_aarch64_feature_detected!("dotprod") {
-                return unsafe { self.dotprod_raw_neon_sdot(vector) };
-            }
-            return unsafe { self.dotprod_raw_neon(vector) };
-        }
-        #[allow(unreachable_code)]
-        self.dotprod_raw(vector)
     }
 
     /// Compute `Σ q_signed[j] · c_raw[v[j]]` across all dims — full chunks
@@ -316,30 +311,19 @@ pub fn score_2bit_internal(a: &[u8], b: &[u8]) -> f32 {
         b.len(),
     );
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx512f")
-            && std::is_x86_feature_detected!("avx512bw")
-            && std::is_x86_feature_detected!("avx512vnni")
-        {
-            return unsafe { x64::score_2bit_internal_avx512_vnni(a, b) };
-        }
-        if std::is_x86_feature_detected!("avx2") {
-            return unsafe { x64::score_2bit_internal_avx2(a, b) };
-        }
-        if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
-            return unsafe { x64::score_2bit_internal_sse(a, b) };
-        }
+    match SimdBackend::detect() {
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512Vnni => unsafe { x64::score_2bit_internal_avx512_vnni(a, b) },
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx2 => unsafe { x64::score_2bit_internal_avx2(a, b) },
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Sse => unsafe { x64::score_2bit_internal_sse(a, b) },
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        SimdBackend::NeonSdot => unsafe { arm::score_2bit_internal_neon_sdot(a, b) },
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        SimdBackend::Neon => unsafe { arm::score_2bit_internal_neon(a, b) },
+        SimdBackend::Scalar => score_2bit_internal_scalar(a, b),
     }
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        if std::arch::is_aarch64_feature_detected!("dotprod") {
-            return unsafe { arm::score_2bit_internal_neon_sdot(a, b) };
-        }
-        return unsafe { arm::score_2bit_internal_neon(a, b) };
-    }
-    #[allow(unreachable_code)]
-    score_2bit_internal_scalar(a, b)
 }
 
 /// Scalar reference for [`score_2bit_internal`] — see the 4-bit counterpart
@@ -395,24 +379,19 @@ pub fn score_2bit_internal_weighted(a: &[u8], b: &[u8], weights: &[i16]) -> i64 
         4 * a.len(),
     );
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx2")
-            && std::is_x86_feature_detected!("ssse3")
-            && std::is_x86_feature_detected!("sse4.1")
-        {
-            return unsafe { x64::score_2bit_internal_weighted_avx2(a, b, weights) };
-        }
-        if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
-            return unsafe { x64::score_2bit_internal_weighted_sse(a, b, weights) };
-        }
+    match SimdBackend::detect() {
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512Vnni | SimdBackend::Avx2 => unsafe {
+            x64::score_2bit_internal_weighted_avx2(a, b, weights)
+        },
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Sse => unsafe { x64::score_2bit_internal_weighted_sse(a, b, weights) },
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        SimdBackend::NeonSdot | SimdBackend::Neon => unsafe {
+            arm::score_2bit_internal_weighted_neon(a, b, weights)
+        },
+        SimdBackend::Scalar => score_2bit_internal_weighted_scalar(a, b, weights),
     }
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        return unsafe { arm::score_2bit_internal_weighted_neon(a, b, weights) };
-    }
-    #[allow(unreachable_code)]
-    score_2bit_internal_weighted_scalar(a, b, weights)
 }
 
 /// Scalar reference for [`score_2bit_internal_weighted`].
