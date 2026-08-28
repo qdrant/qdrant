@@ -312,6 +312,33 @@ fn dotprod_scan<const PLANES: usize, const QUERY_BYTES: usize>(
                 });
             }
         }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            group.bench_with_input(BenchmarkId::new("batch_neon", dim), &dim, |b, _| {
+                let mut out = vec![0.0f32; SCAN_RUN];
+                let mut cursor = 0usize;
+                b.iter(|| {
+                    let run = pool.run(cursor, SCAN_RUN);
+                    cursor = cursor.wrapping_add(1);
+                    unsafe { query.dotprod_batch_neon(black_box(run), stride, &mut out) };
+                    black_box(&out);
+                });
+            });
+
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                group.bench_with_input(BenchmarkId::new("batch_neon_sdot", dim), &dim, |b, _| {
+                    let mut out = vec![0.0f32; SCAN_RUN];
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let run = pool.run(cursor, SCAN_RUN);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { query.dotprod_batch_neon_sdot(black_box(run), stride, &mut out) };
+                        black_box(&out);
+                    });
+                });
+            }
+        }
     }
     group.finish();
 }

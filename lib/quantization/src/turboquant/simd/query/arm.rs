@@ -199,35 +199,77 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             self.vector_bytes,
         );
 
-        unsafe { Self::reduce_neon(self.accumulate_neon(vector.as_ptr())) }
+        unsafe {
+            let [acc] = self.accumulate_neon::<1>(vector.as_ptr(), 0);
+            Self::reduce_neon(acc)
+        }
+    }
+
+    /// Batch counterpart of [`Self::dotprod_raw_neon`] with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (asserted there).  Same grouping policy as
+    /// [`Self::dotprod_batch_neon_sdot`].
+    ///
+    /// # Safety
+    /// `data` must hold `out.len()` vectors at `stride`.
+    #[target_feature(enable = "neon")]
+    pub unsafe fn dotprod_batch_neon(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        unsafe {
+            let mut v = 0;
+            if self.vector_bytes <= INTERLEAVE_MAX_BYTES {
+                let (groups, _) = out.as_chunks_mut::<GROUP_128>();
+                for group in groups {
+                    let accs =
+                        self.accumulate_neon::<GROUP_128>(data.as_ptr().add(v * stride), stride);
+                    for (out, acc) in group.iter_mut().zip(accs) {
+                        *out = self.postprocess(Self::reduce_neon(acc));
+                    }
+                    v += GROUP_128;
+                }
+            }
+            for out in &mut out[v..] {
+                let [acc] = self.accumulate_neon::<1>(data.as_ptr().add(v * stride), stride);
+                *out = self.postprocess(Self::reduce_neon(acc));
+                v += 1;
+            }
+        }
     }
 
     /// [`Self::accumulate_neon_sdot`] for CPUs without `dotprod`.
     ///
     /// # Safety
-    /// `data` must be readable for `self.vector_bytes` bytes.
+    /// `data` must be readable for `(N - 1) * stride + self.vector_bytes`
+    /// bytes.
     #[inline]
     #[target_feature(enable = "neon")]
-    unsafe fn accumulate_neon(&self, data: *const u8) -> Acc128<QUERY_BYTES> {
+    unsafe fn accumulate_neon<const N: usize>(
+        &self,
+        data: *const u8,
+        stride: usize,
+    ) -> [Acc128<QUERY_BYTES>; N] {
         unsafe {
-            let mut acc = Acc128::zero();
+            let mut accs = [Acc128::zero(); N];
 
             let full_blocks = self.vector_bytes / BLOCK_128;
             for block in 0..full_blocks {
                 let offset = block * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                acc.accumulate_mull(vld1q_u8(data.add(offset)), query);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    acc.accumulate_mull(vld1q_u8(data.add(v * stride + offset)), query);
+                }
             }
 
             let tail = self.vector_bytes % BLOCK_128;
             if tail > 0 {
                 let offset = full_blocks * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                let block = tail_block::<BLOCK_128>(data.add(offset), tail);
-                acc.accumulate_mull(vld1q_u8(block.as_ptr()), query);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    let block = tail_block::<BLOCK_128>(data.add(v * stride + offset), tail);
+                    acc.accumulate_mull(vld1q_u8(block.as_ptr()), query);
+                }
             }
 
-            acc
+            accs
         }
     }
 
@@ -250,36 +292,85 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             self.vector_bytes,
         );
 
-        unsafe { Self::reduce_neon(self.accumulate_neon_sdot(vector.as_ptr())) }
+        unsafe {
+            let [acc] = self.accumulate_neon_sdot::<1>(vector.as_ptr(), 0);
+            Self::reduce_neon(acc)
+        }
     }
 
-    /// Block loop of the SDOT kernels over the vector at `data`.
+    /// Batch counterpart of [`Self::dotprod_raw_neon_sdot`] with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (asserted there).
+    ///
+    /// Vectors up to [`INTERLEAVE_MAX_BYTES`] are scored in groups of
+    /// [`GROUP_128`]: the group shares each query block load, and its
+    /// independent accumulators keep the multi-cycle `SDOT` latency off the
+    /// critical path.  Longer vectors keep the one-vector-at-a-time walk so
+    /// the hardware prefetcher sees a single sequential stream.
+    ///
+    /// # Safety
+    /// CPU must support `dotprod`; `data` must hold `out.len()` vectors at
+    /// `stride`.
+    #[target_feature(enable = "neon,dotprod")]
+    pub unsafe fn dotprod_batch_neon_sdot(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        unsafe {
+            let mut v = 0;
+            if self.vector_bytes <= INTERLEAVE_MAX_BYTES {
+                let (groups, _) = out.as_chunks_mut::<GROUP_128>();
+                for group in groups {
+                    let accs = self
+                        .accumulate_neon_sdot::<GROUP_128>(data.as_ptr().add(v * stride), stride);
+                    for (out, acc) in group.iter_mut().zip(accs) {
+                        *out = self.postprocess(Self::reduce_neon(acc));
+                    }
+                    v += GROUP_128;
+                }
+            }
+            for out in &mut out[v..] {
+                let [acc] = self.accumulate_neon_sdot::<1>(data.as_ptr().add(v * stride), stride);
+                *out = self.postprocess(Self::reduce_neon(acc));
+                v += 1;
+            }
+        }
+    }
+
+    /// Block loop of the SDOT kernels over `N` vectors stored `stride` bytes
+    /// apart starting at `data`.  Every query block is loaded once and folded
+    /// into all `N` accumulator sets.
     ///
     /// # Safety
     /// CPU must support `dotprod`; `data` must be readable for
-    /// `self.vector_bytes` bytes.
+    /// `(N - 1) * stride + self.vector_bytes` bytes.
     #[inline]
     #[target_feature(enable = "neon,dotprod")]
-    unsafe fn accumulate_neon_sdot(&self, data: *const u8) -> Acc128<QUERY_BYTES> {
+    unsafe fn accumulate_neon_sdot<const N: usize>(
+        &self,
+        data: *const u8,
+        stride: usize,
+    ) -> [Acc128<QUERY_BYTES>; N] {
         unsafe {
-            let mut acc = Acc128::zero();
+            let mut accs = [Acc128::zero(); N];
 
             let full_blocks = self.vector_bytes / BLOCK_128;
             for block in 0..full_blocks {
                 let offset = block * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                acc.accumulate_sdot(vld1q_u8(data.add(offset)), query);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    acc.accumulate_sdot(vld1q_u8(data.add(v * stride + offset)), query);
+                }
             }
 
             let tail = self.vector_bytes % BLOCK_128;
             if tail > 0 {
                 let offset = full_blocks * BLOCK_128;
                 let query = QueryBlock128::load(&self.planes, offset);
-                let block = tail_block::<BLOCK_128>(data.add(offset), tail);
-                acc.accumulate_sdot(vld1q_u8(block.as_ptr()), query);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    let block = tail_block::<BLOCK_128>(data.add(v * stride + offset), tail);
+                    acc.accumulate_sdot(vld1q_u8(block.as_ptr()), query);
+                }
             }
 
-            acc
+            accs
         }
     }
 
@@ -292,11 +383,22 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     }
 }
 
+/// Vectors per interleaved group of the NEON batch kernels: 4 × 4
+/// accumulators plus the query block and codebook fit the 32 vector
+/// registers.
+const GROUP_128: usize = 4;
+
+/// Longest encoded vector (bytes) the NEON batch kernels score in
+/// interleaved groups: four cache lines per vector — the value measured for
+/// the AVX-512 kernel; not yet tuned on ARM hardware.
+const INTERLEAVE_MAX_BYTES: usize = 256;
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng as _;
     use rand::prelude::StdRng;
 
+    use super::super::super::shared::random_bytes;
     use super::super::QuerySimd;
     use super::super::shared::{parity_dims, random_inputs};
 
@@ -356,5 +458,46 @@ mod tests {
         saturation_safety_64k::<4, 2>();
         saturation_safety_64k::<8, 1>();
         saturation_safety_64k::<8, 2>();
+    }
+
+    /// The batch kernels must reproduce the scalar reference for every
+    /// parity dim (interleaved groups and the per-vector remainder) at a
+    /// stride equal to and larger than the vector.
+    fn batch_kernels_match_scalar<const PLANES: usize, const QUERY_BYTES: usize>() {
+        let has_dotprod = std::arch::is_aarch64_feature_detected!("dotprod");
+        let mut rng = StdRng::seed_from_u64(7);
+        for dim in parity_dims::<PLANES>() {
+            let (query, _) = random_inputs::<PLANES, QUERY_BYTES>(&mut rng, dim);
+            let vector_bytes = dim / PLANES;
+            for stride in [vector_bytes, vector_bytes + 4] {
+                let count = 11;
+                let data = random_bytes(&mut rng, count * stride);
+                let expected: Vec<f32> = (0..count)
+                    .map(|v| {
+                        query.postprocess(query.dotprod_raw(&data[v * stride..][..vector_bytes]))
+                    })
+                    .collect();
+                let tag =
+                    format!("PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} dim={dim} stride={stride}");
+
+                let mut actual = vec![0.0; count];
+                unsafe { query.dotprod_batch_neon(&data, stride, &mut actual) };
+                assert_eq!(expected, actual, "{tag}: neon batch");
+
+                if has_dotprod {
+                    let mut actual = vec![0.0; count];
+                    unsafe { query.dotprod_batch_neon_sdot(&data, stride, &mut actual) };
+                    assert_eq!(expected, actual, "{tag}: sdot batch");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_batch_kernels_match_scalar() {
+        batch_kernels_match_scalar::<2, 2>();
+        batch_kernels_match_scalar::<4, 2>();
+        batch_kernels_match_scalar::<8, 1>();
+        batch_kernels_match_scalar::<8, 2>();
     }
 }
