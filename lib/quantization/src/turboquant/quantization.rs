@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn quantize_output_byte_length() {
         let dims = [64, 128, 300, 384, 512, 768, 1024, 1536];
-        let bit_widths = [TQBits::Bits1, TQBits::Bits2, TQBits::Bits4];
+        let bit_widths = [TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4];
 
         for &bits in &bit_widths {
             for &dim in &dims {
