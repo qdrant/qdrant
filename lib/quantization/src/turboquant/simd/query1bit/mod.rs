@@ -16,6 +16,8 @@
 //!   scored per block as `Σ_b w_b · popcount(data AND plane_b)` where
 //!   `w_b = 2^b` for b < BITS−1 and `−2^(BITS−1)` for the sign plane.
 
+use super::query::{Code, Encoding, pad_codebook};
+
 /// `|c|` for the 1-bit codebook — Lloyd-Max on N(0, 1) gives `sqrt(2/π)`.
 /// Kept in sync with `CENTROIDS_1BIT` in `lloyd_max.rs` by a test below.
 const CENTROID_ABS: f32 = 0.797_884_6;
@@ -23,6 +25,37 @@ const CENTROID_ABS: f32 = 0.797_884_6;
 /// `c²` — converts the signed-agreement count into a centroid dot product:
 /// each lane contributes `(±c)·(±c) = ±c²`, summing to `c² · sign_sum`.
 const CENTROID_SQ: f32 = CENTROID_ABS * CENTROID_ABS;
+
+/// Integer encoding of the 1-bit width for the shared asymmetric kernels
+/// ([`super::query::QuerySimd`]).  Both codebook entries are `∓c`, so any
+/// symmetric integer pair represents them exactly; the pair is chosen per
+/// arch for the widest query the multiply keeps inside its lane.
+pub(super) const ENCODING: Encoding = Encoding {
+    codebook: pad_codebook(CODEBOOK),
+    offset: CODEBOOK_OFFSET,
+    scale: CODEBOOK_SCALE,
+    query_high_coef: 256,
+    query_abs_max: 32639.0,
+};
+
+/// aarch64: signed `∓127`, no offset.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const CODEBOOK: [Code; 2] = [-127, 127];
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const CODEBOOK_OFFSET: i64 = 0;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const CODEBOOK_SCALE: f32 = 127.0 / CENTROID_ABS;
+
+/// x86_64: `{0, 128}` with offset 64 — a codebook magnitude of 128 lets
+/// the query halves span the full i8 range without the `maddubs` pair sum
+/// leaving i16 (`|pair| ≤ 2 · 128 · 128 = 32 768`, reached only at the
+/// negative end, which i16 holds).
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const CODEBOOK: [Code; 2] = [0, 128];
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const CODEBOOK_OFFSET: i64 = 64;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const CODEBOOK_SCALE: f32 = 64.0 / CENTROID_ABS;
 
 /// Block size for the bit-plane interleave: 16 packed bytes = 128 data dims.
 /// Matches an XMM register; AVX2 processes 2 blocks per iter, AVX-512 takes 4.

@@ -27,9 +27,25 @@
 //! `test_codebook_matches_lloyd_max` for the consistency check.
 
 use super::SimdBackend;
+use super::query::{Code, Encoding};
 
 /// `max|c|` over `CENTROIDS_4BIT` — the extreme centroid.  Shared by both archs.
 const CODEBOOK_ABS_MAX: f32 = 2.733;
+
+/// Integer encoding of the 4-bit width for the shared asymmetric kernels
+/// ([`super::query::QuerySimd`]).
+pub(super) const ENCODING: Encoding = Encoding {
+    codebook: CODEBOOK,
+    offset: CODEBOOK_OFFSET,
+    scale: CODEBOOK_SCALE,
+    query_high_coef: QUERY_HIGH_COEF,
+    query_abs_max: QUERY_ABS_MAX,
+};
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const CODEBOOK: [Code; 16] = CODEBOOK_I8;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const CODEBOOK: [Code; 16] = CODEBOOK_U8;
 
 /// Full `i8` signed codebook for aarch64.  `c_scale = 127 / max|c|` so the
 /// extremes hit ±127.  `c_signed[k] = CODEBOOK_I8[k]` directly — no offset.
