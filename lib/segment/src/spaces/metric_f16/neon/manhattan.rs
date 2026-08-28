@@ -87,6 +87,25 @@ mod tests {
             assert!(manhattan_simd_ovf.is_finite(), "NEON manhattan.rs must not overflow f16 accumulation");
             assert!((manhattan_simd_ovf - manhattan_ovf).abs() / manhattan_ovf.abs() < 0.0005);
 
+            // Regression: 33-element vector exercises the scalar remainder path
+            // (32 elements in the SIMD loop + 1 in the tail). The f16 difference
+            // 65504.0 - (-65504.0) = 131008 overflows f16 (max 65504) and would
+            // saturate to +inf under f16 remainder arithmetic; the scalar path
+            // returns a finite value.
+            let mut v1_rem_f32: Vec<f32> = vec![0.0; 32];
+            v1_rem_f32.push(65504.0);
+            let mut v2_rem_f32: Vec<f32> = vec![0.0; 32];
+            v2_rem_f32.push(-65504.0);
+            let v1_rem: Vec<f16> = v1_rem_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let v2_rem: Vec<f16> = v2_rem_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let manhattan_simd_rem = unsafe { neon_manhattan_similarity_half(&v1_rem, &v2_rem) };
+            let manhattan_rem = manhattan_similarity_half(&v1_rem, &v2_rem);
+            assert!(
+                manhattan_simd_rem.is_finite(),
+                "NEON manhattan.rs remainder path must not overflow f16"
+            );
+            assert!((manhattan_simd_rem - manhattan_rem).abs() / manhattan_rem.abs() < 0.0005);
+
         } else {
             println!("neon test skipped");
         }

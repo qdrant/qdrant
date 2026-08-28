@@ -56,7 +56,10 @@ float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, ui
 
     dotProduct = vaddvq_f32(sum);
     for (uint32_t i=0; i < (blockSize % 32); i++) {
-        dotProduct += (float32_t)((*pSrcA)*(*pSrcB));
+        // Multiply in f32: two f16 operands each up to 256.0 give 65536,
+        // which overflows the f16 maximum 65504 (saturates to +inf) while
+        // the f32-accumulating scalar and AVX paths stay finite.
+        dotProduct += (float32_t)(*pSrcA) * (float32_t)(*pSrcB);
         pSrcA += 1;
         pSrcB += 1;
     }
@@ -123,10 +126,13 @@ float32_t euclideanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
     sum = vaddq_f32(sum, sum4_hi);
 
     euclideanDistance = vaddvq_f32(sum);
-    float16_t tmp = 0.0f;
     for (uint32_t i=0; i < (blockSize % 32); i++) {
-        tmp = (*pSrcA - *pSrcB);
-        euclideanDistance += (float32_t)(tmp * tmp);
+        // Compute the difference in f32: the f16 difference of two up-to-65504
+        // operands (e.g. 65504.0 - (-65504.0) = 131008) or the f16 square of a
+        // 256.0 difference (262144) would overflow the f16 maximum 65504 and
+        // saturate to +inf, disagreeing with the scalar path.
+        float32_t diff = (float32_t)(*pSrcA) - (float32_t)(*pSrcB);
+        euclideanDistance += diff * diff;
         pSrcA += 1;
         pSrcB += 1;
     }
@@ -194,7 +200,11 @@ float32_t manhattanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
 
     manhattanDistance = vaddvq_f32(sum);
     for (i=0; i < (blockSize % 32); i++) {
-        manhattanDistance += (float32_t)(vabsh_f16(*pSrcA - *pSrcB));
+        // Compute the difference in f32: the f16 difference of two up-to-65504
+        // operands would overflow the f16 maximum 65504 and saturate to +inf,
+        // disagreeing with the scalar path.
+        float32_t diff = (float32_t)(*pSrcA) - (float32_t)(*pSrcB);
+        manhattanDistance += (diff < 0.0f) ? -diff : diff;
         pSrcA += 1;
         pSrcB += 1;
     }

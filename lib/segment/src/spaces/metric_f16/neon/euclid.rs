@@ -87,6 +87,25 @@ mod tests {
             assert!(euclid_simd_ovf.is_finite(), "NEON euclid.rs must not overflow f16 accumulation");
             assert!((euclid_simd_ovf - euclid_ovf).abs() / euclid_ovf.abs() < 0.0005);
 
+            // Regression: 33-element vector exercises the scalar remainder path
+            // (32 elements in the SIMD loop + 1 in the tail). The f16 difference
+            // 65504.0 - (-65504.0) = 131008 overflows f16 (max 65504) and would
+            // saturate to +inf under f16 remainder arithmetic; the scalar path
+            // returns a finite value.
+            let mut v1_rem_f32: Vec<f32> = vec![0.0; 32];
+            v1_rem_f32.push(65504.0);
+            let mut v2_rem_f32: Vec<f32> = vec![0.0; 32];
+            v2_rem_f32.push(-65504.0);
+            let v1_rem: Vec<f16> = v1_rem_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let v2_rem: Vec<f16> = v2_rem_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let euclid_simd_rem = unsafe { neon_euclid_similarity_half(&v1_rem, &v2_rem) };
+            let euclid_rem = euclid_similarity_half(&v1_rem, &v2_rem);
+            assert!(
+                euclid_simd_rem.is_finite(),
+                "NEON euclid.rs remainder path must not overflow f16"
+            );
+            assert!((euclid_simd_rem - euclid_rem).abs() / euclid_rem.abs() < 0.0005);
+
         } else {
             println!("neon test skipped");
         }
