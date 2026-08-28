@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Poll;
 
 use parking_lot::Mutex;
 
@@ -89,6 +90,7 @@ where
 
 enum ScheduledFile<S: 'static> {
     Future(Pin<Box<dyn Future<Output = UioResult<S>> + Send + 'static>>),
+    Ready(UioResult<S>),
     Unchanged,
 }
 
@@ -96,6 +98,7 @@ impl<S> Debug for ScheduledFile<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScheduledFile::Future(_) => write!(f, "Future"),
+            ScheduledFile::Ready(_) => write!(f, "Ready"),
             ScheduledFile::Unchanged => write!(f, "Unchanged"),
         }
     }
@@ -256,8 +259,17 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         // Clone the fs handle so that the future can own it.
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
-        let file = async move { fs.open_async(path_owned, open_options, open_extra).await };
-        files_prefetched.insert(path.to_path_buf(), ScheduledFile::Future(Box::pin(file)));
+        let mut fut =
+            Box::pin(async move { fs.open_async(path_owned, open_options, open_extra).await });
+
+        // Poll once, so that real async work begins right away
+        let scheduled = futures::executor::block_on(async move {
+            match futures::poll!(fut.as_mut()) {
+                Poll::Ready(file) => ScheduledFile::Ready(file),
+                Poll::Pending => ScheduledFile::Future(Box::pin(fut)),
+            }
+        });
+        files_prefetched.insert(path.to_path_buf(), scheduled);
 
         Ok(())
     }
@@ -371,6 +383,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         if let Some(file) = self.files_prefetched.lock().remove(path) {
             return match file {
                 ScheduledFile::Future(future) => futures::executor::block_on(future),
+                ScheduledFile::Ready(result) => result,
                 ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
                     path: path.to_owned(),
                     since: self.file_info(path).and_then(|info| info.last_modified),
@@ -418,6 +431,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         if let Some(file) = scheduled_file {
             return match file {
                 ScheduledFile::Future(future) => future.await,
+                ScheduledFile::Ready(result) => result,
                 ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
                     since: self.file_info(&path).and_then(|info| info.last_modified),
                     path,
