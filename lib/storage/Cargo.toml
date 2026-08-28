@@ -75,4 +75,5 @@ tracing-appender = "0.2"
 # Optional Tokio telemetry (https://github.com/dial9-rs/dial9)
 dial9 = { version = "0.5.0", optional = true, default-features = false, features = [
     "tokio",
+    "cpu-profiling",
 ] }
