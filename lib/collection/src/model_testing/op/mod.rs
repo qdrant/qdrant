@@ -251,6 +251,15 @@ pub(super) enum Op {
     /// perturbs is the *flush cadence*, which decides how much of the workload is still WAL-only
     /// when a restart hits, plus the worker stop/start race in `on_optimizer_config_update`.
     /// The new value is persisted to `config.json`, so it survives the run's restarts.
+    ///
+    /// KNOWN FAILING, and deliberately left enabled: with the optimizer on, stale point state
+    /// becomes visible within a few firings (a count coming out too high, an ordered scroll
+    /// returning an id whose `num` the model has since changed, a filtered search returning a
+    /// non-matching point). It is narrowed to `recreate_optimizers_background` rather than to this
+    /// op: persisting the diff but skipping the recreation is clean across 16 firings,
+    /// `--disable-optimizer` is clean, and dropping both collection calls while leaving the op in
+    /// the stream is clean on the seeds that otherwise fail. It reproduces on a single shard with
+    /// `--restart-probability 0`, so it needs neither multiple shards nor a close/reopen.
     SetFlushInterval(u64),
 }
 
@@ -373,14 +382,6 @@ impl Swarm {
     /// is just removing it from `FORCE_OFF`.
     //
     // Currently in `FORCE_OFF` (known-broken):
-    // - SetFlushInterval (39): with the optimizer on, the config update makes stale point state
-    //   visible within a few ops (a count coming out too high, an ordered scroll returning an id
-    //   whose `num` the model has since changed, a filtered search returning a non-matching
-    //   point). Narrowed to `recreate_optimizers_background`: persisting the diff but skipping the
-    //   recreation is clean across 16 firings, `--disable-optimizer` is clean, and dropping both
-    //   collection calls while leaving the op in the stream (identical rng draws) is clean on the
-    //   seeds that otherwise fail. It also reproduces with `--restart-probability 0`, so it is not
-    //   an artifact of the harness's own close/reopen. Re-enable once that's fixed.
     // - CreateVectorName / DeleteVectorName (22, 23): (1) proxy-segment schema race (optimizer-on)
     //   → "missing / Not existing vector name"; (2) DeleteVectorName vs. storage incoherence
     //   (fires without the optimizer too) — `delete_named_vector` updates `CollectionParams` but
@@ -440,7 +441,7 @@ impl Swarm {
     /// Indices kept disabled in every swarm config: known-broken ops (see `BASE`).
     // DeleteByFilter (3) was here for https://github.com/qdrant/qdrant/issues/9575 — re-enabled
     // once filter ops are resolved to concrete ids before the WAL append.
-    const FORCE_OFF: [usize; 3] = [22, 23, 39]; // CreateVectorName, DeleteVectorName, SetFlushInterval
+    const FORCE_OFF: [usize; 2] = [22, 23]; // CreateVectorName, DeleteVectorName
 
     /// Index of the snapshot op (`CreateSnapshot`), masked off when `disable_snapshots` is set.
     /// Must stay aligned with `NAMES`/`BASE`.
