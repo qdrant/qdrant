@@ -586,10 +586,10 @@ mod tests_mod {
     #[test]
     fn reopen_schedule_missing_from_snapshot_errors() {
         let scn = Scenario::new(BLOCK_SIZE);
-        let mut cache = scn.open::<R>(PREFILL);
+        let cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.live_preload(|_| None);
-        let err = cache.live_reload().unwrap_err();
+        // `map(drop)` discards the staged future, which is not `Debug`.
+        let err = cache.live_preload(|_| None).map(drop).unwrap_err();
         assert_matches!(err, UniversalIoError::NotFound { .. });
     }
 
