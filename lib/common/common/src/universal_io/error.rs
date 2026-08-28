@@ -276,6 +276,15 @@ impl<Src, Dst: ?Sized> From<zerocopy::SizeError<Src, Dst>> for UniversalIoError 
     }
 }
 
+impl From<tokio::task::JoinError> for UniversalIoError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        if err.is_panic() {
+            return Self::TaskPanicked(err.to_string());
+        }
+        Self::Io(io::Error::from(err))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

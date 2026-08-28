@@ -1,6 +1,7 @@
 mod pipeline;
 
 use std::borrow::Cow;
+use std::future::ready;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -210,6 +211,16 @@ impl UniversalRead for MmapFile {
         let mmap = self.as_bytes::<P>();
         let bytes = read_bytes(mmap, range)?;
         Ok(ACow::Borrowed(bytes))
+    }
+
+    fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> impl Future<Output = UioResult<ACow<'_>>> {
+        // No special async way of reading mmap
+        ready(self.read_bytes(range, access_pattern, align))
     }
 
     /// Override the default pipeline-based for better performance.
