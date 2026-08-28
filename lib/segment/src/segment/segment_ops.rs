@@ -674,6 +674,10 @@ impl Segment {
         internal_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let external_id = self.id_tracker.borrow().external_id(internal_id);
+        log::debug!(
+            "[issue-10302] delete_point_internal: internal_id={internal_id} external_id={external_id:?} clearing field-index postings",
+        );
         // Mark point as deleted, drop mapping
         self.payload_index
             .borrow_mut()

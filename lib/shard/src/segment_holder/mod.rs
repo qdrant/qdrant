@@ -1115,7 +1115,11 @@ impl SegmentHolder {
                         )?;
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
-                        if !appendable_write_segment.point_is_deferred(point_id) {
+                        let dst_deferred = appendable_write_segment.point_is_deferred(point_id);
+                        log::debug!(
+                            "[issue-10302] cow_move: point_id={point_id} op_num={op_num} dst_deferred={dst_deferred} src_delete_skipped={dst_deferred}",
+                        );
+                        if !dst_deferred {
                             write_segment.delete_point(op_num, point_id, hw_counter)?;
                         }
 

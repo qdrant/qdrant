@@ -54,6 +54,11 @@ impl StructPayloadIndex {
         payload_storage.iter(
             |point_id, point_payload| {
                 let field_value = &point_payload.get_value(field);
+                let add = !field_value.is_empty();
+                let value_empty = field_value.is_empty();
+                log::debug!(
+                    "[issue-10302] build_field_indexes: field={field} point_id={point_id} add={add} value_empty={value_empty}",
+                );
                 for builder in builders.iter_mut() {
                     builder.add_point(point_id, field_value, hw_counter)?;
                 }

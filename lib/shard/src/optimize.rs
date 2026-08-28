@@ -559,6 +559,12 @@ fn finish_optimization(
         .iter()
         .filter(|&(point_id, _)| !already_remove_points.contains_key(point_id));
 
+    let points_diff: Vec<_> = points_diff.collect();
+    let points_diff_count = points_diff.len();
+    let points_diff_ids: Vec<_> = points_diff.iter().map(|(p, _)| *p).collect();
+    log::debug!(
+        "[issue-10302] finish_optimization: points_diff_to_delete count={points_diff_count} ids={points_diff_ids:?}",
+    );
     for (&point_id, &versions) in points_diff {
         optimized_segment
             .delete_point(versions.operation_version, point_id, hw_counter)
@@ -591,6 +597,10 @@ fn finish_optimization(
         deferred_points_set.extend(proxy.get().read().deferred_point_ids());
     }
     let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
+    let deferred_points_count = deferred_points.len();
+    log::debug!(
+        "[issue-10302] finish_optimization: deferred_points_to_dedup count={deferred_points_count} ids={deferred_points:?}",
+    );
 
     if !deferred_points.is_empty() {
         const CHUNK_SIZE: usize = 100;

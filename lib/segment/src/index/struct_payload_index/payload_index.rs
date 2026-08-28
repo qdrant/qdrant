@@ -156,6 +156,11 @@ impl PayloadIndex for StructPayloadIndex {
 
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
+            let add = !field_value.is_empty();
+            let value_empty = field_value.is_empty();
+            log::debug!(
+                "[issue-10302] overwrite_payload: field={field} point_id={point_id} add={add} value_empty={value_empty}",
+            );
             if !field_value.is_empty() {
                 for index in field_index {
                     index.add_point(point_id, &field_value, hw_counter)?;
@@ -195,6 +200,11 @@ impl PayloadIndex for StructPayloadIndex {
                 continue;
             }
             let field_value = updated_payload.get_value(field);
+            let add = !field_value.is_empty();
+            let value_empty = field_value.is_empty();
+            log::debug!(
+                "[issue-10302] set_payload: field={field} point_id={point_id} add={add} value_empty={value_empty}",
+            );
             if !field_value.is_empty() {
                 for index in field_index {
                     index.add_point(point_id, &field_value, hw_counter)?;

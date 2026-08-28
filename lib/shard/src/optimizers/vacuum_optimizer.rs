@@ -149,7 +149,10 @@ impl SegmentOptimizer for VacuumOptimizer {
             })
             .sorted_by_key(|(_, ratio)| OrderedFloat(-ratio))
             .collect_vec();
-        for (segment_id, _) in to_optimize {
+        for (segment_id, ratio) in to_optimize {
+            log::debug!(
+                "[issue-10302] vacuum_optimizer: planning rebuild of segment_id={segment_id} littered_ratio={ratio}",
+            );
             planner.plan(vec![segment_id]);
         }
     }

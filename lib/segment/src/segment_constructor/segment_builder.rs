@@ -456,6 +456,13 @@ impl SegmentBuilder {
             let other_payload = payloads[point_data.segment_index.get() as usize]
                 .with_view(|v| v.get_payload_sequential(old_internal_id, &hw_counter))?; // Internal operation, no measurement needed!
 
+            let external_id = &point_data.external_id;
+            let payload_empty = other_payload.is_empty();
+            let payload_keys = other_payload.len();
+            log::debug!(
+                "[issue-10302] segment_builder::update payload read: external_id={external_id:?} old_internal_id={old_internal_id} payload_empty={payload_empty} payload_keys={payload_keys}",
+            );
+
             match self.id_tracker.internal_id_with_behavior(
                 ExtendedPointId::from(point_data.external_id),
                 // Dedup guard on a freshly built target (no deferred heads
