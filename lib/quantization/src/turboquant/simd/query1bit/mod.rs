@@ -10,9 +10,10 @@
 //!   work is just picking the fastest popcount primitive (AVX-512 VPOPCNTDQ,
 //!   AVX2 / SSE `pshufb`-nibble lookup, NEON `vcntq_u8`).
 //!
-//! * [`Query1bitSimd`] — asymmetric scoring of an original query against
-//!   packed data, through the shared [`QuerySimd`] kernels with the 1-bit
-//!   [`Encoding`] defined here (a sign bit indexes a two-entry codebook).
+//! * [`Query1bitSimd`] / [`Query1bitWideSimd`] — asymmetric scoring of an
+//!   original query (8- or 16-bit) against packed data, through the shared
+//!   [`QuerySimd`] kernels with the 1-bit [`Encoding`] defined here (a sign
+//!   bit indexes a two-entry codebook).
 
 use super::query::{Code, Encoding, QuerySimd, pad_codebook};
 
@@ -56,8 +57,15 @@ const CODEBOOK_OFFSET: i64 = 64;
 const CODEBOOK_SCALE: f32 = 64.0 / CENTROID_ABS;
 
 /// Encoded query for asymmetric 1-bit scoring: [`QuerySimd`] over eight
-/// codes per byte (the sign bit of dim `8j + k` is bit `k` of byte `j`).
-pub type Query1bitSimd = QuerySimd<8>;
+/// codes per byte (the sign bit of dim `8j + k` is bit `k` of byte `j`),
+/// with an 8-bit query — plenty next to the ±c codes, and half the
+/// multiply-accumulate work of [`Query1bitWideSimd`].
+pub type Query1bitSimd = QuerySimd<8, 1>;
+
+/// [`Query1bitSimd`] with a 16-bit query, for TQ+: the per-coord `D'`
+/// pre-scaling pushes some query coords toward the small end of the
+/// integer range, where 8 bits lose too much.
+pub type Query1bitWideSimd = QuerySimd<8, 2>;
 
 /// Dot product between two already-encoded 1-bit PQ vectors.
 ///

@@ -84,7 +84,9 @@ impl SimdBackend {
 pub use query::QuerySimd;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use query1bit::score_1bit_internal_neon;
-pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scalar};
+pub use query1bit::{
+    Query1bitSimd, Query1bitWideSimd, score_1bit_internal, score_1bit_internal_scalar,
+};
 #[cfg(target_arch = "x86_64")]
 pub use query1bit::{
     score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,

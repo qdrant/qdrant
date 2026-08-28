@@ -3,8 +3,9 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use quantization::encoded_vectors_binary::BitsStoreType;
 use quantization::turboquant::simd::{
-    Query1bitSimd, QuerySimd, score_1bit_internal, score_1bit_internal_scalar, score_2bit_internal,
-    score_2bit_internal_scalar, score_4bit_internal, score_4bit_internal_scalar,
+    Query1bitSimd, Query1bitWideSimd, QuerySimd, score_1bit_internal, score_1bit_internal_scalar,
+    score_2bit_internal, score_2bit_internal_scalar, score_4bit_internal,
+    score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
@@ -117,11 +118,15 @@ fn dims(default: &[usize]) -> Vec<usize> {
 /// pool ≫ cache, so every call pays a real DRAM fetch — the HNSW scoring
 /// pattern.  `scalar` is the reference kernel, `dotprod` the public path
 /// (best backend + float reconstruction), the rest the individual backends.
-fn dotprod_cold<const PLANES: usize>(c: &mut Criterion, group: &str, default_dims: &[usize]) {
+fn dotprod_cold<const PLANES: usize, const QUERY_BYTES: usize>(
+    c: &mut Criterion,
+    group: &str,
+    default_dims: &[usize],
+) {
     let mut group = c.benchmark_group(group);
     for dim in dims(default_dims) {
         let q = make_query(dim);
-        let query = QuerySimd::<PLANES>::new(&q);
+        let query = QuerySimd::<PLANES, QUERY_BYTES>::new(&q);
         let pool = VectorPool::with_packed_bytes(dim / PLANES, 7);
 
         group.throughput(Throughput::Elements(dim as u64));
@@ -210,9 +215,10 @@ fn dotprod_cold<const PLANES: usize>(c: &mut Criterion, group: &str, default_dim
 }
 
 fn bench_dotprod_cold(c: &mut Criterion) {
-    dotprod_cold::<2>(c, "query4bit_dotprod_cold", DIMS_4BIT);
-    dotprod_cold::<4>(c, "query2bit_dotprod_cold", DIMS_2BIT);
-    dotprod_cold::<8>(c, "query1bit_dotprod_cold", DIMS_1BIT);
+    dotprod_cold::<2, 2>(c, "query4bit_dotprod_cold", DIMS_4BIT);
+    dotprod_cold::<4, 2>(c, "query2bit_dotprod_cold", DIMS_2BIT);
+    dotprod_cold::<8, 1>(c, "query1bit_dotprod_cold", DIMS_1BIT);
+    dotprod_cold::<8, 2>(c, "query1bit_wide_dotprod_cold", DIMS_1BIT);
 }
 
 /// Benchmarks [`score_4bit_internal`] (both vectors already PQ-encoded, both
@@ -410,8 +416,8 @@ fn bench_score_1bit_cold(c: &mut Criterion) {
 /// Query-against-data benchmarks: a single hot query is scored against cold
 /// 1-bit PQ data vectors.  Mirrors the HNSW scoring pattern.
 ///
-/// Compares `Query1bitSimd` (16-bit query halves against a two-entry
-/// codebook) against the existing BQ `Scalar8bits` path
+/// Compares `Query1bitSimd` (8-bit query) and `Query1bitWideSimd` (16-bit)
+/// against the existing BQ `Scalar8bits` path
 /// (`BitsStoreType::xor_popcnt_scalar` with `bits_count=8`) — BQ stays at
 /// 8 bits (its only supported scalar width) and serves as the baseline.
 fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
@@ -424,6 +430,7 @@ fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
             .collect();
 
         let query = Query1bitSimd::new(&query_floats);
+        let query_wide = Query1bitWideSimd::new(&query_floats);
         let q_bq = encode_bq_scalar8bits(&query_floats);
 
         group.throughput(Throughput::Elements(dim as u64));
@@ -434,6 +441,15 @@ fn bench_query1bit_vs_bq_hot(c: &mut Criterion) {
                 let v = pool.vector(cursor);
                 cursor = cursor.wrapping_add(1);
                 query.dotprod(black_box(v))
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("query1bit_wide", dim), &dim, |b, _| {
+            let mut cursor = 0usize;
+            b.iter(|| {
+                let v = pool.vector(cursor);
+                cursor = cursor.wrapping_add(1);
+                query_wide.dotprod(black_box(v))
             });
         });
 

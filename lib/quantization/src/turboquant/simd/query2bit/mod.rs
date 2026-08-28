@@ -119,7 +119,7 @@ fn codebook_signed_i64(idx: u8) -> i64 {
 /// Encoded query for asymmetric 2-bit scoring: [`QuerySimd`] over four
 /// codes per byte (code `k` of dim `4j + k` in bits `[2k, 2k + 2)` of byte
 /// `j`).
-pub type Query2bitSimd = QuerySimd<4>;
+pub type Query2bitSimd = QuerySimd<4, 2>;
 
 /// Dot product between two already-encoded 2-bit PQ vectors.  Any byte length
 /// is accepted — bytes beyond the last SIMD chunk are folded in scalar-wise.

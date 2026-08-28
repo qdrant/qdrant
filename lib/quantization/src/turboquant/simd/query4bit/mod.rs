@@ -138,7 +138,7 @@ fn codebook_signed_i64(idx: u8) -> i64 {
 
 /// Encoded query for asymmetric 4-bit scoring: [`QuerySimd`] over two codes
 /// per byte (low nibble = even dim, high nibble = odd dim).
-pub type Query4bitSimd = QuerySimd<2>;
+pub type Query4bitSimd = QuerySimd<2, 2>;
 
 /// Dot product between two already-encoded 4-bit PQ vectors.  Both `a` and
 /// `b` are the packed-nibble format that [`Query4bitSimd::dotprod`] takes as

@@ -4,9 +4,9 @@ use crate::DistanceType;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::simd::{
-    CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query2bitSimd, Query4bitSimd,
-    score_1bit_internal, score_2bit_internal, score_2bit_internal_weighted, score_4bit_internal,
-    score_4bit_internal_weighted,
+    CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query1bitWideSimd,
+    Query2bitSimd, Query4bitSimd, score_1bit_internal, score_2bit_internal,
+    score_2bit_internal_weighted, score_4bit_internal, score_4bit_internal_weighted,
 };
 use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode, TQRotation};
 
@@ -540,7 +540,15 @@ impl TurboQuantizer {
         // has no downstream benefit here).
         let rotated_f32: Vec<f32> = rotated.iter().map(|&x| x as f32).collect();
 
+        // For TQ+ + Bits1 storage, widen the query from 8 to 16 bits: the
+        // per-coord `D'` pre-scaling can push some coords toward the small
+        // end of the integer range, where 8 bits lose too much.
+        let use_wide_query =
+            self.error_correction.is_some() && matches!(self.bits, TQBits::Bits1 | TQBits::Bits1_5);
         let data = match self.bits {
+            TQBits::Bits1 | TQBits::Bits1_5 if use_wide_query => {
+                EncodedQueryTQData::Bits1Wide(Query1bitWideSimd::new(&rotated_f32))
+            }
             TQBits::Bits1 | TQBits::Bits1_5 => {
                 EncodedQueryTQData::Bits1(Query1bitSimd::new(&rotated_f32))
             }
@@ -562,6 +570,7 @@ impl TurboQuantizer {
         let (data_bytes, vector_extras) = self.split_vector(vec);
         let raw_dot = match &query.data {
             EncodedQueryTQData::Bits1(q) => q.dotprod(data_bytes),
+            EncodedQueryTQData::Bits1Wide(q) => q.dotprod(data_bytes),
             EncodedQueryTQData::Bits2(q) => q.dotprod(data_bytes),
             EncodedQueryTQData::Bits4(q) => q.dotprod(data_bytes),
         };

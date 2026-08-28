@@ -35,27 +35,24 @@ const fn code_mask<const PLANES: usize>() -> i8 {
 
 /// One [`BLOCK_128`]-byte block of every query plane.
 #[derive(Clone, Copy)]
-struct QueryBlock128<const PLANES: usize> {
-    low: [__m128i; PLANES],
-    high: [__m128i; PLANES],
+struct QueryBlock128<const PLANES: usize, const QUERY_BYTES: usize> {
+    bytes: [[__m128i; PLANES]; QUERY_BYTES],
 }
 
-impl<const PLANES: usize> QueryBlock128<PLANES> {
+impl<const PLANES: usize, const QUERY_BYTES: usize> QueryBlock128<PLANES, QUERY_BYTES> {
     /// # Safety
     /// CPU must support `sse2`; `offset + BLOCK_128` must not exceed the
     /// plane length.
     #[inline]
     #[target_feature(enable = "sse2")]
-    unsafe fn load(planes: &QueryPlanes<PLANES>, offset: usize) -> Self {
+    unsafe fn load(planes: &QueryPlanes<PLANES, QUERY_BYTES>, offset: usize) -> Self {
         let mut block = Self {
-            low: [_mm_setzero_si128(); PLANES],
-            high: [_mm_setzero_si128(); PLANES],
+            bytes: [[_mm_setzero_si128(); PLANES]; QUERY_BYTES],
         };
-        for (k, low) in block.low.iter_mut().enumerate() {
-            *low = unsafe { load_plane_128(&planes.low[k], offset) };
-        }
-        for (k, high) in block.high.iter_mut().enumerate() {
-            *high = unsafe { load_plane_128(&planes.high[k], offset) };
+        for (b, byte_planes) in block.bytes.iter_mut().enumerate() {
+            for (k, plane) in byte_planes.iter_mut().enumerate() {
+                *plane = unsafe { load_plane_128(&planes.bytes[b][k], offset) };
+            }
         }
         block
     }
@@ -84,21 +81,18 @@ unsafe fn next_plane_128<const PLANES: usize>(codes: __m128i) -> __m128i {
 /// `maddubs → madd` accumulators of one vector; the 128-bit form of
 /// [`Acc256`], with the same integer bounds.
 #[derive(Clone, Copy)]
-struct Acc128 {
-    low: [__m128i; 2],
-    high: [__m128i; 2],
+struct Acc128<const QUERY_BYTES: usize> {
+    bytes: [[__m128i; 2]; QUERY_BYTES],
 }
 
-impl Acc128 {
+impl<const QUERY_BYTES: usize> Acc128<QUERY_BYTES> {
     /// # Safety
     /// CPU must support `sse2`.
     #[inline]
     #[target_feature(enable = "sse2")]
     unsafe fn zero() -> Self {
-        let zero = _mm_setzero_si128();
         Self {
-            low: [zero; 2],
-            high: [zero; 2],
+            bytes: [[_mm_setzero_si128(); 2]; QUERY_BYTES],
         }
     }
 
@@ -111,7 +105,7 @@ impl Acc128 {
     unsafe fn accumulate<const PLANES: usize>(
         &mut self,
         codes: __m128i,
-        query: QueryBlock128<PLANES>,
+        query: QueryBlock128<PLANES, QUERY_BYTES>,
     ) {
         let table = const { codebook::<PLANES>() };
         let codebook = unsafe { _mm_loadu_si128(table.as_ptr().cast::<__m128i>()) };
@@ -120,52 +114,47 @@ impl Acc128 {
         let mut shifted = codes;
         for k in 0..PLANES {
             let values = _mm_shuffle_epi8(codebook, _mm_and_si128(shifted, mask));
-            let dot = |acc: __m128i, query: __m128i| {
-                _mm_add_epi32(acc, _mm_madd_epi16(_mm_maddubs_epi16(values, query), ones))
-            };
-            self.low[k & 1] = dot(self.low[k & 1], query.low[k]);
-            self.high[k & 1] = dot(self.high[k & 1], query.high[k]);
+            for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
+                acc[k & 1] = _mm_add_epi32(
+                    acc[k & 1],
+                    _mm_madd_epi16(_mm_maddubs_epi16(values, planes[k]), ones),
+                );
+            }
             shifted = unsafe { next_plane_128::<PLANES>(shifted) };
         }
     }
 
-    /// Per-lane `(low, high)` query-half totals.
+    /// Per-lane totals of every query byte.
     ///
     /// # Safety
     /// CPU must support `sse2`.
     #[inline]
     #[target_feature(enable = "sse2")]
-    unsafe fn fold(self) -> (__m128i, __m128i) {
-        (
-            _mm_add_epi32(self.low[0], self.low[1]),
-            _mm_add_epi32(self.high[0], self.high[1]),
-        )
+    unsafe fn fold(self) -> [__m128i; QUERY_BYTES] {
+        self.bytes.map(|[a, b]| _mm_add_epi32(a, b))
     }
 }
 
 /// One [`BLOCK_256`]-byte block of every query plane.
 #[derive(Clone, Copy)]
-struct QueryBlock256<const PLANES: usize> {
-    low: [__m256i; PLANES],
-    high: [__m256i; PLANES],
+struct QueryBlock256<const PLANES: usize, const QUERY_BYTES: usize> {
+    bytes: [[__m256i; PLANES]; QUERY_BYTES],
 }
 
-impl<const PLANES: usize> QueryBlock256<PLANES> {
+impl<const PLANES: usize, const QUERY_BYTES: usize> QueryBlock256<PLANES, QUERY_BYTES> {
     /// # Safety
     /// CPU must support `avx2`; `offset + BLOCK_256` must not exceed the
     /// plane length.
     #[inline]
     #[target_feature(enable = "avx2")]
-    unsafe fn load(planes: &QueryPlanes<PLANES>, offset: usize) -> Self {
+    unsafe fn load(planes: &QueryPlanes<PLANES, QUERY_BYTES>, offset: usize) -> Self {
         let mut block = Self {
-            low: [_mm256_setzero_si256(); PLANES],
-            high: [_mm256_setzero_si256(); PLANES],
+            bytes: [[_mm256_setzero_si256(); PLANES]; QUERY_BYTES],
         };
-        for (k, low) in block.low.iter_mut().enumerate() {
-            *low = unsafe { load_plane_256(&planes.low[k], offset) };
-        }
-        for (k, high) in block.high.iter_mut().enumerate() {
-            *high = unsafe { load_plane_256(&planes.high[k], offset) };
+        for (b, byte_planes) in block.bytes.iter_mut().enumerate() {
+            for (k, plane) in byte_planes.iter_mut().enumerate() {
+                *plane = unsafe { load_plane_256(&planes.bytes[b][k], offset) };
+            }
         }
         block
     }
@@ -200,21 +189,18 @@ unsafe fn next_plane_256<const PLANES: usize>(codes: __m256i) -> __m256i {
 /// adds at most 65 280 (65 536) per i32 lane per plane, the same bound as
 /// VNNI.
 #[derive(Clone, Copy)]
-struct Acc256 {
-    low: [__m256i; 2],
-    high: [__m256i; 2],
+struct Acc256<const QUERY_BYTES: usize> {
+    bytes: [[__m256i; 2]; QUERY_BYTES],
 }
 
-impl Acc256 {
+impl<const QUERY_BYTES: usize> Acc256<QUERY_BYTES> {
     /// # Safety
     /// CPU must support `avx2`.
     #[inline]
     #[target_feature(enable = "avx2")]
     unsafe fn zero() -> Self {
-        let zero = _mm256_setzero_si256();
         Self {
-            low: [zero; 2],
-            high: [zero; 2],
+            bytes: [[_mm256_setzero_si256(); 2]; QUERY_BYTES],
         }
     }
 
@@ -227,7 +213,7 @@ impl Acc256 {
     unsafe fn accumulate<const PLANES: usize>(
         &mut self,
         codes: __m256i,
-        query: QueryBlock256<PLANES>,
+        query: QueryBlock256<PLANES, QUERY_BYTES>,
     ) {
         let table = const { codebook::<PLANES>() };
         let codebook = _mm256_broadcastsi128_si256(unsafe {
@@ -238,55 +224,47 @@ impl Acc256 {
         let mut shifted = codes;
         for k in 0..PLANES {
             let values = _mm256_shuffle_epi8(codebook, _mm256_and_si256(shifted, mask));
-            let dot = |acc: __m256i, query: __m256i| {
-                _mm256_add_epi32(
-                    acc,
-                    _mm256_madd_epi16(_mm256_maddubs_epi16(values, query), ones),
-                )
-            };
-            self.low[k & 1] = dot(self.low[k & 1], query.low[k]);
-            self.high[k & 1] = dot(self.high[k & 1], query.high[k]);
+            for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
+                acc[k & 1] = _mm256_add_epi32(
+                    acc[k & 1],
+                    _mm256_madd_epi16(_mm256_maddubs_epi16(values, planes[k]), ones),
+                );
+            }
             shifted = unsafe { next_plane_256::<PLANES>(shifted) };
         }
     }
 
-    /// Per-lane `(low, high)` query-half totals.
+    /// Per-lane totals of every query byte.
     ///
     /// # Safety
     /// CPU must support `avx2`.
     #[inline]
     #[target_feature(enable = "avx2")]
-    unsafe fn fold(self) -> (__m256i, __m256i) {
-        (
-            _mm256_add_epi32(self.low[0], self.low[1]),
-            _mm256_add_epi32(self.high[0], self.high[1]),
-        )
+    unsafe fn fold(self) -> [__m256i; QUERY_BYTES] {
+        self.bytes.map(|[a, b]| _mm256_add_epi32(a, b))
     }
 }
 
 /// One [`BLOCK_512`]-byte block of every query plane.
 #[derive(Clone, Copy)]
-struct QueryBlock512<const PLANES: usize> {
-    low: [__m512i; PLANES],
-    high: [__m512i; PLANES],
+struct QueryBlock512<const PLANES: usize, const QUERY_BYTES: usize> {
+    bytes: [[__m512i; PLANES]; QUERY_BYTES],
 }
 
-impl<const PLANES: usize> QueryBlock512<PLANES> {
+impl<const PLANES: usize, const QUERY_BYTES: usize> QueryBlock512<PLANES, QUERY_BYTES> {
     /// # Safety
     /// CPU must support `avx512f`; `offset + BLOCK_512` must not exceed the
     /// plane length.
     #[inline]
     #[target_feature(enable = "avx512f")]
-    unsafe fn load(planes: &QueryPlanes<PLANES>, offset: usize) -> Self {
+    unsafe fn load(planes: &QueryPlanes<PLANES, QUERY_BYTES>, offset: usize) -> Self {
         let mut block = Self {
-            low: [_mm512_setzero_si512(); PLANES],
-            high: [_mm512_setzero_si512(); PLANES],
+            bytes: [[_mm512_setzero_si512(); PLANES]; QUERY_BYTES],
         };
-        for (k, low) in block.low.iter_mut().enumerate() {
-            *low = unsafe { load_plane_512(&planes.low[k], offset) };
-        }
-        for (k, high) in block.high.iter_mut().enumerate() {
-            *high = unsafe { load_plane_512(&planes.high[k], offset) };
+        for (b, byte_planes) in block.bytes.iter_mut().enumerate() {
+            for (k, plane) in byte_planes.iter_mut().enumerate() {
+                *plane = unsafe { load_plane_512(&planes.bytes[b][k], offset) };
+            }
         }
         block
     }
@@ -315,30 +293,28 @@ unsafe fn next_plane_512<const PLANES: usize>(codes: __m512i) -> __m512i {
     }
 }
 
-/// `VPDPBUSD` accumulators of one vector: two independent low/high chains,
-/// plane `k` feeding pair `k & 1`.  Two pairs are enough to keep the
-/// multiply-accumulate latency off the critical path at every width
-/// (`PLANES / 2` dependent steps per block against `2 · PLANES` issued).
+/// `VPDPBUSD` accumulators of one vector: per query byte two independent
+/// chains, plane `k` feeding chain `k & 1`.  Two chains per byte are
+/// enough to keep the multiply-accumulate latency off the critical path at
+/// every width (`PLANES / 2` dependent steps per block against `PLANES`
+/// issued per byte).
 ///
 /// i32 lane bound: each `VPDPBUSD` adds at most `4 · 255 · 64 = 65 280`
 /// (`4 · 128 · 128 = 65 536` for the 1-bit encoding) to a lane, so overflow
 /// needs ~32 K blocks ≈ 2 M packed bytes — far beyond any real input.
 #[derive(Clone, Copy)]
-struct Acc512 {
-    low: [__m512i; 2],
-    high: [__m512i; 2],
+struct Acc512<const QUERY_BYTES: usize> {
+    bytes: [[__m512i; 2]; QUERY_BYTES],
 }
 
-impl Acc512 {
+impl<const QUERY_BYTES: usize> Acc512<QUERY_BYTES> {
     /// # Safety
     /// CPU must support `avx512f`.
     #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn zero() -> Self {
-        let zero = _mm512_setzero_si512();
         Self {
-            low: [zero; 2],
-            high: [zero; 2],
+            bytes: [[_mm512_setzero_si512(); 2]; QUERY_BYTES],
         }
     }
 
@@ -353,7 +329,7 @@ impl Acc512 {
     unsafe fn accumulate<const PLANES: usize>(
         &mut self,
         codes: __m512i,
-        query: QueryBlock512<PLANES>,
+        query: QueryBlock512<PLANES, QUERY_BYTES>,
     ) {
         let table = const { codebook::<PLANES>() };
         let codebook =
@@ -362,27 +338,25 @@ impl Acc512 {
         let mut shifted = codes;
         for k in 0..PLANES {
             let values = _mm512_shuffle_epi8(codebook, _mm512_and_si512(shifted, mask));
-            self.low[k & 1] = _mm512_dpbusd_epi32(self.low[k & 1], values, query.low[k]);
-            self.high[k & 1] = _mm512_dpbusd_epi32(self.high[k & 1], values, query.high[k]);
+            for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
+                acc[k & 1] = _mm512_dpbusd_epi32(acc[k & 1], values, planes[k]);
+            }
             shifted = unsafe { next_plane_512::<PLANES>(shifted) };
         }
     }
 
-    /// Per-lane `(low, high)` query-half totals.
+    /// Per-lane totals of every query byte.
     ///
     /// # Safety
     /// CPU must support `avx512f`.
     #[inline]
     #[target_feature(enable = "avx512f")]
-    unsafe fn fold(self) -> (__m512i, __m512i) {
-        (
-            _mm512_add_epi32(self.low[0], self.low[1]),
-            _mm512_add_epi32(self.high[0], self.high[1]),
-        )
+    unsafe fn fold(self) -> [__m512i; QUERY_BYTES] {
+        self.bytes.map(|[a, b]| _mm512_add_epi32(a, b))
     }
 }
 
-impl<const PLANES: usize> QuerySimd<PLANES> {
+impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTES> {
     /// x86_64 SSE4.1 + SSSE3 over the query planes: one XMM of packed codes
     /// per block, the 128-bit form of the AVX2 kernel.
     ///
@@ -393,15 +367,15 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
         assert_eq!(
             vector.len(),
             self.vector_bytes,
-            "QuerySimd<{PLANES}>::dotprod_raw_sse: vector length mismatch ({} vs expected {})",
+            "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_raw_sse: vector length mismatch ({} vs \
+             expected {})",
             vector.len(),
             self.vector_bytes,
         );
 
         unsafe {
-            let (low, high) = self.accumulate_sse(vector.as_ptr()).fold();
-            i64::from(hsum_i32_sse(low))
-                + Self::ENCODING.query_high_coef * i64::from(hsum_i32_sse(high))
+            let totals = self.accumulate_sse(vector.as_ptr()).fold();
+            Self::combine_bytes(totals.map(|total| i64::from(hsum_i32_sse(total))))
         }
     }
 
@@ -412,7 +386,7 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     /// `self.vector_bytes` bytes.
     #[inline]
     #[target_feature(enable = "sse4.1,ssse3")]
-    unsafe fn accumulate_sse(&self, data: *const u8) -> Acc128 {
+    unsafe fn accumulate_sse(&self, data: *const u8) -> Acc128<QUERY_BYTES> {
         unsafe {
             let mut acc = Acc128::zero();
 
@@ -450,7 +424,8 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
         assert_eq!(
             vector.len(),
             self.vector_bytes,
-            "QuerySimd<{PLANES}>::dotprod_raw_avx2: vector length mismatch ({} vs expected {})",
+            "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_raw_avx2: vector length mismatch ({} \
+             vs expected {})",
             vector.len(),
             self.vector_bytes,
         );
@@ -465,7 +440,7 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     /// `self.vector_bytes` bytes.
     #[inline]
     #[target_feature(enable = "avx2")]
-    unsafe fn accumulate_avx2(&self, data: *const u8) -> Acc256 {
+    unsafe fn accumulate_avx2(&self, data: *const u8) -> Acc256<QUERY_BYTES> {
         unsafe {
             let mut acc = Acc256::zero();
 
@@ -497,12 +472,8 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     /// CPU must support `avx2`.
     #[inline]
     #[target_feature(enable = "avx2")]
-    unsafe fn reduce_avx2(acc: Acc256) -> i64 {
-        unsafe {
-            let (low, high) = acc.fold();
-            i64::from(hsum_i32_avx2(low))
-                + Self::ENCODING.query_high_coef * i64::from(hsum_i32_avx2(high))
-        }
+    unsafe fn reduce_avx2(acc: Acc256<QUERY_BYTES>) -> i64 {
+        unsafe { Self::combine_bytes(acc.fold().map(|total| i64::from(hsum_i32_avx2(total)))) }
     }
 
     /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+) over the query planes: one ZMM
@@ -518,7 +489,8 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
         assert_eq!(
             vector.len(),
             self.vector_bytes,
-            "QuerySimd<{PLANES}>::dotprod_raw_avx512_vnni: vector length mismatch ({} vs expected {})",
+            "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_raw_avx512_vnni: vector length \
+             mismatch ({} vs expected {})",
             vector.len(),
             self.vector_bytes,
         );
@@ -533,7 +505,7 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     /// be readable for `self.vector_bytes` bytes.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
-    unsafe fn accumulate_avx512(&self, data: *const u8) -> Acc512 {
+    unsafe fn accumulate_avx512(&self, data: *const u8) -> Acc512<QUERY_BYTES> {
         unsafe {
             let mut acc = Acc512::zero();
 
@@ -564,11 +536,12 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     /// CPU must support `avx512f`.
     #[inline]
     #[target_feature(enable = "avx512f")]
-    unsafe fn reduce_avx512(acc: Acc512) -> i64 {
+    unsafe fn reduce_avx512(acc: Acc512<QUERY_BYTES>) -> i64 {
         unsafe {
-            let (low, high) = acc.fold();
-            i64::from(_mm512_reduce_add_epi32(low))
-                + Self::ENCODING.query_high_coef * i64::from(_mm512_reduce_add_epi32(high))
+            Self::combine_bytes(
+                acc.fold()
+                    .map(|total| i64::from(_mm512_reduce_add_epi32(total))),
+            )
         }
     }
 }
@@ -603,85 +576,46 @@ mod tests {
         std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1")
     }
 
-    /// The SSE kernel must reproduce the scalar reference bit-exactly at
-    /// every parity dim of every width.
-    fn sse_matches_scalar<const PLANES: usize>() {
-        let mut rng = StdRng::seed_from_u64(7);
-        for dim in parity_dims::<PLANES>() {
-            let (query, vector) = random_inputs::<PLANES>(&mut rng, dim);
-            let scalar = query.dotprod_raw(&vector);
-            let sse = unsafe { query.dotprod_raw_sse(&vector) };
-            assert_eq!(
-                scalar, sse,
-                "PLANES={PLANES} dim={dim}: scalar {scalar} != sse {sse}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_sse_matches_scalar() {
-        if !has_sse() {
-            return;
-        }
-        sse_matches_scalar::<2>();
-        sse_matches_scalar::<4>();
-        sse_matches_scalar::<8>();
-    }
-
-    /// The AVX2 kernel must reproduce the scalar reference bit-exactly at
-    /// every parity dim of every width.
-    fn avx2_matches_scalar<const PLANES: usize>() {
-        let mut rng = StdRng::seed_from_u64(7);
-        for dim in parity_dims::<PLANES>() {
-            let (query, vector) = random_inputs::<PLANES>(&mut rng, dim);
-            let scalar = query.dotprod_raw(&vector);
-            let avx2 = unsafe { query.dotprod_raw_avx2(&vector) };
-            assert_eq!(
-                scalar, avx2,
-                "PLANES={PLANES} dim={dim}: scalar {scalar} != avx2 {avx2}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_avx2_matches_scalar() {
-        if !std::is_x86_feature_detected!("avx2") {
-            return;
-        }
-        avx2_matches_scalar::<2>();
-        avx2_matches_scalar::<4>();
-        avx2_matches_scalar::<8>();
-    }
-
     fn has_avx512_vnni() -> bool {
         std::is_x86_feature_detected!("avx512f")
             && std::is_x86_feature_detected!("avx512bw")
             && std::is_x86_feature_detected!("avx512vnni")
     }
 
-    /// The kernel must reproduce the scalar reference bit-exactly at every
-    /// parity dim of every width.
-    fn avx512_vnni_matches_scalar<const PLANES: usize>() {
+    /// Every kernel the host supports must reproduce the scalar reference
+    /// bit-exactly at every parity dim.
+    fn kernels_match_scalar<const PLANES: usize, const QUERY_BYTES: usize>() {
         let mut rng = StdRng::seed_from_u64(7);
         for dim in parity_dims::<PLANES>() {
-            let (query, vector) = random_inputs::<PLANES>(&mut rng, dim);
+            let (query, vector) = random_inputs::<PLANES, QUERY_BYTES>(&mut rng, dim);
             let scalar = query.dotprod_raw(&vector);
-            let vnni512 = unsafe { query.dotprod_raw_avx512_vnni(&vector) };
-            assert_eq!(
-                scalar, vnni512,
-                "PLANES={PLANES} dim={dim}: scalar {scalar} != avx512_vnni {vnni512}"
-            );
+            let tag = format!("PLANES={PLANES} QUERY_BYTES={QUERY_BYTES} dim={dim}");
+            unsafe {
+                if has_sse() {
+                    let sse = query.dotprod_raw_sse(&vector);
+                    assert_eq!(scalar, sse, "{tag}: scalar {scalar} != sse {sse}");
+                }
+                if std::is_x86_feature_detected!("avx2") {
+                    let avx2 = query.dotprod_raw_avx2(&vector);
+                    assert_eq!(scalar, avx2, "{tag}: scalar {scalar} != avx2 {avx2}");
+                }
+                if has_avx512_vnni() {
+                    let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
+                    assert_eq!(
+                        scalar, vnni512,
+                        "{tag}: scalar {scalar} != avx512_vnni {vnni512}"
+                    );
+                }
+            }
         }
     }
 
     #[test]
-    fn test_avx512_vnni_matches_scalar() {
-        if !has_avx512_vnni() {
-            return;
-        }
-        avx512_vnni_matches_scalar::<2>();
-        avx512_vnni_matches_scalar::<4>();
-        avx512_vnni_matches_scalar::<8>();
+    fn test_kernels_match_scalar() {
+        kernels_match_scalar::<2, 2>();
+        kernels_match_scalar::<4, 2>();
+        kernels_match_scalar::<8, 1>();
+        kernels_match_scalar::<8, 2>();
     }
 
     /// Saturation safety at an extreme dim (64K) under the worst-case load:
@@ -689,31 +623,33 @@ mod tests {
     /// slot (all-ones bytes at every width).  The scalar reference is i64
     /// throughout; a SIMD mismatch proves some intermediate saturated or
     /// overflowed.
-    fn saturation_safety_64k<const PLANES: usize>() {
+    fn saturation_safety_64k<const PLANES: usize, const QUERY_BYTES: usize>() {
         let dim = 65_536;
-        let query = QuerySimd::<PLANES>::new(&vec![1.0_f32; dim]);
+        let query = QuerySimd::<PLANES, QUERY_BYTES>::new(&vec![1.0_f32; dim]);
         let vector = vec![0xFF_u8; dim / PLANES];
         let scalar = query.dotprod_raw(&vector);
+        let tag = format!("PLANES={PLANES} QUERY_BYTES={QUERY_BYTES}");
         unsafe {
             if has_sse() {
                 let sse = query.dotprod_raw_sse(&vector);
-                assert_eq!(scalar, sse, "PLANES={PLANES}: sse disagrees");
+                assert_eq!(scalar, sse, "{tag}: sse disagrees");
             }
             if std::is_x86_feature_detected!("avx2") {
                 let avx2 = query.dotprod_raw_avx2(&vector);
-                assert_eq!(scalar, avx2, "PLANES={PLANES}: avx2 disagrees");
+                assert_eq!(scalar, avx2, "{tag}: avx2 disagrees");
             }
             if has_avx512_vnni() {
                 let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
-                assert_eq!(scalar, vnni512, "PLANES={PLANES}: avx512_vnni disagrees");
+                assert_eq!(scalar, vnni512, "{tag}: avx512_vnni disagrees");
             }
         }
     }
 
     #[test]
     fn test_saturation_safety_64k() {
-        saturation_safety_64k::<2>();
-        saturation_safety_64k::<4>();
-        saturation_safety_64k::<8>();
+        saturation_safety_64k::<2, 2>();
+        saturation_safety_64k::<4, 2>();
+        saturation_safety_64k::<8, 1>();
+        saturation_safety_64k::<8, 2>();
     }
 }
