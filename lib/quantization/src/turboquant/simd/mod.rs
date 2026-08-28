@@ -4,8 +4,9 @@
 //!
 //! * [`Query{N}bitSimd`](query4bit::Query4bitSimd) — a rotation-applied query
 //!   precomputed for fast asymmetric scoring (original-query × PQ-vector).
-//!   `dotprod(vector)` dispatches at runtime to the best SIMD backend available
-//!   on the host CPU.
+//!   `dotprod(vector)` dispatches to the best SIMD backend available on the
+//!   host CPU.  The 4-bit width scores through the shared
+//!   [`query::QuerySimd`] kernels; the others still carry their own.
 //! * [`score_{N}bit_internal`](query4bit::score_4bit_internal) — dot product of
 //!   two already-encoded PQ vectors (symmetric scoring), same runtime dispatch.
 //!
@@ -80,6 +81,7 @@ impl SimdBackend {
 // `benches/turbo_simd.rs` target directly.  Every symbol here is consumed
 // either by `turboquant::quantization` inside the crate or by benches/
 // outside — narrowing them to `pub(crate)` would break the bench build.
+pub use query::QuerySimd;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use query1bit::score_1bit_internal_neon;
 pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scalar};
