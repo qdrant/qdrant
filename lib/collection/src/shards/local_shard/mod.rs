@@ -643,57 +643,79 @@ impl LocalShard {
             effective_optimizers_config.get_deferred_points_threshold_bytes(),
         );
 
-        for _sid in 0..segment_number {
-            let path_clone = segments_path.clone();
-            let segment_config = SegmentConfig {
-                vector_data: vector_params.clone(),
-                sparse_vector_data: sparse_vector_params.clone(),
-                payload_storage_type: config.params.payload_storage_type(),
-            };
-            let segment = thread::Builder::new()
-                .name(format!("shard-build-{collection_id}-{id}"))
-                .spawn(move || {
-                    build_segment(&path_clone, &segment_config, deferred_internal_id, true)
-                })
-                .unwrap();
-            build_handlers.push(segment);
-        }
-
-        let join_results = build_handlers
-            .into_iter()
-            .map(|handler| handler.join())
-            .collect_vec();
-
-        for join_result in join_results {
-            let (segment, _token) = join_result.map_err(|err| {
-                let message = panic::downcast_str(&err).unwrap_or("");
-                let separator = if !message.is_empty() { "with:\n" } else { "" };
-
-                CollectionError::service_error(format!(
-                    "Segment DB create panicked{separator}{message}",
-                ))
-            })??;
-
-            segment_holder.add_new(segment);
-        }
-
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(&wal_path, (&config.wal_config).into())?;
-
-        let optimizers = build_optimizers(
-            shard_path,
-            collection_config.clone(),
-            &config.params,
-            &effective_optimizers_config,
-            &config.hnsw_config,
-            &shared_storage_config.hnsw_global_config,
-            &config.quantization_config,
-        );
+        // Segment create (thread join) + WAL/manifest fsync are blocking; keep them off the
+        // async runtime that hosts collection meta-ops.
+        let wal_config = config.wal_config.clone();
+        let params = config.params.clone();
+        let hnsw_config = config.hnsw_config.clone();
+        let quantization_config = config.quantization_config.clone();
+        let hnsw_global_config = shared_storage_config.hnsw_global_config.clone();
+        let collection_config_for_optimizers = collection_config.clone();
+        let effective_optimizers_config_clone = effective_optimizers_config.clone();
+        let shard_path_owned = shard_path.to_path_buf();
+        let collection_id_for_build = collection_id.clone();
+        let payload_storage_type = config.params.payload_storage_type();
 
         drop(config); // release `shared_config` from borrow checker
 
-        // Finalize the holder, wiring up the segment manifest from the freshly populated set.
-        let segment_holder = segment_holder.build(shard_path)?;
+        let (segment_holder, wal, optimizers) = tokio::task::spawn_blocking(move || {
+            for _sid in 0..segment_number {
+                let path_clone = segments_path.clone();
+                let segment_config = SegmentConfig {
+                    vector_data: vector_params.clone(),
+                    sparse_vector_data: sparse_vector_params.clone(),
+                    payload_storage_type,
+                };
+                let segment = thread::Builder::new()
+                    .name(format!("shard-build-{collection_id_for_build}-{id}"))
+                    .spawn(move || {
+                        build_segment(&path_clone, &segment_config, deferred_internal_id, true)
+                    })
+                    .unwrap();
+                build_handlers.push(segment);
+            }
+
+            let join_results = build_handlers
+                .into_iter()
+                .map(|handler| handler.join())
+                .collect_vec();
+
+            for join_result in join_results {
+                let (segment, _token) = join_result.map_err(|err| {
+                    let message = panic::downcast_str(&err).unwrap_or("");
+                    let separator = if !message.is_empty() { "with:\n" } else { "" };
+
+                    CollectionError::service_error(format!(
+                        "Segment DB create panicked{separator}{message}",
+                    ))
+                })??;
+
+                segment_holder.add_new(segment);
+            }
+
+            let wal: SerdeWal<OperationWithClockTag> =
+                SerdeWal::new(&wal_path, (&wal_config).into())?;
+
+            let optimizers = build_optimizers(
+                &shard_path_owned,
+                collection_config_for_optimizers,
+                &params,
+                &effective_optimizers_config_clone,
+                &hnsw_config,
+                &hnsw_global_config,
+                &quantization_config,
+            );
+
+            // Finalize the holder, wiring up the segment manifest from the freshly populated set.
+            let segment_holder = segment_holder.build(&shard_path_owned)?;
+            Ok::<_, CollectionError>((segment_holder, wal, optimizers))
+        })
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "LocalShard::build blocking task panicked: {err}"
+            ))
+        })??;
 
         let local_shard = LocalShard::new(
             collection_id,

@@ -233,3 +233,170 @@ WHO ELSE WAS ON-CPU during this 12ms (per-tid census; ~10.1ms on-CPU per sample 
 ```
 
 </details>
+
+## spawn_blocking validation
+
+Moved blocking `fsync` / segment-build work off async update workers:
+- `optimization_worker`: `ensure_appendable_segment_with_capacity` + `sync_segment_manifest`
+- `update_worker`: `AppliedSeqHandler::update`
+- `LocalShard::build`: thread joins + WAL/manifest finalize
+
+Same workload as deep-dive: 200000 × 256d upload/index, cpu+sched profiling @ 199Hz.
+
+## spawn_blocking validation (dial9 cpu-profiling)
+
+| metric | before | after |
+|---|---:|---:|
+| critical long-polls | 1 | 1 |
+| warning long-polls | 6 | 0 |
+| diagnosed ON-CPU | 0 | 0 |
+| diagnosed OFF-CPU | 5 | 5 |
+| off-CPU `fsync` stack hits | 9 | 6 |
+| long polls spawned from `update_handler.rs` | 4 | 1 |
+
+### After — top spawn locations
+- 2× `lib/storage/src/dispatcher.rs:275:13`
+- 2× `lib/collection/src/collection/point_ops.rs:234:51`
+- 1× `lib/collection/src/update_handler.rs:197:58`
+
+### After — dominant off-CPU blockers
+- 6× `fsync`
+- 1× `__sched_yield`
+- 1× `syscall`
+
+### Verdict
+- **Improved**: fewer update-worker / `fsync` long-poll signals vs the pre-fix deep-dive.
+- Remaining OFF-CPU polls (if any) should be inspected; `epoll_wait` while awaiting `spawn_blocking` is expected and benign.
+
+<details><summary>After red-flag excerpt</summary>
+
+```
+
+=== Red Flag Scan: /tmp/dial9-spawn-blocking/traces ===
+Duration: 29706.0ms, 26 workers, 162924 events
+
+🟡 [blocking-calls] 41390 off-CPU samples detected. Top blocker: "syscall" (25899 samples)
+ℹ️ [kernel-sched-wait] Worker 8: 1 unparks with kernel sched wait > 1ms (worst: 1.0ms)
+ℹ️ [kernel-sched-wait] Worker 9: 1 unparks with kernel sched wait > 1ms (worst: 1.9ms)
+ℹ️ [kernel-sched-wait] Worker 12: 1 unparks with kernel sched wait > 1ms (worst: 1.0ms)
+ℹ️ [kernel-sched-wait] Worker 17: 1 unparks with kernel sched wait > 1ms (worst: 1.7ms)
+ℹ️ [kernel-sched-wait] Worker 19: 1 unparks with kernel sched wait > 1ms (worst: 1.1ms)
+ℹ️ [kernel-sched-wait] Worker 20: 2 unparks with kernel sched wait > 1ms (worst: 1.3ms)
+ℹ️ [kernel-sched-wait] Worker 23: 1 unparks with kernel sched wait > 1ms (worst: 2.8ms)
+
+0 critical, 1 warnings, 7 info
+
+=== Red Flag Scan: /tmp/dial9-spawn-blocking/traces ===
+Duration: 5459.0ms, 26 workers, 266 events
+
+🔴 [long-poll] Poll of 131.3ms on worker 12 at 5325.3ms (task 92, spawn: lib/collection/src/update_handler.rs:252:54)
+🟡 [blocking-calls] 72 off-CPU samples detected. Top blocker: "epoll_wait" (34 samples)
+
+1 critical, 1 warnings, 0 info
+```
+
+</details>
+
+<details><summary>After diagnose excerpt</summary>
+
+```
+poll distribution: p50=21µs p99=935µs max=8.90ms (46732 polls)
+threshold for "long": 2.81ms (3× p99, floor 1ms)
+
+══════════════════════════════════════════════════════════════════════
+LONG POLL  task=83  worker=20  dur=8.90ms (10× this runtime's p99)  [+2065.95 .. +2074.85]ms
+spawn: lib/storage/src/dispatcher.rs:275:13
+
+CLASSIFICATION: OFF-CPU (9 sched samples) — the worker was descheduled by the kernel inside this poll.
+Off-CPU sched stacks ARE present — read them directly (this is the blocking syscall/lock):
+  2× fsync < fs::File>::sync_all < CollectionVersion::save::{closure#0}> < CollectionVersion::save < TableOfContent>::create_collection::{closure#0} < TableOfContent>::perform_collection_meta_op::{closure#0} < {closure#3}>>::poll < current_thread::Handle>>>::poll < handle::Handle>>>::poll < worker::Context>::run_task < worker::Context>::run < run::{closure#0}::{closure#0},()>
+  2× fsync < fs::File>::sync_all < CollectionConfigInternal>::save::{closure#0}> < config::CollectionConfigInternal>::save < TableOfContent>::create_collection::{closure#0} < TableOfContent>::perform_collection_meta_op::{closure#0} < {closure#3}>>::poll < current_thread::Handle>>>::poll < handle::Handle>>>::poll < worker::Context>::run_task < worker::Context>::run < run::{closure#0}::{closure#0},()>
+  2× fsync < fs::File>::sync_all < path::PathBuf>::{closure#0}> < <&std::path::PathBuf> < set_replica_state::{closure#0}::{closure#0}> < ShardReplicaSet>::set_replica_state::{closure#0} < ShardReplicaSet>::ensure_replica_with_state::{closure#0} < Collection>::set_shard_replica_state::{closure#0} < TableOfContent>::create_collection::{closure#0} < TableOfContent>::perform_collection_meta_op::{closure#0} < {closure#3}>>::poll < current_thread::Handle>>>::poll
+
+WHO ELSE WAS ON-CPU during this 9ms (per-tid census; ~10.1ms on-CPU per sample at 99Hz; expected ≤0.9 samp/thread):
+  NOTE: poll is short relative to the sampling period — per-tid counts are noisy.
+        A thread on-CPU for the full window may still produce 0 samples. Treat absences as UNKNOWN.
+  *** UNKNOWN: no on-CPU samples, but the poll is too short for the sampler to confirm an idle box. ***
+  => Cannot distinguish "blocked off-box" from "sampler missed a brief on-CPU holder".
+     Re-run with --hz higher, or examine adjacent longer polls.
+
+══════════════════════════════════════════════════════════════════════
+LONG POLL  task=83  worker=20  dur=6.36ms (7× this runtime's p99)  [+2059.43 .. +2065.79]ms
+spawn: lib/storage/src/dispatcher.rs:275:13
+
+CLASSIFICATION: OFF-CPU (6 sched samples) — the worker was descheduled by the kernel inside this poll.
+Off-CPU sched stacks ARE present — read them directly (this is the blocking syscall/lock):
+  2× fsync < fs::File>::sync_all < path::PathBuf>::{closure#0}> < <&std::path::PathBuf> < build::{closure#0}::{closure#0}> < ShardReplicaSet>::build::{closure#0} < TableOfContent>::create_collection::{closure#0} < TableOfContent>::perform_collection_meta_op::{closure#0} < {closure#3}>>::poll < current_thread::Handle>>>::poll < handle::Handle>>>::poll < worker::Context>::run_task
+  2× fsync < fs::File>::sync_all < ShardConfig>::{closure#0}>::{closure#0}> < shard_config::ShardConfig>::{closure#0}> < shard_config::ShardConfig>::save < ShardReplicaSet>::build::{closure#0} < TableOfContent>::create_collection::{closure#0} < TableOfContent>::perform_collection_meta_op::{closure#0} < {closure#3}>>::poll < current_thread::Handle>>>::poll < handle::Handle>>>::poll < worker::Context>::run_task
+  1× fsync < fs::File>::sync_all < atomicwrites::imp::replace_atomic < path::PathBuf>::{closure#0}> < <&std::path::PathBuf> < build::{closure#0}::{closure#0}> < ShardReplicaSet>::build::{closure#0} < TableOfContent>::create_collection::{closure#0} < TableOfContent>::perform_collection_meta_op::{closure#0} < {closure#3}>>::poll < current_thread::Handle>>>::poll < handle::Handle>>>::poll
+
+WHO ELSE WAS ON-CPU during this 6ms (per-tid census; ~10.1ms on-CPU per sample at 99Hz; expected ≤0.6 samp/thread):
+  NOTE: poll is short relative to the sampling period — per-tid counts are noisy.
+        A thread on-CPU for the full window may still produce 0 samples. Treat absences as UNKNOWN.
+  *** UNKNOWN: no on-CPU samples, but the poll is too short for the sampler to confirm an idle box. ***
+  => Cannot distinguish "blocked off-box" from "sampler missed a brief on-CPU holder".
+     Re-run with --hz higher, or examine adjacent longer polls.
+
+══════════════════════════════════════════════════════════════════════
+LONG POLL  task=90  worker=10  dur=5.64ms (6× this runtime's p99)  [+5607.09 .. +5612.73]ms
+spawn: lib/collection/src/update_handler.rs:197:58
+
+CLASSIFICATION: OFF-CPU (1 sched samples) — the worker was descheduled by the kernel inside this poll.
+Off-CPU sched stacks ARE present — read them directly (this is the blocking syscall/lock):
+  1× __sched_yield < pool::Spawner>::spawn_task < common::operation_error::OperationError>> < UpdateWorkers>::optimization_worker_fn::{closure#0} < current_thread::Handle>>>::poll < handle::Handle>>>::poll < worker::Context>::run_task < worker::Context>::run < run::{closure#0}::{closure#0},()> < worker::run::{closure#0},()> < multi_thread::worker::run < {closure#0}>::poll
+
+WHO ELSE WAS ON-CPU during this 6ms (per-tid census; ~10.1ms on-CPU per sample at 99Hz; expected ≤0.6 samp/thread):
+  NOTE: poll is short relative to the sampling period — per-tid counts are noisy.
+        A thread on-CPU for the full window may still produce 0 samples. Treat absences as UNKNOWN.
+  tid=2517906: 2 samples ≈ 20ms on-CPU (100% of the poll)
+        {closure#0}>::{closure#0}>::{closure#0}> < GraphLayersBuilder>::link_with_heuristic::{closure#0}> < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>> < thread::ThreadRng>::{closure#13}>>
+  tid=2517910: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        spaces::simple_avx::dot_similarity_avx < DenseVectorStorageImpl<f32>>::score_internal < GraphLayersBuilder>::link_with_heuristic::{closure#0}> < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>>
+  tid=2517909: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        spaces::simple_avx::dot_similarity_avx < DenseVectorStorageImpl<f32>>::score_stored_batch::{closure#0}> < DenseVectorStorageImpl<f32>>>::score_points < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>>
+  tid=2517907: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        spaces::simple_avx::dot_similarity_avx < DenseVectorStorageImpl<f32>>::score_internal < GraphLayersBuilder>::link_with_heuristic::{closure#0}> < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>>
+  tid=2517908: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        spaces::simple_avx::dot_similarity_avx < DenseVectorStorageImpl<f32>>::score_stored_batch::{closure#0}> < DenseVectorStorageImpl<f32>>>::score_points < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>>
+
+══════════════════════════════════════════════════════════════════════
+LONG POLL  task=18905  worker=6  dur=5.58ms (6× this runtime's p99)  [+5277.42 .. +5283.01]ms
+spawn: lib/collection/src/collection/point_ops.rs:234:51
+
+CLASSIFICATION: OFF-CPU (no samples) — the worker was descheduled by the kernel inside this poll.
+
+WHO ELSE WAS ON-CPU during this 6ms (per-tid census; ~10.1ms on-CPU per sample at 99Hz; expected ≤0.6 samp/thread):
+  NOTE: poll is short relative to the sampling period — per-tid counts are noisy.
+        A thread on-CPU for the full window may still produce 0 samples. Treat absences as UNKNOWN.
+  tid=2517786: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        condvar::Condvar>::notify_one_slow < pool::Spawner>::spawn_task < common::operation_error::OperationError>> < UpdateWorkers>::optimization_worker_fn::{closure#0} < current_thread::Handle>>>::poll < handle::Handle>>>::poll
+  tid=2517854: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        ScoredPointOffset::partial_cmp < types::ScoredPointOffset>>::fill < graph_layers_builder::GraphLayersBuilder>::link_new_point < rngs::thread::ThreadRng> < rngs::thread::ThreadRng> < rngs::thread::ThreadRng>
+
+══════════════════════════════════════════════════════════════════════
+LONG POLL  task=19452  worker=8  dur=5.47ms (6× this runtime's p99)  [+5372.30 .. +5377.77]ms
+spawn: lib/collection/src/collection/point_ops.rs:234:51
+
+CLASSIFICATION: OFF-CPU (1 sched samples) — the worker was descheduled by the kernel inside this poll.
+Off-CPU sched stacks ARE present — read them directly (this is the blocking syscall/lock):
+  1× syscall < schedule_task::{closure#0}>::{closure#0}, ()> < schedule_task::{closure#0}>::{closure#0}> < Handle>::schedule < handle::Handle>>>::complete < handle::Handle>>>::poll < worker::Context>::run_task < worker::Context>::run < run::{closure#0}::{closure#0},()> < worker::run::{closure#0},()> < multi_thread::worker::run < {closure#0}>::poll
+
+WHO ELSE WAS ON-CPU during this 5ms (per-tid census; ~10.1ms on-CPU per sample at 99Hz; expected ≤0.5 samp/thread):
+  NOTE: poll is short relative to the sampling period — per-tid counts are noisy.
+        A thread on-CPU for the full window may still produce 0 samples. Treat absences as UNKNOWN.
+  tid=2517912: 2 samples ≈ 20ms on-CPU (100% of the poll)
+        spaces::simple_avx::dot_similarity_avx < DenseVectorStorageImpl<f32>>::score_stored_batch::{closure#0}> < DenseVectorStorageImpl<f32>>>::score_points < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>>
+  tid=2517907: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>> < thread::ThreadRng>::{closure#13}>> < operation_error::OperationError>>::{closure#0} < common::operation_error::OperationError>)>
+  tid=2517908: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>> < thread::ThreadRng>::{closure#13}>> < OperationError>>, <()::default>, <segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>>::{closure#1}>::{closure#0}, core::result::Result<(), segment::common::operation_error::OperationError>>>::run_inline < operation_error::OperationError>>::{closure#0}
+  tid=2517911: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        DenseVectorStorageImpl<f32>>::score_stored_batch::{closure#0}> < DenseVectorStorageImpl<f32>>>::score_points < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>> < thread::ThreadRng>::{closure#13}>>
+  tid=2517913: 1 samples ≈ 10ms on-CPU (100% of the poll)
+        <common::generic_consts::Random> < GraphLayersBuilder>::link_with_heuristic::{closure#0}> < graph_layers_builder::GraphLayersBuilder>::link_new_point < {closure#13}::call_mut < OperationError>>::consume_iter::<core::iter::adapters::map::Map<rayon::vec::SliceDrain<u32>, &<segment::index::hnsw_index::hnsw::HNSWIndex>::build<rand::rngs::thread::ThreadRng>::{closure#13}>> < thread::ThreadRng>::{closure#13}>>
+poll distribution: p50=76µs p99=131308µs max=131.31ms (67 polls)
+threshold for "long": 393.92ms (3× p99, floor 1ms)
+No polls >= 393.92ms.
+```
+
+</details>

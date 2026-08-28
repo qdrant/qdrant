@@ -109,14 +109,28 @@ impl UpdateWorkers {
             has_triggered_optimizers.store(true, Ordering::Relaxed);
 
             // Ensure we have at least one appendable segment with enough capacity
-            // Source required parameters from first optimizer
-            let result = Self::ensure_appendable_segment_with_capacity(
-                &segments,
-                some_optimizer.segments_path(),
-                some_optimizer.segment_optimizer_config(),
-                some_optimizer.threshold_config(),
-                payload_index_schema.clone(),
-            );
+            // Source required parameters from first optimizer.
+            // Disk I/O (segment create + manifest fsync) must not run on the async worker.
+            let segments_for_capacity = segments.clone();
+            let segments_path = some_optimizer.segments_path().to_path_buf();
+            let segment_config = some_optimizer.segment_optimizer_config().clone();
+            let thresholds_config = *some_optimizer.threshold_config();
+            let payload_index_schema_for_capacity = payload_index_schema.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                Self::ensure_appendable_segment_with_capacity(
+                    &segments_for_capacity,
+                    &segments_path,
+                    &segment_config,
+                    &thresholds_config,
+                    payload_index_schema_for_capacity,
+                )
+            })
+            .await
+            .unwrap_or_else(|err| {
+                Err(OperationError::service_error(format!(
+                    "ensure_appendable_segment_with_capacity task panicked: {err}"
+                )))
+            });
             if let Err(err) = result {
                 log::error!("Failed to ensure there are appendable segments with capacity: {err}");
                 panic!("Failed to ensure there are appendable segments with capacity: {err}");
@@ -125,8 +139,18 @@ impl UpdateWorkers {
             // Backstop: reconcile the segment manifest with the live segment set. Registration
             // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
             // the recovery path that picks up any registration that was skipped (e.g. an ignored
-            // token). No-op if already in sync.
-            if let Err(err) = segments.read().sync_segment_manifest(None) {
+            // token). No-op if already in sync. Manifest write uses fsync — keep it off the
+            // async worker.
+            let segments_for_sync = segments.clone();
+            if let Err(err) = tokio::task::spawn_blocking(move || {
+                segments_for_sync.read().sync_segment_manifest(None)
+            })
+            .await
+            .unwrap_or_else(|err| {
+                Err(OperationError::service_error(format!(
+                    "sync_segment_manifest task panicked: {err}"
+                )))
+            }) {
                 log::error!("Failed to write segment manifest: {err}");
             }
 

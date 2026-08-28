@@ -185,7 +185,17 @@ impl UpdateWorkers {
                         }
                     };
 
-                    if let Err(err) = applied_seq_handler.update(op_num) {
+                    // `AppliedSeqHandler::update` may fsync every APPLIED_SEQ_SAVE_INTERVAL ops.
+                    let applied_seq_handler = applied_seq_handler.clone();
+                    if let Err(err) =
+                        tokio::task::spawn_blocking(move || applied_seq_handler.update(op_num))
+                            .await
+                            .unwrap_or_else(|join_err| {
+                                Err(CollectionError::service_error(format!(
+                                    "applied_seq update task panicked: {join_err}"
+                                )))
+                            })
+                    {
                         log::error!("Can't update last applied_seq {err}")
                     }
 
