@@ -41,7 +41,7 @@ use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::HnswConfig;
 
-pub use self::action::Action;
+pub use self::action::{Action, CollectionConfigDiff};
 pub use self::state::ClusterState;
 use super::errors::StorageResult;
 use crate::content_manager::collection_meta_ops::*;
@@ -118,12 +118,20 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_create_collection(&self.context, operation))
             }
 
+            CollectionMetaOperations::UpdateCollection(operation) => {
+                // Replica changes have no planning function yet
+                if operation.has_shard_replica_changes() {
+                    ApplyOutcome::NotCovered
+                } else {
+                    ApplyOutcome::new(self.state.plan_update_collection(operation))
+                }
+            }
+
             CollectionMetaOperations::DeleteCollection(operation) => {
                 ApplyOutcome::Accepted(self.state.plan_delete_collection(operation))
             }
 
-            CollectionMetaOperations::UpdateCollection(_)
-            | CollectionMetaOperations::CreateShardKey(_)
+            CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_)
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _)

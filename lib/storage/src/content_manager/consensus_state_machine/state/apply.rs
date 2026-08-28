@@ -17,6 +17,18 @@ impl ClusterState {
                 self.collections.remove(collection);
             }
 
+            Action::UpdateCollectionConfig { collection, diff } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                // Planning validates using the same function, so it should never fail here
+                if let Err(err) = diff.apply(&mut state.config) {
+                    debug_assert!(false, "rejected config diff reached the state: {err}");
+                    log::error!("Failed to update config of {collection}: {err}");
+                }
+            }
+
             Action::AddNamedVector {
                 collection,
                 vector_name,

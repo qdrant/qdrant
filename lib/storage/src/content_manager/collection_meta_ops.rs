@@ -367,7 +367,7 @@ pub struct UpdateCollection {
 pub struct UpdateCollectionOperation {
     pub collection_name: String,
     pub update_collection: UpdateCollection,
-    shard_replica_changes: Option<Vec<replica_set::Change>>,
+    pub shard_replica_changes: Option<Vec<replica_set::Change>>,
 }
 
 impl UpdateCollectionOperation {
