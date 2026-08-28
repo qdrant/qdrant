@@ -42,7 +42,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
 
         // Pin the staged files before the writer can churn them: reload then
         // consumes ready handles and never races the filesystem.
-        fs.wait_all()?;
+        fs.wait_all();
         Ok(())
     }
 

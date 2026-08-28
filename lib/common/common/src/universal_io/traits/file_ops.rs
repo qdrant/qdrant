@@ -201,7 +201,7 @@ pub trait CachedReadFs: UniversalReadFs {
     fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Self::File>>);
 
     /// Wait for all scheduled files to resolve.
-    fn wait_all(&self) -> UioResult<()>;
+    fn wait_all(&self);
 
     /// Return the file info from the current snapshot.
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;

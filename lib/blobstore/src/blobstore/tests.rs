@@ -1932,7 +1932,7 @@ fn test_preopen_schedules_files_for_open(#[values(Mode::Mutable, Mode::AppendOnl
         Populate::No,
     )
     .unwrap();
-    cached_fs.wait_all().unwrap();
+    cached_fs.wait_all();
 
     // Delete everything `open` reads through the backend. The append-only tracker is read
     // directly from disk, not through the backend, so it must stay.

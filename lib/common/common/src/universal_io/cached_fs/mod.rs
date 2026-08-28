@@ -315,7 +315,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             .insert(path, ScheduledFile::Future(fut));
     }
 
-    fn wait_all(&self) -> UioResult<()> {
+    fn wait_all(&self) {
         let mut lock = self.files_prefetched.lock();
         let futs = lock
             .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
@@ -329,7 +329,6 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         for (path, result) in results {
             lock.insert(path, ScheduledFile::Ready(result));
         }
-        Ok(())
     }
 
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
