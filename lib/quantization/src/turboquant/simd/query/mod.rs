@@ -233,7 +233,9 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2 | SimdBackend::Sse => self.dotprod_raw(vector),
             #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-            SimdBackend::NeonSdot | SimdBackend::Neon => self.dotprod_raw(vector),
+            SimdBackend::NeonSdot => unsafe { self.dotprod_raw_neon_sdot(vector) },
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            SimdBackend::Neon => self.dotprod_raw(vector),
             SimdBackend::Scalar => self.dotprod_raw(vector),
         }
     }
@@ -265,6 +267,9 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
         low + encoding.query_high_coef * high
     }
 }
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+mod arm;
 
 #[cfg(target_arch = "x86_64")]
 mod x64;
