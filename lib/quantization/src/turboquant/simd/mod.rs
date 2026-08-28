@@ -5,8 +5,8 @@
 //! * [`Query{N}bitSimd`](query4bit::Query4bitSimd) — a rotation-applied query
 //!   precomputed for fast asymmetric scoring (original-query × PQ-vector).
 //!   `dotprod(vector)` dispatches to the best SIMD backend available on the
-//!   host CPU.  The 4-bit width scores through the shared
-//!   [`query::QuerySimd`] kernels; the others still carry their own.
+//!   host CPU.  The 2- and 4-bit widths score through the shared
+//!   [`query::QuerySimd`] kernels; the 1-bit width still carries its own.
 //! * [`score_{N}bit_internal`](query4bit::score_4bit_internal) — dot product of
 //!   two already-encoded PQ vectors (symmetric scoring), same runtime dispatch.
 //!
