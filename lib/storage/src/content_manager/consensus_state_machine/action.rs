@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use collection::collection_state;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
@@ -13,6 +14,11 @@ use crate::quota::QuotaConfig;
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
+    CreateCollection {
+        collection: CollectionId,
+        state: Box<collection_state::State>,
+    },
+
     AddNamedVector {
         collection: CollectionId,
         vector_name: VectorNameBuf,
@@ -67,7 +73,8 @@ impl Action {
     /// Collection this action changes, if it is scoped to one
     pub fn collection(&self) -> Option<&CollectionId> {
         match self {
-            Action::AddNamedVector { collection, .. }
+            Action::CreateCollection { collection, .. }
+            | Action::AddNamedVector { collection, .. }
             | Action::DropNamedVector { collection, .. }
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. } => Some(collection),

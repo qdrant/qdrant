@@ -9,6 +9,11 @@ impl ClusterState {
     /// Correct operation never emits one, so debug builds assert.
     pub fn apply_action(&mut self, action: &Action) {
         match action {
+            Action::CreateCollection { collection, state } => {
+                self.collections
+                    .insert(collection.clone(), (**state).clone());
+            }
+
             Action::AddNamedVector {
                 collection,
                 vector_name,
