@@ -10,6 +10,10 @@ use core::arch::x86_64::*;
 
 use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding};
 
+/// Packed data bytes per SSE block: one XMM of codes.
+const BLOCK_128: usize = 16;
+const _: () = assert!(PLANE_BLOCK.is_multiple_of(BLOCK_128));
+
 /// Packed data bytes per AVX2 block: one YMM of codes.
 const BLOCK_256: usize = 32;
 const _: () = assert!(PLANE_BLOCK.is_multiple_of(BLOCK_256));
@@ -27,6 +31,116 @@ const fn codebook<const PLANES: usize>() -> [Code; 16] {
 /// Mask of one code in the low bits of a byte.
 const fn code_mask<const PLANES: usize>() -> i8 {
     ((1u16 << (8 / PLANES)) - 1) as i8
+}
+
+/// One [`BLOCK_128`]-byte block of every query plane.
+#[derive(Clone, Copy)]
+struct QueryBlock128<const PLANES: usize> {
+    low: [__m128i; PLANES],
+    high: [__m128i; PLANES],
+}
+
+impl<const PLANES: usize> QueryBlock128<PLANES> {
+    /// # Safety
+    /// CPU must support `sse2`; `offset + BLOCK_128` must not exceed the
+    /// plane length.
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    unsafe fn load(planes: &QueryPlanes<PLANES>, offset: usize) -> Self {
+        let mut block = Self {
+            low: [_mm_setzero_si128(); PLANES],
+            high: [_mm_setzero_si128(); PLANES],
+        };
+        for (k, low) in block.low.iter_mut().enumerate() {
+            *low = unsafe { load_plane_128(&planes.low[k], offset) };
+        }
+        for (k, high) in block.high.iter_mut().enumerate() {
+            *high = unsafe { load_plane_128(&planes.high[k], offset) };
+        }
+        block
+    }
+}
+
+/// # Safety
+/// CPU must support `sse2`; `offset + BLOCK_128 <= plane.len()`.
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn load_plane_128(plane: &[i8], offset: usize) -> __m128i {
+    debug_assert!(offset + BLOCK_128 <= plane.len());
+    unsafe { _mm_loadu_si128(plane.as_ptr().add(offset).cast::<__m128i>()) }
+}
+
+/// [`next_plane_512`] on XMM.
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn next_plane_128<const PLANES: usize>(codes: __m128i) -> __m128i {
+    match PLANES {
+        2 => _mm_srli_epi16(codes, 4),
+        4 => _mm_srli_epi16(codes, 2),
+        _ => _mm_srli_epi16(codes, 1),
+    }
+}
+
+/// `maddubs → madd` accumulators of one vector; the 128-bit form of
+/// [`Acc256`], with the same integer bounds.
+#[derive(Clone, Copy)]
+struct Acc128 {
+    low: [__m128i; 2],
+    high: [__m128i; 2],
+}
+
+impl Acc128 {
+    /// # Safety
+    /// CPU must support `sse2`.
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    unsafe fn zero() -> Self {
+        let zero = _mm_setzero_si128();
+        Self {
+            low: [zero; 2],
+            high: [zero; 2],
+        }
+    }
+
+    /// Fold one block of packed `codes` (16 bytes) into the accumulators.
+    ///
+    /// # Safety
+    /// CPU must support `ssse3` and `sse4.1`.
+    #[inline]
+    #[target_feature(enable = "sse4.1,ssse3")]
+    unsafe fn accumulate<const PLANES: usize>(
+        &mut self,
+        codes: __m128i,
+        query: QueryBlock128<PLANES>,
+    ) {
+        let table = const { codebook::<PLANES>() };
+        let codebook = unsafe { _mm_loadu_si128(table.as_ptr().cast::<__m128i>()) };
+        let mask = _mm_set1_epi8(const { code_mask::<PLANES>() });
+        let ones = _mm_set1_epi16(1);
+        let mut shifted = codes;
+        for k in 0..PLANES {
+            let values = _mm_shuffle_epi8(codebook, _mm_and_si128(shifted, mask));
+            let dot = |acc: __m128i, query: __m128i| {
+                _mm_add_epi32(acc, _mm_madd_epi16(_mm_maddubs_epi16(values, query), ones))
+            };
+            self.low[k & 1] = dot(self.low[k & 1], query.low[k]);
+            self.high[k & 1] = dot(self.high[k & 1], query.high[k]);
+            shifted = unsafe { next_plane_128::<PLANES>(shifted) };
+        }
+    }
+
+    /// Per-lane `(low, high)` query-half totals.
+    ///
+    /// # Safety
+    /// CPU must support `sse2`.
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    unsafe fn fold(self) -> (__m128i, __m128i) {
+        (
+            _mm_add_epi32(self.low[0], self.low[1]),
+            _mm_add_epi32(self.high[0], self.high[1]),
+        )
+    }
 }
 
 /// One [`BLOCK_256`]-byte block of every query plane.
@@ -269,6 +383,61 @@ impl Acc512 {
 }
 
 impl<const PLANES: usize> QuerySimd<PLANES> {
+    /// x86_64 SSE4.1 + SSSE3 over the query planes: one XMM of packed codes
+    /// per block, the 128-bit form of the AVX2 kernel.
+    ///
+    /// # Safety
+    /// CPU must support `ssse3` and `sse4.1`.
+    #[target_feature(enable = "sse4.1,ssse3")]
+    pub unsafe fn dotprod_raw_sse(&self, vector: &[u8]) -> i64 {
+        assert_eq!(
+            vector.len(),
+            self.vector_bytes,
+            "QuerySimd<{PLANES}>::dotprod_raw_sse: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.vector_bytes,
+        );
+
+        unsafe {
+            let (low, high) = self.accumulate_sse(vector.as_ptr()).fold();
+            i64::from(hsum_i32_sse(low))
+                + Self::ENCODING.query_high_coef * i64::from(hsum_i32_sse(high))
+        }
+    }
+
+    /// Block loop of the SSE kernels over the vector at `data`.
+    ///
+    /// # Safety
+    /// CPU must support `ssse3` and `sse4.1`; `data` must be readable for
+    /// `self.vector_bytes` bytes.
+    #[inline]
+    #[target_feature(enable = "sse4.1,ssse3")]
+    unsafe fn accumulate_sse(&self, data: *const u8) -> Acc128 {
+        unsafe {
+            let mut acc = Acc128::zero();
+
+            let full_blocks = self.vector_bytes / BLOCK_128;
+            for block in 0..full_blocks {
+                let offset = block * BLOCK_128;
+                let query = QueryBlock128::load(&self.planes, offset);
+                let codes = _mm_loadu_si128(data.add(offset).cast::<__m128i>());
+                acc.accumulate(codes, query);
+            }
+
+            let tail = self.vector_bytes % BLOCK_128;
+            if tail > 0 {
+                let offset = full_blocks * BLOCK_128;
+                let query = QueryBlock128::load(&self.planes, offset);
+                let mut block = [0u8; BLOCK_128];
+                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                let codes = _mm_loadu_si128(block.as_ptr().cast::<__m128i>());
+                acc.accumulate(codes, query);
+            }
+
+            acc
+        }
+    }
+
     /// x86_64 AVX2 over the query planes: one YMM of packed codes per
     /// block, one `vpshufb` codebook lookup per plane and `maddubs → madd`
     /// products into independent accumulators (see [`Acc256`]).  The last
@@ -430,6 +599,35 @@ mod tests {
     use super::super::QuerySimd;
     use super::super::shared::{parity_dims, random_inputs};
 
+    fn has_sse() -> bool {
+        std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1")
+    }
+
+    /// The SSE kernel must reproduce the scalar reference bit-exactly at
+    /// every parity dim of every width.
+    fn sse_matches_scalar<const PLANES: usize>() {
+        let mut rng = StdRng::seed_from_u64(7);
+        for dim in parity_dims::<PLANES>() {
+            let (query, vector) = random_inputs::<PLANES>(&mut rng, dim);
+            let scalar = query.dotprod_raw(&vector);
+            let sse = unsafe { query.dotprod_raw_sse(&vector) };
+            assert_eq!(
+                scalar, sse,
+                "PLANES={PLANES} dim={dim}: scalar {scalar} != sse {sse}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sse_matches_scalar() {
+        if !has_sse() {
+            return;
+        }
+        sse_matches_scalar::<2>();
+        sse_matches_scalar::<4>();
+        sse_matches_scalar::<8>();
+    }
+
     /// The AVX2 kernel must reproduce the scalar reference bit-exactly at
     /// every parity dim of every width.
     fn avx2_matches_scalar<const PLANES: usize>() {
@@ -497,6 +695,10 @@ mod tests {
         let vector = vec![0xFF_u8; dim / PLANES];
         let scalar = query.dotprod_raw(&vector);
         unsafe {
+            if has_sse() {
+                let sse = query.dotprod_raw_sse(&vector);
+                assert_eq!(scalar, sse, "PLANES={PLANES}: sse disagrees");
+            }
             if std::is_x86_feature_detected!("avx2") {
                 let avx2 = query.dotprod_raw_avx2(&vector);
                 assert_eq!(scalar, avx2, "PLANES={PLANES}: avx2 disagrees");

@@ -105,6 +105,16 @@ unsafe fn sdot(mut acc: int32x4_t, a: int8x16_t, b: int8x16_t) -> int32x4_t {
     acc
 }
 
+/// `acc[lane] += Σ₄ a · b` without `dotprod`: widening i8 multiplies
+/// (`vmull_s8`, exact in i16) pairwise-added into the i32 lanes
+/// (`vpadalq_s16`).  Same per-lane bound as [`sdot`].
+#[inline]
+#[target_feature(enable = "neon")]
+fn mul_add(acc: int32x4_t, a: int8x16_t, b: int8x16_t) -> int32x4_t {
+    let acc = vpadalq_s16(acc, vmull_s8(vget_low_s8(a), vget_low_s8(b)));
+    vpadalq_s16(acc, vmull_high_s8(a, b))
+}
+
 /// i32 accumulators of one vector: two independent low/high chains, plane
 /// `k` feeding pair `k & 1`, which keeps the multiply-accumulate latency
 /// off the critical path at every width.
@@ -150,6 +160,23 @@ impl Acc128 {
         }
     }
 
+    /// [`Self::accumulate_sdot`] for CPUs without `dotprod`.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    fn accumulate_mull<const PLANES: usize>(
+        &mut self,
+        codes: uint8x16_t,
+        query: QueryBlock128<PLANES>,
+    ) {
+        let mut shifted = codes;
+        for k in 0..PLANES {
+            let values = lookup_codes::<PLANES>(shifted);
+            self.low[k & 1] = mul_add(self.low[k & 1], values, query.low[k]);
+            self.high[k & 1] = mul_add(self.high[k & 1], values, query.high[k]);
+            shifted = next_plane_128::<PLANES>(shifted);
+        }
+    }
+
     /// Per-lane `(low, high)` query-half totals.
     #[inline]
     #[target_feature(enable = "neon")]
@@ -162,6 +189,55 @@ impl Acc128 {
 }
 
 impl<const PLANES: usize> QuerySimd<PLANES> {
+    /// ARM NEON over the query planes for CPUs without `dotprod`: the
+    /// [`Self::dotprod_raw_neon_sdot`] block loop with `vmull_s8 →
+    /// vpadalq_s16` in place of `SDOT`.
+    ///
+    /// # Safety
+    /// CPU must support the `neon` feature (always true on aarch64).
+    #[target_feature(enable = "neon")]
+    pub unsafe fn dotprod_raw_neon(&self, vector: &[u8]) -> i64 {
+        assert_eq!(
+            vector.len(),
+            self.vector_bytes,
+            "QuerySimd<{PLANES}>::dotprod_raw_neon: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.vector_bytes,
+        );
+
+        unsafe { Self::reduce_neon(self.accumulate_neon(vector.as_ptr())) }
+    }
+
+    /// [`Self::accumulate_neon_sdot`] for CPUs without `dotprod`.
+    ///
+    /// # Safety
+    /// `data` must be readable for `self.vector_bytes` bytes.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    unsafe fn accumulate_neon(&self, data: *const u8) -> Acc128 {
+        unsafe {
+            let mut acc = Acc128::zero();
+
+            let full_blocks = self.vector_bytes / BLOCK_128;
+            for block in 0..full_blocks {
+                let offset = block * BLOCK_128;
+                let query = QueryBlock128::load(&self.planes, offset);
+                acc.accumulate_mull(vld1q_u8(data.add(offset)), query);
+            }
+
+            let tail = self.vector_bytes % BLOCK_128;
+            if tail > 0 {
+                let offset = full_blocks * BLOCK_128;
+                let query = QueryBlock128::load(&self.planes, offset);
+                let mut block = [0u8; BLOCK_128];
+                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                acc.accumulate_mull(vld1q_u8(block.as_ptr()), query);
+            }
+
+            acc
+        }
+    }
+
     /// ARMv8.2-A Dot Product variant over the query planes: one 128-bit
     /// register of packed codes per block, one `TBL` codebook lookup per
     /// plane and `SDOT` into independent accumulators (see [`Acc128`]).
@@ -232,8 +308,30 @@ mod tests {
     use super::super::QuerySimd;
     use super::super::shared::{parity_dims, random_inputs};
 
-    /// The kernel must reproduce the scalar reference bit-exactly at every
-    /// parity dim of every width.
+    /// The plain NEON kernel must reproduce the scalar reference bit-exactly
+    /// at every parity dim of every width.
+    fn neon_matches_scalar<const PLANES: usize>() {
+        let mut rng = StdRng::seed_from_u64(7);
+        for dim in parity_dims::<PLANES>() {
+            let (query, vector) = random_inputs::<PLANES>(&mut rng, dim);
+            let scalar = query.dotprod_raw(&vector);
+            let neon = unsafe { query.dotprod_raw_neon(&vector) };
+            assert_eq!(
+                scalar, neon,
+                "PLANES={PLANES} dim={dim}: scalar {scalar} != neon {neon}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_neon_matches_scalar() {
+        neon_matches_scalar::<2>();
+        neon_matches_scalar::<4>();
+        neon_matches_scalar::<8>();
+    }
+
+    /// The SDOT kernel must reproduce the scalar reference bit-exactly at
+    /// every parity dim of every width.
     fn neon_sdot_matches_scalar<const PLANES: usize>() {
         let mut rng = StdRng::seed_from_u64(7);
         for dim in parity_dims::<PLANES>() {
@@ -267,15 +365,19 @@ mod tests {
         let query = QuerySimd::<PLANES>::new(&vec![1.0_f32; dim]);
         let vector = vec![0xFF_u8; dim / PLANES];
         let scalar = query.dotprod_raw(&vector);
-        let sdot = unsafe { query.dotprod_raw_neon_sdot(&vector) };
-        assert_eq!(scalar, sdot, "PLANES={PLANES}: sdot disagrees");
+        unsafe {
+            let neon = query.dotprod_raw_neon(&vector);
+            assert_eq!(scalar, neon, "PLANES={PLANES}: neon disagrees");
+
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                let sdot = query.dotprod_raw_neon_sdot(&vector);
+                assert_eq!(scalar, sdot, "PLANES={PLANES}: sdot disagrees");
+            }
+        }
     }
 
     #[test]
     fn test_saturation_safety_64k() {
-        if !std::arch::is_aarch64_feature_detected!("dotprod") {
-            return;
-        }
         saturation_safety_64k::<2>();
         saturation_safety_64k::<4>();
         saturation_safety_64k::<8>();
