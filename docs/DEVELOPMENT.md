@@ -245,6 +245,20 @@ that can be enabled with optional features.
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
   - this is required (and enabled automatically) by the `console` feature
   - but you can enable it explicitly with the `tracy` feature, to see Tokio traces in [`Tracy`] profiler
+- `dial9` feature enables [dial9](https://github.com/dial9-rs/dial9) Tokio telemetry
+  - attaches dial9 runtime hooks to Qdrant's storage Tokio runtimes (`general`, `update`, `search-cpu`, `search-io`)
+  - recording is **off by default**; set `DIAL9_ENABLED=true` at runtime to start writing traces
+  - useful env knobs: `DIAL9_TRACE_DIR` (default `/tmp/dial9-traces`), `DIAL9_MAX_DISK_USAGE_MB`, `DIAL9_ROTATION_SECS`, `DIAL9_TASK_TRACKING_ENABLED`
+  - for full Tokio task spawn/terminate coverage, also pass `--cfg tokio_unstable` (same as `console`)
+  - view traces with the dial9 viewer: <https://dial9-tokio-telemetry.netlify.app/> or `cargo install dial9 --features cli`
+
+```console
+# Build with dial9 support (perf profile: release opts, no LTO)
+$ cargo build --profile perf --features dial9
+
+# Run with telemetry recording enabled
+$ DIAL9_ENABLED=true DIAL9_TRACE_DIR=/tmp/qdrant-dial9 ./target/perf/qdrant
+```
 
 Qdrant code is **not** instrumented by default, so you'll have to manually add `#[tracing::instrument]` attributes
 on functions and methods that you want to profile.
