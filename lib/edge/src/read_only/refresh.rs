@@ -161,12 +161,23 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
         // Done in 2 steps: preload -> reload, so that we can avoid locking when prefetching.
-        self.search_pool.install(|| {
-            survivors.par_iter().for_each(|(uuid, segment)| {
-                let _ = segment.read().live_preload().inspect_err(|err| {
-                    log::warn!("live_preload of segment {uuid} failed: {err}");
-                });
-            });
+        let io_futures = self.search_pool.install(|| {
+            survivors
+                .par_iter()
+                .filter_map(|(uuid, segment)| match segment.read().live_preload() {
+                    Ok(future) => Some(future),
+                    Err(err) => {
+                        // Error when preloading is considered benign.
+                        log::warn!("live_preload of segment {uuid} failed: {err}");
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+
+        // Wait for all preload futures to complete
+        futures::executor::block_on(async {
+            futures::future::join_all(io_futures).await;
         });
 
         let reloads: Vec<_> = survivors

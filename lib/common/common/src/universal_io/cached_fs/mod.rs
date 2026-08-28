@@ -315,9 +315,10 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             .insert(path, ScheduledFile::Future(fut));
     }
 
-    async fn wait_all(&self) {
-        let futs = self
-            .files_prefetched
+    fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Fs> {
+        let files_prefetched = Arc::clone(&self.files_prefetched);
+
+        let futs = files_prefetched
             .lock()
             .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
             .filter_map(|(path, scheduled)| match scheduled {
@@ -326,10 +327,12 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             })
             .collect::<FuturesUnordered<_>>();
 
-        let results = futs.collect::<Vec<_>>().await;
-        let mut lock = self.files_prefetched.lock();
-        for (path, result) in results {
-            lock.insert(path, ScheduledFile::Ready(result));
+        async move {
+            let results = futs.collect::<Vec<_>>().await;
+            let mut lock = files_prefetched.lock();
+            for (path, result) in results {
+                lock.insert(path, ScheduledFile::Ready(result));
+            }
         }
     }
 
