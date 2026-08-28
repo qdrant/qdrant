@@ -99,7 +99,36 @@ pub fn unwrap_proxy(
     segments: &LockedSegmentHolder,
     proxy_ids: &[SegmentId],
 ) -> OperationResult<()> {
-    let mut segments_lock = segments.write();
+    // Proxied changes (deleted points, index and vector-name changes) must be propagated into the
+    // wrapped segments before those go back into the holder, exactly like `unproxy_all_segments`
+    // does for snapshots. Otherwise every point deleted or overwritten while the optimization was
+    // running keeps its pre-optimization copy in the wrapped segment, next to the new copy in the
+    // write segment, and reads see both.
+    //
+    // Lock order is holder-then-updates, matching `try_unproxy_segment`: taking the updates lock
+    // first and then the holder write lock deadlocks against the snapshot path, which holds an
+    // upgradable read on the holder while it waits for the updates lock. The upgradable read does
+    // not block concurrent readers, and holding the updates lock across propagate + replace keeps
+    // an update from recording a deletion on the proxy that would then be dropped with it.
+    let segments_lock = segments.upgradable_read();
+    let _update_guard = segments.acquire_updates_lock();
+
+    let proxies: Vec<_> = proxy_ids
+        .iter()
+        .filter_map(|&proxy_id| match segments_lock.get(proxy_id).cloned() {
+            Some(LockedSegment::Proxy(proxy_segment)) => Some((proxy_id, proxy_segment)),
+            _ => None,
+        })
+        .collect();
+    for (proxy_id, proxy_segment) in &proxies {
+        if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+            log::error!(
+                "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
+            );
+        }
+    }
+
+    let mut segments_lock = RwLockUpgradableReadGuard::upgrade(segments_lock);
     for &proxy_id in proxy_ids {
         if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
             let locked_proxy_segment = proxy_segment_ref.clone();
@@ -949,4 +978,58 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     timer.set_success(true);
 
     Ok(OptimizationResult { points_count })
+}
+
+#[cfg(test)]
+mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::DeferredBehavior;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::fixtures::build_segment_1;
+    use crate::proxy_segment::ProxySegment;
+    use crate::segment_holder::SegmentHolder;
+
+    /// A cancelled optimization puts the wrapped segments back into the holder, so the deletions
+    /// recorded on the proxy while the optimization ran must reach the wrapped segment first.
+    /// Without that, the point's pre-optimization copy stays live next to whatever the write
+    /// segment holds for it, and reads see both.
+    #[test]
+    fn unwrap_proxy_propagates_deletes_to_wrapped_segment() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        // Wrap it the way an optimization does, then delete a point through the proxy: the
+        // deletion is recorded on the proxy, the wrapped segment still has the point.
+        let mut proxy = ProxySegment::new(wrapped.clone());
+        proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
+        let holder = LockedSegmentHolder::new(holder);
+        holder
+            .write()
+            .replace(segment_id, LockedSegment::from(proxy))
+            .unwrap();
+        assert!(
+            wrapped
+                .get()
+                .read()
+                .has_point(1.into(), DeferredBehavior::WithDeferred),
+            "wrapped segment should still hold the point while proxied",
+        );
+
+        unwrap_proxy(&holder, &[segment_id]).unwrap();
+
+        assert!(
+            !wrapped
+                .get()
+                .read()
+                .has_point(1.into(), DeferredBehavior::WithDeferred),
+            "deletion recorded on the proxy must reach the wrapped segment before it goes back \
+             into the holder",
+        );
+    }
 }
