@@ -6,6 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
+use segment::pending_changes::PersistedProxyChanges;
 use segment::types::{
     Distance, MultiVectorConfig, PayloadFieldSchema, PayloadSchemaType, PointIdType, RawPayload,
     WithPayload, WithVector,
@@ -133,6 +134,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         payload_index_schema.clone(),
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -165,6 +167,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
@@ -272,6 +275,7 @@ async fn test_partial_flush_recovery() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
@@ -557,6 +561,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         shared_storage_config,
         payload_index_schema,
         false,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -712,6 +717,7 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
         shared_storage_config,
         payload_index_schema,
         false,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -843,6 +849,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
         shared_storage_config,
         payload_index_schema,
         false,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -990,6 +997,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
         shared_storage_config,
         payload_index_schema,
         false,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -1135,6 +1143,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         Arc::new(shared_storage_config),
         payload_index_schema,
         false,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -1316,6 +1325,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -1438,6 +1448,7 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -1546,6 +1557,7 @@ async fn assert_bad_op_skipped_on_wal_replay(
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime,
         current_runtime.clone(),
         ResourceBudget::default(),
@@ -1893,6 +1905,37 @@ async fn test_proxy_pending_changes_crash_recovery() {
         );
     }
 
+    // Loading while ignoring persisted proxy changes, as partial snapshot recovery does, must
+    // leave the segments and the logs untouched: the first delete is not replayed (and no longer
+    // in the WAL), only the second one comes back through the always replayed last WAL entry
+    let shard = LocalShard::load(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        false,
+        PersistedProxyChanges::Ignore,
+        update_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+    )
+    .await
+    .unwrap();
+    let points_count = shard.info().await.unwrap().points_count.unwrap_or(0);
+    assert_eq!(
+        points_count as u64,
+        total_points - 1,
+        "ignored persisted proxy changes must not be replayed",
+    );
+    assert!(
+        has_pending_changes_log(&segments_path),
+        "ignored pending changes logs must stay in place",
+    );
+    shard.stop_gracefully().await;
+
     // "Restart": the delete is not in the WAL anymore, it must be recovered from the pending
     // changes logs
     let shard = LocalShard::load(
@@ -1904,6 +1947,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
         Arc::new(Default::default()),
         payload_index_schema,
         false,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),

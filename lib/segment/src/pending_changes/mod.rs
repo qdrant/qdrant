@@ -427,17 +427,10 @@ where
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PersistedProxyChanges {
     /// Replay all persisted pending proxy changes onto the segment and remove their log files.
-    ///
-    /// The default: on a regular load this recovers the buffered state of proxies that did not
-    /// propagate it into the segment before the process stopped.
     #[default]
     Replay,
     /// Do not replay persisted pending proxy changes, leave the segment and the log files
     /// untouched.
-    ///
-    /// For segment files that mirror those of another writer, such as a partial snapshot
-    /// recovered from it: replaying would mutate the segment files and remove the logs, making
-    /// the local copy diverge from what the writer's manifest describes.
     Ignore,
 }
 

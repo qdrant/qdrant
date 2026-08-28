@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
+use segment::pending_changes::PersistedProxyChanges;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -96,6 +97,7 @@ async fn test_fix_payload_indices() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),

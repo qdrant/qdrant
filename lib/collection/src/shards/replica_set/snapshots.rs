@@ -337,6 +337,7 @@ impl ShardReplicaSet {
                 self.shared_storage_config.clone(),
                 self.payload_index_schema.clone(),
                 recovery_type.is_full(),
+                recovery_type.persisted_proxy_changes(),
                 self.update_runtime.clone(),
                 self.search_runtime.clone(),
                 self.optimizer_resource_budget.clone(),
