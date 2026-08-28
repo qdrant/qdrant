@@ -229,7 +229,9 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     fn dotprod_raw_best(&self, vector: &[u8]) -> i64 {
         match self.backend {
             #[cfg(target_arch = "x86_64")]
-            SimdBackend::Avx512Vnni | SimdBackend::Avx2 | SimdBackend::Sse => self.dotprod_raw(vector),
+            SimdBackend::Avx512Vnni => unsafe { self.dotprod_raw_avx512_vnni(vector) },
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx2 | SimdBackend::Sse => self.dotprod_raw(vector),
             #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
             SimdBackend::NeonSdot | SimdBackend::Neon => self.dotprod_raw(vector),
             SimdBackend::Scalar => self.dotprod_raw(vector),
@@ -261,6 +263,47 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
             }
         }
         low + encoding.query_high_coef * high
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod x64;
+
+/// Test helpers shared by the kernel parity tests of every backend.
+#[cfg(test)]
+pub(crate) mod shared {
+    use rand::prelude::StdRng;
+
+    use super::super::shared::{random_bytes, sample_normal_vec};
+    use super::QuerySimd;
+
+    /// Corner-case vector lengths (packed bytes) for the block loops of
+    /// every backend — blocks of 16 (SSE, NEON), 32 (AVX2) and 64 (AVX-512)
+    /// bytes, with the last partial block padded or masked:
+    ///   • `16, 64, 128, 512, 1024` — whole blocks only, at every width.
+    ///   • `1` — a single data byte.
+    ///   • `15, 31, 63` — one byte short of a 16-, 32- and 64-byte block;
+    ///     `65` — one byte past a 64-byte block.
+    ///   • `8, 9, 23, 24, 135, 513, 1023` — assorted partial blocks,
+    ///     including a realistic matryoshka slice.
+    pub const PARITY_BYTES: &[usize] = &[
+        1, 8, 9, 15, 16, 23, 24, 31, 63, 64, 65, 128, 135, 512, 513, 1023, 1024,
+    ];
+
+    /// The dims of [`PARITY_BYTES`] at a width packing `PLANES` codes per
+    /// byte.
+    pub fn parity_dims<const PLANES: usize>() -> impl Iterator<Item = usize> {
+        PARITY_BYTES.iter().map(move |&bytes| bytes * PLANES)
+    }
+
+    /// Parity-test inputs: a query ~ N(0, 1) and a vector of uniformly
+    /// random codes (random bytes are random packed codes at every width).
+    pub fn random_inputs<const PLANES: usize>(
+        rng: &mut StdRng,
+        dim: usize,
+    ) -> (QuerySimd<PLANES>, Vec<u8>) {
+        let query = sample_normal_vec(rng, dim);
+        (QuerySimd::new(&query), random_bytes(rng, dim / PLANES))
     }
 }
 
