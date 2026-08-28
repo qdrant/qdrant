@@ -10,6 +10,10 @@ use core::arch::x86_64::*;
 
 use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding};
 
+/// Packed data bytes per AVX2 block: one YMM of codes.
+const BLOCK_256: usize = 32;
+const _: () = assert!(PLANE_BLOCK.is_multiple_of(BLOCK_256));
+
 /// Packed data bytes per AVX-512 block: one ZMM of codes.
 const BLOCK_512: usize = 64;
 const _: () = assert!(PLANE_BLOCK.is_multiple_of(BLOCK_512));
@@ -23,6 +27,127 @@ const fn codebook<const PLANES: usize>() -> [Code; 16] {
 /// Mask of one code in the low bits of a byte.
 const fn code_mask<const PLANES: usize>() -> i8 {
     ((1u16 << (8 / PLANES)) - 1) as i8
+}
+
+/// One [`BLOCK_256`]-byte block of every query plane.
+#[derive(Clone, Copy)]
+struct QueryBlock256<const PLANES: usize> {
+    low: [__m256i; PLANES],
+    high: [__m256i; PLANES],
+}
+
+impl<const PLANES: usize> QueryBlock256<PLANES> {
+    /// # Safety
+    /// CPU must support `avx2`; `offset + BLOCK_256` must not exceed the
+    /// plane length.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn load(planes: &QueryPlanes<PLANES>, offset: usize) -> Self {
+        let mut block = Self {
+            low: [_mm256_setzero_si256(); PLANES],
+            high: [_mm256_setzero_si256(); PLANES],
+        };
+        for (k, low) in block.low.iter_mut().enumerate() {
+            *low = unsafe { load_plane_256(&planes.low[k], offset) };
+        }
+        for (k, high) in block.high.iter_mut().enumerate() {
+            *high = unsafe { load_plane_256(&planes.high[k], offset) };
+        }
+        block
+    }
+}
+
+/// # Safety
+/// CPU must support `avx2`; `offset + BLOCK_256 <= plane.len()`.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn load_plane_256(plane: &[i8], offset: usize) -> __m256i {
+    debug_assert!(offset + BLOCK_256 <= plane.len());
+    unsafe { _mm256_loadu_si256(plane.as_ptr().add(offset).cast::<__m256i>()) }
+}
+
+/// [`next_plane_512`] on YMM.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn next_plane_256<const PLANES: usize>(codes: __m256i) -> __m256i {
+    match PLANES {
+        2 => _mm256_srli_epi16(codes, 4),
+        4 => _mm256_srli_epi16(codes, 2),
+        _ => _mm256_srli_epi16(codes, 1),
+    }
+}
+
+/// `maddubs → madd` accumulators of one vector; the same two-pair shape as
+/// [`Acc512`].
+///
+/// The `maddubs` pair sums stay inside i16 by the module-level query bound
+/// (`|pair| ≤ 2 · 255 · 64 = 32 640`, or exactly `2 · 128 · 128 = 32 768`
+/// at the negative end for the 1-bit encoding); `madd` against ones then
+/// adds at most 65 280 (65 536) per i32 lane per plane, the same bound as
+/// VNNI.
+#[derive(Clone, Copy)]
+struct Acc256 {
+    low: [__m256i; 2],
+    high: [__m256i; 2],
+}
+
+impl Acc256 {
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn zero() -> Self {
+        let zero = _mm256_setzero_si256();
+        Self {
+            low: [zero; 2],
+            high: [zero; 2],
+        }
+    }
+
+    /// Fold one block of packed `codes` (32 bytes) into the accumulators.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn accumulate<const PLANES: usize>(
+        &mut self,
+        codes: __m256i,
+        query: QueryBlock256<PLANES>,
+    ) {
+        let table = const { codebook::<PLANES>() };
+        let codebook = _mm256_broadcastsi128_si256(unsafe {
+            _mm_loadu_si128(table.as_ptr().cast::<__m128i>())
+        });
+        let mask = _mm256_set1_epi8(const { code_mask::<PLANES>() });
+        let ones = _mm256_set1_epi16(1);
+        let mut shifted = codes;
+        for k in 0..PLANES {
+            let values = _mm256_shuffle_epi8(codebook, _mm256_and_si256(shifted, mask));
+            let dot = |acc: __m256i, query: __m256i| {
+                _mm256_add_epi32(
+                    acc,
+                    _mm256_madd_epi16(_mm256_maddubs_epi16(values, query), ones),
+                )
+            };
+            self.low[k & 1] = dot(self.low[k & 1], query.low[k]);
+            self.high[k & 1] = dot(self.high[k & 1], query.high[k]);
+            shifted = unsafe { next_plane_256::<PLANES>(shifted) };
+        }
+    }
+
+    /// Per-lane `(low, high)` query-half totals.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn fold(self) -> (__m256i, __m256i) {
+        (
+            _mm256_add_epi32(self.low[0], self.low[1]),
+            _mm256_add_epi32(self.high[0], self.high[1]),
+        )
+    }
 }
 
 /// One [`BLOCK_512`]-byte block of every query plane.
@@ -144,6 +269,73 @@ impl Acc512 {
 }
 
 impl<const PLANES: usize> QuerySimd<PLANES> {
+    /// x86_64 AVX2 over the query planes: one YMM of packed codes per
+    /// block, one `vpshufb` codebook lookup per plane and `maddubs → madd`
+    /// products into independent accumulators (see [`Acc256`]).  The last
+    /// partial block runs on a zero-padded copy of the remaining bytes.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn dotprod_raw_avx2(&self, vector: &[u8]) -> i64 {
+        assert_eq!(
+            vector.len(),
+            self.vector_bytes,
+            "QuerySimd<{PLANES}>::dotprod_raw_avx2: vector length mismatch ({} vs expected {})",
+            vector.len(),
+            self.vector_bytes,
+        );
+
+        unsafe { Self::reduce_avx2(self.accumulate_avx2(vector.as_ptr())) }
+    }
+
+    /// Block loop of the AVX2 kernels over the vector at `data`.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`; `data` must be readable for
+    /// `self.vector_bytes` bytes.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn accumulate_avx2(&self, data: *const u8) -> Acc256 {
+        unsafe {
+            let mut acc = Acc256::zero();
+
+            let full_blocks = self.vector_bytes / BLOCK_256;
+            for block in 0..full_blocks {
+                let offset = block * BLOCK_256;
+                let query = QueryBlock256::load(&self.planes, offset);
+                let codes = _mm256_loadu_si256(data.add(offset).cast::<__m256i>());
+                acc.accumulate(codes, query);
+            }
+
+            let tail = self.vector_bytes % BLOCK_256;
+            if tail > 0 {
+                let offset = full_blocks * BLOCK_256;
+                let query = QueryBlock256::load(&self.planes, offset);
+                let mut block = [0u8; BLOCK_256];
+                std::ptr::copy_nonoverlapping(data.add(offset), block.as_mut_ptr(), tail);
+                let codes = _mm256_loadu_si256(block.as_ptr().cast::<__m256i>());
+                acc.accumulate(codes, query);
+            }
+
+            acc
+        }
+    }
+
+    /// Raw dot product from one vector's accumulators.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn reduce_avx2(acc: Acc256) -> i64 {
+        unsafe {
+            let (low, high) = acc.fold();
+            i64::from(hsum_i32_avx2(low))
+                + Self::ENCODING.query_high_coef * i64::from(hsum_i32_avx2(high))
+        }
+    }
+
     /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+) over the query planes: one ZMM
     /// of packed codes per block, one `vpshufb` codebook lookup per plane
     /// and `VPDPBUSD` into independent accumulators (see [`Acc512`]).  The
@@ -212,6 +404,24 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
     }
 }
 
+#[target_feature(enable = "sse2")]
+unsafe fn hsum_i32_sse(v: __m128i) -> i32 {
+    let v = _mm_add_epi32(v, _mm_shuffle_epi32(v, 0x4E));
+    let v = _mm_add_epi32(v, _mm_shuffle_epi32(v, 0xB1));
+    _mm_cvtsi128_si32(v)
+}
+
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn hsum_i32_avx2(v: __m256i) -> i32 {
+    unsafe {
+        hsum_i32_sse(_mm_add_epi32(
+            _mm256_castsi256_si128(v),
+            _mm256_extracti128_si256(v, 1),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng as _;
@@ -219,6 +429,31 @@ mod tests {
 
     use super::super::QuerySimd;
     use super::super::shared::{parity_dims, random_inputs};
+
+    /// The AVX2 kernel must reproduce the scalar reference bit-exactly at
+    /// every parity dim of every width.
+    fn avx2_matches_scalar<const PLANES: usize>() {
+        let mut rng = StdRng::seed_from_u64(7);
+        for dim in parity_dims::<PLANES>() {
+            let (query, vector) = random_inputs::<PLANES>(&mut rng, dim);
+            let scalar = query.dotprod_raw(&vector);
+            let avx2 = unsafe { query.dotprod_raw_avx2(&vector) };
+            assert_eq!(
+                scalar, avx2,
+                "PLANES={PLANES} dim={dim}: scalar {scalar} != avx2 {avx2}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_avx2_matches_scalar() {
+        if !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        avx2_matches_scalar::<2>();
+        avx2_matches_scalar::<4>();
+        avx2_matches_scalar::<8>();
+    }
 
     fn has_avx512_vnni() -> bool {
         std::is_x86_feature_detected!("avx512f")
@@ -261,15 +496,20 @@ mod tests {
         let query = QuerySimd::<PLANES>::new(&vec![1.0_f32; dim]);
         let vector = vec![0xFF_u8; dim / PLANES];
         let scalar = query.dotprod_raw(&vector);
-        let vnni512 = unsafe { query.dotprod_raw_avx512_vnni(&vector) };
-        assert_eq!(scalar, vnni512, "PLANES={PLANES}: avx512_vnni disagrees");
+        unsafe {
+            if std::is_x86_feature_detected!("avx2") {
+                let avx2 = query.dotprod_raw_avx2(&vector);
+                assert_eq!(scalar, avx2, "PLANES={PLANES}: avx2 disagrees");
+            }
+            if has_avx512_vnni() {
+                let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
+                assert_eq!(scalar, vnni512, "PLANES={PLANES}: avx512_vnni disagrees");
+            }
+        }
     }
 
     #[test]
     fn test_saturation_safety_64k() {
-        if !has_avx512_vnni() {
-            return;
-        }
         saturation_safety_64k::<2>();
         saturation_safety_64k::<4>();
         saturation_safety_64k::<8>();

@@ -231,7 +231,9 @@ impl<const PLANES: usize> QuerySimd<PLANES> {
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx512Vnni => unsafe { self.dotprod_raw_avx512_vnni(vector) },
             #[cfg(target_arch = "x86_64")]
-            SimdBackend::Avx2 | SimdBackend::Sse => self.dotprod_raw(vector),
+            SimdBackend::Avx2 => unsafe { self.dotprod_raw_avx2(vector) },
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Sse => self.dotprod_raw(vector),
             #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
             SimdBackend::NeonSdot => unsafe { self.dotprod_raw_neon_sdot(vector) },
             #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
