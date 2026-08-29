@@ -1,9 +1,13 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use shard::operations::vector_name_ops::VectorNameConfig;
 
+#[cfg(feature = "staging")]
+use crate::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use crate::quota::QuotaConfig;
 
 /// A single change a consensus operation makes
@@ -31,18 +35,9 @@ pub enum Action {
         field_name: PayloadKeyType,
     },
 
-    SetAlias {
-        alias: String,
-        collection: CollectionId,
-    },
-
-    DeleteAlias {
-        alias: String,
-    },
-
-    RenameAlias {
-        old_alias: String,
-        new_alias: String,
+    UpdateAliases {
+        set: BTreeMap<String, CollectionId>,
+        remove: BTreeSet<String>,
     },
 
     SetPeerMetadata {
@@ -50,7 +45,6 @@ pub enum Action {
         metadata: PeerMetadata,
     },
 
-    /// Null value removes the key
     SetClusterMetadataKey {
         key: String,
         value: serde_json::Value,
@@ -59,6 +53,14 @@ pub enum Action {
     SetQuotaConfig {
         config: QuotaConfig,
     },
+
+    /// TODO: this action has to sleep when implemented for `TableOfContent`
+    #[cfg(feature = "staging")]
+    TestSlowDown(TestSlowDown),
+
+    /// TODO: this action has to return an error when implemented for `TableOfContent`
+    #[cfg(feature = "staging")]
+    TestTransientError(TestTransientError),
 }
 
 impl Action {
@@ -70,13 +72,14 @@ impl Action {
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
-            // Change the alias mapping, a peer or the cluster, none of which is a collection
-            Action::SetAlias { .. }
-            | Action::DeleteAlias { .. }
-            | Action::RenameAlias { .. }
+            Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => None,
+
+            // Sleep on a peer, or fail at random. Neither is scoped to a collection.
+            #[cfg(feature = "staging")]
+            Action::TestSlowDown(_) | Action::TestTransientError(_) => None,
         }
     }
 }
