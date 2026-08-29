@@ -10,7 +10,7 @@
 use std::borrow::Cow;
 
 use common::types::{PointOffsetType, ScoreType};
-use quantization::encoded_storage::EncodedStorage;
+use quantization::encoded_storage::{EncodedStorage, offsets_worth_batch_scoring};
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
@@ -109,6 +109,11 @@ pub(super) fn score_query_bytes(
 /// into contiguous storage runs and scores each run with one batched quantizer
 /// call, so a sequential scan pays the storage resolution and kernel setup per
 /// run rather than per vector.
+///
+/// Id lists whose runs are short on average — HNSW neighbors, and filtered
+/// scans sparse enough that consecutive ids are incidental — fall back to
+/// per-vector [`score_query_bytes`]: the batch kernel only pays off when runs
+/// are long enough (see [`offsets_worth_batch_scoring`]).
 pub(super) fn score_query_batch<TStorage: EncodedStorage>(
     storage: &TStorage,
     quantizer: &TurboQuantizer,
@@ -119,10 +124,10 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
 ) {
     debug_assert_eq!(ids.len(), scores.len());
 
-    if !TStorage::is_in_ram_or_mmap() {
-        // Backends with async reads (io_uring, remote caches) pipeline
-        // per-vector reads in `for_each_batch`; run-granular reads would
-        // serialize them.
+    // Async backends pipeline per-vector reads in `for_each_batch`; run-granular
+    // reads would serialize them. Short-run id lists skip batching for the same
+    // reason as TQ quantization scoring: setup dominates when runs are short.
+    if !TStorage::is_in_ram_or_mmap() || !offsets_worth_batch_scoring(ids) {
         storage.for_each_batch(ids, |idx, bytes| {
             scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
         });

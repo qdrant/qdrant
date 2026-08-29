@@ -129,6 +129,58 @@ pub fn for_each_consecutive_run(
     }
 }
 
+/// Mean ascending run length at or above which run-batched scoring earns its
+/// per-run setup back. Measured crossover is 2.0–3.6, stable across dims
+/// 128/512/1024, both RAM storages and the 1/2/4-bit widths; any threshold in
+/// 2.5–4.0 routes that ladder identically, so 3 sits in the middle.
+pub const BATCH_SCORE_MIN_MEAN_RUN: usize = 3;
+
+/// True when the runs `offsets` splits into are long enough *on average* to
+/// pay for run-batched scoring — mean ascending run length ≥
+/// [`BATCH_SCORE_MIN_MEAN_RUN`]. Gates run batching so scattered id lists
+/// (HNSW hops) keep the cheaper per-vector kernels.
+///
+/// The mean is what decides, not the longest run: a *sorted* id list — what a
+/// filtered scan hands the scorer — already contains adjacent pairs at ~1 %
+/// density while its runs still average one vector, so a "contains a run of
+/// ≥ N" test sends it down the run path to pay setup per vector. An average
+/// is also independent of how the driver slices ids into batches, which a
+/// longest-run test is not.
+///
+/// A fully contiguous ascending block — the plain scan this exists for — is
+/// decided in O(1), so a full scan pays nothing for the gate. A permutation of
+/// such a block passes that check too; that only picks the other scoring path,
+/// never a different score.
+#[inline]
+pub fn offsets_worth_batch_scoring(offsets: &[PointOffsetType]) -> bool {
+    let len = offsets.len();
+    if len < BATCH_SCORE_MIN_MEAN_RUN {
+        return false;
+    }
+
+    let (first, last) = (offsets[0], offsets[len - 1]);
+    if last
+        .checked_sub(first)
+        .is_some_and(|span| span as usize == len - 1)
+    {
+        return true;
+    }
+
+    // Mean run length ≥ MIN ⟺ runs · MIN ≤ len, so stop counting as soon as
+    // the run count rules that out.
+    let max_runs = len / BATCH_SCORE_MIN_MEAN_RUN;
+    let mut runs = 1usize;
+    for window in offsets.windows(2) {
+        if window[1] != window[0] + 1 {
+            runs += 1;
+            if runs > max_runs {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 pub trait EncodedStorageBuilder {
     type Storage: EncodedStorageWrite;
     type Error: std::fmt::Display;
@@ -426,6 +478,37 @@ mod tests {
         // Descending and scattered ids degrade to singleton runs.
         assert_eq!(collect(&[4, 3, 2]), vec![(0, 4, 1), (1, 3, 1), (2, 2, 1)]);
         assert_eq!(collect(&[]), vec![]);
+    }
+
+    #[test]
+    fn offsets_worth_batch_scoring_measures_mean_run_length() {
+        // Too few ids to average anything over.
+        assert!(!offsets_worth_batch_scoring(&[]));
+        assert!(!offsets_worth_batch_scoring(&[7]));
+        assert!(!offsets_worth_batch_scoring(&[7, 8]));
+
+        // Plain scan: one contiguous run, taken by the O(1) path.
+        assert!(offsets_worth_batch_scoring(&[0, 1, 2, 3]));
+        assert!(offsets_worth_batch_scoring(
+            &(100..164).collect::<Vec<PointOffsetType>>()
+        ));
+
+        // HNSW-like: scattered or descending neighbours.
+        assert!(!offsets_worth_batch_scoring(&[4, 3, 2]));
+        assert!(!offsets_worth_batch_scoring(&[10, 20, 30, 40]));
+
+        // Sorted but sparse — a filtered scan at low density. It holds
+        // adjacent pairs, yet its runs average ~1, so batching would pay
+        // setup per vector.
+        assert!(!offsets_worth_batch_scoring(&[5, 7, 8, 10]));
+        assert!(!offsets_worth_batch_scoring(&[0, 1, 5, 9, 14, 20, 27, 35]));
+
+        // Dense filtered scan: gaps, but long runs between them.
+        assert!(offsets_worth_batch_scoring(&[0, 1, 2, 5, 6, 7]));
+
+        // At the threshold (2 runs over 6 ids) and just under it (3 runs).
+        assert!(offsets_worth_batch_scoring(&[0, 1, 2, 10, 11, 12]));
+        assert!(!offsets_worth_batch_scoring(&[0, 1, 10, 11, 20, 21]));
     }
 
     /// The test storage's runs must hand out exactly the bytes of the
