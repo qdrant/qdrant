@@ -162,11 +162,7 @@ impl Collection {
             crate::config::CollectionConfigInternal,
         > = self.collection_config.write().await;
 
-        if let Some(current_metadata) = collection_config_guard.metadata.as_mut() {
-            current_metadata.merge(&metadata);
-        } else {
-            collection_config_guard.metadata = Some(metadata);
-        }
+        update_collection_metadata(&mut collection_config_guard.metadata, metadata);
         drop(collection_config_guard);
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -594,5 +590,50 @@ impl Collection {
         for warning in warnings {
             log::warn!("Collection {}: {}", self.name(), warning.message);
         }
+    }
+}
+
+fn update_collection_metadata(current: &mut Option<Payload>, metadata: Payload) {
+    if metadata.is_empty() {
+        *current = None;
+    } else if let Some(current_metadata) = current.as_mut() {
+        current_metadata.merge(&metadata);
+    } else {
+        *current = Some(metadata);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::update_collection_metadata;
+    use segment::types::Payload;
+
+    #[test]
+    fn empty_metadata_clears_existing_values() {
+        let mut metadata = Some(Payload(
+            json!({"keep": "value"}).as_object().unwrap().clone(),
+        ));
+
+        update_collection_metadata(&mut metadata, Payload::default());
+
+        assert_eq!(metadata, None);
+    }
+
+    #[test]
+    fn non_empty_metadata_still_merges() {
+        let mut metadata = Some(Payload(
+            json!({"keep": "value"}).as_object().unwrap().clone(),
+        ));
+
+        update_collection_metadata(
+            &mut metadata,
+            Payload(json!({"new": "value"}).as_object().unwrap().clone()),
+        );
+
+        let metadata = metadata.unwrap();
+        assert_eq!(metadata.0.get("keep"), Some(&json!("value")));
+        assert_eq!(metadata.0.get("new"), Some(&json!("value")));
     }
 }
