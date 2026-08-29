@@ -303,7 +303,14 @@ fn add_condition_keys(keys: &mut HashSet<PayloadKeyType>, condition: &Condition)
                 add_condition_keys(keys, nested_condition);
             }
         }
-        _ => {
+        Condition::Field(_)
+        | Condition::IsEmpty(_)
+        | Condition::IsNull(_)
+        | Condition::HasId(_)
+        | Condition::HasVector(_)
+        | Condition::Slice(_)
+        | Condition::Nested(_)
+        | Condition::CustomIdChecker(_) => {
             if let Some(key) = condition.targeted_key() {
                 keys.insert(key);
             }
