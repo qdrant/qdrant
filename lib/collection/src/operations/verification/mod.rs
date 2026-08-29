@@ -398,6 +398,7 @@ mod test {
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
     };
+    use shard::scroll::ScrollRequestInternal;
     use tempfile::Builder;
 
     use super::StrictModeVerification;
@@ -433,6 +434,16 @@ mod test {
     async fn test_query_limit(collection: &Collection) {
         assert_strict_mode_error(discover_fixture(Some(10), None, None), collection).await;
         assert_strict_mode_success(discover_fixture(Some(4), None, None), collection).await;
+
+        assert_strict_mode_error(ScrollRequestInternal::default(), collection).await;
+        assert_strict_mode_success(
+            ScrollRequestInternal {
+                limit: Some(4),
+                ..Default::default()
+            },
+            collection,
+        )
+        .await;
     }
 
     async fn test_filter_read(collection: &Collection) {
