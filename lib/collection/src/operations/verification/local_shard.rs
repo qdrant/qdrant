@@ -5,7 +5,10 @@ use crate::operations::types::PointRequestInternal;
 
 impl StrictModeVerification for ScrollRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit.unwrap_or_else(ScrollRequestInternal::default_limit))
+        Some(
+            self.limit
+                .unwrap_or_else(ScrollRequestInternal::default_limit),
+        )
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
