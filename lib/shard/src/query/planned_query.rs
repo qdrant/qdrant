@@ -197,16 +197,25 @@ impl PlannedQuery {
             })),
         };
 
-        // Without rescoring the leaf is the final result: let it fetch payload
-        // and vectors itself instead of retrieving them again afterwards.
+        // A scroll leaf is the final result and retrieves payload and vectors once, for the
+        // merged page, so it can fetch them itself instead of resolving the ids again afterwards.
+        // A search leaf fetches them per segment before merging, which multiplies the I/O by
+        // the segment count, so it stays bare and the root plan retrieves for the final result.
+        // See: <https://github.com/qdrant/qdrant/pull/6279>
+        let leaf_fetches = match &query {
+            None | Some(ScoringQuery::OrderBy(_)) | Some(ScoringQuery::Sample(_)) => true,
+            Some(ScoringQuery::Vector(_))
+            | Some(ScoringQuery::Fusion(_))
+            | Some(ScoringQuery::Formula(_))
+            | Some(ScoringQuery::Mmr(_)) => false,
+        };
         let requested = (with_vector, with_payload);
         let nothing = (WithVector::from(false), WithPayloadInterface::from(false));
-        let ((leaf_with_vector, leaf_with_payload), (with_vector, with_payload)) =
-            if rescore_stages.is_none() {
-                (requested, nothing)
-            } else {
-                (nothing, requested)
-            };
+        let ((leaf_with_vector, leaf_with_payload), (with_vector, with_payload)) = if leaf_fetches {
+            (requested, nothing)
+        } else {
+            (nothing, requested)
+        };
 
         // Everything must come from a single source.
         let sources = vec![leaf_source_from_scoring_query(

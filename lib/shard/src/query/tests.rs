@@ -184,18 +184,18 @@ fn test_try_from_no_prefetch() {
             params: Some(SearchParams::default()),
             limit: 22,
             offset: 0,
-            with_vector: Some(WithVector::Bool(true)),
-            with_payload: Some(WithPayloadInterface::Bool(true)),
+            with_vector: Some(WithVector::Bool(false)),
+            with_payload: Some(WithPayloadInterface::Bool(false)),
             score_threshold: Some(0.5),
         }]
     );
 
-    // The leaf fetches payload and vectors, so the root plan does not.
+    // A search leaf fetches per segment, so the root plan retrieves for the merged result.
     assert_eq!(
         planned_query.root_plans,
         vec![RootPlan {
-            with_payload: WithPayloadInterface::Bool(false),
-            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(true),
+            with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
                 rescore_stages: None,
