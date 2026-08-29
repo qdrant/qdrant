@@ -413,6 +413,7 @@ fn resolved_keys<'a>(
 }
 
 #[cfg(test)]
+#[allow(clippy::chunks_exact_to_as_chunks)]
 mod tests {
     use std::collections::HashMap;
     use std::path::Path;
