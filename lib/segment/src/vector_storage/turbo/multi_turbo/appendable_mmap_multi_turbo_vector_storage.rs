@@ -243,13 +243,11 @@ impl AppendableMmapMultiTurboVectorStorage {
     }
 
     /// Decode the full multivector behind an offset record.
-    fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> CowVector<'_> {
+    fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> Option<CowVector<'_>> {
         let records = self
             .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
-            // SAFETY: `fresh_range_start` guarantees ranges never straddle across a boundary.
-            .expect("Multivector not found");
-        self.dequantize_records(&records)
+            .get_many::<Random>(offset.offset, offset.count as usize)?;
+        Some(self.dequantize_records(&records))
     }
 
     /// Decode concatenated encoded records (the
@@ -497,10 +495,13 @@ impl AppendableMmapMultiTurboVectorStorage {
             return ScoreType::NEG_INFINITY;
         };
 
-        let records = self
+        let Some(records) = self
             .storage
             .get_many::<Random>(offset.offset, offset.count as usize)
-            .expect("Multivector not found");
+        else {
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
+        };
 
         hw_counter
             .cpu_counter()
@@ -527,15 +528,21 @@ impl AppendableMmapMultiTurboVectorStorage {
             return ScoreType::NEG_INFINITY;
         };
 
-        let records_a = self
+        let Some(records_a) = self
             .storage
             .get_many::<Random>(offset_a.offset, offset_a.count as usize)
-            .expect("Multivector not found");
+        else {
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
+        };
 
-        let records_b = self
+        let Some(records_b) = self
             .storage
             .get_many::<Random>(offset_b.offset, offset_b.count as usize)
-            .expect("Multivector not found");
+        else {
+            log::error!("Multivector not found");
+            return ScoreType::NEG_INFINITY;
+        };
 
         hw_counter
             .cpu_counter()
@@ -582,7 +589,7 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        Some(self.dequantize_multi(self.get_offset::<P>(key)?))
+        self.dequantize_multi(self.get_offset::<P>(key)?)
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -733,7 +740,7 @@ impl MultiTQVectorStorageRead for AppendableMmapMultiTurboVectorStorage {
             })
             // `get_many` is also `None` for a range across multiple chunks, but
             // `fresh_range_start` guarantees ranges never straddle a boundary.
-            .expect("Multivector not found")
+            .unwrap_or_default()
     }
 }
 
@@ -2047,5 +2054,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_corrupted_multivector_chunk_panics() {
+        let dir = Builder::new()
+            .prefix("turbo_multi_panic")
+            .tempdir()
+            .unwrap();
+        let dim = 128;
+        let distance = Distance::Cosine;
+        let multi_vector_config = MultiVectorConfig::default();
+        let mut storage = open_appendable_turbo_multi_vector_storage(
+            dir.path(),
+            dim,
+            distance,
+            multi_vector_config,
+            false,
+        )
+        .unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+        let vector = make_multi_vectors(dim, 1, 42).pop().unwrap();
+        storage
+            .insert_vector(0, VectorRef::from(&vector), &hw_counter)
+            .unwrap();
+
+        // simulate corruption: offset points out of bounds
+        let bad_offset = MultivectorMmapOffset {
+            offset: 1000000,
+            count: 4,
+            capacity: 4,
+        };
+        storage
+            .offsets
+            .insert(0, &[bad_offset], &hw_counter)
+            .unwrap();
+
+        // Missing data gracefully returns NEG_INFINITY instead of panicking.
+        let query = storage.preprocess_query(&make_multi_vectors(dim, 1, 43).pop().unwrap());
+        let score = storage.score_point_max_similarity(&query, 0, &hw_counter);
+        assert_eq!(score, f32::NEG_INFINITY);
     }
 }

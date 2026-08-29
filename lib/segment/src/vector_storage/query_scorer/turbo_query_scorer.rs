@@ -66,6 +66,7 @@ impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.hardware_counter.vector_io_read().incr_delta(2);
         self.hardware_counter.cpu_counter().incr();
         self.storage.score_internal_encoded(point_a, point_b)
     }

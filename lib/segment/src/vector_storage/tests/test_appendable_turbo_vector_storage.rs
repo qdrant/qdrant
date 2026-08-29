@@ -1563,3 +1563,40 @@ fn batch_scoring_accumulates_same_hw_counters() {
         per_point_acc.get_vector_io_read(),
     );
 }
+
+#[test]
+fn score_internal_increments_hardware_counters() {
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+
+    use crate::vector_storage::query_scorer::QueryScorer;
+    use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
+
+    const DIM: usize = 128;
+    const COUNT: usize = 2;
+
+    let distance = Distance::Dot;
+    let inputs = make_vectors(DIM, COUNT, SEEDS[0]);
+
+    let dir = Builder::new()
+        .prefix("turbo_internal_hw")
+        .tempdir()
+        .unwrap();
+    build_single_file(dir.path(), &inputs, DIM, distance);
+    let storage =
+        open_turbo_vector_storage_with_uring(dir.path(), DIM, distance, false, false).unwrap();
+
+    let acc = HwMeasurementAcc::new();
+    {
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage, acc.get_counter_cell());
+        scorer.score_internal(0, 1);
+    }
+
+    // score_internal increments CPU by 1
+    assert_eq!(acc.get_cpu(), 1 * storage.quantized_vector_size());
+
+    // score_internal increments vector IO read by 2
+    assert_eq!(
+        acc.get_vector_io_read(),
+        2 * storage.quantized_vector_size()
+    );
+}
