@@ -144,6 +144,16 @@ where
     }
 
     #[inline]
+    fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        align: usize,
+    ) -> impl Future<Output = UioResult<ACow<'_>>> {
+        self.0.read_bytes_async(range, access_pattern, align)
+    }
+
+    #[inline]
     fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
         self.0.read_whole()
     }

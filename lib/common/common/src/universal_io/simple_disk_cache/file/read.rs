@@ -7,10 +7,12 @@ use std::path::Path;
 
 use super::DiskCache;
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::{AccessPattern, Sequential};
+use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
-use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
+use crate::universal_io::simple_disk_cache::pipeline::{
+    DiskCachePipeline, REMOTE_READ_ALIGNMENT, Source, pick_source, read_local,
+};
 use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
 use crate::universal_io::{
     Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
@@ -79,6 +81,47 @@ where
         pipeline.schedule::<P>((), self, range, align)?;
         let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
         Ok(bytes)
+    }
+
+    async fn read_bytes_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+        _align: usize,
+    ) -> UioResult<ACow<'_>> {
+        // warn: first-touch init (`state()`) still does blocking I/O; only the
+        // block fetch itself is async.
+        //
+        // TODO(uio): This is a targeted use of async, but maybe later we'd want
+        // a proper async pipeline
+        let state = self.state()?;
+        match pick_source::<P>(state.local, range.clone())? {
+            Source::Local {
+                range,
+                is_sequential,
+            } => {
+                // SAFETY: Source::Local confirms the range is local (or empty).
+                let bytes = unsafe { read_local::<R>(self, range, is_sequential)? };
+                Ok(ACow::Borrowed(bytes))
+            }
+            Source::Remote {
+                blocks_range,
+                blocks_byte_range,
+            } => {
+                let bytes = state
+                    .remote
+                    .read_bytes_async(blocks_byte_range, access_pattern, REMOTE_READ_ALIGNMENT)
+                    .await?;
+                // SAFETY: `bytes` is the remote content of `blocks_range`
+                // (clamped to EOF), which covers `range`.
+                unsafe {
+                    state.local.write_mmap_bytes(&bytes, blocks_range);
+                    Ok(ACow::Borrowed(
+                        state.local.read_mmap_bytes::<Random>(range)?,
+                    ))
+                }
+            }
+        }
     }
 
     fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {

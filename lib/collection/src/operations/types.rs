@@ -1944,6 +1944,12 @@ pub struct PeerMetadata {
 }
 
 impl PeerMetadata {
+    /// Metadata of a peer running `version`, to set up a state for a test
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new(version: Version) -> Self {
+        Self { version }
+    }
+
     pub fn current() -> Self {
         Self {
             version: defaults::QDRANT_VERSION.clone(),

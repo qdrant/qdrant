@@ -70,6 +70,36 @@ impl ClusterState {
 
                 state.payload_index_schema.schema.remove(field_name);
             }
+
+            Action::UpdateAliases { set, remove } => {
+                for alias in remove {
+                    self.aliases.remove(alias);
+                }
+
+                for (alias, collection) in set {
+                    self.aliases.insert(alias.clone(), collection.clone());
+                }
+            }
+
+            Action::SetPeerMetadata { peer_id, metadata } => {
+                self.peer_metadata_by_id.insert(*peer_id, metadata.clone());
+            }
+
+            Action::SetClusterMetadataKey { key, value } => {
+                if value.is_null() {
+                    self.cluster_metadata.remove(key);
+                } else {
+                    self.cluster_metadata.insert(key.clone(), value.clone());
+                }
+            }
+
+            Action::SetQuotaConfig { config } => {
+                self.quota_config = Some(*config);
+            }
+
+            // Sleep on a peer, or fail at random. Neither changes the state.
+            #[cfg(feature = "staging")]
+            Action::TestSlowDown(_) | Action::TestTransientError(_) => {}
         }
     }
 
