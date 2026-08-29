@@ -2735,11 +2735,39 @@ impl Validate for PayloadSchemaParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, Serialize, JsonSchema)]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+enum PayloadFieldSchemaRepr {
+    FieldType(PayloadSchemaType),
+    FieldParams(PayloadSchemaParams),
+}
+
+impl<'de> Deserialize<'de> for PayloadFieldSchema {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_value::Value::deserialize(deserializer)?;
+        if matches!(value, serde_value::Value::Seq(_)) {
+            return Err(serde::de::Error::custom(
+                "payload field schema must be a string or object",
+            ));
+        }
+
+        value
+            .deserialize_into::<PayloadFieldSchemaRepr>()
+            .map(|schema| match schema {
+                PayloadFieldSchemaRepr::FieldType(schema) => Self::FieldType(schema),
+                PayloadFieldSchemaRepr::FieldParams(schema) => Self::FieldParams(schema),
+            })
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 impl PartialEq for PayloadFieldSchema {
@@ -6010,6 +6038,18 @@ mod tests {
         let query = r#""keyword""#;
         let field_type: PayloadSchemaType = serde_json::from_str(query).unwrap();
         eprintln!("field_type = {field_type:?}");
+    }
+
+    #[test]
+    fn test_payload_field_schema_rejects_sequences() {
+        let invalid = serde_json::from_str::<PayloadFieldSchema>(r#"["keyword"]"#);
+        assert!(invalid.is_err());
+
+        let field_type = serde_json::from_str::<PayloadFieldSchema>(r#""keyword""#);
+        assert!(field_type.is_ok());
+
+        let field_params = serde_json::from_str::<PayloadFieldSchema>(r#"{"type":"keyword"}"#);
+        assert!(field_params.is_ok());
     }
 
     #[test]
