@@ -73,11 +73,23 @@ impl ConsensusStateMachine {
         match operation {
             ConsensusOperations::CollectionMeta(operation) => self.plan_collection_meta(operation),
 
-            ConsensusOperations::AddPeer { .. }
-            | ConsensusOperations::RemovePeer(_)
-            | ConsensusOperations::UpdatePeerMetadata { .. }
-            | ConsensusOperations::UpdateClusterMetadata { .. }
-            | ConsensusOperations::SetQuotaConfig(_) => ApplyOutcome::NotCovered,
+            ConsensusOperations::UpdatePeerMetadata { peer_id, metadata } => {
+                let actions = self.state.plan_update_peer_metadata(*peer_id, metadata);
+                ApplyOutcome::Accepted(actions)
+            }
+
+            ConsensusOperations::UpdateClusterMetadata { key, value } => {
+                let actions = self.state.plan_update_cluster_metadata(key, value);
+                ApplyOutcome::Accepted(actions)
+            }
+
+            ConsensusOperations::SetQuotaConfig(config) => {
+                ApplyOutcome::Accepted(self.state.plan_set_quota_config(config))
+            }
+
+            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
+                ApplyOutcome::NotCovered
+            }
 
             // Never reach the apply path: consensus handles them in its own thread
             ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. } => {
@@ -93,12 +105,15 @@ impl ConsensusStateMachine {
             CollectionMetaOperations::CreateCollection(_)
             | CollectionMetaOperations::UpdateCollection(_)
             | CollectionMetaOperations::DeleteCollection(_)
-            | CollectionMetaOperations::ChangeAliases(_)
             | CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_)
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _)
             | CollectionMetaOperations::Resharding(_, _) => ApplyOutcome::NotCovered,
+
+            CollectionMetaOperations::ChangeAliases(operation) => {
+                ApplyOutcome::new(self.state.plan_change_aliases(operation))
+            }
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))
@@ -114,10 +129,10 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_drop_payload_index(operation))
             }
 
-            // Sleeps, or fails at random. Neither is a state change to plan.
+            // Sleeps on a peer, or fails at random. Neither changes the state.
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(_)
-            | CollectionMetaOperations::TestTransientError(_) => ApplyOutcome::NotCovered,
+            | CollectionMetaOperations::TestTransientError(_) => ApplyOutcome::Accepted(Vec::new()),
         }
     }
 }

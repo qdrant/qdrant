@@ -3,14 +3,17 @@
 
 use std::collections::HashMap;
 
+use collection::operations::types::PeerMetadata;
 use segment::data_types::vector_name_config::*;
 use segment::types::*;
+use serde_json::{Value, json};
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
 use crate::content_manager::errors::StorageError;
+use crate::quota::QuotaConfig;
 
 const COLLECTION: &str = "alpha";
 
@@ -28,6 +31,217 @@ fn nop() {
     };
 
     assert!(actions.is_empty());
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn create_alias() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "alias", COLLECTION,
+    )]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("creating an alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::SetAlias { .. }]));
+
+    let aliases = &machine.state().aliases;
+
+    assert_eq!(aliases.get("alias").map(String::as_str), Some(COLLECTION));
+}
+
+#[test]
+fn create_alias_replay() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "alias", COLLECTION,
+    )]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of an applied alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::SetAlias { .. }]));
+
+    assert_eq!(machine.state(), &state, "replay should not change anything");
+}
+
+#[test]
+fn create_alias_reject_missing_collection() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "alias", "missing",
+    )]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn create_alias_reject_alias_target() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        "other", "alias",
+    )]));
+
+    // An alias of an alias is rejected: the target is not resolved
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn create_alias_reject_collection_name() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![create_alias_action(
+        COLLECTION, COLLECTION,
+    )]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::AlreadyExists { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn delete_alias() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![delete_alias_action("alias")]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("deleting an alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::DeleteAlias { .. }]));
+
+    assert!(machine.state().aliases.get("alias").is_none());
+}
+
+#[test]
+fn delete_alias_missing() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![delete_alias_action("alias")]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("deleting an alias that does not exist should be accepted, got {outcome:?}");
+    };
+
+    // Action is emitted even if state already matches
+    assert!(matches!(actions.as_slice(), [Action::DeleteAlias { .. }]));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn rename_alias() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![rename_alias_action(
+        "alias", "other",
+    )]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("renaming an alias should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(actions.as_slice(), [Action::RenameAlias { .. }]));
+
+    let aliases = &machine.state().aliases;
+
+    assert!(aliases.get("alias").is_none());
+    assert_eq!(aliases.get("other").map(String::as_str), Some(COLLECTION));
+}
+
+#[test]
+fn rename_alias_reject_missing() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![rename_alias_action(
+        "alias", "other",
+    )]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn change_aliases_in_order() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&change_aliases_op(vec![
+        create_alias_action("alias", COLLECTION),
+        rename_alias_action("alias", "other"),
+    ]));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("renaming an alias the operation just created should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetAlias { .. }, Action::RenameAlias { .. }],
+    ));
+
+    let aliases = &machine.state().aliases;
+
+    assert!(aliases.get("alias").is_none());
+    assert_eq!(aliases.get("other").map(String::as_str), Some(COLLECTION));
+}
+
+#[test]
+fn change_aliases_reject_whole_operation() {
+    let mut state = cluster_state(Vec::new());
+    state.aliases.insert("alias".into(), COLLECTION.into());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&change_aliases_op(vec![
+        delete_alias_action("alias"),
+        create_alias_action("other", "missing"),
+    ]));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::NotFound { .. })
+    ));
+
+    // `TableOfContent::update_aliases` saves each action as it goes,
+    // so it drops the alias and rejects the operation after that
     assert_eq!(machine.state(), &state);
 }
 
@@ -310,6 +524,259 @@ fn drop_payload_index_missing() {
 }
 
 #[test]
+fn update_peer_metadata() {
+    let mut machine = state_machine(ClusterState::default());
+    let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("metadata of a peer without any should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPeerMetadata { .. }],
+    ));
+
+    assert_eq!(
+        machine.state().peer_metadata_by_id.get(&PEER_ID),
+        Some(&peer_metadata("1.15.0")),
+    );
+}
+
+#[test]
+fn update_peer_metadata_replace() {
+    let mut state = ClusterState::default();
+
+    state
+        .peer_metadata_by_id
+        .insert(PEER_ID, peer_metadata("1.14.0"));
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a peer reporting a new version should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetPeerMetadata { .. }],
+    ));
+
+    assert_eq!(
+        machine.state().peer_metadata_by_id.get(&PEER_ID),
+        Some(&peer_metadata("1.15.0")),
+    );
+}
+
+#[test]
+fn update_peer_metadata_replay() {
+    let mut state = ClusterState::default();
+
+    state
+        .peer_metadata_by_id
+        .insert(PEER_ID, peer_metadata("1.15.0"));
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of applied metadata should be accepted, got {outcome:?}");
+    };
+
+    // Nothing left to do: metadata is absolute and the applier only writes it
+    assert!(actions.is_empty());
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn update_cluster_metadata() {
+    let mut machine = state_machine(ClusterState::default());
+    let outcome = machine.apply(&update_cluster_metadata_op("region", json!("eu")));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a new metadata key should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetClusterMetadataKey { .. }],
+    ));
+
+    assert_eq!(
+        machine.state().cluster_metadata.get("region"),
+        Some(&json!("eu")),
+    );
+}
+
+#[test]
+fn update_cluster_metadata_replace() {
+    let mut machine = state_machine(cluster_metadata_state("region", json!("eu")));
+    let outcome = machine.apply(&update_cluster_metadata_op("region", json!("us")));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("another value for a key should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetClusterMetadataKey { .. }],
+    ));
+
+    assert_eq!(
+        machine.state().cluster_metadata.get("region"),
+        Some(&json!("us")),
+    );
+}
+
+#[test]
+fn update_cluster_metadata_replay() {
+    let state = cluster_metadata_state("region", json!("eu"));
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&update_cluster_metadata_op("region", json!("eu")));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of an applied key should be accepted, got {outcome:?}");
+    };
+
+    assert!(actions.is_empty());
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn update_cluster_metadata_remove() {
+    let mut machine = state_machine(cluster_metadata_state("region", json!("eu")));
+    let outcome = machine.apply(&update_cluster_metadata_op("region", Value::Null));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a null value should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetClusterMetadataKey { .. }],
+    ));
+
+    assert!(!machine.state().cluster_metadata.contains_key("region"));
+}
+
+#[test]
+fn update_cluster_metadata_remove_missing() {
+    let state = ClusterState::default();
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&update_cluster_metadata_op("region", Value::Null));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("removing a key that does not exist should be accepted, got {outcome:?}");
+    };
+
+    assert!(actions.is_empty());
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn set_quota_config() {
+    let mut machine = state_machine(ClusterState::default());
+    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(true)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a quota config should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetQuotaConfig { .. }],
+    ));
+
+    assert_eq!(machine.state().quota_config, Some(quota_config(true)));
+}
+
+#[test]
+fn set_quota_config_replace() {
+    let state = ClusterState {
+        quota_config: Some(quota_config(true)),
+        ..Default::default()
+    };
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(false)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("another quota config should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetQuotaConfig { .. }],
+    ));
+
+    assert_eq!(machine.state().quota_config, Some(quota_config(false)));
+}
+
+#[test]
+fn set_quota_config_replay() {
+    let state = ClusterState {
+        quota_config: Some(quota_config(true)),
+        ..Default::default()
+    };
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(true)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of an applied quota config should be accepted, got {outcome:?}");
+    };
+
+    // Action is emitted even if state already matches: applying it also drops recorded verdicts
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetQuotaConfig { .. }],
+    ));
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn test_slow_down() {
+    let operation = CollectionMetaOperations::TestSlowDown(TestSlowDown {
+        peer_id: Some(PEER_ID),
+        duration_ms: 10,
+    });
+
+    staging_operation_changes_nothing(operation);
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn test_transient_error() {
+    let operation = CollectionMetaOperations::TestTransientError(TestTransientError {
+        peer_id: Some(PEER_ID),
+        failure_probability_percent: 100,
+    });
+
+    staging_operation_changes_nothing(operation);
+}
+
+#[cfg(feature = "staging")]
+fn staging_operation_changes_nothing(operation: CollectionMetaOperations) {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&collection_meta_op(operation));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("a staging operation should be accepted, got {outcome:?}");
+    };
+
+    assert!(actions.is_empty());
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn reject_missing_collection() {
     let mut machine = state_machine(ClusterState::default());
     let outcome = machine.apply(&create_named_vector_op("text", dense(4, Distance::Cosine)));
@@ -411,6 +878,35 @@ fn collection_meta_op(op: CollectionMetaOperations) -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(op))
 }
 
+fn change_aliases_op(actions: Vec<AliasOperations>) -> ConsensusOperations {
+    collection_meta_op(CollectionMetaOperations::ChangeAliases(
+        ChangeAliasesOperation { actions },
+    ))
+}
+
+fn create_alias_action(alias: &str, collection: &str) -> AliasOperations {
+    CreateAlias {
+        collection_name: collection.into(),
+        alias_name: alias.into(),
+    }
+    .into()
+}
+
+fn delete_alias_action(alias: &str) -> AliasOperations {
+    DeleteAlias {
+        alias_name: alias.into(),
+    }
+    .into()
+}
+
+fn rename_alias_action(old_alias: &str, new_alias: &str) -> AliasOperations {
+    RenameAlias {
+        old_alias_name: old_alias.into(),
+        new_alias_name: new_alias.into(),
+    }
+    .into()
+}
+
 fn create_named_vector_op(vector_name: &str, config: VectorNameConfig) -> ConsensusOperations {
     collection_meta_op(CollectionMetaOperations::CreateNamedVector(
         CreateNamedVector {
@@ -463,6 +959,40 @@ fn drop_payload_index_op(field: &str) -> ConsensusOperations {
             field_name: field_name(field),
         },
     ))
+}
+
+fn update_peer_metadata_op(peer_id: PeerId, version: &str) -> ConsensusOperations {
+    ConsensusOperations::UpdatePeerMetadata {
+        peer_id,
+        metadata: peer_metadata(version),
+    }
+}
+
+fn peer_metadata(version: &str) -> PeerMetadata {
+    PeerMetadata::new(version.parse().expect("valid version"))
+}
+
+fn cluster_metadata_state(key: &str, value: Value) -> ClusterState {
+    ClusterState {
+        cluster_metadata: HashMap::from([(key.into(), value)]),
+        ..Default::default()
+    }
+}
+
+fn update_cluster_metadata_op(key: &str, value: Value) -> ConsensusOperations {
+    ConsensusOperations::UpdateClusterMetadata {
+        key: key.into(),
+        value,
+    }
+}
+
+fn quota_config(enabled: bool) -> QuotaConfig {
+    QuotaConfig {
+        enabled,
+        max_resident_memory_percent: None,
+        max_disk_usage_percent: None,
+        release_margin_percent: None,
+    }
 }
 
 fn field_name(field: &str) -> PayloadKeyType {

@@ -70,6 +70,42 @@ impl ClusterState {
 
                 state.payload_index_schema.schema.remove(field_name);
             }
+
+            Action::SetAlias { alias, collection } => {
+                self.aliases.insert(alias.clone(), collection.clone());
+            }
+
+            Action::DeleteAlias { alias } => {
+                self.aliases.remove(alias);
+            }
+
+            Action::RenameAlias {
+                old_alias,
+                new_alias,
+            } => {
+                let renamed = self.aliases.rename(old_alias, new_alias.clone());
+
+                debug_assert!(
+                    renamed,
+                    "action renames alias {old_alias}, which is not in the state",
+                );
+            }
+
+            Action::SetPeerMetadata { peer_id, metadata } => {
+                self.peer_metadata_by_id.insert(*peer_id, metadata.clone());
+            }
+
+            Action::SetClusterMetadataKey { key, value } => {
+                if value.is_null() {
+                    self.cluster_metadata.remove(key);
+                } else {
+                    self.cluster_metadata.insert(key.clone(), value.clone());
+                }
+            }
+
+            Action::SetQuotaConfig { config } => {
+                self.quota_config = Some(*config);
+            }
         }
     }
 
