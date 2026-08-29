@@ -22,10 +22,10 @@ use crate::types::{PeerAddressById, PeerMetadataById};
 /// [`SnapshotData`]: crate::content_manager::consensus_manager::SnapshotData
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ClusterState {
-    pub peer_address_by_id: PeerAddressById,
-    pub peer_metadata_by_id: PeerMetadataById,
     pub collections: HashMap<CollectionId, collection_state::State>,
     pub aliases: AliasMapping,
+    pub peer_address_by_id: PeerAddressById,
+    pub peer_metadata_by_id: PeerMetadataById,
     pub cluster_metadata: HashMap<String, serde_json::Value>,
     pub quota_config: Option<QuotaConfig>,
 }
