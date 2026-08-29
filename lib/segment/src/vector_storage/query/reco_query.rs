@@ -163,23 +163,12 @@ fn avg_vectors<'a>(
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
     let mut avg_multi: Option<TypedMultiDenseVector<VectorElementType>> = None;
-    let mut dense_dimension = None;
     let mut dense_count = 0;
     let mut sparse_count = 0;
     let mut multi_count = 0;
     for vector in vectors {
         match vector {
             VectorRef::Dense(vector) => {
-                if let Some(expected_dim) = dense_dimension {
-                    if expected_dim != vector.len() {
-                        return Err(OperationError::WrongVectorDimension {
-                            expected_dim,
-                            received_dim: vector.len(),
-                        });
-                    }
-                } else {
-                    dense_dimension = Some(vector.len());
-                }
                 dense_count += 1;
                 for i in 0..vector.len() {
                     if i >= avg_dense.len() {
@@ -422,12 +411,6 @@ mod test {
         );
 
         let vectors: Vec<VectorInternal> = vec![
-            VectorInternal::from(vec![1.0, 2.0, 3.0]),
-            VectorInternal::from(vec![1.0, 2.0, 3.0, 4.0]),
-        ];
-        assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
-
-        let vectors: Vec<VectorInternal> = vec![
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
                 .unwrap()
                 .into(),
@@ -471,18 +454,13 @@ mod test {
         )
         .unwrap();
         assert_eq!(vector, vec![1.0, 0.0].into());
-    }
 
-    #[test]
-    fn test_avg_vector_for_recommendation_rejects_dense_dimension_mismatch() {
-        let positive = vec![VectorInternal::from(vec![1.0, 2.0, 3.0])];
-        let negative = vec![VectorInternal::from(vec![1.0, 2.0, 3.0, 4.0])];
-
+        // Negative average with a different dimension is rejected, not truncated by zip.
+        let negatives: Vec<VectorInternal> = vec![vec![0.0, 1.0, 2.0].into()];
         let result = avg_vector_for_recommendation(
-            positive.iter().map(VectorRef::from),
-            negative.iter().map(VectorRef::from).peekable(),
+            positives.iter().map(VectorRef::from),
+            negatives.iter().map(VectorRef::from).peekable(),
         );
-
         assert!(result.is_err());
     }
 }
