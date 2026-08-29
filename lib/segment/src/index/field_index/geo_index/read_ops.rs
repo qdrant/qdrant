@@ -16,6 +16,7 @@
 //! [`BoolIndexRead`]: super::super::bool_index::BoolIndexRead
 
 use std::cmp::{max, min};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
@@ -286,7 +287,8 @@ pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
         let Some(points) = filter(geo, condition, hw_counter)? else {
             return Ok(None);
         };
-        let mut estimation = CardinalityEstimation::exact(points.count());
+        let unique_points: HashSet<_> = points.collect();
+        let mut estimation = CardinalityEstimation::exact(unique_points.len());
         estimation
             .primary_clauses
             .push(PrimaryCondition::Condition(Box::new(condition.clone())));
