@@ -282,11 +282,11 @@ pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
         return Ok(Some(estimation));
     }
 
-    if let Some(geo_radius) = &condition.geo_radius {
-        let Some(geo_hashes) = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok() else {
+    if condition.geo_radius.is_some() {
+        let Some(points) = filter(geo, condition, hw_counter)? else {
             return Ok(None);
         };
-        let mut estimation = geo.match_cardinality(&geo_hashes, hw_counter)?;
+        let mut estimation = CardinalityEstimation::exact(points.count());
         estimation
             .primary_clauses
             .push(PrimaryCondition::Condition(Box::new(condition.clone())));

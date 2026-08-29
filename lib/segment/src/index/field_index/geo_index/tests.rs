@@ -387,6 +387,30 @@ fn match_cardinality(#[case] index_type: IndexType) {
     );
 }
 
+/// Geo-radius cardinality must apply the point-level predicate instead of
+/// counting every point in the covering geohash regions.
+#[test]
+fn geo_radius_cardinality_matches_filtered_points() {
+    let (index, _temp_dir, _db) = build_random_index(1000, 1, IndexType::Mutable);
+    let condition = condition_for_geo_radius(
+        "test",
+        GeoRadius {
+            center: GeoPoint::new_unchecked(0.0, 0.0),
+            radius: OrderedFloat(2_000_000.0),
+        },
+    );
+    let expected = filtered_points(&index, &condition).len();
+    let estimation = index
+        .estimate_cardinality(&condition, &HardwareCounterCell::new())
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        (estimation.min, estimation.exp, estimation.max),
+        (expected, expected, expected)
+    );
+}
+
 /// Assert the estimated cardinality brackets the exact hash-iterator count.
 fn check_cardinality_match(
     hashes: Vec<GeoHash>,
