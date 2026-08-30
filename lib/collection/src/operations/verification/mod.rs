@@ -422,6 +422,7 @@ mod test {
         let collection = fixture().await;
 
         test_query_limit(&collection).await;
+        test_scroll_query_limit(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
@@ -433,6 +434,33 @@ mod test {
     async fn test_query_limit(collection: &Collection) {
         assert_strict_mode_error(discover_fixture(Some(10), None, None), collection).await;
         assert_strict_mode_success(discover_fixture(Some(4), None, None), collection).await;
+    }
+
+    /// Regression for qdrant/qdrant#10373: `scroll` with an omitted
+    /// `limit` must not bypass the configured `max_query_limit`. The
+    /// default limit (10) exceeds the fixture's cap (4) so an omitted
+    /// limit has to surface as a strict-mode error.
+    async fn test_scroll_query_limit(collection: &Collection) {
+        // Explicit limit at the cap: passes.
+        assert_strict_mode_success(scroll_fixture(Some(4)), collection).await;
+        // Explicit limit below the cap: passes.
+        assert_strict_mode_success(scroll_fixture(Some(2)), collection).await;
+        // Explicit limit above the cap: fails.
+        assert_strict_mode_error(scroll_fixture(Some(10)), collection).await;
+        // Omitted limit: defaults to 10, which exceeds the cap, so the
+        // check must reject it.
+        assert_strict_mode_error(scroll_fixture(None), collection).await;
+    }
+
+    fn scroll_fixture(limit: Option<usize>) -> shard::scroll::ScrollRequestInternal {
+        shard::scroll::ScrollRequestInternal {
+            offset: None,
+            limit,
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        }
     }
 
     async fn test_filter_read(collection: &Collection) {

@@ -5,7 +5,14 @@ use crate::operations::types::PointRequestInternal;
 
 impl StrictModeVerification for ScrollRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        self.limit
+        // The strict-mode cap must be applied against the limit that
+        // will actually be used, not the raw `Option`. If the caller
+        // omits `limit`, `scroll_by` resolves the default (10) *after*
+        // `check_request_query_limit` runs, so an omitted limit bypasses
+        // the configured `max_query_limit` (qdrant/qdrant#10373).
+        // `/points/query` resolves the default in the same way; mirror
+        // it here so the cap is enforced for omitted limits too.
+        Some(self.limit.unwrap_or_else(Self::default_limit))
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
