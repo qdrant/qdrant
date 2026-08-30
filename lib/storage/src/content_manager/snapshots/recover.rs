@@ -112,19 +112,7 @@ async fn _do_recover_from_snapshot(
     let this_peer_id = toc.this_peer_id;
 
     if let Ok(collection) = toc.get_collection(&collection_pass).await {
-        let state = collection.state().await;
-        let all_local_shards_have_other_active_replicas = state.shards.values().all(|shard_info| {
-            !shard_info.replicas.contains_key(&this_peer_id)
-                || shard_info.replicas.iter().any(|(&peer_id, &state)| {
-                    peer_id != this_peer_id
-                        && matches!(
-                            state,
-                            ReplicaState::Active | ReplicaState::ReshardingScaleDown
-                        )
-                })
-        });
-
-        validate_snapshot_priority(priority, all_local_shards_have_other_active_replicas)?;
+        validate_snapshot_priority_for_collection(priority, &collection, this_peer_id).await?;
     }
 
     // Measure this scope for metrics/telemetry.
@@ -228,6 +216,10 @@ async fn _do_recover_from_snapshot(
             toc.get_collection(&collection_pass).await?
         }
     };
+
+    // The collection may have been created after the initial lookup. Revalidate its topology
+    // before changing any shard state.
+    validate_snapshot_priority_for_collection(priority, &collection, this_peer_id).await?;
 
     let state = collection.state().await;
 
@@ -455,6 +447,26 @@ async fn _do_recover_from_snapshot(
 }
 
 /// Reject priorities that cannot be honored by the current deployment topology.
+async fn validate_snapshot_priority_for_collection(
+    priority: SnapshotPriority,
+    collection: &Collection,
+    this_peer_id: PeerId,
+) -> Result<(), StorageError> {
+    let state = collection.state().await;
+    let all_local_shards_have_other_active_replicas = state.shards.values().all(|shard_info| {
+        !shard_info.replicas.contains_key(&this_peer_id)
+            || shard_info.replicas.iter().any(|(&peer_id, &state)| {
+                peer_id != this_peer_id
+                    && matches!(
+                        state,
+                        ReplicaState::Active | ReplicaState::ReshardingScaleDown
+                    )
+            })
+    });
+
+    validate_snapshot_priority(priority, all_local_shards_have_other_active_replicas)
+}
+
 fn validate_snapshot_priority(
     priority: SnapshotPriority,
     has_other_active_replicas: bool,
