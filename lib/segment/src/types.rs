@@ -2737,11 +2737,52 @@ impl Validate for PayloadSchemaParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl<'de> Deserialize<'de> for PayloadFieldSchema {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // `PayloadFieldSchema` is an untagged enum whose `FieldParams`
+        // variant is itself an untagged enum of structs. When a JSON
+        // array reaches the inner deserializer, serde matches its
+        // elements positionally against the first struct variant's
+        // fields and silently produces a misconfigured schema
+        // (qdrant/qdrant#10372). Reject sequence inputs upfront so the
+        // invalid shape produces a 4xx diagnostic instead of a created
+        // index.
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.is_array() {
+            return Err(serde::de::Error::custom(
+                "field_schema must be a string identifier (e.g. \"keyword\") \
+                 or an object with `type` and parameters, not a JSON array",
+            ));
+        }
+        // Delegate to a private shadow enum with the derived
+        // untagged `Deserialize` so we don't recurse into this impl.
+        serde_json::from_value::<PayloadFieldSchemaShadow>(value)
+            .map(Into::into)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+enum PayloadFieldSchemaShadow {
+    FieldType(PayloadSchemaType),
+    FieldParams(PayloadSchemaParams),
+}
+
+impl From<PayloadFieldSchemaShadow> for PayloadFieldSchema {
+    fn from(shadow: PayloadFieldSchemaShadow) -> Self {
+        match shadow {
+            PayloadFieldSchemaShadow::FieldType(t) => Self::FieldType(t),
+            PayloadFieldSchemaShadow::FieldParams(p) => Self::FieldParams(p),
+        }
+    }
 }
 
 impl PartialEq for PayloadFieldSchema {
@@ -6385,5 +6426,94 @@ impl Display for ShardKey {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod field_schema_tests {
+    use super::*;
+
+    /// A bare string identifier deserialises into the `FieldType` variant.
+    #[test]
+    fn accepts_bare_string_identifier() {
+        let schema: PayloadFieldSchema = serde_json::from_str(r#""keyword""#).unwrap();
+        assert!(matches!(
+            schema,
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+        ));
+    }
+
+    /// An object with `type` and parameters deserialises into the
+    /// `FieldParams` variant.
+    #[test]
+    fn accepts_object_with_type_and_params() {
+        let schema: PayloadFieldSchema =
+            serde_json::from_str(r#"{"type": "keyword", "is_tenant": true}"#).unwrap();
+        match schema {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(params)) => {
+                assert_eq!(params.is_tenant, Some(true));
+            }
+            other => panic!("expected FieldParams(Keyword), got {other:?}"),
+        }
+    }
+
+    /// `null` deserialises into the inner `Option::None` of the REST DTO.
+    /// At the type level, this is a deserialisation error (the type is
+    /// not optional), so we exercise it via `Option<PayloadFieldSchema>`.
+    #[test]
+    fn null_in_option_is_none() {
+        let schema: Option<PayloadFieldSchema> = serde_json::from_str("null").unwrap();
+        assert!(schema.is_none());
+    }
+
+    /// Regression for qdrant/qdrant#10372: `["keyword"]` (a JSON array)
+    /// used to be silently deserialised into `FieldParams(Keyword(...))`
+    /// via positional matching against the struct's first field. The
+    /// custom `Deserialize` impl rejects it with a diagnostic.
+    #[test]
+    fn rejects_array_of_strings() {
+        let err = serde_json::from_str::<PayloadFieldSchema>(r#"["keyword"]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// An empty array is also rejected (the untagged deserializer would
+    /// otherwise fall through to the `Integer` variant and produce a
+    /// equally wrong schema).
+    #[test]
+    fn rejects_empty_array() {
+        let err = serde_json::from_str::<PayloadFieldSchema>(r#"[]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// A nested array is also rejected; the rejection happens at the
+    /// outermost layer, before the inner untagged deserializer runs.
+    #[test]
+    fn rejects_nested_array() {
+        let err = serde_json::from_str::<PayloadFieldSchema>(r#"[["keyword"]]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// Array rejection also applies when the field is wrapped in
+    /// `Option`, which is how the REST DTO exposes `field_schema`.
+    #[test]
+    fn rejects_array_in_option() {
+        let err = serde_json::from_str::<Option<PayloadFieldSchema>>(r#"["keyword"]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
     }
 }
