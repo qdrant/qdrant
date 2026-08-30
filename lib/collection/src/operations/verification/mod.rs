@@ -422,6 +422,7 @@ mod test {
         let collection = fixture().await;
 
         test_query_limit(&collection).await;
+        test_scroll_query_limit(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
@@ -433,6 +434,43 @@ mod test {
     async fn test_query_limit(collection: &Collection) {
         assert_strict_mode_error(discover_fixture(Some(10), None, None), collection).await;
         assert_strict_mode_success(discover_fixture(Some(4), None, None), collection).await;
+    }
+
+    async fn test_scroll_query_limit(collection: &Collection) {
+        use shard::scroll::ScrollRequestInternal;
+
+        // Default limit (10) exceeds max_query_limit (4), so omitted limit should error
+        let request_omitted_limit = ScrollRequestInternal {
+            offset: None,
+            limit: None,
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        };
+        assert_strict_mode_error(request_omitted_limit, collection).await;
+
+        // Explicit limit (10) exceeds max_query_limit (4)
+        let request_explicit_exceeding_limit = ScrollRequestInternal {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        };
+        assert_strict_mode_error(request_explicit_exceeding_limit, collection).await;
+
+        // Explicit limit (4) matches max_query_limit (4)
+        let request_valid_limit = ScrollRequestInternal {
+            offset: None,
+            limit: Some(4),
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        };
+        assert_strict_mode_success(request_valid_limit, collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
