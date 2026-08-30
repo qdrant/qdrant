@@ -109,7 +109,23 @@ async fn _do_recover_from_snapshot(
 
     let toc = dispatcher.toc(&auth, &pass);
     let priority = priority.unwrap_or_default();
-    validate_snapshot_priority(priority, toc.is_distributed())?;
+    let this_peer_id = toc.this_peer_id;
+
+    if let Ok(collection) = toc.get_collection(&collection_pass).await {
+        let state = collection.state().await;
+        let all_local_shards_have_other_active_replicas = state.shards.values().all(|shard_info| {
+            !shard_info.replicas.contains_key(&this_peer_id)
+                || shard_info.replicas.iter().any(|(&peer_id, &state)| {
+                    peer_id != this_peer_id
+                        && matches!(
+                            state,
+                            ReplicaState::Active | ReplicaState::ReshardingScaleDown
+                        )
+                })
+        });
+
+        validate_snapshot_priority(priority, all_local_shards_have_other_active_replicas)?;
+    }
 
     // Measure this scope for metrics/telemetry.
     // (This must be a named variable so it doesn't get dropped prematurely!)
@@ -117,8 +133,6 @@ async fn _do_recover_from_snapshot(
         .snapshot_telemetry_collector(collection_pass.name())
         .running_snapshot_recovery
         .measure_scope();
-
-    let this_peer_id = toc.this_peer_id;
 
     let is_distributed = toc.is_distributed();
 
@@ -443,11 +457,11 @@ async fn _do_recover_from_snapshot(
 /// Reject priorities that cannot be honored by the current deployment topology.
 fn validate_snapshot_priority(
     priority: SnapshotPriority,
-    is_distributed: bool,
+    has_other_active_replicas: bool,
 ) -> Result<(), StorageError> {
-    if !is_distributed && matches!(priority, SnapshotPriority::Replica) {
+    if !has_other_active_replicas && matches!(priority, SnapshotPriority::Replica) {
         return Err(StorageError::bad_request(
-            "Snapshot recovery with `replica` priority is not supported in standalone mode",
+            "Snapshot recovery with `replica` priority requires another active replica",
         ));
     }
 
@@ -459,13 +473,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn replica_priority_requires_distributed_mode() {
+    fn replica_priority_requires_another_active_replica() {
         let error = validate_snapshot_priority(SnapshotPriority::Replica, false).unwrap_err();
 
         assert!(matches!(
             error,
             StorageError::BadRequest { description }
-                if description == "Snapshot recovery with `replica` priority is not supported in standalone mode"
+                if description == "Snapshot recovery with `replica` priority requires another active replica"
         ));
         assert!(validate_snapshot_priority(SnapshotPriority::Replica, true).is_ok());
     }
