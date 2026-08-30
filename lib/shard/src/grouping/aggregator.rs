@@ -7,6 +7,7 @@ use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
+use segment::utils::scored_point_ties::ScoredPointTiesOwned;
 use serde_json::Value;
 
 use super::{AggregatorError, Group};
@@ -17,6 +18,7 @@ use super::{AggregatorError, Group};
 const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
 
 type Hits = AHashMap<PointIdType, ScoredPoint>;
+
 pub struct GroupsAggregator {
     groups: AHashMap<GroupId, Hits>,
     max_group_size: usize,
@@ -192,15 +194,17 @@ impl GroupsAggregator {
 
         for group_key in best_groups {
             let mut group = self.groups.remove(&group_key).unwrap();
-            let scored_points_iter = group.drain().map(|(_, hit)| hit);
+            let scored_points_iter = group.drain().map(|(_, hit)| ScoredPointTiesOwned(hit));
             let hits = match self.order {
-                Some(Order::LargeBetter) => {
-                    peek_top_largest_iterable(scored_points_iter, self.max_group_size)
-                }
-                Some(Order::SmallBetter) => {
-                    peek_top_smallest_iterable(scored_points_iter, self.max_group_size)
-                }
-                None => scored_points_iter.take(self.max_group_size).collect(),
+                Some(Order::LargeBetter) => ScoredPointTiesOwned::into_scored_points(
+                    peek_top_largest_iterable(scored_points_iter, self.max_group_size),
+                ),
+                Some(Order::SmallBetter) => ScoredPointTiesOwned::into_scored_points(
+                    peek_top_smallest_iterable(scored_points_iter, self.max_group_size),
+                ),
+                None => ScoredPointTiesOwned::into_scored_points(
+                    scored_points_iter.take(self.max_group_size).collect(),
+                ),
             };
             groups.push(Group {
                 hits,
@@ -466,6 +470,20 @@ mod unit_tests {
             let group_id_score: Vec<_> = group.hits.into_iter().map(|x| (x.id, x.score)).collect();
             assert_eq!(expected_id_score, group_id_score);
         }
+    }
+
+    #[test]
+    fn test_small_better_ties_are_selected_by_point_id() {
+        let mut aggregator =
+            GroupsAggregator::new(1, 2, "docId".parse().unwrap(), Some(Order::SmallBetter));
+
+        for id in [4, 2, 3, 1] {
+            aggregator.add_point(&point(id, 1.0, json!("a"))).unwrap();
+        }
+
+        let groups = aggregator.distill();
+        let ids: Vec<_> = groups[0].hits.iter().map(|point| point.id).collect();
+        assert_eq!(ids, vec![1.into(), 2.into()]);
     }
 
     /// Regression test for issue #8406: a client-supplied huge `limit` (number of groups) and
