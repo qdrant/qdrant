@@ -108,6 +108,8 @@ async fn _do_recover_from_snapshot(
     let pass = new_unchecked_verification_pass();
 
     let toc = dispatcher.toc(&auth, &pass);
+    let priority = priority.unwrap_or_default();
+    validate_snapshot_priority(priority, toc.is_distributed())?;
 
     // Measure this scope for metrics/telemetry.
     // (This must be a named variable so it doesn't get dropped prematurely!)
@@ -269,8 +271,6 @@ async fn _do_recover_from_snapshot(
             Some(_) | None => {} // Shard is not on this node, skip
         }
     }
-
-    let priority = priority.unwrap_or_default();
 
     // Recover shards from the snapshot
     for (shard_id, shard_info) in &state.shards {
@@ -438,4 +438,41 @@ async fn _do_recover_from_snapshot(
     tokio_fs::remove_dir_all(&tmp_collection_dir).await?;
 
     Ok(true)
+}
+
+/// Reject priorities that cannot be honored by the current deployment topology.
+fn validate_snapshot_priority(
+    priority: SnapshotPriority,
+    is_distributed: bool,
+) -> Result<(), StorageError> {
+    if !is_distributed && matches!(priority, SnapshotPriority::Replica) {
+        return Err(StorageError::bad_request(
+            "Snapshot recovery with `replica` priority is not supported in standalone mode",
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replica_priority_requires_distributed_mode() {
+        let error = validate_snapshot_priority(SnapshotPriority::Replica, false).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::BadRequest { description }
+                if description == "Snapshot recovery with `replica` priority is not supported in standalone mode"
+        ));
+        assert!(validate_snapshot_priority(SnapshotPriority::Replica, true).is_ok());
+    }
+
+    #[test]
+    fn other_priorities_remain_supported_in_standalone_mode() {
+        assert!(validate_snapshot_priority(SnapshotPriority::NoSync, false).is_ok());
+        assert!(validate_snapshot_priority(SnapshotPriority::Snapshot, false).is_ok());
+    }
 }
