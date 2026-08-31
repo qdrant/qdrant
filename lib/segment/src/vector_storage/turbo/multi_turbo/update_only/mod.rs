@@ -73,9 +73,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let encoded_size = self.quantizer.quantized_size();
-        // As in the plain multivector storage, a run that would straddle a
-        // chunk skips to the next one; the gaps become explicit zero rows, so
-        // a single append lands every run where its offset entry points.
         let batch_start = self.next_row;
         let mut rows: Vec<u8> = Vec::new();
         let mut offsets = Vec::new();
@@ -92,15 +89,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
             };
 
             let count = encoded.len() / encoded_size;
-            let row = self.place(count)?;
-            rows.resize(rows.len() + (row - self.next_row) * encoded_size, 0);
             rows.extend_from_slice(&encoded);
             offsets.push(MultivectorMmapOffset {
-                offset: row as PointOffsetType,
+                offset: self.next_row as PointOffsetType,
                 count: count as PointOffsetType,
                 capacity: count as PointOffsetType,
             });
-            self.next_row = row + count;
+            self.next_row += count;
         }
 
         self.vectors.append_many(
@@ -120,22 +115,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
         }
 
         self.deleted.flush(hw_counter)
-    }
-
-    /// Where a run of `count` rows goes: at the end, or at the start of the next
-    /// chunk when it would otherwise straddle a chunk boundary.
-    fn place(&self, count: usize) -> OperationResult<usize> {
-        let remaining = self.vectors.remaining_chunk_keys(self.next_row);
-        if count > remaining {
-            let max = self.vectors.remaining_chunk_keys(0);
-            if count > max {
-                return Err(OperationError::service_error(format!(
-                    "Cannot insert a multi vector of {count} inner vectors, a chunk holds {max}",
-                )));
-            }
-            return Ok(self.next_row + remaining);
-        }
-        Ok(self.next_row)
     }
 
     /// Encode every inner vector, back to back.

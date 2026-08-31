@@ -35,21 +35,73 @@ pub(super) struct ChunkedVectorsConfig {
     pub(super) populate: Option<bool>,
 }
 
+/// One chunk's share of a run of vectors.
+pub(super) struct RunPart {
+    pub chunk_idx: usize,
+    /// Where the part starts within its chunk, in elements.
+    pub element_offset: usize,
+    /// Vectors in the part.
+    pub count: usize,
+}
+
 impl ChunkedVectorsConfig {
     pub fn get_chunk_index(&self, key: usize) -> usize {
         key / self.chunk_size_vectors
     }
 
-    pub fn get_chunk_offset(&self, key: usize) -> usize {
-        let chunk_vector_idx = key % self.chunk_size_vectors;
-        chunk_vector_idx * self.dim
-    }
+    /// Split the run of `count` vectors at `key` into one part per chunk it
+    /// covers, in order.
+    ///
+    /// Always yields at least one part, so an empty run still resolves to a
+    /// position.
+    pub fn split_run(&self, key: usize, count: usize) -> RunParts<'_> {
+        let parts = match count {
+            0 => 1,
+            count => self.get_chunk_index(key + count - 1) - self.get_chunk_index(key) + 1,
+        };
 
-    /// How many vectors still fit in the chunk holding `key`, starting at it.
-    pub fn remaining_chunk_capacity(&self, key: usize) -> usize {
-        self.chunk_size_vectors - key % self.chunk_size_vectors
+        RunParts {
+            config: self,
+            key,
+            left: count,
+            parts,
+        }
     }
 }
+
+/// Iterator of [`ChunkedVectorsConfig::split_run`].
+pub(super) struct RunParts<'a> {
+    config: &'a ChunkedVectorsConfig,
+    key: usize,
+    left: usize,
+    parts: usize,
+}
+
+impl Iterator for RunParts<'_> {
+    type Item = RunPart;
+
+    fn next(&mut self) -> Option<RunPart> {
+        self.parts = self.parts.checked_sub(1)?;
+
+        let in_chunk = self.key % self.config.chunk_size_vectors;
+        let part = RunPart {
+            chunk_idx: self.key / self.config.chunk_size_vectors,
+            element_offset: in_chunk * self.config.dim,
+            count: self.left.min(self.config.chunk_size_vectors - in_chunk),
+        };
+
+        self.key += part.count;
+        self.left -= part.count;
+
+        Some(part)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.parts, Some(self.parts))
+    }
+}
+
+impl ExactSizeIterator for RunParts<'_> {}
 
 /// Load the stored config, or create it (and its file) on first open.
 pub(super) fn ensure_config<T, Fs>(
