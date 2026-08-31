@@ -7,6 +7,7 @@ use super::VectorStorageReadEnum;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::{VectorDataConfig, VectorStorageDatatype, VectorStorageType};
+use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
 use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
 };
@@ -113,16 +114,13 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         } else {
             match datatype {
                 VectorStorageDatatype::Float32 => ReadOnlyImmutableDenseVectorStorage::<
-                    VectorElementType,
-                    S,
+                    ImmutableDenseVectorData<VectorElementType, S>,
                 >::preopen(fs, path, populate),
                 VectorStorageDatatype::Uint8 => ReadOnlyImmutableDenseVectorStorage::<
-                    VectorElementTypeByte,
-                    S,
+                    ImmutableDenseVectorData<VectorElementTypeByte, S>,
                 >::preopen(fs, path, populate),
                 VectorStorageDatatype::Float16 => ReadOnlyImmutableDenseVectorStorage::<
-                    VectorElementTypeHalf,
-                    S,
+                    ImmutableDenseVectorData<VectorElementTypeHalf, S>,
                 >::preopen(fs, path, populate),
                 VectorStorageDatatype::Turbo4 => {
                     ReadOnlyImmutableTurboVectorStorage::<S>::preopen(fs, path, populate)
