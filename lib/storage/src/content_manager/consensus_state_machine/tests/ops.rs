@@ -120,15 +120,15 @@ fn create_collection_defaults() {
     let mut machine = ConsensusStateMachine::new(ClusterState::default(), context);
     machine.apply(&create_collection_op(create_collection_request(), None));
 
-    let params = &machine
-        .state()
-        .collection(COLLECTION)
-        .expect("created")
-        .config
-        .params;
+    let state = machine.state().collection(COLLECTION).expect("created");
 
-    assert_eq!(params.shard_number.get(), 3);
-    assert_eq!(params.replication_factor.get(), 2);
+    assert_eq!(
+        state.shards,
+        shards(vec![vec![PEER_ID], vec![PEER_ID], vec![PEER_ID]]),
+    );
+
+    assert_eq!(state.config.params.shard_number.get(), 3);
+    assert_eq!(state.config.params.replication_factor.get(), 2);
 }
 
 #[test]
