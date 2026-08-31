@@ -1,5 +1,5 @@
 use super::{UniversalFlush, UniversalRead, UniversalWriteFileOps};
-use crate::universal_io::{ByteOffset, UioResult};
+use crate::universal_io::{ByteOffset, UioResult, UniversalReadFs};
 
 /// A file handle that supports atomic appends at a caller-provided offset.
 ///
@@ -94,4 +94,18 @@ pub trait UniversalAppend:
 
     // When adding provided methods, don't forget to update impls in
     // crate::universal_io::wrappers::*.
+}
+
+pub trait UniversalAppendFs:
+    UniversalReadFs<File = <Self as UniversalAppendFs>::File> + UniversalWriteFileOps
+{
+    type File: UniversalAppend;
+}
+
+impl<Fs> UniversalAppendFs for Fs
+where
+    Fs: UniversalReadFs + UniversalWriteFileOps<AppendFile = <Self as UniversalReadFs>::File>,
+    <Self as UniversalReadFs>::File: UniversalAppend,
+{
+    type File = <Self as UniversalReadFs>::File;
 }

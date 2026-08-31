@@ -6,7 +6,7 @@ use blobstore::config::LogstoreConfig;
 use blobstore::{Blob, Logstore};
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalAppend};
+use common::universal_io::{Populate, UniversalAppend, UniversalAppendFs};
 
 use crate::common::operation_error::OperationResult;
 
@@ -33,7 +33,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     /// not there yet. An existing storage keeps the config it was created with,
     /// so `config_if_create` only decides the layout of a brand new one.
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<File = S>,
         path: &Path,
         config_if_create: LogstoreConfig,
     ) -> OperationResult<Self> {
