@@ -33,7 +33,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     /// not there yet. An existing storage keeps the config it was created with,
     /// so `config_if_create` only decides the layout of a brand new one.
     pub fn open(
-        fs: &impl UniversalAppendFs<File = S>,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         path: &Path,
         config_if_create: LogstoreConfig,
     ) -> OperationResult<Self> {
@@ -57,7 +57,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     /// rollover.
     pub fn put(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         slot: PointOffsetType,
         value: &V,
         hw_counter: HwMetricRefCounter,

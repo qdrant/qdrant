@@ -15,7 +15,7 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
-    OkNotFound as _, Populate, UniversalAppend, UniversalAppendFs, UniversalRead,
+    OkNotFound as _, Populate, UniversalAppend, UniversalAppendFs, UniversalRead, UniversalReadFs,
     UniversalWriteFileOps, UserData,
 };
 use page::AppendOnlyPages;
@@ -122,11 +122,10 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(
-        fs: &impl UniversalAppendFs<File = S>,
-        base_path: PathBuf,
-        config: LogstoreConfig,
-    ) -> Result<Self> {
+    pub(super) fn new<Fs>(fs: &Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         let tracker = AppendOnlyTracker::new(fs, &base_path)?;
         let pages = AppendOnlyPages::new(fs, &base_path)?;
 
@@ -151,7 +150,7 @@ where
     /// In case of opening, it ignores the `config_if_create` parameter. A storage created in
     /// mutable mode is rejected, the two modes persist incompatible file formats.
     pub fn open_or_create(
-        fs: &impl UniversalAppendFs<File = S>,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         base_path: PathBuf,
         config_if_create: LogstoreConfig,
         populate: Populate,
@@ -170,12 +169,15 @@ where
     }
 
     /// Open an existing storage at the given path, with the already read config.
-    pub(super) fn open(
-        fs: &impl UniversalAppendFs<File = S>,
+    pub(super) fn open<Fs>(
+        fs: &Fs,
         base_path: PathBuf,
         config: LogstoreConfig,
         populate: Populate,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         let tracker = AppendOnlyTracker::open_writable(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, true, populate)?;
         validate_consistency(&tracker, &pages)?;
@@ -209,13 +211,16 @@ where
     /// rejected, the storage is append-only.
     ///
     /// Always returns false on success, as values can never be updated.
-    pub fn put_value(
+    pub fn put_value<Fs>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         point_offset: PointOffset,
         value: &V,
         hw_counter: HwMetricRefCounter,
-    ) -> Result<bool> {
+    ) -> Result<bool>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
     }
 
@@ -227,13 +232,16 @@ where
     /// See [`put_value`](Self::put_value) for buffering and append-only semantics.
     // Takes &mut self for signature parity with the mutable variant
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub(super) fn put_value_bytes(
+    pub(super) fn put_value_bytes<Fs>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
         hw_counter: HwMetricRefCounter,
-    ) -> Result<bool> {
+    ) -> Result<bool>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         // Validate before buffering anything, a rejected put must not leave data behind
         let next = self.tracker.read().pointer_count();
         if point_offset < next {
@@ -275,7 +283,10 @@ where
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it in append-only mode.
-    pub(super) fn clear(&mut self, fs: &S::Fs) -> Result<()> {
+    pub(super) fn clear<Fs>(&mut self, fs: &Fs) -> Result<()>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         self.is_alive_flush_lock.blocking_mark_dead();
 
         fs.remove_dir(&self.base_path)?;
@@ -291,7 +302,10 @@ where
     /// Takes ownership because this function leaves the storage in an inconsistent state which
     /// does not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the
     /// storage.
-    pub(super) fn wipe(self, fs: &S::Fs) -> Result<()> {
+    pub(super) fn wipe<Fs>(self, fs: &Fs) -> Result<()>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S>,
+    {
         let Self {
             config: _,
             tracker,

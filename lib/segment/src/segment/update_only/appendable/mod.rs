@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::UniversalAppendFs;
 
 use super::AppendableIdTrackerState;
 use crate::common::operation_error::OperationResult;
@@ -23,40 +23,40 @@ use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore}
 
 /// A segment open for appends: the write target. Every point a batch stores
 /// lands here, in a fresh slot — nothing is ever rewritten in place.
-pub struct AppendableSegment<S: UniversalAppend + 'static> {
+pub struct AppendableSegment<Fs: UniversalAppendFs> {
     id_tracker: UpdateOnlyAppendableIdTracker,
     /// What the id tracker appends through and
     /// [`store_components`](Self::store_components) opens with.
-    fs: S::Fs,
+    fs: Fs,
     segment_path: PathBuf,
     config: SegmentConfig,
     /// The components a stored point's data goes into, opened on the first
     /// [`store_points`](Self::store_points). A batch that only deletes writes
     /// nothing but the mappings log, so it never pays for these opens.
-    store: Option<StoreComponents<S>>,
+    store: Option<StoreComponents<Fs>>,
 }
 
 /// Everywhere a stored point's data goes. The mappings log that publishes the
 /// point is not here: it belongs to the segment itself, since deletes need it
 /// too.
-struct StoreComponents<S: UniversalAppend + 'static> {
+struct StoreComponents<Fs: UniversalAppendFs> {
     /// What the components write through, passed down per call.
-    fs: S::Fs,
-    payload_storage: UpdateOnlyPayloadStorage<S>,
-    payload_indexes: UpdateOnlyStructPayloadIndex<S>,
+    fs: Fs,
+    payload_storage: UpdateOnlyPayloadStorage<Fs::File>,
+    payload_indexes: UpdateOnlyStructPayloadIndex<Fs::File>,
     /// One writer per named vector, dense and sparse alike.
-    vector_storages: Vec<(VectorNameBuf, UpdateOnlyVectorStorage<S>)>,
+    vector_storages: Vec<(VectorNameBuf, UpdateOnlyVectorStorage<Fs::File>)>,
     /// Quantized overlays, keyed by vector name — only for dense, non-multivector vectors
     /// whose quantization method supports incremental appends (Binary/Turbo — see
     /// `QuantizationConfig::supports_appendable`). A vector name with no entry here simply
     /// has no live quantization (never configured, an unsupported method, or a multivector —
     /// that support is a follow-up, needing its own append-only offsets storage): it stays
     /// searchable exactly, through the raw storage alone, same as before this existed.
-    quantized_vectors: HashMap<VectorNameBuf, UpdateOnlyQuantizedVectors<S>>,
+    quantized_vectors: HashMap<VectorNameBuf, UpdateOnlyQuantizedVectors<Fs>>,
 }
 
-impl<S: UniversalAppend + 'static> StoreComponents<S> {
-    fn open(fs: S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
+impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
+    fn open(fs: Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
         let payload_storage = UpdateOnlyPayloadStorage::open(&fs, segment_path)?;
         let payload_indexes = UpdateOnlyStructPayloadIndex::open(&fs, segment_path)?;
 
@@ -90,7 +90,7 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
     }
 }
 
-impl<S: UniversalAppend + 'static> AppendableSegment<S> {
+impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// Resume the segment directory at `segment_path` from the mappings-log
     /// state the read phase observed.
     ///
@@ -98,7 +98,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
     /// versions were never committed are retired here, since which components
     /// got to write their data is unknowable.
     pub fn open(
-        fs: S::Fs,
+        fs: Fs,
         segment_path: &Path,
         config: &SegmentConfig,
         state: AppendableIdTrackerState,
@@ -126,7 +126,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         })
     }
 
-    fn store_components(&mut self) -> OperationResult<&mut StoreComponents<S>> {
+    fn store_components(&mut self) -> OperationResult<&mut StoreComponents<Fs>> {
         if self.store.is_none() {
             self.store = Some(StoreComponents::open(
                 self.fs.clone(),

@@ -8,7 +8,7 @@ use std::path::Path;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalAppendFs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::UpdateOnlyFieldIndex;
@@ -40,7 +40,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// is a config from before those types were recorded, which only the
     /// writable index can repair, by deriving them from the schema on its next
     /// open.
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        segment_path: &Path,
+    ) -> OperationResult<Self> {
         let path = get_payload_index_path(segment_path);
         let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path))?
             .unwrap_or_default();
@@ -81,7 +84,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// value there.
     pub fn append_many<'a>(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         points: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {

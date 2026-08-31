@@ -8,7 +8,7 @@
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalRead};
+use common::universal_io::{UniversalAppendFs, UniversalRead};
 use rayon::ThreadPool;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
@@ -128,7 +128,7 @@ pub(super) fn resolve_batch<S: UniversalRead + 'static>(
     Ok(points)
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
+impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// Resolve a batch without writing anything: what
     /// [`apply_batch`](Self::apply_batch) would do, reported per point.
     ///
