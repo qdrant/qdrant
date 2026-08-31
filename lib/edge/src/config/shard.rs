@@ -11,6 +11,7 @@ use segment::types::{
 };
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
+use shard::optimizers::config::DenseVectorOptimizerConfig;
 use wal::WalOptions;
 
 use super::optimizers::EdgeOptimizersConfig;
@@ -222,29 +223,7 @@ impl EdgeConfig {
     /// Segment config for creating appendable segments only.
     /// Does not contain any HNSW configuration (plain index only).
     pub fn plain_segment_config(&self) -> SegmentConfig {
-        let payload_storage_type = PayloadStorageType::from_on_disk_payload(self.on_disk_payload());
-        let vector_data = self
-            .vectors
-            .iter()
-            .map(|(name, p)| {
-                (
-                    name.clone(),
-                    p.to_plain_vector_data_config(self.quantization_config.as_ref()),
-                )
-            })
-            .collect();
-
-        let sparse_vector_data = self
-            .sparse_vectors
-            .iter()
-            .map(|(name, p)| (name.clone(), p.to_plain_sparse_vector_data_config()))
-            .collect();
-
-        SegmentConfig {
-            vector_data,
-            sparse_vector_data,
-            payload_storage_type,
-        }
+        self.segment_optimizer_config().plain_segment_config()
     }
 
     /// All vector names (dense and sparse) currently present in this config.
@@ -264,41 +243,34 @@ impl EdgeConfig {
     pub fn segment_optimizer_config(&self) -> shard::optimizers::config::SegmentOptimizerConfig {
         use shard::optimizers::config::SegmentOptimizerConfig;
 
-        let SegmentConfig {
-            vector_data: plain_dense_vector_config,
-            sparse_vector_data: plain_sparse_vector_config,
-            payload_storage_type,
-        } = self.plain_segment_config();
-
-        let hnsw_config = self.hnsw_config();
-        let dense_vector = self
+        let dense_vectors = self
             .vectors
             .iter()
-            .map(|(name, p)| {
-                (
-                    name.clone(),
-                    p.to_dense_vector_optimizer_config(
-                        &hnsw_config,
-                        self.quantization_config.as_ref(),
-                    ),
-                )
-            })
+            .map(|(name, p)| (name.clone(), self.dense_vector_optimizer_config(p)))
             .collect();
 
-        let sparse_vector = self
+        let sparse_vectors = self
             .sparse_vectors
             .iter()
             .map(|(name, p)| (name.clone(), p.to_sparse_vector_optimizer_config()))
             .collect();
 
         SegmentOptimizerConfig {
-            payload_storage_type,
-            plain_dense_vector_config,
-            plain_sparse_vector_config,
-            dense_vector,
-            sparse_vector,
+            payload_storage_type: PayloadStorageType::from_on_disk_payload(self.on_disk_payload()),
+            dense_vectors,
+            sparse_vectors,
             live_vector_names: None,
         }
+    }
+
+    fn dense_vector_optimizer_config(
+        &self,
+        params: &EdgeVectorParams,
+    ) -> DenseVectorOptimizerConfig {
+        params.to_dense_vector_optimizer_config(
+            &self.hnsw_config(),
+            self.quantization_config.as_ref(),
+        )
     }
 
     /// Return vector data config for a named vector (for read-only use, e.g. query).
@@ -309,7 +281,7 @@ impl EdgeConfig {
     ) -> Option<segment::types::VectorDataConfig> {
         self.vectors
             .get(name)
-            .map(|p| p.to_plain_vector_data_config(self.quantization_config.as_ref()))
+            .map(|p| self.dense_vector_optimizer_config(p).plain())
     }
 
     /// Distance of a named vector, mirroring `CollectionParams::get_distance`:

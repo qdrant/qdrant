@@ -51,7 +51,7 @@ impl ConfigMismatchOptimizer {
     /// Memory placement the current configuration requests for original vectors, if configured
     fn requested_vectors_memory(&self, vector_name: &VectorName) -> Option<Memory> {
         self.segment_optimizer_config
-            .dense_vector
+            .dense_vectors
             .get(vector_name)
             .and_then(|cfg| cfg.memory_placement())
     }
@@ -60,7 +60,7 @@ impl ConfigMismatchOptimizer {
     /// if configured
     fn requested_sparse_index_memory(&self, vector_name: &VectorName) -> Option<Memory> {
         self.segment_optimizer_config
-            .sparse_vector
+            .sparse_vectors
             .get(vector_name)
             .and_then(|cfg| cfg.memory_placement())
     }
@@ -90,7 +90,7 @@ impl ConfigMismatchOptimizer {
                             // Select segment if we have an HNSW mismatch that requires rebuild
                             let target_hnsw = self
                                 .segment_optimizer_config
-                                .dense_vector
+                                .dense_vectors
                                 .get(vector_name)
                                 .map(|cfg| cfg.hnsw_config)
                                 .unwrap_or(self.global_hnsw_config);
@@ -110,7 +110,7 @@ impl ConfigMismatchOptimizer {
                     // Check quantization mismatch
                     let target_quantization = self
                         .segment_optimizer_config
-                        .dense_vector
+                        .dense_vectors
                         .get(vector_name)
                         .and_then(|cfg| cfg.quantization_config.as_ref());
 

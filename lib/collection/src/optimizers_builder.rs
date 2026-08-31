@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput,
-    LiveVectorNamesProvider, SegmentOptimizerConfig, SparseVectorOptimizerInput,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig,
+    LiveVectorNamesProvider, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
     TEMP_SEGMENTS_PATH, get_deferred_points_threshold_bytes, get_indexing_threshold_kb,
     get_max_segment_size_kb, get_number_segments,
 };
@@ -209,7 +209,7 @@ pub fn build_segment_optimizer_config(
 
             (
                 name.into(),
-                DenseVectorOptimizerInput {
+                DenseVectorOptimizerConfig {
                     size: size.get() as usize,
                     distance: *distance,
                     on_disk: *on_disk,
@@ -237,7 +237,7 @@ pub fn build_segment_optimizer_config(
 
                     (
                         name.clone(),
-                        SparseVectorOptimizerInput {
+                        SparseVectorOptimizerConfig {
                             on_disk: index.and_then(|index| index.on_disk),
                             memory: index.and_then(|index| index.memory),
                             full_scan_threshold: index.and_then(|index| index.full_scan_threshold),
@@ -253,11 +253,12 @@ pub fn build_segment_optimizer_config(
         })
         .unwrap_or_default();
 
-    SegmentOptimizerConfig::new(
-        collection_params.payload_storage_type(),
+    SegmentOptimizerConfig {
+        payload_storage_type: collection_params.payload_storage_type(),
         dense_vectors,
         sparse_vectors,
-    )
+        live_vector_names: None,
+    }
 }
 
 /// Build a [`LiveVectorNamesProvider`] that reads the collection's current vector names.
