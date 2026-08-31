@@ -146,9 +146,16 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // Vector storages
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
+            let index_path = get_vector_index_path(segment_path, vector_name);
             let storage_populate =
                 load_profile.and_then(|profile| profile.vector_storage_placement(vector_name));
-            VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path, storage_populate)?;
+            VectorStorageReadEnum::<S>::preopen(
+                fs,
+                vector_config,
+                &path,
+                &index_path,
+                storage_populate,
+            )?;
 
             // Quantized vectors live in the vector storage directory; a no-op
             // when quantization isn't configured for this vector.
@@ -161,7 +168,6 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             // prefetched.
             let index_populate =
                 load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
-            let index_path = get_vector_index_path(segment_path, vector_name);
             VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_populate)?;
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
@@ -260,12 +266,19 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             let path = get_vector_storage_path(segment_path, vector_name);
             let storage_populate =
                 load_profile.and_then(|profile| profile.vector_storage_placement(vector_name));
-            let storage = VectorStorageReadEnum::open(&fs, vector_config, &path, storage_populate)?
-                .ok_or_else(|| {
-                    OperationError::service_error(format!(
-                        "Read-only dense vector storage '{vector_name}' was not found, or is corrupted.",
-                    ))
-                })?;
+            let index_path = get_vector_index_path(segment_path, vector_name);
+            let opened = VectorStorageReadEnum::open(
+                &fs,
+                vector_config,
+                &path,
+                &index_path,
+                storage_populate,
+            )?;
+            let storage = opened.ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Read-only dense vector storage '{vector_name}' was not found, or is corrupted.",
+                ))
+            })?;
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {

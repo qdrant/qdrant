@@ -108,7 +108,9 @@ impl SegmentBuilder {
 
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
-            let vector_storage = open_vector_storage(vector_config, &vector_storage_path)?;
+            let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
+            let vector_storage =
+                open_vector_storage(vector_config, &vector_storage_path, &vector_index_path)?;
 
             vector_data.insert(
                 vector_name.to_owned(),
