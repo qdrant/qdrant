@@ -261,6 +261,16 @@ impl<S: UniversalWrite> Bitmask<S> {
         let regions_start_offset = region_id_range.start as usize * self.config.region_size_blocks;
         let regions_end_offset = region_id_range.end as usize * self.config.region_size_blocks;
 
+        let all_bits = self.bitslice.read_all()?;
+
+        // The persisted gaps can diverge from the bitmask after an unclean shutdown; never let a
+        // proposed window reach beyond the bitmask itself. A clamped (and thereby failed) search
+        // is recovered by a gaps rebuild, see `Gridstore::find_or_create_available_blocks`.
+        if regions_start_offset >= all_bits.len() {
+            return Ok(None);
+        }
+        let regions_end_offset = regions_end_offset.min(all_bits.len());
+
         let translate_to_answer = |local_index: u32| {
             let page_size_in_blocks = self.config.page_size_bytes / self.config.block_size_bytes;
 
@@ -273,7 +283,6 @@ impl<S: UniversalWrite> Bitmask<S> {
             (page_id as PageId, page_block_offset as BlockOffset)
         };
 
-        let all_bits = self.bitslice.read_all()?;
         let regions_bitslice = &all_bits[regions_start_offset..regions_end_offset];
 
         Ok(Self::find_available_blocks_in_slice(
@@ -443,6 +452,30 @@ impl<S: UniversalWrite> Bitmask<S> {
         Ok(())
     }
 
+    /// Rebuild all region gaps from the bitmask, from scratch.
+    ///
+    /// The gaps are a persisted acceleration structure derived from the bitmask, but they are
+    /// persisted to a separate file without ordering guarantees. After an unclean shutdown the
+    /// persisted gaps can be inconsistent with the bitmask (in content or in length), making the
+    /// gap search miss free space. The bitmask is authoritative, so recomputing every region
+    /// restores consistency.
+    pub(crate) fn rebuild_gaps(&mut self, fs: &S::Fs) -> Result<()> {
+        let region_size_blocks = self.config.region_size_blocks;
+        let num_regions = (self.bitslice.bit_len() as usize).div_euclid(region_size_blocks);
+
+        let mut gaps = Vec::with_capacity(num_regions);
+        for region_id in 0..num_regions {
+            let region_start = (region_id * region_size_blocks) as u64;
+            let region_end = region_start + region_size_blocks as u64;
+            let bitslice = &self.bitslice.read_bit_range(region_start..region_end)?;
+            gaps.push(Self::calculate_gaps(bitslice, region_size_blocks));
+        }
+
+        // Reset rather than update the entries one by one: this also repairs a persisted gaps
+        // file whose length diverged from the bitmask.
+        self.regions_gaps.reset(fs, gaps.into_iter())
+    }
+
     pub fn calculate_gaps(region: &BitSlice, region_size_blocks: usize) -> RegionGaps {
         debug_assert_eq!(region.len(), region_size_blocks, "Unexpected region size");
         // Get raw memory region
@@ -581,7 +614,7 @@ mod tests {
     use proptest::prelude::*;
     use rand::{RngExt, rng};
 
-    use super::MmapBitmask;
+    use super::{MmapBitmask, RegionGaps};
     use crate::config::{
         Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig,
     };
@@ -655,6 +688,57 @@ mod tests {
         // not fitting cell
         let found_large = bitmask.find_available_blocks(blocks_per_page).unwrap();
         assert_eq!(found_large, None);
+    }
+
+    #[test]
+    fn test_rebuild_gaps() {
+        let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+        let blocks_per_page = (page_size / DEFAULT_BLOCK_SIZE_BYTES) as u32;
+
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = GridstoreConfig {
+            page_size_bytes: page_size,
+            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+            compression: Compression::LZ4,
+        };
+
+        // Two pages, one region per page.
+        let mut bitmask: MmapBitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        bitmask.cover_new_page().unwrap();
+
+        // Occupy all of region 0 and the first block of region 1.
+        bitmask.mark_blocks(0, 0, blocks_per_page, true).unwrap();
+        bitmask.mark_blocks(1, 0, 1, true).unwrap();
+
+        let expected = bitmask.regions_gaps.read_all().unwrap().into_owned();
+
+        // Corrupt the persisted gaps, as an unclean shutdown can leave them: claim region 0 is
+        // all free, and append a phantom region beyond the bitmask.
+        let all_free = RegionGaps::all_free(DEFAULT_REGION_SIZE_BLOCKS as u16);
+        bitmask.regions_gaps.set(0, all_free).unwrap();
+        bitmask
+            .regions_gaps
+            .extend(std::iter::once(all_free))
+            .unwrap();
+        assert_eq!(bitmask.regions_gaps.len().unwrap(), 3);
+
+        // With the corrupted gaps the search proposes region 0, which is actually full.
+        assert_eq!(bitmask.find_available_blocks(1).unwrap(), None);
+
+        bitmask.rebuild_gaps(&MmapFs).unwrap();
+
+        // The length is repaired and every entry matches a fresh recomputation.
+        assert_eq!(bitmask.regions_gaps.len().unwrap(), 2);
+        assert_eq!(
+            bitmask.regions_gaps.read_all().unwrap().as_ref(),
+            expected.as_slice(),
+        );
+
+        // The search finds the free space in region 1 again.
+        let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
+        assert_eq!((page_id, block_offset), (1, 1));
     }
 
     #[test]

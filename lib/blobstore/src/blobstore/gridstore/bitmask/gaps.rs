@@ -170,6 +170,26 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         Ok(())
     }
 
+    /// Rewrites the file to contain exactly the given regions, resizing it as needed.
+    pub fn reset(
+        &mut self,
+        fs: &S::Fs,
+        iter: impl ExactSizeIterator<Item = RegionGaps>,
+    ) -> Result<()> {
+        // Flush outstanding changes so no stale dirty pages of the old mapping can be written
+        // back over the recreated content.
+        self.slice_store.flusher()()?;
+
+        let dir = self
+            .path
+            .parent()
+            .expect("gaps file has a parent directory")
+            .to_path_buf();
+        *self = Self::create(fs, &dir, iter, self.config.clone())?;
+
+        Ok(())
+    }
+
     pub fn trailing_free_blocks(&self) -> Result<u32> {
         let slice = self.read_all()?;
         Ok(slice
