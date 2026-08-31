@@ -1121,7 +1121,7 @@ pub struct StrictModeConfig {
     /// Max number of payload indexes in a collection
     #[prost(uint64, optional, tag = "19")]
     pub max_payload_index_count: ::core::option::Option<u64>,
-    /// Max number of points an update operation that selects its targets by filter may affect, estimated from payload indexes when the request is received
+    /// Max number of points per shard an update operation that selects its targets by filter may affect, counted by each shard when it resolves the filter
     #[prost(uint64, optional, tag = "23")]
     #[validate(range(min = 1))]
     pub max_update_by_filter_limit: ::core::option::Option<u64>,

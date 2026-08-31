@@ -14,6 +14,7 @@ mod shard_query;
 mod shard_telemetry;
 mod snapshot_test;
 mod sparse_vectors_validation_tests;
+mod update_by_filter_limit;
 mod wal_recovery_test;
 
 use std::assert_matches;

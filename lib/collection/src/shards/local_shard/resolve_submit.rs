@@ -25,9 +25,16 @@
 //! the filter matched: it reuses the incoming operation's single clock tag,
 //! and one tag can cover only one record — untagged or tag-sharing records
 //! break WAL-delta recovery. Splitting oversized resolutions is a follow-up.
+//!
+//! `max_update_by_filter_limit` (strict mode) is enforced here, on the exact
+//! point set the scan resolved to. Each shard gates its own share of the
+//! request: the check runs after the filter is resolved and before the WAL
+//! append, so a rejected operation leaves no trace on this shard. Only filter
+//! scans are gated, and only clients issue those: internal operations resolve
+//! no filters, so they need no exemption.
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use shard::resolve::resolve_operation;
+use shard::resolve::{ResolvedOperation, resolve_operation};
 use tokio::sync::oneshot;
 
 use crate::operations::OperationWithClockTag;
@@ -81,6 +88,8 @@ impl LocalShard {
 
         self.check_wal_disk_space().await?;
 
+        let update_by_filter_limit = self.max_update_by_filter_limit().await;
+
         // 1. Fence: block new submits; in-flight ones (holding `read`) have
         // already appended and enqueued by the time `write` is granted.
         let _fence = self.update_lock.write().await;
@@ -103,11 +112,23 @@ impl LocalShard {
         // operation to its id-based form.
         let segments = self.segments.clone();
         let hw_acc = hw_measurement_acc.clone();
-        let resolved = tokio::task::spawn_blocking(move || {
+        let ResolvedOperation {
+            operation: resolved,
+            scanned_points,
+        } = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
             resolve_operation(&segments, operation, &hw_acc.get_counter_cell())
         })
         .await??;
+
+        // Gate on the exact number of points the scan selected in this shard,
+        // before anything is written.
+        if let Some(limit) = update_by_filter_limit
+            && let Some(matched) = scanned_points
+            && matched > limit
+        {
+            return Err(update_by_filter_limit_error(matched, limit));
+        }
 
         // Guard against `is_filter_resolving` and `resolve_operation` drifting
         // apart: a resolved operation must never classify as filter-resolving,
@@ -126,4 +147,40 @@ impl LocalShard {
         )
         .await
     }
+
+    /// Configured `max_update_by_filter_limit`, if strict mode is enabled.
+    async fn max_update_by_filter_limit(&self) -> Option<usize> {
+        self.collection_config
+            .read()
+            .await
+            .strict_mode_config
+            .as_ref()
+            .filter(|config| config.enabled == Some(true))
+            .and_then(|config| config.max_update_by_filter_limit)
+    }
+}
+
+/// Reject an update whose filter selected more points than strict mode allows,
+/// pointing at the `slice` condition as the way to split it up.
+fn update_by_filter_limit_error(matched: usize, limit: usize) -> CollectionError {
+    // `matched / limit` slices only make the *average* slice fit, and slices
+    // are hash-based rather than balanced, so suggest twice that as a starting
+    // point. Another shard may have matched more points than this one, so the
+    // suggestion can still fall short; the message says so.
+    let slices = (2 * matched).div_ceil(limit.max(1));
+
+    CollectionError::strict_mode(
+        format!(
+            "Update by filter matches {matched} points in one shard, \
+             exceeding the per-shard limit of {limit}",
+        ),
+        format!(
+            "Split the update into disjoint slices and send one request per slice: add \
+             `{{\"slice\": {{\"total\": {slices}, \"index\": 0}}}}` to your filter and repeat \
+             it for every index in `0..{slices}`. Together the slices cover all matching points. \
+             Slices are hash-based and not exactly balanced, so raise `total` further if a slice \
+             is still rejected. Alternatively, raise `max_update_by_filter_limit` in the strict \
+             mode config.",
+        ),
+    )
 }
