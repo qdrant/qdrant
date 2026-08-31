@@ -68,6 +68,16 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
         debug_assert!(!options.writeable);
         Ok(ReadOnly(self.0.open(path, options, extra)?))
     }
+
+    async fn open_async(
+        &self,
+        path: std::path::PathBuf,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Self::File> {
+        debug_assert!(!options.writeable);
+        Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
+    }
 }
 
 /// Construction context for [`ReadOnlyFs`], forwarding to the inner Fs's

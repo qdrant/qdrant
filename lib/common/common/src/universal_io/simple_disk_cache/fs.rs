@@ -8,8 +8,8 @@ use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
-use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
+use crate::universal_io::simple_disk_cache::{REMOTE_OPEN_OPTIONS, to_block_range};
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs,
@@ -119,7 +119,7 @@ impl<R: UniversalRead> DiskCacheFs<R> {
 
 impl<R> UniversalReadFileOps for DiskCacheFs<R>
 where
-    R: UniversalRead,
+    R: UniversalRead + 'static,
 {
     type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFileOps>::ContextConfig>;
 
@@ -271,5 +271,72 @@ where
         }
 
         Ok(cache)
+    }
+
+    async fn open_async(
+        &self,
+        path: PathBuf,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Self::File> {
+        let populate = if crate::low_memory::low_memory_mode().skip_populate() {
+            Populate::No
+        } else {
+            options.populate
+        };
+
+        let local_path = unique_local_path(self.config.local_path_for(path.as_ref())?);
+
+        let remote_extra = extra.remote_extra.clone().with_prevent_caching(true);
+
+        let state = match populate {
+            Populate::Auto | Populate::No | Populate::Blocking => {
+                return self.open(path, options, extra);
+            }
+            Populate::PreferBackground => {
+                let remote = self.open_remote(&path, remote_extra.clone())?;
+                let len = match extra.known_len {
+                    Some(len) => len,
+                    None => remote.len::<u8>()?,
+                };
+                let byte_range = 0..len;
+
+                let content = remote
+                    .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                    .await?;
+
+                let local = LocalState::new(&local_path, len, options)?;
+                unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
+                State::ready(remote, local)
+            }
+            Populate::Partial(read_range) => {
+                let remote = self.open_remote(&path, remote_extra.clone())?;
+                let file_len = match extra.known_len {
+                    Some(len) => len,
+                    None => remote.len::<u8>()?,
+                };
+                let byte_range = read_range.into_byte_range::<u8>();
+                let (block_range, fetch_range) =
+                    block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
+
+                let content = remote
+                    .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                    .await?;
+
+                let local = LocalState::new(&local_path, file_len, options)?;
+                unsafe { local.write_mmap_bytes(&content, block_range) };
+                State::ready(remote, local)
+            }
+        };
+
+        Ok(DiskCache::new(
+            self.remote_fs.clone(),
+            remote_extra,
+            path,
+            local_path,
+            options,
+            state,
+            extra.known_etag,
+        ))
     }
 }

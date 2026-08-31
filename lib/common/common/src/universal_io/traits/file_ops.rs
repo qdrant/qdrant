@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::append::UniversalAppend;
@@ -21,10 +21,11 @@ use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 /// [`UniversalWriteFileOps`] subtrait.
 ///
 /// Handles are cheap to clone and shareable across threads, e.g. to move
-/// them into background flushers.
+/// them into background flushers. They own their resources (`'static`), so
+/// futures built from a cloned handle can be parked or spawned.
 ///
 /// [`UniversalWrite`]: super::UniversalWrite
-pub trait UniversalReadFileOps: Clone + Debug + Send + Sync + Sized {
+pub trait UniversalReadFileOps: Clone + Debug + Send + Sync + Sized + 'static {
     /// Implementation-specific construction config. Backends are free to
     /// require explicit construction; callers that want to opt into the
     /// `<Fs::ContextConfig>::default()` pattern must constrain
@@ -134,7 +135,7 @@ pub trait UniversalReadFs: UniversalReadFileOps {
     /// here. Generic callers pass `Default::default()` and chain
     /// [`OpenExtra`] setters (e.g. [`OpenExtra::with_prevent_caching`]) for
     /// behaviors that have universal meaning across backends.
-    type OpenExtra: OpenExtra;
+    type OpenExtra: OpenExtra + Send;
 
     /// Open a file for reading.
     ///
@@ -146,6 +147,16 @@ pub trait UniversalReadFs: UniversalReadFileOps {
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> UioResult<Self::File>;
+
+    /// Open a file, and populate it asynchronously.
+    ///
+    /// Must not depend on ambient async context; capture any runtime by value.
+    fn open_async(
+        &self,
+        path: PathBuf,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
 }
 
 /// Capability extension over [`UniversalReadFs`]: a filesystem that snapshots

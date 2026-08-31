@@ -169,6 +169,16 @@ impl UniversalReadFs for IoUringFs {
             direct_io,
         })
     }
+
+    fn open_async(
+        &self,
+        path: std::path::PathBuf,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> impl Future<Output = UioResult<Self::File>> + '_ {
+        // IoUringFile does not handle `populate` parameter
+        std::future::ready(self.open(&path, options, extra))
+    }
 }
 
 impl UniversalRead for IoUringFile {

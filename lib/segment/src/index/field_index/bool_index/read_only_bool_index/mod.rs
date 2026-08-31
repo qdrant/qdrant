@@ -235,6 +235,7 @@ mod tests {
     #[case(true, false)]
     #[case(true, true)]
     #[case(false, false)]
+    #[case(false, true)]
     fn live_reload_matches_fresh_open(
         #[case] materialize_before_reload: bool,
         #[case] preload: bool,

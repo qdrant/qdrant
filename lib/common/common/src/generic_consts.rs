@@ -1,4 +1,4 @@
-pub trait AccessPattern: Copy + Default {
+pub trait AccessPattern: Copy + Default + Send {
     const IS_SEQUENTIAL: bool;
 }
 
