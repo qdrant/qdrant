@@ -184,7 +184,7 @@ where
     ) -> OperationResult<()> {
         let file_name = dir.join(POINT_TO_VALUES_PATH);
 
-        fs.schedule_prefetch(&file_name, Some(Self::open_options(populate)), None)?;
+        fs.schedule_open(&file_name, Some(Self::open_options(populate)), None)?;
 
         Ok(())
     }

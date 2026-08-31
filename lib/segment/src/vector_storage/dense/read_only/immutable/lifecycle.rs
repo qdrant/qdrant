@@ -39,7 +39,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorSt
         ImmutableDenseVectorData::<T, S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
 
         // Deleted flags
-        fs.schedule_prefetch(
+        fs.schedule_open(
             &path.join(DELETED_PATH),
             Some(bitslice_open_options(Populate::PreferBackground)),
             None,

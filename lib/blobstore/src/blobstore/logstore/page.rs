@@ -60,7 +60,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             if !page_files.contains(&path) {
                 break;
             }
-            fs.schedule_prefetch(
+            fs.schedule_open(
                 &path,
                 Some(AppendOnlyPage::<S>::open_options(populate, false)),
                 None,
@@ -288,7 +288,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             if !page_list.contains_key(&path) {
                 break;
             }
-            fs.schedule_prefetch(
+            fs.schedule_open(
                 &path,
                 Some(AppendOnlyPage::<S>::open_options(populate, false)),
                 None,

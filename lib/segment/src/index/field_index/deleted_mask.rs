@@ -177,13 +177,13 @@ where
     S: UniversalRead,
 {
     if fs
-        .schedule_prefetch(&deleted_mask_path(dir), Some(options), None)
+        .schedule_open(&deleted_mask_path(dir), Some(options), None)
         .ok_not_found()?
         .is_some()
     {
         return Ok(());
     }
-    fs.schedule_prefetch(&dir.join(legacy_file), Some(options), None)?;
+    fs.schedule_open(&dir.join(legacy_file), Some(options), None)?;
     Ok(())
 }
 

@@ -10,7 +10,7 @@ use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
     pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
-        fs.reschedule_prefetch(&deleted_path(&self.path), Some(Self::open_options()), None)?;
+        fs.reschedule_open(&deleted_path(&self.path), Some(Self::open_options()), None)?;
         Ok(())
     }
 

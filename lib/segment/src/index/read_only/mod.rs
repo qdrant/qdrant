@@ -135,7 +135,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         // Sparse index config; `open_sparse` reads it off the parked handle.
         let config_path = SparseIndexConfig::get_config_path(path);
         if fs
-            .schedule_prefetch(&config_path, None, None)
+            .schedule_open(&config_path, None, None)
             .ok_not_found()?
             .is_none()
         {
@@ -165,10 +165,10 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         inverted_index_compressed_mmap::preopen(fs, path, populate)?;
 
         // Version check
-        fs.schedule_prefetch(&path.join(VERSION_FILE), None, None)?;
+        fs.schedule_open(&path.join(VERSION_FILE), None, None)?;
 
         // Indices tracker
-        fs.schedule_prefetch(&IndicesTracker::file_path(path), None, None)?;
+        fs.schedule_open(&IndicesTracker::file_path(path), None, None)?;
 
         Ok(())
     }

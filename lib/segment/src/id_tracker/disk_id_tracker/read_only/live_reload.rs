@@ -14,7 +14,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
     pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
         // The reload reads the whole bitslice
-        fs.reschedule_prefetch(
+        fs.reschedule_open(
             &deleted_path(&self.path),
             Some(Self::deleted_open_options()),
             None,

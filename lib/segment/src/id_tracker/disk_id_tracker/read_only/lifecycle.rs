@@ -47,8 +47,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         }
 
         let options = Self::open_options();
-        fs.schedule_prefetch(&version_mapping_path(segment_path), Some(options), None)?;
-        fs.schedule_prefetch(
+        fs.schedule_open(&version_mapping_path(segment_path), Some(options), None)?;
+        fs.schedule_open(
             &deleted_path(segment_path),
             Some(Self::deleted_open_options()),
             None,

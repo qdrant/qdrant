@@ -65,7 +65,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         // Config; `open` reads it off the parked handle.
         let config_path = QuantizedVectors::get_config_path(path);
         if fs
-            .schedule_prefetch(&config_path, None, None)
+            .schedule_open(&config_path, None, None)
             .ok_not_found()?
             .is_none()
         {
@@ -73,7 +73,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         }
 
         // Per-method metadata
-        fs.schedule_prefetch(&QuantizedVectors::get_meta_path(path), None, None)?;
+        fs.schedule_open(&QuantizedVectors::get_meta_path(path), None, None)?;
 
         let placement = QuantizedVectors::memory_placement(
             quantization_config.memory_placement(),

@@ -116,7 +116,7 @@ impl<S: UniversalRead> HnswGraph<S> {
         dir: &Path,
         residency: GraphLinksResidency,
     ) -> OperationResult<()> {
-        fs.schedule_prefetch(&GraphLayers::get_path(dir), None, None)?;
+        fs.schedule_open(&GraphLayers::get_path(dir), None, None)?;
         let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
             return Ok(());
         };
@@ -125,7 +125,7 @@ impl<S: UniversalRead> HnswGraph<S> {
         } else {
             GraphLinks::preopen_options(residency)
         };
-        fs.schedule_prefetch(
+        fs.schedule_open(
             &GraphLayers::get_links_path(dir, format),
             Some(options),
             None,
