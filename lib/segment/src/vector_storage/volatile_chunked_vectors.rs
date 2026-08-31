@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::max;
 use std::collections::TryReserveError;
 use std::mem;
@@ -87,17 +88,33 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
             })
     }
 
-    pub fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        if self.chunks.is_empty() {
-            return None;
+    /// Borrows a single chunk, or copies when the run straddles a boundary.
+    pub fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<Cow<'_, [T]>> {
+        let mut key = key;
+        let mut left = count;
+        let mut vectors: Option<Cow<'_, [T]>> = None;
+
+        loop {
+            let chunk_data = self.chunks.get(key / self.chunk_capacity)?;
+            let idx = (key % self.chunk_capacity) * self.dim;
+            let part_count = left.min(self.chunk_left_keys(key));
+            let part = chunk_data.get(idx..idx + part_count * self.dim)?;
+
+            vectors = Some(match vectors {
+                None => Cow::Borrowed(part),
+                Some(mut vectors) => {
+                    vectors.to_mut().extend_from_slice(part);
+                    vectors
+                }
+            });
+
+            key += part_count;
+            left -= part_count;
+
+            if left == 0 {
+                return vectors;
+            }
         }
-        self.chunks
-            .get(key / self.chunk_capacity)
-            .and_then(|chunk_data| {
-                let idx = (key % self.chunk_capacity) * self.dim;
-                let range = idx..idx + count * self.dim;
-                chunk_data.get(range)
-            })
     }
 
     pub fn push(&mut self, vector: &[T]) -> Result<VectorOffsetType, TryReserveError> {
@@ -106,8 +123,8 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
         Ok(new_id)
     }
 
-    // returns how many flattened vectors can be inserted starting from key
-    pub fn get_chunk_left_keys(&self, start_key: VectorOffsetType) -> usize {
+    /// How many vectors still fit in the chunk holding `start_key`.
+    fn chunk_left_keys(&self, start_key: VectorOffsetType) -> usize {
         self.chunk_capacity - (start_key % self.chunk_capacity)
     }
 
@@ -126,10 +143,6 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
             vectors.len(),
             vectors_count * self.dim,
             "Vector size mismatch"
-        );
-        assert!(
-            self.get_chunk_left_keys(key) >= vectors_count,
-            "Index out of bounds"
         );
 
         let desired_capacity = self.chunk_capacity * self.dim;
@@ -162,30 +175,40 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
             assert_eq!(self.chunks.len(), chunks_len);
         }
 
-        let chunk_idx = key / self.chunk_capacity;
-        let chunk_data = &mut self.chunks[chunk_idx];
-        let idx = (key % self.chunk_capacity) * self.dim;
+        // A run longer than the chunk's tail continues in the next one
+        let mut key = key;
+        let mut rest = vectors;
+        while !rest.is_empty() {
+            let chunk_idx = key / self.chunk_capacity;
+            let idx = (key % self.chunk_capacity) * self.dim;
+            let fits = self.chunk_left_keys(key) * self.dim;
+            let (part, tail) = rest.split_at(fits.min(rest.len()));
 
-        // Grow the current chunk if needed to fit the new vector.
-        //
-        // All chunks are dynamically resized to fit their vectors in it.
-        // Chunks have a size of zero by default. It's grown with zeroes to fit new vectors.
-        //
-        // The capacity for the first chunk is allocated normally to keep the memory footprint as
-        // small as possible, see
-        // <https://doc.rust-lang.org/std/vec/struct.Vec.html#capacity-and-reallocation>).
-        // All other chunks allocate their capacity in full on first use to prevent expensive
-        // reallocations when their data grows.
-        if chunk_data.len() < idx + vectors.len() {
-            // If the chunk is not the first one, allocate it fully on first use
-            if chunk_idx != 0 {
-                chunk_data.try_set_capacity_exact(desired_capacity)?;
+            let chunk_data = &mut self.chunks[chunk_idx];
+
+            // Grow the current chunk if needed to fit the new vector.
+            //
+            // All chunks are dynamically resized to fit their vectors in it.
+            // Chunks have a size of zero by default. It's grown with zeroes to fit new vectors.
+            //
+            // The capacity for the first chunk is allocated normally to keep the memory footprint as
+            // small as possible, see
+            // <https://doc.rust-lang.org/std/vec/struct.Vec.html#capacity-and-reallocation>).
+            // All other chunks allocate their capacity in full on first use to prevent expensive
+            // reallocations when their data grows.
+            if chunk_data.len() < idx + part.len() {
+                // If the chunk is not the first one, allocate it fully on first use
+                if chunk_idx != 0 {
+                    chunk_data.try_set_capacity_exact(desired_capacity)?;
+                }
+                chunk_data.resize_with(idx + part.len(), T::default);
             }
-            chunk_data.resize_with(idx + vectors.len(), T::default);
-        }
 
-        let data = &mut chunk_data[idx..idx + vectors.len()];
-        data.copy_from_slice(vectors);
+            chunk_data[idx..idx + part.len()].copy_from_slice(part);
+
+            key += part.len() / self.dim;
+            rest = tail;
+        }
 
         // Update `self.len` only after the vector is successfully inserted.
         // In case of OOM, `self.len` will not be updated.
@@ -196,27 +219,14 @@ impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
 
     /// Append all flattened vectors in `vectors` to the end of the storage.
     ///
-    /// `vectors` holds `vectors.len() / dim` consecutive vectors. They are inserted
-    /// in batches of one chunk's remaining capacity, so each batch is a single
-    /// `copy_from_slice` and never crosses a chunk boundary.
+    /// `vectors` holds `vectors.len() / dim` consecutive vectors.
     pub fn extend(&mut self, vectors: &[T]) -> Result<(), TryReserveError> {
         assert!(
             vectors.len().is_multiple_of(self.dim),
             "Vector data size mismatch"
         );
 
-        let count = vectors.len() / self.dim;
-        let mut inserted = 0;
-        while inserted < count {
-            let key = self.len;
-            let batch = self.get_chunk_left_keys(key).min(count - inserted);
-            let start = inserted * self.dim;
-            let end = start + batch * self.dim;
-            self.insert_many(key, &vectors[start..end], batch)?;
-            inserted += batch;
-        }
-
-        Ok(())
+        self.insert_many(self.len, vectors, vectors.len() / self.dim)
     }
 }
 

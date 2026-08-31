@@ -75,14 +75,6 @@ where
         Ok(read_status_len(&self.fs, &status_file(&self.directory))?)
     }
 
-    /// How many more vectors fit in the chunk that `key` falls in.
-    ///
-    /// A vector never straddles a chunk, so a caller placing a run of rows has
-    /// to skip to the next chunk when the run does not fit in this one.
-    pub fn remaining_chunk_keys(&self, key: usize) -> usize {
-        self.config.remaining_chunk_capacity(key)
-    }
-
     /// Replace the stored vector count.
     fn save_len(&self, len: usize) -> OperationResult<()> {
         self.fs.atomic_save(
@@ -176,42 +168,47 @@ where
     /// match the argument
     // Takes &mut self to enforce the single-writer contract the appends rest on
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn append_many<'a>(
+    pub fn append_many<'a, I>(
         &mut self,
         start_key: VectorOffsetType,
-        vectors: impl IntoIterator<Item = &'a [T]>,
+        vectors: I,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<()>
+    where
+        I: IntoIterator<Item = &'a [T]>,
+        I::IntoIter: ExactSizeIterator,
+    {
         self.ensure_chunk_lengths(start_key)?;
 
-        let mut vectors = vectors.into_iter().peekable();
-        let mut len = start_key;
+        let mut vectors = vectors.into_iter();
+        let count = vectors.len();
 
-        while vectors.peek().is_some() {
-            let chunk_idx = self.config.get_chunk_index(len);
-            let chunk_offset = self.config.get_chunk_offset(len);
-            let capacity = self.config.remaining_chunk_capacity(len);
+        for part in self.config.split_run(start_key, count) {
+            // The part an empty run resolves to: no batch to append, and
+            // opening its chunk would create the file for nothing
+            if part.count == 0 {
+                continue;
+            }
 
-            let batch: Vec<&[T]> = vectors.by_ref().take(capacity).collect();
+            let batch: Vec<&[T]> = vectors.by_ref().take(part.count).collect();
             for vector in &batch {
                 assert_eq!(vector.len(), self.config.dim, "Vector size mismatch");
             }
             let batch_bytes = batch.len() * self.config.dim * size_of::<T>();
 
-            let mut chunk = self.open_chunk_for_append(chunk_idx, chunk_offset == 0)?;
+            let mut chunk = self.open_chunk_for_append(part.chunk_idx, part.element_offset == 0)?;
             chunk.append_batch(
-                (chunk_offset * size_of::<T>()) as u64,
+                (part.element_offset * size_of::<T>()) as u64,
                 batch.iter().copied(),
             )?;
             // Flush in case of local backends.
             chunk.flusher()()?;
 
             hw_counter.vector_io_write_counter().incr_delta(batch_bytes);
-            len += batch.len();
         }
 
         // Persist the watermark only after the data landed
-        self.save_len(len)?;
+        self.save_len(start_key + count)?;
 
         Ok(())
     }

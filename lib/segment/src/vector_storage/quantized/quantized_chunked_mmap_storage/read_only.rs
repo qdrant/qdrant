@@ -57,9 +57,9 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         self.data.clear_cache()
     }
 
-    /// Concatenated records `[index, index + count)` in one contiguous read.
-    /// `None` if out of bounds or the range straddles a chunk boundary
-    /// (read-only counterpart of [`super::QuantizedChunkedStorage::get_many`]).
+    /// Concatenated records `[index, index + count)`, copied when the range
+    /// straddles a chunk boundary. `None` if out of bounds (read-only
+    /// counterpart of [`super::QuantizedChunkedStorage::get_many`]).
     pub fn get_many<P: AccessPattern>(
         &self,
         index: PointOffsetType,
@@ -70,8 +70,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
 
     /// Batched counterpart of [`Self::get_many`]: invoke `callback` with the
     /// concatenated records of each `(user_data, start, count)` range, batching
-    /// the underlying reads. Like [`Self::get_many`], a range must not straddle
-    /// a chunk boundary.
+    /// the underlying reads.
     pub fn for_each_many<P: AccessPattern, U: UserData>(
         &self,
         ranges: impl Iterator<Item = (U, PointOffsetType, u32)>,

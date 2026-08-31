@@ -158,14 +158,6 @@ pub fn open_appendable_turbo_multi_vector_storage(
     })
 }
 
-/// Rejection message for a multivector that cannot fit a whole storage chunk
-/// ([`AppendableMmapMultiTurboVectorStorage::fresh_range_start`] returning `None`). Single
-/// source of truth for both write paths; only the error class differs by call
-/// site (user error on ingest, service error on the optimizer merge).
-fn exceeds_chunk_capacity_message(count: PointOffsetType) -> String {
-    format!("Multivector of {count} subvectors exceeds the chunk capacity")
-}
-
 impl AppendableMmapMultiTurboVectorStorage {
     /// Offset record for `key`, if the point exists.
     fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
@@ -247,7 +239,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         let records = self
             .storage
             .get_many::<Random>(offset.offset, offset.count as usize)
-            // SAFETY: `fresh_range_start` guarantees ranges never straddle across a boundary.
             .expect("Multivector not found");
         self.dequantize_records(&records)
     }
@@ -293,24 +284,6 @@ impl AppendableMmapMultiTurboVectorStorage {
             })
     }
 
-    /// Start of a fresh range for `count` records, never straddling a chunk
-    /// boundary: skips the tail when the range wouldn't fit it, `None` when
-    /// even a whole chunk can't hold it. Callers classify the `None` case via
-    /// [`exceeds_chunk_capacity_message`]: user error on the ingest path,
-    /// service error on the optimizer merge.
-    fn fresh_range_start(&self, count: PointOffsetType) -> Option<PointOffsetType> {
-        let start = self.storage.vectors_count() as PointOffsetType;
-        let left = self.storage.get_remaining_chunk_keys(start);
-        if count as usize <= left {
-            return Some(start);
-        }
-        let next_chunk = start + left as PointOffsetType;
-        if count as usize > self.storage.get_remaining_chunk_keys(next_chunk) {
-            return None;
-        }
-        Some(next_chunk)
-    }
-
     /// Record range for upserting `count` records at `key`: reuse the existing
     /// range in place when the new count fits its capacity, else allocate a
     /// fresh range at the end.
@@ -318,7 +291,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         key: PointOffsetType,
         count: PointOffsetType,
-    ) -> OperationResult<MultivectorMmapOffset> {
+    ) -> MultivectorMmapOffset {
         let mut offset = self
             .offsets
             .get::<Random>(key as VectorOffsetType)
@@ -326,20 +299,15 @@ impl AppendableMmapMultiTurboVectorStorage {
             .unwrap_or_default();
 
         if count > offset.capacity {
-            // User error so WAL replay skips the op instead of crash-looping.
-            // Reachable only internally (no `MAX_MULTIVECTOR_FLATTENED_LEN` check).
-            let fresh_start = self.fresh_range_start(count).ok_or_else(|| {
-                OperationError::malformed_vector_blob(exceeds_chunk_capacity_message(count))
-            })?;
             offset = MultivectorMmapOffset {
-                offset: fresh_start,
+                offset: self.storage.vectors_count() as PointOffsetType,
                 count,
                 capacity: count,
             };
         } else {
             offset.count = count;
         }
-        Ok(offset)
+        offset
     }
 
     /// Encode and upsert one multivector at `key`.
@@ -352,7 +320,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         assert_eq!(multi_vector.dim, self.dim);
 
         let count = multi_vector.vectors_count() as PointOffsetType;
-        let offset = self.record_range_for_upsert(key, count)?;
+        let offset = self.record_range_for_upsert(key, count);
 
         for (i, inner) in multi_vector
             .flattened_vectors
@@ -394,7 +362,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         }
 
         let count = (bytes.len() / record_size) as PointOffsetType;
-        let offset = self.record_range_for_upsert(key, count)?;
+        let offset = self.record_range_for_upsert(key, count);
 
         for (i, encoded) in bytes.chunks_exact(record_size).enumerate() {
             self.storage.upsert_vector(
@@ -731,8 +699,6 @@ impl MultiTQVectorStorageRead for AppendableMmapMultiTurboVectorStorage {
                 self.storage
                     .get_many::<P>(offset.offset, offset.count as usize)
             })
-            // `get_many` is also `None` for a range across multiple chunks, but
-            // `fresh_range_start` guarantees ranges never straddle a boundary.
             .expect("Multivector not found")
     }
 }
@@ -758,11 +724,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
 
             let count = (blob.len() / record_size) as u32;
             let key = self.offsets.len() as PointOffsetType;
-            // Optimizer merge of already-stored data: over-capacity here is
-            // genuine corruption, kept as a service error.
-            let inner_start = self.fresh_range_start(count).ok_or_else(|| {
-                OperationError::service_error(exceeds_chunk_capacity_message(count))
-            })?;
+            let inner_start = self.storage.vectors_count() as PointOffsetType;
             for (i, record) in blob.chunks_exact(record_size).enumerate() {
                 self.storage.upsert_vector(
                     inner_start + i as PointOffsetType,
@@ -1286,11 +1248,10 @@ mod tests {
         assert_blob(&storage, &grown);
     }
 
-    /// Both write paths skip the chunk tail when a fresh range would straddle
-    /// the boundary (mirroring the multi-dense storage), so a multivector never
-    /// spans two chunks and reads stay borrowable.
+    /// Both write paths place fresh ranges at the end of the record space, so a
+    /// multivector may span two chunks; those reads copy instead of borrowing.
     #[test]
-    fn fresh_ranges_skip_chunk_tail_so_reads_borrow() {
+    fn fresh_ranges_straddle_chunks_and_reads_stitch() {
         const DIM: usize = 128;
         let distance = Distance::Dot;
         let dir = Builder::new()
@@ -1320,8 +1281,8 @@ mod tests {
         storage.update_from(&mut it, &stopped).unwrap();
         assert_eq!(storage.storage.vectors_count(), records_per_chunk - 1);
 
-        // count=3 does not fit the chunk's single remaining slot: the tail is
-        // skipped and the range starts at the next chunk boundary.
+        // count=3 does not fit the chunk's single remaining slot, so the run
+        // continues into the next chunk. No slot is skipped.
         let multi = multi_of(DIM, 3, 7);
         storage
             .insert_vector(
@@ -1331,48 +1292,44 @@ mod tests {
             )
             .unwrap();
         let offset = storage.get_offset::<Random>(1).unwrap();
-        assert_eq!(offset.offset as usize, records_per_chunk);
+        assert_eq!(offset.offset as usize, records_per_chunk - 1);
         assert_eq!(offset.count, 3);
-        // One padding slot at the chunk tail, never referenced by any offset.
-        assert_eq!(storage.storage.vectors_count(), records_per_chunk + 3);
+        assert_eq!(storage.storage.vectors_count(), records_per_chunk + 2);
 
-        // Within one chunk the getter borrows, and the bytes are exact.
+        // Straddling reads copy, and the bytes are exact.
         let blob = storage.get_multi_tq::<Random>(1);
-        assert!(matches!(blob, Cow::Borrowed(_)));
+        assert!(matches!(blob, Cow::Owned(_)));
         assert_eq!(
             blob.as_ref(),
             oracle.encode_multi(&multi).concat().as_slice(),
         );
 
-        // `update_from` skips too: pad to one slot before the second chunk
-        // boundary, then append a 3-record point that lands at the boundary.
-        let pad = records_per_chunk - 4;
-        let tail_skipped = multi_of(DIM, 3, 8);
+        // Same for `update_from`: pad to one slot before the second boundary,
+        // then append a 3-record point that crosses it.
+        let pad = records_per_chunk - 3;
+        let straddling = multi_of(DIM, 3, 8);
         let blobs = [
             vec![0u8; pad * record_size],
-            oracle.encode_multi(&tail_skipped).concat(),
+            oracle.encode_multi(&straddling).concat(),
         ];
         let mut it = blobs.iter().map(|b| (Cow::from(b.as_slice()), false));
         storage.update_from(&mut it, &stopped).unwrap();
         let offset = storage.get_offset::<Random>(3).unwrap();
-        assert_eq!(offset.offset as usize, 2 * records_per_chunk);
-        // The skipped slot at the second boundary is never referenced.
-        assert_eq!(storage.storage.vectors_count(), 2 * records_per_chunk + 3);
+        assert_eq!(offset.offset as usize, 2 * records_per_chunk - 1);
+        assert_eq!(storage.storage.vectors_count(), 2 * records_per_chunk + 2);
 
-        // The range stays within one chunk: borrowed read, exact bytes.
         let blob = storage.get_multi_tq::<Random>(3);
-        assert!(matches!(blob, Cow::Borrowed(_)));
+        assert!(matches!(blob, Cow::Owned(_)));
         assert_eq!(
             blob.as_ref(),
-            oracle.encode_multi(&tail_skipped).concat().as_slice(),
+            oracle.encode_multi(&straddling).concat().as_slice(),
         );
     }
 
-    /// The largest multivector that fits one chunk is accepted; one subvector
-    /// more is rejected at write time on both write paths (`fresh_range_start`).
-    /// Cheap thanks to the small 512 KiB test-build `CHUNK_SIZE`.
+    /// A multivector larger than a whole chunk is stored and read back on both
+    /// write paths. Cheap thanks to the small 512 KiB test-build `CHUNK_SIZE`.
     #[test]
-    fn chunk_sized_multivector_accepted_one_larger_rejected() {
+    fn multivector_larger_than_a_chunk_round_trips() {
         const DIM: usize = 128;
         let distance = Distance::Dot;
         let dir = Builder::new()
@@ -1392,38 +1349,31 @@ mod tests {
         .unwrap();
         let record_size = storage.quantized_vector_size();
         let records_per_chunk = CHUNK_SIZE / record_size;
+        let oracle = Oracle::new(DIM, distance);
 
-        // Exactly one whole chunk of records is the maximum allowed.
-        let max_blob = vec![0u8; records_per_chunk * record_size];
-        let mut it = std::iter::once((Cow::from(max_blob.as_slice()), false));
+        // One record past a whole chunk, so the range covers two of them
+        let blob = vec![0u8; (records_per_chunk + 1) * record_size];
+        let mut it = std::iter::once((Cow::from(blob.as_slice()), false));
         assert_eq!(storage.update_from(&mut it, &stopped).unwrap(), 0..1);
-        let blob = storage.get_multi_tq::<Random>(0);
-        assert!(matches!(blob, Cow::Borrowed(_)));
-        assert_eq!(blob.as_ref(), max_blob.as_slice());
 
-        // One subvector more cannot fit any chunk: rejected via `update_from`...
-        let oversized_blob = vec![0u8; (records_per_chunk + 1) * record_size];
-        let mut it = std::iter::once((Cow::from(oversized_blob.as_slice()), false));
-        assert!(storage.update_from(&mut it, &stopped).is_err());
+        let read = storage.get_multi_tq::<Random>(0);
+        assert!(matches!(read, Cow::Owned(_)), "straddling read must copy");
+        assert_eq!(read.as_ref(), blob.as_slice());
 
-        // ...and via `insert_vector`, before any record is written.
-        let oversized = multi_of(DIM, records_per_chunk + 1, 11);
-        assert!(
-            storage
-                .insert_vector(
-                    1,
-                    TypedMultiDenseVectorRef::from(&oversized).into(),
-                    &hw_counter,
-                )
-                .is_err()
-        );
+        // Same through `insert_vector`
+        let multi = multi_of(DIM, records_per_chunk + 1, 11);
+        storage
+            .insert_vector(
+                1,
+                TypedMultiDenseVectorRef::from(&multi).into(),
+                &hw_counter,
+            )
+            .unwrap();
 
-        // The rejected points left no trace; the accepted one is intact.
-        assert_eq!(storage.total_vector_count(), 1);
-        assert_eq!(storage.storage.vectors_count(), records_per_chunk);
+        assert_eq!(storage.total_vector_count(), 2);
         assert_eq!(
-            storage.get_multi_tq::<Random>(0).as_ref(),
-            max_blob.as_slice()
+            storage.get_multi_tq::<Random>(1).as_ref(),
+            oracle.encode_multi(&multi).concat().as_slice(),
         );
     }
 
@@ -1663,12 +1613,6 @@ mod tests {
 
             let expected_blob = slot.encoded.concat();
             let blob = storage.get_multi_tq::<Random>(key);
-            // Ranges never straddle a chunk (`fresh_range_start`), so blob
-            // reads always borrow.
-            assert!(
-                matches!(blob, Cow::Borrowed(_)),
-                "{ctx}: blob not borrowed at {i}"
-            );
             assert_eq!(
                 blob.as_ref(),
                 expected_blob.as_slice(),
