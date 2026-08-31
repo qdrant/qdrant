@@ -86,13 +86,6 @@ struct Args {
     #[clap(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..))]
     indexing_threshold_kb: u64,
 
-    /// Periodic flush worker interval in seconds. Lower values mean smaller unflushed-WAL
-    /// windows (more production-realistic given the soak's high op rate); larger values
-    /// stress the unflushed-WAL path and surface bugs like the `DeleteVectorName` replay
-    /// issue where historical Upserts referencing a since-deleted vector name fail.
-    #[clap(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..))]
-    flush_interval_sec: u64,
-
     /// Per-iteration probability (0.0..=1.0) of restarting the collection mid-run:
     /// close + reopen + full model verification. Surfaces reload/WAL-replay bugs at the
     /// op where they're introduced rather than only at end-of-run. 0.0 (default) skips
@@ -228,7 +221,7 @@ async fn run_main(args: Args) {
     println!(
         "model_testing: seed={} {stop} shard_count={} id_pool={} uuid_id_fraction={} \
          storage_path={} disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
-         flush_interval_sec={} restart_probability={} swarm_interval={} \
+         restart_probability={} swarm_interval={} \
          on_disk={} async_scorer={} pre_restart_check={} enable_force_off={} \
          disable_snapshots={}",
         args.seed,
@@ -239,7 +232,6 @@ async fn run_main(args: Args) {
         args.disable_optimizer,
         args.max_segment_size_kb,
         args.indexing_threshold_kb,
-        args.flush_interval_sec,
         args.restart_probability,
         args.swarm_interval,
         args.on_disk,
@@ -259,7 +251,6 @@ async fn run_main(args: Args) {
         args.disable_optimizer,
         args.max_segment_size_kb as usize,
         args.indexing_threshold_kb as usize,
-        args.flush_interval_sec,
         args.restart_probability,
         args.swarm_interval as usize,
         args.on_disk,

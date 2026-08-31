@@ -87,6 +87,10 @@ pub trait OptimizationStrategy: Send {
 
 /// Restores original segments from proxies
 ///
+/// Proxied changes (deleted points, index and vector-name changes) are always propagated into the
+/// wrapped segments first, so they are not lost when the proxies are dropped. If that propagation
+/// fails, no proxy is unwrapped and the error is returned.
+///
 /// # Arguments
 ///
 /// * `segments` - segment holder
@@ -94,12 +98,36 @@ pub trait OptimizationStrategy: Send {
 ///
 /// # Result
 ///
-/// Original segments are pushed into `segments`, proxies removed.
+/// Original segments are pushed into `segments`, proxies removed. On a propagation error the
+/// proxies are left in the holder untouched.
 pub fn unwrap_proxy(
     segments: &LockedSegmentHolder,
     proxy_ids: &[SegmentId],
 ) -> OperationResult<()> {
-    let mut segments_lock = segments.write();
+    // Propagate proxied changes back into wrapped segment to not lose these in-memory changes
+    let segments_lock = segments.upgradable_read();
+    let _update_guard = segments.acquire_updates_lock();
+
+    let proxies: Vec<_> = proxy_ids
+        .iter()
+        .filter_map(|&proxy_id| match segments_lock.get(proxy_id).cloned() {
+            Some(LockedSegment::Proxy(proxy_segment)) => Some((proxy_id, proxy_segment)),
+            _ => None,
+        })
+        .collect();
+    for (proxy_id, proxy_segment) in &proxies {
+        // Unwrapping a proxy whose changes did not reach the wrapped segment loses those deletes
+        // and index changes for good, so bail out instead. Every proxy stays installed and keeps
+        // serving its changes; nothing is unwrapped, so nothing is lost.
+        if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+            log::error!(
+                "Propagating proxy segment {proxy_id} changes to wrapped segment failed: {err}",
+            );
+            return Err(err);
+        }
+    }
+
+    let mut segments_lock = RwLockUpgradableReadGuard::upgrade(segments_lock);
     for &proxy_id in proxy_ids {
         if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
             let locked_proxy_segment = proxy_segment_ref.clone();
@@ -903,16 +931,17 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     let (optimized_segment, already_remove_points) = match build_result {
         Ok(result) => result,
         Err(err) => {
-            // Properly cancel optimization on all error kinds
-            // Unwrap proxies and add temp segment to holder
-            unwrap_proxy(&segment_holder, &proxy_ids)?;
             // A graceful cancellation always happens before the optimized segment is swapped into
             // the holder, so the segment `build` already moved into `segments_path` is now an
-            // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
-            // occur after the swap, where the segment is live, so they are left untouched.
+            // orphan that `Drop` won't remove. Delete it explicitly, before unwrapping the proxies
+            // so a failure there cannot leave it behind. Non-cancellation errors may occur after
+            // the swap, where the segment is live, so they are left untouched.
             if matches!(err, OperationError::Cancelled { .. }) {
                 cleanup_cancelled_optimized_segment(&paths.segments_path, output_segment_uuid);
             }
+            // Properly cancel optimization on all error kinds
+            // Unwrap proxies and add temp segment to holder
+            unwrap_proxy(&segment_holder, &proxy_ids)?;
             return Err(err);
         }
     };
@@ -930,16 +959,17 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     ) {
         Ok(points_count) => points_count,
         Err(err) => {
-            // Properly cancel optimization on all error kinds
-            // Unwrap proxies and add temp segment to holder
-            unwrap_proxy(&segment_holder, &proxy_ids)?;
             // A graceful cancellation always happens before the optimized segment is swapped into
             // the holder, so the segment `build` already moved into `segments_path` is now an
-            // orphan that `Drop` won't remove. Delete it explicitly. Non-cancellation errors may
-            // occur after the swap, where the segment is live, so they are left untouched.
+            // orphan that `Drop` won't remove. Delete it explicitly, before unwrapping the proxies
+            // so a failure there cannot leave it behind. Non-cancellation errors may occur after
+            // the swap, where the segment is live, so they are left untouched.
             if matches!(err, OperationError::Cancelled { .. }) {
                 cleanup_cancelled_optimized_segment(&paths.segments_path, output_segment_uuid);
             }
+            // Properly cancel optimization on all error kinds
+            // Unwrap proxies and add temp segment to holder
+            unwrap_proxy(&segment_holder, &proxy_ids)?;
             return Err(err);
         }
     };
@@ -949,4 +979,58 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     timer.set_success(true);
 
     Ok(OptimizationResult { points_count })
+}
+
+#[cfg(test)]
+mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::DeferredBehavior;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::fixtures::build_segment_1;
+    use crate::proxy_segment::ProxySegment;
+    use crate::segment_holder::SegmentHolder;
+
+    /// A cancelled optimization puts the wrapped segments back into the holder, so the deletions
+    /// recorded on the proxy while the optimization ran must reach the wrapped segment first.
+    /// Without that, the point's pre-optimization copy stays live next to whatever the write
+    /// segment holds for it, and reads see both.
+    #[test]
+    fn unwrap_proxy_propagates_deletes_to_wrapped_segment() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        // Wrap it the way an optimization does, then delete a point through the proxy: the
+        // deletion is recorded on the proxy, the wrapped segment still has the point.
+        let mut proxy = ProxySegment::new(wrapped.clone());
+        proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
+        let holder = LockedSegmentHolder::new(holder);
+        holder
+            .write()
+            .replace(segment_id, LockedSegment::from(proxy))
+            .unwrap();
+        assert!(
+            wrapped
+                .get()
+                .read()
+                .has_point(1.into(), DeferredBehavior::WithDeferred),
+            "wrapped segment should still hold the point while proxied",
+        );
+
+        unwrap_proxy(&holder, &[segment_id]).unwrap();
+
+        assert!(
+            !wrapped
+                .get()
+                .read()
+                .has_point(1.into(), DeferredBehavior::WithDeferred),
+            "deletion recorded on the proxy must reach the wrapped segment before it goes back \
+             into the holder",
+        );
+    }
 }

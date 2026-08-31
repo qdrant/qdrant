@@ -13,6 +13,7 @@ use super::super::op::{
 use super::{apply_update, to_named_persisted};
 use crate::collection::Collection;
 use crate::operations::CollectionUpdateOperations;
+use crate::operations::config_diff::OptimizersConfigDiff;
 use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointIdsList, PointInsertOperationsInternal,
@@ -303,6 +304,35 @@ pub(super) async fn apply_drop_index(collection: &Collection, field: &JsonPath) 
         .drop_payload_index(field.clone())
         .await
         .expect("drop index failed");
+}
+
+/// Change `flush_interval_sec` on the live collection, mirroring the production
+/// `update_collection` path (`toc::collection_meta_ops`): persist the optimizer-config diff,
+/// then recreate the optimizers so the per-shard update/flush workers pick the new cadence up.
+///
+/// The recreation runs in the background (single-flight, coalescing) and we deliberately don't
+/// wait for it: that's what a real config update does, and it leaves the workers restarting
+/// while the run loop keeps writing. The model isn't touched - flush cadence is invisible to
+/// the collection's observable contents.
+pub(super) async fn apply_set_flush_interval(collection: &Collection, flush_interval_sec: u64) {
+    collection
+        .update_optimizer_params_from_diff(OptimizersConfigDiff {
+            flush_interval_sec: Some(flush_interval_sec),
+            // Every other field stays `None` so the diff touches the flush cadence only
+            // (`OptimizersConfig::update` keeps the current value for each `None`).
+            deleted_threshold: None,
+            vacuum_min_vector_number: None,
+            default_segment_number: None,
+            max_segment_size: None,
+            #[expect(deprecated)]
+            memmap_threshold: None,
+            indexing_threshold: None,
+            max_optimization_threads: None,
+            prevent_unoptimized: None,
+        })
+        .await
+        .expect("update flush_interval_sec failed");
+    collection.recreate_optimizers_background();
 }
 
 pub(super) async fn apply_upsert_conditional(
