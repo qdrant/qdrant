@@ -2118,3 +2118,77 @@ fn test_put_value_rebuilds_stale_gaps() {
         );
     }
 }
+
+/// Reproduces a gaps-file length divergence that the lazy gaps rebuild cannot recover from.
+///
+/// `BitmaskGaps::extend` grows the file (with zeroes) and then writes the new all-free entries
+/// through the mmap. After an unclean shutdown the growth can have reached the disk while the
+/// entry contents did not, leaving phantom all-zero entries beyond the bitmask — each claiming a
+/// completely full region.
+///
+/// Phantom full entries are invisible to the gap search but force `trailing_free_blocks` to
+/// report zero, so the next allocation always tries to create a new page. `cover_new_page` then
+/// panics on its "Bitmask length mismatch" assertion — before the lazy rebuild in
+/// `find_or_create_available_blocks` can detect anything.
+///
+/// Opening the storage must repair the length divergence up front (a cheap length comparison)
+/// by rebuilding the gaps from the bitmask.
+#[test]
+fn test_open_repairs_gaps_length_mismatch() {
+    use std::io::Write as _;
+
+    use common::universal_io::Populate;
+
+    // 1 MiB pages: exactly one region (8192 blocks * 128 B) per page.
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+
+    // Fill page 0 (= region 0) completely.
+    let values = [vec![0xAB; page_size], vec![0xCD; DEFAULT_BLOCK_SIZE_BYTES]];
+    storage.put_value_bytes(0, values[0].clone(), hw_counter).unwrap();
+
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Simulate the crash-torn state: append two phantom all-zero entries (6 bytes each) to the
+    // gaps file, as a lost `extend` writeback leaves them.
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(dir.path().join("gaps.dat"))
+        .unwrap();
+    file.write_all(&[0; 2 * 6]).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+
+    // Opening must detect the length mismatch and rebuild the gaps from the bitmask.
+    let mut storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+
+    // Page 0 is full, so this put creates a new page. Without the repair at open, this panicked
+    // in `cover_new_page` on the "Bitmask length mismatch" assertion.
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+    storage.put_value_bytes(1, values[1].clone(), hw_counter).unwrap();
+
+    assert_eq!(storage.as_gridstore().pages.read().num_pages(), 2);
+    let pointer = storage.get_pointer(1).unwrap();
+    assert_eq!((pointer.page_id, pointer.block_offset), (1, 0));
+
+    let hw_read = HardwareCounterCell::new();
+    for (offset, expected) in values.iter().enumerate() {
+        let stored = storage
+            .get_value_bytes::<Random>(offset as u32, &hw_read)
+            .unwrap();
+        assert_eq!(stored.as_deref(), Some(expected.as_slice()), "value {offset}");
+    }
+
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // The repaired gaps are persisted with the right length: one entry per region.
+    let gaps_bytes = fs::read(dir.path().join("gaps.dat")).unwrap();
+    assert_eq!(gaps_bytes.len(), 2 * 6, "one 6-byte entry per region");
+}
