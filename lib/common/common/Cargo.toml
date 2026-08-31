@@ -68,6 +68,7 @@ tango-bench = "0.8.0"
 io-uring = "0.7.12"
 procfs = { version = "0.18", default-features = false }
 thread-priority = "3.0.0"
+tokio-uring = "0.5.0"
 
 [[bench]]
 name = "bitpacking"
