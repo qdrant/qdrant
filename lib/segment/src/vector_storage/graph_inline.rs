@@ -1,11 +1,16 @@
 use std::path::Path;
 
+use common::universal_io::{MmapFile, MmapFs};
+
+use crate::common::flags::FlagsMode;
+use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::HnswGraph;
 use crate::types::{VectorDataConfig, VectorStorageDatatype};
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::graph_inline_dense_vector_storage::GraphInlineDenseVectorStorage;
 use crate::vector_storage::turbo::TurboVectorStorageImpl;
+use crate::vector_storage::turbo::shared::DELETED_DIR_PATH;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 pub(crate) fn open_graph_inline_vector_storage(
     path: &Path,
@@ -31,4 +36,31 @@ pub(crate) fn open_graph_inline_vector_storage(
             TurboVectorStorageImpl::open_graph(graph, path, dim, distance).map(Box::new)?,
         ),
     })
+}
+
+/// Replace the temporary build storage with the final inline-graph storage.
+pub(crate) fn finalize(path: &Path, storage: VectorStorageEnum) -> OperationResult<()> {
+    let files = storage.files();
+    let deleted = storage.deleted_vector_bitslice().to_bitvec();
+
+    // Close the storage (we are the only owner), so we can delete its files.
+    drop(storage);
+
+    // Delete old vector storage files: these were temporarely used during the
+    // HNSW index building. The actual vector data is expected to be already
+    // included in the graph-with-vectors.
+    for file in files {
+        fs_err::remove_file(file)?;
+    }
+
+    // Write deleted flags.
+    // Why: we just deleted them along with other files. (an alternative is to
+    // not delete them, but it's fragile and makes assumptions about the format)
+    BitvecFlags::<MmapFile>::create_from_bitslice(
+        MmapFs,
+        &path.join(DELETED_DIR_PATH),
+        FlagsMode::from_feature_flags(),
+        &deleted,
+    )?
+    .flusher()()
 }

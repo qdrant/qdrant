@@ -58,6 +58,19 @@ where
         }
     }
 
+    pub fn create_from_bitslice(
+        fs: S::Fs,
+        directory: &Path,
+        mode: FlagsMode,
+        bitslice: &BitSlice,
+    ) -> OperationResult<Self> {
+        let mut flags = Self::open_or_create(fs, directory, mode, Populate::No)?;
+        for index in bitslice.iter_ones() {
+            flags.set(index as PointOffsetType, true);
+        }
+        Ok(flags)
+    }
+
     pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
         // load flags into memory
         let bitvec = BitVec::from_bitslice(&*dynamic_flags.get_bitslice()?);
