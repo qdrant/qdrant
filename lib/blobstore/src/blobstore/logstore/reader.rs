@@ -46,7 +46,7 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         base_path: &Path,
         populate: Populate,
     ) -> Result<()> {
-        AppendOnlyTracker::<S>::preopen(fs, base_path, populate)?;
+        AppendOnlyTracker::<S>::preopen(fs, base_path, populate);
         AppendOnlyPages::<S>::preopen(fs, base_path, populate)
     }
 

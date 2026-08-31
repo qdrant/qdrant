@@ -9,7 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::storage_version::VERSION_FILE;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
@@ -132,15 +132,8 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             SparseIndexType::ImmutableRam | SparseIndexType::Mmap => {}
         }
 
-        // Sparse index config; `open_sparse` reads it off the parked handle.
         let config_path = SparseIndexConfig::get_config_path(path);
-        if fs
-            .schedule_open(&config_path, None, None)
-            .ok_not_found()?
-            .is_none()
-        {
-            return Ok(());
-        }
+        fs.schedule_open(&config_path, None, None);
 
         // The effective placement (structural index type refined by the
         // `memory` parameter, degraded by low-memory mode — which is also
@@ -165,10 +158,10 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         inverted_index_compressed_mmap::preopen(fs, path, populate)?;
 
         // Version check
-        fs.schedule_open(&path.join(VERSION_FILE), None, None)?;
+        fs.schedule_open(&path.join(VERSION_FILE), None, None);
 
         // Indices tracker
-        fs.schedule_open(&IndicesTracker::file_path(path), None, None)?;
+        fs.schedule_open(&IndicesTracker::file_path(path), None, None);
 
         Ok(())
     }

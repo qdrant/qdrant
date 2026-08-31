@@ -172,19 +172,11 @@ pub(super) fn preopen_deleted_mask<S>(
     dir: &Path,
     legacy_file: &str,
     options: OpenOptions,
-) -> OperationResult<()>
-where
+) where
     S: UniversalRead,
 {
-    if fs
-        .schedule_open(&deleted_mask_path(dir), Some(options), None)
-        .ok_not_found()?
-        .is_some()
-    {
-        return Ok(());
-    }
-    fs.schedule_open(&dir.join(legacy_file), Some(options), None)?;
-    Ok(())
+    fs.schedule_open(&deleted_mask_path(dir), Some(options), None);
+    fs.schedule_open(&dir.join(legacy_file), Some(options), None);
 }
 
 #[cfg(test)]

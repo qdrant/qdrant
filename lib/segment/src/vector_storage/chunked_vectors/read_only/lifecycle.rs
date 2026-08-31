@@ -21,10 +21,10 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         populate: Populate,
     ) -> OperationResult<()> {
         // Config file
-        fs.schedule_open(&config_file(directory), None, None)?;
+        fs.schedule_open(&config_file(directory), None, None);
 
         // Status file
-        fs.schedule_open(&status_file(directory), None, None)?;
+        fs.schedule_open(&status_file(directory), None, None);
 
         // Chunks
         preopen_chunks(fs, directory, advice, populate)?;
@@ -127,7 +127,7 @@ fn preopen_chunks(
                 &listed.path,
                 Some(chunk_open_options(advice, populate, false)),
                 None,
-            )?;
+            );
         }
     }
     Ok(())

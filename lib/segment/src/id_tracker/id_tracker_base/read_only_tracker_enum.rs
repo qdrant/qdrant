@@ -29,7 +29,8 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
             return Ok(());
         }
-        ReadOnlyAppendableIdTracker::preopen(fs, segment_path)
+        ReadOnlyAppendableIdTracker::preopen(fs, segment_path);
+        Ok(())
     }
 
     /// Detect the persisted id-tracker format and load it, by *attempting* each

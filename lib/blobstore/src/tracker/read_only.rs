@@ -58,9 +58,8 @@ impl<S: UniversalRead> ReadOnlyTracker<S> {
         })
     }
 
-    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
-        Tracker::preopen(fs, &self.path, self.populate)?;
-        Ok(())
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) {
+        Tracker::preopen(fs, &self.path, self.populate);
     }
 
     /// Refresh to the current on-disk state by opening a fresh storage handle

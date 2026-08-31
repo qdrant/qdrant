@@ -43,7 +43,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorSt
             &path.join(DELETED_PATH),
             Some(bitslice_open_options(Populate::PreferBackground)),
             None,
-        )?;
+        );
 
         Ok(())
     }

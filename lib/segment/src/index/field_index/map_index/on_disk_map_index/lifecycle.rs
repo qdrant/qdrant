@@ -46,14 +46,11 @@ where
     ) -> OperationResult<bool> {
         // Config
         let config_path = path.join(CONFIG_PATH);
-        if fs
-            .schedule_open(&config_path, None, None)
-            .ok_not_found()?
-            .is_none()
-        {
+        if !fs.exists(&config_path)? {
             // If config doesn't exist, assume the index doesn't exist on disk
             return Ok(false);
         }
+        fs.schedule_open(&config_path, None, None);
 
         // Value to points
         let hashmap_path = path.join(HASHMAP_PATH);
@@ -61,10 +58,10 @@ where
             fs,
             &hashmap_path,
             Self::open_options(populate),
-        )?;
+        );
 
         // Point to values
-        OnDiskPointToValues::<N, S>::preopen(fs, path, populate)?;
+        OnDiskPointToValues::<N, S>::preopen(fs, path, populate);
 
         // Prefix index
         PrefixIndex::preopen(fs, path, populate)?;
@@ -75,7 +72,7 @@ where
             path,
             DELETED_PATH,
             Self::open_options(Populate::PreferBackground),
-        )?;
+        );
 
         Ok(true)
     }

@@ -18,7 +18,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             &deleted_path(&self.path),
             Some(Self::deleted_open_options()),
             None,
-        )?;
+        );
         Ok(())
     }
 
