@@ -1990,3 +1990,131 @@ fn read_only_reader_over_write_enforced_backend() {
     let stored = reader.get_value::<Random>(0, &hw_counter).unwrap();
     assert_eq!(stored, Some(payload));
 }
+
+/// Reproduces the state behind the `New page has just been created` panic seen on startup WAL
+/// replay after an unclean shutdown (power loss / kernel crash), and checks that it is recovered
+/// by rebuilding the gaps from the bitmask.
+///
+/// The region gaps (`gaps.dat`) are a persisted acceleration structure derived from the bitmask
+/// (`bitmask.dat`). They live in two separately mmapped files with no write-ordering barrier
+/// between them, so after a hard crash the OS may have written back one file's dirty pages but
+/// not the other's. On reopen the gaps can then claim free space where the bitmask has the
+/// blocks marked as used.
+///
+/// In that state:
+/// - `find_available_blocks` only scans the first window `find_fitting_gap` proposes; a stale
+///   all-free gap entry points it at a fully used region, so it comes up empty even though other
+///   space is genuinely free further along.
+/// - `trailing_free_blocks` (gaps-derived, accurate here) reports enough trailing space, so
+///   `find_or_create_available_blocks` computes `missing_blocks == 0` and creates no page.
+///
+/// This used to hit `.expect("New page has just been created")`; now the inconsistency must be
+/// detected, the gaps rebuilt, and the value allocated in the genuinely free space.
+#[test]
+fn test_put_value_rebuilds_stale_gaps() {
+    use std::io::Write as _;
+
+    use common::universal_io::Populate;
+
+    // 1 MiB pages: exactly one region (8192 blocks * 128 B) per page.
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+
+    // Fill page 0 (= region 0) completely, then start page 1 (= region 1).
+    let values = [
+        vec![0xAB; page_size],
+        vec![0xCD; DEFAULT_BLOCK_SIZE_BYTES],
+        vec![0xEF; DEFAULT_BLOCK_SIZE_BYTES * 2],
+        vec![0x42; DEFAULT_BLOCK_SIZE_BYTES],
+    ];
+    storage
+        .put_value_bytes(0, values[0].clone(), hw_counter)
+        .unwrap();
+    storage
+        .put_value_bytes(1, values[1].clone(), hw_counter)
+        .unwrap();
+
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Simulate the crash-torn state: the bitmask.dat writeback reached the disk, the
+    // corresponding gaps.dat page did not. Region 0's persisted gap entry still shows the region
+    // as all-free (`RegionGaps { max, leading, trailing }`, all u16 = region size), while the
+    // bitmask correctly has it fully used. Region 1's entry stays accurate, so the trailing free
+    // blocks count still matches the bitmask.
+    let all_free = (DEFAULT_REGION_SIZE_BLOCKS as u16).to_le_bytes();
+    let stale_entry: Vec<u8> = [all_free; 3].concat();
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .open(dir.path().join("gaps.dat"))
+        .unwrap();
+    file.write_all(&stale_entry).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+
+    let mut storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+
+    // Region 1 still has 8191 genuinely free blocks. This put used to panic with "New page has
+    // just been created"; now it detects the inconsistency, rebuilds the gaps, and allocates.
+    storage
+        .put_value_bytes(2, values[2].clone(), hw_counter)
+        .unwrap();
+
+    // The value lands in the free space of the existing pages, right after the second value; no
+    // new page is created.
+    assert_eq!(storage.as_gridstore().pages.read().num_pages(), 2);
+    let pointer = storage.get_pointer(2).unwrap();
+    assert_eq!((pointer.page_id, pointer.block_offset), (1, 1));
+
+    let hw_read = HardwareCounterCell::new();
+    for (offset, expected) in values.iter().enumerate().take(3) {
+        let stored = storage
+            .get_value_bytes::<Random>(offset as u32, &hw_read)
+            .unwrap();
+        assert_eq!(
+            stored.as_deref(),
+            Some(expected.as_slice()),
+            "value {offset}"
+        );
+    }
+
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // The rebuilt gaps are persisted: region 0 is full again on disk (all gaps zero).
+    let gaps_bytes = fs::read(dir.path().join("gaps.dat")).unwrap();
+    assert_eq!(gaps_bytes.len(), 2 * 6, "one 6-byte entry per region");
+    assert_eq!(gaps_bytes[..6], [0; 6], "region 0 must be full");
+
+    // The storage keeps working normally across a clean reopen.
+    let mut storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+    storage
+        .put_value_bytes(3, values[3].clone(), hw_counter)
+        .unwrap();
+
+    let pointer = storage.get_pointer(3).unwrap();
+    assert_eq!((pointer.page_id, pointer.block_offset), (1, 3));
+
+    let hw_read = HardwareCounterCell::new();
+    for (offset, expected) in values.iter().enumerate() {
+        let stored = storage
+            .get_value_bytes::<Random>(offset as u32, &hw_read)
+            .unwrap();
+        assert_eq!(
+            stored.as_deref(),
+            Some(expected.as_slice()),
+            "value {offset}"
+        );
+    }
+}
