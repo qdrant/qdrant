@@ -2010,6 +2010,8 @@ fn read_only_reader_over_write_enforced_backend() {
 ///
 /// This used to hit `.expect("New page has just been created")`; now the inconsistency must be
 /// detected, the gaps rebuilt, and the value allocated in the genuinely free space.
+///
+/// See: <github.com/qdrant/qdrant/pull/10364>
 #[test]
 fn test_put_value_rebuilds_stale_gaps() {
     use std::io::Write as _;
@@ -2133,6 +2135,8 @@ fn test_put_value_rebuilds_stale_gaps() {
 ///
 /// Opening the storage must repair the length divergence up front (a cheap length comparison)
 /// by rebuilding the gaps from the bitmask.
+///
+/// See: <github.com/qdrant/qdrant/pull/10364>
 #[test]
 fn test_open_repairs_gaps_length_mismatch() {
     use std::io::Write as _;
