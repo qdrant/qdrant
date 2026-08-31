@@ -6,7 +6,7 @@ use std::path::Path;
 use blobstore::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreConfig};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::mmap_sparse_vector_storage::{DELETED_DIRNAME, STORAGE_DIRNAME};
@@ -37,7 +37,7 @@ pub struct UpdateOnlySparseVectorStorage<S: UniversalAppend + 'static> {
 impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &impl UniversalAppendFs<AppendFile = S>, path: &Path) -> OperationResult<Self> {
         Ok(Self {
             storage: UpdateOnlyBlobstore::open(fs, &path.join(STORAGE_DIRNAME), STORAGE_CONFIG)?,
             deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIRNAME))?,
@@ -52,7 +52,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
     /// deleted, which is what the writable side records for it.
     pub fn append_many<'a>(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,

@@ -14,7 +14,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalAppendFs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{
@@ -80,7 +80,11 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     ///
     /// Fails for a storage type an update-only segment cannot have: the mmap
     /// ones are immutable, built whole rather than appended to.
-    pub fn open(fs: &S::Fs, path: &Path, config: &VectorDataConfig) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        path: &Path,
+        config: &VectorDataConfig,
+    ) -> OperationResult<Self> {
         match config.storage_type {
             VectorStorageType::ChunkedMmap | VectorStorageType::InRamChunkedMmap => {}
             storage_type @ (VectorStorageType::Mmap
@@ -128,7 +132,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// Open the writer for a sparse vector storage at `path`. Sparse vectors
     /// are configured separately from dense ones, so they do not go through
     /// [`open`](Self::open).
-    pub fn open_sparse(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open_sparse(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        path: &Path,
+    ) -> OperationResult<Self> {
         Ok(Self::Sparse(Box::new(UpdateOnlySparseVectorStorage::open(
             fs, path,
         )?)))
@@ -138,7 +145,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// persist them.
     pub fn append_many<'a>(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,

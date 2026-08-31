@@ -36,7 +36,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     ///
     /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl::open_or_create
     pub fn open(
-        fs: &impl UniversalAppendFs<File = S>,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         segment_path: &Path,
     ) -> OperationResult<Self> {
         let storage =
@@ -57,7 +57,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     /// an unwritten slot already reads back as an empty payload.
     pub fn append_many<'a>(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {

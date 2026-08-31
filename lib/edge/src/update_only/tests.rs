@@ -6,7 +6,7 @@
 //! saw, and what it appends is verified through an ordinary follower opened
 //! afterwards.
 
-use common::universal_io::MmapFile;
+use common::universal_io::MmapFs;
 use segment::types::{ExtendedPointId, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::CollectionUpdateOperations::PointOperation;
@@ -48,7 +48,7 @@ fn delete_batch(
 fn delete_batch_retires_points_and_leaves_the_rest() {
     let dir = leader_with_ten_points("edge-update-delete");
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
     let (_writer, outcome) = writer.apply_batch(delete_batch([3, 7])).unwrap();
 
     assert_eq!(outcome.deleted, 2);
@@ -91,7 +91,7 @@ fn delete_batch_retires_points_and_leaves_the_rest() {
 fn replayed_delete_batch_is_a_no_op() {
     let dir = leader_with_ten_points("edge-update-delete-replay");
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
     let (writer, outcome) = writer.apply_batch(delete_batch([3])).unwrap();
     assert_eq!(outcome.deleted, 1);
 
@@ -99,7 +99,7 @@ fn replayed_delete_batch_is_a_no_op() {
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
     let (_writer, replayed) = writer.apply_batch(delete_batch([3])).unwrap();
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
@@ -144,7 +144,7 @@ fn vacuumed_leader(prefix: &str) -> TempDir {
 fn delete_batch_tombstones_points_in_immutable_segments() {
     let dir = vacuumed_leader("edge-update-delete-immutable");
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
 
     // The segment holding point 500 must not be the write target, or the
     // test dodges the delete-only path.
@@ -171,7 +171,7 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
     let (_writer, replayed) = writer.apply_batch(delete_batch([500])).unwrap();
     assert_eq!(replayed.deleted, 0);
     assert_eq!(replayed.missing, 1);
@@ -273,7 +273,7 @@ mod store {
             ..point(5)
         };
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (_writer, outcome) = writer
             .apply_batch(store_batch(100, vec![new_point, rewritten]))
             .unwrap();
@@ -340,7 +340,7 @@ mod store {
         let dir = leader_with_ten_points("edge-update-store-replay");
         recreate_payload_storages_append_only(dir.path());
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let batch = || store_batch(100, vec![point(11)]);
         let (writer, outcome) = writer.apply_batch(batch()).unwrap();
         assert_eq!(outcome.stored, 1);
@@ -349,7 +349,7 @@ mod store {
         assert_eq!(replayed.stored, 0);
         assert_eq!(replayed.skipped, 1);
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (_writer, replayed) = writer.apply_batch(batch()).unwrap();
         assert_eq!(replayed.stored, 0);
         assert_eq!(replayed.skipped, 1);
@@ -367,13 +367,13 @@ mod store {
         let dir = leader_with_ten_points("edge-update-store-resume");
         recreate_payload_storages_append_only(dir.path());
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (_writer, outcome) = writer
             .apply_batch(store_batch(100, vec![point(11)]))
             .unwrap();
         assert_eq!(outcome.stored, 1);
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (_writer, second) = writer
             .apply_batch([
                 (
@@ -410,7 +410,7 @@ mod store {
         let dir = leader_with_ten_points("edge-update-store-sequential");
         recreate_payload_storages_append_only(dir.path());
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (writer, outcome) = writer
             .apply_batch(store_batch(100, vec![point(11)]))
             .unwrap();
@@ -465,7 +465,7 @@ mod store {
             ..point(11)
         };
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (writer, outcome) = writer
             .apply_batch(conditional_batch(
                 100,
@@ -530,7 +530,7 @@ mod store {
             ..point(5)
         };
 
-        let writer = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
         let (_writer, outcome) = writer
             .apply_batch(conditional_batch(
                 100,
@@ -594,7 +594,7 @@ fn optimizing_target_gets_a_created_appendable() {
     );
     fs_err::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open(
+    let writer = UpdateOnlyEdgeShard::open(
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
@@ -647,7 +647,7 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
         .unwrap();
     fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
 
-    let writer = UpdateOnlyEdgeShard::<MmapFile>::open(
+    let writer = UpdateOnlyEdgeShard::open(
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),

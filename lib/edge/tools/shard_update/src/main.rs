@@ -63,7 +63,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use clap::{Args as ClapArgs, Parser, ValueEnum};
 use common::universal_io::{
-    DiskCacheConfig, MmapFile, OkNotFound as _, UniversalAppend, UniversalReadFileOps,
+    DiskCacheConfig, MmapFs, OkNotFound as _, UniversalAppendFs, UniversalReadFileOps,
     UniversalReadFs, read_json_via,
 };
 use edge::external::uuid::Uuid;
@@ -76,9 +76,7 @@ use edge::{
 };
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
-use io_bridge_object_store::{
-    AsyncAppend, CachedBlobFile, CachedBlobFs, CachedBlobFsContext, ObjectStoreSource,
-};
+use io_bridge_object_store::{AsyncAppend, CachedBlobFs, CachedBlobFsContext, ObjectStoreSource};
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
 use rand::rngs::StdRng;
@@ -217,8 +215,8 @@ struct ShardSchema {
 /// parsed during the open — no extra reads) plus the payload-index schema,
 /// which is the one file the writer deliberately never opens, so the tool
 /// reads it through `fs` itself.
-fn read_schema<S: UniversalAppend + 'static, F: UniversalReadFs>(
-    shard: &UpdateOnlyEdgeShard<S>,
+fn read_schema<Fs: UniversalAppendFs, F: UniversalReadFs>(
+    shard: &UpdateOnlyEdgeShard<Fs>,
     fs: &F,
     shard_path: &Path,
 ) -> Result<ShardSchema> {
@@ -514,8 +512,8 @@ fn generate_batch(schema: &ShardSchema, ids: &[PointId], seed: u64) -> UpdateOpe
 /// Generate the random batch, resolve it against the open shard, and log what
 /// it would do. The backend is behind `S`, so this is the whole dry run for
 /// local and object-storage shards alike.
-fn dry_run<S: UniversalAppend + 'static>(
-    shard: &UpdateOnlyEdgeShard<S>,
+fn dry_run<Fs: UniversalAppendFs>(
+    shard: &UpdateOnlyEdgeShard<Fs>,
     schema: &ShardSchema,
     ids: &[PointId],
     op_num: u64,
@@ -568,8 +566,8 @@ fn dry_run<S: UniversalAppend + 'static>(
 /// the backend once this returns `Ok`. With `interactive`, keeps prompting
 /// for the next round's ids and applies them through the writer the previous
 /// `apply_batch` handed back, one op-num (and seed) higher per round.
-fn apply_run<S: UniversalAppend + 'static>(
-    mut shard: UpdateOnlyEdgeShard<S>,
+fn apply_run<Fs: UniversalAppendFs>(
+    mut shard: UpdateOnlyEdgeShard<Fs>,
     schema: &ShardSchema,
     ids: &[PointId],
     mut op_num: u64,
@@ -764,7 +762,7 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
         .clone()
         .ok_or_else(|| anyhow!("--path is required for the local backend"))?;
 
-    let shard = UpdateOnlyEdgeShard::<MmapFile>::open_mmap(&path)
+    let shard = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(&path)
         .context("failed to open update-only edge shard")?;
     log::info!(
         "opened update-only shard with {} segment(s)",
@@ -799,7 +797,7 @@ where
 
     let enumerator = ManifestSegmentEnumerator::new(cached_fs.clone(), &prefix);
     let shard =
-        UpdateOnlyEdgeShard::<CachedBlobFile<A>>::open(cached_fs.clone(), &prefix, enumerator)
+        UpdateOnlyEdgeShard::<CachedBlobFs<A>>::open(cached_fs.clone(), &prefix, enumerator)
             .context("failed to open update-only edge shard over object storage")?;
     log::info!(
         "opened update-only shard with {} segment(s)",

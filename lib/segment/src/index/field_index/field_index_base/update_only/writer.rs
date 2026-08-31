@@ -7,7 +7,7 @@ use blobstore::Blob;
 use blobstore::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreConfig};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
@@ -48,7 +48,11 @@ pub struct UpdateOnlyValueIndex<K: UpdateOnlyIndexKind, S: UniversalAppend + 'st
 impl<K: UpdateOnlyIndexKind, S: UniversalAppend + 'static> UpdateOnlyValueIndex<K, S> {
     /// Open the index storage directory at `dir` for appending, creating it if
     /// the field has no index there yet.
-    pub fn open(fs: &S::Fs, dir: &Path, kind: K) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        dir: &Path,
+        kind: K,
+    ) -> OperationResult<Self> {
         let storage = UpdateOnlyBlobstore::open(fs, dir, INDEX_LOGSTORE_CONFIG)?;
         Ok(Self { kind, storage })
     }
@@ -64,7 +68,7 @@ impl<K: UpdateOnlyIndexKind, S: UniversalAppend + 'static> UpdateOnlyValueIndex<
     /// empty slot reads back as a point this index does not cover.
     pub fn add_point(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         slot: PointOffsetType,
         values: &[&Value],
         hw_counter: &HardwareCounterCell,
