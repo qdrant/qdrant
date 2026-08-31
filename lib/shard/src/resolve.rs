@@ -13,6 +13,10 @@
 //! `segments`, and no new operation may be appended between resolution and
 //! the append of the rewritten operation. Callers provide this via the shard
 //! update fence.
+//!
+//! Resolution also reports how many points a filter *scan* selected, so the
+//! caller can gate oversized updates on the exact point count this shard is
+//! about to touch (`max_update_by_filter_limit` in strict mode).
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
@@ -73,6 +77,22 @@ pub fn is_filter_resolving(operation: &CollectionUpdateOperations) -> bool {
     }
 }
 
+/// Outcome of [`resolve_operation`].
+#[derive(Debug)]
+pub struct ResolvedOperation {
+    /// The operation, rewritten to its id-based form.
+    pub operation: CollectionUpdateOperations,
+
+    /// How many points a filter scan selected, for operations that pick their
+    /// targets by scanning this shard (delete by filter, payload by filter,
+    /// clear payload by filter, delete vectors by filter).
+    ///
+    /// `None` when the target set came from the client instead: an explicit id
+    /// list, a conditional upsert or an `update_filter`, which only trim a
+    /// point list the client already sent.
+    pub scanned_points: Option<usize>,
+}
+
 /// Rewrite a filter/condition-resolving operation into its id-based
 /// equivalent by resolving the filter against current segment state.
 ///
@@ -85,12 +105,15 @@ pub fn resolve_operation(
     segments: &SegmentHolder,
     operation: CollectionUpdateOperations,
     hw_counter: &HardwareCounterCell,
-) -> OperationResult<CollectionUpdateOperations> {
+) -> OperationResult<ResolvedOperation> {
+    let mut scanned_points = None;
+
     let resolved = match operation {
         CollectionUpdateOperations::PointOperation(op) => {
             CollectionUpdateOperations::PointOperation(match op {
                 PointOperations::DeletePointsByFilter(filter) => {
                     let ids = matched_ids(segments, &filter, hw_counter)?;
+                    scanned_points = Some(ids.len());
                     PointOperations::DeletePoints { ids }
                 }
                 PointOperations::UpsertPointsConditional(op) => {
@@ -107,6 +130,7 @@ pub fn resolve_operation(
             CollectionUpdateOperations::VectorOperation(match op {
                 VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
                     let ids = matched_ids(segments, &filter, hw_counter)?;
+                    scanned_points = Some(ids.len());
                     VectorOperations::DeleteVectors(ids.into(), vector_names)
                 }
                 VectorOperations::UpdateVectors(update) => {
@@ -132,19 +156,28 @@ pub fn resolve_operation(
         }
         CollectionUpdateOperations::PayloadOperation(op) => {
             CollectionUpdateOperations::PayloadOperation(match op {
-                PayloadOps::SetPayload(sp) => {
-                    PayloadOps::SetPayload(resolve_set_payload(segments, sp, hw_counter)?)
-                }
-                PayloadOps::OverwritePayload(sp) => {
-                    PayloadOps::OverwritePayload(resolve_set_payload(segments, sp, hw_counter)?)
-                }
+                PayloadOps::SetPayload(sp) => PayloadOps::SetPayload(resolve_set_payload(
+                    segments,
+                    sp,
+                    &mut scanned_points,
+                    hw_counter,
+                )?),
+                PayloadOps::OverwritePayload(sp) => PayloadOps::OverwritePayload(
+                    resolve_set_payload(segments, sp, &mut scanned_points, hw_counter)?,
+                ),
                 PayloadOps::DeletePayload(dp) => {
                     let DeletePayloadOp {
                         keys,
                         points,
                         filter,
                     } = dp;
-                    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
+                    let points = resolve_points_or_filter(
+                        segments,
+                        points,
+                        filter,
+                        &mut scanned_points,
+                        hw_counter,
+                    )?;
                     PayloadOps::DeletePayload(DeletePayloadOp {
                         keys,
                         points,
@@ -153,6 +186,7 @@ pub fn resolve_operation(
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
                     let points = matched_ids(segments, &filter, hw_counter)?;
+                    scanned_points = Some(points.len());
                     PayloadOps::ClearPayload { points }
                 }
                 op @ PayloadOps::ClearPayload { .. } => op,
@@ -164,7 +198,10 @@ pub fn resolve_operation(
         op @ CollectionUpdateOperations::StagingOperation(_) => op,
     };
 
-    Ok(resolved)
+    Ok(ResolvedOperation {
+        operation: resolved,
+        scanned_points,
+    })
 }
 
 /// Resolve the point set matched by `filter`, deduplicated and in a
@@ -189,10 +226,15 @@ fn resolve_points_or_filter(
     segments: &SegmentHolder,
     points: Option<Vec<PointIdType>>,
     filter: Option<segment::types::Filter>,
+    scanned_points: &mut Option<usize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<Vec<PointIdType>>> {
     match (points, filter) {
-        (None, Some(filter)) => Ok(Some(matched_ids(segments, &filter, hw_counter)?)),
+        (None, Some(filter)) => {
+            let ids = matched_ids(segments, &filter, hw_counter)?;
+            *scanned_points = Some(ids.len());
+            Ok(Some(ids))
+        }
         (points, _) => Ok(points),
     }
 }
@@ -218,6 +260,7 @@ fn resolve_conditional_upsert(
 fn resolve_set_payload(
     segments: &SegmentHolder,
     operation: SetPayloadOp,
+    scanned_points: &mut Option<usize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<SetPayloadOp> {
     let SetPayloadOp {
@@ -226,7 +269,7 @@ fn resolve_set_payload(
         filter,
         key,
     } = operation;
-    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
+    let points = resolve_points_or_filter(segments, points, filter, scanned_points, hw_counter)?;
     Ok(SetPayloadOp {
         payload,
         points,
@@ -285,7 +328,10 @@ mod tests {
 
         let filter = color_filter("blue");
 
-        let resolved = resolve_operation(
+        let ResolvedOperation {
+            operation: resolved,
+            scanned_points,
+        } = resolve_operation(
             &holder,
             CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
                 filter.clone(),
@@ -299,6 +345,9 @@ mod tests {
         else {
             panic!("expected DeletePoints, got {resolved:?}");
         };
+
+        // A filter scan reports its exact match count for the strict mode gate.
+        assert_eq!(scanned_points, Some(ids.len()));
 
         // Deterministic: sorted, no duplicates (points 4 and 5 exist in both segments).
         assert!(!ids.is_empty());
@@ -340,7 +389,10 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        let ResolvedOperation {
+            operation: resolved,
+            scanned_points,
+        } = resolve_operation(&holder, operation, &hw_counter).unwrap();
 
         let CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(points_op)) =
             resolved
@@ -348,6 +400,10 @@ mod tests {
             panic!("expected plain UpsertPoints");
         };
         assert_eq!(points_op.point_ids(), vec![100.into()]);
+
+        // A conditional upsert only trims the client's own point list, so it
+        // is not a scan and must not be gated by the update-by-filter limit.
+        assert_eq!(scanned_points, None);
     }
 
     #[test]
@@ -364,7 +420,10 @@ mod tests {
                 key: None,
             }));
 
-        let resolved = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        let ResolvedOperation {
+            operation: resolved,
+            scanned_points,
+        } = resolve_operation(&holder, operation, &hw_counter).unwrap();
 
         let CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(sp)) = resolved
         else {
@@ -373,6 +432,7 @@ mod tests {
         assert!(sp.filter.is_none());
         let points = sp.points.expect("points must be resolved");
         assert!(!points.is_empty());
+        assert_eq!(scanned_points, Some(points.len()));
 
         let mut expected = points_by_filter(&holder, &color_filter("red"), &hw_counter).unwrap();
         expected.sort_unstable();
@@ -392,7 +452,8 @@ mod tests {
         assert!(!is_filter_resolving(&operation));
 
         let resolved = resolve_operation(&holder, operation.clone(), &hw_counter).unwrap();
-        assert_eq!(resolved, operation);
+        assert_eq!(resolved.operation, operation);
+        assert_eq!(resolved.scanned_points, None);
     }
 
     #[test]
