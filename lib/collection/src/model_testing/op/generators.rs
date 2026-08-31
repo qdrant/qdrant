@@ -205,8 +205,8 @@ pub(super) fn random_slice(rng: &mut impl Rng) -> (NonZeroU32, u32) {
 /// Flush interval for `Op::SetFlushInterval`, in seconds. The range mirrors what operators
 /// realistically configure: the shipped default is 5s (see `config/config.yaml`), and tuned
 /// deployments trade durability for write throughput anywhere between 1s and 30s. `0` is
-/// excluded on purpose: it makes the flush worker spin without sleeping (the CLI's
-/// `--flush-interval-sec` rejects it for the same reason).
+/// included too: the flush worker then flushes back to back without sleeping in between,
+/// the most aggressive durability setting and the tightest flush-vs-write interleaving.
 pub(super) fn random_flush_interval_sec(rng: &mut impl Rng) -> u64 {
     const INTERVALS: &[u64] = &[0, 1, 2, 5, 10, 30];
     *INTERVALS.choose(rng).unwrap()
