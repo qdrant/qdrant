@@ -145,6 +145,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        let start = std::time::Instant::now();
         let plan = UpdateBatchPlan::build(operations)?;
         if plan.is_empty() {
             return Ok((self, UpdateBatchOutcome::default()));
@@ -155,7 +156,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
 
         // 1-3. Locate, read, materialize — the decision stage shared with
         // `preview_batch`, so a preview cannot drift from the real apply.
+        let instant = std::time::Instant::now();
         let resolved = resolve_batch(&segments, plan, &self.pool)?;
+        log::info!("resolve_batch took {:?}", instant.elapsed());
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
@@ -236,6 +239,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         // writers buffer nothing across calls, so a write is durable when it
         // returns.
         let mut written: Vec<Uuid> = Vec::new();
+        let instant = std::time::Instant::now();
+        let mut tombstone_start = None;
         if !to_store.is_empty() {
             let uuid = write_target_uuid.ok_or_else(|| {
                 OperationError::service_error("No appendable segment exists, expected exactly one")
@@ -250,7 +255,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
                     ))
                 })?
                 .store_points(&to_store, &hw_counter)?;
+            log::info!("store_points took: {:?}", instant.elapsed());
 
+            tombstone_start = Some(std::time::Instant::now());
             // The write target's retirements happen after the store, since
             // every write is durable when it returns and the reverse order
             // can lose a point outright if the process dies in between.
@@ -260,13 +267,18 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
             written.push(uuid);
         }
 
+        let instant = tombstone_start.unwrap_or_else(std::time::Instant::now);
         for (uuid, points) in to_tombstone {
             get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
             written.push(uuid);
         }
+        log::info!("tombstone_points took {:?}", instant.elapsed());
 
+        let instant = std::time::Instant::now();
         self.reload_lookups(&written)?;
+        log::info!("reload_lookups took {:?}", instant.elapsed());
 
+        log::info!("total apply_batch took {:?}", start.elapsed());
         Ok((self, outcome))
     }
 
