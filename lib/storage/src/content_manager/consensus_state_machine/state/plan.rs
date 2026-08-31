@@ -109,11 +109,6 @@ impl ClusterState {
         actions
     }
 
-    /// One action per diff the operation carries, in the order
-    /// `TableOfContent::update_collection` applies them.
-    ///
-    /// Every diff writes an absolute value, computed from the config it updates, so a replay
-    /// converges from any prefix.
     pub fn plan_update_collection(&self, op: &UpdateCollectionOperation) -> StorageResult<Actions> {
         let UpdateCollectionOperation {
             collection_name,
@@ -149,6 +144,23 @@ impl ClusterState {
             .expect("collection exists")
             .config
             .clone();
+
+        // One action per field diff, in the order `ToC::update_collection` applies them.
+        //
+        // `CollectionConfigDiff` merges a diff the same way `Collection::update_*` methods do.
+        //
+        // Every diff kind is idempotent, except `Metadata` on a collection that has none.
+        //
+        // The first apply saves the whole payload as-is, `null`s included, because there is
+        // nothing to merge it into. A replay then merges the payload into what the first apply
+        // saved, and a merge *drops* every key set to `null`.
+        //
+        // E.g., take `{"a": 1, "b": null}` on a collection without metadata.
+        //
+        // The first apply saves it whole, leaving `{"a": 1, "b": null}`.
+        // A replay merges it into itself, leaving `{"a": 1}`.
+        //
+        // `replay_may_diverge` in `tests/replay.rs` exempts it.
 
         let UpdateCollection {
             vectors,
