@@ -30,11 +30,13 @@ use crate::common::Flusher;
 use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::io_uring::{IoUringFallback, use_io_uring};
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorRef};
-use crate::types::{Distance, Memory, VectorStorageDatatype};
+use crate::index::hnsw_index::HnswGraph;
+use crate::types::{Distance, IoBackend, Memory, VectorStorageDatatype};
 use crate::vector_storage::common::error_immutable_insert;
+use crate::vector_storage::graph_vectors::GraphVectors;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, TurboScoring, VectorStorage, VectorStorageEnum,
@@ -126,7 +128,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate)
+        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
     }
 }
 
@@ -146,7 +148,25 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate)
+        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+    }
+}
+
+impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
+    pub fn open_graph(
+        graph: HnswGraph<S>,
+        path: &Path,
+        dim: usize,
+        distance: Distance,
+        populate: bool,
+    ) -> OperationResult<Self> {
+        let quantizer = shared::build_quantizer(dim, distance);
+        let storage = GraphVectors::new(graph, quantizer.quantized_size())?;
+        Self::finalize(storage, quantizer, path, dim, distance, populate, !populate)
+    }
+
+    pub fn io_backend(&self) -> Option<IoBackend> {
+        self.storage.graph().io_backend()
     }
 }
 
@@ -160,6 +180,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
         dim: usize,
         distance: Distance,
         populate: bool,
+        on_disk: bool,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
         let deleted = BitvecFlags::open_or_create(
@@ -175,7 +196,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
             quantizer,
             deleted,
             deleted_count,
-            on_disk: true,
+            on_disk,
             distance,
             dim,
         })
@@ -444,6 +465,18 @@ impl<B: TurboVectorBlob> DenseTQVectorStorageRead for TurboVectorStorageImpl<B> 
             &self.storage.get_vector_data(key),
             keep_rotated,
         )
+    }
+}
+
+impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<GraphVectors<u8, S>> {
+    fn update_from<'a>(
+        &mut self,
+        _other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        Err(OperationError::service_error(
+            "Cannot merge into a graph-backed vector storage",
+        ))
     }
 }
 

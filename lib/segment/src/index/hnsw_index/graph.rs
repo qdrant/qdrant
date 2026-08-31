@@ -229,7 +229,6 @@ impl<S: UniversalRead> HnswGraph<S> {
     }
 
     /// Return an error if this graph doesn't provide base vectors of said layout.
-    #[expect(dead_code, reason = "would be used in combined-storage")]
     pub fn check_base_vector_layout_compatibility(
         &self,
         expected_size: usize,
@@ -251,7 +250,6 @@ impl<S: UniversalRead> HnswGraph<S> {
         )))
     }
 
-    #[expect(dead_code, reason = "would be used in combined-storage")]
     pub fn for_each_base_vector_in_batch<T>(
         &self,
         keys: &[PointOffsetType],
@@ -280,7 +278,6 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
-    #[expect(dead_code, reason = "would be used in combined-storage")]
     pub fn base_vector<T>(&self, key: PointOffsetType) -> OperationResult<Cow<'_, [T]>>
     where
         T: bytemuck::Pod,
@@ -316,7 +313,6 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
-    #[expect(dead_code, reason = "would be used in combined-storage")]
     pub fn io_backend(&self) -> Option<IoBackend> {
         match self {
             HnswGraph::Direct(_) => {
@@ -361,7 +357,6 @@ impl<S: UniversalRead> HnswGraph<S> {
     }
 }
 
-#[expect(dead_code, reason = "would be used in combined-storage")]
 fn cast_vector<T: bytemuck::Pod>(bytes: ACow<'_>) -> OperationResult<Cow<'_, [T]>> {
     bytes.try_cast_bytemuck().map_err(|err| {
         OperationError::service_error(format!("Misplaced inline-graph vector: {err}"))

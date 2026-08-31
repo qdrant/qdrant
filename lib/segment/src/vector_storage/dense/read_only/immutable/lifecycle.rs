@@ -9,11 +9,14 @@ use super::ReadOnlyImmutableDenseVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::index::hnsw_index::HnswGraph;
 use crate::types::Distance;
+use crate::vector_storage::dense::appendable_dense_vector_storage::DELETED_DIR_PATH;
 use crate::vector_storage::dense::dense_vector_storage::{DELETED_PATH, VECTORS_PATH};
 use crate::vector_storage::dense::immutable_dense_vectors::{
     ImmutableDenseVectorData, deleted_mmap_data_start,
 };
+use crate::vector_storage::graph_vectors::GraphVectors;
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
 fn bitslice_open_options(populate: Populate) -> OpenOptions {
@@ -66,6 +69,26 @@ impl<T: PrimitiveVectorElement, S: UniversalRead>
         Ok(Self {
             vectors,
             deleted,
+            distance,
+            populate,
+        })
+    }
+}
+
+impl<T: PrimitiveVectorElement, S: UniversalRead>
+    ReadOnlyImmutableDenseVectorStorage<GraphVectors<T, S>>
+{
+    pub fn open_graph(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        graph: HnswGraph<S>,
+        dim: usize,
+        distance: Distance,
+        populate: Populate,
+    ) -> OperationResult<Self> {
+        Ok(Self {
+            vectors: GraphVectors::new(graph, dim)?,
+            deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,
             distance,
             populate,
         })
