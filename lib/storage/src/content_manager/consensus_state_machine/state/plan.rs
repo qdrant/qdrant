@@ -80,11 +80,6 @@ impl ClusterState {
         }])
     }
 
-    /// Aliases of the collection first, then the collection itself, so a replay of a partially
-    /// applied operation still finds the collection and finishes the removal.
-    ///
-    /// Nothing to validate: `TableOfContent::delete_collection` also accepts a collection that is
-    /// not there. It removes leftover aliases and the directory, and answers `Ok(false)`.
     pub fn plan_delete_collection(&self, op: &DeleteCollectionOperation) -> Actions {
         let DeleteCollectionOperation(collection) = op;
 
@@ -92,6 +87,8 @@ impl ClusterState {
         // collection directly
         let remove: BTreeSet<_> = self.aliases.collection_aliases(collection).collect();
 
+        // Remove aliases first, then collection itself.
+        // Either order is fine, this one simply follows the order `ToC::delete_collection` uses.
         let mut actions = Actions::new();
 
         // Collection without aliases does not produce an empty `UpdateAliases` action
