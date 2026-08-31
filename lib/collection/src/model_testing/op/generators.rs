@@ -208,7 +208,7 @@ pub(super) fn random_slice(rng: &mut impl Rng) -> (NonZeroU32, u32) {
 /// excluded on purpose: it makes the flush worker spin without sleeping (the CLI's
 /// `--flush-interval-sec` rejects it for the same reason).
 pub(super) fn random_flush_interval_sec(rng: &mut impl Rng) -> u64 {
-    const INTERVALS: &[u64] = &[1, 2, 5, 10, 30];
+    const INTERVALS: &[u64] = &[0, 1, 2, 5, 10, 30];
     *INTERVALS.choose(rng).unwrap()
 }
 
