@@ -30,7 +30,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlySegmentEnum<Fs> {
                 AppendableSegment::open(fs, segment_path, config, state)?,
             )),
             WriterIdTrackerState::DeleteOnly(state) => {
-                Self::DeleteOnly(DeleteOnlySegment::open(fs, segment_path, state))
+                Self::DeleteOnly(DeleteOnlySegment::open(fs, segment_path, state)?)
             }
         })
     }

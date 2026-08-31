@@ -20,12 +20,15 @@ pub(crate) fn deleted_path(base: &Path) -> PathBuf {
 /// [`StoredBitSlice::atomic_update`]; `seed` is consumed in place of reading
 /// the mask file when the caller held it in memory — and kept for a later
 /// call when `points` is empty and nothing is written.
-pub(crate) fn tombstone_points_in_stored_mask<Fs: UniversalReadFs + UniversalWriteFileOps>(
+pub(crate) fn tombstone_points_in_stored_mask<Fs>(
     fs: &Fs,
     segment_path: &Path,
     seed: &mut Option<BitVec>,
     points: &[(PointIdType, PointOffsetType)],
-) -> OperationResult<()> {
+) -> OperationResult<()>
+where
+    Fs: UniversalReadFs + UniversalWriteFileOps,
+{
     if points.is_empty() {
         return Ok(());
     }
