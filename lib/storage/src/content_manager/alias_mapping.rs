@@ -24,6 +24,17 @@ impl AliasMapping {
         Ok(atomic_save_json(path, self)?)
     }
 
+    /// Aliases pointing at `collection_name`.
+    pub fn collection_aliases<'a>(
+        &'a self,
+        collection_name: &'a str,
+    ) -> impl Iterator<Item = Alias> + 'a {
+        self.0
+            .iter()
+            .filter(move |&(_, target)| target == collection_name)
+            .map(|(alias, _)| alias.clone())
+    }
+
     /// Iterate over aliases and collections they point at.
     pub fn iter(&self) -> impl Iterator<Item = (&Alias, &CollectionId)> {
         self.0.iter()
