@@ -237,11 +237,11 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) -> UioResult<()> {
+    ) {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
-            return Ok(());
+            return;
         }
 
         let open_options = open_arguments.unwrap_or(OpenOptions {
@@ -270,21 +270,20 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             }
         });
         files_prefetched.insert(path.to_path_buf(), scheduled);
-
-        Ok(())
     }
 
+    // TODO(uio): merge into `schedule_open`? might make it simpler to use
     fn reschedule_open(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) -> UioResult<()> {
+    ) {
         {
             let mut files_prefetched = self.files_prefetched.lock();
 
             if files_prefetched.contains_key(path) {
-                return Ok(());
+                return;
             }
 
             // Check if their file info is complete and didn't change.
@@ -294,7 +293,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
                 .is_some_and(|(previous, current)| previous.full_eq(current))
             {
                 files_prefetched.insert(path.to_path_buf(), ScheduledFile::Unchanged);
-                return Ok(());
+                return;
             }
         }
 

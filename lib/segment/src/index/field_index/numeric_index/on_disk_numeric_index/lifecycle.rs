@@ -119,29 +119,23 @@ where
     ) -> OperationResult<bool> {
         // Config
         let config_path = path.join(CONFIG_PATH);
-        if fs
-            .schedule_open(&config_path, None, None)
-            .ok_not_found()?
-            .is_none()
-        {
-            // If config doesn't exist, assume the index doesn't exist on disk
+        if !fs.exists(&config_path)? {
             return Ok(false);
         }
+        fs.schedule_open(&config_path, None, None);
 
         // Histogram
-        Histogram::<T>::preopen(fs, path)?;
+        Histogram::<T>::preopen(fs, path);
 
         // Value pairs
         let pairs_path = path.join(PAIRS_PATH);
-        fs.schedule_open(&pairs_path, Some(Self::open_options(populate)), None)?;
+        fs.schedule_open(&pairs_path, Some(Self::open_options(populate)), None);
 
         // Block index over the value pairs; optional, absent on old segments
-        let _ = fs
-            .schedule_open(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None)
-            .ok_not_found()?;
+        fs.schedule_open(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None);
 
         // Point to values
-        OnDiskPointToValues::<T, S>::preopen(fs, path, populate)?;
+        OnDiskPointToValues::<T, S>::preopen(fs, path, populate);
 
         // "No values" mask
         preopen_deleted_mask(
@@ -149,7 +143,7 @@ where
             path,
             DELETED_PATH,
             Self::open_options(Populate::PreferBackground),
-        )?;
+        );
 
         Ok(true)
     }

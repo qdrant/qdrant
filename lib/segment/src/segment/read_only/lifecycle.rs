@@ -5,9 +5,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{
-    CachedFs, CachedReadFs, OkNotFound, Populate, UniversalReadFs, read_json_via,
-};
+use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFs, read_json_via};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -45,19 +43,15 @@ fn build_cached_fs<Fs: UniversalReadFs>(
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
-        cached_fs
-            .schedule_open(&segment_path.join(file_name), None, None)
-            .ok_not_found()?;
+        cached_fs.schedule_open(&segment_path.join(file_name), None, None);
     }
 
     // Payload index config
-    cached_fs
-        .schedule_open(
-            &PayloadConfig::get_config_path(&get_payload_index_path(segment_path)),
-            None,
-            None,
-        )
-        .ok_not_found()?;
+    cached_fs.schedule_open(
+        &PayloadConfig::get_config_path(&get_payload_index_path(segment_path)),
+        None,
+        None,
+    );
 
     cached_fs.cache_file_info()?;
 
