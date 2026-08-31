@@ -11,7 +11,9 @@
 //!
 //! Two rules every operation follows:
 //!
-//! 1. Never reject an operation that is partially or fully applied.
+//! 1. Never reject a partially applied operation: rejecting one makes the partial state permanent.
+//!    An operation that was fully applied may be rejected, since the state is already complete.
+//!    E.g., `CreateCollection` rejects a collection that is already there.
 //! 2. Emit only the actions left to reach the goal state, each idempotent, and the action that
 //!    records the operation as applied last.
 //!
