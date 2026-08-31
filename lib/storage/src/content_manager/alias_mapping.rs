@@ -155,13 +155,9 @@ impl AliasPersistence {
     }
 
     pub fn collection_aliases(&self, collection_name: &str) -> Vec<String> {
-        let mut result = vec![];
-        for (alias, target_collection) in self.alias_mapping.0.iter() {
-            if collection_name == target_collection {
-                result.push(alias.clone());
-            }
-        }
-        result
+        self.alias_mapping
+            .collection_aliases(collection_name)
+            .collect()
     }
 
     pub fn state(&self) -> &AliasMapping {
