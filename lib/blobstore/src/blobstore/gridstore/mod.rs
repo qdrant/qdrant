@@ -202,7 +202,7 @@ where
         }
 
         // No fitting gap was found even though enough pages should be covered by now. This signals
-        // the gaps are incosistent with the bitmask. Stale gaps can occur after an unclean
+        // the gaps are inconsistent with the bitmask. Stale gaps can occur after an unclean
         // shutdown. Rebuilt the gaps at most once from the bitmask and try again.
         if self.gaps_rebuilt {
             panic!(
