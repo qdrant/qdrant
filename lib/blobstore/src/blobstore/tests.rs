@@ -2148,7 +2148,9 @@ fn test_open_repairs_gaps_length_mismatch() {
 
     // Fill page 0 (= region 0) completely.
     let values = [vec![0xAB; page_size], vec![0xCD; DEFAULT_BLOCK_SIZE_BYTES]];
-    storage.put_value_bytes(0, values[0].clone(), hw_counter).unwrap();
+    storage
+        .put_value_bytes(0, values[0].clone(), hw_counter)
+        .unwrap();
 
     storage.flusher()().unwrap();
     drop(storage);
@@ -2167,11 +2169,16 @@ fn test_open_repairs_gaps_length_mismatch() {
     let mut storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
 
+    // The repair immediately consumes the once-per-instance rebuild allowance.
+    assert!(storage.as_gridstore().gaps_rebuilt);
+
     // Page 0 is full, so this put creates a new page. Without the repair at open, this panicked
     // in `cover_new_page` on the "Bitmask length mismatch" assertion.
     let hw_cell = HardwareCounterCell::new();
     let hw_counter = hw_cell.ref_payload_io_write_counter();
-    storage.put_value_bytes(1, values[1].clone(), hw_counter).unwrap();
+    storage
+        .put_value_bytes(1, values[1].clone(), hw_counter)
+        .unwrap();
 
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 2);
     let pointer = storage.get_pointer(1).unwrap();
@@ -2182,7 +2189,11 @@ fn test_open_repairs_gaps_length_mismatch() {
         let stored = storage
             .get_value_bytes::<Random>(offset as u32, &hw_read)
             .unwrap();
-        assert_eq!(stored.as_deref(), Some(expected.as_slice()), "value {offset}");
+        assert_eq!(
+            stored.as_deref(),
+            Some(expected.as_slice()),
+            "value {offset}"
+        );
     }
 
     storage.flusher()().unwrap();

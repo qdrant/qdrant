@@ -58,7 +58,7 @@ where
     ///
     /// An unclean shutdown can leave persisted gaps inconsistent with the bitmask. If we detect
     /// this case at runtime, allow to rebuilt the gaps from the bitmask once.
-    gaps_rebuilt: bool,
+    pub(super) gaps_rebuilt: bool,
 }
 
 impl<V, S> Gridstore<V, S>
@@ -146,7 +146,7 @@ where
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
         let tracker = Tracker::open(&fs, &base_path, populate, true)?;
-        let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
+        let mut bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
         let pages = Pages::open(&fs, &base_path, true, populate)?;
@@ -158,6 +158,25 @@ where
             )));
         }
 
+        // The region gaps are persisted separately from the bitmask without ordering guarantees,
+        // so an unclean shutdown can leave them covering a different number of regions (e.g.
+        // phantom entries from a lost `extend` writeback). Such entries would make page creation
+        // panic, so repair a length divergence up front — the check is a cheap length
+        // comparison. Content-level staleness is still repaired lazily, see
+        // `find_or_create_available_blocks`.
+        let gaps_rebuilt = match bitmask.gaps_length_mismatch()? {
+            Some((expected_regions, actual_regions)) => {
+                log::warn!(
+                    "Gridstore region gaps at {base_path:?} cover {actual_regions} regions, but \
+                     the bitmask has {expected_regions}, possibly due to an unclean shutdown. \
+                     Rebuilding the gaps from the bitmask",
+                );
+                bitmask.rebuild_gaps(&fs)?;
+                true
+            }
+            None => false,
+        };
+
         Ok(Self {
             fs,
             config,
@@ -167,7 +186,7 @@ where
             base_path,
             _value_type: std::marker::PhantomData,
             is_alive_flush_lock: IsAliveLock::new(),
-            gaps_rebuilt: false,
+            gaps_rebuilt,
         })
     }
 

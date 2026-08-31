@@ -452,6 +452,17 @@ impl<S: UniversalWrite> Bitmask<S> {
         Ok(())
     }
 
+    /// Check whether the region gaps cover exactly the regions of the bitmask.
+    ///
+    /// Cheap length-only comparison. Returns `Some((expected, actual))` region counts when the
+    /// persisted gaps diverged in length from the bitmask, which an unclean shutdown can cause.
+    pub(crate) fn gaps_length_mismatch(&self) -> Result<Option<(usize, usize)>> {
+        let expected =
+            (self.bitslice.bit_len() as usize).div_euclid(self.config.region_size_blocks);
+        let actual = self.regions_gaps.len()?;
+        Ok((expected != actual).then_some((expected, actual)))
+    }
+
     /// Rebuild all region gaps from the bitmask, from scratch.
     ///
     /// The gaps are a persisted acceleration structure derived from the bitmask, but they are
@@ -739,6 +750,46 @@ mod tests {
         // The search finds the free space in region 1 again.
         let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
         assert_eq!((page_id, block_offset), (1, 1));
+    }
+
+    #[test]
+    fn test_gaps_length_mismatch() {
+        let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = GridstoreConfig {
+            page_size_bytes: page_size,
+            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+            compression: Compression::LZ4,
+        };
+
+        // One page, one region.
+        let mut bitmask: MmapBitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        bitmask.mark_blocks(0, 0, 3, true).unwrap();
+
+        assert_eq!(bitmask.gaps_length_mismatch().unwrap(), None);
+        let expected = bitmask.regions_gaps.read_all().unwrap().into_owned();
+
+        // Append multiple phantom full entries, as a lost `extend` writeback leaves them.
+        let full = RegionGaps {
+            max: 0,
+            leading: 0,
+            trailing: 0,
+        };
+        bitmask.regions_gaps.extend([full; 2].into_iter()).unwrap();
+
+        assert_eq!(bitmask.gaps_length_mismatch().unwrap(), Some((1, 3)));
+
+        bitmask.rebuild_gaps(&MmapFs).unwrap();
+
+        // The length is repaired and the real region's entry is intact.
+        assert_eq!(bitmask.gaps_length_mismatch().unwrap(), None);
+        assert_eq!(
+            bitmask.regions_gaps.read_all().unwrap().as_ref(),
+            expected.as_slice(),
+        );
     }
 
     #[test]
