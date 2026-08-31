@@ -170,23 +170,17 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         Ok(())
     }
 
-    /// Rewrites the file to contain exactly the given regions, resizing it as needed.
-    pub fn reset(
-        &mut self,
-        fs: &S::Fs,
-        iter: impl ExactSizeIterator<Item = RegionGaps>,
-    ) -> Result<()> {
-        // Flush outstanding changes so no stale dirty pages of the old mapping can be written
-        // back over the recreated content.
-        self.slice_store.flusher()()?;
+    /// Overwrite all entries in place.
+    ///
+    /// `iter` must yield exactly the current number of entries: the file is not resized, since
+    /// that would require unmapping it first (Windows refuses to resize a file with a live
+    /// mapping). A length divergence is repaired with a full file replacement instead, see
+    /// `Bitmask::into_rebuilt_gaps`.
+    pub fn overwrite(&mut self, iter: impl ExactSizeIterator<Item = RegionGaps>) -> Result<()> {
+        let data: Vec<RegionGaps> = iter.collect();
+        debug_assert_eq!(self.len()?, data.len(), "overwrite cannot resize");
 
-        let dir = self
-            .path
-            .parent()
-            .expect("gaps file has a parent directory")
-            .to_path_buf();
-        *self = Self::create(fs, &dir, iter, self.config.clone())?;
-
+        self.slice_store.write(0, &data)?;
         Ok(())
     }
 
