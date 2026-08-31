@@ -15,16 +15,6 @@ use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{VectorOffset, VectorOffsetType};
 
-/// What a scheduled read carries back, so its completion knows what it is.
-#[derive(Debug)]
-enum ReadTag<U> {
-    /// The run takes this one read, and the caller's data rides along with it
-    Whole(U),
-    /// One part of a run taking several reads, filed under `run` until the
-    /// others land
-    Part { run: u32, index: u32 },
-}
-
 /// A run whose parts are still arriving from the read pipeline.
 struct SplitRun<'a, U, T: Clone> {
     user_data: U,
@@ -214,6 +204,17 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         P: AccessPattern,
         U: UserData,
     {
+        /// What a scheduled read carries back, so its completion knows what it is.
+        #[derive(Debug)]
+        enum ReadTag<U> {
+            /// The run takes this one read, and the caller's data rides along
+            /// with it
+            Whole(U),
+            /// One part of a run taking several reads, filed under `run` until
+            /// the others land
+            Part { run: u32, index: u32 },
+        }
+
         let out_of_bounds = || OperationError::service_error("vector offset out of bounds");
 
         // access pattern does not matter for io_uring
