@@ -45,13 +45,14 @@ fix: crate::$MOD
 ---
 id: inner-deps-global
 language: rust
+# Matched by node text rather than a `::$MOD` pattern: ast-grep 0.45 no longer parses a leading
+# `::` fragment as a pattern, so that form silently stopped matching anything.
 rule:
-  pattern: ::$MOD
   kind: scoped_identifier
+  regex: ^::(%DEPS%)$
   has:
-    kind: identifier
-    regex: ^(%DEPS%)$
-    stopBy: end
+    field: name
+    pattern: $MOD
 fix: crate::$MOD
 
 # Remove `Anonymize` derives.
