@@ -1,4 +1,10 @@
+use std::io::Write;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use fs_err::{File, OpenOptions};
+
+use crate::common::operation_error::OperationResult;
 
 static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
 
@@ -25,3 +31,34 @@ pub const CHUNK_SIZE: usize = 512 * 1024;
 /// Vector storage chunk size in bytes
 #[cfg(not(any(test, feature = "testing")))]
 pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;
+
+/// Ensure the given mmap file exists and is the given size.
+///
+/// # Arguments
+/// * `path`: path of the file.
+/// * `header`: header to set when the file is newly created.
+/// * `size`: set the file size in bytes, filled with zeroes.
+pub(crate) fn ensure_mmap_file_size(
+    path: &Path,
+    header: &[u8],
+    size: Option<u64>,
+) -> OperationResult<()> {
+    // If it exists, only set the length
+    if path.exists() {
+        if let Some(size) = size {
+            let file = OpenOptions::new().write(true).open(path)?;
+            file.set_len(size)?;
+        }
+        return Ok(());
+    }
+
+    // Create file, and make it the correct size
+    let mut file = File::create(path)?;
+    file.write_all(header)?;
+    if let Some(size) = size
+        && size > header.len() as u64
+    {
+        file.set_len(size)?;
+    }
+    Ok(())
+}

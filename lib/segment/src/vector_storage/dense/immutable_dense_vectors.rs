@@ -1,30 +1,26 @@
 use std::borrow::Cow;
-use std::io::Write;
-use std::mem::{self, MaybeUninit, size_of};
+use std::mem::{MaybeUninit, size_of};
 use std::path::Path;
 
 use bytemuck::TransparentWrapper;
-use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
-use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
+use common::mmap::{AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange,
     TypedStorage, UioResult, UniversalRead, UniversalReadFs,
 };
-use fs_err::{File, OpenOptions};
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::common::{VECTOR_READ_BATCH_SIZE, ensure_mmap_file_size};
+use crate::vector_storage::deleted_flags::DeletedFlags;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
-const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable dense vector blob, shared by the writable [`ImmutableDenseVectors`]
 /// and the read-only dense storage. Provides typed read access for `T` through
@@ -228,10 +224,7 @@ where
 {
     /// Vector data blob, read-only through `S`.
     data: ImmutableDenseVectorData<T, S>,
-    /// Memory mapped deletion flags
-    deleted: MmapBitSlice,
-    /// Current number of deleted vectors.
-    pub deleted_count: usize,
+    deleted: DeletedFlags,
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
@@ -247,30 +240,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
             .describe("Create mmap data file")?;
 
         let data = ImmutableDenseVectorData::open(fs, vectors_path, dim, populate)?;
-        let num_vectors = data.num_vectors;
-
-        // Allocate/open deleted mmap
-        let deleted_mmap_size = deleted_mmap_size(num_vectors);
-        ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
-            .describe("Create mmap deleted file")?;
-        let deleted_mmap = mmap::open_write_mmap(deleted_path, AdviceSetting::Global, false)
-            .describe("Open mmap deleted for writing")?;
-
-        // Advise kernel that we'll need this page soon so the kernel can prepare
-        #[cfg(unix)]
-        if let Err(err) = deleted_mmap.advise(memmap2::Advice::WillNeed) {
-            log::error!("Failed to advise MADV_WILLNEED for deleted flags: {err}");
-        }
-
-        // Transform into mmap BitSlice
-        let deleted = MmapBitSlice::try_from(deleted_mmap, deleted_mmap_data_start())?;
-        let deleted_count = deleted.count_ones();
-
-        Ok(Self {
-            data,
-            deleted,
-            deleted_count,
-        })
+        let deleted = DeletedFlags::open_or_create(deleted_path, data.num_vectors)?;
+        Ok(Self { data, deleted })
     }
 
     pub fn dim(&self) -> usize {
@@ -298,27 +269,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         self.data.for_each_in_batch(keys, f)
     }
 
-    /// Marks the key as deleted.
-    ///
-    /// Returns true if the key was not deleted before, and it is now deleted.
-    pub fn delete(&mut self, key: PointOffsetType) -> bool {
-        let is_deleted = !self.deleted.replace(key as usize, true);
-        if is_deleted {
-            self.deleted_count += 1;
-        }
-        is_deleted
-    }
-
-    pub fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get_bit(key as usize).unwrap_or(false)
-    }
-
-    /// Get [`BitSlice`] representation for deleted vectors with deletion flags
-    ///
-    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
-    /// vectors in this segment.
-    pub fn deleted_vector_bitslice(&self) -> &BitSlice {
+    pub fn deleted(&self) -> &DeletedFlags {
         &self.deleted
+    }
+
+    pub fn deleted_mut(&mut self) -> &mut DeletedFlags {
+        &mut self.deleted
     }
 
     pub fn populate(&self) {
@@ -330,49 +286,4 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         self.deleted.clear_cache()?;
         Ok(())
     }
-}
-
-/// Ensure the given mmap file exists and is the given size.
-///
-/// # Arguments
-/// * `path`: path of the file.
-/// * `header`: header to set when the file is newly created.
-/// * `size`: set the file size in bytes, filled with zeroes.
-fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> OperationResult<()> {
-    // If it exists, only set the length
-    if path.exists() {
-        if let Some(size) = size {
-            let file = OpenOptions::new().write(true).open(path)?;
-            file.set_len(size)?;
-        }
-        return Ok(());
-    }
-
-    // Create file, and make it the correct size
-    let mut file = File::create(path)?;
-    file.write_all(header)?;
-    if let Some(size) = size
-        && size > header.len() as u64
-    {
-        file.set_len(size)?;
-    }
-    Ok(())
-}
-
-/// Get start position of flags `BitSlice` in deleted mmap.
-#[inline]
-pub(crate) const fn deleted_mmap_data_start() -> usize {
-    let align = mem::align_of::<usize>();
-    HEADER_SIZE.div_ceil(align) * align
-}
-
-/// Calculate size for deleted mmap to hold the given number of vectors.
-///
-/// The mmap will hold a file header and an aligned `BitSlice`.
-fn deleted_mmap_size(num: usize) -> usize {
-    let unit_size = mem::size_of::<usize>();
-    let num_bytes = num.div_ceil(8);
-    let num_usizes = num_bytes.div_ceil(unit_size);
-    let data_size = num_usizes * unit_size;
-    deleted_mmap_data_start() + data_size
 }
