@@ -76,7 +76,10 @@ impl HNSWIndex {
 
         let config = load_or_derive_config(&MmapFs, path, &hnsw_config, &vector_storage)?;
 
-        let graph = HnswGraph::open(path, hnsw_config.memory_placement())?;
+        let graph = match vector_storage.borrow().hnsw_graph() {
+            Some(graph) => HnswGraph::clone(graph),
+            None => HnswGraph::open(path, hnsw_config.memory_placement())?,
+        };
 
         Ok(HNSWIndex {
             id_tracker,

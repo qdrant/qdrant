@@ -147,10 +147,11 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         let (memory, residency) =
             graph_residency(hnsw_config.memory_placement(), populate_override);
         let is_on_disk = memory.is_on_disk();
-        let graph = if graph_deferred(fs, path, populate_override, residency)? {
-            OnceCell::new()
-        } else {
-            OnceCell::with_value(HnswGraph::open_universal(fs, path, residency)?)
+
+        let graph = match vector_storage.borrow().hnsw_graph() {
+            Some(graph) => OnceCell::with_value(graph),
+            None if graph_deferred(fs, path, populate_override, residency)? => OnceCell::new(),
+            None => OnceCell::with_value(HnswGraph::open_universal(fs, path, residency)?),
         };
 
         Ok(Self {
