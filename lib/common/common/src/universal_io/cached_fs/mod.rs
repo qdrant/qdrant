@@ -12,9 +12,8 @@ use parking_lot::Mutex;
 mod async_io;
 
 use crate::mmap::AdviceSetting;
-use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
+    CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
     UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync,
 };
 

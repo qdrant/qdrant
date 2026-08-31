@@ -15,7 +15,8 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
-    OkNotFound as _, Populate, UniversalAppend, UniversalRead, UniversalWriteFileOps, UserData,
+    OkNotFound as _, Populate, UniversalAppend, UniversalAppendFs, UniversalRead,
+    UniversalWriteFileOps, UserData,
 };
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
@@ -121,7 +122,11 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: &S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
+    pub(super) fn new(
+        fs: &impl UniversalAppendFs<File = S>,
+        base_path: PathBuf,
+        config: LogstoreConfig,
+    ) -> Result<Self> {
         let tracker = AppendOnlyTracker::new(fs, &base_path)?;
         let pages = AppendOnlyPages::new(fs, &base_path)?;
 
@@ -146,7 +151,7 @@ where
     /// In case of opening, it ignores the `config_if_create` parameter. A storage created in
     /// mutable mode is rejected, the two modes persist incompatible file formats.
     pub fn open_or_create(
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<File = S>,
         base_path: PathBuf,
         config_if_create: LogstoreConfig,
         populate: Populate,
@@ -166,7 +171,7 @@ where
 
     /// Open an existing storage at the given path, with the already read config.
     pub(super) fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<File = S>,
         base_path: PathBuf,
         config: LogstoreConfig,
         populate: Populate,

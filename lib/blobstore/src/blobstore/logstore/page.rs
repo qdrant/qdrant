@@ -7,7 +7,7 @@ use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
-    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFileOps, UserData,
+    UniversalAppendFs, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
 };
 
 use crate::Result;
@@ -305,7 +305,7 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// Create a new empty page 0 in the given directory, truncating it if it already exists.
     ///
     /// The directory must exist already.
-    pub(super) fn new(fs: &S::Fs, dir: &Path) -> Result<Self> {
+    pub(super) fn new(fs: &impl UniversalAppendFs<File = S>, dir: &Path) -> Result<Self> {
         let page = AppendOnlyPage::new(fs, page_file_name(dir, 0))?;
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -324,7 +324,7 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// by creating the new, empty page file.
     pub(super) fn append_value(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<File = S>,
         value: &[u8],
         page_capacity_bytes: u64,
     ) -> Result<(PageId, BlockOffset)> {
@@ -526,7 +526,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// Create a new empty page file at the given path, truncating it if it already exists.
     ///
     /// The directory must exist already.
-    fn new(fs: &S::Fs, path: PathBuf) -> Result<Self> {
+    fn new(fs: &impl UniversalAppendFs<File = S>, path: PathBuf) -> Result<Self> {
         fs.create(&path, 0)?;
         let file = fs.open(
             &path,
