@@ -2754,18 +2754,29 @@ impl<'de> Deserialize<'de> for PayloadFieldSchema {
         // (qdrant/qdrant#10372). Reject sequence inputs upfront so the
         // invalid shape produces a 4xx diagnostic instead of a created
         // index.
-        let value = serde_json::Value::deserialize(deserializer)?;
-        if value.is_array() {
-            return Err(serde::de::Error::custom(
-                "field_schema must be a string identifier (e.g. \"keyword\") \
-                 or an object with `type` and parameters, not a JSON array",
-            ));
+        //
+        // The guard only applies to human-readable formats. The
+        // non-human-readable path (rmp-serde, used by the WAL and the
+        // consensus state machine) encodes `FieldParams` as a tuple
+        // array, which `serde_json::Value::deserialize` would surface
+        // as `Value::Array` and the guard would then mis-reject,
+        // breaking shard recovery and consensus replay.
+        if deserializer.is_human_readable() {
+            let value = serde_json::Value::deserialize(deserializer)?;
+            if value.is_array() {
+                return Err(serde::de::Error::custom(
+                    "field_schema must be a string identifier (e.g. \"keyword\") \
+                     or an object with `type` and parameters, not a JSON array",
+                ));
+            }
+            // Delegate to a private shadow enum with the derived
+            // untagged `Deserialize` so we don't recurse into this impl.
+            serde_json::from_value::<PayloadFieldSchemaShadow>(value)
+                .map(Into::into)
+                .map_err(serde::de::Error::custom)
+        } else {
+            PayloadFieldSchemaShadow::deserialize(deserializer).map(Into::into)
         }
-        // Delegate to a private shadow enum with the derived
-        // untagged `Deserialize` so we don't recurse into this impl.
-        serde_json::from_value::<PayloadFieldSchemaShadow>(value)
-            .map(Into::into)
-            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -6432,6 +6443,7 @@ impl Display for ShardKey {
 #[cfg(test)]
 mod field_schema_tests {
     use super::*;
+    use crate::data_types::index::KeywordIndexType;
 
     /// A bare string identifier deserialises into the `FieldType` variant.
     #[test]
@@ -6515,5 +6527,37 @@ mod field_schema_tests {
             msg.contains("field_schema") || msg.contains("array"),
             "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
         );
+    }
+
+    /// Regression: `rmp-serde` (used by the WAL and consensus state
+    /// machine) encodes `FieldParams(KeywordIndexParams { ... })` as a
+    /// MessagePack tuple array. The custom `Deserialize` impl must
+    /// round-trip the binary form correctly without applying the
+    /// human-readable-only array rejection (qdrant/qdrant#10372,
+    /// CodeRabbit review on PR #10388).
+    #[test]
+    fn rmp_serde_field_params_roundtrip() {
+        let original =
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                r#type: KeywordIndexType::Keyword,
+                is_tenant: Some(true),
+                ..Default::default()
+            }));
+
+        // rmp-serde uses non-human-readable format.
+        let binary = rmp_serde::to_vec(&original).expect("serialize");
+        let restored: PayloadFieldSchema = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(original, restored);
+    }
+
+    /// Same for the bare-`FieldType` variant — the non-human-readable
+    /// path must still resolve a unit enum correctly.
+    #[test]
+    fn rmp_serde_field_type_roundtrip() {
+        let original = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let binary = rmp_serde::to_vec(&original).expect("serialize");
+        let restored: PayloadFieldSchema = rmp_serde::from_slice(&binary).expect("deserialize");
+        assert_eq!(original, restored);
     }
 }
