@@ -27,7 +27,6 @@ pub struct GraphLayersBatched<S: UniversalRead> {
     pub(super) links: GraphLinksFile<S>,
     pub(super) entry_points: EntryPoints,
     visited_pool: VisitedPool,
-    #[expect(dead_code, reason = "would be used in combined-storage")]
     pub(super) residency: GraphLinksResidency,
 }
 
