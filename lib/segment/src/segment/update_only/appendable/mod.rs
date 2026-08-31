@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppendFs;
+use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 
 use super::AppendableIdTrackerState;
 use crate::common::operation_error::OperationResult;
@@ -27,21 +27,19 @@ pub struct AppendableSegment<Fs: UniversalAppendFs> {
     id_tracker: UpdateOnlyAppendableIdTracker,
     /// What the id tracker appends through and
     /// [`store_components`](Self::store_components) opens with.
-    fs: Fs,
+    fs: CachedFs<Fs>,
     segment_path: PathBuf,
     config: SegmentConfig,
     /// The components a stored point's data goes into, opened on the first
     /// [`store_points`](Self::store_points). A batch that only deletes writes
     /// nothing but the mappings log, so it never pays for these opens.
-    store: Option<StoreComponents<Fs>>,
+    store: Option<StoreComponents<CachedFs<Fs>>>,
 }
 
 /// Everywhere a stored point's data goes. The mappings log that publishes the
 /// point is not here: it belongs to the segment itself, since deletes need it
 /// too.
 struct StoreComponents<Fs: UniversalAppendFs> {
-    /// What the components write through, passed down per call.
-    fs: Fs,
     payload_storage: UpdateOnlyPayloadStorage<Fs::File>,
     payload_indexes: UpdateOnlyStructPayloadIndex<Fs::File>,
     /// One writer per named vector, dense and sparse alike.
@@ -56,16 +54,16 @@ struct StoreComponents<Fs: UniversalAppendFs> {
 }
 
 impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
-    fn open(fs: Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
-        let payload_storage = UpdateOnlyPayloadStorage::open(&fs, segment_path)?;
-        let payload_indexes = UpdateOnlyStructPayloadIndex::open(&fs, segment_path)?;
+    fn open(fs: &Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
+        let payload_storage = UpdateOnlyPayloadStorage::open(fs, segment_path)?;
+        let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs, segment_path)?;
 
         let mut vector_storages =
             Vec::with_capacity(config.vector_data.len() + config.sparse_vector_data.len());
         let mut quantized_vectors = HashMap::new();
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open(&fs, &path, vector_config)?;
+            let storage = UpdateOnlyVectorStorage::open(fs, &path, vector_config)?;
             vector_storages.push((vector_name.clone(), storage));
 
             if let Some(quantized) =
@@ -76,12 +74,11 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open_sparse(&fs, &path)?;
+            let storage = UpdateOnlyVectorStorage::open_sparse(fs, &path)?;
             vector_storages.push((vector_name.clone(), storage));
         }
 
         Ok(Self {
-            fs,
             payload_storage,
             payload_indexes,
             vector_storages,
@@ -117,6 +114,8 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             mappings_end,
         )?;
 
+        let fs = CachedFs::new(fs, segment_path)?;
+
         Ok(Self {
             id_tracker,
             fs,
@@ -126,15 +125,19 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         })
     }
 
-    fn store_components(&mut self) -> OperationResult<&mut StoreComponents<Fs>> {
+    /// Lends the fs alongside the components, so a caller holding the mutable
+    /// borrow can still pass it down per call.
+    fn store_components(
+        &mut self,
+    ) -> OperationResult<(&CachedFs<Fs>, &mut StoreComponents<CachedFs<Fs>>)> {
         if self.store.is_none() {
             self.store = Some(StoreComponents::open(
-                self.fs.clone(),
+                &self.fs,
                 &self.segment_path,
                 &self.config,
             )?);
         }
-        Ok(self.store.as_mut().expect("just opened"))
+        Ok((&self.fs, self.store.as_mut().expect("just opened")))
     }
 
     /// Append `points` to this segment, each into a fresh slot, and repoint
@@ -157,6 +160,10 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             return Ok(());
         }
 
+        // Ensure fresh new view of the files
+        self.fs.rotate_cache_file_info();
+        self.fs.cache_file_info()?;
+
         let operations: Vec<MappingOperation> = points
             .iter()
             .map(|point| MappingOperation::Insert(point.id))
@@ -164,7 +171,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
 
-        let store = self.store_components()?;
+        let (fs, store) = self.store_components()?;
 
         // Each named vector, from whichever half of the point holds it: the
         // batch's own decoded vectors win over the bytes carried from the
@@ -187,7 +194,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                     }
                 })
                 .collect();
-            storage.append_many(&store.fs, start_slot, vectors.iter().copied(), hw_counter)?;
+            storage.append_many(fs, start_slot, vectors.iter().copied(), hw_counter)?;
 
             // The quantized storage takes the same run, row-for-row with the raw storage.
             if let Some(quantized) = store.quantized_vectors.get_mut(vector_name) {
@@ -203,10 +210,10 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         };
         store
             .payload_storage
-            .append_many(&store.fs, slot_payloads(), hw_counter)?;
+            .append_many(fs, slot_payloads(), hw_counter)?;
         store
             .payload_indexes
-            .append_many(&store.fs, slot_payloads(), hw_counter)?;
+            .append_many(fs, slot_payloads(), hw_counter)?;
 
         // Publish: covering the slots with their versions is what makes the
         // points visible, so everything above must already be durable.
