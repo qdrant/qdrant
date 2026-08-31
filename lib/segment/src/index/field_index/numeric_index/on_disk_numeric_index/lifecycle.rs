@@ -120,7 +120,7 @@ where
         // Config
         let config_path = path.join(CONFIG_PATH);
         if fs
-            .schedule_prefetch(&config_path, None, None)
+            .schedule_open(&config_path, None, None)
             .ok_not_found()?
             .is_none()
         {
@@ -133,11 +133,11 @@ where
 
         // Value pairs
         let pairs_path = path.join(PAIRS_PATH);
-        fs.schedule_prefetch(&pairs_path, Some(Self::open_options(populate)), None)?;
+        fs.schedule_open(&pairs_path, Some(Self::open_options(populate)), None)?;
 
         // Block index over the value pairs; optional, absent on old segments
         let _ = fs
-            .schedule_prefetch(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None)
+            .schedule_open(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None)
             .ok_not_found()?;
 
         // Point to values

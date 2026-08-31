@@ -77,7 +77,7 @@ impl<S: UniversalRead> Pages<S> {
             if !page_files.contains(&page_path) {
                 break;
             }
-            fs.schedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+            fs.schedule_open(&page_path, Some(page_open_options(populate, false)), None)?;
         }
         Ok(())
     }
@@ -465,7 +465,7 @@ impl<S: UniversalRead> Pages<S> {
             let page_path = self.page_path(page_id);
 
             // Re-schedule so that unchanged files don't re-fetch.
-            fs.reschedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+            fs.reschedule_open(&page_path, Some(page_open_options(populate, false)), None)?;
         }
 
         for page_id in next_page_id.. {
@@ -473,7 +473,7 @@ impl<S: UniversalRead> Pages<S> {
             if !fs.exists(&page_path)? {
                 break;
             }
-            fs.schedule_prefetch(&page_path, Some(page_open_options(populate, false)), None)?;
+            fs.schedule_open(&page_path, Some(page_open_options(populate, false)), None)?;
         }
 
         Ok(())

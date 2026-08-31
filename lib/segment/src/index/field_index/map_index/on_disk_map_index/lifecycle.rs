@@ -47,7 +47,7 @@ where
         // Config
         let config_path = path.join(CONFIG_PATH);
         if fs
-            .schedule_prefetch(&config_path, None, None)
+            .schedule_open(&config_path, None, None)
             .ok_not_found()?
             .is_none()
         {

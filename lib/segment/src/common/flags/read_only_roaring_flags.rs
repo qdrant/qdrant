@@ -85,7 +85,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     ) -> OperationResult<bool> {
         // Status file.
         if fs
-            .schedule_prefetch(
+            .schedule_open(
                 &status_file(directory),
                 Some(open_options(Populate::PreferBackground)),
                 None,
@@ -97,7 +97,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         }
 
         // Bitslice
-        fs.schedule_prefetch(
+        fs.schedule_open(
             &directory.join(FLAGS_FILE),
             Some(open_options(populate)),
             None,
@@ -170,14 +170,14 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             Populate::No
         };
 
-        cached_fs.reschedule_prefetch(
+        cached_fs.reschedule_open(
             &directory.join(FLAGS_FILE),
             Some(open_options(populate)),
             None,
         )?;
 
         // Status file.
-        cached_fs.reschedule_prefetch(
+        cached_fs.reschedule_open(
             &status_file(directory),
             Some(open_options(Populate::PreferBackground)),
             None,

@@ -157,7 +157,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // Postings.
         let postings_path = path.join(POSTINGS_FILE);
         if fs
-            .schedule_prefetch(
+            .schedule_open(
                 &postings_path,
                 Some(Self::open_options(
                     populate,
@@ -180,7 +180,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         )?;
 
         // Point to tokens count
-        fs.schedule_prefetch(
+        fs.schedule_open(
             &path.join(POINT_TO_TOKENS_COUNT_FILE),
             Some(Self::open_options(populate, AdviceSetting::Global)),
             None,

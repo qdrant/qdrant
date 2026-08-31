@@ -58,9 +58,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
         let options = Self::open_options();
 
-        fs.schedule_prefetch(&i2e_path, Some(options), None)?;
-        fs.schedule_prefetch(&e2i_path(segment_path), Some(options), None)?;
-        fs.schedule_prefetch(
+        fs.schedule_open(&i2e_path, Some(options), None)?;
+        fs.schedule_open(&e2i_path(segment_path), Some(options), None)?;
+        fs.schedule_open(
             &is_uuid_path(segment_path),
             Some(OpenOptions {
                 // Prefetch must not stall on population; only the consuming
