@@ -706,7 +706,8 @@ mod tests {
                 }
                 VectorStorageType::InRamMmap
                 | VectorStorageType::InRamChunkedMmap
-                | VectorStorageType::Memory => {
+                | VectorStorageType::Memory
+                | VectorStorageType::GraphInline => {
                     unreachable!("unexpected storage type {storage_type:?}")
                 }
             }
@@ -728,7 +729,8 @@ mod tests {
                 }
                 VectorStorageType::Memory
                 | VectorStorageType::InRamChunkedMmap
-                | VectorStorageType::InRamMmap => false,
+                | VectorStorageType::InRamMmap
+                | VectorStorageType::GraphInline => false,
             };
             assert!(
                 routed,

@@ -105,7 +105,8 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         fs.schedule_open(&HnswGraphConfig::get_config_path(path), None, None);
 
         // Graph data and links
-        let (_memory, residency) = graph_residency(hnsw_config, populate_override);
+        let (_memory, residency) =
+            graph_residency(hnsw_config.memory_placement(), populate_override);
         if !graph_deferred(fs, path, populate_override, residency)? {
             HnswGraph::preopen_universal(fs, path, residency)?;
         }
@@ -143,7 +144,8 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     {
         let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage)?;
 
-        let (memory, residency) = graph_residency(&hnsw_config, populate_override);
+        let (memory, residency) =
+            graph_residency(hnsw_config.memory_placement(), populate_override);
         let is_on_disk = memory.is_on_disk();
         let graph = if graph_deferred(fs, path, populate_override, residency)? {
             OnceCell::new()

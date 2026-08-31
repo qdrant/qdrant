@@ -12716,6 +12716,13 @@
             "enum": [
               "InRamMmap"
             ]
+          },
+          {
+            "description": "Vectors are inlined in the HNSW links file, not in a dedicated storage. Not appendable.",
+            "type": "string",
+            "enum": [
+              "GraphInline"
+            ]
           }
         ]
       },
