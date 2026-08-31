@@ -97,6 +97,10 @@ fn quantization_config(kind: QuantizationKind) -> QuantizationConfig {
     }
 }
 
+/// Periodic flush worker interval the collection starts with, in seconds. Matches the shipped
+/// default (see `config/config.yaml`); `Op::SetFlushInterval` moves it around during the run.
+pub(super) const INITIAL_FLUSH_INTERVAL_SEC: u64 = 5;
+
 /// Build a fresh soak collection rooted at `storage_path`. Creates `collection/` and
 /// `snapshots/` subdirs, wiping any pre-existing contents — each soak run starts from a
 /// clean slate. If you need to preserve a crashed run's state for post-mortem, copy the
@@ -107,7 +111,6 @@ pub(super) async fn fixture(
     disable_optimizer: bool,
     max_segment_size_kb: usize,
     indexing_threshold_kb: usize,
-    flush_interval_sec: u64,
     on_disk: bool,
 ) -> (PathBuf, PathBuf, Collection) {
     let collection_dir = storage_path.join("collection");
@@ -190,7 +193,7 @@ pub(super) async fn fixture(
         #[expect(deprecated)]
         memmap_threshold: None,
         indexing_threshold: Some(indexing_threshold_kb),
-        flush_interval_sec,
+        flush_interval_sec: INITIAL_FLUSH_INTERVAL_SEC,
         // `Some(0)` disables the optimizer worker entirely (per `OptimizersConfig::fixture`'s
         // comment); `None` lets it use its default thread count.
         max_optimization_threads: if disable_optimizer { Some(0) } else { Some(1) },

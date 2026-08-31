@@ -516,7 +516,6 @@ pub async fn run(
     disable_optimizer: bool,
     max_segment_size_kb: usize,
     indexing_threshold_kb: usize,
-    flush_interval_sec: u64,
     restart_probability: f64,
     swarm_interval: usize,
     on_disk: bool,
@@ -534,7 +533,6 @@ pub async fn run(
         disable_optimizer,
         max_segment_size_kb,
         indexing_threshold_kb,
-        flush_interval_sec,
         on_disk,
     )
     .await;
@@ -557,7 +555,7 @@ pub async fn run(
         disable_optimizer,
         max_segment_size_kb,
         indexing_threshold_kb,
-        flush_interval_sec,
+        fixture::INITIAL_FLUSH_INTERVAL_SEC,
         restart_probability,
         swarm_interval,
         enable_force_off,
@@ -1019,7 +1017,6 @@ mod tests {
             disable_optimizer,
             10, // max_segment_size_kb
             5,  // indexing_threshold_kb
-            5,  // flush_interval_sec
             restart_probability,
             2500,  // swarm_interval: a few redraws within the run
             false, // on_disk
