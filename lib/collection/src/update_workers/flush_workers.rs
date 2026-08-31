@@ -17,13 +17,20 @@ use crate::update_workers::UpdateWorkers;
 use crate::wal_delta::LockedWal;
 
 impl UpdateWorkers {
-    /// Returns confirmed version after flush of all segments
+    /// Returns confirmed version after flush of all segments.
+    ///
+    /// Periodic ticks use [`FlushMode::Background`]; the stop path uses [`FlushMode::Sync`] so
+    /// `stop_gracefully` / optimizer recreation cannot drop in-memory points whose WAL entries
+    /// were already acknowledged (see #10402).
     ///
     /// # Errors
     /// Returns an error on flush failure
-    fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
+    fn flush_segments(
+        segments: LockedSegmentHolder,
+        mode: FlushMode,
+    ) -> OperationResult<SeqNumberType> {
         let read_segments = segments.read();
-        let flushed_version = read_segments.flush_all(FlushMode::Background, false)?;
+        let flushed_version = read_segments.flush_all(mode, false)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
@@ -36,8 +43,9 @@ impl UpdateWorkers {
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
+        mode: FlushMode,
     ) {
-        log::trace!("Attempting flushing");
+        log::trace!("Attempting flushing ({mode:?})");
         let wal_flush_job = wal.blocking_lock().flush_async();
 
         let wal_flush_res = match wal_flush_job.join() {
@@ -62,12 +70,12 @@ impl UpdateWorkers {
             return;
         }
 
-        let confirmed_version = Self::flush_segments(segments.clone());
+        let confirmed_version = Self::flush_segments(segments.clone(), mode);
         let confirmed_version = match confirmed_version {
             Ok(version) => version,
             Err(err) => {
-                // Since Self::flush_segments is flushing asynchronously, we can get the error
-                // from the previous flush cycle, not necessarily this one.
+                // With Background mode we can surface an error from the previous flush cycle,
+                // not necessarily this one.
                 log::error!("Failed to flush: {err}");
                 segments.write().report_optimizer_error(err);
                 return;
@@ -113,7 +121,33 @@ impl UpdateWorkers {
                 biased;
                 // Stop flush worker on signal or if sender was dropped
                 _ = &mut stop_receiver => {
-                    log::debug!("Stopping flush worker for shard {}", shard_path.display());
+                    log::debug!(
+                        "Stopping flush worker for shard {}: final sync flush",
+                        shard_path.display(),
+                    );
+                    // Graceful stop and optimizer recreation previously returned here without
+                    // flushing. Periodic ticks use Background flush (ack can advance while the
+                    // newest points are still only in memory / an unsynced WAL buffer). Dropping
+                    // the shard then loses those points across close+reopen (#10402).
+                    let segments_clone = segments.clone();
+                    let wal_clone = wal.clone();
+                    let wal_keep_from_clone = wal_keep_from.clone();
+                    let clocks_clone = clocks.clone();
+                    let shard_path_clone = shard_path.clone();
+                    tokio::task::spawn_blocking(move || {
+                        Self::flush_worker_internal(
+                            segments_clone,
+                            wal_clone,
+                            wal_keep_from_clone,
+                            clocks_clone,
+                            shard_path_clone,
+                            FlushMode::Sync,
+                        )
+                    })
+                    .await
+                    .unwrap_or_else(|error| {
+                        log::error!("Final flush on stop failed: {error}");
+                    });
                     return;
                 },
                 // Flush at the configured flush interval
@@ -133,6 +167,7 @@ impl UpdateWorkers {
                     wal_keep_from_clone,
                     clocks_clone,
                     shard_path_clone,
+                    FlushMode::Background,
                 )
             })
             .await
