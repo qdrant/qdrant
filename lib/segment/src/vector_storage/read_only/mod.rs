@@ -9,6 +9,7 @@ use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorD
 use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
 };
+use crate::vector_storage::graph_vectors::GraphVectors;
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
@@ -41,6 +42,14 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
             ReadOnlyImmutableDenseVectorStorage<ImmutableDenseVectorData<VectorElementTypeHalf, S>>,
         >,
     ),
+
+    DenseGraphInline(Box<ReadOnlyImmutableDenseVectorStorage<GraphVectors<VectorElementType, S>>>),
+    DenseGraphInlineByte(
+        Box<ReadOnlyImmutableDenseVectorStorage<GraphVectors<VectorElementTypeByte, S>>>,
+    ),
+    DenseGraphInlineHalf(
+        Box<ReadOnlyImmutableDenseVectorStorage<GraphVectors<VectorElementTypeHalf, S>>>,
+    ),
     DenseChunked(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementType, S>>),
     DenseChunkedByte(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementTypeByte, S>>),
     DenseChunkedHalf(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementTypeHalf, S>>),
@@ -48,6 +57,7 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
     DenseTurbo(Box<ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>>>),
+    DenseTurboGraphInline(Box<ReadOnlyImmutableTurboVectorStorage<GraphVectors<u8, S>>>),
     DenseTurboChunked(Box<ReadOnlyChunkedTurboVectorStorage<S>>),
     MultiDenseTurbo(Box<ReadOnlyChunkedMultiTurboVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
@@ -65,6 +75,15 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
                 raw_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::DenseHalf(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseGraphInline(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => {
+                raw_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
                 raw_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::DenseChunked(s) => {
@@ -86,6 +105,9 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
                 raw_multi_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::DenseTurbo(s) => {
+                raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
+            }
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => {
                 raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
             }
             VectorStorageReadEnum::DenseTurboChunked(s) => {

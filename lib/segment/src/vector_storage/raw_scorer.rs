@@ -72,6 +72,9 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseGraphInline(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseGraphInlineByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseGraphInlineHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
 
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
@@ -84,6 +87,9 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseTurboMemmap(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseTurboGraphInline(vs) => {
+            raw_turbo_scorer_impl(query, vs.as_ref(), hc)
+        }
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseTurboUring(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseTurboAppendableMemmap(vs) => {
