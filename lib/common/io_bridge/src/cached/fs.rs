@@ -1,6 +1,6 @@
 //! Filesystem handle producing [`CachedBlobFile`]s.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::universal_io::{
@@ -105,6 +105,25 @@ where
         let cache = self.cache_fs.open(path.as_ref(), cache_options, extra)?;
 
         let remote = self.blob_fs.open(path.as_ref(), options, ())?;
+
+        Ok(CachedBlobFile::new(cache, remote, options.writeable))
+    }
+
+    async fn open_async(
+        &self,
+        path: PathBuf,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Self::File> {
+        let mut cache_options = options;
+        cache_options.writeable = false;
+
+        let cache = self
+            .cache_fs
+            .open_async(path.clone(), cache_options, extra)
+            .await?;
+
+        let remote = self.blob_fs.open_async(path, options, ()).await?;
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
     }

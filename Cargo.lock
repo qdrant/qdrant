@@ -883,6 +883,7 @@ dependencies = [
  "strum",
  "tempfile",
  "thiserror 2.0.20",
+ "tokio",
  "zerocopy",
 ]
 
@@ -1369,6 +1370,7 @@ dependencies = [
  "fs-err",
  "fs4 1.1.0",
  "fs_extra",
+ "futures",
  "humantime",
  "io-uring 0.7.14",
  "itertools 0.15.0",
@@ -7210,6 +7212,7 @@ dependencies = [
  "sha2 0.11.0",
  "sparse",
  "tempfile",
+ "tokio",
  "validator",
  "zerocopy",
 ]

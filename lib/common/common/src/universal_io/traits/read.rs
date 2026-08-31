@@ -115,7 +115,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         range: Range<u64>,
         access_pattern: P,
         align: usize,
-    ) -> impl Future<Output = UioResult<ACow<'_>>>;
+    ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
 
     /// Read the entire file in one logical access.
     ///

@@ -37,6 +37,7 @@ dataset = { path = "../common/dataset" }
 fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
 proptest = { workspace = true }
+tokio = { workspace = true }
 bustle = "0.5.1"
 common = { path = "../common/common", features = ["testing"] }
 env_logger = { workspace = true }

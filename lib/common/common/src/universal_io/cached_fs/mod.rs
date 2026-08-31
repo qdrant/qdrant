@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Poll;
 
 use parking_lot::Mutex;
 
@@ -71,7 +73,11 @@ impl FileInfo {
 /// Prefetched handles are take-once: [`UniversalReadFs::open`] removes the
 /// handle from the pool and returns it owned. The pool is shared across
 /// clones.
-pub struct CachedFs<Fs: UniversalReadFs> {
+pub struct CachedFs<Fs>
+where
+    Fs: UniversalReadFs,
+    Fs::File: 'static,
+{
     fs: Fs,
     prefix_path: PathBuf,
     /// `None` until [`CachedFs::cache_file_info`] takes the listing
@@ -79,7 +85,23 @@ pub struct CachedFs<Fs: UniversalReadFs> {
     files_info: Option<HashMap<PathBuf, FileInfo>>,
     /// Previous listing snapshot.
     previous_files_info: Option<HashMap<PathBuf, FileInfo>>,
-    files_prefetched: Arc<Mutex<HashMap<PathBuf, Option<Fs::File>>>>,
+    files_prefetched: Arc<Mutex<HashMap<PathBuf, ScheduledFile<Fs::File>>>>,
+}
+
+enum ScheduledFile<S: 'static> {
+    Future(Pin<Box<dyn Future<Output = UioResult<S>> + Send + 'static>>),
+    Ready(UioResult<S>),
+    Unchanged,
+}
+
+impl<S> Debug for ScheduledFile<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScheduledFile::Future(_) => write!(f, "Future"),
+            ScheduledFile::Ready(_) => write!(f, "Ready"),
+            ScheduledFile::Unchanged => write!(f, "Unchanged"),
+        }
+    }
 }
 
 /// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
@@ -234,8 +256,20 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
             open_extra = open_extra.with_known_len(info.size);
         }
 
-        let file = self.fs.open(path, open_options, open_extra)?;
-        files_prefetched.insert(path.to_path_buf(), Some(file));
+        // Clone the fs handle so that the future can own it.
+        let fs = self.fs.clone();
+        let path_owned = path.to_path_buf();
+        let mut fut =
+            Box::pin(async move { fs.open_async(path_owned, open_options, open_extra).await });
+
+        // Poll once, so that real async work begins right away
+        let scheduled = futures::executor::block_on(async move {
+            match futures::poll!(fut.as_mut()) {
+                Poll::Ready(file) => ScheduledFile::Ready(file),
+                Poll::Pending => ScheduledFile::Future(Box::pin(fut)),
+            }
+        });
+        files_prefetched.insert(path.to_path_buf(), scheduled);
 
         Ok(())
     }
@@ -259,7 +293,7 @@ impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
                 .zip(self.file_info(path))
                 .is_some_and(|(previous, current)| previous.full_eq(current))
             {
-                files_prefetched.insert(path.to_path_buf(), None);
+                files_prefetched.insert(path.to_path_buf(), ScheduledFile::Unchanged);
                 return Ok(());
             }
         }
@@ -348,8 +382,9 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
 
         if let Some(file) = self.files_prefetched.lock().remove(path) {
             return match file {
-                Some(file) => Ok(file),
-                None => Err(UniversalIoError::UnchangedOpen {
+                ScheduledFile::Future(future) => futures::executor::block_on(future),
+                ScheduledFile::Ready(result) => result,
+                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
                     path: path.to_owned(),
                     since: self.file_info(path).and_then(|info| info.last_modified),
                 }),
@@ -376,5 +411,51 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             None => extra,
         };
         self.fs.open(path, options, extra)
+    }
+
+    async fn open_async(
+        &self,
+        path: PathBuf,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Self::File> {
+        if options.writeable {
+            return Err(UniversalIoError::Uninitialized {
+                description:
+                    "CachedReadFs only supports read-only files, writeable option is not allowed"
+                        .to_string(),
+            });
+        }
+
+        let scheduled_file = self.files_prefetched.lock().remove(&path);
+        if let Some(file) = scheduled_file {
+            return match file {
+                ScheduledFile::Future(future) => future.await,
+                ScheduledFile::Ready(result) => result,
+                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
+                    since: self.file_info(&path).and_then(|info| info.last_modified),
+                    path,
+                }),
+            };
+        }
+
+        // With a snapshot, unlisted paths fail locally — probing for
+        // optional files never reaches the inner filesystem.
+        if let Some(files_info) = &self.files_info
+            && !files_info.contains_key(&path)
+        {
+            return Err(UniversalIoError::NotFound { path });
+        }
+
+        // The path was never scheduled for prefetch. If a snapshot was taken it
+        // still carries the file's size, so thread it into the open as a known
+        // length — this lets the backend skip a remote `len`/HEAD round-trip
+        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
+        // snapshot this is a plain cache-bypass open.
+        let extra = match self.file_info(&path) {
+            Some(info) => extra.with_known_len(info.size),
+            None => extra,
+        };
+        self.fs.open_async(path, options, extra).await
     }
 }

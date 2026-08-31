@@ -80,6 +80,15 @@ impl UniversalReadFs for MmapFs {
     ) -> UioResult<MmapFile> {
         MmapFile::open_inner(path, options)
     }
+
+    fn open_async(
+        &self,
+        path: PathBuf,
+        options: OpenOptions,
+        extra: (),
+    ) -> impl Future<Output = UioResult<MmapFile>> + '_ {
+        std::future::ready(self.open(&path, options, extra))
+    }
 }
 
 /// A memory-mapped local file handle.
