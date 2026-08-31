@@ -263,15 +263,14 @@ impl<S: UniversalWrite> Bitmask<S> {
         let regions_start_offset = region_id_range.start as usize * self.config.region_size_blocks;
         let regions_end_offset = region_id_range.end as usize * self.config.region_size_blocks;
 
-        let all_bits = self.bitslice.read_all()?;
-
         // The persisted gaps can diverge from the bitmask after an unclean shutdown; never let a
         // proposed window reach beyond the bitmask itself. A clamped (and thereby failed) search
         // is recovered by a gaps rebuild, see `Gridstore::find_or_create_available_blocks`.
-        if regions_start_offset >= all_bits.len() {
+        let bit_len = self.bitslice.bit_len() as usize;
+        if regions_start_offset >= bit_len {
             return Ok(None);
         }
-        let regions_end_offset = regions_end_offset.min(all_bits.len());
+        let regions_end_offset = regions_end_offset.min(bit_len);
 
         let translate_to_answer = |local_index: u32| {
             let page_size_in_blocks = self.config.page_size_bytes / self.config.block_size_bytes;
@@ -285,6 +284,7 @@ impl<S: UniversalWrite> Bitmask<S> {
             (page_id as PageId, page_block_offset as BlockOffset)
         };
 
+        let all_bits = self.bitslice.read_all()?;
         let regions_bitslice = &all_bits[regions_start_offset..regions_end_offset];
 
         Ok(Self::find_available_blocks_in_slice(
@@ -468,16 +468,11 @@ impl<S: UniversalWrite> Bitmask<S> {
     /// Recompute the gap entries of every region from the bitmask.
     fn compute_gaps(&self) -> Result<Vec<RegionGaps>> {
         let region_size_blocks = self.config.region_size_blocks;
-        let num_regions = (self.bitslice.bit_len() as usize).div_euclid(region_size_blocks);
-
-        let mut gaps = Vec::with_capacity(num_regions);
-        for region_id in 0..num_regions {
-            let region_start = (region_id * region_size_blocks) as u64;
-            let region_end = region_start + region_size_blocks as u64;
-            let bitslice = &self.bitslice.read_bit_range(region_start..region_end)?;
-            gaps.push(Self::calculate_gaps(bitslice, region_size_blocks));
-        }
-        Ok(gaps)
+        let all_bits = self.bitslice.read_all()?;
+        Ok(all_bits
+            .chunks_exact(region_size_blocks)
+            .map(|region| Self::calculate_gaps(region, region_size_blocks))
+            .collect())
     }
 
     /// Rebuild all region gaps from the bitmask, in place.
@@ -501,7 +496,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         }
 
         let gaps = self.compute_gaps()?;
-        self.regions_gaps.overwrite(gaps.into_iter())
+        self.regions_gaps.overwrite(&gaps)
     }
 
     /// Rebuild all region gaps from the bitmask, repairing a gaps file whose length diverged
@@ -692,22 +687,26 @@ mod tests {
         assert_eq!(MmapBitmask::length_for_page(config), 8);
     }
 
-    #[test]
-    fn test_find_available_blocks() {
-        let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-
-        let blocks_per_page = (page_size / DEFAULT_BLOCK_SIZE_BYTES) as u32;
-
+    /// A bitmask covering a single page that holds exactly one region, in a fresh temp dir.
+    fn create_test_bitmask() -> (tempfile::TempDir, MmapBitmask) {
         let dir = tempfile::tempdir().unwrap();
 
         let config = GridstoreConfig {
-            page_size_bytes: page_size,
+            page_size_bytes: DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS,
             block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
             region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
             compression: Compression::LZ4,
         };
 
-        let mut bitmask: MmapBitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        let bitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        (dir, bitmask)
+    }
+
+    #[test]
+    fn test_find_available_blocks() {
+        let blocks_per_page = DEFAULT_REGION_SIZE_BLOCKS as u32;
+
+        let (_dir, mut bitmask) = create_test_bitmask();
         bitmask.cover_new_page().unwrap();
 
         assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);
@@ -754,20 +753,10 @@ mod tests {
 
     #[test]
     fn test_rebuild_gaps() {
-        let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-        let blocks_per_page = (page_size / DEFAULT_BLOCK_SIZE_BYTES) as u32;
-
-        let dir = tempfile::tempdir().unwrap();
-
-        let config = GridstoreConfig {
-            page_size_bytes: page_size,
-            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
-            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
-            compression: Compression::LZ4,
-        };
+        let blocks_per_page = DEFAULT_REGION_SIZE_BLOCKS as u32;
 
         // Two pages, one region per page.
-        let mut bitmask: MmapBitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        let (_dir, mut bitmask) = create_test_bitmask();
         bitmask.cover_new_page().unwrap();
 
         // Occupy all of region 0 and the first block of region 1.
@@ -794,45 +783,12 @@ mod tests {
         // The search finds the free space in region 1 again.
         let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
         assert_eq!((page_id, block_offset), (1, 1));
-
-        // Corrupt the gaps again, now also appending a phantom region beyond the bitmask. The
-        // in-place rebuild refuses the length divergence; the by-value rebuild replaces the
-        // file and repairs both length and content.
-        bitmask.regions_gaps.set(0, all_free).unwrap();
-        bitmask
-            .regions_gaps
-            .extend(std::iter::once(all_free))
-            .unwrap();
-        assert_eq!(bitmask.regions_gaps.len().unwrap(), 3);
-
-        assert!(bitmask.rebuild_gaps().is_err());
-
-        let bitmask = bitmask.into_rebuilt_gaps(&MmapFs).unwrap();
-        assert_eq!(bitmask.regions_gaps.len().unwrap(), 2);
-        assert_eq!(
-            bitmask.regions_gaps.read_all().unwrap().as_ref(),
-            expected.as_slice(),
-        );
-
-        let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
-        assert_eq!((page_id, block_offset), (1, 1));
     }
 
     #[test]
     fn test_gaps_length_mismatch() {
-        let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-
-        let dir = tempfile::tempdir().unwrap();
-
-        let config = GridstoreConfig {
-            page_size_bytes: page_size,
-            block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
-            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
-            compression: Compression::LZ4,
-        };
-
         // One page, one region.
-        let mut bitmask: MmapBitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        let (_dir, mut bitmask) = create_test_bitmask();
         bitmask.mark_blocks(0, 0, 3, true).unwrap();
 
         assert_eq!(bitmask.gaps_length_mismatch().unwrap(), None);
@@ -859,6 +815,10 @@ mod tests {
             bitmask.regions_gaps.read_all().unwrap().as_ref(),
             expected.as_slice(),
         );
+
+        // The search sees the real free space again.
+        let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
+        assert_eq!((page_id, block_offset), (0, 3));
     }
 
     #[test]

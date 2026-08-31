@@ -57,7 +57,7 @@ where
     /// Whether the region gaps have been rebuilt from the bitmask since startup
     ///
     /// An unclean shutdown can leave persisted gaps inconsistent with the bitmask. If we detect
-    /// this case at runtime, allow to rebuilt the gaps from the bitmask once.
+    /// this case at runtime, rebuild the gaps from the bitmask, at most once.
     pub(super) gaps_rebuilt: bool,
 }
 
@@ -146,7 +146,7 @@ where
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
         let tracker = Tracker::open(&fs, &base_path, populate, true)?;
-        let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
+        let mut bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
         let pages = Pages::open(&fs, &base_path, true, populate)?;
@@ -164,18 +164,15 @@ where
         // panic, so repair a length divergence up front — the check is a cheap length
         // comparison. Content-level staleness is still repaired lazily, see
         // `find_or_create_available_blocks`.
-        let (bitmask, gaps_rebuilt) = match bitmask.gaps_length_mismatch()? {
-            Some((expected_regions, actual_regions)) => {
-                log::warn!(
-                    "Gridstore region gaps at {base_path:?} cover {actual_regions} regions, but \
-                     the bitmask has {expected_regions}, possibly due to an unclean shutdown. \
-                     Rebuilding the gaps from the bitmask",
-                );
-                // Replaces the gaps file, which must happen before anything else can map it.
-                (bitmask.into_rebuilt_gaps(&fs)?, true)
-            }
-            None => (bitmask, false),
-        };
+        let mut gaps_rebuilt = false;
+        if bitmask.gaps_length_mismatch()?.is_some() {
+            log::warn!(
+                "Detected region gaps length mismatch for Gridstore bitmask at {base_path:?}, rebuilding gaps from the bitmask",
+            );
+            // Replaces the gaps file, which must happen before anything else can map it.
+            bitmask = bitmask.into_rebuilt_gaps(&fs)?;
+            gaps_rebuilt = true;
+        }
 
         Ok(Self {
             fs,
@@ -222,7 +219,7 @@ where
 
         // No fitting gap was found even though enough pages should be covered by now. This signals
         // the gaps are inconsistent with the bitmask. Stale gaps can occur after an unclean
-        // shutdown. Rebuilt the gaps at most once from the bitmask and try again.
+        // shutdown. Rebuild the gaps at most once from the bitmask and try again.
         if self.gaps_rebuilt {
             panic!(
                 "No available blocks in gridstore at {:?} after creating a new page, \
@@ -233,16 +230,14 @@ where
         self.gaps_rebuilt = true;
 
         log::warn!(
-            "Detected inconsistent region gaps at {:?} are for Gridstore bitmask, rebuilding gaps from the bitmask",
+            "Detected inconsistent region gaps for Gridstore bitmask at {:?}, rebuilding gaps from the bitmask",
             self.base_path,
         );
         self.bitmask.write().rebuild_gaps()?;
 
-        let available = self
+        Ok(self
             .try_find_or_create_available_blocks(num_blocks)?
-            .expect("New page has just been created and gaps have just been rebuilt");
-
-        Ok(available)
+            .expect("New page has just been created and gaps have just been rebuilt"))
     }
 
     /// Find a spot for `num_blocks` contiguous blocks, creating new pages as needed.

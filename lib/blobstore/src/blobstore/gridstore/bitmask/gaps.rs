@@ -172,15 +172,14 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
     /// Overwrite all entries in place.
     ///
-    /// `iter` must yield exactly the current number of entries: the file is not resized, since
+    /// `data` must hold exactly the current number of entries: the file is not resized, since
     /// that would require unmapping it first (Windows refuses to resize a file with a live
     /// mapping). A length divergence is repaired with a full file replacement instead, see
     /// `Bitmask::into_rebuilt_gaps`.
-    pub fn overwrite(&mut self, iter: impl ExactSizeIterator<Item = RegionGaps>) -> Result<()> {
-        let data: Vec<RegionGaps> = iter.collect();
+    pub fn overwrite(&mut self, data: &[RegionGaps]) -> Result<()> {
         debug_assert_eq!(self.len()?, data.len(), "overwrite cannot resize");
 
-        self.slice_store.write(0, &data)?;
+        self.slice_store.write(0, data)?;
         Ok(())
     }
 

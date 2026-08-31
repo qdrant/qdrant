@@ -1,4 +1,4 @@
-use std::io::BufReader;
+use std::io::{BufReader, Write as _};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -1991,6 +1991,21 @@ fn read_only_reader_over_write_enforced_backend() {
     assert_eq!(stored, Some(payload));
 }
 
+/// Assert that every value reads back byte-for-byte from the storage.
+fn assert_stored_bytes(storage: &Blobstore<Payload>, values: &[Vec<u8>]) {
+    let hw_counter = HardwareCounterCell::new();
+    for (offset, expected) in values.iter().enumerate() {
+        let stored = storage
+            .get_value_bytes::<Random>(offset as u32, &hw_counter)
+            .unwrap();
+        assert_eq!(
+            stored.as_deref(),
+            Some(expected.as_slice()),
+            "value {offset}"
+        );
+    }
+}
+
 /// Reproduces the state behind the `New page has just been created` panic seen on startup WAL
 /// replay after an unclean shutdown (power loss / kernel crash), and checks that it is recovered
 /// by rebuilding the gaps from the bitmask.
@@ -2014,10 +2029,6 @@ fn read_only_reader_over_write_enforced_backend() {
 /// See: <github.com/qdrant/qdrant/pull/10364>
 #[test]
 fn test_put_value_rebuilds_stale_gaps() {
-    use std::io::Write as _;
-
-    use common::universal_io::Populate;
-
     // 1 MiB pages: exactly one region (8192 blocks * 128 B) per page.
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
     let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
@@ -2060,9 +2071,6 @@ fn test_put_value_rebuilds_stale_gaps() {
     let mut storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
 
-    let hw_cell = HardwareCounterCell::new();
-    let hw_counter = hw_cell.ref_payload_io_write_counter();
-
     // Region 1 still has 8191 genuinely free blocks. This put used to panic with "New page has
     // just been created"; now it detects the inconsistency, rebuilds the gaps, and allocates.
     storage
@@ -2075,17 +2083,7 @@ fn test_put_value_rebuilds_stale_gaps() {
     let pointer = storage.get_pointer(2).unwrap();
     assert_eq!((pointer.page_id, pointer.block_offset), (1, 1));
 
-    let hw_read = HardwareCounterCell::new();
-    for (offset, expected) in values.iter().enumerate().take(3) {
-        let stored = storage
-            .get_value_bytes::<Random>(offset as u32, &hw_read)
-            .unwrap();
-        assert_eq!(
-            stored.as_deref(),
-            Some(expected.as_slice()),
-            "value {offset}"
-        );
-    }
+    assert_stored_bytes(&storage, &values[..3]);
 
     storage.flusher()().unwrap();
     drop(storage);
@@ -2099,8 +2097,6 @@ fn test_put_value_rebuilds_stale_gaps() {
     let mut storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
 
-    let hw_cell = HardwareCounterCell::new();
-    let hw_counter = hw_cell.ref_payload_io_write_counter();
     storage
         .put_value_bytes(3, values[3].clone(), hw_counter)
         .unwrap();
@@ -2108,17 +2104,7 @@ fn test_put_value_rebuilds_stale_gaps() {
     let pointer = storage.get_pointer(3).unwrap();
     assert_eq!((pointer.page_id, pointer.block_offset), (1, 3));
 
-    let hw_read = HardwareCounterCell::new();
-    for (offset, expected) in values.iter().enumerate() {
-        let stored = storage
-            .get_value_bytes::<Random>(offset as u32, &hw_read)
-            .unwrap();
-        assert_eq!(
-            stored.as_deref(),
-            Some(expected.as_slice()),
-            "value {offset}"
-        );
-    }
+    assert_stored_bytes(&storage, &values);
 }
 
 /// Reproduces a gaps-file length divergence that the lazy gaps rebuild cannot recover from.
@@ -2139,10 +2125,6 @@ fn test_put_value_rebuilds_stale_gaps() {
 /// See: <github.com/qdrant/qdrant/pull/10364>
 #[test]
 fn test_open_repairs_gaps_length_mismatch() {
-    use std::io::Write as _;
-
-    use common::universal_io::Populate;
-
     // 1 MiB pages: exactly one region (8192 blocks * 128 B) per page.
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
     let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
@@ -2178,8 +2160,6 @@ fn test_open_repairs_gaps_length_mismatch() {
 
     // Page 0 is full, so this put creates a new page. Without the repair at open, this panicked
     // in `cover_new_page` on the "Bitmask length mismatch" assertion.
-    let hw_cell = HardwareCounterCell::new();
-    let hw_counter = hw_cell.ref_payload_io_write_counter();
     storage
         .put_value_bytes(1, values[1].clone(), hw_counter)
         .unwrap();
@@ -2188,17 +2168,7 @@ fn test_open_repairs_gaps_length_mismatch() {
     let pointer = storage.get_pointer(1).unwrap();
     assert_eq!((pointer.page_id, pointer.block_offset), (1, 0));
 
-    let hw_read = HardwareCounterCell::new();
-    for (offset, expected) in values.iter().enumerate() {
-        let stored = storage
-            .get_value_bytes::<Random>(offset as u32, &hw_read)
-            .unwrap();
-        assert_eq!(
-            stored.as_deref(),
-            Some(expected.as_slice()),
-            "value {offset}"
-        );
-    }
+    assert_stored_bytes(&storage, &values);
 
     storage.flusher()().unwrap();
     drop(storage);
