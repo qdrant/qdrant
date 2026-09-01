@@ -4,6 +4,8 @@ Interactive call-graph reports for one function of the Qdrant workspace,
 viewable in a browser: pan/zoom graph, per-node docs and source snippets,
 exact call sites, GitHub/editor links.
 
+![callgraph report](screenshot.png)
+
 ```bash
 tools/callgraph/callgraph.py read_bytes_async                        # by name
 tools/callgraph/callgraph.py universal_io::traits::read_bytes_async  # :: segments disambiguate
