@@ -13,7 +13,8 @@ use collection::operations::config_diff::{
 };
 use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::{
-    INSUFFICIENT_STORAGE_METADATA_KEY, SparseVectorsConfig, VectorsConfigDiff,
+    INSUFFICIENT_STORAGE_METADATA_KEY, STRICT_MODE_METADATA_KEY, SparseVectorsConfig,
+    VectorsConfigDiff,
 };
 use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
 use tonic::Status;
@@ -64,6 +65,13 @@ impl From<StorageError> for Status {
                 // back into an error.
                 metadata_headers.insert(INSUFFICIENT_STORAGE_METADATA_KEY, "1".to_string());
                 tonic::Code::ResourceExhausted
+            }
+            StorageError::StrictMode { .. } => {
+                // Shares `InvalidArgument` with every other bad request, so it
+                // carries a marker: a replica that refuses a request on a strict
+                // mode rule is not a failed replica.
+                metadata_headers.insert(STRICT_MODE_METADATA_KEY, "1".to_string());
+                tonic::Code::InvalidArgument
             }
         };
         let mut status = Status::new(error_code, error.to_string());
@@ -398,7 +406,32 @@ impl From<ConsensusThreadStatus> for grpc::ConsensusThreadStatus {
 
 #[cfg(test)]
 mod tests {
+    use collection::operations::types::CollectionError;
+
     use super::*;
+
+    /// A strict mode refusal has to survive the trip to another peer as itself:
+    /// the replica set reads it to tell "the request was not allowed" from "the
+    /// replica failed", and `InvalidArgument` alone cannot say which.
+    #[test]
+    fn strict_mode_refusal_survives_the_wire() {
+        let error = StorageError::StrictMode {
+            description: "Update by filter matches more points than the limit".to_string(),
+        };
+
+        let status = Status::from(error);
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+
+        let round_tripped = CollectionError::from(status);
+        assert!(
+            round_tripped.is_strict_mode(),
+            "expected a strict mode error, got {round_tripped:?}",
+        );
+
+        // A plain bad request still comes back as one, marker or no marker.
+        let plain = CollectionError::from(Status::from(StorageError::bad_request("nope")));
+        assert!(!plain.is_strict_mode(), "got {plain:?}");
+    }
 
     fn create_request(
         vector_memory: Option<grpc::Memory>,

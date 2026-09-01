@@ -299,8 +299,7 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
     res = delete_points_by_filter(peer_urls[0], berlin_filter, collection_name=COLLECTION_NAME)
     assert res.status_code == 400
     error = res.json()["status"]["error"]
-    assert "points in one shard" in error, error
-    assert f"exceeding the per-shard limit of {limit}" in error, error
+    assert f"more points in one shard than the limit of {limit}" in error, error
     # The error nudges the user towards splitting the scan with `slice`.
     assert '"slice"' in error, error
 
@@ -313,7 +312,10 @@ def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
         peer_urls[0], {"visited": True}, berlin_filter, collection_name=COLLECTION_NAME
     )
     assert res.status_code == 400
-    assert f"exceeding the per-shard limit of {limit}" in res.json()["status"]["error"]
+    assert (
+        f"more points in one shard than the limit of {limit}"
+        in res.json()["status"]["error"]
+    )
 
     # Following the nudge: 16 disjoint slices bring every shard's share of each
     # request well under the limit, and together they cover all the points.

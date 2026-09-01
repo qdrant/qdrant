@@ -15,8 +15,11 @@
 //! update fence.
 //!
 //! Resolution also reports how many points a filter *scan* selected, so the
-//! caller can gate oversized updates on the exact point count this shard is
-//! about to touch (`max_update_by_filter_limit` in strict mode).
+//! caller can gate oversized updates on the point count this shard is about to
+//! touch (`max_update_by_filter_limit` in strict mode). Callers that pass that
+//! limit get a scan whose cost is bounded by it: the resolver stops reading
+//! once it knows the match set is bigger, and the operation it returns is then
+//! truncated and must be rejected rather than applied.
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
@@ -28,7 +31,8 @@ use crate::operations::vector_ops::{UpdateVectorsOp, VectorOperations};
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, VectorNameOperations};
 use crate::segment_holder::SegmentHolder;
 use crate::update::{
-    points_by_filter, retain_conditional_upsert_points, select_excluded_by_filter_ids,
+    FilteredPoints, points_by_filter_limited, retain_conditional_upsert_points,
+    select_excluded_by_filter_ids,
 };
 
 /// Does this operation decide its target point set by reading current segment
@@ -90,6 +94,10 @@ pub struct ResolvedOperation {
     /// `None` when the target set came from the client instead: an explicit id
     /// list, a conditional upsert or an `update_filter`, which only trim a
     /// point list the client already sent.
+    ///
+    /// A count above the `limit` passed to [`resolve_operation`] is only a
+    /// lower bound, and [`ResolvedOperation::operation`] holds a truncated
+    /// point set: over the limit the caller must reject the operation.
     pub scanned_points: Option<usize>,
 }
 
@@ -100,10 +108,16 @@ pub struct ResolvedOperation {
 /// unchanged. The rewritten form only uses pre-existing operation variants,
 /// so the WAL format is unaffected.
 ///
+/// `limit` caps what a filter scan is allowed to select. It buys a bounded
+/// scan, not a different result: under the limit the resolved operation is
+/// exactly the one an unbounded scan produces, and above it the scan stops
+/// early and reports a count over the limit for the caller to reject.
+///
 /// See the module docs for the ordering contract callers must uphold.
 pub fn resolve_operation(
     segments: &SegmentHolder,
     operation: CollectionUpdateOperations,
+    limit: Option<usize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<ResolvedOperation> {
     let mut scanned_points = None;
@@ -112,7 +126,7 @@ pub fn resolve_operation(
         CollectionUpdateOperations::PointOperation(op) => {
             CollectionUpdateOperations::PointOperation(match op {
                 PointOperations::DeletePointsByFilter(filter) => {
-                    let ids = matched_ids(segments, &filter, hw_counter)?;
+                    let ids = matched_ids(segments, &filter, limit, hw_counter)?;
                     scanned_points = Some(ids.len());
                     PointOperations::DeletePoints { ids }
                 }
@@ -129,7 +143,7 @@ pub fn resolve_operation(
         CollectionUpdateOperations::VectorOperation(op) => {
             CollectionUpdateOperations::VectorOperation(match op {
                 VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-                    let ids = matched_ids(segments, &filter, hw_counter)?;
+                    let ids = matched_ids(segments, &filter, limit, hw_counter)?;
                     scanned_points = Some(ids.len());
                     VectorOperations::DeleteVectors(ids.into(), vector_names)
                 }
@@ -159,11 +173,12 @@ pub fn resolve_operation(
                 PayloadOps::SetPayload(sp) => PayloadOps::SetPayload(resolve_set_payload(
                     segments,
                     sp,
+                    limit,
                     &mut scanned_points,
                     hw_counter,
                 )?),
                 PayloadOps::OverwritePayload(sp) => PayloadOps::OverwritePayload(
-                    resolve_set_payload(segments, sp, &mut scanned_points, hw_counter)?,
+                    resolve_set_payload(segments, sp, limit, &mut scanned_points, hw_counter)?,
                 ),
                 PayloadOps::DeletePayload(dp) => {
                     let DeletePayloadOp {
@@ -175,6 +190,7 @@ pub fn resolve_operation(
                         segments,
                         points,
                         filter,
+                        limit,
                         &mut scanned_points,
                         hw_counter,
                     )?;
@@ -185,7 +201,7 @@ pub fn resolve_operation(
                     })
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
-                    let points = matched_ids(segments, &filter, hw_counter)?;
+                    let points = matched_ids(segments, &filter, limit, hw_counter)?;
                     scanned_points = Some(points.len());
                     PayloadOps::ClearPayload { points }
                 }
@@ -206,17 +222,43 @@ pub fn resolve_operation(
 
 /// Resolve the point set matched by `filter`, deduplicated and in a
 /// deterministic order.
+///
+/// With a `limit`, the read stops one point past it in every segment. That is
+/// enough to tell an over-the-limit scan from an exact match set: a result
+/// above the limit is a lower bound the caller rejects on, and a result at or
+/// below it is the complete set, unread points included.
 fn matched_ids(
     segments: &SegmentHolder,
     filter: &segment::types::Filter,
+    limit: Option<usize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointIdType>> {
-    // `points_by_filter` flattens per-segment matches, so a point with copies
-    // in several segments can appear more than once.
-    let mut ids = points_by_filter(segments, filter, hw_counter)?;
+    let budget = limit.map(|limit| limit + 1);
+    let FilteredPoints { points, truncated } =
+        points_by_filter_limited(segments, filter, budget, hw_counter)?;
+    let ids = sorted_unique(points);
+
+    // Cross-segment duplicates and the deferred-points correction both shrink
+    // the read, so a truncated one can land back under the limit. The count is
+    // then neither complete nor decisive, and only the full scan can say which
+    // side of the limit the filter falls on. It takes a single segment holding
+    // more matches than the limit, so it is the rare case, not the scan we set
+    // out to avoid.
+    if truncated && limit.is_some_and(|limit| ids.len() <= limit) {
+        let FilteredPoints { points, .. } =
+            points_by_filter_limited(segments, filter, None, hw_counter)?;
+        return Ok(sorted_unique(points));
+    }
+
+    Ok(ids)
+}
+
+/// `points_by_filter_limited` flattens per-segment matches, so a point with
+/// copies in several segments can appear more than once.
+fn sorted_unique(mut ids: Vec<PointIdType>) -> Vec<PointIdType> {
     ids.sort_unstable();
     ids.dedup();
-    Ok(ids)
+    ids
 }
 
 /// Resolve the `(points, filter)` pair of a payload operation. An explicit id
@@ -226,12 +268,13 @@ fn resolve_points_or_filter(
     segments: &SegmentHolder,
     points: Option<Vec<PointIdType>>,
     filter: Option<segment::types::Filter>,
+    limit: Option<usize>,
     scanned_points: &mut Option<usize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<Vec<PointIdType>>> {
     match (points, filter) {
         (None, Some(filter)) => {
-            let ids = matched_ids(segments, &filter, hw_counter)?;
+            let ids = matched_ids(segments, &filter, limit, hw_counter)?;
             *scanned_points = Some(ids.len());
             Ok(Some(ids))
         }
@@ -260,6 +303,7 @@ fn resolve_conditional_upsert(
 fn resolve_set_payload(
     segments: &SegmentHolder,
     operation: SetPayloadOp,
+    limit: Option<usize>,
     scanned_points: &mut Option<usize>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<SetPayloadOp> {
@@ -269,7 +313,8 @@ fn resolve_set_payload(
         filter,
         key,
     } = operation;
-    let points = resolve_points_or_filter(segments, points, filter, scanned_points, hw_counter)?;
+    let points =
+        resolve_points_or_filter(segments, points, filter, limit, scanned_points, hw_counter)?;
     Ok(SetPayloadOp {
         payload,
         points,
@@ -292,7 +337,18 @@ mod tests {
     use crate::operations::point_ops::{
         PointInsertOperationsInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
-    use crate::update::{delete_points_by_filter, points_by_filter, process_point_operation};
+    use crate::update::{delete_points_by_filter, process_point_operation};
+
+    /// Every point matching `filter`, read without a budget.
+    fn all_points_by_filter(
+        holder: &SegmentHolder,
+        filter: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType> {
+        points_by_filter_limited(holder, filter, None, hw_counter)
+            .unwrap()
+            .points
+    }
 
     fn color_filter(color: &str) -> Filter {
         Filter::new_must(Condition::Field(FieldCondition::new_match(
@@ -336,6 +392,7 @@ mod tests {
             CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
                 filter.clone(),
             )),
+            None,
             &hw_counter,
         )
         .unwrap();
@@ -353,7 +410,7 @@ mod tests {
         assert!(!ids.is_empty());
         assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
 
-        let mut expected = points_by_filter(&holder, &filter, &hw_counter).unwrap();
+        let mut expected = all_points_by_filter(&holder, &filter, &hw_counter);
         expected.sort_unstable();
         expected.dedup();
         assert_eq!(*ids, expected);
@@ -365,10 +422,62 @@ mod tests {
         process_point_operation(&holder, 100, op, None, &hw_counter).unwrap();
         delete_points_by_filter(&twin_holder, 100, &filter, &hw_counter).unwrap();
 
-        let remaining = points_by_filter(&holder, &filter, &hw_counter).unwrap();
-        let twin_remaining = points_by_filter(&twin_holder, &filter, &hw_counter).unwrap();
+        let remaining = all_points_by_filter(&holder, &filter, &hw_counter);
+        let twin_remaining = all_points_by_filter(&twin_holder, &filter, &hw_counter);
         assert!(remaining.is_empty(), "resolved delete left {remaining:?}");
         assert!(twin_remaining.is_empty());
+    }
+
+    /// The `limit` only buys a bounded scan: whatever it is, resolution either
+    /// returns the complete match set or a count the caller can reject on.
+    #[test]
+    fn resolve_with_a_limit_is_complete_or_decisive() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        let holder = build_holder(dir.path());
+        let filter = color_filter("blue");
+
+        let mut full = all_points_by_filter(&holder, &filter, &hw_counter);
+        full.sort_unstable();
+        full.dedup();
+        // Points 4 and 5 live in both segments, so the per-segment budget and
+        // the deduplicated result disagree, which is what the fallback is for.
+        assert!(full.len() >= 2, "fixture must match several points");
+
+        for limit in 0..=full.len() + 1 {
+            let ResolvedOperation {
+                operation: resolved,
+                scanned_points,
+            } = resolve_operation(
+                &holder,
+                CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
+                    filter.clone(),
+                )),
+                Some(limit),
+                &hw_counter,
+            )
+            .unwrap();
+
+            let CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }) =
+                &resolved
+            else {
+                panic!("expected DeletePoints, got {resolved:?}");
+            };
+            assert_eq!(scanned_points, Some(ids.len()));
+
+            if full.len() > limit {
+                assert!(
+                    ids.len() > limit,
+                    "limit {limit}: a scan over the limit must report over it, got {}",
+                    ids.len(),
+                );
+            } else {
+                assert_eq!(
+                    *ids, full,
+                    "limit {limit}: a scan within the limit must be the complete set",
+                );
+            }
+        }
     }
 
     #[test]
@@ -392,7 +501,7 @@ mod tests {
         let ResolvedOperation {
             operation: resolved,
             scanned_points,
-        } = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        } = resolve_operation(&holder, operation, None, &hw_counter).unwrap();
 
         let CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(points_op)) =
             resolved
@@ -423,7 +532,7 @@ mod tests {
         let ResolvedOperation {
             operation: resolved,
             scanned_points,
-        } = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        } = resolve_operation(&holder, operation, None, &hw_counter).unwrap();
 
         let CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(sp)) = resolved
         else {
@@ -434,7 +543,7 @@ mod tests {
         assert!(!points.is_empty());
         assert_eq!(scanned_points, Some(points.len()));
 
-        let mut expected = points_by_filter(&holder, &color_filter("red"), &hw_counter).unwrap();
+        let mut expected = all_points_by_filter(&holder, &color_filter("red"), &hw_counter);
         expected.sort_unstable();
         expected.dedup();
         assert_eq!(points, expected);
@@ -451,7 +560,7 @@ mod tests {
         });
         assert!(!is_filter_resolving(&operation));
 
-        let resolved = resolve_operation(&holder, operation.clone(), &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation.clone(), None, &hw_counter).unwrap();
         assert_eq!(resolved.operation, operation);
         assert_eq!(resolved.scanned_points, None);
     }

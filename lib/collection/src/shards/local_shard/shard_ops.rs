@@ -58,10 +58,18 @@ impl LocalShard {
     /// [`SubmitOutcome::Submitted`] carries an owned `oneshot::Receiver` that
     /// can be awaited via [`await_update_result`] after dropping any outer
     /// read guards on the replica set.
+    ///
+    /// `enforce_strict_mode` gates the shard-local strict mode rules, which
+    /// only apply to a replica serving client writes. The caller decides from
+    /// the replica state, exactly as it does for the write rate limiter: a
+    /// replica that is catching up (transfer target, listener, resharding)
+    /// holds a different point set than the one the client's request was
+    /// gated against, and must not second-guess it.
     pub async fn submit_update(
         &self,
         operation: OperationWithClockTag,
         wait: WaitUntil,
+        enforce_strict_mode: bool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
         // Filter/condition-resolving operations must never reach the WAL as-is:
@@ -70,7 +78,12 @@ impl LocalShard {
         // the same filter to the same point set.
         if shard::resolve::is_filter_resolving(&operation.operation) {
             return self
-                .submit_update_filter_resolving(operation, wait, hw_measurement_acc)
+                .submit_update_filter_resolving(
+                    operation,
+                    wait,
+                    enforce_strict_mode,
+                    hw_measurement_acc,
+                )
                 .await;
         }
 
@@ -245,8 +258,12 @@ impl ShardOperation for LocalShard {
         // The filter-resolving fallback inside `submit_update` adds more awaits (fence, drain,
         // resolution scan), but nothing is appended or dispatched until its single WAL write, so
         // cancelling before that point leaves no partial state and the property still holds.
+        // Shard-local strict mode belongs to the replica that takes the client
+        // write, and the replica set decides that (see `submit_update`). A
+        // proxy wrapping this shard forwards writes on behalf of that replica,
+        // so this path enforces.
         let outcome = self
-            .submit_update(operation, wait, hw_measurement_acc)
+            .submit_update(operation, wait, true, hw_measurement_acc)
             .await?;
         await_update_result(outcome, timeout).await
     }

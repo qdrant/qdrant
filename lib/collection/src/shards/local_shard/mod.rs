@@ -6,7 +6,7 @@ pub(super) mod query;
 pub(super) mod resolve_submit;
 pub(super) mod scroll;
 pub(super) mod search;
-pub(super) mod shard_ops;
+pub(crate) mod shard_ops;
 
 mod snapshot;
 mod telemetry;

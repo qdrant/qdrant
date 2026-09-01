@@ -1417,7 +1417,9 @@ pub struct StrictModeConfig {
     /// targets by filter (e.g. delete by filter, set payload by filter, delete
     /// vectors by filter) may affect. Every shard counts the points its own
     /// filter scan matched and rejects the request when that count exceeds the
-    /// limit, before applying anything. Split larger updates with a `slice`
+    /// limit, without applying it there. Shards and replicas are gated
+    /// independently, so a rejected request may still have been applied by
+    /// those that matched fewer points. Split larger updates with a `slice`
     /// filter condition.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
@@ -1596,7 +1598,9 @@ pub struct StrictModeConfigOutput {
     /// targets by filter (e.g. delete by filter, set payload by filter, delete
     /// vectors by filter) may affect. Every shard counts the points its own
     /// filter scan matched and rejects the request when that count exceeds the
-    /// limit, before applying anything. Split larger updates with a `slice`
+    /// limit, without applying it there. Shards and replicas are gated
+    /// independently, so a rejected request may still have been applied by
+    /// those that matched fewer points. Split larger updates with a `slice`
     /// filter condition.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]

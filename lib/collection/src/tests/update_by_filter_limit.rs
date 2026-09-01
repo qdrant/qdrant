@@ -1,5 +1,6 @@
 //! Strict mode `max_update_by_filter_limit`: every shard gates the update it
-//! resolved from a filter scan on its own point count, before writing anything.
+//! resolved from a filter scan on its own point count, before writing anything,
+//! reading no more than the limit allows to decide.
 
 use std::sync::Arc;
 
@@ -175,21 +176,44 @@ async fn delete_by_filter_over_the_limit_is_rejected() {
     let message = err.to_string();
 
     assert!(
-        message.contains(&format!("matches {POINT_COUNT} points")),
-        "error must report the exact match count: {message}",
+        message.contains(&format!(
+            "more points in one shard than the limit of {LIMIT}"
+        )),
+        "error must report the limit it exceeded: {message}",
     );
     assert!(
-        message.contains(&format!("per-shard limit of {LIMIT}")),
-        "error must report the limit: {message}",
-    );
-    // The nudge: 6 points at a limit of 2, with headroom for unbalanced slices.
-    assert!(
-        message.contains(r#"{"slice": {"total": 6, "index": 0}}"#),
+        message.contains(r#"{"slice": {"total": 2, "index": 0}}"#),
         "error must point at the slice condition: {message}",
     );
 
     // Rejected before the WAL append, so nothing was deleted.
     assert_eq!(count(shard, red_filter()).await, POINT_COUNT as usize);
+
+    fixture.stop().await;
+}
+
+/// A replica that is catching up (transfer target, listener, resharding) holds
+/// a different point set than the one the client's request was gated against,
+/// so it applies what it is given instead of gating again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replica_that_does_not_enforce_is_not_gated() {
+    let fixture = shard_fixture(Some(LIMIT)).await;
+    let shard = &fixture.shard;
+
+    let outcome = shard
+        .submit_update(
+            delete_by_filter(red_filter()).into(),
+            WaitUntil::Visible,
+            false,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .expect("an exempt replica must apply the update");
+    crate::shards::local_shard::shard_ops::await_update_result(outcome, None)
+        .await
+        .expect("update must complete");
+
+    assert_eq!(count(shard, red_filter()).await, 0);
 
     fixture.stop().await;
 }

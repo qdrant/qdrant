@@ -1107,6 +1107,35 @@ impl CollectionError {
         matches!(self, Self::PreConditionFailed { .. })
     }
 
+    /// Whether a strict mode rule refused this request, including through the
+    /// wrappers that carry another peer's or another shard's error.
+    ///
+    /// A refusal says the request was not allowed, not that the replica which
+    /// answered is unhealthy, so the replica set reads this to keep a refusing
+    /// replica active. A refusal from another peer only arrives as itself when
+    /// its status carried [`STRICT_MODE_METADATA_KEY`].
+    pub fn is_strict_mode(&self) -> bool {
+        match self {
+            Self::StrictMode { .. } => true,
+            Self::ForwardProxyError { error, .. } => error.is_strict_mode(),
+            Self::InconsistentShardFailure { first_err, .. } => first_err.is_strict_mode(),
+            Self::BadInput { .. } => false,
+            Self::NotFound { .. } => false,
+            Self::PointNotFound { .. } => false,
+            Self::ServiceError { .. } => false,
+            Self::BadRequest { .. } => false,
+            Self::Timeout { .. } => false,
+            Self::Cancelled { .. } => false,
+            Self::OutOfMemory { .. } => false,
+            Self::PreConditionFailed { .. } => false,
+            Self::ObjectStoreError { .. } => false,
+            Self::InferenceError { .. } => false,
+            Self::RateLimitExceeded { .. } => false,
+            Self::ShardUnavailable { .. } => false,
+            Self::InsufficientStorage { .. } => false,
+        }
+    }
+
     pub fn is_missing_point(&self) -> bool {
         #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
         match self {
@@ -1273,9 +1302,25 @@ impl From<InvalidUri> for CollectionError {
 /// of the set. Set on the way out, read on the way back in.
 pub const INSUFFICIENT_STORAGE_METADATA_KEY: &str = "qdrant-insufficient-storage";
 
+/// Marks an `InvalidArgument` status as a strict mode refusal rather than a
+/// malformed request.
+///
+/// Both are the caller's problem, but only one of them says something about the
+/// replica that answered: a replica set must not read a strict mode refusal as
+/// a replica that failed to apply an operation. Set on the way out, read on the
+/// way back in.
+pub const STRICT_MODE_METADATA_KEY: &str = "qdrant-strict-mode";
+
 impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
+            tonic::Code::InvalidArgument
+                if err.metadata().contains_key(STRICT_MODE_METADATA_KEY) =>
+            {
+                Self::StrictMode {
+                    description: err.message().to_string(),
+                }
+            }
             tonic::Code::InvalidArgument => Self::bad_input(format!("InvalidArgument: {err}")),
             tonic::Code::AlreadyExists => Self::bad_input(format!("AlreadyExists: {err}")),
             tonic::Code::NotFound => Self::not_found(err.to_string()),
