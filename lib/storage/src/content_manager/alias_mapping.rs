@@ -112,16 +112,6 @@ impl AliasPersistence {
         Ok(())
     }
 
-    pub fn remove(&mut self, alias: &str) -> Result<Option<String>, StorageError> {
-        let output = self.alias_mapping.0.remove(alias);
-
-        if output.is_some() {
-            self.alias_mapping.save(&self.data_path)?;
-        }
-
-        Ok(output)
-    }
-
     /// Removes all aliases for a given collection.
     pub fn remove_collection(&mut self, collection_name: &str) -> Result<(), StorageError> {
         let prev_len = self.alias_mapping.0.len();
@@ -133,25 +123,6 @@ impl AliasPersistence {
         }
 
         Ok(())
-    }
-
-    pub fn rename_alias(
-        &mut self,
-        old_alias_name: &str,
-        new_alias_name: String,
-    ) -> Result<(), StorageError> {
-        match self.get(old_alias_name) {
-            None => Err(StorageError::not_found(format!(
-                "Alias {old_alias_name} does not exists!"
-            ))),
-            Some(collection_name) => {
-                self.alias_mapping.0.remove(old_alias_name);
-                self.alias_mapping.0.insert(new_alias_name, collection_name);
-                // 'remove' & 'insert' saved atomically
-                self.alias_mapping.save(&self.data_path)?;
-                Ok(())
-            }
-        }
     }
 
     pub fn collection_aliases(&self, collection_name: &str) -> Vec<String> {
