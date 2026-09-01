@@ -35,6 +35,7 @@ use crate::vector_storage::turbo::update_only::UpdateOnlyTurboVectorStorage;
 /// storage-native bytes that never need decoding.
 ///
 /// [1]: crate::data_types::fully_qualified_point::FullyQualifiedPoint
+#[derive(Clone, Copy)]
 pub enum VectorToStore<'a> {
     /// Decoded by the batch.
     Decoded(VectorRef<'a>),

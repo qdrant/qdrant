@@ -342,26 +342,27 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         &self.metadata
     }
 
-    /// Encode and persist `vector` at `id`, using this instance's already-fitted quantizer. A
-    /// true inherent method (not the [`EncodedVectors`] trait's `upsert_vector`) so it only needs
-    /// [`EncodedStorageWrite`] — a storage that can only append, never read, e.g. an
-    /// update-only segment's overlay, can still call this.
-    pub fn upsert_vector(
+    /// Encode and persist `vectors` on consecutive ids from `start_id`, handing the storage the
+    /// whole run as one batch. Inherent rather than on the [`EncodedVectors`] trait, so a
+    /// write-only [`EncodedStorageWrite`] storage can call it.
+    pub fn append_many<'a>(
         &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
+        start_id: PointOffsetType,
+        vectors: impl IntoIterator<Item = &'a [f32]>,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        let encoded_vector =
-            Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
-        self.encoded_vectors.upsert_vector(
-            id,
-            bytemuck::cast_slice(encoded_vector.as_slice()),
-            hw_counter,
-        )
+        // Encoded whole rather than streamed: the storage borrows the encoded rows.
+        let quantizer = &self.quantizer;
+        let encoding_buffer = &mut self.encoding_buffer;
+        let encoded: Vec<_> = vectors
+            .into_iter()
+            .map(|vector| Self::encode_vector(vector, quantizer, encoding_buffer))
+            .collect();
+        self.encoded_vectors
+            .upsert_many(start_id, encoded.iter().map(Vec::as_slice), hw_counter)
     }
 
-    /// See [`Self::upsert_vector`]: an inherent counterpart of the [`EncodedVectors`] trait's
+    /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
     /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
     pub fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()

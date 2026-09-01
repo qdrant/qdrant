@@ -32,6 +32,25 @@ pub trait EncodedStorageWrite {
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
 
+    /// Persist `vectors` on consecutive ids starting at `start_id`. A storage
+    /// whose backend can batch writes overrides this; the default loops over
+    /// [`upsert_vector`](Self::upsert_vector).
+    fn upsert_many<'a, I>(
+        &mut self,
+        start_id: PointOffsetType,
+        vectors: I,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        for (offset, vector) in vectors.into_iter().enumerate() {
+            self.upsert_vector(start_id + offset as PointOffsetType, vector, hw_counter)?;
+        }
+        Ok(())
+    }
+
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
