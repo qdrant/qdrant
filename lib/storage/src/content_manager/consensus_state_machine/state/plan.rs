@@ -9,6 +9,7 @@ use collection::shards::shard::PeerId;
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff, NodeContext};
+use crate::content_manager::toc::apply_alias_actions;
 
 type Actions = Vec<Action>;
 
@@ -266,55 +267,14 @@ impl ClusterState {
         // Validate all `actions` before emitting anything, and emit a single `UpdateAliases`,
         // which the applier writes in one go. So either all `actions` apply, or none of them do.
         //
-        // `ToC::update_aliases` does the same, against a copy of the mapping it saves once.
+        // `ToC::update_aliases` runs the same actions against a copy of the mapping it saves
+        // once, and owns the function both call.
 
         let mut aliases = self.aliases.clone();
 
-        for action in actions {
-            match action {
-                AliasOperations::CreateAlias(action) => {
-                    let CreateAlias {
-                        collection_name,
-                        alias_name,
-                    } = &action.create_alias;
-
-                    // `collection_name` must name a collection, not an alias
-                    if !self.has_collection(collection_name) {
-                        return Err(StorageError::not_found(format!(
-                            "Collection `{collection_name}` does not exist"
-                        )));
-                    }
-
-                    if self.has_collection(alias_name) {
-                        return Err(StorageError::already_exists(format!(
-                            "Collection `{alias_name}` already exists"
-                        )));
-                    }
-
-                    aliases.insert(alias_name.clone(), collection_name.clone());
-                }
-
-                AliasOperations::DeleteAlias(action) => {
-                    let DeleteAlias { alias_name } = &action.delete_alias;
-
-                    // Deleting an alias that does not exist is a no-op, not an error
-                    aliases.remove(alias_name);
-                }
-
-                AliasOperations::RenameAlias(action) => {
-                    let RenameAlias {
-                        old_alias_name,
-                        new_alias_name,
-                    } = &action.rename_alias;
-
-                    if !aliases.rename(old_alias_name, new_alias_name.clone()) {
-                        return Err(StorageError::not_found(format!(
-                            "Alias {old_alias_name} does not exist"
-                        )));
-                    }
-                }
-            }
-        }
+        apply_alias_actions(&mut aliases, actions, |collection| {
+            self.has_collection(collection)
+        })?;
 
         let set: BTreeMap<_, _> = aliases
             .iter()
