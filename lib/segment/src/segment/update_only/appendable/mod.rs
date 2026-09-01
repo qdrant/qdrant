@@ -65,7 +65,7 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
         let mut quantized_vectors = HashMap::new();
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open(fs.clone(), &path, vector_config)?;
+            let storage = UpdateOnlyVectorStorage::open(&fs, &path, vector_config)?;
             vector_storages.push((vector_name.clone(), storage));
 
             if let Some(quantized) =

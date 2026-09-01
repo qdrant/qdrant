@@ -4,7 +4,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFs;
 use tempfile::TempDir;
 
 use super::UpdateOnlyMultiDenseVectorStorage;
@@ -14,7 +14,7 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
 use crate::vector_storage::update_only::VectorToStore;
 use crate::vector_storage::{MultiVectorStorageRead, VectorStorageRead};
 
-type Writer = UpdateOnlyMultiDenseVectorStorage<VectorElementType, MmapFile>;
+type Writer = UpdateOnlyMultiDenseVectorStorage<VectorElementType>;
 
 const DIM: usize = 2;
 
@@ -60,7 +60,7 @@ fn multi_vectors_round_trip() {
     let first = multi(&[[1.0, 2.0], [3.0, 4.0]]);
     let second = multi(&[[5.0, 6.0]]);
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -87,7 +87,7 @@ fn missing_multi_vectors_own_no_rows() {
     let hw_counter = HardwareCounterCell::new();
 
     let present = multi(&[[1.0, 2.0]]);
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -121,7 +121,7 @@ fn batches_resume_at_the_row_space_end() {
     let first = multi(&[[1.0, 1.0], [2.0, 2.0]]);
     let second = multi(&[[3.0, 3.0]]);
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -132,7 +132,7 @@ fn batches_resume_at_the_row_space_end() {
         .unwrap();
     drop(writer);
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -162,7 +162,7 @@ fn raw_multi_bytes_round_trip() {
     let flattened: Vec<VectorElementType> = vec![1.0, 2.0, 3.0, 4.0];
     let bytes = bytemuck::cast_slice(&flattened).to_vec();
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(&MmapFs, 0, [VectorToStore::Raw(&bytes)], &hw_counter)
         .unwrap();

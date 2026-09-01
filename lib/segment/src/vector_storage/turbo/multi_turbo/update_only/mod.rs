@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -27,9 +27,9 @@ use crate::vector_storage::update_only::VectorToStore;
 /// [`AppendableMmapMultiTurboVectorStorage`]: super::appendable_mmap_multi_turbo_vector_storage::AppendableMmapMultiTurboVectorStorage
 /// [1]: crate::vector_storage::turbo::update_only::UpdateOnlyTurboVectorStorage
 /// [2]: crate::vector_storage::multi_dense::update_only::UpdateOnlyMultiDenseVectorStorage
-pub struct UpdateOnlyMultiTurboVectorStorage<S: UniversalAppend + 'static> {
-    vectors: UpdateOnlyChunkedVectors<u8, S>,
-    offsets: UpdateOnlyChunkedVectors<MultivectorMmapOffset, S>,
+pub struct UpdateOnlyMultiTurboVectorStorage {
+    vectors: UpdateOnlyChunkedVectors<u8>,
+    offsets: UpdateOnlyChunkedVectors<MultivectorMmapOffset>,
     deleted: UpdateOnlyStoredFlags,
     quantizer: TurboQuantizer,
     quantization_buffer: Vec<f64>,
@@ -38,20 +38,25 @@ pub struct UpdateOnlyMultiTurboVectorStorage<S: UniversalAppend + 'static> {
     next_row: usize,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
+impl UpdateOnlyMultiTurboVectorStorage {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: S::Fs, path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        path: &Path,
+        dim: usize,
+        distance: Distance,
+    ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
-        let deleted = UpdateOnlyStoredFlags::open(&fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(
-            fs.clone(),
+            fs,
             &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
         )?;
         let offsets = UpdateOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1)?;
-        let next_row = vectors.stored_len()?;
+        let next_row = vectors.stored_len(fs)?;
 
         Ok(Self {
             vectors,
@@ -66,9 +71,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
 
     /// Append one encoded multi-vector per point of a batch, starting at
     /// `start_slot`, and persist them.
-    pub fn append_many<'a>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -100,12 +105,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
         }
 
         self.vectors.append_many(
+            fs,
             batch_start as VectorOffsetType,
             rows.chunks_exact(encoded_size),
             hw_counter,
         )?;
 
         self.offsets.append_many(
+            fs,
             start_slot as VectorOffsetType,
             offsets.iter().map(std::slice::from_ref),
             hw_counter,

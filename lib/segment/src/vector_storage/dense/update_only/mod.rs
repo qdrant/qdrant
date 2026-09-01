@@ -6,7 +6,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
 
 use super::appendable_dense_vector_storage::{DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use crate::common::flags::update_only_stored_flags::UpdateOnlyStoredFlags;
@@ -21,18 +21,22 @@ use crate::vector_storage::update_only::VectorToStore;
 /// the flags marking which slots hold no vector of their own.
 ///
 /// [`AppendableMmapDenseVectorStorage`]: super::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage
-pub struct UpdateOnlyDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalAppend + 'static> {
-    vectors: UpdateOnlyChunkedVectors<T, S>,
+pub struct UpdateOnlyDenseVectorStorage<T: PrimitiveVectorElement> {
+    vectors: UpdateOnlyChunkedVectors<T>,
     deleted: UpdateOnlyStoredFlags,
     dim: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static> UpdateOnlyDenseVectorStorage<T, S> {
+impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: S::Fs, path: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        path: &Path,
+        dim: usize,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            deleted: UpdateOnlyStoredFlags::open(&fs, &path.join(DELETED_DIR_PATH))?,
+            deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?,
             vectors: UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?,
             dim,
         })
@@ -44,9 +48,9 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static> UpdateOnlyDenseVec
     /// Slots are consecutive from `start_slot`: every point of the batch takes
     /// one, whether or not it has a vector here. `start_slot` must be the slot
     /// this storage ends at, since the vectors are stored positionally.
-    pub fn append_many<'a>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -82,6 +86,7 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static> UpdateOnlyDenseVec
         }
 
         self.vectors.append_many(
+            fs,
             start_slot as VectorOffsetType,
             run.iter().map(Vec::as_slice),
             hw_counter,

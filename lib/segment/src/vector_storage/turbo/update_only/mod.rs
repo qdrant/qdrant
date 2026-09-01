@@ -5,7 +5,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -25,8 +25,8 @@ use crate::vector_storage::update_only::VectorToStore;
 /// so the two encode identically.
 ///
 /// [`AppendableMmapTurboVectorStorage`]: super::appendable_turbo_vector_storage::AppendableMmapTurboVectorStorage
-pub struct UpdateOnlyTurboVectorStorage<S: UniversalAppend + 'static> {
-    vectors: UpdateOnlyChunkedVectors<u8, S>,
+pub struct UpdateOnlyTurboVectorStorage {
+    vectors: UpdateOnlyChunkedVectors<u8>,
     deleted: UpdateOnlyStoredFlags,
     quantizer: TurboQuantizer,
     /// Scratch for the padded, rotated vector `quantize` writes through.
@@ -34,13 +34,18 @@ pub struct UpdateOnlyTurboVectorStorage<S: UniversalAppend + 'static> {
     dim: usize,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyTurboVectorStorage<S> {
+impl UpdateOnlyTurboVectorStorage {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: S::Fs, path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        path: &Path,
+        dim: usize,
+        distance: Distance,
+    ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
-        let deleted = UpdateOnlyStoredFlags::open(&fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(
             fs,
             &path.join(VECTORS_DIR_PATH),
@@ -61,9 +66,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyTurboVectorStorage<S> {
     ///
     /// As in the plain dense storage, a point with no vector here still takes
     /// its slot — holding an encoded zero vector — and is flagged deleted.
-    pub fn append_many<'a>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -99,6 +104,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyTurboVectorStorage<S> {
         }
 
         self.vectors.append_many(
+            fs,
             start_slot as VectorOffsetType,
             run.iter().map(Vec::as_slice),
             hw_counter,

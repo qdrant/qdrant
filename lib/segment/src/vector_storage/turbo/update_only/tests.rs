@@ -2,7 +2,7 @@
 //! appendable TurboQuant storage opened on the same directory.
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFs;
 use tempfile::TempDir;
 
 use super::UpdateOnlyTurboVectorStorage;
@@ -12,7 +12,7 @@ use crate::vector_storage::VectorStorageRead;
 use crate::vector_storage::turbo::appendable_turbo_vector_storage::open_appendable_turbo_vector_storage;
 use crate::vector_storage::update_only::VectorToStore;
 
-type Writer = UpdateOnlyTurboVectorStorage<MmapFile>;
+type Writer = UpdateOnlyTurboVectorStorage;
 
 const DIM: usize = 8;
 
@@ -25,7 +25,7 @@ fn encoded_vectors_match_the_writable_side() {
 
     // Written by the update-only writer.
     let ours = TempDir::with_prefix("update_only_turbo").unwrap();
-    let mut writer = Writer::open(MmapFs, ours.path(), DIM, Distance::Dot).unwrap();
+    let mut writer = Writer::open(&MmapFs, ours.path(), DIM, Distance::Dot).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -73,7 +73,7 @@ fn batches_resume() {
     let vector: Vec<VectorElementType> = vec![1.0; DIM];
 
     for slot in 0..2 {
-        let mut writer = Writer::open(MmapFs, dir.path(), DIM, Distance::Dot).unwrap();
+        let mut writer = Writer::open(&MmapFs, dir.path(), DIM, Distance::Dot).unwrap();
         writer
             .append_many(
                 &MmapFs,

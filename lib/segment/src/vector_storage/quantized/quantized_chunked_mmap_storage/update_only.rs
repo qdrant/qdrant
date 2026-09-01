@@ -32,13 +32,17 @@ use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVector
 ///
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
 pub struct UpdateOnlyQuantizedChunkedStorage<S: UniversalAppend + 'static> {
-    vectors: UpdateOnlyChunkedVectors<u8, S>,
+    vectors: UpdateOnlyChunkedVectors<u8>,
+    /// Owned rather than passed down: [`EncodedStorageWrite`] cannot carry a
+    /// filesystem per call.
+    fs: S::Fs,
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedChunkedStorage<S> {
     pub fn open(fs: S::Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
         Ok(Self {
-            vectors: UpdateOnlyChunkedVectors::open(fs, path, quantized_vector_size)?,
+            vectors: UpdateOnlyChunkedVectors::open(&fs, path, quantized_vector_size)?,
+            fs,
         })
     }
 }
@@ -75,12 +79,12 @@ impl<S: UniversalAppend + 'static> EncodedStorageWrite for UpdateOnlyQuantizedCh
         // `id` is always the current end of the storage — a genuine append, matching what
         // `UpdateOnlyChunkedVectors::append_many` requires of `start_key`.
         self.vectors
-            .append_many(start_id as VectorOffsetType, vectors, hw_counter)
+            .append_many(&self.fs, start_id as VectorOffsetType, vectors, hw_counter)
             .map_err(std::io::Error::other)
     }
 
     fn vectors_count(&self) -> usize {
-        self.vectors.stored_len().unwrap_or(0)
+        self.vectors.stored_len(&self.fs).unwrap_or(0)
     }
 
     fn flusher(&self) -> MmapFlusher {
