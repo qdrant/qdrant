@@ -108,7 +108,7 @@ where
         .unwrap();
     assert_eq!(reader.len::<u8>().unwrap(), eof);
     file.append(eof, b"tail".as_slice()).unwrap();
-    reader.reopen().unwrap();
+    reader.live_reload().unwrap();
     assert_eq!(reader.len::<u8>().unwrap(), eof + 4);
     assert_eq!(
         reader
@@ -145,7 +145,7 @@ where
 
     // Recovery per the contract: reopen the stale handle, re-check the
     // length to learn the true end of file, and append there.
-    first.reopen().unwrap();
+    first.live_reload().unwrap();
     let eof = first.len::<u8>().unwrap();
     assert_eq!(eof, 6);
     first.append(eof, b"ccc".as_slice()).unwrap();

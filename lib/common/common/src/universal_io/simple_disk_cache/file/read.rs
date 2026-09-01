@@ -5,6 +5,8 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::path::Path;
 
+use futures::FutureExt as _;
+
 use super::DiskCache;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
@@ -60,15 +62,28 @@ where
         R: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         self.reopen_impl()
     }
 
-    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+    fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<()> {
-        self.schedule_reopen_impl(get_file_info)
+    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
+        let mut future = self.live_preload_impl(get_file_info)?;
+
+        // Poll once so that actual async work begins right away
+        let future = futures::executor::block_on(
+            #[expect(clippy::async_yields_async)] // so it can be polled externally
+            async move {
+                match futures::poll!(&mut future) {
+                    std::task::Poll::Ready(()) => async {}.left_future(),
+                    std::task::Poll::Pending => future.right_future(),
+                }
+            },
+        );
+
+        Ok(future)
     }
 
     fn read_bytes<P: AccessPattern>(

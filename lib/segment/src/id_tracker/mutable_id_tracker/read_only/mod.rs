@@ -23,7 +23,7 @@ use crate::types::{PointIdType, SeqNumberType};
 ///
 /// Backed by [`UniversalRead`] file handles so it works over any storage backend (mmap, io_uring,
 /// object storage, ...). The handles are retained between reloads and refreshed via
-/// [`UniversalRead::reopen`] to pick up data appended by the writer.
+/// [`UniversalRead::live_reload`] to pick up data appended by the writer.
 ///
 /// The mappings and versions files may be absent: the writer only creates them once it flushes the
 /// first point (an empty file is never written), exactly as

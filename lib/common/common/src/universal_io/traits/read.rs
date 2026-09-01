@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use std::ops::Range;
 use std::path::Path;
 
+use futures::FutureExt as _;
+
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
@@ -58,9 +60,9 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// underlying file larger, so reopening can account for this growth.
     ///
     /// This may be a no-op in some implementations.
-    fn reopen(&mut self) -> UioResult<()>;
+    fn live_reload(&mut self) -> UioResult<()>;
 
-    /// Stage the work that the next [`reopen`](Self::reopen) must do, reading
+    /// Stage the work that the next [`live_reload`](Self::reopen) must do, reading
     /// the file's current length via `get_file_info` — typically backed by a
     /// [`CachedReadFs`] listing snapshot. The implementation resolves its own
     /// path, so there is nothing to mispair.
@@ -72,17 +74,20 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// readers of an already-live mirror — no length change, no cache
     /// invalidation.
     ///
+    /// The returned future signals when the preload is complete.
+    ///
     /// Defaults to a no-op: local backends' `reopen` is a stat plus a remap,
     /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.
     ///
     /// [`CachedReadFs`]: crate::universal_io::CachedReadFs
     /// [`DiskCache`]: crate::universal_io::DiskCache
-    fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+    fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<()> {
+    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
         let _ = get_file_info;
-        Ok(())
+
+        Ok(async {}.boxed())
     }
 
     /// Prefer [`read_batch`] if you need high performance.
