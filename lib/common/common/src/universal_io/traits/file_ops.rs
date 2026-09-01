@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
+use futures::future::BoxFuture;
+
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::append::UniversalAppend;
 use crate::universal_io::traits::open_extra::OpenExtra;
@@ -194,6 +196,12 @@ pub trait CachedReadFs: UniversalReadFs {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
     );
+
+    /// Granular version of `schedule_open` for custom `populate` cases
+    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Self::File>>);
+
+    /// Wait for all scheduled files to resolve.
+    fn wait_all(&self);
 
     /// Return the file info from the current snapshot.
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;

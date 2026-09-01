@@ -163,17 +163,21 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     ) -> OperationResult<Vec<MappingChange>> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
-        if self.mappings_file.is_none() {
-            self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+        match self.mappings_file.as_mut() {
+            Some(file) => {
+                // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+                // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+                // an empty file.
+                file.reopen().ok_not_found()?;
+            }
+            None => {
+                self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+            }
         }
         let Some(file) = self.mappings_file.as_mut() else {
             return Ok(Vec::new());
         };
 
-        // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
-        // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
-        // an empty file.
-        file.reopen().ok_not_found()?;
         let Some(file_len) = file.len::<u8>().ok_not_found()? else {
             return Ok(Vec::new());
         };
@@ -217,17 +221,20 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     fn reload_versions(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
-        if self.versions_file.is_none() {
-            self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+        match self.versions_file.as_mut() {
+            Some(versions_file) => {
+                // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+                // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+                // an empty file (no committed versions).
+                versions_file.reopen().ok_not_found()?;
+            }
+            None => {
+                self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+            }
         }
         let Some(versions_file) = self.versions_file.as_mut() else {
             return Ok(self.internal_to_version.len());
         };
-
-        // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
-        // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
-        // an empty file (no committed versions).
-        versions_file.reopen().ok_not_found()?;
 
         // Disjoint field borrow so the read (from `versions_file`) can extend `internal_to_version`.
         let internal_to_version = &mut self.internal_to_version;

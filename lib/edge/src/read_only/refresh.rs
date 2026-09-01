@@ -169,15 +169,23 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             });
         });
 
+        let reloads: Vec<_> = survivors
+            .into_iter()
+            // The counter cell is not `Sync`, so fork one per reload outside the
+            // pool; forks drain into the shared accumulator on drop.
+            .map(|(uuid, segment)| (uuid, segment, hw_counter.fork()))
+            .collect();
+        let results: Vec<_> = self.search_pool.install(|| {
+            reloads
+                .into_par_iter()
+                .map(|(uuid, segment, hw)| (uuid, segment.write().live_reload(&hw)))
+                .collect()
+        });
+
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;
-
-        // TODO(uio): currently this locks each segment one at a time. Once we
-        // do `live_preload` async we'll have a clear signal of finishing
-        // prefetches to start locking. By then, we can also make this section a
-        // rayon par_iter, and take care of hw_counter not being thread-safe.
-        for (uuid, segment) in survivors {
-            match segment.write().live_reload(hw_counter) {
+        for (uuid, result) in results {
+            match result {
                 Ok(()) => {}
                 // An essential file is gone; whether that is benign (the leader removed the
                 // segment while we reloaded it) is decided against a re-read manifest below.

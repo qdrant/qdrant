@@ -32,23 +32,23 @@ use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 /// [`preopen`]: LookupSegment::preopen
 const WRITER_POPULATE: Populate = Populate::No;
 
-/// Build the per-segment [`CachedFs`] an open runs over: the version and
-/// state files are prefetched, and the directory listing snapshot is taken so
-/// probes for optional files resolve without inner-filesystem round-trips.
-/// Mirror of the read-only segment's `build_cached_fs`, minus the payload
-/// index config the writer never opens.
+/// Build the per-segment [`CachedFs`] an open runs over. Preloads statically
+/// known files.
+///
+/// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
+/// config the writer never opens.
 fn build_cached_fs<Fs: UniversalReadFs>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
 
+    cached_fs.cache_file_info()?;
+
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
         cached_fs.schedule_open(&segment_path.join(file_name), None, None);
     }
-
-    cached_fs.cache_file_info()?;
 
     Ok(cached_fs)
 }

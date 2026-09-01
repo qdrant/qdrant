@@ -145,6 +145,7 @@ mod tests {
         cached_fs.cache_file_info().unwrap();
         ReadOnlySparseVectorStorage::<MmapFile>::preopen(&cached_fs, dir.path(), Populate::No)
             .unwrap();
+        cached_fs.wait_all();
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [STORAGE_DIRNAME, DELETED_DIRNAME] {
@@ -234,6 +235,7 @@ mod tests {
             let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
             cached_fs.cache_file_info().unwrap();
             reader.live_preload(&cached_fs).unwrap();
+            cached_fs.wait_all();
 
             fs_err::remove_dir_all(dir.path()).unwrap();
 
