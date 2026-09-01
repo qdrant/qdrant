@@ -30,7 +30,7 @@ use crate::vector_storage::update_only::VectorToStore;
 pub struct UpdateOnlyMultiTurboVectorStorage<S: UniversalAppend + 'static> {
     vectors: UpdateOnlyChunkedVectors<u8, S>,
     offsets: UpdateOnlyChunkedVectors<MultivectorMmapOffset, S>,
-    deleted: UpdateOnlyStoredFlags<S>,
+    deleted: UpdateOnlyStoredFlags,
     quantizer: TurboQuantizer,
     quantization_buffer: Vec<f64>,
     dim: usize,
@@ -44,13 +44,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
     pub fn open(fs: S::Fs, path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
+        let deleted = UpdateOnlyStoredFlags::open(&fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(
             fs.clone(),
             &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
         )?;
-        let offsets = UpdateOnlyChunkedVectors::open(fs.clone(), &path.join(OFFSETS_DIR_PATH), 1)?;
-        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
+        let offsets = UpdateOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1)?;
         let next_row = vectors.stored_len()?;
 
         Ok(Self {
@@ -68,6 +68,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
     /// `start_slot`, and persist them.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -114,7 +115,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyMultiTurboVectorStorage<S> {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(hw_counter)
+        self.deleted.flush(fs, hw_counter)
     }
 
     /// Encode every inner vector, back to back.

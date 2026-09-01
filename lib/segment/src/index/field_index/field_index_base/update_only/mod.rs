@@ -56,15 +56,15 @@ pub enum UpdateOnlyFieldIndex<S: UniversalAppend + 'static> {
     UuidMapIndex(UpdateOnlyValueIndex<UpdateOnlyMapKind<UuidIntType>, S>),
     GeoIndex(UpdateOnlyValueIndex<UpdateOnlyGeoKind, S>),
     FullTextIndex(UpdateOnlyValueIndex<UpdateOnlyTextKind, S>),
-    BoolIndex(UpdateOnlyBoolIndex<S>),
-    NullIndex(UpdateOnlyNullIndex<S>),
+    BoolIndex(UpdateOnlyBoolIndex),
+    NullIndex(UpdateOnlyNullIndex),
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// Open the writer for `field`'s index of type `index_type`, under the
     /// payload index root `dir`, creating its storage if it is not there yet.
     pub fn open(
-        fs: S::Fs,
+        fs: &S::Fs,
         dir: &Path,
         field: &JsonPath,
         schema: &PayloadFieldSchema,
@@ -75,31 +75,31 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
 
         let index = match index_type {
             PayloadIndexType::IntIndex => {
-                Self::IntIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
+                Self::IntIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
             PayloadIndexType::DatetimeIndex => {
-                Self::DatetimeIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
+                Self::DatetimeIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
             PayloadIndexType::FloatIndex => {
-                Self::FloatIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
+                Self::FloatIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
             PayloadIndexType::IntMapIndex => {
-                Self::IntMapIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
+                Self::IntMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
             PayloadIndexType::KeywordIndex => {
-                Self::KeywordIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
+                Self::KeywordIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
             // The `UuidIndex` discriminant is historically map-backed
             PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => {
-                Self::UuidMapIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
+                Self::UuidMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
             }
             PayloadIndexType::GeoIndex => {
-                Self::GeoIndex(UpdateOnlyValueIndex::open(&fs, dir, UpdateOnlyGeoKind)?)
+                Self::GeoIndex(UpdateOnlyValueIndex::open(fs, dir, UpdateOnlyGeoKind)?)
             }
             PayloadIndexType::FullTextIndex => {
                 let config = TextIndexParams::try_from(schema)?;
                 Self::FullTextIndex(UpdateOnlyValueIndex::open(
-                    &fs,
+                    fs,
                     dir,
                     UpdateOnlyTextKind::new(&config),
                 )?)
@@ -139,7 +139,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     ///
     /// `hw_counter` is charged only by the bitmask-backed indexes, which do
     /// their writing here; the rest charge each value as it is put.
-    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn flush(&mut self, fs: &S::Fs, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             Self::IntIndex(index) => index.flush(),
             Self::DatetimeIndex(index) => index.flush(),
@@ -149,8 +149,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::UuidMapIndex(index) => index.flush(),
             Self::GeoIndex(index) => index.flush(),
             Self::FullTextIndex(index) => index.flush(),
-            Self::BoolIndex(index) => index.flush(hw_counter),
-            Self::NullIndex(index) => index.flush(hw_counter),
+            Self::BoolIndex(index) => index.flush(fs, hw_counter),
+            Self::NullIndex(index) => index.flush(fs, hw_counter),
         }
     }
 }

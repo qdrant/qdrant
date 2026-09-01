@@ -28,6 +28,7 @@ fn encoded_vectors_match_the_writable_side() {
     let mut writer = Writer::open(MmapFs, ours.path(), DIM, Distance::Dot).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [
                 VectorToStore::Decoded(VectorRef::from(vector.as_slice())),
@@ -75,6 +76,7 @@ fn batches_resume() {
         let mut writer = Writer::open(MmapFs, dir.path(), DIM, Distance::Dot).unwrap();
         writer
             .append_many(
+                &MmapFs,
                 slot,
                 [VectorToStore::Decoded(VectorRef::from(vector.as_slice()))],
                 &hw_counter,

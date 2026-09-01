@@ -27,7 +27,7 @@ use crate::vector_storage::update_only::VectorToStore;
 /// [`AppendableMmapTurboVectorStorage`]: super::appendable_turbo_vector_storage::AppendableMmapTurboVectorStorage
 pub struct UpdateOnlyTurboVectorStorage<S: UniversalAppend + 'static> {
     vectors: UpdateOnlyChunkedVectors<u8, S>,
-    deleted: UpdateOnlyStoredFlags<S>,
+    deleted: UpdateOnlyStoredFlags,
     quantizer: TurboQuantizer,
     /// Scratch for the padded, rotated vector `quantize` writes through.
     quantization_buffer: Vec<f64>,
@@ -40,12 +40,12 @@ impl<S: UniversalAppend + 'static> UpdateOnlyTurboVectorStorage<S> {
     pub fn open(fs: S::Fs, path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
+        let deleted = UpdateOnlyStoredFlags::open(&fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(
-            fs.clone(),
+            fs,
             &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
         )?;
-        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
 
         Ok(Self {
             vectors,
@@ -63,6 +63,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyTurboVectorStorage<S> {
     /// its slot — holding an encoded zero vector — and is flagged deleted.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -107,6 +108,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyTurboVectorStorage<S> {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(hw_counter)
+        self.deleted.flush(fs, hw_counter)
     }
 }
