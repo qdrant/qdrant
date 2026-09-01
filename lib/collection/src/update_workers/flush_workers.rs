@@ -19,9 +19,26 @@ use crate::wal_delta::LockedWal;
 impl UpdateWorkers {
     /// Returns confirmed version after flush of all segments
     ///
+    /// Runs at an operation boundary: the updates lock is held while flushers are captured and
+    /// the persisted waterline is read, so this pass can never observe a half-applied operation.
+    ///
+    /// A single update operation writes to segments in several separately locked phases. E.g.
+    /// `upsert_points_impl` first updates the points that already exist, then takes a fresh write
+    /// lock on the smallest appendable segment to insert the new ones. `flush_all` read-locks
+    /// every segment, which prevents interleaving *within* a phase, but without this guard a pass
+    /// could still start *between* two phases of the same operation. It would then capture a
+    /// segment at `version = op_num` with only part of that operation applied, and stamp
+    /// `persisted_version = op_num` once the flush completes. The segment looks clean from then on
+    /// (`version == persisted_version`), so the rest of the operation is never written, while the
+    /// waterline reports it as fully saved and the WAL is acknowledged past it, dropping the only
+    /// recoverable copy. See #10402.
+    ///
     /// # Errors
     /// Returns an error on flush failure
     fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
+        // Taken before the holder read lock, matching `CollectionUpdater::update`, so waiting for
+        // it never blocks a writer that is waiting for the holder lock.
+        let _updates_guard = segments.acquire_updates_lock();
         let read_segments = segments.read();
         let flushed_version = read_segments.flush_all(FlushMode::Background, false)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
@@ -140,5 +157,52 @@ impl UpdateWorkers {
                 log::error!("Flush worker failed: {error}",);
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::collection_manager::fixtures::build_test_holder;
+
+    /// A flush pass must not start in the middle of an update operation.
+    ///
+    /// Operations write to segments in several separately locked phases; a flush that lands
+    /// between two of them captures a segment with the operation half applied and then marks it
+    /// as fully persisted, so the remainder is never written (#10402). Holding the updates lock
+    /// for the duration of an operation is what keeps flushes on operation boundaries.
+    #[test]
+    fn flush_segments_waits_for_operation_boundary() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let holder = build_test_holder(dir.path());
+
+        let updates_guard = holder.acquire_updates_lock();
+
+        let flushed = Arc::new(AtomicBool::new(false));
+        let handle = thread::spawn({
+            let holder = holder.clone();
+            let flushed = flushed.clone();
+            move || {
+                UpdateWorkers::flush_segments(holder).unwrap();
+                flushed.store(true, Ordering::SeqCst);
+            }
+        });
+
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            !flushed.load(Ordering::SeqCst),
+            "flush must block while an update operation holds the updates lock",
+        );
+
+        drop(updates_guard);
+        handle.join().unwrap();
+        assert!(flushed.load(Ordering::SeqCst));
     }
 }
