@@ -99,6 +99,7 @@
 //!   the buffer back as a plain `AVec<u8>`. This removes the two redundant
 //!   copies that an "aggregate to `Bytes`, then copy out" path would do.
 
+mod async_io;
 mod cached;
 mod file;
 mod fs;

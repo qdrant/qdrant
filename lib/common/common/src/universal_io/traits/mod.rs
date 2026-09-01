@@ -1,4 +1,5 @@
 mod append;
+mod async_io;
 mod file_ops;
 mod open_extra;
 mod pipeline;
@@ -8,6 +9,7 @@ mod write;
 use std::fmt;
 
 pub use append::UniversalAppend;
+pub use async_io::{UniversalReadAsync, UniversalReadFsAsync};
 pub use file_ops::{CachedReadFs, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps};
 pub use open_extra::OpenExtra;
 pub use pipeline::{OwnedPipeline, ReadPipeline};

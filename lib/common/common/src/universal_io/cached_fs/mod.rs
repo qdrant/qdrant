@@ -9,11 +9,13 @@ use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
 
+mod async_io;
+
 use crate::mmap::AdviceSetting;
 use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFileOps, UniversalReadFs,
+    UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync,
 };
 
 #[derive(Clone, Debug)]
@@ -77,7 +79,7 @@ impl FileInfo {
 /// clones.
 pub struct CachedFs<Fs>
 where
-    Fs: UniversalReadFs,
+    Fs: UniversalReadFsAsync,
     Fs::File: 'static,
 {
     fs: Fs,
@@ -109,7 +111,7 @@ impl<S> Debug for ScheduledFile<S> {
 /// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
 /// bound for the projection in `files_prefetched`, even though the
 /// `Arc` field is unconditionally cloneable (rust-lang/rust#26925).
-impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
+impl<Fs: UniversalReadFsAsync> Clone for CachedFs<Fs> {
     fn clone(&self) -> Self {
         let Self {
             fs,
@@ -128,7 +130,7 @@ impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> CachedFs<Fs> {
+impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
     pub fn new(fs: Fs, prefix_path: &Path) -> UioResult<Self> {
         Ok(Self {
             fs,
@@ -198,7 +200,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
+impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     /// Take a LIST snapshot of the filesystem and drop prefetched files.
     fn cache_file_info(&mut self) -> UioResult<()> {
         // List all files
@@ -349,7 +351,7 @@ pub struct CachedReadFsContext<C> {
     pub prefix_path: PathBuf,
 }
 
-impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
+impl<Fs: UniversalReadFsAsync> UniversalReadFileOps for CachedFs<Fs> {
     type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
 
     fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
@@ -372,7 +374,7 @@ impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
+impl<Fs: UniversalReadFsAsync> Debug for CachedFs<Fs> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let Self {
             fs,
@@ -391,7 +393,7 @@ impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
+impl<Fs: UniversalReadFsAsync> UniversalReadFs for CachedFs<Fs> {
     /// The *wrapped* backend's file type: opening through the cache hands
     /// out the very handles the inner filesystem produced (prefetched or
     /// fallback-opened), so the wrapper never appears in stored types.
@@ -445,51 +447,5 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             None => extra,
         };
         self.fs.open(path, options, extra)
-    }
-
-    async fn open_async(
-        &self,
-        path: PathBuf,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Self::File> {
-        if options.writeable {
-            return Err(UniversalIoError::Uninitialized {
-                description:
-                    "CachedReadFs only supports read-only files, writeable option is not allowed"
-                        .to_string(),
-            });
-        }
-
-        let scheduled_file = self.files_prefetched.lock().remove(&path);
-        if let Some(file) = scheduled_file {
-            return match file {
-                ScheduledFile::Future(future) => future.await,
-                ScheduledFile::Ready(result) => result,
-                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
-                    since: self.file_info(&path).and_then(|info| info.last_modified),
-                    path,
-                }),
-            };
-        }
-
-        // With a snapshot, unlisted paths fail locally — probing for
-        // optional files never reaches the inner filesystem.
-        if let Some(files_info) = &self.files_info
-            && !files_info.contains_key(&path)
-        {
-            return Err(UniversalIoError::NotFound { path });
-        }
-
-        // The path was never scheduled for prefetch. If a snapshot was taken it
-        // still carries the file's size, so thread it into the open as a known
-        // length — this lets the backend skip a remote `len`/HEAD round-trip
-        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
-        // snapshot this is a plain cache-bypass open.
-        let extra = match self.file_info(&path) {
-            Some(info) => extra.with_known_len(info.size),
-            None => extra,
-        };
-        self.fs.open_async(path, options, extra).await
     }
 }

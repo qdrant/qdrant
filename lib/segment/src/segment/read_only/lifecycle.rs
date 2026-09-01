@@ -5,7 +5,9 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFs, read_json_via};
+use common::universal_io::{
+    CachedFs, CachedReadFs, Populate, UniversalReadFs, UniversalReadFsAsync, read_json_via,
+};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -31,7 +33,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
 /// Build a per-segment [`CachedReadFs`] over `segment_path`. Schedules statically known files.
-fn build_cached_fs<Fs: UniversalReadFs>(
+fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {

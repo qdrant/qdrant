@@ -22,6 +22,7 @@ wal = { path = "../wal" }
 ahash = { workspace = true }
 core_affinity = { workspace = true }
 fs-err = { workspace = true }
+futures = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 ordered-float = { workspace = true }
@@ -31,7 +32,6 @@ rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-futures = { workspace = true }
 
 [dev-dependencies]
 fs-err = { workspace = true, features = ["debug"] }

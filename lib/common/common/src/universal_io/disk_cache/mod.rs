@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
@@ -133,16 +133,6 @@ impl UniversalReadFs for BlockCacheFs {
         CachedSlice::open(&self.controller, path.as_ref())
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))
     }
-
-    fn open_async(
-        &self,
-        path: PathBuf,
-        options: OpenOptions,
-        extra: (),
-    ) -> impl Future<Output = UioResult<CachedSlice>> + '_ {
-        // FIXME: implement proper async
-        std::future::ready(self.open(&path, options, extra))
-    }
 }
 
 impl UniversalRead for CachedSlice {
@@ -170,16 +160,6 @@ impl UniversalRead for CachedSlice {
         let start = usize::try_from(range.start).expect("range.start is within usize");
         let end = usize::try_from(range.end).expect("range.end is within usize");
         Ok(self.get_range_bytes(start..end, align)?)
-    }
-
-    async fn read_bytes_async<P: AccessPattern>(
-        &self,
-        range: Range<u64>,
-        access_pattern: P,
-        align: usize,
-    ) -> UioResult<ACow<'_>> {
-        // TODO(uio): implement real async
-        self.read_bytes(range, access_pattern, align)
     }
 
     fn len<T>(&self) -> UioResult<u64> {
