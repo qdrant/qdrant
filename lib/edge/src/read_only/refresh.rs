@@ -4,7 +4,6 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::IsNotFound as _;
 use parking_lot::RwLock;
-use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
@@ -12,7 +11,7 @@ use uuid::Uuid;
 
 use crate::EdgeConfig;
 use crate::read_only::ReadOnlyEdgeShard;
-use crate::read_only::load::load_segments_parallel;
+use crate::read_only::load::{load_segments_parallel, reload_segments_parallel};
 
 /// How a single [`refresh_attempt`](ReadOnlyEdgeShard::refresh_attempt) ended.
 enum RefreshOutcome {
@@ -160,27 +159,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         }
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
-        // Done in 2 steps: preload -> reload, so that we can avoid locking when prefetching.
-        self.search_pool.install(|| {
-            survivors.par_iter().for_each(|(uuid, segment)| {
-                let _ = segment.read().live_preload().inspect_err(|err| {
-                    log::warn!("live_preload of segment {uuid} failed: {err}");
-                });
-            });
-        });
-
-        let reloads: Vec<_> = survivors
-            .into_iter()
-            // The counter cell is not `Sync`, so fork one per reload outside the
-            // pool; forks drain into the shared accumulator on drop.
-            .map(|(uuid, segment)| (uuid, segment, hw_counter.fork()))
-            .collect();
-        let results: Vec<_> = self.search_pool.install(|| {
-            reloads
-                .into_par_iter()
-                .map(|(uuid, segment, hw)| (uuid, segment.write().live_reload(&hw)))
-                .collect()
-        });
+        let results = reload_segments_parallel(&self.search_pool, survivors, hw_counter);
 
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;
