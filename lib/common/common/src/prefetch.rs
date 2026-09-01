@@ -26,7 +26,7 @@ const FAR_BYTES: usize = 4096;
 pub const MAX_UNPREFETCHED_BATCH: usize = 2;
 
 /// Smallest per-segment quantized storage that still benefits from prefetch
-/// hints. A storage at or below this size stays resident in a core's private
+/// A storage below this size stays resident in a core's private
 /// L2 (and low L3), so its vectors are already hot when scored and the hints
 /// only add issue overhead. Measured: a cache-resident binary/128 storage
 /// (~0.4 MB per segment) regressed ~2-4% under contention across Zen 2/3 and
