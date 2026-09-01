@@ -29,8 +29,9 @@ use tempfile::TempDir;
 use super::{UpdateOnlyQuantizedVectorStorage, UpdateOnlyQuantizedVectors};
 use crate::data_types::vectors::VectorRef;
 use crate::types::{
-    BinaryQuantization, BinaryQuantizationConfig, Distance, QuantizationConfig, TurboQuantBitSize,
-    TurboQuantQuantizationConfig, TurboQuantization,
+    BinaryQuantization, BinaryQuantizationConfig, Distance, Indexes, QuantizationConfig,
+    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedStorage, UpdateOnlyQuantizedChunkedStorageBuilder,
@@ -39,6 +40,7 @@ use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorage
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
 };
+use crate::vector_storage::update_only::VectorToStore;
 
 const DIM: usize = 8;
 
@@ -61,6 +63,19 @@ fn turbo_config() -> QuantizationConfig {
             bits: Some(TurboQuantBitSize::Bits4),
         },
     })
+}
+
+/// The raw-storage config of the dense vector every overlay in these tests shadows.
+fn dense_vector_config() -> VectorDataConfig {
+    VectorDataConfig {
+        size: DIM,
+        distance: Distance::Dot,
+        storage_type: VectorStorageType::ChunkedMmap,
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config: None,
+        datatype: None,
+    }
 }
 
 fn some_vectors(n: usize) -> Vec<Vec<f32>> {
@@ -163,6 +178,8 @@ fn create_empty_overlay(
     UpdateOnlyQuantizedVectors {
         storage,
         config: overlay_config,
+        distance: Distance::Dot,
+        datatype: VectorStorageDatatype::Float32,
     }
 }
 
@@ -174,24 +191,26 @@ fn create_empty_overlay(
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
     let hw_counter = HardwareCounterCell::new();
 
+    fn as_batch(vectors: &[Vec<f32>]) -> impl Iterator<Item = VectorToStore<'_>> {
+        vectors
+            .iter()
+            .map(|vector| VectorToStore::Decoded(VectorRef::from(vector.as_slice())))
+    }
+
     let split = vectors.len() / 2;
     let mut writer = create_empty_overlay(config, path);
-    for (id, vector) in vectors[..split].iter().enumerate() {
-        writer
-            .upsert_vector(id as u32, VectorRef::from(vector.as_slice()), &hw_counter)
-            .unwrap();
-    }
+    writer
+        .append_many(0, as_batch(&vectors[..split]), &hw_counter)
+        .unwrap();
     drop(writer);
 
-    let mut writer = UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, path)
-        .unwrap()
-        .expect("overlay was already created by the first writer");
-    for (offset, vector) in vectors[split..].iter().enumerate() {
-        let id = (split + offset) as u32;
-        writer
-            .upsert_vector(id, VectorRef::from(vector.as_slice()), &hw_counter)
-            .unwrap();
-    }
+    let mut writer =
+        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, path, &dense_vector_config())
+            .unwrap()
+            .expect("overlay was already created by the first writer");
+    writer
+        .append_many(split as u32, as_batch(&vectors[split..]), &hw_counter)
+        .unwrap();
     drop(writer);
 }
 
@@ -351,7 +370,9 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
 #[test]
 fn open_returns_none_when_nothing_persisted() {
     let dir = TempDir::with_prefix("update_only_quantized_no_config").unwrap();
-    let overlay = UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path()).unwrap();
+    let overlay =
+        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path(), &dense_vector_config())
+            .unwrap();
     assert!(overlay.is_none());
 }
 
@@ -368,10 +389,16 @@ fn reopening_a_nonempty_overlay_works() {
     let mut writer = create_empty_overlay(&config, dir.path());
     let vector = some_vectors(1).remove(0);
     writer
-        .upsert_vector(0, VectorRef::from(vector.as_slice()), &hw_counter)
+        .append_many(
+            0,
+            [VectorToStore::Decoded(VectorRef::from(vector.as_slice()))],
+            &hw_counter,
+        )
         .unwrap();
     drop(writer);
 
-    let reopened = UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path()).unwrap();
+    let reopened =
+        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path(), &dense_vector_config())
+            .unwrap();
     assert!(reopened.is_some());
 }
