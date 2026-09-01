@@ -61,12 +61,16 @@ impl<S: UniversalAppend + 'static> EncodedStorageWrite for UpdateOnlyQuantizedCh
         self.upsert_many(id, std::iter::once(vector), hw_counter)
     }
 
-    fn upsert_many<'a>(
+    fn upsert_many<'a, I>(
         &mut self,
         start_id: PointOffsetType,
-        vectors: impl IntoIterator<Item = &'a [u8]>,
+        vectors: I,
         hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<()>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+        I::IntoIter: ExactSizeIterator,
+    {
         // Update-only never rewrites a slot in place (every upsert clones to a fresh one), so
         // `id` is always the current end of the storage — a genuine append, matching what
         // `UpdateOnlyChunkedVectors::append_many` requires of `start_key`.
