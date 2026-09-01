@@ -263,24 +263,10 @@ impl ClusterState {
     pub fn plan_change_aliases(&self, op: &ChangeAliasesOperation) -> StorageResult<Actions> {
         let ChangeAliasesOperation { actions } = op;
 
-        // TODO:
+        // Validate all `actions` before emitting anything, and emit a single `UpdateAliases`,
+        // which the applier writes in one go. So either all `actions` apply, or none of them do.
         //
-        // This is intentionally different from `TableOfContent::update_aliases`.
-        //
-        // `ToC::update_aliases` validates and applies `actions` one by one,
-        // and `AliasPersistence` writes the mapping on every insert, remove and rename.
-        // So if an `AliasOperation` in the middle of the list is rejected, every action
-        // before it is applied and persisted, and every action after it never runs.
-        //
-        // `plan_change_aliases` validates all `actions` first, and emits a single
-        // `UpdateAliases` action, which the applier has to write in one go.
-        // So either all `actions` apply, or none of them do.
-        //
-        // E.g., take a list of two actions:
-        // the first creates alias `new`, the second renames alias `missing`, which does not exist.
-        //
-        // `ToC::update_aliases` would create alias `new`, then return an error.
-        // `plan_change_aliases` would return an error *before* creating alias `new`.
+        // `ToC::update_aliases` does the same, against a copy of the mapping it saves once.
 
         let mut aliases = self.aliases.clone();
 

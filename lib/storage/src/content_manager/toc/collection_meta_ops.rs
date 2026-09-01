@@ -317,6 +317,13 @@ impl TableOfContent {
         // Prevent search on partially switched collections
         let collection_lock = self.collections.write().await;
         let mut alias_lock = self.alias_persistence.write().await;
+
+        // Validate and apply `actions` to a copy of the mapping, and save it once at the end.
+        //
+        // Rejecting an action in the middle of the list must not keep the actions before it,
+        // so nothing is persisted until every action is validated.
+        let mut aliases = alias_lock.state().clone();
+
         for action in operation.actions {
             match action {
                 AliasOperations::CreateAlias(CreateAliasOperation {
@@ -329,12 +336,12 @@ impl TableOfContent {
                     collection_lock.validate_collection_exists(&collection_name)?;
                     collection_lock.validate_collection_not_exists(&alias_name)?;
 
-                    alias_lock.insert(alias_name, collection_name)?;
+                    aliases.insert(alias_name, collection_name);
                 }
                 AliasOperations::DeleteAlias(DeleteAliasOperation {
                     delete_alias: DeleteAlias { alias_name },
                 }) => {
-                    alias_lock.remove(&alias_name)?;
+                    aliases.remove(&alias_name);
                 }
                 AliasOperations::RenameAlias(RenameAliasOperation {
                     rename_alias:
@@ -343,10 +350,17 @@ impl TableOfContent {
                             new_alias_name,
                         },
                 }) => {
-                    alias_lock.rename_alias(&old_alias_name, new_alias_name)?;
+                    if !aliases.rename(&old_alias_name, new_alias_name) {
+                        return Err(StorageError::not_found(format!(
+                            "Alias {old_alias_name} does not exists!"
+                        )));
+                    }
                 }
             };
         }
+
+        alias_lock.apply_state(aliases)?;
+
         Ok(true)
     }
 
