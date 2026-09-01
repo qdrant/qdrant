@@ -72,7 +72,11 @@ async fn build_shard(
     .unwrap()
 }
 
-async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
+async fn retrieve_point(
+    shard: &LocalShard,
+    point_id: u64,
+    deferred_behavior: DeferredBehavior,
+) -> bool {
     let request = Arc::new(PointRequestInternal {
         ids: vec![point_id.into()],
         with_payload: None,
@@ -87,7 +91,7 @@ async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
             &current_runtime,
             None,
             HwMeasurementAcc::new(),
-            DeferredBehavior::VisibleOnly,
+            deferred_behavior,
         )
         .await
         .unwrap();
@@ -129,7 +133,7 @@ async fn test_deferred_points_wait_true() {
 
         // With wait=true, the point must be visible after the upsert returns
         assert!(
-            retrieve_point(&shard, i).await,
+            retrieve_point(&shard, i, DeferredBehavior::VisibleOnly).await,
             "Point {i} should be visible after upsert with wait=true"
         );
     }
@@ -236,8 +240,8 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     a_handle.abort();
 }
 
-/// Test that with `prevent_unoptimized=true` and `wait=false`, points that reach
-/// the indexing threshold are not guaranteed to be visible immediately.
+/// Test that `wait=false` acknowledges updates after writing them to the WAL,
+/// without making assumptions about how quickly the update worker applies them.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_deferred_points_wait_false() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -257,38 +261,32 @@ async fn test_deferred_points_wait_false() {
 
     let hw_acc = HwMeasurementAcc::new();
 
-    // Push all points with wait=false — returns immediately without waiting for application
+    // Push all points with wait=false. The update worker may or may not apply an
+    // operation before this future resumes, but the response status must remain
+    // Acknowledged because the request only waits for the WAL write.
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
         let result = shard
             .update(op.into(), WaitUntil::Wal, None, hw_acc.clone())
-            .await;
-        assert!(
-            result.is_ok(),
-            "Upsert with wait=false should succeed for point {i}"
+            .await
+            .unwrap_or_else(|err| panic!("Upsert with wait=false failed for point {i}: {err}"));
+        assert_eq!(
+            result.status,
+            UpdateStatus::Acknowledged,
+            "Upsert with wait=false should only acknowledge point {i}"
         );
     }
 
-    // Immediately after sending all upserts with wait=false,
-    // count how many points are visible.
-    let mut visible_count = 0;
+    // Drain the worker queue before checking that every acknowledged operation
+    // was applied. WithDeferred includes points that are not query-visible yet,
+    // so this assertion is independent of optimizer scheduling.
+    shard.plunge_async().await.unwrap().await.unwrap();
     for i in 1..=NUM_POINTS {
-        if retrieve_point(&shard, i).await {
-            visible_count += 1;
-        }
+        assert!(
+            retrieve_point(&shard, i, DeferredBehavior::WithDeferred).await,
+            "Acknowledged point {i} should be applied after the update queue drains"
+        );
     }
-
-    // With wait=false the update worker may not have processed all operations yet,
-    // especially once the indexing threshold is reached and optimization is triggered.
-    // We assert that NOT all points are visible, showing that wait=false
-    // does not guarantee point visibility unlike wait=true.
-    eprintln!("Visible points with wait=false: {visible_count}/{NUM_POINTS}");
-    assert!(
-        visible_count < NUM_POINTS as usize,
-        "With wait=false, not all {NUM_POINTS} points should be immediately visible, \
-         but found {visible_count} visible. This means the update worker processed \
-         all operations before we could check — the indexing threshold may be too high."
-    );
 
     shard.stop_gracefully().await;
 }
