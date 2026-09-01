@@ -70,12 +70,6 @@ io-uring = "0.7.12"
 procfs = { version = "0.18", default-features = false }
 thread-priority = "3.0.0"
 
-# tokio-uring uses libc::statx, which is unavailable on x86_64 musl in libc
-# (see https://github.com/tokio-rs/tokio-uring/issues/316). Debug tools are
-# built for x86_64-unknown-linux-musl; async reads fall back to the sync path.
-[target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
-tokio-uring = "0.5.0"
-
 [[bench]]
 name = "bitpacking"
 harness = false

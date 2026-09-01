@@ -14,10 +14,12 @@ use crate::universal_io::{
     Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalIoError,
     UniversalKind, UniversalRead, UniversalReadFs, UserData,
 };
+// Async impls (`UniversalReadAsync` / `UniversalReadFsAsync`) live in
+// `super::async_io`, gated on the wrapped backend being async-capable.
 
 #[derive(Debug, TransparentWrapper)]
 #[repr(transparent)]
-pub struct ReadOnly<S>(S);
+pub struct ReadOnly<S>(pub(super) S);
 
 /// Phantom filesystem handle whose `File` type is `ReadOnly<F::File>`.
 ///
@@ -27,7 +29,7 @@ pub struct ReadOnly<S>(S);
 /// rarely instantiated; callers use [`ReadOnly::open`] with the
 /// underlying `&S::Fs` directly.
 #[derive(Clone)]
-pub struct ReadOnlyFs<F>(F);
+pub struct ReadOnlyFs<F>(pub(super) F);
 
 impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -67,16 +69,6 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
     ) -> UioResult<Self::File> {
         debug_assert!(!options.writeable);
         Ok(ReadOnly(self.0.open(path, options, extra)?))
-    }
-
-    async fn open_async(
-        &self,
-        path: std::path::PathBuf,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Self::File> {
-        debug_assert!(!options.writeable);
-        Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
     }
 }
 
@@ -151,16 +143,6 @@ where
         align: usize,
     ) -> UioResult<ACow<'_>> {
         self.0.read_bytes(range, access_pattern, align)
-    }
-
-    #[inline]
-    fn read_bytes_async<P: AccessPattern>(
-        &self,
-        range: Range<u64>,
-        access_pattern: P,
-        align: usize,
-    ) -> impl Future<Output = UioResult<ACow<'_>>> {
-        self.0.read_bytes_async(range, access_pattern, align)
     }
 
     #[inline]

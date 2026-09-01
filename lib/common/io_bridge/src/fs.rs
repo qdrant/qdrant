@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bytes::Bytes;
 use common::universal_io::{
@@ -112,15 +112,5 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
             BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
                 .with_writeable(options.writeable),
         )
-    }
-
-    async fn open_async(
-        &self,
-        path: PathBuf,
-        options: OpenOptions,
-        extra: (),
-    ) -> UioResult<BlobFile<A>> {
-        // BlobFile does not populate on open.
-        self.open(path, options, extra)
     }
 }

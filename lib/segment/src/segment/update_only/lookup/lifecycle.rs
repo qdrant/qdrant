@@ -6,7 +6,8 @@ use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedFs, CachedReadFs, Populate, UniversalRead, UniversalReadFs, read_json_via,
+    CachedFs, CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+    read_json_via,
 };
 
 use super::LookupSegment;
@@ -37,7 +38,7 @@ const WRITER_POPULATE: Populate = Populate::No;
 ///
 /// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
 /// config the writer never opens.
-fn build_cached_fs<Fs: UniversalReadFs>(
+fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
@@ -53,7 +54,7 @@ fn build_cached_fs<Fs: UniversalReadFs>(
     Ok(cached_fs)
 }
 
-impl<S: UniversalRead + 'static> LookupSegment<S> {
+impl<S: UniversalRead<Fs: UniversalReadFsAsync> + 'static> LookupSegment<S> {
     /// Open the segment over a per-segment [`CachedFs`]: every file the
     /// components will read is prefetched concurrently
     /// ([`preopen`](Self::preopen)) before the component opens consume it, so

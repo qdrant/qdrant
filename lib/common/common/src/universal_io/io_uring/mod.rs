@@ -2,8 +2,6 @@ mod error;
 mod pipeline;
 mod pool;
 mod runtime;
-#[cfg(not(target_env = "musl"))]
-mod tokio_bridge;
 
 #[cfg(test)]
 mod tests;
@@ -170,17 +168,12 @@ impl UniversalReadFs for IoUringFs {
             direct_io,
         })
     }
-
-    fn open_async(
-        &self,
-        path: std::path::PathBuf,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> impl Future<Output = UioResult<Self::File>> + '_ {
-        // IoUringFile does not handle `populate` parameter
-        std::future::ready(self.open(&path, options, extra))
-    }
 }
+
+// Deliberately no `UniversalReadFsAsync`/`UniversalReadAsync` impls: io_uring
+// is not used as a read-only-segment backend, and its previous async surface
+// (a dedicated `tokio_uring` bridge thread) was a stopgap. A real async path,
+// if ever needed, belongs on the submission pool.
 
 impl UniversalRead for IoUringFile {
     type Fs = IoUringFs;
@@ -213,24 +206,6 @@ impl UniversalRead for IoUringFile {
         let mut bytes = avec_rt!([align] | 0u8; len);
         self.file.read_exact_at(&mut bytes, range.start)?;
         Ok(ACow::Owned(bytes))
-    }
-
-    async fn read_bytes_async<P: AccessPattern>(
-        &self,
-        range: Range<u64>,
-        _access_pattern: P,
-        align: usize,
-    ) -> UioResult<ACow<'_>> {
-        #[cfg(not(target_env = "musl"))]
-        {
-            return Ok(ACow::Owned(
-                tokio_bridge::read_bytes_async(self, range, align).await?,
-            ));
-        }
-        #[cfg(target_env = "musl")]
-        {
-            self.read_bytes::<P>(range, _access_pattern, align)
-        }
     }
 
     fn len<T>(&self) -> UioResult<u64> {

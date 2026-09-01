@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::StorageVersion;
-use common::universal_io::{UniversalReadFs, read_json_via};
+use common::universal_io::{UniversalReadFs, UniversalReadFsAsync, read_json_via};
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -79,7 +79,7 @@ impl<S: UniversalReadExt + 'static> SegmentConfigReloadDiff<S> {
     }
 }
 
-impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Re-read the on-disk config and compute its difference against the
     /// in-memory config, eagerly loading every new or changed component.
     ///

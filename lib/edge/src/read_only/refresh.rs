@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::IsNotFound as _;
+use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::UniversalReadExt;
@@ -40,7 +40,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// and the next refresh replays its unapplied delta (see `pending_reload`).
     pub fn refresh(&self) -> OperationResult<()>
     where
-        S::Fs: Send + Sync + Clone + 'static,
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         let hw_counter = HardwareCounterCell::disposable();
         self.refresh_with(&hw_counter)
@@ -49,7 +49,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// [`refresh`](Self::refresh) with a caller-supplied hardware counter.
     pub fn refresh_with(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
-        S::Fs: Send + Sync + Clone + 'static,
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         let _refresh_guard = self.refresh_lock.lock();
 
@@ -85,7 +85,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// manifest still lists it escalates. Any other reload failure escalates after the loop.
     fn refresh_attempt(&self, hw_counter: &HardwareCounterCell) -> OperationResult<RefreshOutcome>
     where
-        S::Fs: Send + Sync + Clone + 'static,
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         // 1. Snapshot the current on-disk segment set (backend-specific; see `SegmentEnumerator`).
         let on_disk = self.enumerator.list_segments()?;

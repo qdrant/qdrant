@@ -181,7 +181,6 @@ fn drain_pipeline<R: DiskCacheRemote>(
     tests_mod       R               cfg_predicate               _PREFILL;
     [tests_prefill] [MmapFile]      [cfg(all())]                [true];
     [tests_mmap]    [MmapFile]      [cfg(all())]                [false];
-    [tests_uring]   [IoUringFile]   [cfg(target_os = "linux")]  [false];
 )]
 #[cfg_predicate]
 #[cfg(test)]
@@ -887,7 +886,10 @@ mod tests_async {
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
-    use crate::universal_io::{ListedFile, MmapFs, UioResult, UniversalKind, UserData};
+    use crate::universal_io::{
+        ListedFile, MmapFs, UioResult, UniversalKind, UniversalReadAsync, UniversalReadFsAsync,
+        UserData,
+    };
 
     fn sync_read_error() -> UniversalIoError {
         UniversalIoError::Io(std::io::Error::other("sync read on async-only remote"))
@@ -972,7 +974,9 @@ mod tests_async {
                 async_reads: AtomicUsize::new(0),
             })
         }
+    }
 
+    impl UniversalReadFsAsync for AsyncOnlyFs {
         async fn open_async(
             &self,
             path: PathBuf,
@@ -1008,18 +1012,6 @@ mod tests_async {
             Err(sync_read_error())
         }
 
-        async fn read_bytes_async<P: AccessPattern>(
-            &self,
-            range: Range<u64>,
-            access_pattern: P,
-            align: usize,
-        ) -> UioResult<ACow<'_>> {
-            // Suspend once so concurrent reads interleave like a real async remote.
-            tokio::task::yield_now().await;
-            self.async_reads.fetch_add(1, Ordering::Relaxed);
-            self.inner.read_bytes(range, access_pattern, align)
-        }
-
         fn len<T>(&self) -> UioResult<u64> {
             self.inner.len::<T>()
         }
@@ -1038,6 +1030,20 @@ mod tests_async {
 
         fn kind() -> UniversalKind {
             UniversalKind::Mmap
+        }
+    }
+
+    impl UniversalReadAsync for AsyncOnlyRemote {
+        async fn read_bytes_async<P: AccessPattern>(
+            &self,
+            range: Range<u64>,
+            access_pattern: P,
+            align: usize,
+        ) -> UioResult<ACow<'_>> {
+            // Suspend once so concurrent reads interleave like a real async remote.
+            tokio::task::yield_now().await;
+            self.async_reads.fetch_add(1, Ordering::Relaxed);
+            self.inner.read_bytes(range, access_pattern, align)
         }
     }
 

@@ -16,6 +16,7 @@
 //! observe the appended bytes right away; the appended blocks themselves
 //! fault in from the remote on first read.
 
+mod async_io;
 mod fs;
 mod pipeline;
 #[cfg(test)]
@@ -209,15 +210,6 @@ where
         align: usize,
     ) -> UioResult<ACow<'_>> {
         self.cache.read_bytes(range, access_pattern, align)
-    }
-
-    fn read_bytes_async<P: AccessPattern>(
-        &self,
-        range: Range<u64>,
-        access_pattern: P,
-        align: usize,
-    ) -> impl Future<Output = UioResult<ACow<'_>>> {
-        self.cache.read_bytes_async(range, access_pattern, align)
     }
 
     fn read_whole<T: common::universal_io::Item>(&self) -> UioResult<std::borrow::Cow<'_, [T]>> {

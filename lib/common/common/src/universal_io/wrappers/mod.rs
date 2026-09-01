@@ -1,3 +1,4 @@
+mod async_io;
 mod buffered_update;
 mod read_only;
 mod stored_struct;

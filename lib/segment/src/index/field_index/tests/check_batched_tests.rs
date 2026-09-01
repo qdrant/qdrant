@@ -2,8 +2,6 @@ use common::bitvec::BitVec;
 use common::condition_checker::{ConditionChecker, assert_congruence};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-#[cfg(target_os = "linux")]
-use common::universal_io::IoUringFs;
 use common::universal_io::MmapFs;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -233,16 +231,6 @@ fn check_index<T: Serialize>(
             let index = index.unwrap().unwrap();
             let checker = index.condition_checker(condition, HwMeasurementAcc::new());
             assert_congruence(&checker.unwrap().unwrap(), n as _, &mut rng);
-
-            #[cfg(target_os = "linux")]
-            {
-                let index = ReadOnlyFieldIndex::open(
-                    &IoUringFs, dir, &field, schema, &r#type, n, &deleted, None,
-                );
-                let index = index.unwrap().unwrap();
-                let checker = index.condition_checker(condition, HwMeasurementAcc::new());
-                assert_congruence(&checker.unwrap().unwrap(), n, &mut rng);
-            }
         }
     }
 }

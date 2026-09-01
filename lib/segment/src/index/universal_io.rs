@@ -1,5 +1,3 @@
-#[cfg(target_os = "linux")]
-use common::universal_io::IoUringFile;
 #[cfg(test)]
 use common::universal_io::ReadOnly;
 use common::universal_io::{DiskCache, DiskCacheRemote, MmapFile, UniversalRead};
@@ -62,23 +60,6 @@ impl UniversalReadExt for MmapFile {
     fn condition_checker_numeric_float   <'a>(i: RangeCC<'a, Self, FloatPayloadType>) -> EnumCC<'a> { EnumCC::NumericFloatRoMmap  (i) }
     fn condition_checker_numeric_int     <'a>(i: RangeCC<'a, Self, IntPayloadType>)   -> EnumCC<'a> { EnumCC::NumericIntRoMmap    (i) }
     fn condition_checker_numeric_uuid    <'a>(i: RangeCC<'a, Self, UuidIntType>)      -> EnumCC<'a> { EnumCC::NumericUuidRoMmap   (i) }
-}
-
-#[cfg(target_os = "linux")]
-#[rustfmt::skip]
-impl UniversalReadExt for IoUringFile {
-    fn condition_checker_bool            <'a>(i: BoolCC<'a, Self>)                    -> EnumCC<'a> { EnumCC::BoolRoIoUring          (i) }
-    fn condition_checker_full_text       <'a>(i: FullTextCC<'a, Self>)                -> EnumCC<'a> { EnumCC::FullTextRoIoUring      (i) }
-    fn condition_checker_geo_bounding_box<'a>(i: GeoCC<'a, Self, GeoBoundingBox>)     -> EnumCC<'a> { EnumCC::GeoBoundingBoxRoIoUring(i) }
-    fn condition_checker_geo_polygon     <'a>(i: GeoCC<'a, Self, PolygonWrapper>)     -> EnumCC<'a> { EnumCC::GeoPolygonRoIoUring    (i) }
-    fn condition_checker_geo_radius      <'a>(i: GeoCC<'a, Self, GeoRadius>)          -> EnumCC<'a> { EnumCC::GeoRadiusRoIoUring     (i) }
-    fn condition_checker_map_int         <'a>(i: MapCC<'a, Self, IntPayloadType>)     -> EnumCC<'a> { EnumCC::MapIntRoIoUring        (i) }
-    fn condition_checker_map_str         <'a>(i: MapCC<'a, Self, str>)                -> EnumCC<'a> { EnumCC::MapStrRoIoUring        (i) }
-    fn condition_checker_map_uuid        <'a>(i: MapCC<'a, Self, UuidIntType>)        -> EnumCC<'a> { EnumCC::MapUuidRoIoUring       (i) }
-    fn condition_checker_null            <'a>(i: NullCC<'a, Self>)                    -> EnumCC<'a> { EnumCC::NullRoIoUring          (i) }
-    fn condition_checker_numeric_float   <'a>(i: RangeCC<'a, Self, FloatPayloadType>) -> EnumCC<'a> { EnumCC::NumericFloatRoIoUring  (i) }
-    fn condition_checker_numeric_int     <'a>(i: RangeCC<'a, Self, IntPayloadType>)   -> EnumCC<'a> { EnumCC::NumericIntRoIoUring    (i) }
-    fn condition_checker_numeric_uuid    <'a>(i: RangeCC<'a, Self, UuidIntType>)      -> EnumCC<'a> { EnumCC::NumericUuidRoIoUring   (i) }
 }
 
 // TODO: add enum variants for these

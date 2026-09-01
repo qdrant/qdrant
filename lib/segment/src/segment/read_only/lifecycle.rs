@@ -5,7 +5,9 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFs, read_json_via};
+use common::universal_io::{
+    CachedFs, CachedReadFs, Populate, UniversalReadFs, UniversalReadFsAsync, read_json_via,
+};
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -31,7 +33,7 @@ use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
 /// Build a per-segment [`CachedReadFs`] over `segment_path`. Schedules statically known files.
-fn build_cached_fs<Fs: UniversalReadFs>(
+fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
@@ -73,7 +75,7 @@ pub(super) fn sparse_storage_populate(sparse_vector_config: &SparseVectorDataCon
     }
 }
 
-impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Open the segment over a per-segment [`CachedReadFs`]: known files are
     /// prefetched before the listing snapshot is taken (see
     /// [`build_cached_fs`]), and probes for optional files resolve against
@@ -352,7 +354,7 @@ pub struct StagedSegmentOpen<'a, S: UniversalReadExt + 'static> {
     load_profile: Option<&'a LoadProfile>,
 }
 
-impl<'a, S: UniversalReadExt + 'static> StagedSegmentOpen<'a, S> {
+impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentOpen<'a, S> {
     /// Drive the staged fetches to completion. Detached (`use<S>`), so many
     /// segments' waits can be collected and awaited together.
     pub fn wait(&self) -> impl Future<Output = ()> + Send + 'static + use<S> {
@@ -384,7 +386,7 @@ impl<'a, S: UniversalReadExt + 'static> StagedSegmentOpen<'a, S> {
     }
 }
 
-impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     /// `load_profile` mirrors the preopen's per-vector placement decisions.

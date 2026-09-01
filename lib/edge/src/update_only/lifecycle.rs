@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use common::universal_io::{MmapFile, MmapFs, UniversalAppend, UniversalReadFs};
+use common::universal_io::{
+    MmapFile, MmapFs, UniversalAppend, UniversalReadFs, UniversalReadFsAsync,
+};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
@@ -41,7 +43,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         enumerator: impl SegmentEnumerator + 'static,
     ) -> OperationResult<Self>
     where
-        S::Fs: UniversalReadFs<File = S>,
+        S::Fs: UniversalReadFs<File = S> + UniversalReadFsAsync,
     {
         // Sized like the search pools: over-provisioned relative to the CPU
         // count, since on a remote backend the threads mostly wait on IO.
