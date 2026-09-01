@@ -193,8 +193,7 @@ where
                                 Ok(new_remote
                                     .read_bytes_async(byte_range, Sequential, REMOTE_READ_ALIGNMENT)
                                     .await?
-                                    .try_cast_bytemuck::<u8>()?
-                                    .into_owned())
+                                    .into_owned(1))
                             };
                             let result = fetch().await.map(|fetched| (new_remote, fetched));
 

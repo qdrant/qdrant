@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use aligned_vec::{AVec, RuntimeAlign};
 use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
@@ -114,7 +115,7 @@ pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     /// `future` completes.
     Tail {
         future: Shared<BoxFuture<'static, ()>>,
-        data: futures::channel::oneshot::Receiver<UioResult<(R, Vec<u8>)>>,
+        data: futures::channel::oneshot::Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
         blocks_range: Range<u32>,
         target_len: u64,
     },
