@@ -1,6 +1,6 @@
 //! Filesystem handle producing [`CachedBlobFile`]s.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use common::universal_io::{
@@ -30,8 +30,8 @@ pub struct CachedBlobFsContext<C> {
 /// stays read-only, and the writeable half lives in the combined handle.
 #[derive(Clone)]
 pub struct CachedBlobFs<A: AsyncRead + Clone> {
-    cache_fs: DiskCacheFs<BlobFile<A>>,
-    blob_fs: BlobFs<A>,
+    pub(super) cache_fs: DiskCacheFs<BlobFile<A>>,
+    pub(super) blob_fs: BlobFs<A>,
 }
 
 impl<A: AsyncRead + Clone> CachedBlobFs<A> {
@@ -105,25 +105,6 @@ where
         let cache = self.cache_fs.open(path.as_ref(), cache_options, extra)?;
 
         let remote = self.blob_fs.open(path.as_ref(), options, ())?;
-
-        Ok(CachedBlobFile::new(cache, remote, options.writeable))
-    }
-
-    async fn open_async(
-        &self,
-        path: PathBuf,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Self::File> {
-        let mut cache_options = options;
-        cache_options.writeable = false;
-
-        let cache = self
-            .cache_fs
-            .open_async(path.clone(), cache_options, extra)
-            .await?;
-
-        let remote = self.blob_fs.open_async(path, options, ()).await?;
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
     }

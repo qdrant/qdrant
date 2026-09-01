@@ -8,8 +8,8 @@ use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
-use crate::universal_io::simple_disk_cache::{REMOTE_OPEN_OPTIONS, to_block_range};
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
     UniversalRead, UniversalReadFileOps, UniversalReadFs,
@@ -27,11 +27,11 @@ pub struct DiskCacheFsContext<C> {
 #[derive(Default, Debug)]
 pub struct DiskCacheFsOpenExtra<RemoteExtra: OpenExtra> {
     /// Extra options passed to the remote
-    remote_extra: RemoteExtra,
+    pub(super) remote_extra: RemoteExtra,
     /// The length of the file, if known
-    known_len: Option<u64>,
+    pub(super) known_len: Option<u64>,
     /// Entity tag of the remote object, if known
-    known_etag: Option<String>,
+    pub(super) known_etag: Option<String>,
 }
 
 impl<RemoteExtra: OpenExtra> OpenExtra for DiskCacheFsOpenExtra<RemoteExtra> {
@@ -69,8 +69,8 @@ pub struct DiskCacheFs<R>
 where
     R: UniversalRead,
 {
-    config: Arc<DiskCacheConfig>,
-    remote_fs: R::Fs,
+    pub(super) config: Arc<DiskCacheConfig>,
+    pub(super) remote_fs: R::Fs,
 }
 
 impl<R> Clone for DiskCacheFs<R>
@@ -107,7 +107,7 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         Self { config, remote_fs }
     }
 
-    fn open_remote(
+    pub(super) fn open_remote(
         &self,
         path: impl AsRef<Path>,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
@@ -153,7 +153,7 @@ where
 ///
 /// The name carries no state across opens: a mirror is truncated when its
 /// [`LocalState`] materializes and removed when its `DiskCache` is dropped.
-fn unique_local_path(mut path: PathBuf) -> PathBuf {
+pub(super) fn unique_local_path(mut path: PathBuf) -> PathBuf {
     static NEXT_MIRROR_ID: AtomicU64 = AtomicU64::new(0);
     let id = NEXT_MIRROR_ID.fetch_add(1, Ordering::Relaxed);
     // Process id disambiguates processes sharing a local cache dir.
@@ -271,76 +271,5 @@ where
         }
 
         Ok(cache)
-    }
-
-    async fn open_async(
-        &self,
-        path: PathBuf,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Self::File> {
-        let populate = if crate::low_memory::low_memory_mode().skip_populate() {
-            Populate::No
-        } else {
-            options.populate
-        };
-
-        let local_path = unique_local_path(self.config.local_path_for(path.as_ref())?);
-
-        let remote_extra = extra.remote_extra.clone().with_prevent_caching(true);
-
-        let state = match populate {
-            Populate::Auto | Populate::No => match extra.known_len {
-                Some(len) => State::ready(
-                    self.open_remote(&path, remote_extra.clone())?,
-                    LocalState::new(&local_path, len, options)?,
-                ),
-                None => State::Uninit,
-            },
-            Populate::PreferBackground | Populate::Blocking => {
-                let remote = self.open_remote(&path, remote_extra.clone())?;
-                let len = match extra.known_len {
-                    Some(len) => len,
-                    None => remote.len::<u8>()?,
-                };
-                let byte_range = 0..len;
-
-                let content = remote
-                    .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await?;
-
-                let local = LocalState::new(&local_path, len, options)?;
-                unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
-                State::ready(remote, local)
-            }
-            Populate::Partial(read_range) => {
-                let remote = self.open_remote(&path, remote_extra.clone())?;
-                let file_len = match extra.known_len {
-                    Some(len) => len,
-                    None => remote.len::<u8>()?,
-                };
-                let byte_range = read_range.into_byte_range::<u8>();
-                let (block_range, fetch_range) =
-                    block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
-
-                let content = remote
-                    .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await?;
-
-                let local = LocalState::new(&local_path, file_len, options)?;
-                unsafe { local.write_mmap_bytes(&content, block_range) };
-                State::ready(remote, local)
-            }
-        };
-
-        Ok(DiskCache::new(
-            self.remote_fs.clone(),
-            remote_extra,
-            path,
-            local_path,
-            options,
-            state,
-            extra.known_etag,
-        ))
     }
 }

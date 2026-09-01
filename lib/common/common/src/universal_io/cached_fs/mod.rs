@@ -9,11 +9,13 @@ use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
 
+mod async_io;
+
 use crate::mmap::AdviceSetting;
 use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFileOps, UniversalReadFs,
+    UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync,
 };
 
 #[derive(Clone, Debug)]
@@ -198,7 +200,11 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFs> CachedReadFs for CachedFs<Fs> {
+/// The one impl with the `UniversalReadFsAsync` bound: `schedule_open` /
+/// `reschedule_open` park the inner filesystem's `open_async` futures in the
+/// prefetch pool. Everything else on `CachedFs` (including consuming parked
+/// futures in `open`) works over a plain `UniversalReadFs`.
+impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     /// Take a LIST snapshot of the filesystem and drop prefetched files.
     fn cache_file_info(&mut self) -> UioResult<()> {
         // List all files
@@ -445,51 +451,5 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             None => extra,
         };
         self.fs.open(path, options, extra)
-    }
-
-    async fn open_async(
-        &self,
-        path: PathBuf,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Self::File> {
-        if options.writeable {
-            return Err(UniversalIoError::Uninitialized {
-                description:
-                    "CachedReadFs only supports read-only files, writeable option is not allowed"
-                        .to_string(),
-            });
-        }
-
-        let scheduled_file = self.files_prefetched.lock().remove(&path);
-        if let Some(file) = scheduled_file {
-            return match file {
-                ScheduledFile::Future(future) => future.await,
-                ScheduledFile::Ready(result) => result,
-                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
-                    since: self.file_info(&path).and_then(|info| info.last_modified),
-                    path,
-                }),
-            };
-        }
-
-        // With a snapshot, unlisted paths fail locally — probing for
-        // optional files never reaches the inner filesystem.
-        if let Some(files_info) = &self.files_info
-            && !files_info.contains_key(&path)
-        {
-            return Err(UniversalIoError::NotFound { path });
-        }
-
-        // The path was never scheduled for prefetch. If a snapshot was taken it
-        // still carries the file's size, so thread it into the open as a known
-        // length — this lets the backend skip a remote `len`/HEAD round-trip
-        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
-        // snapshot this is a plain cache-bypass open.
-        let extra = match self.file_info(&path) {
-            Some(info) => extra.with_known_len(info.size),
-            None => extra,
-        };
-        self.fs.open_async(path, options, extra).await
     }
 }
