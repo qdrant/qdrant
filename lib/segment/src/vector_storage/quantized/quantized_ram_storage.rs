@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
 use common::prefetch::{
-    MAX_UNPREFETCHED_BATCH, prefetch_slice, prefetch_slice_l2, prefetch_windows,
+    MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
+    prefetch_windows,
 };
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OneshotFile, UniversalRead, UniversalReadFs};
@@ -130,10 +131,15 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) {
-        // Tiny batches gain nothing from hints, and dense-ascending batches
-        // stream — the hardware prefetcher already covers them and software
+        // Tiny batches gain nothing from hints, cache-resident storages have
+        // nothing to fetch, and dense-ascending batches stream — in all three
+        // the hardware prefetcher already covers the access and software
         // prefetch is pure overhead.
-        if offsets.len() <= MAX_UNPREFETCHED_BATCH || is_read_with_prefetch_efficient(offsets) {
+        let storage_bytes = self.vectors.len() * self.vectors.vector_size_bytes();
+        if offsets.len() <= MAX_UNPREFETCHED_BATCH
+            || storage_bytes < MIN_PREFETCH_STORAGE_BYTES
+            || is_read_with_prefetch_efficient(offsets)
+        {
             default_for_each_batch(self, offsets, callback);
             return;
         }

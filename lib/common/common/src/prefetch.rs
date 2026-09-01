@@ -25,6 +25,17 @@ const FAR_BYTES: usize = 4096;
 /// common batch sizes (HNSW neighbor expansions) once the window is deep.
 pub const MAX_UNPREFETCHED_BATCH: usize = 2;
 
+/// Smallest per-segment quantized storage that still benefits from prefetch
+/// A storage below this size stays resident in a core's private
+/// L2 (and low L3), so its vectors are already hot when scored and the hints
+/// only add issue overhead. Measured: a cache-resident binary/128 storage
+/// (~0.4 MB per segment) regressed ~2-4% under contention across Zen 2/3 and
+/// Intel, while its ~3.2 MB per-segment 1024-dim counterpart, which overflows
+/// L2, kept the full win. 1 MiB sits above the 512 KB-1 MB L2 of common server
+/// cores and below that overflow point. Compared against the storage's own
+/// byte size, so it scales with how points are split across segments.
+pub const MIN_PREFETCH_STORAGE_BYTES: usize = 1024 * 1024; // 1Mb
+
 /// Near (L1, [`prefetch_slice`]) and far (L2, [`prefetch_slice_l2`]) prefetch
 /// window sizes in vectors, covering a constant [`NEAR_BYTES`] / [`FAR_BYTES`]
 /// of lead — bytes, not vector counts, map to the time a fetch has to
