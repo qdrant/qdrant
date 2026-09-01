@@ -161,6 +161,60 @@ impl FromIterator<TokenId> for Document {
 }
 
 #[derive(Debug, Clone)]
+pub struct FuzzyDocument(Vec<TokenSet>);
+
+impl FuzzyDocument {
+    pub fn new(groups: Vec<TokenSet>) -> Self {
+        Self(groups)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn groups(&self) -> &[TokenSet] {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> Vec<TokenSet> {
+        self.0
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &TokenSet> {
+        self.0.iter()
+    }
+
+    /// Collect all token IDs across every group into a single `TokenSet`.
+    pub fn all_tokens(&self) -> TokenSet {
+        self.0
+            .iter()
+            .flat_map(|group| group.tokens().iter().copied())
+            .collect()
+    }
+
+    /// Checks if a contiguous window of this document's groups matches the exact [`Document`].
+    pub fn matches_document(&self, doc: &Document) -> bool {
+        let tokens = doc.tokens();
+        let groups = self.groups();
+
+        if tokens.len() < groups.len() || tokens.is_empty() || groups.is_empty() {
+            return false;
+        }
+
+        tokens.windows(groups.len()).any(|window| {
+            window
+                .iter()
+                .zip(groups.iter())
+                .all(|(token_id, group)| group.contains(token_id))
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ParsedQuery {
     /// All these tokens must be present in the document, regardless of order.
     ///

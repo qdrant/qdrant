@@ -107,6 +107,8 @@ charabia = { version = "0.10.0", default-features = false, features = [
     "chinese-segmentation",
     "chinese-normalization",
 ] }
+strsim = "0.11.1"
+fst = { version = "0.4.7", features = ["levenshtein"]}
 
 blobstore = { path = "../blobstore" }
 
