@@ -2,6 +2,7 @@ mod error;
 mod pipeline;
 mod pool;
 mod runtime;
+#[cfg(not(target_env = "musl"))]
 mod tokio_bridge;
 
 #[cfg(test)]
@@ -220,9 +221,16 @@ impl UniversalRead for IoUringFile {
         _access_pattern: P,
         align: usize,
     ) -> UioResult<ACow<'_>> {
-        Ok(ACow::Owned(
-            tokio_bridge::read_bytes_async(self, range, align).await?,
-        ))
+        #[cfg(not(target_env = "musl"))]
+        {
+            return Ok(ACow::Owned(
+                tokio_bridge::read_bytes_async(self, range, align).await?,
+            ));
+        }
+        #[cfg(target_env = "musl")]
+        {
+            self.read_bytes::<P>(range, _access_pattern, align)
+        }
     }
 
     fn len<T>(&self) -> UioResult<u64> {
