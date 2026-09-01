@@ -63,14 +63,14 @@ pub enum VectorToStore<'a> {
 ///
 /// [1]: crate::vector_storage::VectorStorageEnum
 pub enum UpdateOnlyVectorStorage<S: UniversalAppend + 'static> {
-    Dense(Box<UpdateOnlyDenseVectorStorage<VectorElementType, S>>),
-    DenseByte(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeByte, S>>),
-    DenseHalf(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeHalf, S>>),
-    MultiDense(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementType, S>>),
-    MultiDenseByte(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeByte, S>>),
-    MultiDenseHalf(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    Turbo(Box<UpdateOnlyTurboVectorStorage<S>>),
-    MultiTurbo(Box<UpdateOnlyMultiTurboVectorStorage<S>>),
+    Dense(Box<UpdateOnlyDenseVectorStorage<VectorElementType>>),
+    DenseByte(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeByte>>),
+    DenseHalf(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeHalf>>),
+    MultiDense(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementType>>),
+    MultiDenseByte(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeByte>>),
+    MultiDenseHalf(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeHalf>>),
+    Turbo(Box<UpdateOnlyTurboVectorStorage>),
+    MultiTurbo(Box<UpdateOnlyMultiTurboVectorStorage>),
     Sparse(Box<UpdateOnlySparseVectorStorage<S>>),
 }
 
@@ -80,7 +80,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     ///
     /// Fails for a storage type an update-only segment cannot have: the mmap
     /// ones are immutable, built whole rather than appended to.
-    pub fn open(fs: S::Fs, path: &Path, config: &VectorDataConfig) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, path: &Path, config: &VectorDataConfig) -> OperationResult<Self> {
         match config.storage_type {
             VectorStorageType::ChunkedMmap | VectorStorageType::InRamChunkedMmap => {}
             storage_type @ (VectorStorageType::Mmap
