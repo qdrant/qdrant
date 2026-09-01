@@ -58,3 +58,8 @@ tempfile = { workspace = true }
 
 [build-dependencies]
 uniffi = { version = "0.32", features = ["build"] }
+
+[dev-dependencies]
+# Integration tests fabricate/mutate scratch shard dirs; the workspace bans bare
+# `std::fs` (clippy `disallowed_methods`) in favour of `fs_err`.
+fs-err = { workspace = true }
