@@ -8,7 +8,9 @@ use collection::shards::shard::PeerId;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
-use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff, NodeContext};
+use crate::content_manager::consensus_state_machine::{
+    Action, NodeContext, apply_collection_config_diffs,
+};
 use crate::content_manager::toc::apply_alias_actions;
 
 type Actions = Vec<Action>;
@@ -154,9 +156,7 @@ impl ClusterState {
             .config
             .clone();
 
-        // One action per field diff, in the order `ToC::update_collection` applies them.
-        //
-        // `CollectionConfigDiff` merges a diff the same way `Collection::update_*` methods do.
+        // One action per diff `apply_collection_config_diffs` applies.
         //
         // Every diff kind is idempotent, except `Metadata` on a collection that has none.
         //
@@ -171,46 +171,13 @@ impl ClusterState {
         //
         // `replay_may_diverge` in `tests/replay.rs` exempts it.
 
-        let UpdateCollection {
-            vectors,
-            optimizers_config,
-            params,
-            hnsw_config,
-            quantization_config,
-            sparse_vectors,
-            strict_mode_config,
-            metadata,
-        } = update_collection;
-
-        let diffs = [
-            optimizers_config
-                .clone()
-                .map(CollectionConfigDiff::Optimizers),
-            params.clone().map(CollectionConfigDiff::Params),
-            (*hnsw_config).map(CollectionConfigDiff::Hnsw),
-            vectors.clone().map(CollectionConfigDiff::Vectors),
-            quantization_config
-                .clone()
-                .map(CollectionConfigDiff::Quantization),
-            sparse_vectors
-                .clone()
-                .map(CollectionConfigDiff::SparseVectors),
-            strict_mode_config
-                .clone()
-                .map(CollectionConfigDiff::StrictMode),
-            metadata.clone().map(CollectionConfigDiff::Metadata),
-        ];
-
-        let mut planned = Actions::new();
-
-        for diff in diffs.into_iter().flatten() {
-            diff.apply(&mut config)?;
-
-            planned.push(Action::UpdateCollectionConfig {
+        let planned = apply_collection_config_diffs(&mut config, update_collection)?
+            .into_iter()
+            .map(|diff| Action::UpdateCollectionConfig {
                 collection: collection.clone(),
                 diff: Box::new(diff),
-            });
-        }
+            })
+            .collect();
 
         Ok(planned)
     }

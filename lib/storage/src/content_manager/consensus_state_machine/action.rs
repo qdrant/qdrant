@@ -15,6 +15,7 @@ use segment::types::{
 };
 use shard::operations::vector_name_ops::VectorNameConfig;
 
+use crate::content_manager::collection_meta_ops::UpdateCollection;
 #[cfg(feature = "staging")]
 use crate::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use crate::content_manager::errors::StorageResult;
@@ -185,4 +186,54 @@ impl CollectionConfigDiff {
 
         Ok(())
     }
+}
+
+/// Diffs `update` carries, in the order `TableOfContent::update_collection` applies them, each
+/// applied to `config`.
+///
+/// Only `Vectors` and `SparseVectors` can be rejected, both for naming a vector the collection
+/// does not have. `config` holds a partial result when that happens, so the caller has to work
+/// on a copy.
+pub fn apply_collection_config_diffs(
+    config: &mut CollectionConfigInternal,
+    update: &UpdateCollection,
+) -> StorageResult<Vec<CollectionConfigDiff>> {
+    let UpdateCollection {
+        vectors,
+        optimizers_config,
+        params,
+        hnsw_config,
+        quantization_config,
+        sparse_vectors,
+        strict_mode_config,
+        metadata,
+    } = update;
+
+    let diffs = [
+        optimizers_config
+            .clone()
+            .map(CollectionConfigDiff::Optimizers),
+        params.clone().map(CollectionConfigDiff::Params),
+        (*hnsw_config).map(CollectionConfigDiff::Hnsw),
+        vectors.clone().map(CollectionConfigDiff::Vectors),
+        quantization_config
+            .clone()
+            .map(CollectionConfigDiff::Quantization),
+        sparse_vectors
+            .clone()
+            .map(CollectionConfigDiff::SparseVectors),
+        strict_mode_config
+            .clone()
+            .map(CollectionConfigDiff::StrictMode),
+        metadata.clone().map(CollectionConfigDiff::Metadata),
+    ];
+
+    let mut applied = Vec::new();
+
+    for diff in diffs.into_iter().flatten() {
+        diff.apply(config)?;
+        applied.push(diff);
+    }
+
+    Ok(applied)
 }
