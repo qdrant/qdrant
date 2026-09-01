@@ -47,6 +47,7 @@ pprof = { workspace = true }
 [dependencies]
 io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 blink-alloc = { workspace = true }
+futures = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 fs-err = { workspace = true }

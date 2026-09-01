@@ -6666,6 +6666,7 @@ dependencies = [
  "fnv",
  "fs-err",
  "fs_extra",
+ "futures",
  "geo",
  "geohash",
  "gpu",
