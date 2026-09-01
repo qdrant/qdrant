@@ -40,9 +40,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// is a config from before those types were recorded, which only the
     /// writable index can repair, by deriving them from the schema on its next
     /// open.
-    pub fn open(fs: S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
         let path = get_payload_index_path(segment_path);
-        let config = PayloadConfig::load_universal(&fs, &PayloadConfig::get_config_path(&path))?
+        let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path))?
             .unwrap_or_default();
 
         let mut field_indexes = AHashMap::with_capacity(config.indices.len());
@@ -58,13 +58,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
                 .types
                 .iter()
                 .map(|index_type| {
-                    UpdateOnlyFieldIndex::open(
-                        fs.clone(),
-                        &path,
-                        field,
-                        &indexed.schema,
-                        index_type,
-                    )
+                    UpdateOnlyFieldIndex::open(fs, &path, field, &indexed.schema, index_type)
                 })
                 .collect::<OperationResult<Vec<_>>>()?;
 
@@ -103,7 +97,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         // Once per index per batch: for the bitmask-backed indexes a flush
         // rewrites a whole mask
         for index in self.field_indexes.values_mut().flatten() {
-            index.flush(hw_counter)?;
+            index.flush(fs, hw_counter)?;
         }
 
         Ok(())

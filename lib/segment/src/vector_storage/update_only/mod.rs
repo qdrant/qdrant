@@ -128,7 +128,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// Open the writer for a sparse vector storage at `path`. Sparse vectors
     /// are configured separately from dense ones, so they do not go through
     /// [`open`](Self::open).
-    pub fn open_sparse(fs: S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open_sparse(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
         Ok(Self::Sparse(Box::new(UpdateOnlySparseVectorStorage::open(
             fs, path,
         )?)))
@@ -144,14 +144,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Dense(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::DenseByte(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::DenseHalf(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiDense(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiDenseByte(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiDenseHalf(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::Turbo(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiTurbo(s) => s.append_many(start_slot, vectors, hw_counter),
+            Self::Dense(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::DenseByte(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::DenseHalf(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiDense(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiDenseByte(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiDenseHalf(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::Turbo(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiTurbo(s) => s.append_many(fs, start_slot, vectors, hw_counter),
             Self::Sparse(s) => s.append_many(fs, start_slot, vectors, hw_counter),
         }
     }

@@ -23,7 +23,7 @@ use crate::vector_storage::update_only::VectorToStore;
 /// [`AppendableMmapDenseVectorStorage`]: super::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage
 pub struct UpdateOnlyDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalAppend + 'static> {
     vectors: UpdateOnlyChunkedVectors<T, S>,
-    deleted: UpdateOnlyStoredFlags<S>,
+    deleted: UpdateOnlyStoredFlags,
     dim: usize,
 }
 
@@ -32,8 +32,8 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static> UpdateOnlyDenseVec
     /// yet.
     pub fn open(fs: S::Fs, path: &Path, dim: usize) -> OperationResult<Self> {
         Ok(Self {
-            vectors: UpdateOnlyChunkedVectors::open(fs.clone(), &path.join(VECTORS_DIR_PATH), dim)?,
-            deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?,
+            deleted: UpdateOnlyStoredFlags::open(&fs, &path.join(DELETED_DIR_PATH))?,
+            vectors: UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?,
             dim,
         })
     }
@@ -46,6 +46,7 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static> UpdateOnlyDenseVec
     /// this storage ends at, since the vectors are stored positionally.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -94,7 +95,7 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static> UpdateOnlyDenseVec
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(hw_counter)
+        self.deleted.flush(fs, hw_counter)
     }
 
     /// Storage-native bytes are a packed `[T]` of exactly one vector, the form

@@ -44,6 +44,7 @@ fn decoded_vectors_round_trip() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             vectors
                 .iter()
@@ -75,6 +76,7 @@ fn missing_vectors_take_their_slot_and_are_flagged() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [
                 VectorToStore::Decoded(VectorRef::from(present.as_slice())),
@@ -109,7 +111,7 @@ fn raw_bytes_round_trip() {
 
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
-        .append_many(0, [VectorToStore::Raw(&bytes)], &hw_counter)
+        .append_many(&MmapFs, 0, [VectorToStore::Raw(&bytes)], &hw_counter)
         .unwrap();
     drop(writer);
 
@@ -129,6 +131,7 @@ fn batches_resume() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(first.as_slice()))],
             &hw_counter,
@@ -139,6 +142,7 @@ fn batches_resume() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             1,
             [VectorToStore::Decoded(VectorRef::from(second.as_slice()))],
             &hw_counter,
@@ -161,7 +165,7 @@ fn malformed_raw_bytes_are_rejected() {
 
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     let err = writer
-        .append_many(0, [VectorToStore::Raw(&[1, 2, 3])], &hw_counter)
+        .append_many(&MmapFs, 0, [VectorToStore::Raw(&[1, 2, 3])], &hw_counter)
         .unwrap_err();
     assert!(
         format!("{err}").contains("Malformed dense vector blob"),

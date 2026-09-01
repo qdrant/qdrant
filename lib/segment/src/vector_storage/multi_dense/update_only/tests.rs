@@ -63,6 +63,7 @@ fn multi_vectors_round_trip() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [
                 VectorToStore::Decoded(VectorRef::from(&first)),
@@ -89,6 +90,7 @@ fn missing_multi_vectors_own_no_rows() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [
                 VectorToStore::Missing,
@@ -122,6 +124,7 @@ fn batches_resume_at_the_row_space_end() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(&first))],
             &hw_counter,
@@ -132,6 +135,7 @@ fn batches_resume_at_the_row_space_end() {
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             1,
             [VectorToStore::Decoded(VectorRef::from(&second))],
             &hw_counter,
@@ -160,11 +164,11 @@ fn raw_multi_bytes_round_trip() {
 
     let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
     writer
-        .append_many(0, [VectorToStore::Raw(&bytes)], &hw_counter)
+        .append_many(&MmapFs, 0, [VectorToStore::Raw(&bytes)], &hw_counter)
         .unwrap();
 
     let err = writer
-        .append_many(1, [VectorToStore::Raw(&bytes[..5])], &hw_counter)
+        .append_many(&MmapFs, 1, [VectorToStore::Raw(&bytes[..5])], &hw_counter)
         .unwrap_err();
     assert!(
         format!("{err}").contains("Malformed multi vector blob"),

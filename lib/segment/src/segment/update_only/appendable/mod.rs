@@ -58,7 +58,7 @@ struct StoreComponents<S: UniversalAppend + 'static> {
 impl<S: UniversalAppend + 'static> StoreComponents<S> {
     fn open(fs: S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
         let payload_storage = UpdateOnlyPayloadStorage::open(&fs, segment_path)?;
-        let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs.clone(), segment_path)?;
+        let payload_indexes = UpdateOnlyStructPayloadIndex::open(&fs, segment_path)?;
 
         let mut vector_storages =
             Vec::with_capacity(config.vector_data.len() + config.sparse_vector_data.len());
@@ -76,7 +76,7 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open_sparse(fs.clone(), &path)?;
+            let storage = UpdateOnlyVectorStorage::open_sparse(&fs, &path)?;
             vector_storages.push((vector_name.clone(), storage));
         }
 

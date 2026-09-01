@@ -53,13 +53,13 @@ fn write(
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
 
-    let mut writer = Writer::open(MmapFs, dir, &field(), schema, &index_type).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir, &field(), schema, &index_type).unwrap();
     for (slot, value) in points {
         writer
             .add_point(&MmapFs, *slot, &[value], &hw_counter)
             .unwrap();
     }
-    writer.flush(&hw_counter).unwrap();
+    writer.flush(&MmapFs, &hw_counter).unwrap();
 
     storage
 }
@@ -215,7 +215,7 @@ fn rewriting_a_slot_is_rejected() {
     let schema = schema(PayloadSchemaType::Integer);
 
     let mut writer = Writer::open(
-        MmapFs,
+        &MmapFs,
         dir.path(),
         &field(),
         &schema,

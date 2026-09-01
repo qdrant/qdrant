@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalReadFs, UniversalWriteFileOps};
 use serde_json::Value;
 
 use super::super::MutableBoolIndex;
@@ -14,16 +14,19 @@ use crate::index::field_index::ValueIndexer;
 /// Writes what [`MutableBoolIndex`] persists: the two masks saying, per point,
 /// whether its field holds a true and whether it holds a false. A point whose
 /// field holds both is set in both.
-pub struct UpdateOnlyBoolIndex<S: UniversalAppend + 'static> {
-    trues: UpdateOnlyStoredFlags<S>,
-    falses: UpdateOnlyStoredFlags<S>,
+pub struct UpdateOnlyBoolIndex {
+    trues: UpdateOnlyStoredFlags,
+    falses: UpdateOnlyStoredFlags,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyBoolIndex<S> {
+impl UpdateOnlyBoolIndex {
     /// Open the index at `dir` for writing, reading both masks into memory.
-    pub fn open(fs: S::Fs, dir: &Path) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        dir: &Path,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            trues: UpdateOnlyStoredFlags::open(fs.clone(), &dir.join(TRUES_DIRNAME))?,
+            trues: UpdateOnlyStoredFlags::open(fs, &dir.join(TRUES_DIRNAME))?,
             falses: UpdateOnlyStoredFlags::open(fs, &dir.join(FALSES_DIRNAME))?,
         })
     }
@@ -41,8 +44,12 @@ impl<S: UniversalAppend + 'static> UpdateOnlyBoolIndex<S> {
     }
 
     /// Persist both masks.
-    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
-        self.trues.flush(hw_counter)?;
-        self.falses.flush(hw_counter)
+    pub fn flush<Fs: UniversalWriteFileOps>(
+        &mut self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.trues.flush(fs, hw_counter)?;
+        self.falses.flush(fs, hw_counter)
     }
 }
