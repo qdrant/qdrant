@@ -21,6 +21,14 @@ impl<'a> ACow<'a> {
             ),
         })
     }
+
+    /// Convert into owned AVec. If it was a slice, it will have the provided align.
+    pub fn into_owned(self, align_if_borrowed: usize) -> AVec<u8, RuntimeAlign> {
+        match self {
+            ACow::Borrowed(slice) => AVec::from_slice(align_if_borrowed, slice),
+            ACow::Owned(vec) => vec,
+        }
+    }
 }
 
 impl Deref for ACow<'_> {
