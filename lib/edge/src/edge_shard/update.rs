@@ -11,6 +11,20 @@ use crate::EdgeShard;
 use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
 impl EdgeShard {
+    /// Deletes every point in the shard, leaving it loaded and its configuration
+    /// and payload indexes intact. The shard stays open and immediately writable
+    /// — the in-place counterpart of deleting the shard directory. Equivalent to
+    /// applying a match-all `DeletePointsByFilter`, but as a named operation.
+    pub fn clear(&self) -> OperationResult<()> {
+        // A default (all-`None`) filter matches every point; the delete is
+        // written to the WAL and applied to the segments like any other op.
+        self.update(CollectionUpdateOperations::PointOperation(
+            shard::operations::point_ops::PointOperations::DeletePointsByFilter(
+                segment::types::Filter::default(),
+            ),
+        ))
+    }
+
     pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
         // Reject a conflicting vector-name re-create before it reaches the WAL:
         // the segment-level create is idempotent, so re-creating an existing
