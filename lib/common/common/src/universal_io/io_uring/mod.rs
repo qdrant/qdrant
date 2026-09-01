@@ -191,7 +191,7 @@ impl UniversalRead for IoUringFile {
         Self: 'a,
         U: UserData;
 
-    fn reopen(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         Ok(())
     }
 

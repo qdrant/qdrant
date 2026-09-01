@@ -568,7 +568,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage.reopen()?;
+            self.storage.live_reload()?;
         }
 
         let pointer = OptionalPointer::from(pointer);

@@ -68,15 +68,15 @@ where
         fs.open(path, options, extra).map(Self::new)
     }
 
-    pub fn reopen(&mut self) -> UioResult<()> {
-        self.inner.reopen()
+    pub fn live_reload(&mut self) -> UioResult<()> {
+        self.inner.live_reload()
     }
 
-    pub fn schedule_reopen<F: FnOnce(&Path) -> Option<FileInfo>>(
+    pub fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &mut self,
         get_file_info: F,
-    ) -> UioResult<()> {
-        self.inner.schedule_reopen(get_file_info)
+    ) -> UioResult<impl Future<Output = ()>> {
+        self.inner.live_preload(get_file_info)
     }
 
     #[inline]

@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
 use super::DiskCacheRemote;
@@ -19,7 +20,7 @@ mod reopen;
 /// A lazily-populated local mirror of an append-only remote file.
 ///
 /// The remote's existing bytes are assumed to be immutable for the lifetime
-/// of the file: it may grow externally (picked up by [`reopen`]), but never
+/// of the file: it may grow externally (picked up by [`live_reload`]), but never
 /// shrink or change in place. This type implements [`UniversalRead`] only —
 /// appends are deliberately not supported through the cache (append
 /// directly to the backing storage instead), and random-offset writes stay
@@ -55,9 +56,9 @@ where
     /// Fast-path gate: `true` when `state` is [`State::Ready`].
     pub(super) is_ready: AtomicBool,
     /// Entity tag of the remote object, as last known: seeded from the open
-    /// extras, refreshed by [`schedule_reopen`] and [`set_etag`](Self::set_etag).
+    /// extras, refreshed by [`live_preload`] and [`set_etag`](Self::set_etag).
     ///
-    /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+    /// [`live_preload`]: UniversalRead::live_preload
     etag: Mutex<Option<String>>,
 }
 
@@ -71,13 +72,13 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     Ready {
         remote: R,
         local: LocalState,
-        /// What the next [`reopen`] must do. Staged by [`schedule_reopen`],
-        /// consumed (reset to [`ScheduledReopen::No`]) by [`reopen`]. Only
+        /// What the next [`live_reload`] must do. Staged by [`live_preload`],
+        /// consumed (reset to [`ScheduledReopen::No`]) by [`live_reload`]. Only
         /// touched under `&mut self`, and `ReadyRef` borrows just
         /// `remote`/`local`, so staging never disturbs the served state.
         ///
-        /// [`reopen`]: UniversalRead::reopen
-        /// [`schedule_reopen`]: UniversalRead::schedule_reopen
+        /// [`live_reload`]: UniversalRead::live_reload
+        /// [`live_preload`]: UniversalRead::live_preload
         scheduled_reopen: Option<ScheduledReopen<R>>,
     },
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
@@ -91,8 +92,8 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     },
 }
 
-/// The obligation of the next [`reopen`](UniversalRead::reopen), staged ahead
-/// of time by [`schedule_reopen`](UniversalRead::schedule_reopen).
+/// The obligation of the next [`live_reload`](UniversalRead::live_reload), staged ahead
+/// of time by [`live_preload`](UniversalRead::live_preload).
 ///
 /// Staging deliberately leaves the mirror alone: its length keeps matching its
 /// persisted content until the apply, so readers observe nothing in between
@@ -107,11 +108,14 @@ pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     /// `target_len` and lets the new blocks fault in on demand.
     Resize { target_len: u64 },
     /// Populated (`Blocking` / `PreferBackground`): the appended tail is
-    /// already in flight on a clone of the remote; apply resizes, drains it
-    /// and writes it. Holds exactly one read, whose user data is the block
-    /// range it covers, as in [`State::PartialPrefill`].
+    /// already in flight on a fresh remote handle; apply resizes, drains it
+    /// and writes it. `future` drives the fetch (clones of it may be polled
+    /// externally); `data` receives the fetched bytes and the handle once
+    /// `future` completes.
     Tail {
-        pipeline: OwnedPipeline<R, Range<u32>>,
+        future: Shared<BoxFuture<'static, ()>>,
+        data: futures::channel::oneshot::Receiver<UioResult<(R, Vec<u8>)>>,
+        blocks_range: Range<u32>,
         target_len: u64,
     },
 }
@@ -125,7 +129,9 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
             ScheduledReopen::Resize { target_len }
             | ScheduledReopen::Tail {
                 target_len,
-                pipeline: _,
+                data: _,
+                future: _,
+                blocks_range: _,
             } => Some(*target_len),
         }
     }
