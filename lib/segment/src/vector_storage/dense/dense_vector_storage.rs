@@ -23,6 +23,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, Memory, VectorStorageDatatype};
+use crate::vector_storage::common::error_immutable_insert;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
@@ -445,7 +446,7 @@ where
         _vector: VectorRef,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        panic!("Can't directly update vector in mmap storage")
+        Err(error_immutable_insert())
     }
 
     fn flusher(&self) -> Flusher {
