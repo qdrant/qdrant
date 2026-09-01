@@ -3,26 +3,77 @@
 //! Every `query{N}bit` submodule exposes two public entry points:
 //!
 //! * [`Query{N}bitSimd`](query4bit::Query4bitSimd) — a rotation-applied query
-//!   precomputed for fast asymmetric scoring (original-query × PQ-vector).
-//!   `dotprod(vector)` dispatches at runtime to the best SIMD backend available
-//!   on the host CPU.
+//!   precomputed for fast asymmetric scoring (original-query × PQ-vector):
+//!   the shared [`query::QuerySimd`] kernels instantiated at the width, which
+//!   dispatch to the best SIMD backend available on the host CPU.
 //! * [`score_{N}bit_internal`](query4bit::score_4bit_internal) — dot product of
 //!   two already-encoded PQ vectors (symmetric scoring), same runtime dispatch.
 //!
-//! Available SIMD backends per bit-width:
+//! Available SIMD backends:
 //!
-//! | Bits | x86_64                                        | aarch64              |
-//! |------|-----------------------------------------------|----------------------|
-//! |  1   | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3         | NEON                 |
-//! |  2   | AVX-512 VNNI, AVX2, SSE4.1+SSSE3              | NEON + SDOT, NEON    |
-//! |  4   | AVX-512 VNNI, AVX2, SSE4.1+SSSE3              | NEON + SDOT, NEON    |
+//! | Path              | x86_64                                | aarch64           |
+//! |-------------------|---------------------------------------|-------------------|
+//! | asymmetric, 1/2/4 | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
+//! | symmetric, 1      | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3 | NEON              |
+//! | symmetric, 2/4    | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
 //!
-//! On any other target the scalar reference kernels in each module take over.
+//! On any other target the scalar reference kernels take over.
 
 pub mod hadamard;
+pub mod query;
 pub mod query1bit;
 pub mod query2bit;
 pub mod query4bit;
+
+/// Best multiply-accumulate backend the host CPU supports, in preference
+/// order AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar.  Shared by
+/// every kernel built on `u8 × i8` / `i8 × i8` products (the asymmetric
+/// paths of every width and the symmetric 2- and 4-bit paths); resolve it
+/// once with [`SimdBackend::detect`] and dispatch on the value, so a scoring
+/// loop doesn't re-run CPU feature detection per vector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SimdBackend {
+    #[cfg(target_arch = "x86_64")]
+    Avx512Vnni,
+    #[cfg(target_arch = "x86_64")]
+    Avx2,
+    #[cfg(target_arch = "x86_64")]
+    Sse,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    NeonSdot,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    Neon,
+    Scalar,
+}
+
+impl SimdBackend {
+    pub(crate) fn detect() -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx512f")
+                && std::is_x86_feature_detected!("avx512bw")
+                && std::is_x86_feature_detected!("avx512vnni")
+            {
+                return SimdBackend::Avx512Vnni;
+            }
+            if std::is_x86_feature_detected!("avx2") {
+                return SimdBackend::Avx2;
+            }
+            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+                return SimdBackend::Sse;
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                return SimdBackend::NeonSdot;
+            }
+            return SimdBackend::Neon;
+        }
+        #[allow(unreachable_code)]
+        SimdBackend::Scalar
+    }
+}
 
 // Re-exports below include the runtime-dispatching entry points used by the
 // crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
@@ -30,9 +81,12 @@ pub mod query4bit;
 // `benches/turbo_simd.rs` target directly.  Every symbol here is consumed
 // either by `turboquant::quantization` inside the crate or by benches/
 // outside — narrowing them to `pub(crate)` would break the bench build.
+pub use query::QuerySimd;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use query1bit::score_1bit_internal_neon;
-pub use query1bit::{Query1bitSimd, score_1bit_internal, score_1bit_internal_scalar};
+pub use query1bit::{
+    Query1bitSimd, Query1bitWideSimd, score_1bit_internal, score_1bit_internal_scalar,
+};
 #[cfg(target_arch = "x86_64")]
 pub use query1bit::{
     score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,

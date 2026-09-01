@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
+use crate::turboquant::simd::{Query1bitSimd, Query1bitWideSimd, Query2bitSimd, Query4bitSimd};
 
 pub mod encoding;
 pub mod lloyd_max;
@@ -123,15 +123,13 @@ pub struct EncodedQueryTQ {
 /// on architectures without a matching SIMD instruction set the scalar
 /// reference kernel inside each type takes over automatically.
 ///
-/// `Bits1Wide` is the same kernel as `Bits1` but with 16-bit query
-/// quantization instead of the default 8-bit (the kernel's max). Used in
+/// `Bits1Wide` is `Bits1` with a 16-bit query instead of 8-bit.  Used in
 /// TQ+ for 1-bit storage: the per-coord `D'` pre-scaling pushes some query
 /// coords into the bottom of the 8-bit integer range, where rounding noise
-/// is large relative to the signal — 16 bits gives the most headroom the
-/// existing kernel supports.
+/// is large relative to the signal.
 pub enum EncodedQueryTQData {
     Bits1(Query1bitSimd),
-    Bits1Wide(Query1bitSimd<16>),
+    Bits1Wide(Query1bitWideSimd),
     Bits2(Query2bitSimd),
     Bits4(Query4bitSimd),
 }

@@ -1,7 +1,5 @@
-//! NEON SIMD paths for [`Query2bitSimd`] on aarch64.
-//!
-//! Codebook storage mirrors [`super::query4bit::arm`] — full signed `i8` with
-//! no offset — so `vmull_s8` / `sdot` run as true signed-signed multiplies.
+//! NEON kernels for the symmetric 2-bit paths (`score_2bit_internal*`) on
+//! aarch64.  The codebook is the signed `CODEBOOK_I8`.
 //!
 //! # Unpack trick
 //! Each packed data byte holds 4 × 2-bit codes; consecutive pairs (`c0c1`,
@@ -21,7 +19,7 @@
 //!
 //! Same pipeline as 4-bit from that point on (i8 × i8 → i16 + `vpadalq_s16`).
 
-use super::{CODEBOOK_I8, CODEBOOK_SCALE, QUERY_HIGH_COEF, Query2bitSimd};
+use super::{CODEBOOK_I8, CODEBOOK_SCALE};
 
 /// `PAIR_TABLE_EVEN[nibble]` = `CODEBOOK_I8[nibble & 0b11]`.
 const PAIR_TABLE_EVEN: [i8; 16] = {
@@ -76,152 +74,6 @@ unsafe fn unpack_16_codes(bytes4: *const u8) -> core::arch::aarch64::int8x16_t {
     }
 }
 
-impl Query2bitSimd {
-    /// NEON implementation of [`Query2bitSimd::dotprod_raw`].
-    ///
-    /// # Safety
-    /// CPU must support the `neon` feature (always true on aarch64).
-    #[target_feature(enable = "neon")]
-    pub unsafe fn dotprod_raw_neon(&self, vector: &[u8]) -> i64 {
-        use core::arch::aarch64::*;
-
-        assert_eq!(
-            vector.len(),
-            self.expected_vector_bytes(),
-            "Query2bitSimd::dotprod_raw_neon: vector length mismatch ({} vs expected {})",
-            vector.len(),
-            self.expected_vector_bytes(),
-        );
-
-        unsafe {
-            let mut acc_low = vdupq_n_s32(0);
-            let mut acc_high = vdupq_n_s32(0);
-
-            for (chunk_idx, [low, high]) in self.query_data.iter().enumerate() {
-                let c = unpack_16_codes(vector.as_ptr().add(chunk_idx * 4));
-
-                let q_low = vld1q_s8(low.as_ptr());
-                let q_high = vld1q_s8(high.as_ptr());
-
-                let prod_low_lo = vmull_s8(vget_low_s8(q_low), vget_low_s8(c));
-                let prod_low_hi = vmull_high_s8(q_low, c);
-                let prod_high_lo = vmull_s8(vget_low_s8(q_high), vget_low_s8(c));
-                let prod_high_hi = vmull_high_s8(q_high, c);
-
-                acc_low = vpadalq_s16(acc_low, prod_low_lo);
-                acc_low = vpadalq_s16(acc_low, prod_low_hi);
-                acc_high = vpadalq_s16(acc_high, prod_high_lo);
-                acc_high = vpadalq_s16(acc_high, prod_high_hi);
-            }
-
-            let full =
-                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
-            full + self.dotprod_raw_tail(vector)
-        }
-    }
-
-    /// ARMv8.2-A Dot Product variant.  Uses SDOT to sum 4 × i8 × i8 products
-    /// per i32 lane per instruction, with a 2× unroll (2 chunks per iter) +
-    /// a 1-chunk tail for odd chunk counts (allows `dim % 16 == 0`, matching
-    /// the scalar / plain-NEON contract).
-    ///
-    /// # Safety
-    /// CPU must support `neon` and `dotprod`.
-    #[target_feature(enable = "neon,dotprod")]
-    pub unsafe fn dotprod_raw_neon_sdot(&self, vector: &[u8]) -> i64 {
-        use core::arch::aarch64::*;
-
-        assert_eq!(
-            vector.len(),
-            self.expected_vector_bytes(),
-            "Query2bitSimd::dotprod_raw_neon_sdot: vector length mismatch ({} vs expected {})",
-            vector.len(),
-            self.expected_vector_bytes(),
-        );
-
-        unsafe {
-            let mut acc_low_0 = vdupq_n_s32(0);
-            let mut acc_low_1 = vdupq_n_s32(0);
-            let mut acc_high_0 = vdupq_n_s32(0);
-            let mut acc_high_1 = vdupq_n_s32(0);
-
-            let n_pairs = self.query_data.len() / 2;
-            let data_ptr = vector.as_ptr();
-            for i in 0..n_pairs {
-                let [low_0, high_0] = &self.query_data[2 * i];
-                let [low_1, high_1] = &self.query_data[2 * i + 1];
-
-                let c_0 = unpack_16_codes(data_ptr.add(8 * i));
-                let c_1 = unpack_16_codes(data_ptr.add(8 * i + 4));
-
-                let q_low_0 = vld1q_s8(low_0.as_ptr());
-                let q_high_0 = vld1q_s8(high_0.as_ptr());
-                let q_low_1 = vld1q_s8(low_1.as_ptr());
-                let q_high_1 = vld1q_s8(high_1.as_ptr());
-
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_0,
-                    a = in(vreg) q_low_0,
-                    b = in(vreg) c_0,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_0,
-                    a = in(vreg) q_high_0,
-                    b = in(vreg) c_0,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_1,
-                    a = in(vreg) q_low_1,
-                    b = in(vreg) c_1,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_1,
-                    a = in(vreg) q_high_1,
-                    b = in(vreg) c_1,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-            }
-
-            // Tail: odd chunk count → one extra chunk via single SDOT per half.
-            if self.query_data.len() % 2 == 1 {
-                let tail = 2 * n_pairs;
-                let [low_t, high_t] = &self.query_data[tail];
-                let c_t = unpack_16_codes(data_ptr.add(4 * tail));
-                let q_low_t = vld1q_s8(low_t.as_ptr());
-                let q_high_t = vld1q_s8(high_t.as_ptr());
-
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_low_0,
-                    a = in(vreg) q_low_t,
-                    b = in(vreg) c_t,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-                core::arch::asm!(
-                    "sdot {acc:v}.4s, {a:v}.16b, {b:v}.16b",
-                    acc = inout(vreg) acc_high_0,
-                    a = in(vreg) q_high_t,
-                    b = in(vreg) c_t,
-                    options(pure, nomem, nostack, preserves_flags),
-                );
-            }
-
-            let acc_low = vaddq_s32(acc_low_0, acc_low_1);
-            let acc_high = vaddq_s32(acc_high_0, acc_high_1);
-            let full =
-                i64::from(vaddvq_s32(acc_low)) + QUERY_HIGH_COEF * i64::from(vaddvq_s32(acc_high));
-            full + self.dotprod_raw_tail(vector)
-        }
-    }
-}
-
 /// NEON implementation of [`super::score_2bit_internal`] — vector × vector
 /// centroid dot, both sides unpacked via the pair-table trick.
 ///
@@ -260,8 +112,7 @@ pub unsafe fn score_2bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
     }
 }
 
-/// SDOT variant of [`score_2bit_internal_neon`].  2× chunk unroll mirrors
-/// [`Query2bitSimd::dotprod_raw_neon_sdot`].
+/// SDOT variant of [`score_2bit_internal_neon`], 2× chunk-unrolled.
 ///
 /// # Safety
 /// CPU must support `neon` and `dotprod`.
@@ -398,9 +249,7 @@ mod tests {
 
     use super::super::super::shared::pack_codes;
     use super::super::shared::{PARITY_DIMS, random_inputs};
-    use super::super::{
-        Query2bitSimd, score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
-    };
+    use super::super::{score_2bit_internal_scalar, score_2bit_internal_weighted_scalar};
     use super::{
         score_2bit_internal_neon, score_2bit_internal_neon_sdot, score_2bit_internal_weighted_neon,
     };
@@ -412,54 +261,6 @@ mod tests {
         (0..4 * vec_bytes)
             .map(|_| rng.random_range(0..=i16::MAX))
             .collect()
-    }
-
-    #[test]
-    fn test_neon_matches_scalar() {
-        let mut rng = StdRng::seed_from_u64(7);
-        for &dim in PARITY_DIMS {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let neon = unsafe { simd_query.dotprod_raw_neon(&vector) };
-            assert_eq!(scalar, neon, "scalar {scalar} != neon {neon} at dim {dim}");
-        }
-    }
-
-    #[test]
-    fn test_neon_sdot_matches_scalar() {
-        if !std::arch::is_aarch64_feature_detected!("dotprod") {
-            return;
-        }
-        let mut rng = StdRng::seed_from_u64(7);
-        for &dim in PARITY_DIMS {
-            let (simd_query, vector) = random_inputs(&mut rng, dim);
-            let scalar = simd_query.dotprod_raw(&vector);
-            let sdot = unsafe { simd_query.dotprod_raw_neon_sdot(&vector) };
-            assert_eq!(scalar, sdot, "scalar {scalar} != sdot {sdot} at dim {dim}");
-        }
-    }
-
-    /// Saturation safety for query-vs-vector at dim=64K: query maxed out,
-    /// every lane pointing at CODEBOOK_I8[3] = +127.
-    #[test]
-    fn test_saturation_safety_64k() {
-        let dim = 65_536;
-        let query = vec![1.0_f32; dim];
-        let indices: Vec<u8> = vec![3; dim]; // +127 centroid
-        let vector = pack_codes(&indices, 2);
-
-        let q = Query2bitSimd::new(&query);
-        let scalar = q.dotprod_raw(&vector);
-
-        unsafe {
-            let neon = q.dotprod_raw_neon(&vector);
-            assert_eq!(scalar, neon, "neon disagrees at dim={dim}");
-
-            if std::arch::is_aarch64_feature_detected!("dotprod") {
-                let sdot = q.dotprod_raw_neon_sdot(&vector);
-                assert_eq!(scalar, sdot, "sdot disagrees at dim={dim}");
-            }
-        }
     }
 
     #[test]
