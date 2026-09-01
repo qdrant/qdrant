@@ -441,7 +441,7 @@ fn test_write_across_pages() {
         compression: Compression::None,
     };
 
-    storage.as_gridstore_mut().create_new_page().unwrap();
+    storage.as_gridstore_mut().create_new_page(&MmapFs).unwrap();
 
     let value_len = 1000;
 
