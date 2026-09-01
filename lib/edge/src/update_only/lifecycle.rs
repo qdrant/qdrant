@@ -68,17 +68,18 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
                 segments
                     .into_par_iter()
                     .map(|(uuid, listing)| {
+                        let ListedSegment { path, writable } = listing;
                         // No deferred threshold yet: it belongs to the coordination
                         // with an external rebuilder, which does not exist in this
                         // iteration.
-                        let segment = LookupSegment::<S>::open(&fs, &listing.path, None)?;
+                        let segment = LookupSegment::<S>::open(&fs, &path, None)?;
                         let writer = UpdateOnlySegmentEnum::open(
                             &fs,
-                            &listing.path,
+                            &path,
                             &segment.segment_config,
                             segment.writer_state(),
                         )?;
-                        Ok((uuid, segment, writer, listing.writable))
+                        Ok((uuid, segment, writer, writable))
                     })
                     .collect::<OperationResult<Vec<_>>>()
             })?;
@@ -105,10 +106,12 @@ where
     S::Fs: UniversalReadFs<File = S> + UniversalReadFsAsync,
 {
     /// [`create_appendable`](Self::create_appendable) with `source`'s config.
-    pub fn create_appendable_from(
+    #[cfg(test)]
+    pub(crate) fn create_appendable_from(
         self,
         source: Uuid,
         indexed_fields: &HashMap<JsonPath, PayloadFieldSchema>,
+        temp_path: &Path,
     ) -> OperationResult<(Self, Uuid)> {
         let config = self
             .segments
@@ -117,37 +120,36 @@ where
             .read()
             .segment_config
             .clone();
-        self.create_appendable(&config, indexed_fields)
+        self.create_appendable(&config, indexed_fields, temp_path)
     }
 
     /// Build an empty appendable and adopt it as the write target; the
     /// manifest entry stays the caller's job. Also bootstraps a segmentless
     /// shard (an empty manifest opens with no write target).
+    ///
+    /// `temp_path` is a local directory the segment is built in before it is
+    /// copied to the backend (conventionally `<shard>/temp_segments`); it is
+    /// created if missing and left empty afterwards.
     pub fn create_appendable(
         mut self,
         config: &SegmentConfig,
         indexed_fields: &HashMap<JsonPath, PayloadFieldSchema>,
+        temp_path: &Path,
     ) -> OperationResult<(Self, Uuid)> {
         // Built locally: the append-only components have no create path over a backend.
-        let scratch = tempfile::tempdir()
+        fs_err::create_dir_all(temp_path)?;
+        let scratch = tempfile::Builder::new()
+            .prefix("appendable-")
+            .tempdir_in(temp_path)
             .map_err(|err| OperationError::service_error(format!("create scratch dir: {err}")))?;
-        let (mut segment, _token) = build_segment(scratch.path(), config, None, true)?;
+        let (mut segment, token) = build_segment(scratch.path(), config, None, true)?;
+        let uuid = token.id();
         let hw_counter = HardwareCounterCell::disposable();
         for (key, schema) in indexed_fields {
             segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
         segment.flush(true)?;
         let local = segment.data_path();
-        let uuid: Uuid = local
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| name.parse().ok())
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "built segment path carries no uuid: {}",
-                    local.display(),
-                ))
-            })?;
         drop(segment);
 
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());

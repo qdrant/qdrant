@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use common::universal_io::{UniversalReadFs, read_json_via};
 use segment::common::operation_error::OperationResult;
 use shard::files::{SEGMENTS_PATH, segment_manifest_path};
-use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
+use shard::segment_manifest::SegmentsManifest;
 use uuid::Uuid;
 
 use crate::edge_shard::scan_segment_dirs;
@@ -73,10 +73,9 @@ impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnum
             .iter()
             .filter(|(_, state)| state.is_usable())
             .map(|(uuid, state)| {
-                let writable = !matches!(state, SegmentManifestState::Optimizing { .. });
                 let listed = ListedSegment {
                     path: self.segments_path.join(uuid.to_string()),
-                    writable,
+                    writable: state.is_writable(),
                 };
                 (*uuid, listed)
             })

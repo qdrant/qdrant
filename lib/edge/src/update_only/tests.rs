@@ -572,6 +572,7 @@ fn optimizing_target_gets_a_created_appendable() {
     use shard::files::segment_manifest_path;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::UpsertPoints;
+    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
     use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
     use uuid::Uuid;
 
@@ -605,7 +606,10 @@ fn optimizing_target_gets_a_created_appendable() {
         "a claimed target must not take appends",
     );
 
-    let (writer, fresh) = writer.create_appendable_from(old, &HashMap::new()).unwrap();
+    let temp_path = dir.path().join(TEMP_SEGMENTS_PATH);
+    let (writer, fresh) = writer
+        .create_appendable_from(old, &HashMap::new(), &temp_path)
+        .unwrap();
     assert_ne!(fresh, old);
     assert_eq!(writer.write_target(), Some(fresh));
 
@@ -631,6 +635,7 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
     use shard::files::segment_manifest_path;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::UpsertPoints;
+    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
 
     use crate::read_only::ManifestSegmentEnumerator;
     use crate::read_only::tests::{init_serverless_feature_flags, point, test_config};
@@ -652,8 +657,15 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
     assert_eq!(writer.write_target(), None);
 
     let config = test_config().plain_segment_config();
-    let (writer, fresh) = writer.create_appendable(&config, &HashMap::new()).unwrap();
+    let temp_path = dir.path().join(TEMP_SEGMENTS_PATH);
+    let (writer, fresh) = writer
+        .create_appendable(&config, &HashMap::new(), &temp_path)
+        .unwrap();
     assert_eq!(writer.write_target(), Some(fresh));
+    assert!(
+        fs_err::read_dir(&temp_path).unwrap().next().is_none(),
+        "scratch segment must not outlive the copy",
+    );
 
     let batch = [(7, PointOperation(UpsertPoints(PointsList(vec![point(1)]))))];
     let (_writer, outcome) = writer.apply_batch(batch).unwrap();
