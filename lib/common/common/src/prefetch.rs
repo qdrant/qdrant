@@ -34,7 +34,7 @@ pub const MAX_UNPREFETCHED_BATCH: usize = 2;
 /// L2, kept the full win. 1 MiB sits above the 512 KB-1 MB L2 of common server
 /// cores and below that overflow point. Compared against the storage's own
 /// byte size, so it scales with how points are split across segments.
-pub const MIN_PREFETCH_STORAGE_BYTES: usize = 1 << 20;
+pub const MIN_PREFETCH_STORAGE_BYTES: usize = 1 * 1024 * 1024; // 1Mb
 
 /// Near (L1, [`prefetch_slice`]) and far (L2, [`prefetch_slice_l2`]) prefetch
 /// window sizes in vectors, covering a constant [`NEAR_BYTES`] / [`FAR_BYTES`]
