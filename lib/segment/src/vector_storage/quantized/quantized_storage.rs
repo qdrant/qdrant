@@ -10,7 +10,8 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{AdviceSetting, MmapFlusher, advice};
 use common::prefetch::{
-    MAX_UNPREFETCHED_BATCH, prefetch_slice, prefetch_slice_l2, prefetch_windows,
+    MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
+    prefetch_windows,
 };
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -104,6 +105,12 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let (near, far) = prefetch_windows(self.quantized_vector_size.get());
 
+        // A storage small enough to stay cache-resident has nothing to fetch,
+        // so the hints are pure overhead; skip them. On the rare chance the
+        // size lookup fails, treat the storage as large and keep prefetching.
+        let storage_bytes = self.storage.len::<u8>().unwrap_or(u64::MAX) as usize;
+        let storage_fits_cache = storage_bytes < MIN_PREFETCH_STORAGE_BYTES;
+
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let sequential = is_read_with_prefetch_efficient(keys);
             let vectors = if sequential {
@@ -116,9 +123,10 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
-            // Dense-ascending batches stream; the hardware prefetcher already
-            // covers them and software prefetch is pure overhead.
-            if sequential || vectors.len() <= MAX_UNPREFETCHED_BATCH {
+            // Dense-ascending batches stream and cache-resident storages are
+            // already hot; the hardware prefetcher covers both and software
+            // prefetch is pure overhead.
+            if sequential || storage_fits_cache || vectors.len() <= MAX_UNPREFETCHED_BATCH {
                 for (vector_idx, vector) in vectors.iter().enumerate() {
                     f(batch_offset + vector_idx, vector);
                 }
