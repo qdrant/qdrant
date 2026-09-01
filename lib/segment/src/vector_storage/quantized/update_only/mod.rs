@@ -18,7 +18,7 @@
 //! `reopen_for_write` (added alongside `load`, which additionally validates a stored vector by
 //! reading it back — a read this write-only storage cannot serve, and a guarantee a resuming
 //! writer doesn't need: every vector it writes is sized from the same metadata `load` and
-//! `reopen_for_write` both read). Both `reopen_for_write` and `upsert_vector`/`flusher` only
+//! `reopen_for_write` both read). Both `reopen_for_write` and `upsert_many`/`flusher` only
 //! require [`EncodedStorageWrite`] — the write-only half of [`EncodedStorage`], split out so a
 //! storage that can never serve a read doesn't have to fake one. The only new storage-layer code
 //! is [`UpdateOnlyQuantizedChunkedStorage`], an [`EncodedStorageWrite`] backed by
@@ -35,6 +35,7 @@
 #[cfg(test)]
 mod tests;
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -44,12 +45,14 @@ use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::VectorRef;
-use crate::types::QuantizationConfig;
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::types::{Distance, QuantizationConfig, VectorDataConfig, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::UpdateOnlyQuantizedChunkedStorage;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsConfig,
 };
+use crate::vector_storage::update_only::VectorToStore;
 
 enum UpdateOnlyQuantizedVectorStorage<S: UniversalAppend + 'static> {
     Binary(Box<EncodedVectorsBin<u128, UpdateOnlyQuantizedChunkedStorage<S>>>),
@@ -64,6 +67,9 @@ enum UpdateOnlyQuantizedVectorStorage<S: UniversalAppend + 'static> {
 pub struct UpdateOnlyQuantizedVectors<S: UniversalAppend + 'static> {
     storage: UpdateOnlyQuantizedVectorStorage<S>,
     config: QuantizedVectorsConfig,
+    /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
+    distance: Distance,
+    datatype: VectorStorageDatatype,
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
@@ -74,13 +80,24 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
     /// absence. Returns `None` when nothing was persisted, e.g. quantization was never configured
     /// for this vector, or the configured method didn't support incremental appends (Scalar,
     /// Product — see [`QuantizationConfig::supports_appendable`]) at creation time.
-    pub fn open(fs: S::Fs, path: &Path) -> OperationResult<Option<Self>> {
+    pub fn open(
+        fs: S::Fs,
+        path: &Path,
+        vector_config: &VectorDataConfig,
+    ) -> OperationResult<Option<Self>> {
+        let datatype = vector_config.datatype.unwrap_or_default();
+        // Multivector and Turbo4-datatype vectors never get an overlay, so they return
+        // `None` outright.
+        if vector_config.multivector_config.is_some() || datatype == VectorStorageDatatype::Turbo4 {
+            return Ok(None);
+        }
+
         let config_path = QuantizedVectors::get_config_path(path);
         if !fs.exists(&config_path)? {
             return Ok(None);
         }
         let config: QuantizedVectorsConfig = read_json_via(&fs, &config_path)?;
-        Self::open_existing(fs, config, path).map(Some)
+        Self::open_existing(fs, config, path, vector_config.distance, datatype).map(Some)
     }
 
     /// Reopen a previously-persisted overlay to resume appending: reads the fitted metadata
@@ -94,6 +111,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
         fs: S::Fs,
         config: QuantizedVectorsConfig,
         path: &Path,
+        distance: Distance,
+        datatype: VectorStorageDatatype,
     ) -> OperationResult<Self> {
         let meta_path = QuantizedVectors::get_meta_path(path);
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
@@ -129,42 +148,90 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
             }
         };
 
-        Ok(Self { storage, config })
+        Ok(Self {
+            storage,
+            config,
+            distance,
+            datatype,
+        })
     }
 
-    /// The quantization method actually persisted for this overlay — the source of truth for a
-    /// caller deciding how to reconstruct an `f32` vector from storage-native bytes carried over
-    /// from a point's previous slot, since a reopened overlay's config is read from disk, not
-    /// necessarily identical to whatever live config the caller has to hand.
-    pub fn quantization_config(&self) -> &QuantizationConfig {
-        &self.config.quantization_config
+    /// Encode and persist one row per point of a batch, starting at `start_slot` — the current
+    /// end of the overlay, since slots are never rewritten in place.
+    ///
+    /// Every point takes a row (a missing vector as an all-zero placeholder), keeping row `k` in
+    /// lockstep with slot `k` of the raw storage this overlay shadows.
+    pub fn append_many<'a>(
+        &mut self,
+        start_slot: PointOffsetType,
+        vectors: impl IntoIterator<Item = VectorToStore<'a>>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // Decoded whole rather than streamed: an owned row must outlive the storage call.
+        let placeholder = vec![0.0 as VectorElementType; self.dim()];
+        let mut run: Vec<Cow<[VectorElementType]>> = Vec::new();
+        for vector in vectors {
+            run.push(match vector {
+                VectorToStore::Decoded(vector) => Cow::Borrowed(vector.try_into()?),
+                VectorToStore::Raw(bytes) => self.decode_raw(bytes)?,
+                VectorToStore::Missing => Cow::Borrowed(placeholder.as_slice()),
+            });
+        }
+
+        let rows = run.iter().map(Cow::as_ref);
+        match &mut self.storage {
+            UpdateOnlyQuantizedVectorStorage::Binary(q) => {
+                Ok(q.append_many(start_slot, rows, hw_counter)?)
+            }
+            UpdateOnlyQuantizedVectorStorage::Turbo(q) => {
+                Ok(q.append_many(start_slot, rows, hw_counter)?)
+            }
+        }
     }
 
-    /// The dimensionality of the (dense, unrotated) vector this overlay quantizes — the length
-    /// a caller must give [`Self::upsert_vector`], including for a placeholder vector standing
-    /// in for a point with no vector under this name.
-    pub fn dim(&self) -> usize {
+    /// The dimensionality of the (dense, unrotated) vector this overlay quantizes.
+    fn dim(&self) -> usize {
         self.config.vector_parameters.dim
     }
 
-    /// Encode and persist `vector` for `id`. `id` must be the current end of the overlay: like
-    /// every other update-only storage, this never rewrites a slot in place.
-    pub fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        let VectorRef::Dense(vector) = vector else {
-            return Err(OperationError::WrongMulti);
-        };
-        match &mut self.storage {
-            UpdateOnlyQuantizedVectorStorage::Binary(q) => {
-                Ok(q.upsert_vector(id, vector, hw_counter)?)
-            }
-            UpdateOnlyQuantizedVectorStorage::Turbo(q) => {
-                Ok(q.upsert_vector(id, vector, hw_counter)?)
+    /// Reconstruct the `f32` form of a raw, storage-native vector, preprocessing it per the
+    /// persisted config — the source of truth over whatever live config the caller has.
+    fn decode_raw<'a>(&self, bytes: &'a [u8]) -> OperationResult<Cow<'a, [VectorElementType]>> {
+        match self.datatype {
+            VectorStorageDatatype::Float32 => self.decode_raw_as::<VectorElementType>(bytes),
+            VectorStorageDatatype::Uint8 => self.decode_raw_as::<VectorElementTypeByte>(bytes),
+            VectorStorageDatatype::Float16 => self.decode_raw_as::<VectorElementTypeHalf>(bytes),
+            VectorStorageDatatype::Turbo4 => {
+                unreachable!("`Self::open` opens no overlay for a Turbo4-datatype vector")
             }
         }
+    }
+
+    /// Mirrors `QuantizedVectors::create_impl` on the non-update-only path.
+    fn decode_raw_as<'a, T: PrimitiveVectorElement>(
+        &self,
+        bytes: &'a [u8],
+    ) -> OperationResult<Cow<'a, [VectorElementType]>> {
+        let expected_size = self.dim() * size_of::<T>();
+        if bytes.len() != expected_size {
+            // `MalformedVectorBlob`, not a service error: a blob that reached
+            // the WAL is skipped on replay rather than crash-looping recovery.
+            return Err(OperationError::malformed_vector_blob(format!(
+                "Malformed dense vector blob of {} bytes, expected {expected_size}",
+                bytes.len(),
+            )));
+        }
+
+        // A misaligned blob decodes through a copy.
+        let vector: Cow<'a, [T]> = match bytemuck::try_cast_slice(bytes) {
+            Ok(slice) => Cow::Borrowed(slice),
+            Err(_) => Cow::Owned(bytemuck::allocation::pod_collect_to_vec(bytes)),
+        };
+
+        Ok(T::quantization_preprocess(
+            &self.config.quantization_config,
+            self.distance,
+            vector,
+        ))
     }
 }

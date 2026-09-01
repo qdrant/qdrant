@@ -1,7 +1,6 @@
 //! The write phase for the appendable segment: the one segment of a shard a
 //! batch appends its points to.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -10,22 +9,15 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalAppend;
 
 use super::AppendableIdTrackerState;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
-use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{
-    VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorRef,
-};
 use crate::id_tracker::mutable_id_tracker::update_only::{
     MappingOperation, UpdateOnlyAppendableIdTracker,
 };
 use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
 use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
 use crate::segment_constructor::get_vector_storage_path;
-use crate::types::{
-    Distance, PointIdType, QuantizationConfig, SegmentConfig, SeqNumberType, VectorNameBuf,
-    VectorStorageDatatype,
-};
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
 use crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors;
 use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore};
 
@@ -73,15 +65,10 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
             let storage = UpdateOnlyVectorStorage::open(fs.clone(), &path, vector_config)?;
             vector_storages.push((vector_name.clone(), storage));
 
-            // Turbo4-datatype vectors already store a compressed representation as their raw
-            // format; a `QuantizationConfig` overlay on top of that is not a combination the
-            // non-update-only path supports either, so it is out of scope here too.
-            let is_turbo4_datatype = vector_config.datatype == Some(VectorStorageDatatype::Turbo4);
-            if vector_config.multivector_config.is_none() && !is_turbo4_datatype {
-                let quantized = UpdateOnlyQuantizedVectors::open(fs.clone(), &path)?;
-                if let Some(quantized) = quantized {
-                    quantized_vectors.insert(vector_name.clone(), quantized);
-                }
+            if let Some(quantized) =
+                UpdateOnlyQuantizedVectors::open(fs.clone(), &path, vector_config)?
+            {
+                quantized_vectors.insert(vector_name.clone(), quantized);
             }
         }
         for vector_name in config.sparse_vector_data.keys() {
@@ -96,53 +83,6 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
             vector_storages,
             quantized_vectors,
         })
-    }
-}
-
-/// Reconstruct the `f32` form of a vector stored as raw, storage-native bytes — carried over
-/// from a point's previous slot rather than freshly decoded — so it can be pushed through a
-/// quantized overlay the same way a freshly decoded vector is. Mirrors
-/// `QuantizedVectors::create_impl`'s use of `PrimitiveVectorElement::quantization_preprocess`
-/// for the same purpose on the non-update-only path.
-fn decode_raw_dense_vector(
-    datatype: VectorStorageDatatype,
-    quantization_config: &QuantizationConfig,
-    distance: Distance,
-    bytes: &[u8],
-) -> Vec<VectorElementType> {
-    match datatype {
-        VectorStorageDatatype::Float32 => {
-            let vector: &[VectorElementType] = bytemuck::cast_slice(bytes);
-            VectorElementType::quantization_preprocess(
-                quantization_config,
-                distance,
-                Cow::Borrowed(vector),
-            )
-            .into_owned()
-        }
-        VectorStorageDatatype::Uint8 => {
-            let vector: &[VectorElementTypeByte] = bytemuck::cast_slice(bytes);
-            VectorElementTypeByte::quantization_preprocess(
-                quantization_config,
-                distance,
-                Cow::Borrowed(vector),
-            )
-            .into_owned()
-        }
-        VectorStorageDatatype::Float16 => {
-            let vector: &[VectorElementTypeHalf] = bytemuck::cast_slice(bytes);
-            VectorElementTypeHalf::quantization_preprocess(
-                quantization_config,
-                distance,
-                Cow::Borrowed(vector),
-            )
-            .into_owned()
-        }
-        VectorStorageDatatype::Turbo4 => {
-            unreachable!(
-                "a Turbo4-datatype vector never has a quantized overlay open, see StoreComponents::open"
-            )
-        }
     }
 }
 
@@ -220,21 +160,6 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         let inserted = self.id_tracker.insert_operations(&operations)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
 
-        // Distance/datatype per named vector, needed to decode a `VectorToStore::Raw` blob back
-        // to `f32` for its quantized overlay. Captured before `store_components()` borrows
-        // `self` mutably — `self.config` and `self.store` cannot both be borrowed through it.
-        let vector_metadata: HashMap<VectorNameBuf, (Distance, VectorStorageDatatype)> = self
-            .config
-            .vector_data
-            .iter()
-            .map(|(name, cfg)| {
-                (
-                    name.clone(),
-                    (cfg.distance, cfg.datatype.unwrap_or_default()),
-                )
-            })
-            .collect();
-
         let store = self.store_components()?;
 
         // Each named vector, from whichever half of the point holds it: the
@@ -242,56 +167,27 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         // point's previous slot, and a name in neither still takes its slot —
         // the storage records it as a vector the point does not have.
         for (vector_name, storage) in &mut store.vector_storages {
-            let vectors = points.iter().map(|point| {
-                if let Some(vector) = point.updated_vectors.get(vector_name) {
-                    VectorToStore::Decoded(vector)
-                } else if let Some((_, bytes)) = point
-                    .stored_vectors
-                    .iter()
-                    .find(|(name, _)| name == vector_name)
-                {
-                    VectorToStore::Raw(bytes)
-                } else {
-                    VectorToStore::Missing
-                }
-            });
-            storage.append_many(start_slot, vectors, hw_counter)?;
-
-            // The quantized overlay, if this vector has one, must keep its row count in exact
-            // lockstep with the raw storage above: every point takes a row here too — a
-            // decoded/carried-over vector encoded for real, a missing one as an all-zero
-            // placeholder — so row `k` always means the same point in both. Skipping a row for
-            // a `Raw`/`Missing` point here would silently misalign every later lookup, scoring
-            // one point's vector against another's quantized copy.
-            if let Some(quantized) = store.quantized_vectors.get_mut(vector_name) {
-                let quantization_config = quantized.quantization_config().clone();
-                let &(distance, datatype) = vector_metadata.get(vector_name).expect(
-                    "a quantized overlay only exists for a name present in config.vector_data",
-                );
-                for (offset, point) in points.iter().enumerate() {
-                    let id = start_slot + offset as PointOffsetType;
+            let vectors: Vec<VectorToStore> = points
+                .iter()
+                .map(|point| {
                     if let Some(vector) = point.updated_vectors.get(vector_name) {
-                        let VectorRef::Dense(dense) = vector else {
-                            return Err(OperationError::WrongMulti);
-                        };
-                        quantized.upsert_vector(id, VectorRef::Dense(dense), hw_counter)?;
+                        VectorToStore::Decoded(vector)
                     } else if let Some((_, bytes)) = point
                         .stored_vectors
                         .iter()
                         .find(|(name, _)| name == vector_name)
                     {
-                        let decoded = decode_raw_dense_vector(
-                            datatype,
-                            &quantization_config,
-                            distance,
-                            bytes,
-                        );
-                        quantized.upsert_vector(id, VectorRef::Dense(&decoded), hw_counter)?;
+                        VectorToStore::Raw(bytes)
                     } else {
-                        let placeholder = vec![0.0 as VectorElementType; quantized.dim()];
-                        quantized.upsert_vector(id, VectorRef::Dense(&placeholder), hw_counter)?;
+                        VectorToStore::Missing
                     }
-                }
+                })
+                .collect();
+            storage.append_many(start_slot, vectors.iter().copied(), hw_counter)?;
+
+            // The quantized storage takes the same run, row-for-row with the raw storage.
+            if let Some(quantized) = store.quantized_vectors.get_mut(vector_name) {
+                quantized.append_many(start_slot, vectors.iter().copied(), hw_counter)?;
             }
         }
 
