@@ -54,6 +54,11 @@ where
     pub(super) _value_type: std::marker::PhantomData<V>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     is_alive_flush_lock: IsAliveLock,
+    /// Whether the region gaps have been rebuilt from the bitmask since startup
+    ///
+    /// An unclean shutdown can leave persisted gaps inconsistent with the bitmask. If we detect
+    /// this case at runtime, rebuild the gaps from the bitmask, at most once.
+    pub(super) gaps_rebuilt: bool,
 }
 
 impl<V, S> Gridstore<V, S>
@@ -113,6 +118,7 @@ where
             _value_type: std::marker::PhantomData,
             bitmask: Arc::new(RwLock::new(bitmask)),
             is_alive_flush_lock: IsAliveLock::new(),
+            gaps_rebuilt: false,
         };
 
         let new_page_id = storage.next_page_id();
@@ -140,7 +146,7 @@ where
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
         let tracker = Tracker::open(&fs, &base_path, populate, true)?;
-        let bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
+        let mut bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
         let pages = Pages::open(&fs, &base_path, true, populate)?;
@@ -152,6 +158,22 @@ where
             )));
         }
 
+        // The region gaps are persisted separately from the bitmask without ordering guarantees,
+        // so an unclean shutdown can leave them covering a different number of regions (e.g.
+        // phantom entries from a lost `extend` writeback). Such entries would make page creation
+        // panic, so repair a length divergence up front — the check is a cheap length
+        // comparison. Content-level staleness is still repaired lazily, see
+        // `find_or_create_available_blocks`.
+        let mut gaps_rebuilt = false;
+        if bitmask.gaps_length_mismatch()?.is_some() {
+            log::warn!(
+                "Detected region gaps length mismatch for Gridstore bitmask at {base_path:?}, rebuilding gaps from the bitmask",
+            );
+            // Replaces the gaps file, which must happen before anything else can map it.
+            bitmask = bitmask.into_rebuilt_gaps(&fs)?;
+            gaps_rebuilt = true;
+        }
+
         Ok(Self {
             fs,
             config,
@@ -161,6 +183,7 @@ where
             base_path,
             _value_type: std::marker::PhantomData,
             is_alive_flush_lock: IsAliveLock::new(),
+            gaps_rebuilt,
         })
     }
 
@@ -190,9 +213,44 @@ where
     ) -> Result<(PageId, BlockOffset)> {
         debug_assert!(num_blocks > 0, "num_blocks must be greater than 0");
 
+        if let Some(available) = self.try_find_or_create_available_blocks(num_blocks)? {
+            return Ok(available);
+        }
+
+        // No fitting gap was found even though enough pages should be covered by now. This signals
+        // the gaps are inconsistent with the bitmask. Stale gaps can occur after an unclean
+        // shutdown. Rebuild the gaps at most once from the bitmask and try again.
+        if self.gaps_rebuilt {
+            panic!(
+                "No available blocks in gridstore at {:?} after creating a new page, \
+                 even though the region gaps have already been rebuilt",
+                self.base_path,
+            );
+        }
+        self.gaps_rebuilt = true;
+
+        log::warn!(
+            "Detected inconsistent region gaps for Gridstore bitmask at {:?}, rebuilding gaps from the bitmask",
+            self.base_path,
+        );
+        self.bitmask.write().rebuild_gaps()?;
+
+        Ok(self
+            .try_find_or_create_available_blocks(num_blocks)?
+            .expect("New page has just been created and gaps have just been rebuilt"))
+    }
+
+    /// Find a spot for `num_blocks` contiguous blocks, creating new pages as needed.
+    ///
+    /// Returns `None` if no spot was found even after page creation, which only happens when the
+    /// region gaps are inconsistent with the bitmask.
+    fn try_find_or_create_available_blocks(
+        &mut self,
+        num_blocks: u32,
+    ) -> Result<Option<(PageId, BlockOffset)>> {
         let bitmask_guard = self.bitmask.read();
         if let Some((page_id, block_offset)) = bitmask_guard.find_available_blocks(num_blocks)? {
-            return Ok((page_id, block_offset));
+            return Ok(Some((page_id, block_offset)));
         }
         let trailing_free_blocks = bitmask_guard.trailing_free_blocks()?;
 
@@ -206,13 +264,7 @@ where
             self.create_new_page()?;
         }
 
-        let available = self
-            .bitmask
-            .read()
-            .find_available_blocks(num_blocks)?
-            .expect("New page has just been created");
-
-        Ok(available)
+        self.bitmask.read().find_available_blocks(num_blocks)
     }
 
     /// Write value into a new cell, considering that it can span more than one page.
@@ -373,6 +425,7 @@ where
             config: _,
             _value_type,
             is_alive_flush_lock,
+            gaps_rebuilt: _,
         } = self;
 
         is_alive_flush_lock.blocking_mark_dead();
@@ -644,6 +697,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             base_path: _,
             _value_type,
             is_alive_flush_lock: _,
+            gaps_rebuilt: _,
         } = self;
         pages.read().clear_cache()?;
         bitmask.read().clear_cache()?;
