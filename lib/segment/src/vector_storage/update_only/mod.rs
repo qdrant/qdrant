@@ -138,6 +138,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// persist them.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -151,7 +152,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
             Self::MultiDenseHalf(s) => s.append_many(start_slot, vectors, hw_counter),
             Self::Turbo(s) => s.append_many(start_slot, vectors, hw_counter),
             Self::MultiTurbo(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::Sparse(s) => s.append_many(start_slot, vectors, hw_counter),
+            Self::Sparse(s) => s.append_many(fs, start_slot, vectors, hw_counter),
         }
     }
 }

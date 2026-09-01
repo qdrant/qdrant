@@ -46,9 +46,10 @@ fn batches_are_durable_and_resume() {
     let hw_counter = HardwareCounterCell::new();
 
     let first: Vec<Payload> = (0..3).map(payload).collect();
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
+            &MmapFs,
             first.iter().enumerate().map(|(i, p)| (i as u32, p)),
             &hw_counter,
         )
@@ -58,9 +59,10 @@ fn batches_are_durable_and_resume() {
     assert_eq!(read_back(dir.path(), 0..3), first);
 
     let second: Vec<Payload> = (10..13).map(payload).collect();
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
+            &MmapFs,
             second.iter().enumerate().map(|(i, p)| (i as u32 + 3, p)),
             &hw_counter,
         )
@@ -81,9 +83,10 @@ fn empty_payloads_and_gaps_read_back_empty() {
     let hw_counter = HardwareCounterCell::new();
 
     let empty = Payload::default();
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
+            &MmapFs,
             [(0, &payload(0)), (1, &empty), (4, &payload(4))],
             &hw_counter,
         )
@@ -110,9 +113,9 @@ fn first_payload_may_land_on_a_high_slot() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
-        .append_many([(1_000, &payload(1_000))], &hw_counter)
+        .append_many(&MmapFs, [(1_000, &payload(1_000))], &hw_counter)
         .unwrap();
     drop(writer);
 
@@ -129,22 +132,26 @@ fn rewriting_a_slot_is_rejected() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
-        .append_many([(0, &payload(0)), (1, &payload(1))], &hw_counter)
+        .append_many(&MmapFs, [(0, &payload(0)), (1, &payload(1))], &hw_counter)
         .unwrap();
 
     // Out of order within a batch
     assert!(
         writer
-            .append_many([(3, &payload(3)), (2, &payload(2))], &hw_counter)
+            .append_many(&MmapFs, [(3, &payload(3)), (2, &payload(2))], &hw_counter)
             .is_err(),
     );
     drop(writer);
 
     // And a slot a previous writer already used
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
-    assert!(writer.append_many([(0, &payload(0))], &hw_counter).is_err());
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    assert!(
+        writer
+            .append_many(&MmapFs, [(0, &payload(0))], &hw_counter)
+            .is_err()
+    );
 }
 
 /// A payload storage created in mutable mode is refused rather than opened.
@@ -156,5 +163,5 @@ fn mutable_storage_is_refused() {
         PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false).unwrap();
     drop(storage);
 
-    assert!(Writer::open(MmapFs, dir.path()).is_err());
+    assert!(Writer::open(&MmapFs, dir.path()).is_err());
 }

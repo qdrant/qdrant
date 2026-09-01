@@ -87,10 +87,12 @@ mod tests {
         .unwrap();
 
         writer
-            .add_point(0, &[&json!("the quick brown fox")], &hw_counter)
+            .add_point(&MmapFs, 0, &[&json!("the quick brown fox")], &hw_counter)
             .unwrap();
         // A value the text index cannot read stores nothing.
-        writer.add_point(1, &[&json!(42)], &hw_counter).unwrap();
+        writer
+            .add_point(&MmapFs, 1, &[&json!(42)], &hw_counter)
+            .unwrap();
         writer.flush(&hw_counter).unwrap();
 
         let index = MutableFullTextIndex::open_gridstore(storage, params, false)

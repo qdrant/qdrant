@@ -25,9 +25,6 @@ use crate::common::operation_error::OperationResult;
 /// [`BlobstoreReader`]: blobstore::BlobstoreReader
 pub struct UpdateOnlyBlobstore<V, S: UniversalAppend + 'static> {
     storage: Logstore<V, S>,
-    /// Opens the new page file on a rollover; the storage holds no filesystem
-    /// of its own.
-    fs: S::Fs,
     buffered: bool,
 }
 
@@ -35,9 +32,13 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     /// Open the storage directory at `path` for appending, creating it if it is
     /// not there yet. An existing storage keeps the config it was created with,
     /// so `config_if_create` only decides the layout of a brand new one.
-    pub fn open(fs: S::Fs, path: &Path, config_if_create: LogstoreConfig) -> OperationResult<Self> {
+    pub fn open(
+        fs: &S::Fs,
+        path: &Path,
+        config_if_create: LogstoreConfig,
+    ) -> OperationResult<Self> {
         let storage = Logstore::open_or_create(
-            &fs,
+            fs,
             path.to_path_buf(),
             config_if_create,
             // Appends never read back, and on a remote backend populating would
@@ -47,20 +48,21 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
 
         Ok(Self {
             storage,
-            fs,
             buffered: false,
         })
     }
 
     /// Buffer `value` at `slot`. Nothing reaches the files until
-    /// [`flush`](Self::flush).
+    /// [`flush`](Self::flush); `fs` only opens the next page file on a
+    /// rollover.
     pub fn put(
         &mut self,
+        fs: &S::Fs,
         slot: PointOffsetType,
         value: &V,
         hw_counter: HwMetricRefCounter,
     ) -> OperationResult<()> {
-        self.storage.put_value(&self.fs, slot, value, hw_counter)?;
+        self.storage.put_value(fs, slot, value, hw_counter)?;
         self.buffered = true;
         Ok(())
     }
