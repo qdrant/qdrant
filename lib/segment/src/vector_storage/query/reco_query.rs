@@ -274,6 +274,7 @@ mod test {
     use sparse::common::sparse_vector::SparseVector;
 
     use super::{avg_vector_for_recommendation, avg_vectors};
+    use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::{VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
@@ -461,6 +462,12 @@ mod test {
             positives.iter().map(VectorRef::from),
             negatives.iter().map(VectorRef::from).peekable(),
         );
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
     }
 }
