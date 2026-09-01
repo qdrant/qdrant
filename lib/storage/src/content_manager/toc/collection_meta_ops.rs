@@ -333,8 +333,18 @@ impl TableOfContent {
                             alias_name,
                         },
                 }) => {
-                    collection_lock.validate_collection_exists(&collection_name)?;
-                    collection_lock.validate_collection_not_exists(&alias_name)?;
+                    // `collection_name` must name a collection, not an alias
+                    if !collection_lock.collection_exists(&collection_name) {
+                        return Err(StorageError::not_found(format!(
+                            "Collection `{collection_name}` does not exist"
+                        )));
+                    }
+
+                    if collection_lock.collection_exists(&alias_name) {
+                        return Err(StorageError::already_exists(format!(
+                            "Collection `{alias_name}` already exists"
+                        )));
+                    }
 
                     aliases.insert(alias_name, collection_name);
                 }
@@ -352,7 +362,7 @@ impl TableOfContent {
                 }) => {
                     if !aliases.rename(&old_alias_name, new_alias_name) {
                         return Err(StorageError::not_found(format!(
-                            "Alias {old_alias_name} does not exists!"
+                            "Alias {old_alias_name} does not exist"
                         )));
                     }
                 }
