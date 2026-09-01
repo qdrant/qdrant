@@ -115,6 +115,12 @@ impl ShardReplicaSet {
                 .await?;
         }
 
+        // Shard-local strict mode rules apply to the replica that takes the
+        // client write, on the same states as the rate limiter above. A replica
+        // still catching up resolves a filter against a point set the client's
+        // request was never gated against.
+        let enforce_strict_mode = state.is_write_rate_limitable();
+
         // For a plain `Shard::Local`, submit the operation while the read
         // guard is held (brief), then drop the guard before awaiting
         // completion. Holding the guard across a deferred-points wait would
@@ -123,7 +129,12 @@ impl ShardReplicaSet {
         let result = match shard {
             Shard::Local(local_shard) => {
                 let outcome = local_shard
-                    .submit_update(operation, effective_wait, hw_measurement)
+                    .submit_update(
+                        operation,
+                        effective_wait,
+                        enforce_strict_mode,
+                        hw_measurement,
+                    )
                     .await?;
                 drop(local);
                 await_update_result(outcome, effective_timeout).await?
@@ -426,7 +437,12 @@ impl ShardReplicaSet {
             match local.deref() {
                 Some(Shard::Local(local_shard)) if local_is_updatable => {
                     let outcome = local_shard
-                        .submit_update(operation, local_wait, hw_measurement_acc)
+                        .submit_update(
+                            operation,
+                            local_wait,
+                            self.peer_is_write_rate_limitable(this_peer_id),
+                            hw_measurement_acc,
+                        )
                         .await?;
                     drop(local);
 
@@ -560,15 +576,17 @@ impl ShardReplicaSet {
                 // If there are enough successes, deactivate failed replicas
                 // Failed replicas will automatically recover from another replica ensuring consistency
 
-                let failures_to_handle: Vec<_> = if !has_full_completed_updates {
+                let failures_to_handle: Vec<_> = failures
+                    .into_iter()
+                    // A strict mode refusal says the request was not allowed,
+                    // not that the replica failed to apply it. Dropping it here
+                    // rather than only in `handle_failed_replicas` also keeps it
+                    // out of the deactivation wait below, which would otherwise
+                    // wait out its timeout on a replica nothing is deactivating.
+                    .filter(|(_, err)| !err.is_strict_mode())
                     // We can only deactivate transient errors
-                    failures
-                        .into_iter()
-                        .filter(|(_, err)| err.is_transient())
-                        .collect()
-                } else {
-                    failures
-                };
+                    .filter(|(_, err)| has_full_completed_updates || err.is_transient())
+                    .collect();
 
                 let wait_for_deactivation = self.handle_failed_replicas(
                     &failures_to_handle,
@@ -738,6 +756,15 @@ impl ShardReplicaSet {
                 | ReplicaState::Resharding
                 | ReplicaState::ReshardingScaleDown
                 | ReplicaState::ActiveRead => (),
+            }
+
+            // A strict mode rejection is a policy verdict on the request, not a
+            // health signal: the replica refused the operation before writing
+            // anything and is otherwise fine. Deactivating it would trade a
+            // rejected update for a full shard resync, and abort any transfer
+            // the replica takes part in.
+            if err.is_strict_mode() {
+                continue;
             }
 
             // Handle a special case where transfer receiver is not in the expected replica state yet.
@@ -993,6 +1020,48 @@ mod tests {
 
         assert_eq!(rs.highest_replica_peer_id(), Some(5));
         assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
+    }
+
+    /// A strict mode rejection is a verdict on the request, not a replica
+    /// health signal, so it must never cost the replica its `Active` state.
+    #[tokio::test]
+    async fn test_strict_mode_failure_does_not_deactivate_replica() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let rs = new_shard_replica_set(&collection_dir).await;
+
+        for peer_id in [1, 2, 3] {
+            rs.set_replica_state(peer_id, ReplicaState::Active)
+                .await
+                .unwrap();
+        }
+
+        let strict_mode = vec![(
+            2,
+            CollectionError::strict_mode("matches 100 points", "use a slice"),
+        )];
+        let forwarded_strict_mode = vec![(
+            2,
+            CollectionError::forward_proxy_error(
+                3,
+                CollectionError::strict_mode("matches 100 points", "use a slice"),
+            ),
+        )];
+        let other_failure = vec![(3, CollectionError::service_error("something broke"))];
+
+        let state = rs.replica_state.read();
+        assert!(!rs.handle_failed_replicas(&strict_mode, &state, false));
+        assert!(!rs.handle_failed_replicas(&forwarded_strict_mode, &state, false));
+        rs.handle_failed_replicas(&other_failure, &state, false);
+        drop(state);
+
+        assert!(
+            !rs.is_locally_disabled(2),
+            "a strict mode rejection must leave the replica active",
+        );
+        assert!(
+            rs.is_locally_disabled(3),
+            "any other failure still deactivates the replica",
+        );
     }
 
     const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
