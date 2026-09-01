@@ -87,6 +87,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// value there.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         points: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
@@ -94,7 +95,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
             for (field, indexes) in &mut self.field_indexes {
                 let values = payload.get_value(field);
                 for index in indexes.iter_mut() {
-                    index.add_point(slot, &values, hw_counter)?;
+                    index.add_point(fs, slot, &values, hw_counter)?;
                 }
             }
         }

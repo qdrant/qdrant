@@ -75,31 +75,31 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
 
         let index = match index_type {
             PayloadIndexType::IntIndex => {
-                Self::IntIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
+                Self::IntIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
             }
             PayloadIndexType::DatetimeIndex => {
-                Self::DatetimeIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
+                Self::DatetimeIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
             }
             PayloadIndexType::FloatIndex => {
-                Self::FloatIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
+                Self::FloatIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
             }
             PayloadIndexType::IntMapIndex => {
-                Self::IntMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
+                Self::IntMapIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
             }
             PayloadIndexType::KeywordIndex => {
-                Self::KeywordIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
+                Self::KeywordIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
             }
             // The `UuidIndex` discriminant is historically map-backed
             PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => {
-                Self::UuidMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
+                Self::UuidMapIndex(UpdateOnlyValueIndex::open(&fs, dir, Default::default())?)
             }
             PayloadIndexType::GeoIndex => {
-                Self::GeoIndex(UpdateOnlyValueIndex::open(fs, dir, UpdateOnlyGeoKind)?)
+                Self::GeoIndex(UpdateOnlyValueIndex::open(&fs, dir, UpdateOnlyGeoKind)?)
             }
             PayloadIndexType::FullTextIndex => {
                 let config = TextIndexParams::try_from(schema)?;
                 Self::FullTextIndex(UpdateOnlyValueIndex::open(
-                    fs,
+                    &fs,
                     dir,
                     UpdateOnlyTextKind::new(&config),
                 )?)
@@ -116,19 +116,20 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// [`flush`](Self::flush).
     pub fn add_point(
         &mut self,
+        fs: &S::Fs,
         slot: PointOffsetType,
         values: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::IntIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::DatetimeIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::FloatIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::IntMapIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::KeywordIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::UuidMapIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::GeoIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::FullTextIndex(index) => index.add_point(slot, values, hw_counter),
+            Self::IntIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::DatetimeIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::FloatIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::IntMapIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::KeywordIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::UuidMapIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::GeoIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::FullTextIndex(index) => index.add_point(fs, slot, values, hw_counter),
             Self::BoolIndex(index) => index.add_point(slot, values),
             Self::NullIndex(index) => index.add_point(slot, values),
         }

@@ -40,6 +40,8 @@ pub struct AppendableSegment<S: UniversalAppend + 'static> {
 /// point is not here: it belongs to the segment itself, since deletes need it
 /// too.
 struct StoreComponents<S: UniversalAppend + 'static> {
+    /// What the components write through, passed down per call.
+    fs: S::Fs,
     payload_storage: UpdateOnlyPayloadStorage<S>,
     payload_indexes: UpdateOnlyStructPayloadIndex<S>,
     /// One writer per named vector, dense and sparse alike.
@@ -54,8 +56,8 @@ struct StoreComponents<S: UniversalAppend + 'static> {
 }
 
 impl<S: UniversalAppend + 'static> StoreComponents<S> {
-    fn open(fs: &S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
-        let payload_storage = UpdateOnlyPayloadStorage::open(fs.clone(), segment_path)?;
+    fn open(fs: S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
+        let payload_storage = UpdateOnlyPayloadStorage::open(&fs, segment_path)?;
         let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs.clone(), segment_path)?;
 
         let mut vector_storages =
@@ -79,6 +81,7 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
         }
 
         Ok(Self {
+            fs,
             payload_storage,
             payload_indexes,
             vector_storages,
@@ -126,7 +129,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
     fn store_components(&mut self) -> OperationResult<&mut StoreComponents<S>> {
         if self.store.is_none() {
             self.store = Some(StoreComponents::open(
-                &self.fs,
+                self.fs.clone(),
                 &self.segment_path,
                 &self.config,
             )?);
@@ -184,7 +187,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
                     }
                 })
                 .collect();
-            storage.append_many(start_slot, vectors.iter().copied(), hw_counter)?;
+            storage.append_many(&store.fs, start_slot, vectors.iter().copied(), hw_counter)?;
 
             // The quantized storage takes the same run, row-for-row with the raw storage.
             if let Some(quantized) = store.quantized_vectors.get_mut(vector_name) {
@@ -200,10 +203,10 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         };
         store
             .payload_storage
-            .append_many(slot_payloads(), hw_counter)?;
+            .append_many(&store.fs, slot_payloads(), hw_counter)?;
         store
             .payload_indexes
-            .append_many(slot_payloads(), hw_counter)?;
+            .append_many(&store.fs, slot_payloads(), hw_counter)?;
 
         // Publish: covering the slots with their versions is what makes the
         // points visible, so everything above must already be durable.
