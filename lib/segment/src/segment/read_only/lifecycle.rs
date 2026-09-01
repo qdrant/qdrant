@@ -30,30 +30,25 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
-/// Build a per-segment [`CachedReadFs`] over `segment_path`.
-///
-/// The files whose names are known in advance (version file, segment state)
-/// are scheduled *before* the listing snapshot is taken, so on backends with
-/// background population their fetch overlaps the listing round-trip.
+/// Build a per-segment [`CachedReadFs`] over `segment_path`. Schedules statically known files.
 fn build_cached_fs<Fs: UniversalReadFs>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
 
-    // Absence is tolerated here: the subsequent read reports it gracefully.
-    for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
-        cached_fs.schedule_open(&segment_path.join(file_name), None, None);
-    }
-
-    // Payload index config
-    cached_fs.schedule_open(
-        &PayloadConfig::get_config_path(&get_payload_index_path(segment_path)),
-        None,
-        None,
-    );
-
     cached_fs.cache_file_info()?;
+
+    // TODO(uio): Schedule static files in advance, after implementing
+    // `read_whole_bytes_async`, so that their fetch can overlap with the listing
+    // round-trip.
+    for path in [
+        segment_path.join(VERSION_FILE),
+        segment_path.join(SEGMENT_STATE_FILE),
+        PayloadConfig::get_config_path(&get_payload_index_path(segment_path)),
+    ] {
+        cached_fs.schedule_open(&path, None, None);
+    }
 
     Ok(cached_fs)
 }
@@ -211,6 +206,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
+        fs.wait_all();
+
         if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written last, so
             // its absence means the segment vanished mid-open (or was never completed) —
