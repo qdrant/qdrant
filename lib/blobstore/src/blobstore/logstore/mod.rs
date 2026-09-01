@@ -91,7 +91,6 @@ pub struct Logstore<V, S>
 where
     S: UniversalAppend + 'static,
 {
-    fs: S::Fs,
     pub(super) config: LogstoreConfig,
     tracker: Arc<RwLock<AppendOnlyTracker<S>>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
@@ -122,16 +121,15 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
-        let tracker = AppendOnlyTracker::new(&fs, &base_path)?;
-        let pages = AppendOnlyPages::new(&fs, &base_path)?;
+    pub(super) fn new(fs: &S::Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self> {
+        let tracker = AppendOnlyTracker::new(fs, &base_path)?;
+        let pages = AppendOnlyPages::new(fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
         let config_bytes = serde_json::to_vec(&StorageConfig::AppendOnly(config.clone()))?;
         fs.atomic_save(&config_path, &config_bytes)?;
 
         Ok(Self {
-            fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
             pages: Arc::new(RwLock::new(pages)),
@@ -148,12 +146,12 @@ where
     /// In case of opening, it ignores the `config_if_create` parameter. A storage created in
     /// mutable mode is rejected, the two modes persist incompatible file formats.
     pub fn open_or_create(
-        fs: S::Fs,
+        fs: &S::Fs,
         base_path: PathBuf,
         config_if_create: LogstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
-        match super::reader::read_config(&fs, &base_path).ok_not_found()? {
+        match super::reader::read_config(fs, &base_path).ok_not_found()? {
             Some(StorageConfig::AppendOnly(config)) => Self::open(fs, base_path, config, populate),
             Some(StorageConfig::Mutable(_)) => Err(BlobstoreError::unsupported_operation(format!(
                 "storage at {} was created in mutable mode, it cannot be opened append-only",
@@ -168,17 +166,16 @@ where
 
     /// Open an existing storage at the given path, with the already read config.
     pub(super) fn open(
-        fs: S::Fs,
+        fs: &S::Fs,
         base_path: PathBuf,
         config: LogstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
-        let tracker = AppendOnlyTracker::open_writable(&fs, &base_path, populate)?;
-        let pages = AppendOnlyPages::open(&fs, &base_path, true, populate)?;
+        let tracker = AppendOnlyTracker::open_writable(fs, &base_path, populate)?;
+        let pages = AppendOnlyPages::open(fs, &base_path, true, populate)?;
         validate_consistency(&tracker, &pages)?;
 
         Ok(Self {
-            fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
             pages: Arc::new(RwLock::new(pages)),
@@ -209,11 +206,12 @@ where
     /// Always returns false on success, as values can never be updated.
     pub fn put_value(
         &mut self,
+        fs: &S::Fs,
         point_offset: PointOffset,
         value: &V,
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
-        self.put_value_bytes(point_offset, value.to_bytes(), hw_counter)
+        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
     }
 
     /// Put an already serialized value in the storage.
@@ -226,6 +224,7 @@ where
     #[allow(clippy::needless_pass_by_ref_mut)]
     pub(super) fn put_value_bytes(
         &mut self,
+        fs: &S::Fs,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
         hw_counter: HwMetricRefCounter,
@@ -252,7 +251,7 @@ where
         let (page_id, offset) =
             self.pages
                 .write()
-                .append_value(&self.fs, &comp_value, page_capacity_bytes)?;
+                .append_value(fs, &comp_value, page_capacity_bytes)?;
 
         self.tracker
             .write()
@@ -271,13 +270,13 @@ where
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it in append-only mode.
-    pub(super) fn clear(&mut self) -> Result<()> {
+    pub(super) fn clear(&mut self, fs: &S::Fs) -> Result<()> {
         self.is_alive_flush_lock.blocking_mark_dead();
 
-        self.fs.remove_dir(&self.base_path)?;
-        self.fs.create_dir(&self.base_path)?;
+        fs.remove_dir(&self.base_path)?;
+        fs.create_dir(&self.base_path)?;
 
-        *self = Self::new(self.fs.clone(), self.base_path.clone(), self.config.clone())?;
+        *self = Self::new(fs, self.base_path.clone(), self.config.clone())?;
 
         Ok(())
     }
@@ -287,9 +286,8 @@ where
     /// Takes ownership because this function leaves the storage in an inconsistent state which
     /// does not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the
     /// storage.
-    pub(super) fn wipe(self) -> Result<()> {
+    pub(super) fn wipe(self, fs: &S::Fs) -> Result<()> {
         let Self {
-            fs,
             config: _,
             tracker,
             pages,
@@ -507,7 +505,6 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
     /// Ask to evict the tracker and all pages from the RAM cache.
     pub(super) fn clear_cache(&self) -> crate::Result<()> {
         let Self {
-            fs: _,
             config: _,
             tracker,
             pages,
