@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>call graph</title>
+<style>
+  :root {
+    --bg: #f8fafc; --panel: #ffffff; --border: #e2e8f0; --text: #0f172a;
+    --dim: #64748b; --accent: #2563eb; --root-ring: #b45309;
+    --code-bg: #f1f5f9; --hl-bg: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: var(--text); background: var(--bg);
+         height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  code, pre { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12px; }
+
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header h1 code { font-size: 14px; background: var(--code-bg); padding: 2px 6px; border-radius: 4px; }
+  .meta { color: var(--dim); font-size: 12px; }
+  .meta a { color: var(--dim); }
+  .toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .toggle button { border: 0; background: var(--panel); padding: 6px 14px; cursor: pointer; font: inherit; color: var(--dim); }
+  .toggle button.active { background: var(--accent); color: #fff; }
+  #search { margin-left: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+            font: inherit; width: 220px; background: var(--panel); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #graph-pane { flex: 1; position: relative; min-width: 0; }
+  #svg-host { position: absolute; inset: 0; cursor: grab; user-select: none; -webkit-user-select: none; }
+  #svg-host.dragging { cursor: grabbing; }
+  #svg-host svg { width: 100%; height: 100%; display: block; }
+
+  #zoom { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+  #zoom button { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 6px;
+                 background: var(--panel); cursor: pointer; font-size: 15px; color: var(--text); }
+  #legend { position: absolute; bottom: 12px; left: 12px; background: #ffffffe6; border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px 12px; font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap;
+            max-width: 70%; z-index: 2; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); }
+  .chip i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #00000022; }
+  .chip svg { overflow: visible; }
+
+  /* graph highlighting */
+  .node { cursor: pointer; }
+  .node text { pointer-events: none; }
+  .node.sel :is(path, polygon, ellipse) { stroke: var(--accent); stroke-width: 2.5px; }
+  .node.trunc :is(path, polygon, ellipse) { stroke-dasharray: 5 3; }
+  svg.focus :is(.node, .edge):not(.sel):not(.nbr):not(.in-e):not(.out-e) { opacity: 0.22; }
+  .edge.in-e :is(path) { stroke: #d97706; stroke-width: 2px; }
+  .edge.in-e :is(polygon) { fill: #d97706; stroke: #d97706; }
+  .edge.out-e :is(path) { stroke: var(--accent); stroke-width: 2px; }
+  .edge.out-e :is(polygon) { fill: var(--accent); stroke: var(--accent); }
+  .search-miss { opacity: 0.15; }
+
+  /* details panel */
+  #resizer { flex: 0 0 6px; cursor: col-resize; background: transparent; border-left: 1px solid var(--border); }
+  #resizer:hover, #resizer.active { background: var(--accent); border-left-color: var(--accent); }
+  #panel { width: 420px; min-width: 280px; flex-shrink: 0; background: var(--panel);
+           overflow-y: auto; padding: 16px; }
+  #panel .empty { color: var(--dim); margin-top: 40px; text-align: center; }
+  #panel h2 { font-size: 15px; margin: 0 0 2px; word-break: break-all; }
+  #panel h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin: 18px 0 6px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px;
+           border: 1px solid #00000022; margin-right: 4px; }
+  .badge.warn { background: var(--hl-bg); border-color: #d9770655; color: #92400e; }
+  .links { margin: 8px 0 0; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .links a { color: var(--accent); text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  .links button { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; padding: 0; }
+  .path { color: var(--dim); font-size: 12px; word-break: break-all; }
+
+  pre.code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+             padding: 6px 0; overflow-x: auto; margin: 6px 0; line-height: 1.55; }
+  pre.code.plain { padding: 6px 10px; }
+  pre.code .cl { display: block; width: max-content; min-width: 100%; padding-right: 10px; }
+  pre.code .ln { position: sticky; left: 0; display: inline-block; min-width: 4ch; text-align: right;
+                 padding: 0 8px 0 6px; margin-right: 8px; color: #94a3b8; user-select: none;
+                 background: var(--code-bg); border-right: 1px solid var(--border); }
+  pre.code .cl.hl-line { background: var(--hl-bg); }
+  pre.code .cl.hl-line .ln { background: var(--hl-bg); color: #92400e; border-right-color: #d9770680; }
+  .k { color: #7c3aed; } .s { color: #16a34a; } .c { color: #94a3b8; font-style: italic; } .n { color: #d97706; }
+  .docs p { margin: 6px 0; } .docs hr { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
+  .docs code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; }
+
+  .rel { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; overflow: hidden; }
+  .rel > summary, .rel > .rel-head { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; background: #fbfcfe; }
+  .rel .fname { font-family: ui-monospace, monospace; font-size: 12.5px; font-weight: 600; }
+  .rel .where { color: var(--dim); font-size: 11.5px; margin-left: auto; white-space: nowrap; }
+  .rel .body { padding: 4px 10px 8px; border-top: 1px solid var(--border); }
+  .site { margin: 8px 0; }
+  .site .site-head { font-size: 11.5px; color: var(--dim); margin-bottom: 2px; }
+  .site .site-head a { color: var(--accent); text-decoration: none; }
+  details.src summary { cursor: pointer; color: var(--dim); font-size: 12px; margin: 14px 0 4px; }
+  .goto { color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1><code id="h-root"></code> <span class="meta">call graph</span></h1>
+  <div class="toggle">
+    <button id="btn-callers">Callers</button>
+    <button id="btn-callees">Callees</button>
+  </div>
+  <span class="meta" id="h-meta"></span>
+  <input id="search" type="search" placeholder="filter nodes… (Enter selects)">
+</header>
+<main>
+  <div id="graph-pane">
+    <div id="zoom">
+      <button id="z-in" title="zoom in">+</button>
+      <button id="z-out" title="zoom out">−</button>
+      <button id="z-fit" title="fit">⤢</button>
+    </div>
+    <div id="svg-host"></div>
+    <div id="legend"></div>
+  </div>
+  <div id="resizer" title="drag to resize, double-click to reset"></div>
+  <aside id="panel"><div class="empty">Click a node to inspect it.</div></aside>
+</main>
+<script>
+const DATA = __DATA__;
+const M = DATA.meta, NODES = DATA.nodes;
+let view = "callers", selected = null, vb = null, vb0 = null, svg = null;
+let userFocused = false; // fade the rest of the graph only after an explicit click
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/* ---------- tiny rust highlighter ---------- */
+const RUST_TOKENS = new RegExp(
+  '(\\/\\/[^\\n]*)|("(?:[^"\\\\]|\\\\.)*")|(\\b\\d[\\d_]*(?:\\.\\d+)?\\b)|' +
+  "(\\b(?:pub|fn|let|mut|const|static|impl|trait|struct|enum|match|if|else|for|while|loop|return|" +
+  "use|mod|where|async|await|move|dyn|ref|self|Self|super|crate|in|as|break|continue|unsafe|type)\\b)", "g");
+function hlRust(src) {
+  let out = "", last = 0, m;
+  RUST_TOKENS.lastIndex = 0;
+  while ((m = RUST_TOKENS.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    const cls = m[1] ? "c" : m[2] ? "s" : m[3] ? "n" : "k";
+    out += `<span class="${cls}">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(src.slice(last));
+}
+function codeBlock(lines, startLine, hlLine) {
+  const nonEmpty = lines.filter((l) => l.trim());
+  const indent = nonEmpty.length ? Math.min(...nonEmpty.map((l) => l.match(/^[ \t]*/)[0].length)) : 0;
+  const body = lines.map((l, i) => {
+    const no = startLine + i;
+    const cls = no === hlLine ? "cl hl-line" : "cl";
+    return `<span class="${cls}"><span class="ln">${no}</span>${hlRust(l.slice(indent))}</span>`;
+  }).join("");
+  return `<pre class="code">${body}</pre>`;
+}
+/* hover markdown: alternate text / ```fenced``` segments */
+function renderDocs(md) {
+  if (!md) return "";
+  const parts = md.split(/```(?:rust[^\n]*)?\n?/);
+  return '<div class="docs">' + parts.map((p, i) => {
+    if (i % 2 === 1) return `<pre class="code plain">${hlRust(p.replace(/\n$/, ""))}</pre>`;
+    return p.trim().split(/\n{2,}/).filter(Boolean).map((para) => {
+      if (/^-{3,}$/.test(para.trim())) return "<hr>";
+      if (/^Implements notable traits/.test(para.trim())) return ""; // rust-analyzer noise
+      const text = esc(para)
+        .replace(/\[([^\]]+)\]\([^)\s]+\)/g, "$1") // docs.rs links from RA are dead for workspace crates
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+      return `<p>${text}</p>`;
+    }).join("");
+  }).join("") + "</div>";
+}
+
+/* ---------- links ---------- */
+const ghLink = (path, line) => M.github ? `${M.github}/blob/${M.commit}/${path}#L${line}` : null;
+const edLink = (path, line) => `vscode://file${M.repoRoot}/${path}:${line}`;
+function linksRow(path, line) {
+  const gh = ghLink(path, line);
+  return `<div class="links">
+    ${gh ? `<a href="${gh}" target="_blank">GitHub ↗</a>` : ""}
+    <a href="${edLink(path, line)}">editor</a>
+    <button data-copy="${esc(path)}:${line}">copy path</button>
+  </div>`;
+}
+
+/* ---------- graph rendering ---------- */
+function edgeSvgId(i, kind) { return `E${i}_${kind}`; }
+
+function show(name) {
+  view = name;
+  const v = DATA.views[view];
+  $("svg-host").innerHTML = v.svg;
+  svg = $("svg-host").querySelector("svg");
+  svg.removeAttribute("width"); svg.removeAttribute("height");
+  const [x, y, w, h] = svg.getAttribute("viewBox").split(" ").map(Number);
+  vb0 = { x, y, w, h };
+  fit();
+  // node tooltips + truncation marks
+  for (const [nid, n] of Object.entries(NODES)) {
+    const el = svg.getElementById(nid);
+    if (!el) continue;
+    el.querySelector("title")?.remove();
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    t.textContent = `${n.name} — ${n.path}:${n.line}` + (v.truncated.includes(nid) ? " (not expanded)" : "");
+    el.appendChild(t);
+    if (v.truncated.includes(nid)) el.classList.add("trunc");
+  }
+  $("btn-callers").classList.toggle("active", view === "callers");
+  $("btn-callees").classList.toggle("active", view === "callees");
+  applySelection();
+  applySearch();
+}
+
+function edgesOf(nid) {
+  const v = DATA.views[view];
+  const res = { callers: [], callees: [], impls: [], decl: [] };
+  v.edges.forEach(([a, b, kind], i) => {
+    if (kind === "call") {
+      if (b === nid) res.callers.push({ peer: a, i, sites: v.sites[`${a}>${b}`] || [] });
+      if (a === nid) res.callees.push({ peer: b, i, sites: v.sites[`${a}>${b}`] || [] });
+    } else {
+      if (a === nid) res.impls.push({ peer: b, i });
+      if (b === nid) res.decl.push({ peer: a, i });
+    }
+  });
+  return res;
+}
+
+function applySelection() {
+  if (!svg) return;
+  svg.classList.toggle("focus", !!selected && userFocused);
+  svg.querySelectorAll(".sel, .nbr, .in-e, .out-e").forEach((el) =>
+    el.classList.remove("sel", "nbr", "in-e", "out-e"));
+  if (!selected) return;
+  const el = svg.getElementById(selected);
+  if (el) el.classList.add("sel");
+  const rel = edgesOf(selected);
+  const v = DATA.views[view];
+  for (const { peer, i } of [...rel.callers, ...rel.decl])
+    mark(peer, i, v.edges[i][2], "in-e");
+  for (const { peer, i } of [...rel.callees, ...rel.impls])
+    mark(peer, i, v.edges[i][2], "out-e");
+  function mark(peer, i, kind, cls) {
+    svg.getElementById(peer)?.classList.add("nbr");
+    svg.getElementById(edgeSvgId(i, kind))?.classList.add(cls);
+  }
+}
+
+function select(nid, centerIt, focus = true) {
+  selected = nid;
+  userFocused = focus && !!nid;
+  applySelection();
+  renderPanel();
+  if (centerIt && nid) center(nid);
+}
+
+/* ---------- details panel ---------- */
+function nodeRef(nid) {
+  const n = NODES[nid];
+  return `<a class="goto" data-goto="${nid}">${esc(n.name)}</a> <span class="path">${esc(n.path)}:${n.line}</span>`;
+}
+function relEntry({ peer, i, sites }, siteOwnerIsPeer) {
+  const n = NODES[peer];
+  const siteHtml = (sites || []).map((s) => {
+    const owner = siteOwnerIsPeer ? NODES[peer] : NODES[selected];
+    const gh = ghLink(owner.path, s.line);
+    return `<div class="site">
+      <div class="site-head" title="${esc(owner.path)}:${s.line}">line ${s.line}${gh ? ` — <a href="${gh}" target="_blank">GitHub ↗</a>` : ""}</div>
+      ${codeBlock(s.lines, s.context_start, s.line)}
+    </div>`;
+  }).join("");
+  const head = `<span class="fname"><a class="goto" data-goto="${peer}">${esc(n.name)}</a></span>
+                <span class="where">${esc(shortPath(n.path))}:${n.line}</span>`;
+  if (!siteHtml) return `<div class="rel"><div class="rel-head">${head}</div></div>`;
+  return `<details class="rel"><summary>${head}</summary><div class="body">${siteHtml}</div></details>`;
+}
+function shortPath(p) {
+  const parts = p.split("/src/").pop().split("/");
+  return parts.slice(-2).join("/");
+}
+function renderPanel() {
+  const panel = $("panel");
+  if (!selected) { panel.innerHTML = '<div class="empty">Click a node to inspect it.</div>'; return; }
+  const n = NODES[selected];
+  const v = DATA.views[view];
+  const rel = edgesOf(selected);
+  const badges =
+    (selected === M.rootId ? '<span class="badge" style="background:#fde68a">root</span>' : "") +
+    `<span class="badge" style="background:${M.crateColors[n.crate]}">${esc(n.crate)}</span>` +
+    (v.truncated.includes(selected) ? '<span class="badge warn">not expanded (limit)</span>' : "");
+  let html = `<h2>${esc(n.name)}</h2>
+    <div>${badges}</div>
+    <div class="path" style="margin-top:6px">${esc(n.path)}:${n.line}</div>
+    ${linksRow(n.path, n.line)}
+    ${renderDocs(n.hover)}`;
+  if (rel.decl.length)
+    html += `<h3>Declared in trait</h3>` + rel.decl.map((r) => `<div class="rel"><div class="rel-head">${nodeRef(r.peer)}</div></div>`).join("");
+  if (rel.impls.length)
+    html += `<h3>Implementations (${rel.impls.length})</h3>` + rel.impls.map((r) => `<div class="rel"><div class="rel-head">${nodeRef(r.peer)}</div></div>`).join("");
+  if (rel.callers.length)
+    html += `<h3>Called by (${rel.callers.length})</h3>` + rel.callers.map((r) => relEntry(r, true)).join("");
+  if (rel.callees.length)
+    html += `<h3>Calls (${rel.callees.length})</h3>` + rel.callees.map((r) => relEntry(r, false)).join("");
+  const snip = n.snippet;
+  html += `<details class="src"><summary>Source (${snip.lines.length}${snip.clipped ? "+ (clipped)" : ""} lines)</summary>
+    ${codeBlock(snip.lines, snip.start, -1)}</details>`;
+  panel.innerHTML = html;
+  panel.scrollTop = 0;
+}
+
+/* ---------- pan / zoom ---------- */
+function setVb() { svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`); }
+function fit() {
+  vb = { ...vb0 };
+  // don't blow small graphs up: cap initial scale at ~1.3x
+  const host = $("svg-host").getBoundingClientRect();
+  const scale = Math.min(host.width / vb.w, host.height / vb.h);
+  if (scale > 1.3) {
+    const w = host.width / 1.3, h = host.height / 1.3;
+    vb = { x: vb.x - (w - vb.w) / 2, y: vb.y - (h - vb.h) / 2, w, h };
+  }
+  setVb();
+}
+function zoom(factor, cx, cy) {
+  const host = $("svg-host").getBoundingClientRect();
+  cx = cx === undefined ? host.width / 2 : cx; cy = cy === undefined ? host.height / 2 : cy;
+  const px = vb.x + (cx / host.width) * vb.w, py = vb.y + (cy / host.height) * vb.h;
+  vb.w /= factor; vb.h /= factor;
+  vb.x = px - (cx / host.width) * vb.w; vb.y = py - (cy / host.height) * vb.h;
+  setVb();
+}
+function center(nid) {
+  const el = svg.getElementById(nid);
+  if (!el) return;
+  const r = el.getBoundingClientRect(), host = $("svg-host").getBoundingClientRect();
+  const dx = (r.left + r.width / 2 - (host.left + host.width / 2)) * (vb.w / host.width);
+  const dy = (r.top + r.height / 2 - (host.top + host.height / 2)) * (vb.h / host.height);
+  vb.x += dx; vb.y += dy;
+  setVb();
+}
+$("svg-host").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const host = $("svg-host").getBoundingClientRect();
+  zoom(Math.pow(1.0015, -e.deltaY), e.clientX - host.left, e.clientY - host.top);
+}, { passive: false });
+let drag = null;
+$("svg-host").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  drag = { x: e.clientX, y: e.clientY, moved: false };
+  $("svg-host").classList.add("dragging");
+  $("svg-host").setPointerCapture(e.pointerId);
+});
+$("svg-host").addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const host = $("svg-host").getBoundingClientRect();
+  const dx = (e.clientX - drag.x) * (vb.w / host.width), dy = (e.clientY - drag.y) * (vb.h / host.height);
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
+  vb.x -= dx; vb.y -= dy;
+  drag.x = e.clientX; drag.y = e.clientY;
+  setVb();
+});
+$("svg-host").addEventListener("pointerup", (e) => {
+  const wasDrag = drag?.moved;
+  drag = null;
+  $("svg-host").classList.remove("dragging");
+  if (wasDrag) return;
+  // pointer capture retargets e.target to the host div: hit-test by coordinates
+  const nodeEl = document.elementFromPoint(e.clientX, e.clientY)?.closest("g.node");
+  select(nodeEl ? nodeEl.id : null, false);
+});
+
+/* ---------- search ---------- */
+function applySearch() {
+  const q = $("search").value.trim().toLowerCase();
+  if (!svg) return;
+  for (const nid of Object.keys(NODES)) {
+    const el = svg.getElementById(nid);
+    if (!el) continue;
+    const hit = !q || NODES[nid].name.toLowerCase().includes(q) || NODES[nid].path.toLowerCase().includes(q);
+    el.classList.toggle("search-miss", !hit);
+  }
+}
+$("search").addEventListener("input", applySearch);
+$("search").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const q = $("search").value.trim().toLowerCase();
+  const hit = Object.keys(NODES).find((nid) =>
+    svg.getElementById(nid) && NODES[nid].name.toLowerCase().includes(q));
+  if (hit) select(hit, true);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { $("search").value = ""; applySearch(); select(null, false); }
+});
+
+/* ---------- global click handlers (goto / copy) ---------- */
+document.addEventListener("click", (e) => {
+  const goto = e.target.closest("[data-goto]");
+  if (goto) { e.preventDefault(); select(goto.dataset.goto, true); return; }
+  const copy = e.target.closest("[data-copy]");
+  if (copy) { navigator.clipboard?.writeText(copy.dataset.copy); copy.textContent = "copied!"; setTimeout(() => (copy.textContent = "copy path"), 1200); }
+});
+
+/* ---------- panel resize ---------- */
+function setPanelWidth(w) {
+  w = Math.max(280, Math.min(w, window.innerWidth - 400));
+  $("panel").style.width = w + "px";
+  try { localStorage.setItem("cg-panel-w", w); } catch {}
+}
+$("resizer").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  $("resizer").classList.add("active");
+  $("resizer").setPointerCapture(e.pointerId);
+  const move = (ev) => setPanelWidth(window.innerWidth - ev.clientX);
+  $("resizer").addEventListener("pointermove", move);
+  $("resizer").addEventListener("pointerup", () => {
+    $("resizer").classList.remove("active");
+    $("resizer").removeEventListener("pointermove", move);
+  }, { once: true });
+});
+$("resizer").addEventListener("dblclick", () => setPanelWidth(420));
+try {
+  const saved = parseInt(localStorage.getItem("cg-panel-w"));
+  if (saved) setPanelWidth(saved);
+} catch {}
+
+/* ---------- boot ---------- */
+document.title = `${M.root} — call graph`;
+$("h-root").textContent = M.root;
+$("h-meta").innerHTML = `${esc(M.target)} · depth ${M.depth} · ` +
+  (M.github ? `<a href="${M.github}/commit/${M.commit}" target="_blank">${esc(M.branch)}@${esc(M.commitShort)}</a>` : esc(M.commitShort)) +
+  ` · ${esc(M.date)}`;
+$("btn-callers").textContent = `Callers (${DATA.views.callers.nodeCount})`;
+$("btn-callees").textContent = `Callees (${DATA.views.callees.nodeCount})`;
+$("btn-callers").onclick = () => show("callers");
+$("btn-callees").onclick = () => show("callees");
+$("z-in").onclick = () => zoom(1.4);
+$("z-out").onclick = () => zoom(1 / 1.4);
+$("z-fit").onclick = fit;
+$("legend").innerHTML =
+  Object.entries(M.crateColors).map(([c, col]) => `<span class="chip"><i style="background:${col}"></i>${esc(c)}</span>`).join("") +
+  `<span class="chip"><svg width="26" height="10"><line x1="0" y1="5" x2="26" y2="5" stroke="#94a3b8" stroke-dasharray="4 3" stroke-width="1.5"/></svg>trait ↔ impl</span>` +
+  `<span class="chip"><i style="border:1.5px dashed #64748b; background:none"></i>not expanded</span>`;
+show("callers");
+select(M.rootId, false, false);
+</script>
+</body>
+</html>
