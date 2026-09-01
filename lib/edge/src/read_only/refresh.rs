@@ -100,7 +100,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             on_disk
                 .iter()
                 .filter(|(uuid, _)| !holder.contains(uuid))
-                .map(|(uuid, segment_path)| (*uuid, segment_path.clone()))
+                .map(|(uuid, listing)| (*uuid, listing.path.clone()))
                 .collect()
         };
         let loaded = load_segments_parallel::<S>(

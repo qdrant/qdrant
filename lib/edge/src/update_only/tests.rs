@@ -14,7 +14,8 @@ use shard::operations::point_ops::PointOperations::DeletePoints;
 use tempfile::TempDir;
 
 use crate::read_only::tests::{
-    delete as leader_delete, exact_count, open_follower, scrolled_ids, test_config, upsert,
+    delete as leader_delete, exact_count, init_serverless_feature_flags, open_follower, point,
+    scrolled_ids, test_config, upsert,
 };
 use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
 use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
@@ -560,4 +561,104 @@ mod store {
             Some(payload_json! { "kind": "updated" })
         );
     }
+}
+
+/// A claimed target opens non-writable; a created appendable takes the writes.
+#[test]
+fn optimizing_target_gets_a_created_appendable() {
+    use std::collections::HashMap;
+
+    use common::universal_io::MmapFs;
+    use shard::files::segment_manifest_path;
+    use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+    use shard::operations::point_ops::PointOperations::UpsertPoints;
+    use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
+    use uuid::Uuid;
+
+    use crate::read_only::ManifestSegmentEnumerator;
+
+    init_serverless_feature_flags();
+    let dir = leader_with_ten_points("edge-update-roll");
+
+    let manifest_path = segment_manifest_path(dir.path());
+    let mut manifest: SegmentsManifest =
+        serde_json::from_slice(&fs_err::read(&manifest_path).unwrap()).unwrap();
+    let old: Uuid = *manifest.iter().next().unwrap().0;
+    manifest.set(
+        old,
+        SegmentManifestState::Optimizing {
+            holder: "idx".to_string(),
+            lease_until: u64::MAX,
+        },
+    );
+    fs_err::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+    let writer = UpdateOnlyEdgeShard::<MmapFile>::open(
+        MmapFs,
+        dir.path(),
+        ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+    )
+    .unwrap();
+    assert_eq!(
+        writer.write_target(),
+        None,
+        "a claimed target must not take appends",
+    );
+
+    let (writer, fresh) = writer.create_appendable_from(old, &HashMap::new()).unwrap();
+    assert_ne!(fresh, old);
+    assert_eq!(writer.write_target(), Some(fresh));
+
+    let batch = [(
+        100,
+        PointOperation(UpsertPoints(PointsList(vec![point(42)]))),
+    )];
+    let (_writer, outcome) = writer.apply_batch(batch).unwrap();
+    assert_eq!(outcome.stored, 1);
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 11);
+    assert!(scrolled_ids(&follower).contains(&ExtendedPointId::NumId(42)));
+}
+
+/// A segmentless shard (empty manifest) opens with no target; `create_appendable`
+/// bootstraps the first one.
+#[test]
+fn empty_manifest_shard_bootstraps_an_appendable() {
+    use std::collections::HashMap;
+
+    use common::universal_io::MmapFs;
+    use shard::files::segment_manifest_path;
+    use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+    use shard::operations::point_ops::PointOperations::UpsertPoints;
+
+    use crate::read_only::ManifestSegmentEnumerator;
+    use crate::read_only::tests::{init_serverless_feature_flags, point, test_config};
+
+    init_serverless_feature_flags();
+    let dir = tempfile::Builder::new()
+        .prefix("edge-update-bootstrap")
+        .tempdir()
+        .unwrap();
+    fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+    let writer = UpdateOnlyEdgeShard::<MmapFile>::open(
+        MmapFs,
+        dir.path(),
+        ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+    )
+    .unwrap();
+    assert_eq!(writer.segments_count(), 0);
+    assert_eq!(writer.write_target(), None);
+
+    let config = test_config().plain_segment_config();
+    let (writer, fresh) = writer.create_appendable(&config, &HashMap::new()).unwrap();
+    assert_eq!(writer.write_target(), Some(fresh));
+
+    let batch = [(7, PointOperation(UpsertPoints(PointsList(vec![point(1)]))))];
+    let (_writer, outcome) = writer.apply_batch(batch).unwrap();
+    assert_eq!(outcome.stored, 1);
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 1);
 }

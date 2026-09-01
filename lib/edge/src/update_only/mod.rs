@@ -91,6 +91,11 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         self.segments.read().len()
     }
 
+    /// The append target; `None` when every appendable is claimed by a rebuild.
+    pub fn write_target(&self) -> Option<Uuid> {
+        self.segments.read().write_target_uuid()
+    }
+
     /// Every segment's config, cloned out, with the write target marked.
     /// Order is unspecified. The write target's config is the schema a write
     /// must conform to: the named vectors a point carries, and their shapes.
