@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::load_profile::LoadProfile;
@@ -63,7 +63,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         load_profile: Option<LoadProfile>,
     ) -> OperationResult<Self>
     where
-        S::Fs: Send + Sync + Clone + 'static,
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
         Self::open_with_enumerator(fs, path, enumerator, config, load_profile)
@@ -86,7 +86,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         load_profile: Option<LoadProfile>,
     ) -> OperationResult<Self>
     where
-        S::Fs: Send + Sync + Clone + 'static,
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         let provided_config = config.unwrap_or_default();
 

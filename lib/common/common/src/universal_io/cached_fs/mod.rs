@@ -79,7 +79,7 @@ impl FileInfo {
 /// clones.
 pub struct CachedFs<Fs>
 where
-    Fs: UniversalReadFsAsync,
+    Fs: UniversalReadFs,
     Fs::File: 'static,
 {
     fs: Fs,
@@ -111,7 +111,7 @@ impl<S> Debug for ScheduledFile<S> {
 /// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
 /// bound for the projection in `files_prefetched`, even though the
 /// `Arc` field is unconditionally cloneable (rust-lang/rust#26925).
-impl<Fs: UniversalReadFsAsync> Clone for CachedFs<Fs> {
+impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
     fn clone(&self) -> Self {
         let Self {
             fs,
@@ -130,7 +130,7 @@ impl<Fs: UniversalReadFsAsync> Clone for CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
+impl<Fs: UniversalReadFs> CachedFs<Fs> {
     pub fn new(fs: Fs, prefix_path: &Path) -> UioResult<Self> {
         Ok(Self {
             fs,
@@ -200,6 +200,10 @@ impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
     }
 }
 
+/// The one impl with the `UniversalReadFsAsync` bound: `schedule_open` /
+/// `reschedule_open` park the inner filesystem's `open_async` futures in the
+/// prefetch pool. Everything else on `CachedFs` (including consuming parked
+/// futures in `open`) works over a plain `UniversalReadFs`.
 impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     /// Take a LIST snapshot of the filesystem and drop prefetched files.
     fn cache_file_info(&mut self) -> UioResult<()> {
@@ -351,7 +355,7 @@ pub struct CachedReadFsContext<C> {
     pub prefix_path: PathBuf,
 }
 
-impl<Fs: UniversalReadFsAsync> UniversalReadFileOps for CachedFs<Fs> {
+impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
     type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
 
     fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
@@ -374,7 +378,7 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFileOps for CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFsAsync> Debug for CachedFs<Fs> {
+impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let Self {
             fs,
@@ -393,7 +397,7 @@ impl<Fs: UniversalReadFsAsync> Debug for CachedFs<Fs> {
     }
 }
 
-impl<Fs: UniversalReadFsAsync> UniversalReadFs for CachedFs<Fs> {
+impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
     /// The *wrapped* backend's file type: opening through the cache hands
     /// out the very handles the inner filesystem produced (prefetched or
     /// fallback-opened), so the wrapper never appears in stored types.

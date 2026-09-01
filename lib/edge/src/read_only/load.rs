@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::universal_io::UniversalReadFsAsync;
 use futures::future::join_all;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
@@ -34,7 +35,7 @@ pub(crate) fn load_segments_parallel<S>(
 ) -> Vec<(Uuid, ReadOnlySegment<S>)>
 where
     S: UniversalReadExt + 'static,
-    S::Fs: Send + Sync + Clone + 'static,
+    S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
     // Stage every open: per-segment LIST + config reads, with the bulk
     // fetches going in flight as scheduled.
@@ -84,7 +85,7 @@ pub(crate) fn reload_segments_parallel<S>(
 ) -> Vec<(Uuid, OperationResult<()>)>
 where
     S: UniversalReadExt + 'static,
-    S::Fs: Send + Sync + Clone + 'static,
+    S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
     let io_futures = pool.install(|| {
         segments

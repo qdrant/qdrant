@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalReadFs, UniversalReadFsAsync};
 use futures::future::{BoxFuture, join_all};
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
@@ -10,7 +10,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::index::UniversalReadExt;
 
-impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Stage every component's next [`Self::live_reload`] under shared access:
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
@@ -115,7 +115,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     }
 }
 
-impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {
     /// Stage this vector's next [`Self::live_reload`]. Shared access only.
     fn live_preload(
         &self,

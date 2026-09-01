@@ -75,7 +75,7 @@ pub(super) fn sparse_storage_populate(sparse_vector_config: &SparseVectorDataCon
     }
 }
 
-impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Open the segment over a per-segment [`CachedReadFs`]: known files are
     /// prefetched before the listing snapshot is taken (see
     /// [`build_cached_fs`]), and probes for optional files resolve against
@@ -354,7 +354,7 @@ pub struct StagedSegmentOpen<'a, S: UniversalReadExt + 'static> {
     load_profile: Option<&'a LoadProfile>,
 }
 
-impl<'a, S: UniversalReadExt + 'static> StagedSegmentOpen<'a, S> {
+impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentOpen<'a, S> {
     /// Drive the staged fetches to completion. Detached (`use<S>`), so many
     /// segments' waits can be collected and awaited together.
     pub fn wait(&self) -> impl Future<Output = ()> + Send + 'static + use<S> {
@@ -386,7 +386,7 @@ impl<'a, S: UniversalReadExt + 'static> StagedSegmentOpen<'a, S> {
     }
 }
 
-impl<S: UniversalReadExt + 'static> ReadOnlyVectorData<S> {
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {
     /// Open one dense vector's quantized vectors and index over `fs`, mirroring
     /// `open_dense_vector_data`. No `prefill`: read-only never writes.
     /// `load_profile` mirrors the preopen's per-vector placement decisions.

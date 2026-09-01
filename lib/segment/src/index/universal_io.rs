@@ -1,8 +1,6 @@
 #[cfg(test)]
 use common::universal_io::ReadOnly;
-use common::universal_io::{
-    DiskCache, DiskCacheRemote, MmapFile, UniversalRead, UniversalReadFsAsync,
-};
+use common::universal_io::{DiskCache, DiskCacheRemote, MmapFile, UniversalRead};
 
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::{BoolConditionChecker, ReadOnlyBoolIndex};
@@ -29,16 +27,8 @@ type RangeCC<'a, S, T> = RangeConditionChecker<'a, ReadOnlyNumericIndexInner<T, 
 /// Sometimes generic-over-[`UniversalRead`] code must branch on the concrete
 /// UIO type. This trait is a place for such branching. Any implementations of
 /// [`UniversalRead`] used in this [crate] should implement this.
-///
-/// The `Fs: UniversalReadFsAsync` bound makes every read-only-segment backend
-/// async-capable at the filesystem level — [`CachedFs`] (which every segment
-/// open and live-reload goes through) parks `open_async` futures in its
-/// prefetch pool. Notably io_uring implements no async surface and is
-/// therefore not a read-only-segment backend.
-///
-/// [`CachedFs`]: common::universal_io::CachedFs
 #[rustfmt::skip]
-pub trait UniversalReadExt: UniversalRead<Fs: UniversalReadFsAsync> {
+pub trait UniversalReadExt: UniversalRead {
     // Methods to convert generic `BlahBlahConditionChecker<S>` -> non-generic enum.
     fn condition_checker_bool            <'a>(i: BoolCC<'a, Self>)                    -> EnumCC<'a>;
     fn condition_checker_full_text       <'a>(i: FullTextCC<'a, Self>)                -> EnumCC<'a>;
