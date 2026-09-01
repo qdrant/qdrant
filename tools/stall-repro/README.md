@@ -20,20 +20,31 @@ python3 with `requests`.
 That is all. It starts 3 peers throttled to half a CPU each, creates a 1-shard collection
 replicated on two of them, loads 100k points, keeps overwriting them so the index gets rebuilt
 with healing, and each time a heal build starts it drops that peer's replica and measures how
-long the node takes to apply the entry. Then it puts the replica back and repeats. Five trials
-take about 10 minutes. It ends with a table like
+long the node takes to apply the entry. Then it puts the replica back and repeats. Three trials
+took 8 minutes on a laptop; five is the default. It ends with a table like
 
     trial  healed  slow wait  applied
-        0    8035      23.83    23.99
-        1     601       0.66     0.72
-        2   13905      25.33    25.40
+        0   12733      35.42    35.56
+        1    3636      10.50    10.61
+        2    3534      10.12    10.28
 
 `healed` is the number of points the heal had to process, `slow wait` the seconds from the WARN
 above, `applied` seconds from sending `drop_replica` to the node applying it. A `-` in
 `slow wait` means no stall (the heal finished before the entry arrived). While a trial runs it
-prints the log lines that bracket the stall (`Stopping flush worker` … `Migrated in` …
-`Optimization cancelled` … `Slow wait`). Full log excerpts per trial land in `trials/`, all
-numbers in `results.jsonl`.
+prints the log lines that bracket the stall:
+
+    drop_replica sent to peer 0: HTTP 500 after 3.82s
+         +0.10s  Applying committed entry with index 17
+         +0.16s  Stopping flush worker for shard ...          <- consensus thread enters remove_local
+        +10.50s  Migrated in 10.601335724s                    <- heal phase ends
+        +10.51s  Optimization cancelled - process cancelled by service
+        +10.61s  WARN Slow wait: removing a peer in handle_replica_changes took 10.50s
+        +10.61s  Successfully applied consensus operation entry. Index: 17
+
+Between "waiting for a heal build" and the drop it may print `rebuild without heal (65% of the
+segment changed)` a few times: qdrant only heals when less than 30% of a segment changed since
+the old index, otherwise it builds from scratch (which is cancellable, so no stall). Full log
+excerpts per trial land in `trials/`, all numbers in `results.jsonl`.
 
 ## Knobs
 

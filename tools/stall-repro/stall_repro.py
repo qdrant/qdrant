@@ -94,7 +94,7 @@ def start_peer(i):
     subprocess.Popen(
         ["systemd-run", "--user", "--scope", "-q", f"--unit={unit(i)}", "-p", f"CPUQuota={CPU_QUOTA}",
          str(QDRANT_BIN), *args],
-        env=env, stdout=log, stderr=subprocess.STDOUT, cwd=HERE,
+        env=env, stdout=log, stderr=subprocess.STDOUT, cwd=DATA / f"peer_{i}",
     )
 
 
@@ -135,6 +135,8 @@ def cmd_up(_):
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir()
     for i in range(PEERS):
+        (DATA / f"peer_{i}").mkdir()
+    for i in range(PEERS):
         start_peer(i)
         wait_up(i)
         print(f"peer {i} up: {api(i)}")
@@ -156,12 +158,14 @@ def cmd_up(_):
     print(f"loading {POINTS} points (waits for the index to be built) ...")
     subprocess.run(bfb(["--rm"], ["-n", str(POINTS), "-t", "4", "-p", "4"]), check=True)
 
-    # endless random upserts: overwrites delete old versions -> vacuum rebuilds HNSW on the old graph
+    # Endless random upserts at 200 points/s: overwrites delete old versions, so segments get rebuilt
+    # on top of their old HNSW graph (= heal). Faster churn is counterproductive: if > 30% of a
+    # segment changed by the time it is rebuilt, qdrant discards the old graph instead of healing.
     subprocess.run(bfb(["-d", "--name", CHURN],
-                       ["--skip-wait-index", "-n", str(POINTS * 1000), "-t", "2", "-p", "2", "-T", "5",
+                       ["--skip-wait-index", "-n", str(POINTS * 1000), "-t", "2", "-p", "2", "-T", "2",
                         "--retry", "10", "--retry-interval", "1", "--ignore-errors"]),
                    check=True, capture_output=True)
-    print("churn started; now: stall_repro.py run")
+    print("churn started")
 
 
 def cmd_down(_):
@@ -174,6 +178,7 @@ def cmd_down(_):
 
 LOG_TS = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+)Z\s*")
 HEAL = re.compile(r"Reusing (\d+) points from the old index, healing (\d+) points")
+NO_HEAL = re.compile(r"missing ratio: ([\d.]+), do_heal: false")
 APPLY_START = re.compile(r"Applying committed entry with index (\d+)")
 SLOW_WAIT = re.compile(r"Slow wait: removing a peer in handle_replica_changes took ([\d.]+)(ms|s|m)")
 # lines worth showing between "drop sent" and "entry applied", in the order they appear on a stall
@@ -207,6 +212,9 @@ def run_trial(k, q, peer_id, min_heal):
     print(f"\n--- trial {k}: waiting for a heal build (>= {min_heal} healed points)")
     while True:
         i, _, line = q.get()
+        if m := NO_HEAL.search(line):
+            print(f"peer {i}: rebuild without heal ({float(m.group(1)):.0%} of the segment changed), waiting")
+            continue
         m = HEAL.search(line)
         if not m or int(m.group(2)) < min_heal:
             continue
@@ -281,7 +289,8 @@ def cmd_run(args):
             time.sleep(5)
     print(f"\n{'trial':>5} {'healed':>7} {'slow wait':>10} {'applied':>8}")
     for k, (stall, applied, healed) in enumerate(rows):
-        print(f"{k:>5} {healed:>7} {stall if stall is not None else '-':>10} {applied and round(applied, 2):>8}")
+        fmt = lambda v: f"{v:.2f}" if v is not None else "-"  # noqa: E731
+        print(f"{k:>5} {healed:>7} {fmt(stall):>10} {fmt(applied):>8}")
     print(f"details: {RESULTS}, {TRIALS}/")
 
 
