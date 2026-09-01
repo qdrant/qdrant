@@ -647,7 +647,7 @@ impl LocalShard {
         // async runtime that hosts collection meta-ops.
         let wal_config = config.wal_config.clone();
         let params = config.params.clone();
-        let hnsw_config = config.hnsw_config.clone();
+        let hnsw_config = config.hnsw_config;
         let quantization_config = config.quantization_config.clone();
         let hnsw_global_config = shared_storage_config.hnsw_global_config.clone();
         let collection_config_for_optimizers = collection_config.clone();
