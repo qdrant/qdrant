@@ -129,27 +129,11 @@ impl ClusterState {
 
         let collection = self.resolve_collection(collection_name)?;
 
-        // TODO:
-        //
-        // This is intentionally different from `TableOfContent::update_collection`.
-        //
-        // `ToC::update_collection` validates and applies the diffs one by one,
-        // and saves the config after every one of them.
-        // So if a diff in the middle of the operation is rejected, every diff
-        // before it is applied and persisted, and every diff after it never runs.
-        //
-        // `plan_update_collection` validates all diffs first, and emits one
-        // `UpdateCollectionConfig` action per diff, which the applier runs in order.
-        // So either all diffs apply, or none of them do.
-        //
-        // E.g., take an operation carrying two diffs:
-        // an `hnsw_config` one, and a `vectors` one naming a vector that does not exist.
-        //
-        // `ToC::update_collection` would save the new HNSW config, then return an error.
-        // `plan_update_collection` would return an error *before* emitting any action.
-
         // Validate operation by updating a copy of the config,
         // so that `plan` and `apply_action` are always in sync.
+        //
+        // `ToC::update_collection` checks the operation with the same call, against a copy of
+        // the config it applies nothing to on rejection.
         let mut config = self
             .collection(&collection)
             .expect("collection exists")
