@@ -495,7 +495,7 @@ fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
     hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
-    segment.live_preload()?;
+    futures::executor::block_on(segment.live_preload()?);
     segment.live_reload(hw_counter)
 }
 

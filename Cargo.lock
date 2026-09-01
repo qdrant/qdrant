@@ -2043,6 +2043,7 @@ dependencies = [
  "common",
  "core_affinity",
  "fs-err",
+ "futures",
  "itertools 0.15.0",
  "log",
  "ordered-float 5.5.0",

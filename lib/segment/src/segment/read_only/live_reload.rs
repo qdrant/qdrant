@@ -15,7 +15,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
     /// reload only applies ready data.
-    pub fn live_preload(&self) -> OperationResult<()> {
+    pub fn live_preload(
+        &self,
+    ) -> OperationResult<impl Future<Output = ()> + Send + 'static + use<S>> {
         let Self {
             uuid: _,
             segment_path: _,
@@ -42,9 +44,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
             preloads.extend(vector_data.live_preload(fs)?);
         }
 
-        // Complete all IO before returning
-        futures::executor::block_on(async { futures::join!(fs.wait_all(), join_all(preloads)) });
-        Ok(())
+        let reopens = fs.wait_all();
+
+        Ok(async move {
+            futures::join!(reopens, join_all(preloads));
+        })
     }
 
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).

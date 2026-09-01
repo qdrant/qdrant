@@ -31,6 +31,7 @@ rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 fs-err = { workspace = true, features = ["debug"] }
