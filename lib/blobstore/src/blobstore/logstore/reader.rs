@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -195,12 +196,13 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         self.view().get_storage_size_bytes()
     }
 
-    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
-        self.tracker.live_preload(fs)?;
-
-        self.pages.live_preload(fs, self.populate)?;
-
-        Ok(())
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+        let mut futs = vec![self.tracker.live_preload(fs)?];
+        futs.extend(self.pages.live_preload(fs, self.populate)?);
+        Ok(futs)
     }
 
     /// This method reloads the storage from "disk", so that it makes newly appended data

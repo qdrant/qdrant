@@ -686,8 +686,8 @@ mod tests {
     /// make the prefetch pool the *only* possible source, the index directory
     /// is emptied between the two calls: the already-open handles parked in
     /// the pool stay readable, while any fallback open hits `NotFound`.
-    #[test]
-    fn preopen_then_open_ro_through_cached_fs() {
+    #[tokio::test]
+    async fn preopen_then_open_ro_through_cached_fs() {
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let hw_counter = HardwareCounterCell::new();
@@ -724,7 +724,7 @@ mod tests {
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
         cached_fs.cache_file_info().unwrap();
         preopen(&cached_fs, dir.path(), Populate::No).unwrap();
-        cached_fs.wait_all();
+        cached_fs.wait_all().await;
 
         // Everything `open_ro` reads must now come from the prefetch pool.
         for entry in fs_err::read_dir(dir.path()).unwrap() {

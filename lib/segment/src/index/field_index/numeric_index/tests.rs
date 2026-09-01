@@ -1178,7 +1178,7 @@ fn test_block_index_preopen() {
         )
         .unwrap()
     );
-    cached_fs.wait_all();
+    futures::executor::block_on(cached_fs.wait_all());
 
     // The sidecar read of `open` must now come from the prefetch pool.
     fs_err::remove_file(&block_index_path).unwrap();

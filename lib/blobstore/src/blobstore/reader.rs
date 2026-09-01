@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::pin::Pin;
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -217,7 +218,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
         match self {
             Self::Gridstore(reader) => reader.live_preload(fs),
             Self::Logstore(reader) => reader.live_preload(fs),

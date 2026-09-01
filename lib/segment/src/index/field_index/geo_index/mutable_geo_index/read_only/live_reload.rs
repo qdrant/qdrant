@@ -3,6 +3,7 @@ use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use futures::future::BoxFuture;
 
 use super::ReadOnlyAppendableGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -12,7 +13,10 @@ use crate::types::{GeoPoint, RawGeoPoint};
 impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         Ok(self.storage.live_preload(fs)?)
     }
 

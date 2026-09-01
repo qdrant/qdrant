@@ -1,6 +1,7 @@
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs};
+use futures::future::BoxFuture;
 
 use super::ReadOnlyImmutableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -9,9 +10,12 @@ use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
-    pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+    pub fn live_preload(
+        &self,
+        fs: &impl CachedReadFs<File = S>,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         fs.reschedule_open(&deleted_path(&self.path), Some(Self::open_options()), None);
-        Ok(())
+        Ok(Vec::new())
     }
 
     /// Re-read the on-disk `deleted` bitslice and apply points deleted since the last reload.

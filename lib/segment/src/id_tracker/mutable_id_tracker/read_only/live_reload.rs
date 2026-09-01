@@ -3,6 +3,8 @@ use std::io::Cursor;
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs};
+use futures::FutureExt;
+use futures::future::BoxFuture;
 
 use super::ReadOnlyAppendableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -62,23 +64,30 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
     /// reopen for held handles, a prefetch for files it opens lazily. Absence
     /// is tolerated the same way the reload tolerates it.
-    pub fn live_preload(&self, fs: &impl CachedReadFs<File = S>) -> OperationResult<()> {
+    pub fn live_preload(
+        &self,
+        fs: &impl CachedReadFs<File = S>,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         let options = Self::open_options();
+        let mut futs: Vec<BoxFuture<'static, ()>> = Vec::new();
         for (file, path) in [
             (&self.versions_file, versions_path(&self.segment_path)),
             (&self.mappings_file, mappings_path(&self.segment_path)),
         ] {
             match file {
                 Some(file) => {
-                    file.live_preload(|p| fs.cached_file_info(p))
-                        .ok_not_found()?;
+                    futs.extend(
+                        file.live_preload(|p| fs.cached_file_info(p))
+                            .ok_not_found()?
+                            .map(FutureExt::boxed),
+                    );
                 }
                 None => {
                     fs.schedule_open(&path, Some(options), None);
                 }
             };
         }
-        Ok(())
+        Ok(futs)
     }
 
     /// Consume mapping and version changes appended to storage since the last reload.

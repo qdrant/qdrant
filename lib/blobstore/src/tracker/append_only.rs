@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting};
@@ -273,10 +274,13 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         self.persisted_count = count;
     }
 
-    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<()> {
-        #[expect(unused_must_use)] // todo(uio): remove after propagating future
-        self.file.live_preload(|path| fs.cached_file_info(path))?;
-        Ok(())
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> Result<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
+        Ok(Box::pin(
+            self.file.live_preload(|path| fs.cached_file_info(path))?,
+        ))
     }
 }
 

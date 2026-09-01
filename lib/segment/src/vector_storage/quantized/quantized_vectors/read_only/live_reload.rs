@@ -2,6 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use futures::future::BoxFuture;
 
 use super::{ReadOnlyQuantizedVectorStorage, ReadOnlyQuantizedVectors};
 use crate::common::live_reload::LiveReload;
@@ -10,7 +11,10 @@ use crate::common::operation_error::OperationResult;
 impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         self.storage_impl.live_preload(fs)
     }
 
@@ -30,7 +34,11 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
 impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+        let mut futs = Vec::new();
         match self {
             // Ram/Mmap layouts are immutable: nothing to stage.
             ReadOnlyQuantizedVectorStorage::ScalarRam(_)
@@ -49,18 +57,22 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
             | ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(_)
             | ReadOnlyQuantizedVectorStorage::TQRamMulti(_)
             | ReadOnlyQuantizedVectorStorage::TQMmapMulti(_) => {}
-            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.storage().live_preload(fs)?,
-            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.storage().live_preload(fs)?,
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => {
+                futs.extend(q.storage().live_preload(fs)?);
+            }
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => {
+                futs.extend(q.storage().live_preload(fs)?);
+            }
             ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
-                q.storage().storage().live_preload(fs)?;
-                q.offsets_storage().live_preload(fs)?;
+                futs.extend(q.storage().storage().live_preload(fs)?);
+                futs.extend(q.offsets_storage().live_preload(fs)?);
             }
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
-                q.storage().storage().live_preload(fs)?;
-                q.offsets_storage().live_preload(fs)?;
+                futs.extend(q.storage().storage().live_preload(fs)?);
+                futs.extend(q.offsets_storage().live_preload(fs)?);
             }
         }
-        Ok(())
+        Ok(futs)
     }
 
     /// Pick up quantized vectors a writer appended. Only the chunked (appendable)

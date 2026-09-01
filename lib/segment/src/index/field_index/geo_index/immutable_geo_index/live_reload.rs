@@ -2,6 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use futures::future::BoxFuture;
 
 use super::ImmutableGeoIndex;
 use crate::common::operation_error::OperationResult;
@@ -10,8 +11,11 @@ use crate::index::field_index::LiveReload;
 impl<S: UniversalRead> LiveReload for ImmutableGeoIndex<S> {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, _fs: &Fs) -> OperationResult<()> {
-        Ok(())
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        _fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+        Ok(Vec::new())
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(

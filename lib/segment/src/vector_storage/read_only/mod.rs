@@ -353,7 +353,7 @@ mod tests {
         let config = dense_config(VectorStorageType::ChunkedMmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
-        cached_fs.wait_all();
+        futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [
@@ -402,7 +402,7 @@ mod tests {
         let config = dense_config(VectorStorageType::Mmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
-        cached_fs.wait_all();
+        futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
         for file_name in [
@@ -466,7 +466,7 @@ mod tests {
         );
         let cached_fs = snapshot_cached_fs(dir.path());
         VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
-        cached_fs.wait_all();
+        futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
         for dir_name in [

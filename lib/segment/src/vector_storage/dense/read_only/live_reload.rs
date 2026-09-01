@@ -2,6 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use futures::future::BoxFuture;
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::live_reload::LiveReload;
@@ -13,10 +14,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
 {
     type File = S;
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> OperationResult<()> {
-        self.vectors.live_preload(fs)?;
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+        let futs = self.vectors.live_preload(fs)?;
         self.deleted.live_preload(fs)?;
-        Ok(())
+        Ok(futs)
     }
 
     /// Reload the chunked vectors, apply `deleted_points`, and fold in the
