@@ -21,7 +21,7 @@ use collection::{discovery, recommendations};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::{FuturesUnordered, StreamExt as _};
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::types::{ScoredPoint, ShardKey};
+use segment::types::{PointIdType, ScoredPoint, ShardKey};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -847,7 +847,7 @@ mod tests {
 
     fn point_not_found() -> CollectionResult<UpdateResult> {
         Err(CollectionError::PointNotFound {
-            missed_point_id: 9.into(),
+            missed_point_id: PointIdType::from(9),
         })
     }
 
