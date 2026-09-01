@@ -24,8 +24,9 @@ use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore}
 /// A segment open for appends: the write target. Every point a batch stores
 /// lands here, in a fresh slot — nothing is ever rewritten in place.
 pub struct AppendableSegment<S: UniversalAppend + 'static> {
-    id_tracker: UpdateOnlyAppendableIdTracker<S>,
-    /// What [`store_components`](Self::store_components) opens with.
+    id_tracker: UpdateOnlyAppendableIdTracker,
+    /// What the id tracker appends through and
+    /// [`store_components`](Self::store_components) opens with.
     fs: S::Fs,
     segment_path: PathBuf,
     config: SegmentConfig,
@@ -106,7 +107,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         } = state;
 
         let id_tracker = UpdateOnlyAppendableIdTracker::new(
-            fs.clone(),
+            &fs,
             segment_path,
             max_claimed_internal_id,
             pending_inserts,
@@ -157,7 +158,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
             .iter()
             .map(|point| MappingOperation::Insert(point.id))
             .collect();
-        let inserted = self.id_tracker.insert_operations(&operations)?;
+        let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
 
         let store = self.store_components()?;
@@ -208,7 +209,8 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         // points visible, so everything above must already be durable.
         let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
         let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
-        self.id_tracker.set_internal_versions(&slots, &versions)?;
+        self.id_tracker
+            .set_internal_versions(&self.fs, &slots, &versions)?;
 
         Ok(())
     }
@@ -225,7 +227,9 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        self.id_tracker
-            .delete_points(points.iter().map(|(point_id, _internal_id)| *point_id))
+        self.id_tracker.delete_points(
+            &self.fs,
+            points.iter().map(|(point_id, _internal_id)| *point_id),
+        )
     }
 }
