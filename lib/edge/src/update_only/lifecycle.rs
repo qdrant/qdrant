@@ -68,7 +68,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     // No deferred threshold yet: it belongs to the coordination
                     // with an external rebuilder, which does not exist in this
                     // iteration.
-                    let segment = LookupSegment::open(&fs, &path, None)?;
+                    let segment = LookupSegment::open(fs.clone(), &path, None)?;
                     let writer = UpdateOnlySegmentEnum::open(
                         fs.clone(),
                         &path,
@@ -151,7 +151,7 @@ where
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());
         copy_dir_via(&self.fs, &local, &remote)?;
 
-        let lookup = LookupSegment::<Fs::File>::open(&self.fs, &remote, None)?;
+        let lookup = LookupSegment::<Fs>::open(self.fs.clone(), &remote, None)?;
         let writer = UpdateOnlySegmentEnum::open(
             self.fs.clone(),
             &remote,
