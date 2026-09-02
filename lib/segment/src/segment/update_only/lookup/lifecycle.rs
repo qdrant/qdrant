@@ -15,7 +15,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
-use crate::segment_constructor::get_vector_storage_path;
+use crate::segment_constructor::{get_vector_index_path, get_vector_storage_path};
 use crate::types::{SegmentConfig, SegmentState};
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
@@ -127,13 +127,19 @@ impl<S: UniversalRead<Fs: UniversalReadFsAsync> + 'static> LookupSegment<S> {
         let mut vector_data = HashMap::new();
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage =
-                VectorStorageReadEnum::open(fs, vector_config, &path, Some(WRITER_POPULATE))?
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!(
-                            "Dense vector storage '{vector_name}' was not found, or is corrupted.",
-                        ))
-                    })?;
+            let index_path = get_vector_index_path(segment_path, vector_name);
+            let storage = VectorStorageReadEnum::open(
+                fs,
+                vector_config,
+                &path,
+                &index_path,
+                Some(WRITER_POPULATE),
+            )?
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Dense vector storage '{vector_name}' was not found, or is corrupted.",
+                ))
+            })?;
             vector_data.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
         for vector_name in config.sparse_vector_data.keys() {
@@ -173,7 +179,14 @@ impl<S: UniversalRead<Fs: UniversalReadFsAsync> + 'static> LookupSegment<S> {
 
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            VectorStorageReadEnum::<S>::preopen(fs, vector_config, &path, Some(WRITER_POPULATE))?;
+            let index_path = get_vector_index_path(segment_path, vector_name);
+            VectorStorageReadEnum::<S>::preopen(
+                fs,
+                vector_config,
+                &path,
+                &index_path,
+                Some(WRITER_POPULATE),
+            )?;
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);

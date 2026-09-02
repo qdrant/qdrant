@@ -90,7 +90,8 @@ impl Segment {
                 index: crate::types::Indexes::Plain {},
                 ..config.clone()
             };
-            open_vector_storage(&config_for_open, &storage_path)?
+            let index_path = get_vector_index_path(&self.segment_path, vector_name);
+            open_vector_storage(&config_for_open, &storage_path, &index_path)?
         } else {
             // Immutable segment: create empty placeholder
             new_empty_dense_vector_storage(
