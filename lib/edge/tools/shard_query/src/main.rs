@@ -86,7 +86,7 @@
 //! ```
 //!
 //! With `--live-reload <SECONDS>` the tool keeps running after the first
-//! answer: every interval it [`refresh`](ReadOnlyEdgeShard::refresh)es the
+//! answer: every interval it [`live_reload`](ReadOnlyEdgeShard::live_reload)s the
 //! shard from object storage, re-runs the same request, and prints the
 //! difference against the previous results (`+` appeared, `-` disappeared,
 //! `~` changed), so a leader writing to the same bucket can be observed live.
@@ -141,7 +141,7 @@ struct Cli {
     connection: ConnectionArgs,
 
     /// Live-reload polling interval in seconds. When set, the tool keeps
-    /// running after the first answer: every interval it refreshes the shard
+    /// running after the first answer: every interval it live_reloads the shard
     /// from object storage, re-runs the same request, and prints the
     /// difference against the previous results (`+` appeared, `-` disappeared,
     /// `~` changed). Must be given before the sub-command.
@@ -161,9 +161,9 @@ struct Cli {
 
 /// What triggers each live-reload iteration.
 enum ReloadTrigger {
-    /// Refresh every interval (`--live-reload <SECONDS>`).
+    /// Live-reload every interval (`--live-reload <SECONDS>`).
     Timer(Duration),
-    /// Refresh when the user presses Enter (`--live-reload-key`).
+    /// Live-reload when the user presses Enter (`--live-reload-key`).
     Key,
 }
 
@@ -966,7 +966,7 @@ where
         return Ok(());
     };
 
-    // Live-reload loop: on every trigger (timer tick or Enter), refresh the
+    // Live-reload loop: on every trigger (timer tick or Enter), live_reload the
     // shard from the backend, re-run the same request, and print the diff
     // against the previous run. Runs until interrupted (or stdin closes, in
     // key mode).
@@ -977,18 +977,18 @@ where
             return Ok(());
         }
 
-        if let Err(err) = shard.refresh() {
+        if let Err(err) = shard.live_reload() {
             // The shard keeps serving its previous state; retry on the next trigger.
-            log::error!("live-reload refresh failed (will retry on next reload): {err}");
+            log::error!("live_reload failed (will retry on next reload): {err}");
             continue;
         }
         log::info!(
-            "live-reload #{iteration}: refreshed shard, {} segment(s)",
+            "live-reload #{iteration}: live_reloaded shard, {} segment(s)",
             shard.segments_count(),
         );
 
         let (rows, _) = request.run(&shard)?;
-        println!("--- refresh #{iteration}: diff vs previous results ---");
+        println!("--- live_reload #{iteration}: diff vs previous results ---");
         print_diff(&previous, &rows)?;
         previous = rows;
     }
