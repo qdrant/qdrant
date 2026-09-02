@@ -665,9 +665,10 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         }
     }
 
-    /// [`Self::widen_avx2`] for ZMM accumulators: each total is folded to
-    /// 256 bits first, which halves the lanes and doubles their values —
-    /// the per-byte bound behind [`fused_reduction_max_bytes`] is unchanged.
+    /// [`Self::widen_avx2`] for ZMM accumulators.  Within the fused bound the
+    /// query bytes are combined in 512-bit and only then folded to 256 and
+    /// widened, so the per-vector narrowing runs once rather than once per
+    /// query byte; out of the bound it falls back to the per-byte i64 combine.
     ///
     /// # Safety
     /// CPU must support `avx512f`.
@@ -675,7 +676,18 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[target_feature(enable = "avx512f")]
     unsafe fn widen_avx512(&self, acc: Acc512<QUERY_BYTES>) -> __m256i {
         unsafe {
-            let totals = acc.fold().map(|total| {
+            let totals = acc.fold();
+            // Fuse the query bytes in 512-bit first, so the 512 -> 256 narrowing
+            // and the i64 widening run once per vector instead of once per query
+            // byte.  Folding after the fuse leaves the same four i32 lanes the
+            // per-byte path produced, so the result and the
+            // [`fused_reduction_max_bytes`] bound are unchanged.
+            if self.vector_bytes <= Self::FUSED_REDUCTION_MAX_BYTES {
+                return widen_i64_512(combine_fused_512::<PLANES, QUERY_BYTES>(totals));
+            }
+            // Out of the fused bound: narrow each query byte on its own and let
+            // [`Self::widen_totals_256`] combine them in i64.
+            let totals = totals.map(|total| {
                 _mm256_add_epi32(
                     _mm512_castsi512_si256(total),
                     _mm512_extracti64x4_epi64(total, 1),
@@ -892,6 +904,47 @@ unsafe fn reduce_fused_512<const PLANES: usize, const QUERY_BYTES: usize>(
                 _mm512_extracti64x4_epi64(total, 1),
             )
         }))
+    }
+}
+
+/// [`combine_fused_256`] for ZMM totals: the high query byte's i32 lanes
+/// shifted by `log2(K)` and added to the low byte's, staying in 512-bit.
+///
+/// # Safety
+/// CPU must support `avx512f`; the totals must come from a vector within the
+/// width's [`fused_reduction_max_bytes`].
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn combine_fused_512<const PLANES: usize, const QUERY_BYTES: usize>(
+    totals: [__m512i; QUERY_BYTES],
+) -> __m512i {
+    let mut combined = totals[0];
+    if QUERY_BYTES == 2 {
+        // The radix is a power of two (128 or 256); the shift is an immediate.
+        let high = totals[1];
+        let scaled = match const { encoding(PLANES).query_high_coef } {
+            128 => _mm512_slli_epi32(high, 7),
+            _ => _mm512_slli_epi32(high, 8),
+        };
+        combined = _mm512_add_epi32(combined, scaled);
+    }
+    combined
+}
+
+/// A fused 512-bit total's sixteen i32 lanes folded to four i64 lanes: the
+/// 512-bit halves add to 256 bits, then [`widen_i64_256`].
+///
+/// # Safety
+/// CPU must support `avx512f`.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn widen_i64_512(combined: __m512i) -> __m256i {
+    unsafe {
+        let folded = _mm256_add_epi32(
+            _mm512_castsi512_si256(combined),
+            _mm512_extracti64x4_epi64(combined, 1),
+        );
+        widen_i64_256(folded)
     }
 }
 
