@@ -124,12 +124,12 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
 ) {
     debug_assert_eq!(ids.len(), scores.len());
 
-    // Async backends pipeline per-vector reads in `for_each_batch`; run-granular
-    // reads would serialize them, unless the storage reports that runs win at
-    // any length (see `prefers_run_reads`). Short-run id lists skip batching for
-    // the same reason as TQ quantization scoring: setup dominates when runs are
-    // short.
-    if !TStorage::prefers_run_reads()
+    // Async backends pipeline per-vector reads in `for_each_batch`;
+    // contiguous-slice reads would serialize them, unless the storage reports
+    // that contiguous reads win at any length (see `prefers_contiguous_reads`).
+    // Short-run id lists skip batching for the same reason as TQ quantization
+    // scoring: setup dominates when runs are short.
+    if !TStorage::prefers_contiguous_reads()
         && (!TStorage::is_in_ram_or_mmap() || !offsets_worth_batch_scoring(ids))
     {
         storage.for_each_batch(ids, |idx, bytes| {

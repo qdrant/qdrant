@@ -71,20 +71,20 @@ pub trait EncodedStorage: EncodedStorageWrite {
         callback: impl FnMut(usize, Cow<'_, [u8]>),
     );
 
-    /// True when the storage serves one contiguous run faster than the same
+    /// True when the storage serves one contiguous slice faster than the same
     /// vectors read individually, at *any* run length, so run batching should
     /// not be gated for it.
     ///
     /// Measured for io_uring, where per-request submission and completion
     /// bookkeeping dominates once the data is in the page cache: one
-    /// run-granular read beats the batched per-vector path by 27 % on
+    /// contiguous-slice read beats the batched per-vector path by 27 % on
     /// HNSW-shaped id lists and by 93 % on a full scan.
     ///
     /// Storages with cheap random access (RAM, mmap) return `false` and are
     /// gated by run length instead. So do remote backends (object stores, a
     /// gRPC peer): their per-vector reads pipeline across a batch, while
-    /// run-granular reads would serialize the round trips.
-    fn prefers_run_reads() -> bool {
+    /// contiguous-slice reads would serialize the round trips.
+    fn prefers_contiguous_reads() -> bool {
         false
     }
 

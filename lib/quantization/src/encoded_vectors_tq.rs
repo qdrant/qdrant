@@ -476,9 +476,10 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         // keep the per-vector path there. Plain and dense filtered scans hand
         // long runs and take the run-batched path below. Async backends stay
         // per-vector too: they pipeline reads in `for_each_batch`, and
-        // run-granular reads would serialize them — except where the storage
-        // reports that runs win at any length (see `prefers_run_reads`).
-        if !TStorage::prefers_run_reads()
+        // contiguous-slice reads would serialize them — except where the
+        // storage reports that contiguous reads win at any length (see
+        // `prefers_contiguous_reads`).
+        if !TStorage::prefers_contiguous_reads()
             && (!TStorage::is_in_ram_or_mmap() || !offsets_worth_batch_scoring(offsets))
         {
             self.for_each_batch(offsets, |i, vector| {

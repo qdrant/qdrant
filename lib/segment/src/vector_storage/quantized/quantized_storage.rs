@@ -292,13 +292,13 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
-    fn prefers_run_reads() -> bool {
+    fn prefers_contiguous_reads() -> bool {
         // Exhaustive on purpose: a new backend must decide here rather than
         // inherit whichever answer a wildcard happened to give it.
         match S::kind() {
             // Measured: with the data in the page cache, per-request
             // submission and completion bookkeeping dominates, so one
-            // run-granular read beats the batched per-vector path at every
+            // contiguous-slice read beats the batched per-vector path at every
             // density.
             UniversalKind::IoUring => true,
             // Random access is cheap; run batching pays only for long enough
@@ -310,7 +310,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
             | UniversalKind::SimpleDiskCache
             | UniversalKind::CachedBlob => false,
             // Remote: per-vector reads pipeline across a batch, while
-            // run-granular reads would serialize the round trips.
+            // contiguous-slice reads would serialize the round trips.
             UniversalKind::S3
             | UniversalKind::Gcs
             | UniversalKind::Azure
