@@ -24,10 +24,8 @@ const EXIT_CODE: i32 = 42;
 #[test]
 fn process_crash() {
     let vars: HashMap<String, String> = env::vars().collect();
-    if vars.contains_key("SEED") && vars.contains_key("SEGMENT_PATH") {
-        let seed: usize = vars["SEED"].parse().unwrap();
-        let path = vars["SEGMENT_PATH"].clone();
-        subprocess(path, seed);
+    if let (Some(seed), Some(path)) = (vars.get("SEED"), vars.get("SEGMENT_PATH")) {
+        subprocess(path.clone(), seed.parse().unwrap());
     } else {
         test()
     }

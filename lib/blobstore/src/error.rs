@@ -1,7 +1,7 @@
 use common::mmap;
 use common::universal_io::{IsNotFound, UniversalIoError};
 
-use crate::tracker::{PageId, PointOffset};
+use crate::tracker::PageId;
 
 #[derive(thiserror::Error, Debug)]
 pub enum BlobstoreError {
@@ -23,8 +23,6 @@ pub enum BlobstoreError {
     UnsupportedOperation { operation: String },
     #[error("Page {page_id} not found")]
     PageNotFound { page_id: PageId },
-    #[error("value {point_offset} not found")]
-    ValueNotFound { point_offset: PointOffset },
 }
 
 impl BlobstoreError {
@@ -58,8 +56,7 @@ impl IsNotFound for BlobstoreError {
             | BlobstoreError::FlushCancelled
             | BlobstoreError::ValidationError { .. }
             | BlobstoreError::UnsupportedOperation { .. }
-            | BlobstoreError::PageNotFound { .. }
-            | BlobstoreError::ValueNotFound { .. } => false,
+            | BlobstoreError::PageNotFound { .. } => false,
         }
     }
 }

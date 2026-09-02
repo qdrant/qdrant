@@ -45,7 +45,7 @@ where
 {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
-    vectors: Option<ImmutableDenseVectors<T, S>>,
+    vectors: ImmutableDenseVectors<T, S>,
     distance: Distance,
     populated: bool,
     fs: S::Fs,
@@ -59,9 +59,7 @@ where
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) {
-        if let Some(mmap_store) = &self.vectors {
-            mmap_store.populate();
-        }
+        self.vectors.populate();
     }
 
     /// Drop disk cache.
@@ -74,9 +72,7 @@ where
             populated: _,
             fs: _,
         } = self;
-        if let Some(vectors) = vectors {
-            vectors.clear_cache()?;
-        }
+        vectors.clear_cache()?;
         Ok(())
     }
 }
@@ -230,7 +226,7 @@ where
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
-        vectors: Some(vectors),
+        vectors,
         distance,
         populated: populate,
         fs,
@@ -245,13 +241,11 @@ where
     S: UniversalRead,
 {
     fn vector_dim(&self) -> usize {
-        self.vectors.as_ref().unwrap().dim()
+        self.vectors.dim()
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
         self.vectors
-            .as_ref()
-            .unwrap()
             .get_vector_opt::<P>(key)
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
@@ -261,8 +255,7 @@ where
         keys: &[PointOffsetType],
         f: F,
     ) -> OperationResult<()> {
-        let mmap_store = self.vectors.as_ref().unwrap();
-        mmap_store.for_each_in_batch(keys, f)
+        self.vectors.for_each_in_batch(keys, f)
     }
 
     fn read_dense_bytes<P: AccessPattern, U: Copy>(
@@ -276,8 +269,6 @@ where
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.vectors
-            .as_ref()
-            .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
                 callback(
                     user_data[idx],
@@ -299,7 +290,7 @@ where
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
-        let start_index = self.vectors.as_ref().unwrap().num_vectors() as PointOffsetType;
+        let start_index = self.vectors.num_vectors() as PointOffsetType;
         let mut end_index = start_index;
 
         // Extend vectors file, write other vectors into it
@@ -328,24 +319,23 @@ where
             .sync_data()?;
 
         // Load store with updated files
-        self.vectors.replace(ImmutableDenseVectors::open(
+        self.vectors = ImmutableDenseVectors::open(
             &self.fs,
             &self.vectors_path,
             &self.deleted_path,
             dim,
             Populate::No, // No need to populate
-        )?);
+        )?;
 
         // Flush deleted flags into store
         // We must do that in the updated store, and cannot do it in the previous loop. That is
         // because the file backing delete storage must be resized, and for that we'd need to know
         // the exact number of vectors beforehand. When opening the store it is done automatically.
-        let store = self.vectors.as_mut().unwrap();
         for id in deleted_ids {
             check_process_stopped(stopped)?;
-            store.delete(id);
+            self.vectors.delete(id);
         }
-        store.flusher()()?;
+        self.vectors.flusher()()?;
 
         Ok(start_index..end_index)
     }
@@ -373,13 +363,11 @@ where
     }
 
     fn total_vector_count(&self) -> usize {
-        self.vectors.as_ref().unwrap().num_vectors()
+        self.vectors.num_vectors()
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
-            .as_ref()
-            .unwrap()
             .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector).into())
             .expect("Vector not found")
@@ -396,8 +384,6 @@ where
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.vectors
-            .as_ref()
-            .unwrap()
             .for_each_in_batch(&point_offsets, |idx, vector| {
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
@@ -407,22 +393,20 @@ where
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
-            .as_ref()
-            .unwrap()
             .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector).into())
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.vectors.as_ref().unwrap().is_deleted_vector(key)
+        self.vectors.is_deleted_vector(key)
     }
 
     fn deleted_vector_count(&self) -> usize {
-        self.vectors.as_ref().unwrap().deleted_count
+        self.vectors.deleted_count
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.vectors.as_ref().unwrap().deleted_vector_bitslice()
+        self.vectors.deleted_vector_bitslice()
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
@@ -449,13 +433,8 @@ where
     }
 
     fn flusher(&self) -> Flusher {
-        match &self.vectors {
-            Some(mmap_store) => {
-                let mmap_flusher = mmap_store.flusher();
-                Box::new(move || mmap_flusher().map_err(OperationError::from))
-            }
-            None => Box::new(|| Ok(())),
-        }
+        let mmap_flusher = self.vectors.flusher();
+        Box::new(move || mmap_flusher().map_err(OperationError::from))
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -469,7 +448,7 @@ where
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.vectors.as_mut().unwrap().delete(key))
+        Ok(self.vectors.delete(key))
     }
 }
 

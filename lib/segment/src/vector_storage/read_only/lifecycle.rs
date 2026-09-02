@@ -26,7 +26,7 @@ fn storage_type_params(storage_type: VectorStorageType) -> Option<(AdviceSetting
         VectorStorageType::InRamMmap => (AdviceSetting::from(Advice::Normal), true, false),
         VectorStorageType::ChunkedMmap => (AdviceSetting::Global, false, true),
         VectorStorageType::InRamChunkedMmap => (AdviceSetting::from(Advice::Normal), true, true),
-        VectorStorageType::Memory | VectorStorageType::Empty => return None,
+        VectorStorageType::Memory => return None,
     };
 
     let populate = match populate {

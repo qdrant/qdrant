@@ -37,7 +37,6 @@ impl From<StorageError> for Status {
             StorageError::ServiceError { .. } => tonic::Code::Internal,
             StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
             StorageError::StandaloneMode { .. } => tonic::Code::Unimplemented,
-            StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
             StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
             StorageError::AlreadyExists { .. } => tonic::Code::AlreadyExists,
             StorageError::ChecksumMismatch { .. } => tonic::Code::DataLoss,

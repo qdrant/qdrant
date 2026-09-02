@@ -42,13 +42,6 @@ pub enum OperationError {
     VectorNameNotExists { received_name: VectorNameBuf },
     #[error("No point with id {missed_point_id}")]
     PointIdError { missed_point_id: PointIdType },
-    #[error(
-        "Payload type does not match with previously given for field {field_name}. Expected: {expected_type}"
-    )]
-    TypeError {
-        field_name: PayloadKeyType,
-        expected_type: String,
-    },
     #[error("Unable to infer type for the field '{field_name}'. Please specify `field_type`")]
     TypeInferenceError { field_name: PayloadKeyType },
     /// Service Error prevents further update of the collection until it is fixed.
@@ -95,13 +88,6 @@ pub enum OperationError {
     },
     #[error("The expression {expression} produced a non-finite number")]
     NonFiniteNumber { expression: String },
-    /// All appendable segments reached `max_segment_size`, so there is no valid destination for
-    /// new or moved points. Recoverable by provisioning a fresh appendable segment and re-applying
-    /// the operation; already-applied points are skipped by their point version.
-    #[error(
-        "All appendable segments reached the maximum segment size of {max_segment_size_bytes} bytes"
-    )]
-    OutOfAppendableCapacity { max_segment_size_bytes: usize },
 }
 
 impl OperationError {
@@ -163,7 +149,7 @@ impl OperationError {
 }
 
 /// `FileNotFound` only ever originates from sources that carry a structured path
-/// ([`UniversalIoError::NotFound`], [`MmapError::MissingFile`]); a raw io NotFound is a
+/// ([`UniversalIoError::NotFound`]); a raw io NotFound is a
 /// plain `ServiceError` — universal-io wraps not-found at the call site
 /// (`UniversalIoError::extract_not_found`), so classify there, not here.
 impl IsNotFound for OperationError {
@@ -175,7 +161,6 @@ impl IsNotFound for OperationError {
             | Self::MalformedPayloadBlob { .. }
             | Self::VectorNameNotExists { .. }
             | Self::PointIdError { .. }
-            | Self::TypeError { .. }
             | Self::TypeInferenceError { .. }
             | Self::ServiceError { .. }
             | Self::InconsistentStorage { .. }
@@ -188,8 +173,7 @@ impl IsNotFound for OperationError {
             | Self::MissingRangeIndexForOrderBy { .. }
             | Self::MissingMapIndexForFacet { .. }
             | Self::VariableTypeError { .. }
-            | Self::NonFiniteNumber { .. }
-            | Self::OutOfAppendableCapacity { .. } => false,
+            | Self::NonFiniteNumber { .. } => false,
         }
     }
 }
@@ -216,15 +200,9 @@ impl From<DecompressionError> for OperationError {
 
 impl From<MmapError> for OperationError {
     fn from(err: MmapError) -> Self {
-        match err {
-            // `MissingFile` is the only mmap error with a structured path; an io NotFound
-            // is deliberately left as a service error (see `IsNotFound for OperationError`).
-            MmapError::MissingFile(path) => Self::FileNotFound { path: path.into() },
-            err @ (MmapError::SizeExact(..)
-            | MmapError::SizeLess(..)
-            | MmapError::SizeMultiple(..)
-            | MmapError::Io(_)) => Self::service_error(err.to_string()),
-        }
+        // An io NotFound is deliberately left as a service error
+        // (see `IsNotFound for OperationError`).
+        Self::service_error(err.to_string())
     }
 }
 
@@ -328,8 +306,7 @@ impl From<geohash::GeohashError> for OperationError {
 impl From<quantization::EncodingError> for OperationError {
     fn from(err: quantization::EncodingError) -> Self {
         match err {
-            quantization::EncodingError::IOError(err)
-            | quantization::EncodingError::EncodingError(err)
+            quantization::EncodingError::EncodingError(err)
             | quantization::EncodingError::ArgumentsError(err) => {
                 Self::service_error(format!("Quantization encoding error: {err}"))
             }
@@ -386,7 +363,6 @@ impl From<BlobstoreError> for OperationError {
                 }
             },
             BlobstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
-            BlobstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
         }
     }
 }
@@ -443,10 +419,6 @@ mod tests {
         });
         assert!(err.is_not_found());
         assert!(err.to_string().contains("segments/0/deleted.bin"));
-
-        let err = OperationError::from(MmapError::MissingFile("matrix.dat".to_string()));
-        assert!(err.is_not_found());
-        assert!(err.to_string().contains("matrix.dat"));
 
         let err = OperationError::from(BlobstoreError::UniversalIo(UniversalIoError::NotFound {
             path: "page_0.dat".into(),

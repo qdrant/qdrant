@@ -575,15 +575,15 @@ impl Inner {
                 }
             }
 
-            if batch.batch.is_empty() {
+            let Some(last) = batch.batch.last() else {
                 break;
-            }
+            };
 
             // Send the current batch and prefetch the next one concurrently. This overlaps the
             // network round-trip with the WAL read for the next batch.
             // Note: this temporarily holds two batches in memory (~2x MAX_BATCH_BYTES).
             let is_last = batch.reached_end;
-            let next_from = batch.batch.last().unwrap().0 + 1;
+            let next_from = last.0 + 1;
             let (send_result, read_result) = tokio::join!(
                 self.send_wal_batch(&batch, is_last),
                 self.read_wal_batch(next_from),
