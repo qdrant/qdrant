@@ -8,9 +8,10 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use std::{env, io};
 
+use dial9::cpu::{CpuProfilingConfig, SchedEventConfig};
 use dial9::{
-    Dial9Handle, Dial9HandleTokioExt, DiskBuffer, Recorder, TokioAttachOptions, recorder_disabled,
-    recorder_or_disabled,
+    Dial9Handle, Dial9HandleTokioExt, DiskBuffer, Recorder, RecorderPerfExt, TokioAttachOptions,
+    recorder_disabled, recorder_or_disabled,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -34,6 +35,13 @@ impl Drop for Dial9Guard {
     }
 }
 
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(default)
+}
+
 /// Initialize dial9 from `DIAL9_*` environment variables.
 ///
 /// Safe to call once at process start, before any Tokio runtimes are built.
@@ -47,11 +55,11 @@ impl Drop for Dial9Guard {
 /// - `DIAL9_TRACE_DIR` — trace directory (default: `/tmp/dial9-traces`)
 /// - `DIAL9_MAX_DISK_USAGE_MB` — total on-disk budget (default: `1024`)
 /// - `DIAL9_ROTATION_SECS` — segment rotation period (default: `60`)
+/// - `DIAL9_CPU_PROFILE_ENABLED` — CPU stack sampling (default: on, Linux)
+/// - `DIAL9_CPU_SAMPLE_HZ` — sampling frequency (default: `99`)
+/// - `DIAL9_SCHEDULE_PROFILE_ENABLED` — sched-switch capture (default: on, Linux)
 pub fn init(application_version: &str) -> Dial9Guard {
-    let enabled = env::var("DIAL9_ENABLED")
-        .ok()
-        .and_then(|v| v.parse::<bool>().ok())
-        .unwrap_or(false);
+    let enabled = env_bool("DIAL9_ENABLED", false);
 
     if !enabled {
         log::info!("dial9 telemetry disabled (set DIAL9_ENABLED=true to enable)");
@@ -71,6 +79,13 @@ pub fn init(application_version: &str) -> Dial9Guard {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(60);
+    let cpu_profile_enabled = env_bool("DIAL9_CPU_PROFILE_ENABLED", cfg!(target_os = "linux"));
+    let schedule_profile_enabled =
+        env_bool("DIAL9_SCHEDULE_PROFILE_ENABLED", cfg!(target_os = "linux"));
+    let cpu_sample_hz = env::var("DIAL9_CPU_SAMPLE_HZ")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(99);
 
     let writer = DiskBuffer::builder()
         .base_path(&trace_dir)
@@ -84,15 +99,23 @@ pub fn init(application_version: &str) -> Dial9Guard {
         );
     }
 
-    let recorder = recorder_or_disabled(writer)
-        .segment_metadata([
-            ("service".to_string(), "qdrant".to_string()),
-            (
-                "application.version".to_string(),
-                application_version.to_string(),
-            ),
-        ])
-        .build();
+    let mut builder = recorder_or_disabled(writer).segment_metadata([
+        ("service".to_string(), "qdrant".to_string()),
+        (
+            "application.version".to_string(),
+            application_version.to_string(),
+        ),
+    ]);
+
+    if cpu_profile_enabled {
+        builder =
+            builder.with_cpu_profiling(CpuProfilingConfig::default().frequency_hz(cpu_sample_hz));
+    }
+    if schedule_profile_enabled {
+        builder = builder.with_sched_events(SchedEventConfig::default());
+    }
+
+    let recorder = builder.build();
 
     if recorder.handle().is_connected() {
         if let Err(err) = recorder.install_global_handle() {
@@ -100,7 +123,14 @@ pub fn init(application_version: &str) -> Dial9Guard {
         }
         log::info!(
             "dial9 telemetry enabled; writing traces to {trace_dir} \
-             (max {max_disk_mb} MiB, rotate every {rotation_secs}s)"
+             (max {max_disk_mb} MiB, rotate every {rotation_secs}s, \
+             cpu_profile={cpu_profile_enabled}, sched_profile={schedule_profile_enabled}, \
+             sample_hz={cpu_sample_hz})"
+        );
+    } else {
+        log::error!(
+            "dial9: recorder not connected after init (trace_dir={trace_dir}); \
+             check DiskBuffer / cpu-profiling permissions; telemetry inactive"
         );
     }
 
@@ -121,10 +151,7 @@ pub fn build_runtime(mut builder: Builder, runtime_name: &str) -> io::Result<Run
         return builder.build();
     }
 
-    let task_tracking = env::var("DIAL9_TASK_TRACKING_ENABLED")
-        .ok()
-        .and_then(|v| v.parse::<bool>().ok())
-        .unwrap_or(true);
+    let task_tracking = env_bool("DIAL9_TASK_TRACKING_ENABLED", true);
 
     let options = TokioAttachOptions::builder()
         .runtime_name(runtime_name.to_string())

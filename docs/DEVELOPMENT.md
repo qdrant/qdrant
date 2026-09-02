@@ -248,15 +248,17 @@ that can be enabled with optional features.
 - `dial9` feature enables [dial9](https://github.com/dial9-rs/dial9) Tokio telemetry
   - attaches dial9 runtime hooks to Qdrant's storage Tokio runtimes (`general`, `update`, `search-cpu`, `search-io`)
   - recording is **off by default**; set `DIAL9_ENABLED=true` at runtime to start writing traces
-  - useful env knobs: `DIAL9_TRACE_DIR` (default `/tmp/dial9-traces`), `DIAL9_MAX_DISK_USAGE_MB`, `DIAL9_ROTATION_SECS`, `DIAL9_TASK_TRACKING_ENABLED`
+  - useful env knobs: `DIAL9_TRACE_DIR` (default `/tmp/dial9-traces`), `DIAL9_MAX_DISK_USAGE_MB`, `DIAL9_ROTATION_SECS`, `DIAL9_TASK_TRACKING_ENABLED`, `DIAL9_CPU_PROFILE_ENABLED`, `DIAL9_SCHEDULE_PROFILE_ENABLED`, `DIAL9_CPU_SAMPLE_HZ`
   - for full Tokio task spawn/terminate coverage, also pass `--cfg tokio_unstable` (same as `console`)
+  - CPU/schedule profiling needs frame pointers: `RUSTFLAGS='--cfg tokio_unstable -C force-frame-pointers=yes'`
   - view traces with the dial9 viewer: <https://dial9-tokio-telemetry.netlify.app/> or `cargo install dial9 --features cli`
 
 ```console
 # Build with dial9 support (perf profile: release opts, no LTO)
-$ cargo build --profile perf --features dial9
+$ RUSTFLAGS='--cfg tokio_unstable -C force-frame-pointers=yes' \
+    cargo build --profile perf --features dial9
 
-# Run with telemetry recording enabled
+# Run with telemetry + CPU/schedule profiling
 $ DIAL9_ENABLED=true DIAL9_TRACE_DIR=/tmp/qdrant-dial9 ./target/perf/qdrant
 ```
 

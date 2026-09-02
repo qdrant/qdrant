@@ -2113,6 +2113,7 @@ dependencies = [
  "bon",
  "bytes",
  "dial9-core",
+ "dial9-perf-self-profile",
  "dial9-trace-format",
  "flate2",
  "futures-util",
