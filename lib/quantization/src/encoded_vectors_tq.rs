@@ -14,8 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
 use crate::encoded_storage::{
-    EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, offsets_worth_batch_scoring,
-    validate_storage_vector_size,
+    EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
 };
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
@@ -471,17 +470,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     ) {
         debug_assert_eq!(offsets.len(), scores.len());
 
-        // Ids whose runs are short on average (HNSW neighbors, and sparse
-        // filtered scans) don't amortize the batch kernel's per-run setup —
-        // keep the per-vector path there. Plain and dense filtered scans hand
-        // long runs and take the run-batched path below. Async backends stay
-        // per-vector too: they pipeline reads in `for_each_batch`, and
-        // contiguous-slice reads would serialize them — except where the
-        // storage reports that contiguous reads win at any length (see
-        // `prefers_contiguous_reads`).
-        if !TStorage::prefers_contiguous_reads()
-            && (!TStorage::is_in_ram_or_mmap() || !offsets_worth_batch_scoring(offsets))
-        {
+        if !TStorage::prefers_run_scoring(offsets) {
             self.for_each_batch(offsets, |i, vector| {
                 scores[i] = self.score_bytes(True, query, &vector, hw_counter);
             });

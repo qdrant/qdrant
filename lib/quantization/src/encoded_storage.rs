@@ -88,16 +88,38 @@ pub trait EncodedStorage: EncodedStorageWrite {
         false
     }
 
+    /// Whether `offsets` should be scored through [`Self::for_each_run`] —
+    /// one batched kernel call per run — rather than vector by vector through
+    /// [`Self::for_each_batch`].
+    ///
+    /// Run scoring pays a per-run setup that only long runs amortize, so
+    /// storages with cheap random access (RAM, mmap) take it when the runs are
+    /// long enough on average ([`offsets_worth_batch_scoring`]): plain and
+    /// dense filtered scans qualify, HNSW neighbours and sparse filtered scans
+    /// do not.  Async backends stay per-vector regardless, since
+    /// `for_each_batch` pipelines their reads — unless the storage reports
+    /// that contiguous reads win at any length
+    /// ([`Self::prefers_contiguous_reads`]).
+    fn prefers_run_scoring(offsets: &[PointOffsetType]) -> bool {
+        Self::prefers_contiguous_reads()
+            || (Self::is_in_ram_or_mmap() && offsets_worth_batch_scoring(offsets))
+    }
+
     /// Invoke `callback(first, count, bytes)` over `offsets` split into runs
     /// the storage serves from one contiguous slice: `bytes` holds the
-    /// concatenated vectors of `offsets[first..first + count]`.  Runs cover
-    /// `offsets` in order, so a sequential scan over consecutive offsets
+    /// concatenated vectors of `offsets[first..first + count]`.  The runs
+    /// partition `offsets`, so a sequential scan over consecutive offsets
     /// resolves storage internals (chunk lookups, reads) once per run rather
     /// than once per vector.
     ///
+    /// Runs arrive in whatever order the storage completes them: in-memory
+    /// storages walk `offsets` front to back, a pipelined backend (io_uring)
+    /// reports reads as they land.  Callers must address results by `first`
+    /// and not assume the previous run ended where this one starts.
+    ///
     /// The default serves every vector as its own run; storages with
     /// contiguous regions should override it to coalesce consecutive offsets
-    /// (see [`for_each_consecutive_run`]).
+    /// (see [`consecutive_runs`]).
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
@@ -123,27 +145,37 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
     }
 }
 
+/// One maximal run of consecutive ids in an offsets list, see
+/// [`consecutive_runs`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Run {
+    /// Index into `offsets` of the run's first id.
+    pub first: usize,
+    /// The run's first id, `offsets[first]`.
+    pub start: PointOffsetType,
+    /// Number of ids in the run.
+    pub len: usize,
+}
+
 /// Run detection shared by [`EncodedStorage::for_each_run`] implementations:
-/// splits `offsets` into maximal runs of consecutive ids and invokes
-/// `emit(first, start, len)` per run, where `first` indexes into `offsets`.
+/// splits `offsets` into maximal runs of consecutive ids, in order of
+/// appearance.  Lazy, so a storage can feed the runs straight into a read
+/// pipeline without collecting them first.
 ///
 /// Runs are not capped: a storage serves whatever region a run covers, even
 /// one straddling its internal chunk boundary.
-pub fn for_each_consecutive_run(
-    offsets: &[PointOffsetType],
-    mut emit: impl FnMut(usize, PointOffsetType, usize),
-) {
+pub fn consecutive_runs(offsets: &[PointOffsetType]) -> impl Iterator<Item = Run> + '_ {
     let mut first = 0;
-    while first < offsets.len() {
-        let start = offsets[first];
+    std::iter::from_fn(move || {
+        let start = *offsets.get(first)?;
         let mut len = 1;
-        while first + len < offsets.len() && offsets[first + len] == start + len as PointOffsetType
-        {
+        while offsets.get(first + len) == Some(&(start + len as PointOffsetType)) {
             len += 1;
         }
-        emit(first, start, len);
+        let run = Run { first, start, len };
         first += len;
-    }
+        Some(run)
+    })
 }
 
 /// Mean ascending run length at or above which run-batched scoring earns its
@@ -366,11 +398,11 @@ impl EncodedStorage for TestEncodedStorage {
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
     ) {
-        for_each_consecutive_run(offsets, |first, start, len| {
-            let begin = start as usize * self.quantized_vector_size.get();
-            let end = begin + len * self.quantized_vector_size.get();
-            callback(first, len, Cow::Borrowed(&self.data[begin..end]));
-        });
+        for run in consecutive_runs(offsets) {
+            let begin = run.start as usize * self.quantized_vector_size.get();
+            let end = begin + run.len * self.quantized_vector_size.get();
+            callback(run.first, run.len, Cow::Borrowed(&self.data[begin..end]));
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -479,11 +511,9 @@ mod tests {
     #[test]
     fn consecutive_runs_split_at_gaps() {
         let collect = |offsets: &[u32]| {
-            let mut runs = Vec::new();
-            for_each_consecutive_run(offsets, |first, start, len| {
-                runs.push((first, start, len));
-            });
-            runs
+            consecutive_runs(offsets)
+                .map(|Run { first, start, len }| (first, start, len))
+                .collect::<Vec<_>>()
         };
 
         // Split at gaps only, however long the consecutive stretch.
