@@ -2,8 +2,8 @@
 //!
 //! A leader process owns a read-write `EdgeShard` and writes to an on-disk directory. One or more
 //! follower processes open the *same* directory as a [`ReadOnlyEdgeShard`] and serve reads. A
-//! follower never writes: no WAL, no optimization, no segment creation. It refreshes by
-//! [`refresh`](ReadOnlyEdgeShard::refresh)ing — rescanning the `segments/` directory to pick up
+//! follower never writes: no WAL, no optimization, no segment creation. It live-reloads by
+//! [`live_reload`](ReadOnlyEdgeShard::live_reload)ing — rescanning the `segments/` directory to pick up
 //! segments the leader created/removed, and [`live_reload`](segment::segment::read_only::ReadOnlySegment::live_reload)ing
 //! the survivors to fold in the leader's flushed in-place appends and deletes.
 //!
@@ -15,8 +15,8 @@
 mod enumerate;
 mod holder;
 mod lifecycle;
+mod live_reload;
 mod load;
-mod refresh;
 mod shard_read;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -44,27 +44,27 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// Read backend handle; passed to segment `open` and `live_reload`.
     fs: S::Fs,
     /// Config snapshot, derived from the segments (a follower has no `edge_config.json`). At open
-    /// it is overlaid with the tunables of the caller-provided config; each refresh re-derives it
+    /// it is overlaid with the tunables of the caller-provided config; each live_reload re-derives it
     /// from the segments alone. Stored as an `Arc` so a read view can cheaply clone the current
-    /// snapshot while a refresh swaps in a new one.
+    /// snapshot while a live_reload swaps in a new one.
     config: RwLock<Arc<EdgeConfig>>,
     segments: RwLock<ReadOnlySegmentHolder<S>>,
     /// Discovers the current segment directories. Injected because segment discovery is
     /// backend-specific (see [`SegmentEnumerator`]) until an on-disk manifest exists.
     enumerator: Box<dyn SegmentEnumerator>,
-    /// Fixed-size pool used to open segments in parallel on open/refresh and to run per-segment
+    /// Fixed-size pool used to open segments in parallel on open/live_reload and to run per-segment
     /// reads in parallel. Segments never carry `max_search_threads`, so it is sized from
     /// `provided_config` alone: the CPU-derived default unless explicitly set (see
     /// [`EdgeConfig::search_thread_count`]).
     search_pool: Arc<rayon::ThreadPool>,
     /// Request-specific load profile this shard was opened with, if any: components the request
     /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a
-    /// later [`refresh`](Self::refresh) discovers load with the same placement.
+    /// later [`live_reload`](Self::live_reload) discovers load with the same placement.
     load_profile: Option<LoadProfile>,
-    /// Serializes [`refresh`](Self::refresh)es: concurrent refreshes would
+    /// Serializes [`live_reload`](Self::live_reload)s: concurrent live_reloads would
     /// duplicate the listing and load work, and could clear each other's staged
     /// prefetches between a segment's preload and apply.
-    refresh_lock: Mutex<()>,
+    live_reload_lock: Mutex<()>,
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {

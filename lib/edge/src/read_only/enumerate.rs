@@ -18,7 +18,7 @@ use crate::edge_shard::scan_segment_dirs;
 /// * [`LocalSegmentEnumerator`] scans the local `segments/` directory;
 /// * an S3 follower can supply its own (e.g. reading the manifest over object storage).
 ///
-/// Called on every [`refresh`](super::ReadOnlyEdgeShard::refresh), so it must reflect the current
+/// Called on every [`live_reload`](super::ReadOnlyEdgeShard::live_reload), so it must reflect the current
 /// set. The returned paths are segment directory paths interpreted relative to the backend root
 /// (e.g. `segments/<uuid>`), matching what [`ReadOnlySegment::open`] expects.
 ///

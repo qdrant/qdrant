@@ -1,6 +1,6 @@
 //! Leader + follower tests: a read-write [`EdgeShard`] (leader) writes to a directory and a
 //! [`ReadOnlyEdgeShard`] (follower) opened over the same directory serves reads, converging on the
-//! leader's flushed state after a [`refresh`](ReadOnlyEdgeShard::refresh).
+//! leader's flushed state after a [`live_reload`](ReadOnlyEdgeShard::live_reload).
 #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
 use std::collections::{HashMap, HashSet};
@@ -91,7 +91,7 @@ pub(crate) fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
 }
 
 /// Open a follower that discovers segments by scanning the directory (no manifest required) — used
-/// by the read/refresh tests, whose leaders don't write a manifest.
+/// by the read/live_reload tests, whose leaders don't write a manifest.
 pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {
     ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
@@ -171,7 +171,7 @@ fn follower_sees_flushed_data() {
     leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
 
     assert_eq!(exact_count(&follower), 100);
     assert_eq!(exact_count(&follower), leader_exact_count(&leader));
@@ -213,15 +213,15 @@ fn follower_with_load_profile_serves_reads() {
     // Reads outside the profile (vectors are parked cold for a scroll) still work.
     assert_follower_vectors(&follower, &[1, 50, 100]);
 
-    // Segments discovered by a refresh load under the same profile.
+    // Segments discovered by a live_reload load under the same profile.
     upsert(&leader, 101..=150);
     leader.flush().unwrap();
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 150);
 }
 
 #[test]
-fn refresh_picks_up_incremental_writes() {
+fn live_reload_picks_up_incremental_writes() {
     let dir = tempfile::Builder::new()
         .prefix("edge-ro-incremental")
         .tempdir()
@@ -232,13 +232,13 @@ fn refresh_picks_up_incremental_writes() {
     leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 50);
 
     // Second batch: appended in place to the same (appendable) segment.
     upsert(&leader, 51..=100);
     leader.flush().unwrap();
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
 
     assert_eq!(exact_count(&follower), 100);
     assert_eq!(exact_count(&follower), leader_exact_count(&leader));
@@ -257,12 +257,12 @@ fn follower_reflects_deletes() {
     leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 100);
 
     delete(&leader, 1..=40);
     leader.flush().unwrap();
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
 
     assert_eq!(exact_count(&follower), 60);
     assert_eq!(exact_count(&follower), leader_exact_count(&leader));
@@ -294,14 +294,14 @@ fn follower_tracks_optimization_swap() {
     leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 700);
 
     // Vacuum rebuilds the segment under a new UUID and removes the old one.
     let optimized = leader.optimize().unwrap();
     assert!(optimized, "expected a vacuum optimization to run");
     leader.flush().unwrap();
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
 
     // Follower drops the old UUID, opens the new one, and serves the same data.
     assert_eq!(exact_count(&follower), 700);
@@ -310,7 +310,7 @@ fn follower_tracks_optimization_swap() {
 }
 
 #[test]
-fn refresh_on_unchanged_dir_is_noop() {
+fn live_reload_on_unchanged_dir_is_noop() {
     let dir = tempfile::Builder::new()
         .prefix("edge-ro-noop")
         .tempdir()
@@ -321,12 +321,12 @@ fn refresh_on_unchanged_dir_is_noop() {
     leader.flush().unwrap();
 
     let follower = open_follower(dir.path());
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
     let before = exact_count(&follower);
 
-    // Repeated refreshes without leader changes must be stable.
-    follower.refresh().unwrap();
-    follower.refresh().unwrap();
+    // Repeated live_reloads without leader changes must be stable.
+    follower.live_reload().unwrap();
+    follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), before);
     assert_eq!(before, 10);
 }
@@ -355,10 +355,10 @@ fn open_without_config_derives_from_segments() {
 }
 
 /// A caller-provided config overrides tunables at open only: `vectors` still derive from the
-/// segments (so reads work with a vectors-less provided config), while [`refresh`] re-derives the
+/// segments (so reads work with a vectors-less provided config), while [`live_reload`] re-derives the
 /// config from the segments alone.
 ///
-/// [`refresh`]: ReadOnlyEdgeShard::refresh
+/// [`live_reload`]: ReadOnlyEdgeShard::live_reload
 #[test]
 fn provided_config_overrides_tunables_at_open() {
     let dir = tempfile::Builder::new()
@@ -400,11 +400,11 @@ fn provided_config_overrides_tunables_at_open() {
     assert_eq!(config.max_search_threads, Some(2));
     assert_eq!(exact_count(&follower), 10);
 
-    // Refresh re-derives the config from the segments alone: the provided tunables are dropped
+    // live_reload re-derives the config from the segments alone: the provided tunables are dropped
     // (segments never carry `max_search_threads`), the segment-derived values remain.
     upsert(&leader, 11..=15);
     leader.flush().unwrap();
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
 
     let config = follower.config_snapshot();
     assert!(config.vectors.contains_key(VECTOR_NAME));
@@ -475,8 +475,8 @@ fn follower_uses_injected_enumerator() {
     .unwrap();
     assert_eq!(follower.segments_count(), all_segments.len() - 1);
 
-    // A refresh still goes through the same enumerator, so the hidden segment stays hidden.
-    follower.refresh().unwrap();
+    // A live_reload still goes through the same enumerator, so the hidden segment stays hidden.
+    follower.live_reload().unwrap();
     assert_eq!(follower.segments_count(), all_segments.len() - 1);
 }
 
@@ -551,6 +551,6 @@ fn leader_writes_manifest_and_follower_loads_it() {
 
     // The follower discovers and serves the data through the manifest.
     let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
-    follower.refresh().unwrap();
+    follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 100);
 }

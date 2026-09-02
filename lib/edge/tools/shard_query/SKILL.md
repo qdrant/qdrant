@@ -101,7 +101,7 @@ Results print as one JSON object per line (`id`, `payload`, `vector`, plus `scor
 
 ## Live reload — watching a leader's writes
 
-Both flags keep the tool running after the first answer. Each iteration refreshes the shard from the backend, re-runs the **same** request, and prints a diff against the previous results:
+Both flags keep the tool running after the first answer. Each iteration live_reloads the shard from the backend, re-runs the **same** request, and prints a diff against the previous results:
 
 ```
 + {...}   point appeared
@@ -111,10 +111,10 @@ Both flags keep the tool running after the first answer. Each iteration refreshe
 
 A pure reordering of unchanged rows prints nothing (`no changes`). This is the fastest way to watch a leader writing into the same bucket, and to catch staleness or consistency bugs in the follower read path.
 
-- `--live-reload <SECONDS>` — refresh on a timer (minimum 1).
-- `--live-reload-key` — refresh when you press Enter instead. Better when stepping through a debugger on the leader. Not compatible with `@-` (stdin) request arguments, since it reads stdin itself.
+- `--live-reload <SECONDS>` — live_reload on a timer (minimum 1).
+- `--live-reload-key` — live_reload when you press Enter instead. Better when stepping through a debugger on the leader. Not compatible with `@-` (stdin) request arguments, since it reads stdin itself.
 
-The two are mutually exclusive. A failed refresh is logged and retried on the next trigger — the shard keeps serving its previous state rather than dying.
+The two are mutually exclusive. A failed live_reload is logged and retried on the next trigger — the shard keeps serving its previous state rather than dying.
 
 ## Examples
 
