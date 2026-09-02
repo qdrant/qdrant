@@ -345,6 +345,30 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
     ) {
         let size = self.quantized_vector_size.get() as u64;
+
+        if ReadOnly::<S>::kind().can_be_async() {
+            // Pipelined backends (io_uring): submit every run of the batch
+            // together — still one read per run — so scattered ids keep their
+            // reads in flight concurrently instead of waiting on each run
+            // before submitting the next.
+            let mut runs = Vec::new();
+            quantization::encoded_storage::for_each_consecutive_run(
+                offsets,
+                |first, start, len| {
+                    let range = ReadRange::new(size * u64::from(start), size * len as u64);
+                    runs.push(((first, len), range));
+                },
+            );
+            // Access pattern does not matter for io_uring.
+            self.storage
+                .read_batch(runs, Random, |(first, len), bytes: &[u8]| {
+                    callback(first, len, Cow::Borrowed(bytes));
+                    UioResult::Ok(())
+                })
+                .expect("vectors read from quantized storage failed");
+            return;
+        }
+
         quantization::encoded_storage::for_each_consecutive_run(offsets, |first, start, len| {
             let range = ReadRange::new(size * u64::from(start), size * len as u64);
             let bytes = if len > 1 {
