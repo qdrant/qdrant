@@ -461,6 +461,47 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.score_bytes(True, query, &encoded_vector, hw_counter)
     }
 
+    fn score_points(
+        &self,
+        query: &EncodedQueryTQ,
+        offsets: &[PointOffsetType],
+        scores: &mut [f32],
+        hw_counter: &HardwareCounterCell,
+    ) {
+        debug_assert_eq!(offsets.len(), scores.len());
+
+        if !TStorage::is_in_ram_or_mmap() {
+            // Backends with async reads (io_uring, remote caches) pipeline
+            // per-vector reads in `for_each_batch`; run-granular reads would
+            // serialize them.
+            self.for_each_batch(offsets, |i, vector| {
+                scores[i] = self.score_bytes(True, query, &vector, hw_counter);
+            });
+            return;
+        }
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(offsets.len() * self.quantized_vector_size());
+
+        let stride = self.quantized_vector_size();
+        self.encoded_vectors
+            .for_each_run(offsets, |first, count, bytes| {
+                self.quantizer.score_precomputed_batch(
+                    query,
+                    &bytes,
+                    stride,
+                    &mut scores[first..first + count],
+                );
+            });
+
+        if self.metadata.vector_parameters.invert {
+            for score in scores {
+                *score = -*score;
+            }
+        }
+    }
+
     /// Score two points inside endoded data by their indexes
     fn score_internal(
         &self,

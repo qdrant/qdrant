@@ -137,6 +137,10 @@ name = "turbo_vector_search"
 harness = false
 
 [[bench]]
+name = "turbo_full_scan"
+harness = false
+
+[[bench]]
 name = "read_vectors"
 harness = false
 

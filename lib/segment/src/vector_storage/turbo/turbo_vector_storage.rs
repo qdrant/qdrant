@@ -399,6 +399,22 @@ impl<S: UniversalRead> TurboScoring for TurboVectorStorageImpl<S> {
         Self::score_query_bytes(self, query, bytes)
     }
 
+    fn score_query_batch(
+        &self,
+        query: &EncodedQueryTQ,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) {
+        shared::score_query_batch(
+            &self.storage,
+            &self.quantizer,
+            self.distance,
+            query,
+            ids,
+            scores,
+        )
+    }
+
     fn score_internal_encoded(
         &self,
         point_a: PointOffsetType,

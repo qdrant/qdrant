@@ -58,11 +58,7 @@ impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
         self.hardware_counter.cpu_counter().incr_delta(ids.len());
 
-        self.storage
-            .for_each_in_dense_tq_batch(ids, |idx, bytes| {
-                scores[idx] = self.storage.score_query_bytes(&self.query, bytes);
-            })
-            .expect("read TQ vectors");
+        self.storage.score_query_batch(&self.query, ids, scores);
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
