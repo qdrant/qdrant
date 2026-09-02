@@ -51,7 +51,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QueryBlock128<PLANES, QUERY_
         };
         for (b, byte_planes) in block.bytes.iter_mut().enumerate() {
             for (k, plane) in byte_planes.iter_mut().enumerate() {
-                *plane = unsafe { load_plane_128(&planes.bytes[b][k], offset) };
+                *plane = unsafe { load_plane_128(planes.plane(b, k), offset) };
             }
         }
         block
@@ -153,7 +153,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QueryBlock256<PLANES, QUERY_
         };
         for (b, byte_planes) in block.bytes.iter_mut().enumerate() {
             for (k, plane) in byte_planes.iter_mut().enumerate() {
-                *plane = unsafe { load_plane_256(&planes.bytes[b][k], offset) };
+                *plane = unsafe { load_plane_256(planes.plane(b, k), offset) };
             }
         }
         block
@@ -263,7 +263,7 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QueryBlock512<PLANES, QUERY_
         };
         for (b, byte_planes) in block.bytes.iter_mut().enumerate() {
             for (k, plane) in byte_planes.iter_mut().enumerate() {
-                *plane = unsafe { load_plane_512(&planes.bytes[b][k], offset) };
+                *plane = unsafe { load_plane_512(planes.plane(b, k), offset) };
             }
         }
         block
