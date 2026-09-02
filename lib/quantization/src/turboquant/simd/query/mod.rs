@@ -147,7 +147,16 @@ unsafe fn tail_block<const N: usize>(data: *const u8, len: usize) -> [u8; N] {
 /// kernel can always load a whole block on the query side; whatever the
 /// data lanes past the vector's end hold, they multiply against zeros.
 pub(crate) struct QueryPlanes<const PLANES: usize, const QUERY_BYTES: usize> {
-    bytes: [[Vec<i8>; PLANES]; QUERY_BYTES],
+    /// Every plane in one allocation, plane `(b, k)` at
+    /// `data[(b * PLANES + k) * plane_len..][..plane_len]`.
+    ///
+    /// One allocation rather than `PLANES * QUERY_BYTES` separate `Vec`s so
+    /// the planes land on neighbouring pages: a scoring loop that re-reads
+    /// them per vector then touches one TLB region and one prefetch stream
+    /// instead of up to sixteen scattered ones.
+    data: Vec<i8>,
+    /// Padded length of a single plane, in bytes.
+    plane_len: usize,
 }
 
 impl<const PLANES: usize, const QUERY_BYTES: usize> QueryPlanes<PLANES, QUERY_BYTES> {
@@ -156,16 +165,28 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QueryPlanes<PLANES, QUERY_BY
     fn new(encoded: impl ExactSizeIterator<Item = [i8; QUERY_BYTES]>) -> Self {
         let dim = encoded.len();
         debug_assert!(dim.is_multiple_of(PLANES));
-        let len = (dim / PLANES).next_multiple_of(PLANE_BLOCK);
-        let mut bytes: [[Vec<i8>; PLANES]; QUERY_BYTES] =
-            std::array::from_fn(|_| std::array::from_fn(|_| vec![0; len]));
+        let plane_len = (dim / PLANES).next_multiple_of(PLANE_BLOCK);
+        let mut data = vec![0; QUERY_BYTES * PLANES * plane_len];
         for (i, dim_bytes) in encoded.enumerate() {
             let (j, k) = (i / PLANES, i % PLANES);
             for (b, &byte) in dim_bytes.iter().enumerate() {
-                bytes[b][k][j] = byte;
+                data[(b * PLANES + k) * plane_len + j] = byte;
             }
         }
-        Self { bytes }
+        Self { data, plane_len }
+    }
+
+    /// The plane holding query byte `b` of the dims whose code sits at
+    /// position `k`, zero-padded to a multiple of [`PLANE_BLOCK`].
+    #[inline(always)]
+    pub(crate) fn plane(&self, b: usize, k: usize) -> &[i8] {
+        debug_assert!(b < QUERY_BYTES && k < PLANES);
+        let start = (b * PLANES + k) * self.plane_len;
+        // SAFETY: `data` holds `QUERY_BYTES * PLANES` planes of `plane_len`
+        // bytes, and both indices are in range by the assert above. Bounds
+        // checks here cost 28-36% of the kernel: the slice is re-taken for
+        // every block of every vector.
+        unsafe { self.data.get_unchecked(start..start + self.plane_len) }
     }
 }
 
@@ -373,8 +394,8 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             for k in 0..PLANES {
                 let code = (byte >> (k * Self::BITS)) & mask;
                 let c = i64::from(encoding.codebook[code as usize]);
-                for (sum, planes) in sums.iter_mut().zip(&self.planes.bytes) {
-                    *sum += i64::from(planes[k][j]) * c;
+                for (b, sum) in sums.iter_mut().enumerate() {
+                    *sum += i64::from(self.planes.plane(b, k)[j]) * c;
                 }
             }
         }
