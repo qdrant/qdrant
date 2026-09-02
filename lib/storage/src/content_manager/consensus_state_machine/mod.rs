@@ -11,7 +11,9 @@
 //!
 //! Two rules every operation follows:
 //!
-//! 1. Never reject an operation that is partially or fully applied.
+//! 1. Never reject a partially applied operation: rejecting one makes the partial state permanent.
+//!    An operation that was fully applied may be rejected, since the state is already complete.
+//!    E.g., `CreateCollection` rejects a collection that is already there.
 //! 2. Emit only the actions left to reach the goal state, each idempotent, and the action that
 //!    records the operation as applied last.
 //!
@@ -25,14 +27,24 @@ pub mod state;
 #[cfg(test)]
 mod tests;
 
-use collection::shards::shard::PeerId;
+use std::num::NonZeroU32;
+
+use collection::config::{
+    self, CollectionConfigInternal, CollectionParams, PayloadStorageParams, ShardingMethod,
+    WalConfig,
+};
+use collection::operations::config_diff::DiffConfig as _;
+use collection::operations::types::VectorsConfig;
+use collection::optimizers_builder::OptimizersConfig;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
+use segment::types::HnswConfig;
 
 pub use self::action::Action;
 pub use self::state::ClusterState;
 use super::errors::StorageResult;
-use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
+use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 
@@ -102,9 +114,15 @@ impl ConsensusStateMachine {
         match operation {
             CollectionMetaOperations::Nop { .. } => ApplyOutcome::Accepted(Vec::new()),
 
-            CollectionMetaOperations::CreateCollection(_)
-            | CollectionMetaOperations::UpdateCollection(_)
-            | CollectionMetaOperations::DeleteCollection(_)
+            CollectionMetaOperations::CreateCollection(operation) => {
+                ApplyOutcome::new(self.state.plan_create_collection(&self.context, operation))
+            }
+
+            CollectionMetaOperations::DeleteCollection(operation) => {
+                ApplyOutcome::Accepted(self.state.plan_delete_collection(operation))
+            }
+
+            CollectionMetaOperations::UpdateCollection(_)
             | CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_)
             | CollectionMetaOperations::SetShardReplicaState(_)
@@ -146,7 +164,7 @@ impl ConsensusStateMachine {
 /// Node-local values operations read.
 ///
 /// These come from this node's config, not from consensus, so two peers can read different values
-/// for the same operation.
+/// for the same operation. Values scraped from `StorageConfig` keep the names they have there.
 #[derive(Clone, Debug)]
 pub struct NodeContext {
     pub peer_id: PeerId,
@@ -155,6 +173,146 @@ pub struct NodeContext {
     pub collection_defaults: Option<CollectionConfigDefaults>,
     /// Transfer method this node picks when an operation does not name one
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
+    pub max_collections: Option<usize>,
+    pub wal: WalConfig,
+    pub optimizers: OptimizersConfig,
+    pub hnsw_index: HnswConfig,
+    pub payload: Option<PayloadStorageParams>,
+    /// Mirrors the deprecated storage config flag of the same name, which `payload` overrides
+    pub on_disk_payload: bool,
+}
+
+impl NodeContext {
+    /// Shards a new collection starts with.
+    ///
+    /// The proposer picks them and the operation carries them. An operation proposed without a
+    /// distribution comes from a single node, which puts every shard on itself.
+    pub fn shard_distribution(
+        &self,
+        op: &CreateCollectionOperation,
+    ) -> Vec<(ShardId, Vec<PeerId>)> {
+        if let Some(distribution) = op.distribution() {
+            return distribution.distribution.clone();
+        }
+
+        match op.create_collection.sharding_method.unwrap_or_default() {
+            ShardingMethod::Auto => {
+                let shard_number = op.create_collection.shard_number.or_else(|| {
+                    let defaults = self.collection_defaults.as_ref()?;
+                    Some(defaults.get_shard_number(1))
+                });
+
+                (0..shard_number.unwrap_or(1))
+                    .map(|shard_id| (shard_id, vec![self.peer_id]))
+                    .collect()
+            }
+
+            // Custom sharding creates shards with the shard key, not with the collection
+            ShardingMethod::Custom => Vec::new(),
+        }
+    }
+
+    /// Resolve the config of a new collection from the operation and this node's defaults.
+    ///
+    /// `shards` is how many shards the collection starts with, which auto sharding stores as the
+    /// shard number when the operation names none.
+    #[expect(deprecated)]
+    pub fn collection_config(
+        &self,
+        op: &CreateCollection,
+        shards: usize,
+    ) -> StorageResult<CollectionConfigInternal> {
+        let CreateCollection {
+            mut vectors,
+            shard_number,
+            sharding_method,
+            on_disk_payload,
+            payload,
+            hnsw_config: hnsw_config_diff,
+            wal_config: wal_config_diff,
+            optimizers_config: optimizers_config_diff,
+            replication_factor,
+            write_consistency_factor,
+            quantization_config,
+            sparse_vectors,
+            strict_mode_config,
+            uuid,
+            metadata,
+        } = op.clone();
+
+        let defaults = self.collection_defaults.as_ref();
+
+        let shard_number = match sharding_method.unwrap_or_default() {
+            ShardingMethod::Auto => shard_number.unwrap_or(shards as u32),
+            ShardingMethod::Custom => shard_number.unwrap_or_else(|| {
+                defaults
+                    .and_then(|defaults| defaults.shard_number)
+                    .unwrap_or_else(|| config::default_shard_number().get())
+            }),
+        };
+
+        let replication_factor = replication_factor
+            .or_else(|| defaults.and_then(|defaults| defaults.replication_factor))
+            .unwrap_or_else(|| config::default_replication_factor().get());
+
+        let write_consistency_factor = write_consistency_factor
+            .or_else(|| defaults.and_then(|defaults| defaults.write_consistency_factor))
+            .unwrap_or_else(|| config::default_write_consistency_factor().get());
+
+        if let Some(vectors_defaults) = defaults.and_then(|defaults| defaults.vectors.as_ref()) {
+            match &mut vectors {
+                VectorsConfig::Single(params) => {
+                    apply_vector_placement_defaults(params, vectors_defaults);
+                }
+                VectorsConfig::Multi(params) => {
+                    for params in params.values_mut() {
+                        apply_vector_placement_defaults(params, vectors_defaults);
+                    }
+                }
+            }
+        }
+
+        let params = CollectionParams {
+            vectors,
+            sparse_vectors,
+            shard_number: NonZeroU32::new(shard_number)
+                .ok_or_else(|| StorageError::bad_input("`shard_number` cannot be 0"))?,
+            sharding_method,
+            on_disk_payload: Some(on_disk_payload.unwrap_or(self.on_disk_payload)),
+            payload: apply_payload_placement_defaults(payload, on_disk_payload, self.payload),
+            replication_factor: NonZeroU32::new(replication_factor)
+                .ok_or_else(|| StorageError::bad_input("`replication_factor` cannot be 0"))?,
+            write_consistency_factor: NonZeroU32::new(write_consistency_factor)
+                .ok_or_else(|| StorageError::bad_input("`write_consistency_factor` cannot be 0"))?,
+            read_fan_out_factor: None,
+            read_fan_out_delay_ms: None,
+        };
+
+        let quantization_config = quantization_config
+            .or_else(|| defaults.and_then(|defaults| defaults.quantization.clone()));
+
+        let strict_mode_config = match strict_mode_config {
+            Some(diff) => {
+                let default_config = defaults
+                    .and_then(|defaults| defaults.strict_mode.clone())
+                    .unwrap_or_default();
+
+                Some(default_config.update(&diff))
+            }
+            None => defaults.and_then(|defaults| defaults.strict_mode.clone()),
+        };
+
+        Ok(CollectionConfigInternal {
+            params,
+            hnsw_config: self.hnsw_index.update_opt(hnsw_config_diff.as_ref()),
+            optimizer_config: self.optimizers.update_opt(optimizers_config_diff.as_ref()),
+            wal_config: self.wal.update_opt(wal_config_diff.as_ref()),
+            quantization_config,
+            strict_mode_config,
+            uuid,
+            metadata,
+        })
+    }
 }
 
 /// What the machine decided about an operation.
