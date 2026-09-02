@@ -278,6 +278,8 @@ impl HNSWIndex {
             None
         };
 
+        check_process_stopped(stopped)?;
+
         if build_main_graph {
             let progress_main_graph = progress_main_graph.unwrap();
             let progress_migrate = progress_migrate.unwrap();
@@ -300,7 +302,14 @@ impl HNSWIndex {
                 );
                 let old_vector_storage = old_index.index.vector_storage.borrow();
                 let old_quantized_vectors = old_index.index.quantized_vectors.borrow();
-                healer.heal(&pool, &old_vector_storage, old_quantized_vectors.as_ref())?;
+
+                healer.heal(
+                    &pool,
+                    &old_vector_storage,
+                    old_quantized_vectors.as_ref(),
+                    stopped,
+                )?;
+                check_process_stopped(stopped)?;
                 healer.save_into_builder(&graph_layers_builder);
 
                 for vector_id in ids_iter {
