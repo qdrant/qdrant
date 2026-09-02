@@ -367,7 +367,7 @@ pub struct UpdateCollection {
 pub struct UpdateCollectionOperation {
     pub collection_name: String,
     pub update_collection: UpdateCollection,
-    shard_replica_changes: Option<Vec<replica_set::Change>>,
+    pub shard_replica_changes: Option<Vec<replica_set::Change>>,
 }
 
 impl UpdateCollectionOperation {
@@ -402,6 +402,10 @@ impl UpdateCollectionOperation {
             update_collection,
             shard_replica_changes: None,
         })
+    }
+
+    pub fn has_shard_replica_changes(&self) -> bool {
+        self.shard_replica_changes.is_some()
     }
 
     pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {

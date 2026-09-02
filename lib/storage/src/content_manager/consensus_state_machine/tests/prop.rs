@@ -1,10 +1,13 @@
 //! Proptest generators for cluster state and consensus operations
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use collection::collection_state;
 use collection::config::ShardingMethod;
-use collection::operations::types::PeerMetadata;
+use collection::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
+use collection::operations::types::{
+    PeerMetadata, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
+};
 use collection::shards::CollectionId;
 use collection::shards::shard::ShardId;
 use proptest::prelude::*;
@@ -173,7 +176,7 @@ pub fn arb_consensus_operation(
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        8 => collection_meta,
+        9 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -188,6 +191,7 @@ fn arb_collection_meta_operation(
     prop_oneof![
         Just(CollectionMetaOperations::Nop { token: 0 }),
         arb_create_collection(collection_names.clone()),
+        arb_update_collection(collection_names.clone()),
         arb_delete_collection(collection_names.clone()),
         arb_change_aliases(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
@@ -258,6 +262,115 @@ fn arb_shard_distribution() -> impl Strategy<Value = Option<ShardDistributionPro
     });
 
     proptest::option::of(distribution)
+}
+
+/// The optimizers and params diffs are always absent. Both merge into the config exactly the way
+/// the strict-mode diff does, and that one is generated.
+fn arb_update_collection(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    let diffs = (
+        proptest::option::of(arb_vectors_diff()),
+        proptest::option::of(arb_hnsw_diff()),
+        proptest::option::of(arb_quantization_diff()),
+        proptest::option::of(arb_sparse_vectors_diff()),
+        proptest::option::of(arb_strict_mode_diff()),
+        proptest::option::of(arb_metadata_diff()),
+    );
+
+    (arb_collection_name(collections), diffs).prop_map(|(collection_name, diffs)| {
+        let (
+            vectors,
+            hnsw_config,
+            quantization_config,
+            sparse_vectors,
+            strict_mode_config,
+            metadata,
+        ) = diffs;
+
+        let update_collection = UpdateCollection {
+            vectors,
+            optimizers_config: None,
+            params: None,
+            hnsw_config,
+            quantization_config,
+            sparse_vectors,
+            strict_mode_config,
+            metadata,
+        };
+
+        let operation = UpdateCollectionOperation::new(collection_name, update_collection)
+            .expect("valid operation");
+
+        CollectionMetaOperations::UpdateCollection(operation)
+    })
+}
+
+/// Name may be missing from the collection, or name a sparse vector, both of which are rejected
+fn arb_vectors_diff() -> impl Strategy<Value = VectorsConfigDiff> {
+    (arb_vector_name(), arb_hnsw_diff()).prop_map(|(vector_name, hnsw_config)| {
+        let params = VectorParamsDiff {
+            hnsw_config: Some(hnsw_config),
+            quantization_config: None,
+            #[expect(deprecated)]
+            on_disk: None,
+            memory: None,
+        };
+
+        VectorsConfigDiff(BTreeMap::from([(vector_name, params)]))
+    })
+}
+
+/// Name may be missing from the collection, or name a dense vector, both of which are rejected
+fn arb_sparse_vectors_diff() -> impl Strategy<Value = SparseVectorsConfig> {
+    arb_vector_name().prop_map(|vector_name| {
+        let params = SparseVectorParams {
+            index: None,
+            modifier: Some(Modifier::Idf),
+        };
+
+        SparseVectorsConfig(BTreeMap::from([(vector_name, params)]))
+    })
+}
+
+fn arb_hnsw_diff() -> impl Strategy<Value = HnswConfigDiff> {
+    proptest::sample::select(vec![8_usize, 16]).prop_map(|m| HnswConfigDiff {
+        m: Some(m),
+        ..Default::default()
+    })
+}
+
+/// Disabled clears the config, any other variant replaces it
+fn arb_quantization_diff() -> impl Strategy<Value = QuantizationConfigDiff> {
+    let scalar = ScalarQuantization {
+        scalar: ScalarQuantizationConfig {
+            r#type: ScalarType::Int8,
+            quantile: None,
+            #[expect(deprecated)]
+            always_ram: None,
+            memory: None,
+        },
+    };
+
+    prop_oneof![
+        Just(QuantizationConfigDiff::new_disabled()),
+        Just(QuantizationConfigDiff::Scalar(scalar)),
+    ]
+}
+
+fn arb_strict_mode_diff() -> impl Strategy<Value = StrictModeConfig> {
+    proptest::bool::ANY.prop_map(|enabled| StrictModeConfig {
+        enabled: Some(enabled),
+        ..Default::default()
+    })
+}
+
+/// A null value removes the key it names
+fn arb_metadata_diff() -> impl Strategy<Value = Payload> {
+    let value = prop_oneof![arb_metadata_value(), Just(serde_json::Value::Null)];
+
+    (arb_metadata_key(), value)
+        .prop_map(|(key, value)| Payload(serde_json::Map::from_iter([(key, value)])))
 }
 
 fn arb_delete_collection(
