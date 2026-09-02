@@ -427,12 +427,12 @@ impl From<QueryEnum> for grpc::QueryEnum {
             },
             QueryEnum::RecommendBestScore(named) => grpc::QueryEnum {
                 query: Some(grpc::query_enum::Query::RecommendBestScore(
-                    named.query.into(),
+                    grpc::RecoQuery::from(named.query),
                 )),
             },
             QueryEnum::RecommendSumScores(named) => grpc::QueryEnum {
                 query: Some(grpc::query_enum::Query::RecommendSumScores(
-                    named.query.into(),
+                    grpc::RecoQuery::from(named.query),
                 )),
             },
             QueryEnum::Discover(named) => grpc::QueryEnum {

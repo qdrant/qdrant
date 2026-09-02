@@ -234,6 +234,12 @@ fn merge_positive_and_negative_avg(
 ) -> OperationResult<VectorInternal> {
     match (positive, negative) {
         (VectorInternal::Dense(positive), VectorInternal::Dense(negative)) => {
+            if positive.len() != negative.len() {
+                return Err(OperationError::WrongVectorDimension {
+                    expected_dim: positive.len(),
+                    received_dim: negative.len(),
+                });
+            }
             let vector: DenseVector = positive
                 .iter()
                 .zip(negative.iter())
@@ -268,6 +274,7 @@ mod test {
     use sparse::common::sparse_vector::SparseVector;
 
     use super::{avg_vector_for_recommendation, avg_vectors};
+    use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::{VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
@@ -448,5 +455,19 @@ mod test {
         )
         .unwrap();
         assert_eq!(vector, vec![1.0, 0.0].into());
+
+        // Negative average with a different dimension is rejected, not truncated by zip.
+        let negatives: Vec<VectorInternal> = vec![vec![0.0, 1.0, 2.0].into()];
+        let result = avg_vector_for_recommendation(
+            positives.iter().map(VectorRef::from),
+            negatives.iter().map(VectorRef::from).peekable(),
+        );
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
     }
 }
