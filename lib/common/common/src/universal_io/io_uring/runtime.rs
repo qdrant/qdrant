@@ -43,6 +43,13 @@ impl<Req, U> IoUringRuntime<Req, U> {
         self.in_progress
     }
 
+    /// Submitted operations the kernel has not completed yet, i.e. `in_progress`
+    /// minus the completions already sitting in the queue waiting to be reaped.
+    pub fn outstanding(&mut self) -> usize {
+        let ready = self.io_uring.completion().len();
+        self.in_progress.saturating_sub(ready)
+    }
+
     pub fn state(&mut self) -> &mut IoUringState<Req, U> {
         &mut self.state
     }
