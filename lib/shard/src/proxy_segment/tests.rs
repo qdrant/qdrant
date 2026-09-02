@@ -1113,3 +1113,27 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
         Some(&field_schema),
     );
 }
+
+/// Dropping the data of a proxy segment removes the wrapped segment directory, taking the
+/// pending changes log with it.
+#[test]
+fn test_drop_data_removes_pending_changes_log() {
+    let hw_counter = HardwareCounterCell::new();
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
+    let wrapped_segment_dir = locked_wrapped_segment.get().read().data_path();
+
+    let mut proxy_segment = ProxySegment::new(locked_wrapped_segment);
+    proxy_segment
+        .delete_point(100, 2.into(), &hw_counter)
+        .unwrap();
+    proxy_segment.flush(false).unwrap();
+    assert!(segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0).is_file());
+
+    proxy_segment.drop_data().unwrap();
+    assert!(!wrapped_segment_dir.exists());
+}
