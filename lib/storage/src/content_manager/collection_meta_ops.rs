@@ -12,7 +12,7 @@ use collection::operations::config_diff::{
     WalConfigDiff,
 };
 use collection::operations::types::{
-    SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
+    SparseVectorParams, SparseVectorsConfig, VectorParams, VectorsConfig, VectorsConfigDiff,
 };
 use collection::operations::validation;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
-    VectorNameBuf,
+    VectorNameBuf, VectorsConfigDefaults,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -193,6 +193,43 @@ pub struct CreateCollection {
     pub metadata: Option<Payload>,
 }
 
+/// Fill exactly one placement level, by precedence: request `memory`, request legacy `on_disk`,
+/// default `memory`, default `on_disk`. Filling a lower level alongside a higher one would cause
+/// spurious `memory`-vs-legacy mismatch warnings at resolution time.
+pub fn apply_vector_placement_defaults(
+    params: &mut VectorParams,
+    defaults: &VectorsConfigDefaults,
+) {
+    if params.memory.is_some() || params.on_disk.is_some() {
+        return;
+    }
+
+    let &VectorsConfigDefaults { on_disk, memory } = defaults;
+
+    if memory.is_some() {
+        params.memory = memory;
+    } else {
+        params.on_disk = on_disk;
+    }
+}
+
+/// Service-level `payload.memory` default applies unless the request specifies `payload.memory`
+/// or the legacy `on_disk_payload` flag.
+pub fn apply_payload_placement_defaults(
+    payload: Option<PayloadStorageParams>,
+    on_disk_payload: Option<bool>,
+    defaults: Option<PayloadStorageParams>,
+) -> Option<PayloadStorageParams> {
+    if on_disk_payload.is_some() {
+        return payload;
+    }
+
+    match (defaults, payload) {
+        (Some(defaults), Some(payload)) => Some(defaults.update(&payload)),
+        (defaults, payload) => payload.or(defaults),
+    }
+}
+
 /// Operation for creating new collection and (optionally) specify index params
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -275,6 +312,10 @@ impl CreateCollectionOperation {
 
     pub fn is_distribution_set(&self) -> bool {
         self.distribution.is_some()
+    }
+
+    pub fn distribution(&self) -> Option<&ShardDistributionProposal> {
+        self.distribution.as_ref()
     }
 
     pub fn take_distribution(&mut self) -> Option<ShardDistributionProposal> {

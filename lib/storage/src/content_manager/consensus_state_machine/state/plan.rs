@@ -1,16 +1,114 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use collection::collection::vector_name_schema;
+use collection::collection_state::ShardInfo;
 use collection::operations::types::PeerMetadata;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
-use crate::content_manager::consensus_state_machine::Action;
+use crate::content_manager::consensus_state_machine::{Action, NodeContext};
 
 type Actions = Vec<Action>;
 
 impl ClusterState {
+    /// One action: `Collection::new` saves the config as its last step, and a collection whose
+    /// config is missing does not load, so creation is atomic already.
+    ///
+    /// The config is resolved here, from the operation and node-local defaults, because
+    /// `TableOfContent::create_collection` resolves it before it writes anything.
+    pub fn plan_create_collection(
+        &self,
+        context: &NodeContext,
+        op: &CreateCollectionOperation,
+    ) -> StorageResult<Actions> {
+        let collection = &op.collection_name;
+
+        if self.has_collection(collection) {
+            return Err(StorageError::already_exists(format!(
+                "Collection `{collection}` already exists!"
+            )));
+        }
+
+        if let Some(max_collections) = context.max_collections
+            && self.collections.len() >= max_collections
+        {
+            return Err(StorageError::bad_request(format!(
+                "Can't create collection with name {collection}. \
+                 Max collections limit reached: {max_collections}",
+            )));
+        }
+
+        if self.aliases.get(collection).is_some() {
+            return Err(StorageError::bad_input(format!(
+                "Can't create collection with name {collection}. \
+                 Alias with the same name already exists",
+            )));
+        }
+
+        let distribution = context.shard_distribution(op);
+        let config = context.collection_config(&op.create_collection, distribution.len())?;
+
+        // Every replica of a new collection starts `Initializing`, and the peer that has a local
+        // one proposes `SetShardReplicaState` once the shard is built
+        let shards = distribution
+            .into_iter()
+            .map(|(shard_id, peers)| {
+                let replicas = peers
+                    .into_iter()
+                    .map(|peer_id| (peer_id, ReplicaState::Initializing))
+                    .collect();
+
+                (shard_id, ShardInfo { replicas })
+            })
+            .collect();
+
+        let state = collection_state::State {
+            config,
+            shards,
+            resharding: None,
+            transfers: Default::default(),
+            // Shard keys are set up after the collection is created
+            shards_key_mapping: Default::default(),
+            payload_index_schema: Default::default(),
+        };
+
+        Ok(vec![Action::CreateCollection {
+            collection: collection.clone(),
+            state: Box::new(state),
+        }])
+    }
+
+    pub fn plan_delete_collection(&self, op: &DeleteCollectionOperation) -> Actions {
+        let DeleteCollectionOperation(collection) = op;
+
+        // Collection name is *not* resolved through aliases, `DeleteCollection` must name existing
+        // collection directly
+        let remove: BTreeSet<_> = self.aliases.collection_aliases(collection).collect();
+
+        // Remove aliases first, then collection itself.
+        // Either order is fine, this one simply follows the order `ToC::delete_collection` uses.
+        let mut actions = Actions::new();
+
+        // Collection without aliases does not produce an empty `UpdateAliases` action
+        // (similar to `plan_change_aliases`)
+        if !remove.is_empty() {
+            actions.push(Action::UpdateAliases {
+                set: Default::default(),
+                remove,
+            });
+        }
+
+        // Produce `DropCollection` action, even if collection does not exist:
+        // it removes leftover aliases and storage directory
+        actions.push(Action::DropCollection {
+            collection: collection.clone(),
+        });
+
+        actions
+    }
+
     pub fn plan_create_named_vector(&self, op: &CreateNamedVector) -> StorageResult<Actions> {
         let CreateNamedVector {
             collection_name,
