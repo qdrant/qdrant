@@ -148,7 +148,7 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
 /// One maximal run of consecutive ids in an offsets list, see
 /// [`consecutive_runs`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Run {
+pub struct ConsecutiveRun {
     /// Index into `offsets` of the run's first id.
     pub first: usize,
     /// The run's first id, `offsets[first]`.
@@ -164,7 +164,7 @@ pub struct Run {
 ///
 /// Runs are not capped: a storage serves whatever region a run covers, even
 /// one straddling its internal chunk boundary.
-pub fn consecutive_runs(offsets: &[PointOffsetType]) -> impl Iterator<Item = Run> + '_ {
+pub fn consecutive_runs(offsets: &[PointOffsetType]) -> impl Iterator<Item = ConsecutiveRun> + '_ {
     let mut first = 0;
     std::iter::from_fn(move || {
         let start = *offsets.get(first)?;
@@ -172,7 +172,7 @@ pub fn consecutive_runs(offsets: &[PointOffsetType]) -> impl Iterator<Item = Run
         while offsets.get(first + len) == Some(&(start + len as PointOffsetType)) {
             len += 1;
         }
-        let run = Run { first, start, len };
+        let run = ConsecutiveRun { first, start, len };
         first += len;
         Some(run)
     })
@@ -512,7 +512,7 @@ mod tests {
     fn consecutive_runs_split_at_gaps() {
         let collect = |offsets: &[u32]| {
             consecutive_runs(offsets)
-                .map(|Run { first, start, len }| (first, start, len))
+                .map(|ConsecutiveRun { first, start, len }| (first, start, len))
                 .collect::<Vec<_>>()
         };
 

@@ -20,7 +20,7 @@ use common::universal_io::{
 };
 use fs_err as fs;
 use memmap2::MmapMut;
-use quantization::encoded_storage::{Run, consecutive_runs};
+use quantization::encoded_storage::{ConsecutiveRun, consecutive_runs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
@@ -346,7 +346,9 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
     ) {
         let size = self.quantized_vector_size.get() as u64;
-        let range = |run: &Run| ReadRange::new(size * u64::from(run.start), size * run.len as u64);
+        let range = |run: &ConsecutiveRun| {
+            ReadRange::new(size * u64::from(run.start), size * run.len as u64)
+        };
 
         if S::kind().can_be_async() {
             // Pipelined backends (io_uring): keep every run of the batch in
