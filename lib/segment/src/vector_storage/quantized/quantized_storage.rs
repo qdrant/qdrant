@@ -16,7 +16,7 @@ use common::prefetch::{
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult,
-    UniversalRead, UniversalReadFs,
+    UniversalKind, UniversalRead, UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -292,6 +292,32 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
+    fn prefers_run_reads() -> bool {
+        // Exhaustive on purpose: a new backend must decide here rather than
+        // inherit whichever answer a wildcard happened to give it.
+        match S::kind() {
+            // Measured: with the data in the page cache, per-request
+            // submission and completion bookkeeping dominates, so one
+            // run-granular read beats the batched per-vector path at every
+            // density.
+            UniversalKind::IoUring => true,
+            // Random access is cheap; run batching pays only for long enough
+            // runs, which the caller gates on.
+            UniversalKind::Mmap => false,
+            // Local caches over a slower backing store. Plausibly the same
+            // story as io_uring, but unmeasured, so they keep the gate.
+            UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::CachedBlob => false,
+            // Remote: per-vector reads pipeline across a batch, while
+            // run-granular reads would serialize the round trips.
+            UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::UioGrpc => false,
+        }
+    }
+
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.get_vector_data_opt(index).expect("vector exists")
     }

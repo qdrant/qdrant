@@ -474,10 +474,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         // Ids whose runs are short on average (HNSW neighbors, and sparse
         // filtered scans) don't amortize the batch kernel's per-run setup —
         // keep the per-vector path there. Plain and dense filtered scans hand
-        // long runs and take the run-batched path below. Async backends always
-        // stay per-vector: they pipeline reads in `for_each_batch`, and
-        // run-granular reads would serialize them.
-        if !TStorage::is_in_ram_or_mmap() || !offsets_worth_batch_scoring(offsets) {
+        // long runs and take the run-batched path below. Async backends stay
+        // per-vector too: they pipeline reads in `for_each_batch`, and
+        // run-granular reads would serialize them — except where the storage
+        // reports that runs win at any length (see `prefers_run_reads`).
+        if !TStorage::prefers_run_reads()
+            && (!TStorage::is_in_ram_or_mmap() || !offsets_worth_batch_scoring(offsets))
+        {
             self.for_each_batch(offsets, |i, vector| {
                 scores[i] = self.score_bytes(True, query, &vector, hw_counter);
             });
