@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use rayon::ThreadPool;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
@@ -211,11 +211,14 @@ impl<'a> GraphLayersHealer<'a> {
         pool: &ThreadPool,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: Option<&QuantizedVectors>,
+        stopped: &std::sync::atomic::AtomicBool,
     ) -> OperationResult<()> {
         pool.install(|| {
             std::mem::take(&mut self.to_heal)
                 .into_par_iter()
                 .try_for_each(|(offset, level)| {
+                    check_process_stopped(stopped)?;
+
                     // Internal operation. No measurements needed.
                     let internal_hardware_counter = HardwareCounterCell::disposable();
                     let query = vector_storage
