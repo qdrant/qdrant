@@ -19,13 +19,28 @@ use tokio::runtime::{self, Runtime};
 /// heavy work runs on the blocking pool, not the async workers.
 const SEARCH_ASYNC_WORKERS: usize = 1;
 
+/// Finish building a runtime, optionally attaching dial9 telemetry hooks.
+fn finish_runtime(builder: runtime::Builder, runtime_name: &str) -> io::Result<Runtime> {
+    #[cfg(feature = "dial9")]
+    {
+        crate::dial9_telemetry::build_runtime(builder, runtime_name)
+    }
+    #[cfg(not(feature = "dial9"))]
+    {
+        let _ = runtime_name;
+        let mut builder = builder;
+        builder.build()
+    }
+}
+
 /// Build the CPU-friendly search runtime. Sized for steady-state CPU
 /// saturation: one blocking thread per CPU, so concurrent searches don't
 /// thrash.
 pub(super) fn create_high_cpu_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let blocking_threads = high_cpu_blocking_threads(max_search_threads);
     let async_workers = SEARCH_ASYNC_WORKERS.min(blocking_threads.max(1));
-    runtime::Builder::new_multi_thread()
+    let mut builder = runtime::Builder::new_multi_thread();
+    builder
         .worker_threads(async_workers)
         .max_blocking_threads(blocking_threads)
         .enable_all()
@@ -33,8 +48,8 @@ pub(super) fn create_high_cpu_search_runtime(max_search_threads: usize) -> io::R
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("search-cpu-{id}")
-        })
-        .build()
+        });
+    finish_runtime(builder, "search-cpu")
 }
 
 /// Build the IO-friendly search runtime. Blocking pool size comes from
@@ -43,7 +58,8 @@ pub(super) fn create_high_cpu_search_runtime(max_search_threads: usize) -> io::R
 pub(super) fn create_high_io_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let blocking_threads = high_io_blocking_threads(max_search_threads);
     let async_workers = SEARCH_ASYNC_WORKERS.min(blocking_threads.max(1));
-    runtime::Builder::new_multi_thread()
+    let mut builder = runtime::Builder::new_multi_thread();
+    builder
         .worker_threads(async_workers)
         .max_blocking_threads(blocking_threads)
         .enable_all()
@@ -51,8 +67,8 @@ pub(super) fn create_high_io_search_runtime(max_search_threads: usize) -> io::Re
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("search-io-{id}")
-        })
-        .build()
+        });
+    finish_runtime(builder, "search-io")
 }
 
 pub(super) fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runtime> {
@@ -70,11 +86,12 @@ pub(super) fn create_update_runtime(max_optimization_threads: usize) -> io::Resu
     if max_optimization_threads > 0 {
         builder.max_blocking_threads(max_optimization_threads);
     }
-    builder.build()
+    finish_runtime(builder, "update")
 }
 
 pub(super) fn create_general_purpose_runtime() -> io::Result<Runtime> {
-    runtime::Builder::new_multi_thread()
+    let mut builder = runtime::Builder::new_multi_thread();
+    builder
         .enable_time()
         .enable_io()
         .worker_threads(max(common::cpu::get_num_cpus(), 2))
@@ -82,8 +99,8 @@ pub(super) fn create_general_purpose_runtime() -> io::Result<Runtime> {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("general-{id}")
-        })
-        .build()
+        });
+    finish_runtime(builder, "general")
 }
 
 /// Blocking-thread count for the high-CPU search pool.
