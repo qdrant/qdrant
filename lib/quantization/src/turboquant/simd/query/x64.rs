@@ -652,9 +652,19 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
                     }
                     accs
                 };
-                let lanes = accs.map(|acc| self.widen_avx512(acc));
-                let scores = self.postprocess_x4_avx2(transpose_sum_4x64(lanes));
-                _mm_storeu_ps(group.as_mut_ptr(), scores);
+                // Reduce the group together only for a one-byte query. With two
+                // bytes each vector carries twice the accumulator state, so
+                // holding all four until the transpose spills the register file
+                // and costs more than sharing the reduction saves.
+                if QUERY_BYTES == 1 {
+                    let lanes = accs.map(|acc| self.widen_avx512(acc));
+                    let scores = self.postprocess_x4_avx2(transpose_sum_4x64(lanes));
+                    _mm_storeu_ps(group.as_mut_ptr(), scores);
+                } else {
+                    for (out, acc) in group.iter_mut().zip(accs) {
+                        *out = self.postprocess(self.reduce_avx512(acc));
+                    }
+                }
                 v += GROUP_512;
             }
             for out in rest {
