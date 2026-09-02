@@ -436,12 +436,22 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     /// reconstruction applied — see `dotprod_batch` for the layout contract
     /// (asserted there).
     ///
-    /// Unlike the VNNI kernel this one scores vectors one at a time: its
-    /// loop-carried chain is a single `vpaddd` per accumulator (the
-    /// `maddubs → madd` products hang off the loads), so the accumulator
-    /// pairs already keep the pipeline full, and interleaving vectors only
-    /// adds register pressure on the 16 YMM registers — measured 10–15 %
-    /// slower with groups of two or four on Zen 4 at the 4-bit width.
+    /// Unlike the VNNI kernel this one walks the block loop one vector at a
+    /// time: its loop-carried chain is a single `vpaddd` per accumulator
+    /// (the `maddubs → madd` products hang off the loads), so the
+    /// accumulator pairs already keep the pipeline full, and interleaving
+    /// vectors only adds register pressure on the 16 YMM registers —
+    /// measured 10–15 % slower with groups of two or four on Zen 4 at the
+    /// 4-bit width.
+    ///
+    /// The horizontal reduction is shared across [`REDUCE_GROUP_256`]
+    /// vectors instead: each vector's accumulators are folded to four i64
+    /// lanes right after its block loop, and the group's lanes are
+    /// transposed into one YMM of sums that is bias-corrected, converted and
+    /// stored four-wide.  The per-vector serial chain (fold, extract, widen,
+    /// scalar convert, multiply, store) retired in order behind the next
+    /// vector's block loop and cost about a third of the kernel's cycles;
+    /// sharing it measured 10–25 % faster on Zen 3, bit-identical.
     ///
     /// # Safety
     /// CPU must support `avx2`; `data` must hold `out.len()` vectors at
@@ -449,11 +459,74 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[target_feature(enable = "avx2")]
     pub unsafe fn dotprod_batch_avx2(&self, data: &[u8], stride: usize, out: &mut [f32]) {
         unsafe {
-            for (v, out) in out.iter_mut().enumerate() {
+            let (groups, rest) = out.as_chunks_mut::<REDUCE_GROUP_256>();
+            let mut v = 0;
+            for group in groups {
+                let mut lanes = [_mm256_setzero_si256(); REDUCE_GROUP_256];
+                for lane in &mut lanes {
+                    let acc = self.accumulate_avx2(data.as_ptr().add(v * stride));
+                    *lane = self.widen_avx2(acc);
+                    v += 1;
+                }
+                let scores = self.postprocess_x4_avx2(transpose_sum_4x64(lanes));
+                _mm_storeu_ps(group.as_mut_ptr(), scores);
+            }
+            for out in rest {
                 let acc = self.accumulate_avx2(data.as_ptr().add(v * stride));
                 *out = self.postprocess(self.reduce_avx2(acc));
+                v += 1;
             }
         }
+    }
+
+    /// One vector's accumulators folded to four i64 lanes whose sum is the
+    /// raw dot product: the fused i32 fold whenever the vector is short
+    /// enough for its lane bound, otherwise each query byte widened on its
+    /// own and combined in i64.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn widen_avx2(&self, acc: Acc256<QUERY_BYTES>) -> __m256i {
+        unsafe {
+            let totals = acc.fold();
+            if self.vector_bytes <= Self::FUSED_REDUCTION_MAX_BYTES {
+                return widen_i64_256(combine_fused_256::<PLANES, QUERY_BYTES>(totals));
+            }
+            let mut combined = widen_i64_256(totals[0]);
+            if QUERY_BYTES == 2 {
+                let high = widen_i64_256(totals[1]);
+                let scaled = match const { encoding(PLANES).query_high_coef } {
+                    128 => _mm256_slli_epi64(high, 7),
+                    _ => _mm256_slli_epi64(high, 8),
+                };
+                combined = _mm256_add_epi64(combined, scaled);
+            }
+            combined
+        }
+    }
+
+    /// [`Self::postprocess`] on four raw dot products at once.  The i64 →
+    /// f64 step goes through the exponent trick (add `1.5 · 2^52` as an
+    /// integer, subtract it as a double), exact for `|x| < 2^51`; a raw dot
+    /// product is bounded by `dim · 8127 · 255`, so that holds to dims past
+    /// `10^9`.  f64 → f32 then rounds once, to nearest even, exactly like
+    /// the scalar `as f32`.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn postprocess_x4_avx2(&self, raw: __m256i) -> __m128 {
+        let bias = _mm256_set1_epi64x(self.bias_correction);
+        let diff = _mm256_sub_epi64(raw, bias);
+        let magic = _mm256_set1_epi64x(0x4338_0000_0000_0000);
+        let as_f64 = _mm256_sub_pd(
+            _mm256_castsi256_pd(_mm256_add_epi64(diff, magic)),
+            _mm256_castsi256_pd(magic),
+        );
+        _mm_mul_ps(_mm256_cvtpd_ps(as_f64), _mm_set1_ps(self.postprocess_scale))
     }
 
     /// Block loop of the AVX2 kernels over the vector at `data`.
@@ -675,6 +748,10 @@ const fn fused_reduction_max_bytes<const PLANES: usize, const QUERY_BYTES: usize
     4 * (i32::MAX as usize) / per_byte
 }
 
+/// Vectors per shared reduction of the AVX2 batch kernel: four vectors'
+/// i64 lanes transpose into one YMM of sums.
+const REDUCE_GROUP_256: usize = 4;
+
 /// `Σ_b K^b · Σ totals[b]` with the horizontal reductions fused into one:
 /// the high lanes are shifted by `log2(K)` and added to the low lanes up
 /// front, leaving a single tree reduction that widens to i64 before its
@@ -688,6 +765,28 @@ const fn fused_reduction_max_bytes<const PLANES: usize, const QUERY_BYTES: usize
 unsafe fn reduce_fused_256<const PLANES: usize, const QUERY_BYTES: usize>(
     totals: [__m256i; QUERY_BYTES],
 ) -> i64 {
+    unsafe {
+        let wide = widen_i64_256(combine_fused_256::<PLANES, QUERY_BYTES>(totals));
+        let pair = _mm_add_epi64(
+            _mm256_castsi256_si128(wide),
+            _mm256_extracti128_si256(wide, 1),
+        );
+        let total = _mm_add_epi64(pair, _mm_unpackhi_epi64(pair, pair));
+        _mm_cvtsi128_si64(total)
+    }
+}
+
+/// The i32 lanes of `Σ_b K^b · totals[b]`: the high byte's lanes shifted by
+/// `log2(K)` and added to the low byte's.
+///
+/// # Safety
+/// CPU must support `avx2`; the totals must come from a vector within the
+/// width's [`fused_reduction_max_bytes`].
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn combine_fused_256<const PLANES: usize, const QUERY_BYTES: usize>(
+    totals: [__m256i; QUERY_BYTES],
+) -> __m256i {
     let mut combined = totals[0];
     if QUERY_BYTES == 2 {
         // The radix is a power of two (128 or 256); the shift is an immediate.
@@ -698,17 +797,38 @@ unsafe fn reduce_fused_256<const PLANES: usize, const QUERY_BYTES: usize>(
         };
         combined = _mm256_add_epi32(combined, scaled);
     }
+    combined
+}
+
+/// Eight i32 lanes folded to four and sign-extended to i64.
+///
+/// # Safety
+/// CPU must support `avx2`.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn widen_i64_256(lanes: __m256i) -> __m256i {
     let fold_128 = _mm_add_epi32(
-        _mm256_castsi256_si128(combined),
-        _mm256_extracti128_si256(combined, 1),
+        _mm256_castsi256_si128(lanes),
+        _mm256_extracti128_si256(lanes, 1),
     );
-    let wide = _mm256_cvtepi32_epi64(fold_128);
-    let pair = _mm_add_epi64(
-        _mm256_castsi256_si128(wide),
-        _mm256_extracti128_si256(wide, 1),
-    );
-    let total = _mm_add_epi64(pair, _mm_unpackhi_epi64(pair, pair));
-    _mm_cvtsi128_si64(total)
+    _mm256_cvtepi32_epi64(fold_128)
+}
+
+/// The lane sums of four i64 vectors, one per output lane: `unpack` pairs
+/// the lanes of `a`/`b` and `c`/`d` within each 128-bit half, the 128-bit
+/// permutes then bring the halves together.
+///
+/// # Safety
+/// CPU must support `avx2`.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn transpose_sum_4x64([a, b, c, d]: [__m256i; 4]) -> __m256i {
+    let ab = _mm256_add_epi64(_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
+    let cd = _mm256_add_epi64(_mm256_unpacklo_epi64(c, d), _mm256_unpackhi_epi64(c, d));
+    _mm256_add_epi64(
+        _mm256_permute2x128_si256(ab, cd, 0x20),
+        _mm256_permute2x128_si256(ab, cd, 0x31),
+    )
 }
 
 /// [`reduce_fused_256`] for ZMM accumulators: folds each to 256 bits first,
