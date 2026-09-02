@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppendFs, UniversalRead};
+use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -295,10 +295,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 // Not shared across segments: `HardwareCounterCell` is not
                 // `Sync`, and the writer's accounting is disposable.
                 let hw_counter = HardwareCounterCell::disposable();
-                segments
-                    .get(uuid)?
-                    .write()
-                    .live_reload(&self.fs, &hw_counter)
+                segments.get(uuid)?.write().live_reload(&hw_counter)
             })
         })
     }
@@ -318,8 +315,8 @@ fn get_writer<Fs: UniversalAppendFs>(
 /// Locate every point the batch touches: every slot it occupies, with the
 /// newest copy marked, when more than one segment holds the point. Segments
 /// are visited in parallel on `pool`.
-pub(super) fn locate_points<S: UniversalRead + 'static>(
-    segments: &LookupSegmentHolder<S>,
+pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
+    segments: &LookupSegmentHolder<Fs>,
     plan: &UpdateBatchPlan,
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
@@ -384,8 +381,8 @@ pub(super) fn locate_points<S: UniversalRead + 'static>(
 
 /// Read the stored form of the points whose mutations need it, one batched
 /// pass per segment; segments are read in parallel on `pool`.
-pub(super) fn read_stored_points<S: UniversalRead + 'static>(
-    segments: &LookupSegmentHolder<S>,
+pub(super) fn read_stored_points<Fs: UniversalReadFsAsync>(
+    segments: &LookupSegmentHolder<Fs>,
     plan: &UpdateBatchPlan,
     locations: &AHashMap<PointIdType, PointLocations>,
     pool: &ThreadPool,
