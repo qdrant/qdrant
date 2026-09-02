@@ -215,19 +215,25 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[target_feature(enable = "neon")]
     pub unsafe fn dotprod_batch_neon(&self, data: &[u8], stride: usize, out: &mut [f32]) {
         unsafe {
+            let (groups, rest) = out.as_chunks_mut::<GROUP_128>();
+            let interleave = self.vector_bytes <= INTERLEAVE_MAX_BYTES;
             let mut v = 0;
-            if self.vector_bytes <= INTERLEAVE_MAX_BYTES {
-                let (groups, _) = out.as_chunks_mut::<GROUP_128>();
-                for group in groups {
-                    let accs =
-                        self.accumulate_neon::<GROUP_128>(data.as_ptr().add(v * stride), stride);
-                    for (out, acc) in group.iter_mut().zip(accs) {
-                        *out = self.postprocess(Self::reduce_neon(acc));
+            for group in groups {
+                let accs = if interleave {
+                    self.accumulate_neon::<GROUP_128>(data.as_ptr().add(v * stride), stride)
+                } else {
+                    let mut accs = [Acc128::zero(); GROUP_128];
+                    for (i, acc) in accs.iter_mut().enumerate() {
+                        let [single] =
+                            self.accumulate_neon::<1>(data.as_ptr().add((v + i) * stride), stride);
+                        *acc = single;
                     }
-                    v += GROUP_128;
-                }
+                    accs
+                };
+                vst1q_f32(group.as_mut_ptr(), self.postprocess_x4_neon(accs));
+                v += GROUP_128;
             }
-            for out in &mut out[v..] {
+            for out in rest {
                 let [acc] = self.accumulate_neon::<1>(data.as_ptr().add(v * stride), stride);
                 *out = self.postprocess(Self::reduce_neon(acc));
                 v += 1;
@@ -305,8 +311,14 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     /// Vectors up to [`INTERLEAVE_MAX_BYTES`] are scored in groups of
     /// [`GROUP_128`]: the group shares each query block load, and its
     /// independent accumulators keep the multi-cycle `SDOT` latency off the
-    /// critical path.  Longer vectors keep the one-vector-at-a-time walk so
-    /// the hardware prefetcher sees a single sequential stream.
+    /// critical path.  Longer vectors walk the block loop one vector at a
+    /// time so the hardware prefetcher sees a single sequential stream.
+    ///
+    /// Either way the reduction is shared across the group (see
+    /// [`Self::postprocess_x4_neon`]): the per-vector chain of horizontal
+    /// add, scalar combine, convert, multiply and store retires in order
+    /// behind the next vector's block loop, so one four-wide pass per group
+    /// replaces four serial ones.
     ///
     /// # Safety
     /// CPU must support `dotprod`; `data` must hold `out.len()` vectors at
@@ -314,19 +326,25 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[target_feature(enable = "neon,dotprod")]
     pub unsafe fn dotprod_batch_neon_sdot(&self, data: &[u8], stride: usize, out: &mut [f32]) {
         unsafe {
+            let (groups, rest) = out.as_chunks_mut::<GROUP_128>();
+            let interleave = self.vector_bytes <= INTERLEAVE_MAX_BYTES;
             let mut v = 0;
-            if self.vector_bytes <= INTERLEAVE_MAX_BYTES {
-                let (groups, _) = out.as_chunks_mut::<GROUP_128>();
-                for group in groups {
-                    let accs = self
-                        .accumulate_neon_sdot::<GROUP_128>(data.as_ptr().add(v * stride), stride);
-                    for (out, acc) in group.iter_mut().zip(accs) {
-                        *out = self.postprocess(Self::reduce_neon(acc));
+            for group in groups {
+                let accs = if interleave {
+                    self.accumulate_neon_sdot::<GROUP_128>(data.as_ptr().add(v * stride), stride)
+                } else {
+                    let mut accs = [Acc128::zero(); GROUP_128];
+                    for (i, acc) in accs.iter_mut().enumerate() {
+                        let [single] = self
+                            .accumulate_neon_sdot::<1>(data.as_ptr().add((v + i) * stride), stride);
+                        *acc = single;
                     }
-                    v += GROUP_128;
-                }
+                    accs
+                };
+                vst1q_f32(group.as_mut_ptr(), self.postprocess_x4_neon(accs));
+                v += GROUP_128;
             }
-            for out in &mut out[v..] {
+            for out in rest {
                 let [acc] = self.accumulate_neon_sdot::<1>(data.as_ptr().add(v * stride), stride);
                 *out = self.postprocess(Self::reduce_neon(acc));
                 v += 1;
@@ -381,6 +399,47 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     fn reduce_neon(acc: Acc128<QUERY_BYTES>) -> i64 {
         Self::combine_bytes(acc.fold().map(|total| i64::from(vaddvq_s32(total))))
     }
+
+    /// [`Self::postprocess`] of a group's accumulators in one pass: per query
+    /// byte, two rounds of pairwise adds turn the four vectors' lane totals
+    /// into one register of per-vector sums (the same wrapping i32 sum as
+    /// `vaddvq_s32`), which are widened to i64, combined across the query
+    /// bytes, bias-corrected and converted through f64 — exact, with a
+    /// single rounding to f32 like the scalar `as f32`.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    fn postprocess_x4_neon(&self, accs: [Acc128<QUERY_BYTES>; GROUP_128]) -> float32x4_t {
+        let totals = accs.map(|acc| acc.fold());
+        let low = sum_lanes_x4(totals.map(|total| total[0]));
+        let mut lo = vmovl_s32(vget_low_s32(low));
+        let mut hi = vmovl_high_s32(low);
+        if QUERY_BYTES == 2 {
+            let high = sum_lanes_x4(totals.map(|total| total[1]));
+            let high_lo = vmovl_s32(vget_low_s32(high));
+            let high_hi = vmovl_high_s32(high);
+            // The radix is a power of two (128 or 256); the shift is an immediate.
+            let (scaled_lo, scaled_hi) = match const { encoding(PLANES).query_high_coef } {
+                128 => (vshlq_n_s64::<7>(high_lo), vshlq_n_s64::<7>(high_hi)),
+                _ => (vshlq_n_s64::<8>(high_lo), vshlq_n_s64::<8>(high_hi)),
+            };
+            lo = vaddq_s64(lo, scaled_lo);
+            hi = vaddq_s64(hi, scaled_hi);
+        }
+        let bias = vdupq_n_s64(self.bias_correction);
+        let lo = vcvtq_f64_s64(vsubq_s64(lo, bias));
+        let hi = vcvtq_f64_s64(vsubq_s64(hi, bias));
+        let scores = vcvt_high_f32_f64(vcvt_f32_f64(lo), hi);
+        vmulq_n_f32(scores, self.postprocess_scale)
+    }
+}
+
+/// The lane sums of four i32 vectors, one per output lane: the first
+/// pairwise add leaves `[a0+a1, a2+a3, b0+b1, b2+b3]`, the second finishes
+/// each vector's sum.
+#[inline]
+#[target_feature(enable = "neon")]
+fn sum_lanes_x4([a, b, c, d]: [int32x4_t; 4]) -> int32x4_t {
+    vpaddq_s32(vpaddq_s32(a, b), vpaddq_s32(c, d))
 }
 
 /// Vectors per interleaved group of the NEON batch kernels: 4 × 4
