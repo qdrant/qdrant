@@ -16,7 +16,7 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswGlobalConfig, Indexes, Memory, VectorNameBuf, VectorStorageType};
+use segment::types::{HnswGlobalConfig, Memory, VectorNameBuf, VectorStorageType};
 use uuid::Uuid;
 
 use super::config::SegmentOptimizerConfig;
@@ -32,7 +32,7 @@ const BYTES_IN_KB: usize = 1024;
 /// Resolves per-vector HNSW max_indexing_threads (0 = auto) and returns the actual thread count.
 pub fn max_num_indexing_threads(segment_optimizer_config: &SegmentOptimizerConfig) -> usize {
     let segment_resolution = segment_optimizer_config
-        .dense_vector
+        .dense_vectors
         .values()
         .map(|cfg| get_num_indexing_threads(cfg.hnsw_config.max_indexing_threads))
         .max();
@@ -219,26 +219,26 @@ pub trait SegmentOptimizer: Sync {
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
-        let mut vector_data = segment_optimizer_config.plain_dense_vector_config.clone();
-        let mut sparse_vector_data = segment_optimizer_config.plain_sparse_vector_config.clone();
-
         // If indexing, change to HNSW index and quantization
         // We must always create an HNSW index if we have deferred points to be able to promote them
-        if threshold_is_indexed || any_has_deferred {
-            if !threshold_is_indexed {
-                log::info!(
-                    "Segment has deferred points, but doesn't exceed indexing threshold. It will be optimized with HNSW index and quantization."
-                );
-            }
-            vector_data.iter_mut().for_each(|(vector_name, config)| {
-                if let Some(vector_cfg) = segment_optimizer_config.dense_vector.get(vector_name) {
-                    // Assign HNSW index
-                    config.index = Indexes::Hnsw(vector_cfg.hnsw_config);
-                    // Assign quantization config
-                    config.quantization_config = vector_cfg.quantization_config.clone();
-                }
-            });
+        let indexed = threshold_is_indexed || any_has_deferred;
+        if indexed && !threshold_is_indexed {
+            log::info!(
+                "Segment has deferred points, but doesn't exceed indexing threshold. It will be optimized with HNSW index and quantization."
+            );
         }
+        let mut vector_data: HashMap<_, _> = segment_optimizer_config
+            .dense_vectors
+            .iter()
+            .map(|(vector_name, config)| {
+                let config = if indexed {
+                    config.indexed()
+                } else {
+                    config.plain()
+                };
+                (vector_name.clone(), config)
+            })
+            .collect();
 
         // We want to use single-file mmap in the following cases:
         // - It is explicitly configured by `mmap_threshold` -> threshold_is_on_disk=true
@@ -248,7 +248,7 @@ pub trait SegmentOptimizer: Sync {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Requested memory placement: explicit `memory`, or the deprecated `on_disk`
                 let config_memory = segment_optimizer_config
-                    .dense_vector
+                    .dense_vectors
                     .get(vector_name)
                     .and_then(|cfg| {
                         Memory::resolve_or_warn(
@@ -291,20 +291,16 @@ pub trait SegmentOptimizer: Sync {
             });
         }
 
-        sparse_vector_data
-            .iter_mut()
-            .for_each(|(vector_name, config)| {
+        let sparse_vector_data = segment_optimizer_config
+            .sparse_vectors
+            .iter()
+            .map(|(vector_name, cfg)| {
                 // Requested memory placement: explicit `memory`, or the deprecated `on_disk`
-                let config_memory = segment_optimizer_config
-                    .sparse_vector
-                    .get(vector_name)
-                    .and_then(|cfg| {
-                        Memory::resolve_or_warn(
-                            cfg.memory,
-                            cfg.on_disk.map(Memory::from_on_disk_heap),
-                            &format_args!("sparse vector `{vector_name}`"),
-                        )
-                    });
+                let config_memory = Memory::resolve_or_warn(
+                    cfg.memory,
+                    cfg.on_disk.map(Memory::from_on_disk_heap),
+                    &format_args!("sparse vector `{vector_name}`"),
+                );
 
                 let requested_memory = config_memory
                     .unwrap_or_else(|| Memory::from_on_disk_heap(threshold_is_on_disk));
@@ -323,17 +319,9 @@ pub trait SegmentOptimizer: Sync {
                     SparseIndexType::MutableRam
                 };
 
-                config.index.index_type = index_type;
-                // Persist only the explicitly requested `memory` parameter: the structural
-                // decision is carried by `index_type`, and only the cold/cached distinction
-                // (reachable solely through the explicit parameter) needs the extra field.
-                // Legacy-only configurations thus keep a byte-identical index config,
-                // which older Qdrant versions can load without any unknown fields.
-                config.index.memory = segment_optimizer_config
-                    .sparse_vector
-                    .get(vector_name)
-                    .and_then(|cfg| cfg.memory);
-            });
+                (vector_name.clone(), cfg.with_index_type(index_type))
+            })
+            .collect();
 
         let optimized_config = segment::types::SegmentConfig {
             vector_data,
