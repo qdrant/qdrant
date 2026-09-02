@@ -11,7 +11,9 @@ use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::read_only::PayloadIndexReloadDiff;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
-use crate::segment_constructor::{get_payload_index_path, get_vector_storage_path};
+use crate::segment_constructor::{
+    get_payload_index_path, get_vector_index_path, get_vector_storage_path,
+};
 use crate::types::{
     SegmentConfig, SegmentState, SegmentType, SparseVectorDataConfig, VectorDataConfig, VectorName,
     VectorNameBuf,
@@ -165,13 +167,15 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         new_config: &SegmentConfig,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
+        let index_path = get_vector_index_path(&self.segment_path, name);
         // A config reload follows the new config alone: the request-specific
         // load profile of the original open (if any) does not outlive it.
-        let storage = VectorStorageReadEnum::open(fs, config, &path, None)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Read-only dense vector storage '{name}' was not found, or is corrupted.",
-            ))
-        })?;
+        let storage = VectorStorageReadEnum::open(fs, config, &path, &index_path, None)?
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Read-only dense vector storage '{name}' was not found, or is corrupted.",
+                ))
+            })?;
         let storage = Arc::new(AtomicRefCell::new(storage));
         ReadOnlyVectorData::open_dense(
             fs,

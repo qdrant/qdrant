@@ -52,6 +52,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         fs: &impl CachedReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
+        _vector_index_path: &Path,
         populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         let datatype = vector_config.datatype.unwrap_or_default();
@@ -137,6 +138,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         fs: &impl UniversalReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
+        _vector_index_path: &Path,
         populate_override: Option<Populate>,
     ) -> OperationResult<Option<Self>> {
         let dim = vector_config.size;

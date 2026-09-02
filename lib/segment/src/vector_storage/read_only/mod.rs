@@ -157,6 +157,7 @@ mod tests {
                 &MmapFs,
                 &dense_config(storage_type, None),
                 dir.path(),
+                dir.path(),
                 None,
             )
             .unwrap();
@@ -192,6 +193,7 @@ mod tests {
         let storage = VectorStorageReadEnum::<MmapFile>::open(
             &MmapFs,
             &dense_config(VectorStorageType::ChunkedMmap, None),
+            dir.path(),
             dir.path(),
             None,
         )
@@ -234,6 +236,7 @@ mod tests {
         let storage = VectorStorageReadEnum::<MmapFile>::open(
             &MmapFs,
             &dense_config(VectorStorageType::Mmap, None),
+            dir.path(),
             dir.path(),
             None,
         )
@@ -291,6 +294,7 @@ mod tests {
                 VectorStorageType::ChunkedMmap,
                 Some(MultiVectorConfig::default()),
             ),
+            dir.path(),
             dir.path(),
             None,
         )
@@ -352,7 +356,14 @@ mod tests {
 
         let config = dense_config(VectorStorageType::ChunkedMmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
-        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
+        VectorStorageReadEnum::<MmapFile>::preopen(
+            &cached_fs,
+            &config,
+            dir.path(),
+            dir.path(),
+            None,
+        )
+        .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
@@ -363,9 +374,10 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), None)
-            .unwrap()
-            .unwrap();
+        let storage =
+            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
+                .unwrap()
+                .unwrap();
         assert_eq!(storage.total_vector_count(), vectors.len());
         let got: DenseVector = storage
             .get_vector::<Random>(7)
@@ -401,7 +413,14 @@ mod tests {
 
         let config = dense_config(VectorStorageType::Mmap, None);
         let cached_fs = snapshot_cached_fs(dir.path());
-        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
+        VectorStorageReadEnum::<MmapFile>::preopen(
+            &cached_fs,
+            &config,
+            dir.path(),
+            dir.path(),
+            None,
+        )
+        .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
@@ -412,9 +431,10 @@ mod tests {
             fs_err::remove_file(dir.path().join(file_name)).unwrap();
         }
 
-        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), None)
-            .unwrap()
-            .unwrap();
+        let storage =
+            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
+                .unwrap()
+                .unwrap();
         assert_eq!(storage.total_vector_count(), vectors.len());
         let got: DenseVector = storage
             .get_vector::<Random>(1)
@@ -465,7 +485,14 @@ mod tests {
             Some(MultiVectorConfig::default()),
         );
         let cached_fs = snapshot_cached_fs(dir.path());
-        VectorStorageReadEnum::<MmapFile>::preopen(&cached_fs, &config, dir.path(), None).unwrap();
+        VectorStorageReadEnum::<MmapFile>::preopen(
+            &cached_fs,
+            &config,
+            dir.path(),
+            dir.path(),
+            None,
+        )
+        .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
@@ -477,9 +504,10 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage = VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), None)
-            .unwrap()
-            .unwrap();
+        let storage =
+            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
+                .unwrap()
+                .unwrap();
         assert_eq!(storage.total_vector_count(), multis.len());
         let stored = storage.get_vector::<Random>(5);
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
@@ -514,6 +542,7 @@ mod tests {
         let mut storage = VectorStorageReadEnum::<MmapFile>::open(
             &MmapFs,
             &dense_config(VectorStorageType::ChunkedMmap, None),
+            dir.path(),
             dir.path(),
             None,
         )
@@ -664,6 +693,7 @@ mod tests {
                 &MmapFs,
                 &turbo_config(storage_type, None),
                 dir.path(),
+                dir.path(),
                 None,
             )
             .unwrap()
@@ -780,6 +810,7 @@ mod tests {
         let ro = VectorStorageReadEnum::<MmapFile>::open(
             &MmapFs,
             &turbo_config(VectorStorageType::ChunkedMmap, Some(multivector_config)),
+            dir.path(),
             dir.path(),
             None,
         )

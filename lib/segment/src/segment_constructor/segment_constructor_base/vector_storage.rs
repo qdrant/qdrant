@@ -98,6 +98,7 @@ fn open_chunked_mmap_vector_storage(
 pub(crate) fn open_vector_storage(
     vector_config: &VectorDataConfig,
     vector_storage_path: &Path,
+    _vector_index_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     match vector_config.storage_type {
         VectorStorageType::Memory => Err(OperationError::service_error(

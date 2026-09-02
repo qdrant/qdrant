@@ -67,9 +67,14 @@ pub(super) fn create_segment(
 
     for (vector_name, vector_config) in &config.vector_data {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+        let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         let started = Instant::now();
-        let vector_storage = sp(open_vector_storage(vector_config, &vector_storage_path)?);
+        let vector_storage = sp(open_vector_storage(
+            vector_config,
+            &vector_storage_path,
+            &vector_index_path,
+        )?);
         log_load_timing(
             segment_path,
             &format!("vector_storage dense '{vector_name}'"),
