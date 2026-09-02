@@ -24,7 +24,14 @@ use crate::edge_shard::scan_segment_dirs;
 ///
 /// [`ReadOnlySegment::open`]: segment::segment::read_only::ReadOnlySegment::open
 pub trait SegmentEnumerator: Send + Sync {
-    fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>>;
+    fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>>;
+}
+
+/// An enumerated segment; `writable` gates write-target choice, readers ignore it.
+#[derive(Clone, Debug)]
+pub struct ListedSegment {
+    pub path: PathBuf,
+    pub writable: bool,
 }
 
 /// [`SegmentEnumerator`] that reads the leader's segment manifest (`segments_manifest.json`, sitting
@@ -60,12 +67,18 @@ impl<F: UniversalReadFs> ManifestSegmentEnumerator<F> {
 }
 
 impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnumerator<F> {
-    fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
+    fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
         let manifest: SegmentsManifest = read_json_via(&self.fs, &self.manifest_path)?;
         Ok(manifest
             .iter()
             .filter(|(_, state)| state.is_usable())
-            .map(|(uuid, _)| (*uuid, self.segments_path.join(uuid.to_string())))
+            .map(|(uuid, state)| {
+                let listed = ListedSegment {
+                    path: self.segments_path.join(uuid.to_string()),
+                    writable: state.is_writable(),
+                };
+                (*uuid, listed)
+            })
             .collect())
     }
 }
@@ -86,7 +99,18 @@ impl LocalSegmentEnumerator {
 }
 
 impl SegmentEnumerator for LocalSegmentEnumerator {
-    fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
-        scan_segment_dirs(&self.segments_path)
+    fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
+        Ok(scan_segment_dirs(&self.segments_path)?
+            .into_iter()
+            .map(|(uuid, path)| {
+                (
+                    uuid,
+                    ListedSegment {
+                        path,
+                        writable: true,
+                    },
+                )
+            })
+            .collect())
     }
 }

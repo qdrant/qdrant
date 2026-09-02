@@ -21,7 +21,8 @@ use uuid::Uuid;
 use crate::config::vectors::EdgeVectorParams;
 use crate::edge_shard::scan_segment_dirs;
 use crate::read_only::{
-    LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
+    ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard,
+    SegmentEnumerator,
 };
 use crate::read_view::EdgeShardRead;
 use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
@@ -421,10 +422,21 @@ struct ExcludingEnumerator {
 }
 
 impl SegmentEnumerator for ExcludingEnumerator {
-    fn list_segments(&self) -> OperationResult<HashMap<Uuid, PathBuf>> {
+    fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
         let mut segments = scan_segment_dirs(&self.segments_path)?;
         segments.remove(&self.exclude);
-        Ok(segments)
+        Ok(segments
+            .into_iter()
+            .map(|(uuid, path)| {
+                (
+                    uuid,
+                    ListedSegment {
+                        path,
+                        writable: true,
+                    },
+                )
+            })
+            .collect())
     }
 }
 
