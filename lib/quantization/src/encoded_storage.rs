@@ -71,16 +71,55 @@ pub trait EncodedStorage: EncodedStorageWrite {
         callback: impl FnMut(usize, Cow<'_, [u8]>),
     );
 
+    /// True when the storage serves one contiguous slice faster than the same
+    /// vectors read individually, at *any* run length, so run batching should
+    /// not be gated for it.
+    ///
+    /// Measured for io_uring, where per-request submission and completion
+    /// bookkeeping dominates once the data is in the page cache: one
+    /// contiguous-slice read beats the batched per-vector path by 27 % on
+    /// HNSW-shaped id lists and by 93 % on a full scan.
+    ///
+    /// Storages with cheap random access (RAM, mmap) return `false` and are
+    /// gated by run length instead. So do remote backends (object stores, a
+    /// gRPC peer): their per-vector reads pipeline across a batch, while
+    /// contiguous-slice reads would serialize the round trips.
+    fn prefers_contiguous_reads() -> bool {
+        false
+    }
+
+    /// Whether `offsets` should be scored through [`Self::for_each_run`] —
+    /// one batched kernel call per run — rather than vector by vector through
+    /// [`Self::for_each_batch`].
+    ///
+    /// Run scoring pays a per-run setup that only long runs amortize, so
+    /// storages with cheap random access (RAM, mmap) take it when the runs are
+    /// long enough on average ([`offsets_worth_batch_scoring`]): plain and
+    /// dense filtered scans qualify, HNSW neighbours and sparse filtered scans
+    /// do not.  Async backends stay per-vector regardless, since
+    /// `for_each_batch` pipelines their reads — unless the storage reports
+    /// that contiguous reads win at any length
+    /// ([`Self::prefers_contiguous_reads`]).
+    fn prefers_run_scoring(offsets: &[PointOffsetType]) -> bool {
+        Self::prefers_contiguous_reads()
+            || (Self::is_in_ram_or_mmap() && offsets_worth_batch_scoring(offsets))
+    }
+
     /// Invoke `callback(first, count, bytes)` over `offsets` split into runs
     /// the storage serves from one contiguous slice: `bytes` holds the
-    /// concatenated vectors of `offsets[first..first + count]`.  Runs cover
-    /// `offsets` in order, so a sequential scan over consecutive offsets
+    /// concatenated vectors of `offsets[first..first + count]`.  The runs
+    /// partition `offsets`, so a sequential scan over consecutive offsets
     /// resolves storage internals (chunk lookups, reads) once per run rather
     /// than once per vector.
     ///
+    /// Runs arrive in whatever order the storage completes them: in-memory
+    /// storages walk `offsets` front to back, a pipelined backend (io_uring)
+    /// reports reads as they land.  Callers must address results by `first`
+    /// and not assume the previous run ended where this one starts.
+    ///
     /// The default serves every vector as its own run; storages with
     /// contiguous regions should override it to coalesce consecutive offsets
-    /// (see [`for_each_consecutive_run`]).
+    /// (see [`consecutive_runs`]).
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
@@ -106,27 +145,89 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
     }
 }
 
+/// One maximal run of consecutive ids in an offsets list, see
+/// [`consecutive_runs`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsecutiveRun {
+    /// Index into `offsets` of the run's first id.
+    pub first: usize,
+    /// The run's first id, `offsets[first]`.
+    pub start: PointOffsetType,
+    /// Number of ids in the run.
+    pub len: usize,
+}
+
 /// Run detection shared by [`EncodedStorage::for_each_run`] implementations:
-/// splits `offsets` into maximal runs of consecutive ids and invokes
-/// `emit(first, start, len)` per run, where `first` indexes into `offsets`.
+/// splits `offsets` into maximal runs of consecutive ids, in order of
+/// appearance.  Lazy, so a storage can feed the runs straight into a read
+/// pipeline without collecting them first.
 ///
 /// Runs are not capped: a storage serves whatever region a run covers, even
 /// one straddling its internal chunk boundary.
-pub fn for_each_consecutive_run(
-    offsets: &[PointOffsetType],
-    mut emit: impl FnMut(usize, PointOffsetType, usize),
-) {
+pub fn consecutive_runs(offsets: &[PointOffsetType]) -> impl Iterator<Item = ConsecutiveRun> + '_ {
     let mut first = 0;
-    while first < offsets.len() {
-        let start = offsets[first];
+    std::iter::from_fn(move || {
+        let start = *offsets.get(first)?;
         let mut len = 1;
-        while first + len < offsets.len() && offsets[first + len] == start + len as PointOffsetType
-        {
+        while offsets.get(first + len) == Some(&(start + len as PointOffsetType)) {
             len += 1;
         }
-        emit(first, start, len);
+        let run = ConsecutiveRun { first, start, len };
         first += len;
+        Some(run)
+    })
+}
+
+/// Mean ascending run length at or above which run-batched scoring earns its
+/// per-run setup back. Measured crossover is 2.0–3.6, stable across dims
+/// 128/512/1024, both RAM storages and the 1/2/4-bit widths; any threshold in
+/// 2.5–4.0 routes that ladder identically, so 3 sits in the middle.
+pub const BATCH_SCORE_MIN_MEAN_RUN: usize = 3;
+
+/// True when the runs `offsets` splits into are long enough *on average* to
+/// pay for run-batched scoring — mean ascending run length ≥
+/// [`BATCH_SCORE_MIN_MEAN_RUN`]. Gates run batching so scattered id lists
+/// (HNSW hops) keep the cheaper per-vector kernels.
+///
+/// The mean is what decides, not the longest run: a *sorted* id list — what a
+/// filtered scan hands the scorer — already contains adjacent pairs at ~1 %
+/// density while its runs still average one vector, so a "contains a run of
+/// ≥ N" test sends it down the run path to pay setup per vector. An average
+/// is also independent of how the driver slices ids into batches, which a
+/// longest-run test is not.
+///
+/// A fully contiguous ascending block — the plain scan this exists for — is
+/// decided in O(1), so a full scan pays nothing for the gate. A permutation of
+/// such a block passes that check too; that only picks the other scoring path,
+/// never a different score.
+#[inline]
+pub fn offsets_worth_batch_scoring(offsets: &[PointOffsetType]) -> bool {
+    let len = offsets.len();
+    if len < BATCH_SCORE_MIN_MEAN_RUN {
+        return false;
     }
+
+    let (first, last) = (offsets[0], offsets[len - 1]);
+    if last
+        .checked_sub(first)
+        .is_some_and(|span| span as usize == len - 1)
+    {
+        return true;
+    }
+
+    // Mean run length ≥ MIN ⟺ runs · MIN ≤ len, so stop counting as soon as
+    // the run count rules that out.
+    let max_runs = len / BATCH_SCORE_MIN_MEAN_RUN;
+    let mut runs = 1usize;
+    for window in offsets.windows(2) {
+        if window[1] != window[0] + 1 {
+            runs += 1;
+            if runs > max_runs {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 pub trait EncodedStorageBuilder {
@@ -297,11 +398,11 @@ impl EncodedStorage for TestEncodedStorage {
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
     ) {
-        for_each_consecutive_run(offsets, |first, start, len| {
-            let begin = start as usize * self.quantized_vector_size.get();
-            let end = begin + len * self.quantized_vector_size.get();
-            callback(first, len, Cow::Borrowed(&self.data[begin..end]));
-        });
+        for run in consecutive_runs(offsets) {
+            let begin = run.start as usize * self.quantized_vector_size.get();
+            let end = begin + run.len * self.quantized_vector_size.get();
+            callback(run.first, run.len, Cow::Borrowed(&self.data[begin..end]));
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -410,11 +511,9 @@ mod tests {
     #[test]
     fn consecutive_runs_split_at_gaps() {
         let collect = |offsets: &[u32]| {
-            let mut runs = Vec::new();
-            for_each_consecutive_run(offsets, |first, start, len| {
-                runs.push((first, start, len));
-            });
-            runs
+            consecutive_runs(offsets)
+                .map(|ConsecutiveRun { first, start, len }| (first, start, len))
+                .collect::<Vec<_>>()
         };
 
         // Split at gaps only, however long the consecutive stretch.
@@ -426,6 +525,37 @@ mod tests {
         // Descending and scattered ids degrade to singleton runs.
         assert_eq!(collect(&[4, 3, 2]), vec![(0, 4, 1), (1, 3, 1), (2, 2, 1)]);
         assert_eq!(collect(&[]), vec![]);
+    }
+
+    #[test]
+    fn offsets_worth_batch_scoring_measures_mean_run_length() {
+        // Too few ids to average anything over.
+        assert!(!offsets_worth_batch_scoring(&[]));
+        assert!(!offsets_worth_batch_scoring(&[7]));
+        assert!(!offsets_worth_batch_scoring(&[7, 8]));
+
+        // Plain scan: one contiguous run, taken by the O(1) path.
+        assert!(offsets_worth_batch_scoring(&[0, 1, 2, 3]));
+        assert!(offsets_worth_batch_scoring(
+            &(100..164).collect::<Vec<PointOffsetType>>()
+        ));
+
+        // HNSW-like: scattered or descending neighbours.
+        assert!(!offsets_worth_batch_scoring(&[4, 3, 2]));
+        assert!(!offsets_worth_batch_scoring(&[10, 20, 30, 40]));
+
+        // Sorted but sparse — a filtered scan at low density. It holds
+        // adjacent pairs, yet its runs average ~1, so batching would pay
+        // setup per vector.
+        assert!(!offsets_worth_batch_scoring(&[5, 7, 8, 10]));
+        assert!(!offsets_worth_batch_scoring(&[0, 1, 5, 9, 14, 20, 27, 35]));
+
+        // Dense filtered scan: gaps, but long runs between them.
+        assert!(offsets_worth_batch_scoring(&[0, 1, 2, 5, 6, 7]));
+
+        // At the threshold (2 runs over 6 ids) and just under it (3 runs).
+        assert!(offsets_worth_batch_scoring(&[0, 1, 2, 10, 11, 12]));
+        assert!(!offsets_worth_batch_scoring(&[0, 1, 10, 11, 20, 21]));
     }
 
     /// The test storage's runs must hand out exactly the bytes of the

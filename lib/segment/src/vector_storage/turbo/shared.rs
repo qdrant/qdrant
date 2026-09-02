@@ -109,6 +109,11 @@ pub(super) fn score_query_bytes(
 /// into contiguous storage runs and scores each run with one batched quantizer
 /// call, so a sequential scan pays the storage resolution and kernel setup per
 /// run rather than per vector.
+///
+/// Whether an id list takes the run path is the storage's call, see
+/// [`EncodedStorage::prefers_run_scoring`]: lists whose runs are short on
+/// average — HNSW neighbors, and filtered scans sparse enough that consecutive
+/// ids are incidental — fall back to per-vector [`score_query_bytes`].
 pub(super) fn score_query_batch<TStorage: EncodedStorage>(
     storage: &TStorage,
     quantizer: &TurboQuantizer,
@@ -119,10 +124,7 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
 ) {
     debug_assert_eq!(ids.len(), scores.len());
 
-    if !TStorage::is_in_ram_or_mmap() {
-        // Backends with async reads (io_uring, remote caches) pipeline
-        // per-vector reads in `for_each_batch`; run-granular reads would
-        // serialize them.
+    if !TStorage::prefers_run_scoring(ids) {
         storage.for_each_batch(ids, |idx, bytes| {
             scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
         });

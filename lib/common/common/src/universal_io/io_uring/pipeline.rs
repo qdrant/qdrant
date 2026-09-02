@@ -77,9 +77,16 @@ impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
 
         let enqueued = self.runtime.enqueued();
 
-        if next.is_some() && enqueued > 0 {
-            self.runtime.submit_and_wait(0)?;
-        } else if next.is_none() && enqueued + self.runtime.in_progress() > 0 {
+        if next.is_some() {
+            // Refill the device only while it still has reads outstanding.
+            // When everything submitted so far has already completed — the
+            // page cache is warm and reads finish inline — the entries
+            // enqueued meanwhile wait and go down in one submission once the
+            // ready completions run out, instead of one syscall per read.
+            if enqueued > 0 && self.runtime.outstanding() > 0 {
+                self.runtime.submit_and_wait(0)?;
+            }
+        } else if enqueued + self.runtime.in_progress() > 0 {
             self.runtime.submit_and_wait(1)?;
         }
 

@@ -177,13 +177,13 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
     ) {
-        quantization::encoded_storage::for_each_consecutive_run(offsets, |first, start, len| {
+        for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
                 .vectors
-                .get_many(start as VectorOffsetType, len)
+                .get_many(run.start as VectorOffsetType, run.len)
                 .expect("vectors read");
-            callback(first, len, bytes);
-        });
+            callback(run.first, run.len, bytes);
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -294,9 +294,10 @@ mod tests {
         assert_eq!(storage.get_vector_data(1).as_ref(), [3, 4]);
     }
 
-    /// `for_each_run` must serve every offset exactly once, in order, with
-    /// bytes identical to per-point `get_vector_data` — including a run that
-    /// straddles the internal chunk boundary.
+    /// `for_each_run` must serve every offset exactly once with bytes
+    /// identical to per-point `get_vector_data` — including a run that
+    /// straddles the internal chunk boundary.  This storage walks `offsets`
+    /// front to back, so its runs also arrive in order.
     #[test]
     fn runs_match_per_point_reads_across_chunk_boundary() {
         use quantization::EncodedStorage;

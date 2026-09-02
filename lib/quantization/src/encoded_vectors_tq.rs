@@ -470,10 +470,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     ) {
         debug_assert_eq!(offsets.len(), scores.len());
 
-        if !TStorage::is_in_ram_or_mmap() {
-            // Backends with async reads (io_uring, remote caches) pipeline
-            // per-vector reads in `for_each_batch`; run-granular reads would
-            // serialize them.
+        if !TStorage::prefers_run_scoring(offsets) {
             self.for_each_batch(offsets, |i, vector| {
                 scores[i] = self.score_bytes(True, query, &vector, hw_counter);
             });
