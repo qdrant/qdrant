@@ -1324,7 +1324,12 @@ fn score_stored_batch_matches_score_stored() {
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 
     const DIM: usize = 128;
-    const COUNT: usize = 100;
+    // Enough vectors to cross a (test-sized) chunk boundary of the chunked
+    // backend, so batch scoring of a sequential scan has to split its
+    // contiguous runs there.
+    const COUNT: usize = 8192;
+    const _: () =
+        assert!(COUNT * (DIM / 2 + size_of::<f32>()) > crate::vector_storage::common::CHUNK_SIZE);
 
     let distance = Distance::Dot;
     let seed = SEEDS[0];
@@ -1336,6 +1341,9 @@ fn score_stored_batch_matches_score_stored() {
         .chain(0..(COUNT / 2) as PointOffsetType)
         .collect();
     ids.shuffle(&mut rng);
+    // An ascending full scan on top of the shuffled ids: maximal-length
+    // sequential runs, including one straddling the chunk boundary.
+    let ascending: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
 
     // Backends under test: appendable chunked, single-file mmap, and (on
     // Linux) single-file uring.
@@ -1393,12 +1401,15 @@ fn score_stored_batch_matches_score_stored() {
     }
 
     check_backend("chunked", &chunked, &inputs, &ids);
+    check_backend("chunked/scan", &chunked, &inputs, &ascending);
     check_backend("mmap", &mmap, &inputs, &ids);
+    check_backend("mmap/scan", &mmap, &inputs, &ascending);
 
     #[cfg(target_os = "linux")]
     {
         let uring = open_turbo_single_uring(single_dir.path(), DIM, distance, false).unwrap();
         check_backend("uring", &uring, &inputs, &ids);
+        check_backend("uring/scan", &uring, &inputs, &ascending);
     }
 }
 

@@ -85,11 +85,8 @@ where
             .vector_io_read()
             .incr_delta(ids.len() * self.quantized_data.quantized_vector_size());
 
-        self.quantized_data.for_each_batch(ids, |idx, vector| {
-            scores[idx] = self
-                .quantized_data
-                .score(&self.query, &vector, &self.hardware_counter);
-        });
+        self.quantized_data
+            .score_points(&self.query, ids, scores, &self.hardware_counter);
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

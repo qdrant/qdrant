@@ -555,6 +555,17 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
 
     fn score_query_bytes(&self, query: &EncodedQueryTQ, bytes: &[u8]) -> ScoreType;
 
+    /// Batch counterpart of [`Self::score_query_bytes`]: `scores[i]` ← score
+    /// of `query` against point `ids[i]`.  Storages backed by contiguous
+    /// encoded bytes score whole runs of consecutive ids with one batched
+    /// quantizer call (see `turbo::shared::score_query_batch`).
+    fn score_query_batch(
+        &self,
+        query: &EncodedQueryTQ,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    );
+
     fn score_internal_encoded(
         &self,
         point_a: PointOffsetType,

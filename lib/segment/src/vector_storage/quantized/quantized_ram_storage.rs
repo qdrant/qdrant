@@ -172,6 +172,20 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         }
     }
 
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) {
+        quantization::encoded_storage::for_each_consecutive_run(offsets, |first, start, len| {
+            let bytes = self
+                .vectors
+                .get_many(start as VectorOffsetType, len)
+                .expect("vectors read");
+            callback(first, len, bytes);
+        });
+    }
+
     fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
@@ -278,5 +292,50 @@ mod tests {
         assert_eq!(storage.vectors_count(), 2);
         assert_eq!(storage.get_vector_data(0).as_ref(), [1, 2]);
         assert_eq!(storage.get_vector_data(1).as_ref(), [3, 4]);
+    }
+
+    /// `for_each_run` must serve every offset exactly once, in order, with
+    /// bytes identical to per-point `get_vector_data` — including a run that
+    /// straddles the internal chunk boundary.
+    #[test]
+    fn runs_match_per_point_reads_across_chunk_boundary() {
+        use quantization::EncodedStorage;
+
+        use crate::vector_storage::common::CHUNK_SIZE;
+
+        const VECTOR_SIZE: usize = 68;
+        // Enough vectors to cross the first chunk boundary.
+        let count = CHUNK_SIZE / VECTOR_SIZE + 100;
+
+        let mut vectors = VolatileChunkedVectors::<u8>::new(VECTOR_SIZE);
+        for i in 0..count {
+            let vector: Vec<u8> = (0..VECTOR_SIZE).map(|b| (i * 31 + b) as u8).collect();
+            vectors.push(&vector).unwrap();
+        }
+        let storage = QuantizedRamStorage {
+            vectors,
+            path: PathBuf::new(),
+        };
+
+        let ascending: Vec<PointOffsetType> = (0..count as PointOffsetType).collect();
+        let scattered: Vec<PointOffsetType> = (0..count as PointOffsetType).step_by(7).collect();
+
+        for ids in [&ascending, &scattered] {
+            let mut visited = 0;
+            storage.for_each_run(ids, |first, run_len, bytes| {
+                assert_eq!(first, visited, "runs must cover `ids` in order");
+                assert_eq!(bytes.len(), run_len * VECTOR_SIZE);
+                for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
+                    assert_eq!(
+                        vector.as_slice(),
+                        storage.get_vector_data(ids[first + i]).as_ref(),
+                        "run bytes diverge at offset {}",
+                        ids[first + i],
+                    );
+                }
+                visited += run_len;
+            });
+            assert_eq!(visited, ids.len());
+        }
     }
 }
