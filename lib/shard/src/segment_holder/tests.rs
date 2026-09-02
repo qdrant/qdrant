@@ -2523,3 +2523,63 @@ fn test_unwrap_proxy_propagates_pending_changes() {
         "unwrapping must propagate the buffered delete into the wrapped segment",
     );
 }
+
+/// Unwrapping a proxy whose buffered changes cannot be propagated must not report success: the
+/// WAL acknowledge already passed those operations, so the caller has to know they are only
+/// recoverable from the pending changes log on the next restart.
+#[test]
+fn test_unwrap_proxy_reports_failed_propagation() {
+    use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+    use segment::segment_constructor::get_vector_storage_path;
+
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
+    let wrapped_segment_dir = wrapped_segment.get().read().data_path();
+
+    let mut proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    proxy_segment
+        .create_vector_name(
+            100,
+            "v2",
+            &VectorNameConfig::dense(DenseVectorConfig {
+                size: 8,
+                distance: Distance::Dot,
+                multivector_config: None,
+                datatype: None,
+            }),
+        )
+        .unwrap();
+    proxy_segment.flush(false).unwrap();
+
+    // A plain file where the new vector's storage directory has to go, so propagating the
+    // buffered create into the wrapped segment fails
+    fs_err::write(
+        get_vector_storage_path(&wrapped_segment_dir, "v2"),
+        b"not a directory",
+    )
+    .unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let proxy_id = holder.add_new_locked(LockedSegment::from(proxy_segment));
+    let holder = LockedSegmentHolder::new(holder);
+
+    let result = unwrap_proxy(&holder, &[proxy_id]);
+
+    assert!(
+        !wrapped_segment
+            .get()
+            .read()
+            .vector_names()
+            .iter()
+            .any(|name| name == "v2"),
+        "test setup must make the propagation fail",
+    );
+    assert!(
+        result.is_err(),
+        "unwrap_proxy must not report success when propagation failed",
+    );
+}

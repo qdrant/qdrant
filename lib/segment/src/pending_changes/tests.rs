@@ -805,3 +805,43 @@ fn test_torn_tail_truncation_sweep() {
         );
     }
 }
+
+/// A corrupted length prefix is not a torn write: the bytes it claims are on disk, so entries
+/// behind it may have been acknowledged in the WAL. Load must fail loudly instead of silently
+/// dropping them and truncating the file.
+#[test]
+fn test_corrupt_length_prefix_is_hard_error() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    for point_id in 1..=2u64 {
+        pending_changes.register_delete_point(
+            point_id.into(),
+            ProxyDeletedPoint {
+                local_version: point_id,
+                operation_version: 10 + point_id,
+            },
+        );
+    }
+    pending_changes.flusher(12).unwrap()().unwrap();
+    let log_path = pending_changes.log_path().to_path_buf();
+    let pristine = fs::read(&log_path).unwrap();
+    drop(pending_changes);
+
+    // A single bit flip in the first entry's length prefix
+    let mut mangled = pristine.clone();
+    mangled[3] ^= 1 << 4;
+    fs::write(&log_path, &mangled).unwrap();
+
+    let result = PendingChanges::load(dir.path(), 0);
+    assert!(
+        result.is_err(),
+        "corrupt length prefix must be an error, got {} entries",
+        result.map_or(0, |loaded| loaded.deleted_points().len()),
+    );
+    assert_eq!(
+        fs::metadata(&log_path).unwrap().len(),
+        pristine.len() as u64,
+        "a corrupt entry that is not a torn tail must not truncate the log",
+    );
+}
