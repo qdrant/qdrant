@@ -368,7 +368,7 @@ fn resolve_initial_config(
 ///
 /// Skips non-directories, hidden (`.`-prefixed) entries, and (via [`normalize_segment_dir`])
 /// `.deleted` leftovers and segments without a written `version.info`. Shared by [`EdgeShard`]
-/// loading and by the read-only follower's refresh, so both observe the same segment set.
+/// loading and by the read-only follower's live_reload, so both observe the same segment set.
 pub(crate) fn scan_segment_dirs(segments_path: &Path) -> OperationResult<HashMap<Uuid, PathBuf>> {
     let segments_dir = fs::read_dir(segments_path).map_err(|err| {
         OperationError::service_error(format!("failed to read segments directory: {err}"))

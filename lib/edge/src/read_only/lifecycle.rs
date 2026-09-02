@@ -47,14 +47,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// derived from the segments themselves (see [`EdgeConfig::from_segment_config`]), mirroring the
     /// read-write [`EdgeShard`](crate::EdgeShard)'s fallback. A provided `config` overrides tunable
     /// parameters at open (its `Some` values win over the derived ones; `vectors`/`sparse_vectors`
-    /// are ignored); a [`refresh`](Self::refresh) re-derives the config from the segments alone.
+    /// are ignored); a [`live_reload`](Self::live_reload) re-derives the config from the segments alone.
     /// An empty shard (no segments yet) starts from the provided config (or a default one).
     ///
     /// A `load_profile` — derived from the request this shard is being opened to serve (see
     /// [`LoadProfile`]) — parks the segment components that request won't touch cold instead of
     /// warming them per the persisted segment configs, cutting the cold-start cost. Without one,
     /// loading follows the segment configs alone. The profile also applies to segments a later
-    /// [`refresh`](Self::refresh) discovers: the shard was opened for that one request, so new
+    /// [`live_reload`](Self::live_reload) discovers: the shard was opened for that one request, so new
     /// segments shouldn't load any warmer.
     pub fn open(
         fs: S::Fs,
@@ -74,7 +74,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Internal seam: [`open`](Self::open) always discovers via the manifest, but tests inject other
     /// discovery strategies (e.g. a directory scan) here.
     ///
-    /// The initial load is a [`refresh`](Self::refresh) over an empty shard: same discovery, same
+    /// The initial load is a [`live_reload`](Self::live_reload) over an empty shard: same discovery, same
     /// parallel load, same handling of segments that change while being loaded. The manifest is
     /// superset-biased, so segments that cannot be loaded (not yet finalized, already deleted, or
     /// appendable) are skipped rather than failing the open.
@@ -106,13 +106,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             enumerator: Box::new(enumerator),
             search_pool,
             load_profile,
-            refresh_lock: Default::default(),
+            live_reload_lock: Default::default(),
         };
-        shard.refresh()?;
+        shard.live_reload()?;
 
         // Open-only config overlay: caller-provided tunables win over the segment-derived ones
-        // (`refresh` re-derives from the segments alone — see the `config` field docs). For an
-        // empty shard the refresh left the provided config in place, and the overlay is a no-op.
+        // (`live_reload` re-derives from the segments alone — see the `config` field docs). For an
+        // empty shard the live_reload left the provided config in place, and the overlay is a no-op.
         let derived = shard.config.read().clone();
         *shard.config.write() = Arc::new(merge_follower_config(
             provided_config,
