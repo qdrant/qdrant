@@ -8,7 +8,7 @@ use collection::shards::shard::PeerId;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
-use crate::content_manager::consensus_state_machine::{Action, NodeContext};
+use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff, NodeContext};
 
 type Actions = Vec<Action>;
 
@@ -107,6 +107,111 @@ impl ClusterState {
         });
 
         actions
+    }
+
+    pub fn plan_update_collection(&self, op: &UpdateCollectionOperation) -> StorageResult<Actions> {
+        // TODO:
+        //
+        // `shard_replica_changes` is unimplemented, because it depends on
+        // `Transfer::Abort`/`Resharding::Abort`.
+        //
+        // If `shard_replica_changes` is set, `plan_collection_meta` returns `NotCovered`
+        // instead of calling `plan_update_collection`.
+
+        let UpdateCollectionOperation {
+            collection_name,
+            update_collection,
+            shard_replica_changes: _,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+
+        // TODO:
+        //
+        // This is intentionally different from `TableOfContent::update_collection`.
+        //
+        // `ToC::update_collection` validates and applies the diffs one by one,
+        // and saves the config after every one of them.
+        // So if a diff in the middle of the operation is rejected, every diff
+        // before it is applied and persisted, and every diff after it never runs.
+        //
+        // `plan_update_collection` validates all diffs first, and emits one
+        // `UpdateCollectionConfig` action per diff, which the applier runs in order.
+        // So either all diffs apply, or none of them do.
+        //
+        // E.g., take an operation carrying two diffs:
+        // an `hnsw_config` one, and a `vectors` one naming a vector that does not exist.
+        //
+        // `ToC::update_collection` would save the new HNSW config, then return an error.
+        // `plan_update_collection` would return an error *before* emitting any action.
+
+        // Validate operation by updating a copy of the config,
+        // so that `plan` and `apply_action` are always in sync.
+        let mut config = self
+            .collection(&collection)
+            .expect("collection exists")
+            .config
+            .clone();
+
+        // One action per field diff, in the order `ToC::update_collection` applies them.
+        //
+        // `CollectionConfigDiff` merges a diff the same way `Collection::update_*` methods do.
+        //
+        // Every diff kind is idempotent, except `Metadata` on a collection that has none.
+        //
+        // The first apply saves the whole payload as-is, `null`s included, because there is
+        // nothing to merge it into. A replay then merges the payload into what the first apply
+        // saved, and a merge *drops* every key set to `null`.
+        //
+        // E.g., take `{"a": 1, "b": null}` on a collection without metadata.
+        //
+        // The first apply saves it whole, leaving `{"a": 1, "b": null}`.
+        // A replay merges it into itself, leaving `{"a": 1}`.
+        //
+        // `replay_may_diverge` in `tests/replay.rs` exempts it.
+
+        let UpdateCollection {
+            vectors,
+            optimizers_config,
+            params,
+            hnsw_config,
+            quantization_config,
+            sparse_vectors,
+            strict_mode_config,
+            metadata,
+        } = update_collection;
+
+        let diffs = [
+            optimizers_config
+                .clone()
+                .map(CollectionConfigDiff::Optimizers),
+            params.clone().map(CollectionConfigDiff::Params),
+            (*hnsw_config).map(CollectionConfigDiff::Hnsw),
+            vectors.clone().map(CollectionConfigDiff::Vectors),
+            quantization_config
+                .clone()
+                .map(CollectionConfigDiff::Quantization),
+            sparse_vectors
+                .clone()
+                .map(CollectionConfigDiff::SparseVectors),
+            strict_mode_config
+                .clone()
+                .map(CollectionConfigDiff::StrictMode),
+            metadata.clone().map(CollectionConfigDiff::Metadata),
+        ];
+
+        let mut planned = Actions::new();
+
+        for diff in diffs.into_iter().flatten() {
+            diff.apply(&mut config)?;
+
+            planned.push(Action::UpdateCollectionConfig {
+                collection: collection.clone(),
+                diff: Box::new(diff),
+            });
+        }
+
+        Ok(planned)
     }
 
     pub fn plan_create_named_vector(&self, op: &CreateNamedVector) -> StorageResult<Actions> {
