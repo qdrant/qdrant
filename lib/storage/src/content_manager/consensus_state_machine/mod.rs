@@ -119,7 +119,11 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::UpdateCollection(operation) => {
-                // Replica changes have no planning function yet
+                // TODO:
+                //
+                // Replica changes remove a replica *and* abort its transfers and resharding,
+                // so they need `Transfer::Abort`/`Resharding::Abort` to be implemented first
+
                 if operation.has_shard_replica_changes() {
                     ApplyOutcome::NotCovered
                 } else {

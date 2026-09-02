@@ -110,10 +110,18 @@ impl ClusterState {
     }
 
     pub fn plan_update_collection(&self, op: &UpdateCollectionOperation) -> StorageResult<Actions> {
+        // TODO:
+        //
+        // `shard_replica_changes` is unimplemented, because it depends on
+        // `Transfer::Abort`/`Resharding::Abort`.
+        //
+        // If `shard_replica_changes` is set, `plan_collection_meta` returns `NotCovered`
+        // instead of calling `plan_update_collection`.
+
         let UpdateCollectionOperation {
             collection_name,
             update_collection,
-            shard_replica_changes: _, // TODO!?
+            shard_replica_changes: _,
         } = op;
 
         let collection = self.resolve_collection(collection_name)?;
