@@ -489,8 +489,17 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[inline]
     #[target_feature(enable = "avx2")]
     unsafe fn widen_avx2(&self, acc: Acc256<QUERY_BYTES>) -> __m256i {
+        unsafe { self.widen_totals_256(acc.fold()) }
+    }
+
+    /// [`Self::widen_avx2`] on the per-byte lane totals.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn widen_totals_256(&self, totals: [__m256i; QUERY_BYTES]) -> __m256i {
         unsafe {
-            let totals = acc.fold();
             if self.vector_bytes <= Self::FUSED_REDUCTION_MAX_BYTES {
                 return widen_i64_256(combine_fused_256::<PLANES, QUERY_BYTES>(totals));
             }
@@ -611,12 +620,16 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     ///
     /// Vectors up to [`INTERLEAVE_MAX_BYTES`] are scored in groups of
     /// [`GROUP_512`]: the group shares each query block load and its tail
-    /// mask, and its independent accumulators keep `VPDPBUSD` saturated
-    /// while the per-vector reductions overlap with the next group's loads.
-    /// Longer vectors keep the one-vector-at-a-time walk: the group reads
-    /// [`GROUP_512`] interleaved byte streams, which hardware prefetchers
-    /// stream far worse than a single sequential one once each vector spans
-    /// more than a couple of cache lines.
+    /// mask, and its independent accumulators keep `VPDPBUSD` saturated.
+    /// Longer vectors walk the block loop one vector at a time: the group
+    /// reads [`GROUP_512`] interleaved byte streams, which hardware
+    /// prefetchers stream far worse than a single sequential one once each
+    /// vector spans more than a couple of cache lines.
+    ///
+    /// Either way the reduction is shared across the group as in
+    /// [`Self::dotprod_batch_avx2`]: each vector's accumulators are folded
+    /// to four i64 lanes, the group's lanes are transposed into one YMM of
+    /// sums, bias-corrected, converted and stored four-wide.
     ///
     /// # Safety
     /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`; `data` must
@@ -624,23 +637,86 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
     pub unsafe fn dotprod_batch_avx512_vnni(&self, data: &[u8], stride: usize, out: &mut [f32]) {
         unsafe {
-            let mut v = 0;
+            // Resolve the interleave choice here, so the group loop holds one
+            // shape only: a runtime test inside it keeps the untaken arm live
+            // for the register allocator, which costs the narrow widths a few
+            // percent even when they never take it.
             if self.vector_bytes <= INTERLEAVE_MAX_BYTES {
-                let (groups, _) = out.as_chunks_mut::<GROUP_512>();
-                for group in groups {
-                    let accs =
-                        self.accumulate_avx512::<GROUP_512>(data.as_ptr().add(v * stride), stride);
+                self.dotprod_batch_avx512_groups::<true>(data, stride, out);
+            } else {
+                self.dotprod_batch_avx512_groups::<false>(data, stride, out);
+            }
+        }
+    }
+
+    /// [`Self::dotprod_batch_avx512_vnni`] with the interleave choice fixed:
+    /// `INTERLEAVE` groups score [`GROUP_512`] vectors through one block loop,
+    /// otherwise each vector walks the blocks on its own and the group only
+    /// shares the reduction.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`, `avx512bw`, and `avx512vnni`; `data` must
+    /// hold `out.len()` vectors at `stride`.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn dotprod_batch_avx512_groups<const INTERLEAVE: bool>(
+        &self,
+        data: &[u8],
+        stride: usize,
+        out: &mut [f32],
+    ) {
+        unsafe {
+            let (groups, rest) = out.as_chunks_mut::<GROUP_512>();
+            let mut v = 0;
+            for group in groups {
+                let accs = if INTERLEAVE {
+                    self.accumulate_avx512::<GROUP_512>(data.as_ptr().add(v * stride), stride)
+                } else {
+                    std::array::from_fn(|i| {
+                        let [single] = self
+                            .accumulate_avx512::<1>(data.as_ptr().add((v + i) * stride), stride);
+                        single
+                    })
+                };
+                // Reduce the group together only for a one-byte query. With two
+                // bytes each vector carries twice the accumulator state, so
+                // holding all four until the transpose spills the register file
+                // and costs more than sharing the reduction saves.
+                if QUERY_BYTES == 1 {
+                    let lanes = accs.map(|acc| self.widen_avx512(acc));
+                    let scores = self.postprocess_x4_avx2(transpose_sum_4x64(lanes));
+                    _mm_storeu_ps(group.as_mut_ptr(), scores);
+                } else {
                     for (out, acc) in group.iter_mut().zip(accs) {
                         *out = self.postprocess(self.reduce_avx512(acc));
                     }
-                    v += GROUP_512;
                 }
+                v += GROUP_512;
             }
-            for out in &mut out[v..] {
+            for out in rest {
                 let [acc] = self.accumulate_avx512::<1>(data.as_ptr().add(v * stride), stride);
                 *out = self.postprocess(self.reduce_avx512(acc));
                 v += 1;
             }
+        }
+    }
+
+    /// [`Self::widen_avx2`] for ZMM accumulators: each total is folded to
+    /// 256 bits first, which halves the lanes and doubles their values —
+    /// the per-byte bound behind [`fused_reduction_max_bytes`] is unchanged.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f`.
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn widen_avx512(&self, acc: Acc512<QUERY_BYTES>) -> __m256i {
+        unsafe {
+            let totals = acc.fold().map(|total| {
+                _mm256_add_epi32(
+                    _mm512_castsi512_si256(total),
+                    _mm512_extracti64x4_epi64(total, 1),
+                )
+            });
+            self.widen_totals_256(totals)
         }
     }
 
@@ -713,8 +789,9 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
 
 /// Vectors per interleaved group of the AVX-512 batch kernel: 4 × 4
 /// accumulators plus the query block, codebook and mask fit the 32 ZMM
-/// registers without spilling.
-const GROUP_512: usize = 4;
+/// registers without spilling.  Equal to [`REDUCE_GROUP_256`] so one
+/// interleaved group feeds one shared reduction.
+const GROUP_512: usize = REDUCE_GROUP_256;
 
 /// Longest encoded vector (bytes) the AVX-512 batch kernel scores in
 /// interleaved groups: four cache lines per vector.  Measured streaming
