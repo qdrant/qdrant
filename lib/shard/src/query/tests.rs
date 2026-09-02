@@ -190,6 +190,7 @@ fn test_try_from_no_prefetch() {
         }]
     );
 
+    // A search leaf fetches per segment, so the root plan retrieves for the merged result.
     assert_eq!(
         planned_query.root_plans,
         vec![RootPlan {
@@ -201,6 +202,45 @@ fn test_try_from_no_prefetch() {
             },
         }]
     );
+}
+
+/// MMR without prefetches is rescored at collection level, so its candidates leaf must not
+/// fetch payload or vectors; the root plan fetches them for the final result.
+#[test]
+fn test_try_from_no_prefetch_mmr() {
+    let request = ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Mmr(MmrInternal {
+            vector: VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            using: "dense".to_owned(),
+            lambda: OrderedFloat(0.5),
+            candidates_limit: 100,
+        })),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(true),
+    };
+
+    let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
+
+    let [search] = planned_query.searches.as_slice() else {
+        panic!("expected a single candidates search");
+    };
+    assert_eq!(search.with_vector, Some(WithVector::Bool(false)));
+    assert_eq!(search.with_payload, Some(WithPayloadInterface::Bool(false)));
+
+    let [root_plan] = planned_query.root_plans.as_slice() else {
+        panic!("expected a single root plan");
+    };
+    assert_eq!(
+        root_plan.with_vector,
+        WithVector::Selector(vec!["dense".to_owned()])
+    );
+    assert_eq!(root_plan.with_payload, WithPayloadInterface::Bool(true));
 }
 
 #[test]
@@ -583,7 +623,7 @@ fn test_from_batch_of_requests() {
             limit: 20,
             offset: 0,
             params: None,
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayloadInterface::Bool(true),
             with_vector: WithVector::Bool(false),
         },
         // A double fusion query
@@ -620,6 +660,12 @@ fn test_from_batch_of_requests() {
     assert_eq!(planned_query.searches.len(), 3);
     assert_eq!(planned_query.scrolls.len(), 2);
     assert_eq!(planned_query.root_plans.len(), 3);
+
+    // The no-prefetch scroll fetches its own payload.
+    assert_eq!(
+        planned_query.scrolls[0].with_payload,
+        WithPayloadInterface::Bool(true)
+    );
 
     assert_eq!(
         planned_query.root_plans,
