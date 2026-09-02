@@ -2473,3 +2473,53 @@ fn test_proxy_segment_does_not_hold_back_wal_ack() {
     // pending changes log
     assert_eq!(wrapped_segment.get().read().version(), 6);
 }
+
+/// Unwrapping a proxy puts the wrapped segment back into the holder, so everything the proxy
+/// buffered must be propagated into it first — otherwise the changes are only visible again
+/// after a restart replays the pending changes log.
+#[test]
+fn test_unwrap_proxy_propagates_pending_changes() {
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut holder = SegmentHolder::default();
+    let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
+    let proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    let proxy_id = holder.add_new_locked(LockedSegment::from(proxy_segment));
+    let holder = LockedSegmentHolder::new(holder);
+
+    {
+        let segments = holder.read();
+        segments
+            .get(proxy_id)
+            .unwrap()
+            .get()
+            .write()
+            .delete_point(100, 2.into(), &hw_counter)
+            .unwrap();
+    }
+    assert!(
+        wrapped_segment
+            .get()
+            .read()
+            .has_point(2.into(), DeferredBehavior::VisibleOnly)
+    );
+
+    unwrap_proxy(&holder, &[proxy_id]).unwrap();
+
+    let segments = holder.read();
+    assert!(matches!(
+        segments.get(proxy_id).unwrap(),
+        LockedSegment::Original(_),
+    ));
+    assert!(
+        !wrapped_segment
+            .get()
+            .read()
+            .has_point(2.into(), DeferredBehavior::VisibleOnly),
+        "unwrapping must propagate the buffered delete into the wrapped segment",
+    );
+}
