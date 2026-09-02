@@ -200,7 +200,19 @@ impl GroupsAggregator {
                 Some(Order::SmallBetter) => {
                     peek_top_smallest_iterable(scored_points_iter, self.max_group_size)
                 }
-                None => scored_points_iter.take(self.max_group_size).collect(),
+                None => {
+                    // No query order → the schema documents that the
+                    // no-query path returns points ordered by their IDs
+                    // (qdrant/qdrant#10371). The HashMap iteration order
+                    // above is non-deterministic, so we have to materialise
+                    // and sort before truncating to `group_size`; otherwise
+                    // the take() below would pick an arbitrary subset on
+                    // every call when the tie pool exceeds `group_size`.
+                    let mut points: Vec<ScoredPoint> = scored_points_iter.collect();
+                    points.sort_unstable_by_key(|p| p.id);
+                    points.truncate(self.max_group_size);
+                    points
+                }
             };
             groups.push(Group {
                 hits,
@@ -270,6 +282,65 @@ mod unit_tests {
         assert_eq!(result[1].hits.len(), 2);
         assert_eq!(result[1].hits[0].id, 2.into());
         assert_eq!(result[1].hits[1].id, 3.into());
+    }
+
+    /// Regression for qdrant/qdrant#10371: with no query order (`order: None`),
+    /// the no-query path documented as "returns points ordered by their IDs"
+    /// must produce identical group members across repeated `distill()` calls
+    /// even when the tie pool exceeds `group_size`. Without the sort, the
+    /// HashMap iteration order is non-deterministic and `take(group_size)`
+    /// picks an arbitrary subset on every call.
+    #[test]
+    fn test_no_query_order_is_deterministic_on_truncation() {
+        // 8 points all in one group with payloads, with `group_size` (3) below
+        // the tie pool (8), so the truncation step is the face of the bug.
+        let scored_points: Vec<ScoredPoint> = (1..=8).map(|i| point(i, 0.5, json!("g"))).collect();
+
+        // Run `distill` ten times against freshly-built aggregators; the
+        // members of the (only) group must be identical across runs.
+        let first_signature: Vec<u64> = {
+            let mut aggregator = GroupsAggregator::new(1, 3, "docId".parse().unwrap(), None);
+            for p in &scored_points {
+                aggregator.add_point(p).unwrap();
+            }
+            let result = aggregator.distill();
+            assert_eq!(result.len(), 1);
+            assert_eq!(result[0].hits.len(), 3);
+            result[0]
+                .hits
+                .iter()
+                .map(|h| match h.id {
+                    ExtendedPointId::NumId(n) => n,
+                    _ => panic!("expected NumId"),
+                })
+                .collect()
+        };
+
+        for _ in 0..10 {
+            let mut aggregator = GroupsAggregator::new(1, 3, "docId".parse().unwrap(), None);
+            for p in &scored_points {
+                aggregator.add_point(p).unwrap();
+            }
+            let result = aggregator.distill();
+            assert_eq!(result.len(), 1);
+            let signature: Vec<u64> = result[0]
+                .hits
+                .iter()
+                .map(|h| match h.id {
+                    ExtendedPointId::NumId(n) => n,
+                    _ => panic!("expected NumId"),
+                })
+                .collect();
+            assert_eq!(
+                signature, first_signature,
+                "group member selection must be deterministic"
+            );
+        }
+
+        // The deterministic order must be ascending point IDs (matches the
+        // schema doc: "returns points ordered by their IDs").
+        let expected: Vec<u64> = vec![1, 2, 3];
+        assert_eq!(first_signature, expected);
     }
 
     struct Case {
