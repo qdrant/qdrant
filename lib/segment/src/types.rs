@@ -2243,6 +2243,39 @@ impl VectorDataConfig {
         }
         Ok(())
     }
+
+    /// Effective check: whether inline-storage should be used.
+    pub fn inline_vectors_in_graph(&self) -> bool {
+        self.check_inline_vectors() == Ok(true)
+    }
+
+    /// Whether inline-storage is configured AND should be used.
+    ///
+    /// - `Ok(true)`    - configured,     should be used.
+    /// - `Ok(false)`   - not configured, should not be used.
+    /// - `Err(reason)` - configured, but won't be used because of `reason`.
+    pub fn check_inline_vectors(&self) -> Result<bool, &'static str> {
+        let hnsw_config = match &self.index {
+            Indexes::Hnsw(hnsw_config) => hnsw_config,
+            Indexes::Plain {} => return Ok(false),
+        };
+        if !hnsw_config.inline_storage.unwrap_or_default() {
+            return Ok(false);
+        }
+        if self.multivector_config.is_some() {
+            return Err(
+                "The `hnsw_config.inline_storage` option is not compatible with multivectors. \
+                 This option will be ignored.",
+            );
+        }
+        if self.quantization_config.is_none() {
+            return Err(
+                "The `hnsw_config.inline_storage` option requires quantization to be enabled. \
+                 This option will be ignored.",
+            );
+        }
+        Ok(true)
+    }
 }
 
 #[derive(

@@ -31,7 +31,7 @@ use crate::operations::types::{
     SparseVectorsConfig, VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
 };
 use crate::operations::validation;
-use crate::optimizers_builder::OptimizersConfig;
+use crate::optimizers_builder::{OptimizersConfig, build_segment_optimizer_config};
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
@@ -400,36 +400,16 @@ impl CollectionConfigInternal {
 
     /// Get warnings related to this configuration
     pub fn get_warnings(&self) -> Vec<CollectionWarning> {
-        let mut warnings = Vec::new();
-
-        for (vector_name, vector_config) in self.params.vectors.params_iter() {
-            let vector_hnsw = self
-                .hnsw_config
-                .update_opt(vector_config.hnsw_config.as_ref());
-
-            let vector_quantization =
-                vector_config.quantization_config.is_some() || self.quantization_config.is_some();
-
-            if vector_hnsw.inline_storage.unwrap_or_default() {
-                if vector_config.multivector_config.is_some() {
-                    warnings.push(CollectionWarning {
-                        message: format!(
-                            "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
-                             is not compatible with multivectors. This option will be ignored."
-                        ),
-                    });
-                } else if !vector_quantization {
-                    warnings.push(CollectionWarning {
-                        message: format!(
-                            "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
-                             requires quantization to be enabled. This option will be ignored."
-                        ),
-                    });
-                }
-            }
-        }
-
-        warnings
+        build_segment_optimizer_config(&self.params, &self.hnsw_config, &self.quantization_config)
+            .dense_vectors
+            .iter()
+            .filter_map(|(vector_name, vector_config)| {
+                let message = vector_config.indexed().check_inline_vectors().err()?;
+                Some(CollectionWarning {
+                    message: format!("Vector '{vector_name}': {message}"),
+                })
+            })
+            .collect()
     }
 
     pub fn to_base_segment_config(&self) -> SegmentConfig {

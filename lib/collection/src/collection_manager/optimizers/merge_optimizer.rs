@@ -54,24 +54,26 @@ mod tests {
     fn test_segment_config(dim: usize) -> SegmentOptimizerConfig {
         let temp_dir = Builder::new().prefix("segment_cfg_dir").tempdir().unwrap();
         let segment = build_simple_segment(temp_dir.path(), dim, Distance::Dot).unwrap();
-        let mut dense_vector = HashMap::new();
-        for vector_name in segment.segment_config.vector_data.keys() {
-            dense_vector.insert(
+        let mut dense_vectors = HashMap::new();
+        for (vector_name, vector_data) in &segment.segment_config.vector_data {
+            dense_vectors.insert(
                 vector_name.clone(),
                 DenseVectorOptimizerConfig {
+                    size: vector_data.size,
+                    distance: vector_data.distance,
                     memory: None,
                     on_disk: None,
                     hnsw_config: HnswConfig::default(),
                     quantization_config: None,
+                    multivector_config: vector_data.multivector_config,
+                    datatype: vector_data.datatype,
                 },
             );
         }
         SegmentOptimizerConfig {
             payload_storage_type: segment.segment_config.payload_storage_type,
-            plain_dense_vector_config: segment.segment_config.vector_data.clone(),
-            plain_sparse_vector_config: segment.segment_config.sparse_vector_data.clone(),
-            dense_vector,
-            sparse_vector: Default::default(),
+            dense_vectors,
+            sparse_vectors: Default::default(),
             live_vector_names: None,
         }
     }

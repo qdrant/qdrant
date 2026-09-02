@@ -18,13 +18,16 @@ pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
 pub const DEFAULT_DELETED_THRESHOLD: f64 = 0.2;
 pub const DEFAULT_VACUUM_MIN_VECTOR_NUMBER: usize = 1000;
 
-/// Extra configuration for dense vectors, applied on top of the plain config during optimization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DenseVectorOptimizerConfig {
+    pub size: usize,
+    pub distance: Distance,
     pub on_disk: Option<bool>,
     pub memory: Option<Memory>,
     pub hnsw_config: HnswConfig,
     pub quantization_config: Option<QuantizationConfig>,
+    pub multivector_config: Option<MultiVectorConfig>,
+    pub datatype: Option<VectorStorageDatatype>,
 }
 
 impl DenseVectorOptimizerConfig {
@@ -33,13 +36,49 @@ impl DenseVectorOptimizerConfig {
     pub fn memory_placement(&self) -> Option<Memory> {
         Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk))
     }
+
+    /// Config for a plain (appendable, unindexed) segment.
+    pub fn plain(&self) -> VectorDataConfig {
+        self.vector_data_config(
+            Indexes::Plain {},
+            QuantizationConfig::for_appendable_segment(self.quantization_config.as_ref()),
+        )
+    }
+
+    /// Config for an indexed segment.
+    pub fn indexed(&self) -> VectorDataConfig {
+        self.vector_data_config(
+            Indexes::Hnsw(self.hnsw_config),
+            self.quantization_config.clone(),
+        )
+    }
+
+    fn vector_data_config(
+        &self,
+        index: Indexes,
+        quantization_config: Option<QuantizationConfig>,
+    ) -> VectorDataConfig {
+        let memory = self.memory_placement().unwrap_or(Memory::Cached);
+        VectorDataConfig {
+            size: self.size,
+            distance: self.distance,
+            index,
+            storage_type: VectorStorageType::appendable_from_memory(memory),
+            quantization_config,
+            multivector_config: self.multivector_config,
+            datatype: self.datatype,
+        }
+    }
 }
 
-/// Extra configuration for sparse vectors, applied on top of the plain config during optimization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SparseVectorOptimizerConfig {
     pub on_disk: Option<bool>,
     pub memory: Option<Memory>,
+    pub full_scan_threshold: Option<usize>,
+    pub index_datatype: Option<VectorStorageDatatype>,
+    pub storage_type: SparseVectorStorageType,
+    pub modifier: Option<Modifier>,
 }
 
 impl SparseVectorOptimizerConfig {
@@ -47,6 +86,29 @@ impl SparseVectorOptimizerConfig {
     /// against the deprecated `on_disk` flag. `None` if neither is configured.
     pub fn memory_placement(&self) -> Option<Memory> {
         Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk_heap))
+    }
+
+    /// Config for a plain (appendable) segment.
+    pub fn plain(&self) -> SparseVectorDataConfig {
+        self.with_index_type(SparseIndexType::MutableRam)
+    }
+
+    pub fn with_index_type(&self, index_type: SparseIndexType) -> SparseVectorDataConfig {
+        SparseVectorDataConfig {
+            index: SparseIndexConfig {
+                full_scan_threshold: self.full_scan_threshold,
+                index_type,
+                datatype: self.index_datatype,
+                // Persist only the explicitly requested `memory` parameter: the structural
+                // decision is carried by `index_type`, and only the cold/cached distinction
+                // (reachable solely through the explicit parameter) needs the extra field.
+                // Legacy-only configurations thus keep a byte-identical index config,
+                // which older Qdrant versions can load without any unknown fields.
+                memory: self.memory,
+            },
+            storage_type: self.storage_type,
+            modifier: self.modifier,
+        }
     }
 }
 
@@ -82,16 +144,8 @@ impl fmt::Debug for LiveVectorNamesProvider {
 #[derive(Debug, Clone)]
 pub struct SegmentOptimizerConfig {
     pub payload_storage_type: PayloadStorageType,
-    /// Configuration of dense vectors, as it should be for a plain segment (without any optimization).
-    pub plain_dense_vector_config: HashMap<VectorNameBuf, VectorDataConfig>,
-    /// Configuration of sparse vectors, as it should be for a plain segment (without any optimization).
-    pub plain_sparse_vector_config: HashMap<VectorNameBuf, SparseVectorDataConfig>,
-    /// Extra configuration for dense vectors, which _might_ be applied during optimization,
-    /// depending on the segment state.
-    pub dense_vector: HashMap<VectorNameBuf, DenseVectorOptimizerConfig>,
-    /// Extra configuration for sparse vectors, which _might_ be applied during optimization,
-    /// depending on the segment state.
-    pub sparse_vector: HashMap<VectorNameBuf, SparseVectorOptimizerConfig>,
+    pub dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerConfig>,
+    pub sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerConfig>,
     /// Live read of the collection's vector names, when wired in via
     /// [`SegmentOptimizerConfig::with_live_vector_names`]. `None` if no live source is available.
     pub live_vector_names: Option<LiveVectorNamesProvider>,
@@ -100,92 +154,17 @@ pub struct SegmentOptimizerConfig {
 impl SegmentOptimizerConfig {
     pub fn plain_segment_config(&self) -> SegmentConfig {
         SegmentConfig {
-            vector_data: self.plain_dense_vector_config.clone(),
-            sparse_vector_data: self.plain_sparse_vector_config.clone(),
+            vector_data: self
+                .dense_vectors
+                .iter()
+                .map(|(name, config)| (name.clone(), config.plain()))
+                .collect(),
+            sparse_vector_data: self
+                .sparse_vectors
+                .iter()
+                .map(|(name, config)| (name.clone(), config.plain()))
+                .collect(),
             payload_storage_type: self.payload_storage_type,
-        }
-    }
-
-    pub fn new(
-        payload_storage_type: PayloadStorageType,
-        dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerInput>,
-        sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerInput>,
-    ) -> SegmentOptimizerConfig {
-        let (mut plain_dense_vector_config, mut dense_vector) = (HashMap::new(), HashMap::new());
-        for (name, input) in dense_vectors {
-            let DenseVectorOptimizerInput {
-                size,
-                distance,
-                on_disk,
-                memory,
-                hnsw_config,
-                quantization_config,
-                multivector_config,
-                datatype,
-            } = input;
-            let plain_memory = Memory::resolve(
-                memory,
-                Some(Memory::from_on_disk(on_disk.unwrap_or_default())),
-            )
-            .unwrap_or(Memory::Cached);
-            plain_dense_vector_config.insert(
-                name.clone(),
-                VectorDataConfig {
-                    size,
-                    distance,
-                    index: Indexes::Plain {},
-                    storage_type: VectorStorageType::appendable_from_memory(plain_memory),
-                    quantization_config: QuantizationConfig::for_appendable_segment(
-                        quantization_config.as_ref(),
-                    ),
-                    multivector_config,
-                    datatype,
-                },
-            );
-            dense_vector.insert(
-                name,
-                DenseVectorOptimizerConfig {
-                    on_disk,
-                    memory,
-                    hnsw_config,
-                    quantization_config,
-                },
-            );
-        }
-
-        let (mut plain_sparse_vector_config, mut sparse_vector) = (HashMap::new(), HashMap::new());
-        for (name, input) in sparse_vectors {
-            let SparseVectorOptimizerInput {
-                on_disk,
-                memory,
-                full_scan_threshold,
-                index_datatype,
-                storage_type,
-                modifier,
-            } = input;
-            plain_sparse_vector_config.insert(
-                name.clone(),
-                SparseVectorDataConfig {
-                    index: SparseIndexConfig {
-                        full_scan_threshold,
-                        index_type: SparseIndexType::MutableRam,
-                        datatype: index_datatype,
-                        memory,
-                    },
-                    storage_type,
-                    modifier,
-                },
-            );
-            sparse_vector.insert(name, SparseVectorOptimizerConfig { on_disk, memory });
-        }
-
-        SegmentOptimizerConfig {
-            payload_storage_type,
-            plain_dense_vector_config,
-            plain_sparse_vector_config,
-            dense_vector,
-            sparse_vector,
-            live_vector_names: None,
         }
     }
 
@@ -202,30 +181,6 @@ impl SegmentOptimizerConfig {
             .as_ref()
             .map(LiveVectorNamesProvider::get)
     }
-}
-
-/// Per-dense-vector input for the optimizer builder.
-#[derive(Debug, Clone)]
-pub struct DenseVectorOptimizerInput {
-    pub size: usize,
-    pub distance: Distance,
-    pub on_disk: Option<bool>,
-    pub memory: Option<Memory>,
-    pub hnsw_config: HnswConfig,
-    pub quantization_config: Option<QuantizationConfig>,
-    pub multivector_config: Option<MultiVectorConfig>,
-    pub datatype: Option<VectorStorageDatatype>,
-}
-
-/// Per-sparse-vector input for the optimizer builder.
-#[derive(Debug, Clone)]
-pub struct SparseVectorOptimizerInput {
-    pub on_disk: Option<bool>,
-    pub memory: Option<Memory>,
-    pub full_scan_threshold: Option<usize>,
-    pub index_datatype: Option<VectorStorageDatatype>,
-    pub storage_type: SparseVectorStorageType,
-    pub modifier: Option<Modifier>,
 }
 
 /// Target segment count for the merge optimizer.

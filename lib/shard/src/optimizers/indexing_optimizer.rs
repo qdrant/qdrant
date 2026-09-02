@@ -63,7 +63,7 @@ impl IndexingOptimizer {
 
         let has_deferred_points = segment.has_deferred_points();
 
-        for (vector_name, vector_cfg) in &self.segment_optimizer_config.dense_vector {
+        for (vector_name, vector_cfg) in &self.segment_optimizer_config.dense_vectors {
             if let Some(vector_data) = segment_data_config.vector_data.get(vector_name) {
                 let is_indexed = vector_data.index.is_indexed();
                 let is_on_disk = vector_data.storage_type.is_on_disk();
@@ -87,7 +87,7 @@ impl IndexingOptimizer {
             }
         }
 
-        for sparse_vector_name in self.segment_optimizer_config.sparse_vector.keys() {
+        for sparse_vector_name in self.segment_optimizer_config.sparse_vectors.keys() {
             if let Some(sparse_vector_data) = segment_data_config
                 .sparse_vector_data
                 .get(sparse_vector_name)

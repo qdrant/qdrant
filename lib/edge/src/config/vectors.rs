@@ -5,13 +5,13 @@
 //! global `EdgeShardConfig::quantization_config` for that vector.
 
 use segment::data_types::modifier::Modifier;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use segment::types::{
     Distance, HnswConfig, Indexes, MultiVectorConfig, QuantizationConfig, SparseVectorDataConfig,
-    SparseVectorStorageType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    SparseVectorStorageType, VectorDataConfig, VectorStorageDatatype,
 };
 use serde::{Deserialize, Serialize};
-use shard::optimizers::config::DenseVectorOptimizerConfig;
+use shard::optimizers::config::{DenseVectorOptimizerConfig, SparseVectorOptimizerConfig};
 
 /// User-facing dense vector parameters.
 ///
@@ -43,11 +43,11 @@ impl EdgeVectorParams {
         crate::builders::EdgeVectorParamsBuilder::new(size, distance)
     }
 
-    /// Build `VectorDataConfig` for segment/optimizer use, using global quantization.
-    pub fn to_plain_vector_data_config(
+    pub fn to_dense_vector_optimizer_config(
         &self,
-        global_quantization: Option<&QuantizationConfig>,
-    ) -> VectorDataConfig {
+        global_hnsw_config: &HnswConfig,
+        global_quantization_config: Option<&QuantizationConfig>,
+    ) -> DenseVectorOptimizerConfig {
         let EdgeVectorParams {
             size,
             distance,
@@ -55,44 +55,19 @@ impl EdgeVectorParams {
             multivector_config,
             datatype,
             quantization_config,
-            hnsw_config: _, // edge does not use per-vector HNSW config
-        } = self;
-
-        let resolved_quantization_config = quantization_config.as_ref().or(global_quantization);
-        let quantization_config =
-            QuantizationConfig::for_appendable_segment(resolved_quantization_config);
-        VectorDataConfig {
-            size: *size,
-            distance: *distance,
-            storage_type: VectorStorageType::from_on_disk(on_disk.unwrap_or_default()),
-            index: Indexes::Plain {},
-            quantization_config,
-            multivector_config: *multivector_config,
-            datatype: *datatype,
-        }
-    }
-
-    pub fn to_dense_vector_optimizer_config(
-        &self,
-        global_hnsw_config: &HnswConfig,
-        global_quantization_config: Option<&QuantizationConfig>,
-    ) -> DenseVectorOptimizerConfig {
-        let EdgeVectorParams {
-            size: _,
-            distance: _,
-            on_disk,
-            multivector_config: _,
-            datatype: _,
-            quantization_config,
             hnsw_config,
         } = self;
         DenseVectorOptimizerConfig {
+            size: *size,
+            distance: *distance,
             on_disk: *on_disk,
             memory: None,
             hnsw_config: hnsw_config.unwrap_or(*global_hnsw_config),
             quantization_config: quantization_config
                 .clone()
                 .or_else(|| global_quantization_config.cloned()),
+            multivector_config: *multivector_config,
+            datatype: *datatype,
         }
     }
 
@@ -144,37 +119,20 @@ impl EdgeSparseVectorParams {
         crate::builders::EdgeSparseVectorParamsBuilder::new()
     }
 
-    pub fn to_plain_sparse_vector_data_config(&self) -> SparseVectorDataConfig {
+    pub fn to_sparse_vector_optimizer_config(&self) -> SparseVectorOptimizerConfig {
         let EdgeSparseVectorParams {
             full_scan_threshold,
-            on_disk: _,
+            on_disk,
             modifier,
             datatype,
         } = self;
-        SparseVectorDataConfig {
-            index: SparseIndexConfig {
-                full_scan_threshold: *full_scan_threshold,
-                index_type: SparseIndexType::default(),
-                datatype: *datatype,
-                memory: None,
-            },
-            storage_type: SparseVectorStorageType::Mmap,
-            modifier: *modifier,
-        }
-    }
-
-    pub fn to_sparse_vector_optimizer_config(
-        &self,
-    ) -> shard::optimizers::config::SparseVectorOptimizerConfig {
-        let EdgeSparseVectorParams {
-            full_scan_threshold: _,
-            on_disk,
-            modifier: _,
-            datatype: _,
-        } = self;
-        shard::optimizers::config::SparseVectorOptimizerConfig {
+        SparseVectorOptimizerConfig {
             on_disk: *on_disk,
             memory: None,
+            full_scan_threshold: *full_scan_threshold,
+            index_datatype: *datatype,
+            storage_type: SparseVectorStorageType::Mmap,
+            modifier: *modifier,
         }
     }
 
