@@ -111,7 +111,8 @@ fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationErr
 ///
 /// This does not check the length of the name.
 pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
-    check_invalid_name_chars(value, "collection name")
+    check_invalid_name_chars(value, "collection name")?;
+    check_reserved_windows_names(value, "collection name")
 }
 
 /// Validate a named vector identifier.
@@ -154,8 +155,37 @@ pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationErro
                 .replace(format!("collection name cannot contain \"{c}\" char").into());
             Err(err)
         }
-        None => Ok(()),
+        None => check_reserved_windows_names(value, "collection name"),
     }
+}
+
+/// Check for Windows-reserved names that are unsafe as path components.
+///
+/// On Windows, `.` and `..` are reserved path components. A collection named `.`
+/// would have its data written directly into the collections directory itself,
+/// and `..` would escape into the storage root. Names ending with a space or
+/// period are also problematic because Windows strips them, so `...` resolves
+/// to the same path as `.` on Windows.
+fn check_reserved_windows_names(value: &str, kind: &str) -> Result<(), ValidationError> {
+    // Reject "." and ".."
+    if value == "." || value == ".." {
+        let mut err = ValidationError::new("reserved_name");
+        err.message.replace(
+            format!("{kind} cannot be a reserved Windows name \"{value}\"").into(),
+        );
+        return Err(err);
+    }
+
+    // Reject names that end with a space or period (Windows strips these)
+    if value.ends_with(' ') || value.ends_with('.') {
+        let mut err = ValidationError::new("trailing_whitespace_or_period");
+        err.message.replace(
+            format!("{kind} cannot end with a space or period").into(),
+        );
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 /// Validate a polygon has at least 4 points and is closed.
@@ -404,6 +434,13 @@ mod tests {
         assert!(validate_collection_name("no*path").is_err());
         assert!(validate_collection_name("?").is_err());
         assert!(validate_collection_name("\0").is_err());
+        // Windows-reserved names
+        assert!(validate_collection_name(".").is_err());
+        assert!(validate_collection_name("..").is_err());
+        // Names that Windows strips trailing dots/spaces from
+        assert!(validate_collection_name("...").is_err());
+        assert!(validate_collection_name("name.").is_err());
+        assert!(validate_collection_name("name ").is_err());
 
         assert!(validate_collection_name_legacy("test_collection").is_ok());
         assert!(validate_collection_name_legacy("").is_ok());
@@ -411,6 +448,13 @@ mod tests {
         assert!(validate_collection_name_legacy("no*path").is_ok());
         assert!(validate_collection_name_legacy("?").is_ok());
         assert!(validate_collection_name_legacy("\0").is_err());
+        // Windows-reserved names
+        assert!(validate_collection_name_legacy(".").is_err());
+        assert!(validate_collection_name_legacy("..").is_err());
+        // Names that Windows strips trailing dots/spaces from
+        assert!(validate_collection_name_legacy("...").is_err());
+        assert!(validate_collection_name_legacy("name.").is_err());
+        assert!(validate_collection_name_legacy("name ").is_err());
     }
 
     #[test]
