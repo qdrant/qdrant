@@ -58,6 +58,21 @@ impl SegmentManifestState {
         }
     }
 
+    /// Whether a writer may take the segment as its append target. Only
+    /// [`Active`](Self::Active) qualifies: an [`Optimizing`](Self::Optimizing) segment is
+    /// readable, but appends into it are lost at the swap.
+    pub fn is_writable(&self) -> bool {
+        match self {
+            SegmentManifestState::Active => true,
+            SegmentManifestState::UnderConstruction
+            | SegmentManifestState::Optimizing {
+                holder: _,
+                lease_until: _,
+            }
+            | SegmentManifestState::Retiring => false,
+        }
+    }
+
     /// Whether the state is a mark owned by an out-of-process optimizer — a rebuild claim
     /// ([`Optimizing`](Self::Optimizing)) or a pending removal ([`Retiring`](Self::Retiring)) —
     /// rather than something derivable from the segment holder. A holder rebuild must not erase

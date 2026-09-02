@@ -25,8 +25,9 @@ impl<S: UniversalRead + 'static> Default for LookupSegmentHolder<S> {
 }
 
 impl<S: UniversalRead + 'static> LookupSegmentHolder<S> {
-    pub(crate) fn insert(&mut self, uuid: Uuid, segment: LookupSegment<S>) {
-        if segment.appendable {
+    /// A non-`writable` segment (claimed by a rebuild) never becomes the target.
+    pub(crate) fn insert(&mut self, uuid: Uuid, segment: LookupSegment<S>, writable: bool) {
+        if segment.appendable && writable {
             self.write_target = Some(uuid);
         }
         self.by_uuid.insert(uuid, Arc::new(RwLock::new(segment)));
@@ -34,10 +35,6 @@ impl<S: UniversalRead + 'static> LookupSegmentHolder<S> {
 
     pub(crate) fn len(&self) -> usize {
         self.by_uuid.len()
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.by_uuid.is_empty()
     }
 
     /// Every segment, paired with its UUID. Order is unspecified.
