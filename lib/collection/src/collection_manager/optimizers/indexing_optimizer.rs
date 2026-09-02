@@ -1135,10 +1135,10 @@ mod tests {
     /// up front, so a single large filter update can still grow one appendable
     /// segment past `max_segment_size`.
     ///
-    /// Ignored until a follow-up fixes destination selection / provisioning so
-    /// this assertion holds under default CI.
+    /// This test currently FAILS by design: it is a reproduction for the
+    /// unfixed segment overgrow bug. It will pass once destination selection
+    /// / provisioning is fixed.
     #[test]
-    #[ignore = "repro for unfixed segment overgrow on set_payload by filter"]
     fn test_set_payload_by_filter_does_not_overgrow_segment() {
         init();
 
