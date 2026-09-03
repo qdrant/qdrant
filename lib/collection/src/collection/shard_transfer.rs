@@ -665,12 +665,18 @@ impl Collection {
     }
 
     /// Initiate local partial shard
+    ///
+    /// # Cancel safety
+    ///
+    /// This is cancel safe. If the future is dropped, initialization is aborted.
+    ///
+    /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
+    /// partial state. In that case it will remain a dummy shard, signaled by the initialization
+    /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
     pub fn initiate_shard_transfer(
         &self,
         shard_id: ShardId,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
-        // TODO: Ensure cancel safety!
-
         let shards_holder = self.shards_holder.clone();
 
         let collection_path = self.path.clone();

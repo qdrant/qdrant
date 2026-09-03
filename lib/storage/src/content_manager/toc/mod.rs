@@ -580,16 +580,21 @@ impl TableOfContent {
     /// Initiate receiving shard.
     ///
     /// Fails if the collection does not exist
+    ///
+    /// # Cancel safety
+    ///
+    /// This is cancel safe. If the future is dropped, initialization is aborted.
+    ///
+    /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
+    /// partial state. In that case it will remain a dummy shard, signaled by the initialization
+    /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
     pub async fn initiate_receiving_shard(
         &self,
         collection_name: String,
         shard_id: ShardId,
     ) -> Result<(), StorageError> {
-        // TODO: Ensure cancel safety!
-
         log::info!("Initiating receiving shard {collection_name}:{shard_id}");
 
-        // TODO: Ensure cancel safety!
         let initiate_shard_transfer_future = self
             .get_collection_unchecked(&collection_name)
             .await?
