@@ -73,12 +73,18 @@ impl ShadowStateMachine {
 
         // A service error kills the consensus thread and the entry is applied again after
         // restart. What the failed apply wrote before it gave up is not something the machine
-        // predicts, and an operation it does not model leaves its state behind entirely.
-        let comparable = !matches!(result, Err(StorageError::ServiceError { .. }))
-            && !matches!(outcome, ApplyOutcome::NotCovered);
-
-        if !comparable {
+        // predicts.
+        if matches!(result, Err(StorageError::ServiceError { .. })) {
             self.machine = None;
+            return;
+        }
+
+        let collections = compared_collections(operation, machine.state());
+
+        // An operation the machine does not model leaves the state of the collections it names
+        // behind, so those are read back instead of compared
+        if matches!(outcome, ApplyOutcome::NotCovered) {
+            self.resync(toc, collections);
             return;
         }
 
@@ -87,7 +93,7 @@ impl ShadowStateMachine {
         let mut report = Vec::from_iter(diff::outcome(outcome, result));
         report.extend(diff::cluster(machine.state(), &actual));
 
-        for collection in compared_collections(operation, machine.state()) {
+        for collection in collections {
             let shadow = machine.state().collection(&collection);
             let actual = toc.collection_state(&collection);
 
@@ -97,6 +103,26 @@ impl ShadowStateMachine {
         }
 
         self.report_divergence(report);
+    }
+
+    /// Read the state of `collections` back into the machine.
+    ///
+    /// An operation naming none of them, `RemovePeer` above all, can have changed any
+    /// collection, so the machine goes instead.
+    fn resync(&mut self, toc: &impl CollectionContainer, collections: Vec<CollectionId>) {
+        if collections.is_empty() {
+            self.machine = None;
+            return;
+        }
+
+        let Some(machine) = &mut self.machine else {
+            return;
+        };
+
+        for collection in collections {
+            let state = toc.collection_state(&collection);
+            machine.resync_collection(&collection, state);
+        }
     }
 
     /// Report a non-empty `report` and invalidate the machine

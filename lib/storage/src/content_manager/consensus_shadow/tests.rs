@@ -2,12 +2,15 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use collection::collection_state;
+use collection::collection_state::ShardInfo;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
-use collection::shards::shard::PeerId;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
 use raft::eraftpb::Entry as RaftEntry;
 use segment::types::PayloadSchemaType;
 use serde_json::json;
@@ -16,7 +19,9 @@ use tempfile::{Builder, TempDir};
 use super::fixtures::*;
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
-use crate::content_manager::collection_meta_ops::{CollectionMetaOperations, CreatePayloadIndex};
+use crate::content_manager::collection_meta_ops::{
+    CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex, SetShardReplicaState,
+};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_manager::ConsensusManager;
 use crate::content_manager::consensus_state_machine::NodeContext;
@@ -87,6 +92,52 @@ fn disabled() {
     manager.apply_normal_entry(&entry(&nop())).expect("nop");
 }
 
+/// An operation the machine does not model reads the collections it names back, rather than
+/// rebuilding the machine from every collection
+#[test]
+fn not_covered_resync() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container.clone(), panicking_shadow(), dir.path());
+
+    // Builds the machine, the one full read of the state this test expects
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    container.add_shard(0);
+    manager
+        .apply_normal_entry(&entry(&set_replica_state(COLLECTION)))
+        .expect("replica state");
+
+    // Names the collection, so its state is compared: the shard has to be in both by now.
+    // Dropping an index neither side has changes nothing either side records.
+    manager
+        .apply_normal_entry(&entry(&drop_payload_index(COLLECTION)))
+        .expect("index dropped");
+
+    assert_eq!(container.snapshots(), 1);
+}
+
+/// Reading one collection back does not paper over a divergence somewhere else
+#[test]
+#[should_panic(expected = "aliases")]
+fn not_covered_keeps_the_rest() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container.clone(), panicking_shadow(), dir.path());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    container
+        .aliases
+        .lock()
+        .insert(OTHER_ALIAS.to_string(), COLLECTION.to_string());
+    manager
+        .apply_normal_entry(&entry(&set_replica_state(COLLECTION)))
+        .expect("replica state");
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+}
+
 /// A rejection of the same class on both sides is a match, whatever the state says
 #[test]
 fn matching_rejection() {
@@ -128,7 +179,7 @@ fn scrape_cluster_state() {
 
     let state = super::scrape_cluster_state(&container, &persistent);
 
-    assert_eq!(state.collections, container.collections);
+    assert_eq!(state.collections, *container.collections.lock());
     assert_eq!(state.aliases, *container.aliases.lock());
     assert_eq!(state.quota_config, container.quota_config);
     assert_eq!(
@@ -212,6 +263,31 @@ fn create_payload_index(collection: &str) -> ConsensusOperations {
     )))
 }
 
+fn drop_payload_index(collection: &str) -> ConsensusOperations {
+    let operation = DropPayloadIndex {
+        collection_name: collection.to_string(),
+        field_name: "city".parse().expect("valid field name"),
+    };
+
+    ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::DropPayloadIndex(
+        operation,
+    )))
+}
+
+fn set_replica_state(collection: &str) -> ConsensusOperations {
+    let operation = SetShardReplicaState {
+        collection_name: collection.to_string(),
+        shard_id: 0,
+        peer_id: PEER_ID,
+        state: ReplicaState::Active,
+        from_state: None,
+    };
+
+    ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::SetShardReplicaState(
+        operation,
+    )))
+}
+
 fn nop() -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop { token: 0 }))
 }
@@ -238,13 +314,17 @@ fn container() -> Container {
     aliases.insert(ALIAS.to_string(), COLLECTION.to_string());
 
     Container {
-        collections: HashMap::from([(COLLECTION.to_string(), collection_state())]),
+        collections: Mutex::new(HashMap::from([(
+            COLLECTION.to_string(),
+            collection_state(),
+        )])),
         aliases: Mutex::new(aliases),
         quota_config: QuotaConfig {
             enabled: true,
             ..Default::default()
         },
         meta_op_result: Ok(true),
+        snapshots: AtomicUsize::new(0),
     }
 }
 
@@ -261,27 +341,49 @@ fn container_answering(result: StorageResult<bool>) -> Container {
 /// Aliases are behind a lock, so a test can change them the way something other than consensus
 /// would.
 struct Container {
-    collections: HashMap<CollectionId, collection_state::State>,
+    collections: Mutex<HashMap<CollectionId, collection_state::State>>,
     aliases: Mutex<AliasMapping>,
     quota_config: QuotaConfig,
     /// What the apply path answers for a collection meta operation
     meta_op_result: StorageResult<bool>,
+    /// How many times the whole state was read back, to tell a resync from a rebuild
+    snapshots: AtomicUsize,
+}
+
+impl Container {
+    fn snapshots(&self) -> usize {
+        self.snapshots.load(Ordering::Relaxed)
+    }
+
+    /// Add a shard to the collection, the way an operation the machine does not model would
+    fn add_shard(&self, shard_id: ShardId) {
+        let replicas = HashMap::from([(PEER_ID, ReplicaState::Active)]);
+
+        self.collections
+            .lock()
+            .get_mut(COLLECTION)
+            .expect("collection exists")
+            .shards
+            .insert(shard_id, ShardInfo { replicas });
+    }
 }
 
 impl CollectionContainer for Container {
     fn collections_snapshot(&self) -> CollectionsSnapshot {
+        self.snapshots.fetch_add(1, Ordering::Relaxed);
+
         CollectionsSnapshot {
-            collections: self.collections.clone(),
+            collections: self.collections.lock().clone(),
             aliases: self.aliases.lock().clone(),
         }
     }
 
     fn collection_state(&self, collection: &str) -> Option<collection_state::State> {
-        self.collections.get(collection).cloned()
+        self.collections.lock().get(collection).cloned()
     }
 
     fn collection_names(&self) -> BTreeSet<CollectionId> {
-        self.collections.keys().cloned().collect()
+        self.collections.lock().keys().cloned().collect()
     }
 
     fn alias_mapping(&self) -> AliasMapping {

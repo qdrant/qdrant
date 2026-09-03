@@ -5,9 +5,9 @@
 //! state change method on `TableOfContent`, `Collection` or `ShardHolder`, which checks only that
 //! the object it touches exists and then persists the change. Every decision is made here.
 //!
-//! [`ClusterState::apply_action`] is the only way to change the state, and it cannot fail. So a
-//! rejected operation leaves the state untouched, and applying the first N actions of an operation
-//! gives the state that a crash after N writes leaves behind.
+//! [`ClusterState::apply_action`] is the only way an operation changes the state, and it cannot
+//! fail. So a rejected operation leaves the state untouched, and applying the first N actions of
+//! an operation gives the state that a crash after N writes leaves behind.
 //!
 //! Two rules every operation follows:
 //!
@@ -29,6 +29,7 @@ mod tests;
 
 use std::num::NonZeroU32;
 
+use collection::collection_state;
 use collection::config::{
     self, CollectionConfigInternal, CollectionParams, PayloadStorageParams, ShardingMethod,
     WalConfig,
@@ -36,6 +37,7 @@ use collection::config::{
 use collection::operations::config_diff::DiffConfig as _;
 use collection::operations::types::VectorsConfig;
 use collection::optimizers_builder::OptimizersConfig;
+use collection::shards::CollectionId;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
@@ -66,6 +68,23 @@ impl ConsensusStateMachine {
 
     pub fn context(&self) -> &NodeContext {
         &self.context
+    }
+
+    /// Replace the state of one collection with state read back from `TableOfContent`, `None`
+    /// removing it.
+    ///
+    /// Actions are the only way an *operation* changes the state. This is for the shadow run,
+    /// after an operation the machine does not model: the collections that operation touched
+    /// are read back, so the next one plans against what the legacy path left behind.
+    pub fn resync_collection(
+        &mut self,
+        collection: &CollectionId,
+        state: Option<collection_state::State>,
+    ) {
+        match state {
+            Some(state) => self.state.collections.insert(collection.clone(), state),
+            None => self.state.collections.remove(collection),
+        };
     }
 
     /// Plan `operation` and advance the state by the actions it returns
