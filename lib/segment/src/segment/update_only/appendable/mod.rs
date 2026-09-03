@@ -1,12 +1,14 @@
 //! The write phase for the appendable segment: the one segment of a shard a
 //! batch appends its points to.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
+use rayon::ThreadPool;
+use rayon::iter::{IntoParallelRefMutIterator as _, ParallelIterator as _};
 
 use super::AppendableIdTrackerState;
 use crate::common::operation_error::OperationResult;
@@ -42,15 +44,65 @@ pub struct AppendableSegment<Fs: UniversalAppendFs> {
 struct StoreComponents<Fs: UniversalAppendFs> {
     payload_storage: UpdateOnlyPayloadStorage<Fs::File>,
     payload_indexes: UpdateOnlyStructPayloadIndex<Fs::File>,
-    /// One writer per named vector, dense and sparse alike.
-    vector_storages: Vec<(VectorNameBuf, UpdateOnlyVectorStorage<Fs::File>)>,
-    /// Quantized overlays, keyed by vector name — only for dense, non-multivector vectors
-    /// whose quantization method supports incremental appends (Binary/Turbo — see
-    /// `QuantizationConfig::supports_appendable`). A vector name with no entry here simply
-    /// has no live quantization (never configured, an unsupported method, or a multivector —
-    /// that support is a follow-up, needing its own append-only offsets storage): it stays
-    /// searchable exactly, through the raw storage alone, same as before this existed.
-    quantized_vectors: HashMap<VectorNameBuf, UpdateOnlyQuantizedVectors<Fs>>,
+    /// The writers of each named vector, dense and sparse alike.
+    vectors: Vec<(VectorNameBuf, VectorComponents<Fs>)>,
+}
+
+/// The writers of one named vector.
+struct VectorComponents<Fs: UniversalAppendFs> {
+    storage: UpdateOnlyVectorStorage<Fs::File>,
+    /// Quantized overlay — only for dense, non-multivector vectors whose
+    /// quantization method supports incremental appends.
+    quantized: Option<UpdateOnlyQuantizedVectors<Fs>>,
+}
+
+impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
+    /// Appends many points to the original and quantized (if any) storages in parallel
+    fn append_many(
+        &mut self,
+        pool: &rayon::ThreadPool,
+        points: &[FullyQualifiedPoint],
+        start_slot: u32,
+        fs: &Fs,
+        hw_acc: &HwMeasurementAcc,
+        vector_name: &String,
+    ) -> OperationResult<()> {
+        let vectors: Vec<VectorToStore> = points
+            .iter()
+            .map(|point| {
+                if let Some(vector) = point.updated_vectors.get(vector_name) {
+                    VectorToStore::Decoded(vector)
+                } else if let Some((_, bytes)) = point
+                    .stored_vectors
+                    .iter()
+                    .find(|(name, _)| name == vector_name)
+                {
+                    VectorToStore::Raw(bytes)
+                } else {
+                    VectorToStore::Missing
+                }
+            })
+            .collect();
+
+        let mut original_res = Ok(());
+        let mut quantized_res = Ok(());
+        pool.scope(|s| {
+            s.spawn(|_| {
+                let hw_counter = hw_acc.get_counter_cell();
+                original_res =
+                    self.storage
+                        .append_many(fs, start_slot, vectors.iter().copied(), &hw_counter);
+            });
+            if let Some(quantized) = &mut self.quantized {
+                s.spawn(|_| {
+                    let hw_counter = hw_acc.get_counter_cell();
+                    quantized_res =
+                        quantized.append_many(start_slot, vectors.iter().copied(), &hw_counter);
+                });
+            }
+        });
+        original_res.and(quantized_res)
+    }
 }
 
 impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
@@ -58,31 +110,29 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
         let payload_storage = UpdateOnlyPayloadStorage::open(fs, segment_path)?;
         let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs, segment_path)?;
 
-        let mut vector_storages =
+        let mut vectors =
             Vec::with_capacity(config.vector_data.len() + config.sparse_vector_data.len());
-        let mut quantized_vectors = HashMap::new();
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open(fs, &path, vector_config)?;
-            vector_storages.push((vector_name.clone(), storage));
-
-            if let Some(quantized) =
-                UpdateOnlyQuantizedVectors::open(fs.clone(), &path, vector_config)?
-            {
-                quantized_vectors.insert(vector_name.clone(), quantized);
-            }
+            let components = VectorComponents {
+                storage: UpdateOnlyVectorStorage::open(fs, &path, vector_config)?,
+                quantized: UpdateOnlyQuantizedVectors::open(fs.clone(), &path, vector_config)?,
+            };
+            vectors.push((vector_name.clone(), components));
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open_sparse(fs, &path)?;
-            vector_storages.push((vector_name.clone(), storage));
+            let components = VectorComponents {
+                storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
+                quantized: None,
+            };
+            vectors.push((vector_name.clone(), components));
         }
 
         Ok(Self {
             payload_storage,
             payload_indexes,
-            vector_storages,
-            quantized_vectors,
+            vectors,
         })
     }
 }
@@ -140,19 +190,11 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         Ok((&self.fs, self.store.as_mut().expect("just opened")))
     }
 
-    /// Append `points` to this segment, each into a fresh slot, and repoint
-    /// the id tracker at those slots. A point that already exists here is
-    /// never rewritten in place: it is written anew, and the mappings log
-    /// retires its previous slot on its own.
-    ///
-    /// The order of writes is what makes a crash safe anywhere in between:
-    /// the slots are claimed first, every component then writes its data at
-    /// them, and only after all of that do the versions cover them — the step
-    /// that makes the points visible to readers. A batch cut short leaves
-    /// claimed, unpublished slots, which the next writer to open this segment
-    /// retires.
+    /// Append `points` to fresh slots in this segment and update the id tracker.
+    /// Writes component data in parallel before making points visible by publishing versions.
     pub fn store_points(
         &mut self,
+        pool: &ThreadPool,
         points: &[FullyQualifiedPoint],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
@@ -173,34 +215,8 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
         let (fs, store) = self.store_components()?;
 
-        // Each named vector, from whichever half of the point holds it: the
-        // batch's own decoded vectors win over the bytes carried from the
-        // point's previous slot, and a name in neither still takes its slot —
-        // the storage records it as a vector the point does not have.
-        for (vector_name, storage) in &mut store.vector_storages {
-            let vectors: Vec<VectorToStore> = points
-                .iter()
-                .map(|point| {
-                    if let Some(vector) = point.updated_vectors.get(vector_name) {
-                        VectorToStore::Decoded(vector)
-                    } else if let Some((_, bytes)) = point
-                        .stored_vectors
-                        .iter()
-                        .find(|(name, _)| name == vector_name)
-                    {
-                        VectorToStore::Raw(bytes)
-                    } else {
-                        VectorToStore::Missing
-                    }
-                })
-                .collect();
-            storage.append_many(fs, start_slot, vectors.iter().copied(), hw_counter)?;
-
-            // The quantized storage takes the same run, row-for-row with the raw storage.
-            if let Some(quantized) = store.quantized_vectors.get_mut(vector_name) {
-                quantized.append_many(start_slot, vectors.iter().copied(), hw_counter)?;
-            }
-        }
+        // One cell per task, off the accumulator: the cell itself is not Sync
+        let hw_acc = hw_counter.new_accumulator();
 
         let slot_payloads = || {
             inserted
@@ -208,12 +224,45 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                 .zip(points)
                 .map(|((_, slot), point)| (*slot, &point.payload))
         };
-        store
-            .payload_storage
-            .append_many(fs, slot_payloads(), hw_counter)?;
-        store
-            .payload_indexes
-            .append_many(fs, slot_payloads(), hw_counter)?;
+
+        // Each component owns its files, so none of them waits on another
+        let mut vectors_res = Ok(());
+        let mut payload_res = Ok(());
+        let mut indexes_res = Ok(());
+        pool.scope(|s| {
+            s.spawn(|_| {
+                vectors_res =
+                    store
+                        .vectors
+                        .par_iter_mut()
+                        .try_for_each(|(vector_name, components)| {
+                            components.append_many(
+                                pool,
+                                points,
+                                start_slot,
+                                fs,
+                                &hw_acc,
+                                vector_name,
+                            )
+                        });
+            });
+
+            s.spawn(|_| {
+                let hw_counter = hw_acc.get_counter_cell();
+                payload_res = store
+                    .payload_storage
+                    .append_many(fs, slot_payloads(), &hw_counter);
+            });
+
+            s.spawn(|_| {
+                let hw_counter = hw_acc.get_counter_cell();
+                indexes_res =
+                    store
+                        .payload_indexes
+                        .par_append_many(fs, slot_payloads(), &hw_counter);
+            });
+        });
+        vectors_res.and(payload_res).and(indexes_res)?;
 
         // Publish: covering the slots with their versions is what makes the
         // points visible, so everything above must already be durable.
