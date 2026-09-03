@@ -8,6 +8,7 @@ pub mod health;
 pub mod helpers;
 pub mod http_client;
 pub mod inference;
+pub mod json_path_filter;
 pub mod metrics;
 pub mod pyroscope_state;
 pub mod query;

@@ -112,6 +112,49 @@ def test_telemetry():
         "per_collection_responses should not appear when per_collection is not requested"
 
 
+def test_telemetry_filter_jq():
+    """filter_jq returns a subset of telemetry in `result` (shape is no longer TelemetryData)."""
+    import requests
+    from .helpers.helpers import qdrant_host_headers
+    from .helpers.settings import QDRANT_HOST
+
+    # Path relative to telemetry payload
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={
+            "details_level": 3,
+            "filter_jq": ".collections.collections[].transfers",
+        },
+        headers=qdrant_host_headers(),
+    )
+    assert response.ok, response.text
+    body = response.json()
+    assert body["status"] == "ok"
+    assert isinstance(body["result"], list)
+    # One entry per collection at details_level >= 3
+    assert len(body["result"]) >= 1
+    assert isinstance(body["result"][0], list)
+
+    # Optional `result.` prefix (as seen in the full API envelope) is accepted
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={
+            "filter_jq": "result.collections.number_of_collections",
+        },
+        headers=qdrant_host_headers(),
+    )
+    assert response.ok, response.text
+    assert response.json()["result"] >= 1
+
+    # Invalid path syntax → 400
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={"filter_jq": ".foo..bar"},
+        headers=qdrant_host_headers(),
+    )
+    assert response.status_code == 400
+
+
 @pytest.mark.parametrize("level", [0, 1, 2, 3, 10])
 def test_telemetry_detail(level: int):
     response = request_with_validation(
