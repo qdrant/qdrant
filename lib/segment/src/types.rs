@@ -2770,10 +2770,12 @@ impl<'de> Deserialize<'de> for PayloadFieldSchema {
                     "field_schema must be a string identifier (e.g. \"keyword\") \
                      or an object with `type` and parameters, not a JSON array",
                 )),
-                other => Ok(other.into()),
+                PayloadFieldSchemaShadowHuman::FieldType(t) => Ok(Self::FieldType(t)),
+                PayloadFieldSchemaShadowHuman::FieldParams(p) => Ok(Self::FieldParams(p)),
             }
         } else {
-            PayloadFieldSchemaShadowNonHuman::deserialize(deserializer).map(Into::into)
+            PayloadFieldSchemaShadowNonHuman::deserialize(deserializer)
+                .map(PayloadFieldSchema::from)
         }
     }
 }
