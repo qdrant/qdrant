@@ -22,7 +22,7 @@ use super::CollectionPath;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
-use crate::common::json_path_filter::apply_filter_jq;
+use crate::common::json_path_filter::apply_jq;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::TelemetryCollector;
@@ -39,7 +39,7 @@ pub struct TelemetryParam {
     /// Supports object keys, `.` traversal, and `*` / `[]` iteration.
     /// Example: `.collections.collections[].transfers`
     #[validate(length(min = 1, max = 512))]
-    pub filter_jq: Option<String>,
+    pub jq: Option<String>,
     #[validate(range(min = 1))]
     pub timeout: Option<u64>,
 }
@@ -80,8 +80,8 @@ async fn telemetry(
         };
 
         let value = serde_json::to_value(telemetry_data)?;
-        if let Some(filter_jq) = params.filter_jq.as_deref() {
-            apply_filter_jq(&value, filter_jq).map_err(StorageError::bad_request)
+        if let Some(jq) = params.jq.as_deref() {
+            apply_jq(&value, jq).map_err(StorageError::bad_request)
         } else {
             Ok(value)
         }

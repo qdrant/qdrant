@@ -112,8 +112,8 @@ def test_telemetry():
         "per_collection_responses should not appear when per_collection is not requested"
 
 
-def test_telemetry_filter_jq():
-    """filter_jq returns a subset of telemetry in `result` (shape is no longer TelemetryData)."""
+def test_telemetry_jq():
+    """jq returns a subset of telemetry in `result` (shape is no longer TelemetryData)."""
     unfiltered = request_with_validation(
         api="/telemetry",
         method="GET",
@@ -125,7 +125,7 @@ def test_telemetry_filter_jq():
     response = request_with_validation(
         api="/telemetry",
         method="GET",
-        query_params={"filter_jq": "result.collections.number_of_collections"},
+        query_params={"jq": "result.collections.number_of_collections"},
     )
     assert response.ok, response.text
     body = response.json()
@@ -136,7 +136,7 @@ def test_telemetry_filter_jq():
     response = request_with_validation(
         api="/telemetry",
         method="GET",
-        query_params={"filter_jq": ".foo..bar"},
+        query_params={"jq": ".foo..bar"},
     )
     assert response.status_code == 400
 

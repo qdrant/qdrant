@@ -12,7 +12,7 @@
 
 use serde_json::Value;
 
-const MAX_FILTER_JQ_LEN: usize = 512;
+const MAX_JQ_LEN: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Segment {
@@ -25,15 +25,13 @@ enum Segment {
 /// - Zero matches → [`Value::Null`]
 /// - One match → that value
 /// - Multiple matches → JSON array of values (jq stream collected into one value)
-pub fn apply_filter_jq(value: &Value, path: &str) -> Result<Value, String> {
+pub fn apply_jq(value: &Value, path: &str) -> Result<Value, String> {
     let path = path.trim();
     if path.is_empty() {
-        return Err("filter_jq must not be empty".to_string());
+        return Err("jq must not be empty".to_string());
     }
-    if path.len() > MAX_FILTER_JQ_LEN {
-        return Err(format!(
-            "filter_jq exceeds maximum length of {MAX_FILTER_JQ_LEN}"
-        ));
+    if path.len() > MAX_JQ_LEN {
+        return Err(format!("jq exceeds maximum length of {MAX_JQ_LEN}"));
     }
 
     let segments = parse_path(path)?;
@@ -58,14 +56,14 @@ fn parse_path(path: &str) -> Result<Vec<Segment>, String> {
 
     if path.is_empty() {
         return Err(
-            "filter_jq path must select a field inside telemetry (e.g. `.collections`)".to_string(),
+            "jq path must select a field inside telemetry (e.g. `.collections`)".to_string(),
         );
     }
 
     let mut segments = Vec::new();
     for raw in path.split('.') {
         if raw.is_empty() {
-            return Err("filter_jq path contains an empty segment".to_string());
+            return Err("jq path contains an empty segment".to_string());
         }
 
         if raw == "*" || raw == "[]" {
@@ -75,11 +73,11 @@ fn parse_path(path: &str) -> Result<Vec<Segment>, String> {
 
         if let Some(key) = raw.strip_suffix("[]") {
             if key.is_empty() || key == "*" {
-                return Err(format!("invalid filter_jq segment `{raw}`"));
+                return Err(format!("invalid jq segment `{raw}`"));
             }
             if !is_ident(key) {
                 return Err(format!(
-                    "invalid filter_jq key `{key}`: only alphanumeric and underscore are allowed"
+                    "invalid jq key `{key}`: only alphanumeric and underscore are allowed"
                 ));
             }
             segments.push(Segment::Key(key.to_string()));
@@ -89,7 +87,7 @@ fn parse_path(path: &str) -> Result<Vec<Segment>, String> {
 
         if !is_ident(raw) {
             return Err(format!(
-                "invalid filter_jq key `{raw}`: only alphanumeric and underscore are allowed"
+                "invalid jq key `{raw}`: only alphanumeric and underscore are allowed"
             ));
         }
         segments.push(Segment::Key(raw.to_string()));
@@ -149,7 +147,7 @@ mod tests {
         });
 
         assert_eq!(
-            apply_filter_jq(&value, ".collections.number_of_collections").unwrap(),
+            apply_jq(&value, ".collections.number_of_collections").unwrap(),
             json!(2)
         );
     }
@@ -167,11 +165,11 @@ mod tests {
 
         let expected = json!([[{"shard_id": 0}], []]);
         assert_eq!(
-            apply_filter_jq(&value, "collections.collections.*.transfers").unwrap(),
+            apply_jq(&value, "collections.collections.*.transfers").unwrap(),
             expected
         );
         assert_eq!(
-            apply_filter_jq(&value, ".collections.collections[].transfers").unwrap(),
+            apply_jq(&value, ".collections.collections[].transfers").unwrap(),
             expected
         );
     }
@@ -180,7 +178,7 @@ mod tests {
     fn strips_optional_result_prefix() {
         let value = json!({"app": {"version": "1.0"}});
         assert_eq!(
-            apply_filter_jq(&value, "result.app.version").unwrap(),
+            apply_jq(&value, "result.app.version").unwrap(),
             json!("1.0")
         );
     }
@@ -188,15 +186,15 @@ mod tests {
     #[test]
     fn missing_path_returns_null() {
         let value = json!({"a": 1});
-        assert_eq!(apply_filter_jq(&value, ".b.c").unwrap(), Value::Null);
+        assert_eq!(apply_jq(&value, ".b.c").unwrap(), Value::Null);
     }
 
     #[test]
     fn rejects_empty_and_invalid_paths() {
         let value = json!({});
-        assert!(apply_filter_jq(&value, "").is_err());
-        assert!(apply_filter_jq(&value, ".foo..bar").is_err());
-        assert!(apply_filter_jq(&value, ".foo-bar").is_err());
-        assert!(apply_filter_jq(&value, "result").is_err());
+        assert!(apply_jq(&value, "").is_err());
+        assert!(apply_jq(&value, ".foo..bar").is_err());
+        assert!(apply_jq(&value, ".foo-bar").is_err());
+        assert!(apply_jq(&value, "result").is_err());
     }
 }

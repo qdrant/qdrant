@@ -45,7 +45,7 @@ paths:
           required: false
           schema:
             type: boolean
-        - name: filter_jq
+        - name: jq
           in: query
           description: "Optional jq-like path selecting a subset of telemetry JSON into `result`. Supports key traversal and `*`/`[]` iteration (e.g. `.collections.collections[].transfers`). An optional `result.` prefix is accepted."
           required: false
