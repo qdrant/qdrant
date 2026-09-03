@@ -41,7 +41,7 @@ const SCROLL_PAGE: usize = 1000;
 
 /// Read-only Edge followers over the soak collection's shard directories, one per shard.
 /// Opened once and kept across checkpoints, so each [`Self::observe`] exercises
-/// `refresh` + `live_reload` deltas (segment churn, in-place appends/deletes) rather than
+/// `live_reload` deltas (segment churn, in-place appends/deletes) rather than
 /// fresh one-shot opens.
 pub(super) struct EdgeVerifier {
     #[cfg(feature = "edge-verify")]
@@ -93,9 +93,9 @@ impl EdgeVerifier {
     pub(super) fn observe(&self, ctx: &str) -> Model {
         let mut out = Model::new();
         for follower in &self.shards {
-            follower.refresh().unwrap_or_else(|e| {
+            follower.live_reload().unwrap_or_else(|e| {
                 panic!(
-                    "{ctx}: follower refresh of {} failed: {e}",
+                    "{ctx}: follower live_reload of {} failed: {e}",
                     follower.path().display(),
                 )
             });
