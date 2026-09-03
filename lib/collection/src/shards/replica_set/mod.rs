@@ -1403,6 +1403,9 @@ impl ShardReplicaSet {
     }
 
     /// Collect memory reports from both local and remote shards.
+    ///
+    /// Individual remote (or local) failures become warnings; successful
+    /// shard reports are still returned.
     pub async fn memory_report(
         &self,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
@@ -1415,15 +1418,40 @@ impl ShardReplicaSet {
                 .iter()
                 .map(|remote| remote.memory_report())
                 .collect();
-            futures::future::try_join_all(futures).await
+            // Do not fail the whole request on the first remote error.
+            futures::future::join_all(futures).await
         };
 
-        let (local_report, remote_reports) =
-            futures::future::try_join(local_future, remote_futures).await?;
+        let (local_result, remote_results) =
+            futures::future::join(local_future, remote_futures).await;
 
-        let mut all_reports = vec![local_report];
-        all_reports.extend(remote_reports);
-        Ok(CollectionMemoryReport::merge_all(all_reports))
+        let mut all_reports = Vec::new();
+        let mut warnings = Vec::new();
+
+        match local_result {
+            Ok(report) => all_reports.push(report),
+            Err(err) => warnings.push(format!("Failed to get local memory report: {err}")),
+        }
+
+        for result in remote_results {
+            match result {
+                Ok(report) => all_reports.push(report),
+                Err(err) => {
+                    warnings.push(format!("Failed to get remote shard memory report: {err}"))
+                }
+            }
+        }
+
+        if all_reports.is_empty() {
+            return Err(CollectionError::service_error(format!(
+                "Failed to get memory report from all replicas: {}",
+                warnings.join("; ")
+            )));
+        }
+
+        let mut merged = CollectionMemoryReport::merge_all(all_reports);
+        merged.warnings.extend(warnings);
+        Ok(merged)
     }
 
     /// Get optimizations info from only the local shard.
