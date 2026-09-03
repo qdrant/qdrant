@@ -3,6 +3,7 @@ use num_traits::AsPrimitive;
 use crate::DistanceType;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
+use crate::turboquant::simd::query2bit_lut::{self, QueryLut2bit};
 use crate::turboquant::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query1bitWideSimd,
     Query2bitSimd, Query4bitSimd, score_1bit_internal, score_2bit_internal,
@@ -560,11 +561,29 @@ impl TurboQuantizer {
             TQBits::Bits2 => EncodedQueryTQData::Bits2(Query2bitSimd::new(&rotated_f32)),
             TQBits::Bits4 => EncodedQueryTQData::Bits4(Query4bitSimd::new(&rotated_f32)),
         };
+
+        // LUT scan (env `QDRANT_TQ_LUT_SCAN`): also bake the rotated
+        // query into the 2-bit LUT. Dot/Cosine only — the LUT
+        // scan reconstructs `(raw_dot + ec_correction) · scaling_factor`,
+        // which is exactly those distances' score formula; folding
+        // `ec_correction` into the LUT bias covers TQ+ (the per-coord `D'`
+        // pre-scale is already in `rotated_f32`).
+        let lut2bit = if matches!(self.bits, TQBits::Bits2)
+            && matches!(self.distance, DistanceType::Dot | DistanceType::Cosine)
+            && query2bit_lut::is_supported()
+            && query2bit_lut::scan_enabled()
+        {
+            Some(QueryLut2bit::new(&rotated_f32, ec_correction))
+        } else {
+            None
+        };
+
         EncodedQueryTQ {
             data,
             l2_norm,
             query,
             ec_correction,
+            lut2bit,
         }
     }
 

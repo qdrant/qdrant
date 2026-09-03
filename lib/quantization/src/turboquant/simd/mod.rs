@@ -23,6 +23,7 @@ pub mod hadamard;
 pub mod query;
 pub mod query1bit;
 pub mod query2bit;
+pub mod query2bit_lut;
 pub mod query4bit;
 
 /// Best multiply-accumulate backend the host CPU supports, in preference

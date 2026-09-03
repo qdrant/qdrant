@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::turboquant::simd::query2bit_lut::QueryLut2bit;
 use crate::turboquant::simd::{Query1bitSimd, Query1bitWideSimd, Query2bitSimd, Query4bitSimd};
 
 pub mod encoding;
@@ -115,6 +116,14 @@ pub struct EncodedQueryTQ {
     /// `0.0` when EC is not configured. Added to the SIMD raw_dot so the
     /// existing score formulas stay unchanged.
     ec_correction: f32,
+
+    /// The query baked into the 2-bit scoring lookup tables (env
+    /// `QDRANT_TQ_LUT_SCAN`), with `ec_correction` already folded
+    /// into the LUT bias. Built only for Bits2 + Dot/Cosine on a supported
+    /// CPU with the flag set; `EncodedVectorsTQ::score_points` uses it for
+    /// long runs when the storage holds a blocked shadow, every other path
+    /// ignores it.
+    pub(crate) lut2bit: Option<QueryLut2bit>,
 }
 
 /// SIMD-ready encoded query, one variant per supported bit-width.  Each

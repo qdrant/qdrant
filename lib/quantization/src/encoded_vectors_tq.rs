@@ -1,6 +1,7 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -14,12 +15,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
 use crate::encoded_storage::{
-    EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
+    EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, consecutive_runs,
+    validate_storage_vector_size,
 };
 use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
+use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
+use crate::turboquant::simd::query2bit_lut::{self, Blocked2bit};
 use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
 pub struct EncodedVectorsTQ<TStorage: EncodedStorageWrite> {
@@ -30,6 +34,14 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorageWrite> {
 
     // Buffer used when encoding vectors.
     encoding_buffer: Vec<f64>,
+
+    /// Lazily-built transposed shadow copy of the 2-bit codes for the LUT
+    /// scan (env `QDRANT_TQ_LUT_SCAN`), plus the extracted scaling
+    /// factors. Built on the first `score_points` call
+    /// that carries a query LUT; `None` inside the cell when the
+    /// configuration doesn't qualify (bits, distance, CPU). Reset by
+    /// writes, so a stale shadow is never scored.
+    lut_shadow: OnceLock<Option<Blocked2bit>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -302,6 +314,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
             metadata_path: meta_path.map(PathBuf::from),
             encoding_buffer: vec![0.0f64; quantizer.padded_dim],
             quantizer,
+            lut_shadow: OnceLock::new(),
         })
     }
 
@@ -327,6 +340,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
             metadata_path: Some(meta_path.to_path_buf()),
             encoding_buffer: vec![0.0f64; quantizer.padded_dim],
             quantizer,
+            lut_shadow: OnceLock::new(),
         })
     }
 
@@ -351,6 +365,8 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         vectors: impl IntoIterator<Item = &'a [f32]>,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
+        // See `upsert_vector`: writes invalidate the LUT-scan shadow.
+        self.lut_shadow = OnceLock::new();
         // Encoded whole rather than streamed: the storage borrows the encoded rows.
         let quantizer = &self.quantizer;
         let encoding_buffer = &mut self.encoding_buffer;
@@ -385,6 +401,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
             metadata_path: Some(meta_path.to_path_buf()),
             encoding_buffer: vec![0.0f64; quantizer.padded_dim],
             quantizer,
+            lut_shadow: OnceLock::new(),
         };
 
         // Validate the storage's vector size against the metadata once here, so the size
@@ -402,6 +419,39 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
     pub fn layout(&self) -> Layout {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
+    }
+
+    /// The blocked LUT-scan shadow, built on first use. `None` when the
+    /// configuration doesn't qualify: 2-bit codes, a distance whose score is
+    /// `(raw_dot + ec) · scaling_factor` (Dot/Cosine), and a CPU with the
+    /// scan kernel. The env flag itself is not re-checked here — reaching
+    /// this requires a query that carries a LUT, which implies the flag.
+    fn lut_shadow(&self) -> Option<&Blocked2bit> {
+        self.lut_shadow
+            .get_or_init(|| {
+                if !matches!(self.metadata.bits, TQBits::Bits2)
+                    || !matches!(
+                        self.metadata.vector_parameters.distance_type,
+                        crate::DistanceType::Dot | crate::DistanceType::Cosine
+                    )
+                    || !query2bit_lut::is_supported()
+                {
+                    return None;
+                }
+                let stride = self.quantized_vector_size();
+                let extras_len = TqVectorExtras::size_for(
+                    self.metadata.bits,
+                    self.metadata.vector_parameters.distance_type,
+                    self.metadata.mode,
+                );
+                Some(Blocked2bit::pack_records(
+                    self.encoded_vectors.vectors_count(),
+                    stride - extras_len,
+                    self.quantizer.get_padded_dim(),
+                    |id| self.encoded_vectors.get_vector_data(id as PointOffsetType),
+                ))
+            })
+            .as_ref()
     }
 }
 
@@ -470,6 +520,32 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     ) {
         debug_assert_eq!(offsets.len(), scores.len());
 
+        // LUT scan (env `QDRANT_TQ_LUT_SCAN`): when the
+        // query carries a 2-bit LUT and this storage qualifies for the
+        // blocked shadow, score exactly the id lists run scoring would take
+        // through the transposed kernel instead of the per-vector one.
+        if let Some(lut) = query.lut2bit.as_ref()
+            && TStorage::prefers_run_scoring(offsets)
+            && let Some(shadow) = self.lut_shadow()
+        {
+            hw_counter
+                .cpu_counter()
+                .incr_delta(offsets.len() * self.quantized_vector_size());
+            for run in consecutive_runs(offsets) {
+                shadow.score_range(
+                    lut,
+                    run.start as usize,
+                    &mut scores[run.first..run.first + run.len],
+                );
+            }
+            if self.metadata.vector_parameters.invert {
+                for score in scores {
+                    *score = -*score;
+                }
+            }
+            return;
+        }
+
         if !TStorage::prefers_run_scoring(offsets) {
             self.for_each_batch(offsets, |i, vector| {
                 scores[i] = self.score_bytes(True, query, &vector, hw_counter);
@@ -534,13 +610,19 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             metadata_path: _,
             quantizer,
             encoding_buffer,
+            lut_shadow,
         } = self;
         // Storage backend (the quantized vectors themselves; non-zero for the
-        // RAM-backed variants), plus the always-resident quantizer tables and
-        // the per-instance encoding scratch buffer.
+        // RAM-backed variants), plus the always-resident quantizer tables,
+        // the per-instance encoding scratch buffer, and the LUT-scan shadow
+        // when built.
         encoded_vectors.heap_size_bytes()
             + quantizer.heap_size_bytes()
             + encoding_buffer.capacity() * size_of::<f64>()
+            + lut_shadow
+                .get()
+                .and_then(Option::as_ref)
+                .map_or(0, Blocked2bit::heap_size_bytes)
     }
 
     fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
@@ -557,6 +639,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
+        // The LUT-scan shadow interleaves 32 vectors per block; rebuilding it
+        // per write is not worth it — drop it and let the next scan rebuild.
+        self.lut_shadow = OnceLock::new();
         let encoded_vector =
             Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
         self.encoded_vectors.upsert_vector(

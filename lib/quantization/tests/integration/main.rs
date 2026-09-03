@@ -24,3 +24,5 @@ pub mod test_simple;
 pub mod test_sse;
 #[cfg(test)]
 pub mod test_tq;
+#[cfg(test)]
+pub mod test_tq_lut_scan;
