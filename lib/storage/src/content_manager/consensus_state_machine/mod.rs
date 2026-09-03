@@ -47,6 +47,7 @@ use super::errors::StorageResult;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
+use crate::types::StorageConfig;
 
 #[derive(Clone, Debug)]
 pub struct ConsensusStateMachine {
@@ -177,7 +178,7 @@ impl ConsensusStateMachine {
 ///
 /// These come from this node's config, not from consensus, so two peers can read different values
 /// for the same operation. Values scraped from `StorageConfig` keep the names they have there.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeContext {
     pub peer_id: PeerId,
     pub is_distributed: bool,
@@ -195,6 +196,57 @@ pub struct NodeContext {
 }
 
 impl NodeContext {
+    pub fn from_storage_config(
+        config: &StorageConfig,
+        peer_id: PeerId,
+        is_distributed: bool,
+    ) -> Self {
+        // Naming every field forces a new storage config option to be either read here, or
+        // dismissed as one no operation reads
+        #[expect(deprecated)]
+        let StorageConfig {
+            collection,
+            shard_transfer_method,
+            max_collections,
+            wal,
+            optimizers,
+            hnsw_index,
+            payload,
+            on_disk_payload,
+
+            storage_path: _,
+            snapshots_path: _,
+            snapshots_config: _,
+            temp_path: _,
+            optimizers_overwrite: _,
+            performance: _,
+            hnsw_global_config: _,
+            mmap_advice: _,
+            low_memory_mode: _,
+            node_type: _,
+            update_queue_size: _,
+            handle_collection_load_errors: _,
+            recovery_mode: _,
+            update_concurrency: _,
+            // Seeds the quota manager on first start only; `SetQuotaConfig` carries the config
+            // consensus decides on
+            quotas: _,
+        } = config;
+
+        Self {
+            peer_id,
+            is_distributed,
+            collection_defaults: collection.clone(),
+            default_shard_transfer_method: *shard_transfer_method,
+            max_collections: *max_collections,
+            wal: wal.clone(),
+            optimizers: optimizers.clone(),
+            hnsw_index: *hnsw_index,
+            payload: *payload,
+            on_disk_payload: *on_disk_payload,
+        }
+    }
+
     /// Shards a new collection starts with.
     ///
     /// The proposer picks them and the operation carries them. An operation proposed without a

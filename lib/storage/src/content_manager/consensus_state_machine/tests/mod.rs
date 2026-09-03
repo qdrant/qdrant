@@ -1,5 +1,6 @@
 //! Common test fixtures
 
+mod context;
 mod ops;
 mod prop;
 mod replay;
