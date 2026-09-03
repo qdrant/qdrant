@@ -790,7 +790,7 @@ mod tests {
     #[test]
     fn quantize_extreme_values() {
         for &dim in &[127, 128, 513] {
-            for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            for &bits in &[TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4] {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let mut buf = vec![0.0f64; tq.padded_dim];
                 let n_centroids = 1u8 << bits.bit_size();
@@ -842,7 +842,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(123);
 
-        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+        for &bits in &[TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4] {
             for &dim in &[127, 128, 300, 513, 768] {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let mut buf = vec![0.0f64; tq.padded_dim];
@@ -859,7 +859,7 @@ mod tests {
     /// middle boundary region (centroids are symmetric around 0).
     #[test]
     fn quantize_zero_vector() {
-        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+        for &bits in &[TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4] {
             let n_centroids = 1u8 << bits.bit_size();
             // For symmetric centroids around 0, zero maps to either of the two
             // middle indices. With boundaries being midpoints of consecutive
@@ -899,7 +899,7 @@ mod tests {
         let odd_dims = [3, 50, 127, 700, 1025];
 
         for &dim in &odd_dims {
-            for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+            for &bits in &[TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4] {
                 let tq = make_tq(dim, bits, DistanceType::Cosine);
                 let n_centroids = 1u8 << bits.bit_size();
                 let vec: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
@@ -933,7 +933,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(321);
 
-        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+        for &bits in &[TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4] {
             let centroids = bits.get_centroids();
             let n_centroids = 1u8 << bits.bit_size();
 
@@ -1320,7 +1320,7 @@ mod tests {
     /// centroid values exercise the bit-packing boundaries.
     #[test]
     fn pack_unpack_vector_uniform_indices() {
-        for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
+        for &bits in &[TQBits::Bits1, TQBits::Bits1_5, TQBits::Bits2, TQBits::Bits4] {
             let centroids = bits.get_centroids();
             let max_idx = (1u8 << bits.bit_size()) - 1;
 
@@ -1357,6 +1357,8 @@ mod tests {
     fn unpadded_rotation_keeps_padding_zero() {
         let mut rng = StdRng::seed_from_u64(42);
 
+        // `Bits1_5` is absent: it rotates into its x1.5 padding, so
+        // `TurboQuantizer::new` requires `TQRotation::Padded` for it.
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
             // All odd, so every bit width gets a non-empty padding tail.
             for &dim in &[3usize, 7, 127, 513, 1025] {
@@ -1389,8 +1391,11 @@ mod tests {
     fn unpadded_rotation_matches_padded_for_padding_free_dims() {
         let mut rng = StdRng::seed_from_u64(7);
 
+        // `Bits1_5` is absent: it rotates into its x1.5 padding, so
+        // `TurboQuantizer::new` requires `TQRotation::Padded` for it — and it has
+        // no padding-free dims anyway, since `padded_dim(8)` is 16.
         for &bits in &[TQBits::Bits1, TQBits::Bits2, TQBits::Bits4] {
-            // Multiples of 8 are padding-free for every supported bit width.
+            // Multiples of 8 are padding-free for these bit widths.
             for &dim in &[8usize, 64, 128, 512] {
                 for &distance in &[DistanceType::Dot, DistanceType::Cosine] {
                     let padded = make_tq(dim, bits, distance);
@@ -1536,6 +1541,7 @@ mod tests {
     /// antipodal negative, and a non-trivial gap between the two.
     #[rstest::rstest]
     #[case::bits1(TQBits::Bits1)]
+    #[case::bits1_5(TQBits::Bits1_5)]
     #[case::bits2(TQBits::Bits2)]
     #[case::bits4(TQBits::Bits4)]
     fn score_precomputed_dispatches_all_bit_widths(#[case] bits: TQBits) {
