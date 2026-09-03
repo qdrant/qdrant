@@ -4,3 +4,6 @@
 //! state, and a compare after the entry reports where the two disagree.
 
 pub mod diff;
+
+#[cfg(test)]
+mod fixtures;
