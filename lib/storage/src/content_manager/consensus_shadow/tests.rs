@@ -11,7 +11,7 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use raft::eraftpb::Entry as RaftEntry;
+use raft::eraftpb::{ConfState, Entry as RaftEntry, Snapshot, SnapshotMetadata};
 use segment::types::PayloadSchemaType;
 use serde_json::json;
 use tempfile::{Builder, TempDir};
@@ -23,9 +23,10 @@ use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex, SetShardReplicaState,
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::consensus_manager::ConsensusManager;
+use crate::content_manager::consensus_manager::{ConsensusManager, SnapshotData};
 use crate::content_manager::consensus_state_machine::NodeContext;
 use crate::quota::QuotaConfig;
+use crate::types::{PeerAddressById, PeerMetadataById};
 
 const ALIAS: &str = "novels";
 const OTHER_ALIAS: &str = "crime";
@@ -88,6 +89,25 @@ fn disabled() {
         .aliases
         .lock()
         .insert(OTHER_ALIAS.to_string(), COLLECTION.to_string());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+}
+
+/// Snapshot recovery leaves state no operation asked for, so the machine goes and the next
+/// entry builds a new one. Here the snapshot empties the container while the machine still
+/// holds a collection and its alias.
+#[test]
+fn snapshot_invalidates() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container, panicking_shadow(), dir.path());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    manager
+        .apply_snapshot(&snapshot())
+        .expect("snapshot applied")
+        .expect("snapshot applied");
 
     manager.apply_normal_entry(&entry(&nop())).expect("nop");
 }
@@ -263,6 +283,31 @@ fn create_payload_index(collection: &str) -> ConsensusOperations {
     )))
 }
 
+/// Snapshot of an empty cluster, with this peer as its only voter
+fn snapshot() -> Snapshot {
+    let data = SnapshotData {
+        collections_data: CollectionsSnapshot::default(),
+        address_by_id: PeerAddressById::new(),
+        metadata_by_id: PeerMetadataById::new(),
+        cluster_metadata: HashMap::new(),
+        quota_config: None,
+    };
+
+    let conf_state = ConfState {
+        voters: vec![PEER_ID],
+        ..Default::default()
+    };
+
+    Snapshot {
+        data: serde_cbor::to_vec(&data).expect("snapshot serialized"),
+        metadata: Some(SnapshotMetadata {
+            conf_state: Some(conf_state),
+            index: 1,
+            term: 1,
+        }),
+    }
+}
+
 fn drop_payload_index(collection: &str) -> ConsensusOperations {
     let operation = DropPayloadIndex {
         collection_name: collection.to_string(),
@@ -407,11 +452,19 @@ impl CollectionContainer for Container {
         self.meta_op_result.clone()
     }
 
-    // Never reached: no test recovers a snapshot, removes a peer or writes a quota config
+    fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError> {
+        let CollectionsSnapshot {
+            collections,
+            aliases,
+        } = data;
 
-    fn apply_collections_snapshot(&self, _data: CollectionsSnapshot) -> Result<(), StorageError> {
-        unimplemented!()
+        *self.collections.lock() = collections;
+        *self.aliases.lock() = aliases;
+
+        Ok(())
     }
+
+    // Never reached: no test removes a peer or writes a quota config
 
     fn remove_peer(&self, _peer_id: PeerId) -> Result<(), StorageError> {
         unimplemented!()

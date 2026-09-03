@@ -379,6 +379,18 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// Return `true` if consensus should be stopped (peer removed)
     /// Return `false` if everything is ok.
     pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+        let result = self.apply_entries_impl(raw_node);
+
+        // An entry that failed here is applied again after the restart, on top of whatever it
+        // wrote before it failed
+        if result.is_err() {
+            self.invalidate_shadow();
+        }
+
+        result
+    }
+
+    fn apply_entries_impl<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
         use raft::eraftpb::EntryType;
 
         self.persistent
@@ -474,6 +486,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         raw_node: &mut RawNode<T>,
     ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
+
+        // Peer changes are not modeled yet, and removing one drops its replicas from every
+        // collection
+        self.invalidate_shadow();
 
         let conf_state = raw_node.apply_conf_change(&change)?;
         log::debug!("Applied conf state {conf_state:?}");
@@ -640,6 +656,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Some((operation.clone(), outcome))
     }
 
+    /// Drop the shadow state, so the next entry builds a machine from `TableOfContent`
+    fn invalidate_shadow(&self) {
+        if let Some(shadow) = &self.shadow {
+            shadow.lock().invalidate();
+        }
+    }
+
     fn shadow_compare(
         &self,
         operation: &ConsensusOperations,
@@ -665,6 +688,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         snapshot: &raft::eraftpb::Snapshot,
     ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
+
+        // Recovery deliberately leaves state no operation asked for: it discards proxies,
+        // forces recovery of local replicas it just created and proposes transfer aborts
+        self.invalidate_shadow();
 
         let SnapshotData {
             collections_data,

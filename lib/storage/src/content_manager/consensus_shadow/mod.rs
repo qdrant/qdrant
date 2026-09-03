@@ -40,6 +40,11 @@ impl ShadowStateMachine {
         }
     }
 
+    /// Drop the state, so the next entry builds a machine out of `TableOfContent` again
+    pub fn invalidate(&mut self) {
+        self.machine = None;
+    }
+
     /// Apply `operation` to the shadow state, building the machine when there is none
     pub fn apply(
         &mut self,
