@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -9,6 +9,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
 
 use super::TableOfContent;
+use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -27,6 +28,23 @@ impl CollectionContainer for TableOfContent {
 
     fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
         self.collections_snapshot_sync()
+    }
+
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State> {
+        self.general_runtime.block_on(async {
+            let collections = self.collections.read().await;
+            Some(collections.get(collection)?.state().await)
+        })
+    }
+
+    fn collection_names(&self) -> BTreeSet<CollectionId> {
+        self.general_runtime
+            .block_on(async { self.collections.read().await.keys().cloned().collect() })
+    }
+
+    fn alias_mapping(&self) -> AliasMapping {
+        self.general_runtime
+            .block_on(async { self.alias_persistence.read().await.state().clone() })
     }
 
     fn apply_collections_snapshot(

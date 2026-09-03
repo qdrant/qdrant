@@ -1,5 +1,10 @@
+use std::collections::BTreeSet;
+
+use collection::collection_state;
+use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
 
+use self::alias_mapping::AliasMapping;
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
 use self::errors::StorageError;
@@ -210,6 +215,15 @@ pub trait CollectionContainer {
     ) -> Result<bool, StorageError>;
 
     fn collections_snapshot(&self) -> CollectionsSnapshot;
+
+    /// State of one collection, `None` when there is no such collection
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State>;
+
+    /// Names of all collections, without reading their state
+    fn collection_names(&self) -> BTreeSet<CollectionId>;
+
+    /// Current alias mapping
+    fn alias_mapping(&self) -> AliasMapping;
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 

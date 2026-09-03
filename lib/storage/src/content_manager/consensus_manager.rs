@@ -1362,9 +1362,12 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 #[cfg(test)]
 mod tests {
     use std::assert_matches;
+    use std::collections::BTreeSet;
     use std::sync::{Arc, mpsc};
     use std::time::Duration;
 
+    use collection::collection_state;
+    use collection::shards::CollectionId;
     use collection::shards::shard::PeerId;
     use proptest::prelude::*;
     use raft::eraftpb::{
@@ -1376,6 +1379,7 @@ mod tests {
 
     use super::{ConsensusManager, ConsensusOperations};
     use crate::content_manager::CollectionContainer;
+    use crate::content_manager::alias_mapping::AliasMapping;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
     use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -1499,6 +1503,18 @@ mod tests {
 
         fn collections_snapshot(&self) -> super::CollectionsSnapshot {
             super::CollectionsSnapshot::default()
+        }
+
+        fn collection_state(&self, _collection: &str) -> Option<collection_state::State> {
+            None
+        }
+
+        fn collection_names(&self) -> BTreeSet<CollectionId> {
+            BTreeSet::new()
+        }
+
+        fn alias_mapping(&self) -> AliasMapping {
+            AliasMapping::default()
         }
 
         fn apply_collections_snapshot(
