@@ -1241,15 +1241,23 @@ impl LocalShard {
     pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
         let segments = self.segments.clone();
         tokio::task::spawn_blocking(move || {
-            let segments_read = segments.read();
-            let mut reports = Vec::new();
+            // Phase 1: collect file lists + RAM estimates under segment locks.
+            // No page-cache probing here — that I/O can take minutes on multi-TiB
+            // shards and must not block updates / optimizer swaps.
+            let segment_reports = {
+                let segments_read = segments.read();
+                let mut reports = Vec::new();
+                for (_id, locked_segment) in segments_read.iter() {
+                    collect_segment_memory_metadata(locked_segment, &mut reports);
+                }
+                reports
+            }; // segment-holder + segment read locks released
 
-            // Collect from all segments, including those wrapped in proxies.
-            // During optimization, original segments become proxy-wrapped while
-            // a new empty segment is built. We must report from both.
-            for (_id, locked_segment) in segments_read.iter() {
-                collect_memory_reports(locked_segment, &mut reports)?;
-            }
+            // Phase 2: probe page cache outside locks (cachestat/mincore, parallel).
+            let reports: Vec<_> = segment_reports
+                .into_iter()
+                .map(crate::common::memory_reporter::report_from_segment)
+                .collect();
 
             Ok(CollectionMemoryReport::merge_all(reports))
         })
@@ -1694,27 +1702,25 @@ fn desired_vector_names_from_config(
     desired
 }
 
-/// Recursively collect memory reports from a `LockedSegment`.
+/// Recursively collect segment memory metadata from a `LockedSegment`.
 ///
 /// For `Original` segments, collects directly.
 /// For `Proxy` segments, collects from the wrapped segment
 /// (which is the real data holder during optimization).
-fn collect_memory_reports(
+///
+/// Only gathers file lists and RAM estimates — no page-cache I/O.
+fn collect_segment_memory_metadata(
     locked_segment: &LockedSegment,
-    reports: &mut Vec<CollectionMemoryReport>,
-) -> CollectionResult<()> {
+    reports: &mut Vec<segment::segment::memory::SegmentMemoryReport>,
+) {
     match locked_segment {
         LockedSegment::Original(segment) => {
             let segment_guard = segment.read();
-            let seg_report = segment_guard.memory_report();
-            reports.push(crate::common::memory_reporter::report_from_segment(
-                seg_report,
-            )?);
+            reports.push(segment_guard.memory_report());
         }
         LockedSegment::Proxy(proxy) => {
             let proxy_guard = proxy.read();
-            collect_memory_reports(&proxy_guard.wrapped_segment, reports)?;
+            collect_segment_memory_metadata(&proxy_guard.wrapped_segment, reports);
         }
     }
-    Ok(())
 }

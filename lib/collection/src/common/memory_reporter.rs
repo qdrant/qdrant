@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::operations::types::CollectionResult;
-
-/// Memory usage stats for a single component, after mincore measurement.
+/// Memory usage stats for a single component, after page-cache measurement.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryUsageReport {
     /// Total bytes stored on disk (file sizes).
@@ -71,6 +69,10 @@ pub struct CollectionMemoryReport {
     pub payload: MemoryUsageReport,
     pub payload_index: Vec<NamedPayloadIndexMemoryReport>,
     pub other: OtherMemoryReport,
+    /// Non-fatal issues encountered while building the report (e.g. a remote
+    /// shard timed out). Present only when the response is partial.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 impl CollectionMemoryReport {
@@ -86,6 +88,7 @@ impl CollectionMemoryReport {
                 payload,
                 payload_index,
                 other: OtherMemoryReport { id_tracker },
+                warnings,
             } = report;
 
             result.total.merge(&total);
@@ -141,24 +144,29 @@ impl CollectionMemoryReport {
             }
 
             result.other.id_tracker.merge(&id_tracker);
+            result.warnings.extend(warnings);
         }
 
         result
     }
 }
 
-/// Convert a `ComponentMemoryUsage` into a `MemoryUsageReport` by measuring
-/// file residency via mincore and adding extra RAM.
-#[cfg(unix)]
-pub fn measure_component(
+/// Probe results for a single file.
+#[derive(Debug, Clone, Copy)]
+struct FileProbe {
+    disk_bytes: u64,
+    resident_bytes: u64,
+}
+
+/// Convert a `ComponentMemoryUsage` into a `MemoryUsageReport` using
+/// precomputed file probes (and optional disk-only fallback on non-unix).
+fn measure_component_with_probes(
     usage: segment::common::memory_usage::ComponentMemoryUsage,
-) -> CollectionResult<MemoryUsageReport> {
-    use common::universal_io::MmapFile;
+    probes: &std::collections::HashMap<std::path::PathBuf, FileProbe>,
+) -> MemoryUsageReport {
     use segment::common::memory_usage::{
         ComponentFileEntry, ComponentMemoryUsage, FileStorageIntent,
     };
-
-    use crate::operations::types::CollectionError;
 
     let ComponentMemoryUsage {
         files,
@@ -170,15 +178,18 @@ pub fn measure_component(
     let mut cached_bytes = 0u64;
     let mut expected_cache_bytes = 0u64;
 
-    for entry in files {
-        let ComponentFileEntry { path, intent } = &entry;
-        let (file_disk, file_resident) = MmapFile::probe_memory_stats(path).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to probe memory stats for {}: {err}",
-                path.display()
-            ))
-        })?;
-
+    for entry in &files {
+        let ComponentFileEntry { path, intent } = entry;
+        let (file_disk, file_resident) = match probes.get(path) {
+            Some(probe) => (probe.disk_bytes, probe.resident_bytes),
+            None => {
+                // Non-unix / failed probe: disk size from metadata when possible.
+                match fs_err::metadata(path) {
+                    Ok(meta) => (meta.len(), 0),
+                    Err(_) => continue,
+                }
+            }
+        };
         disk_bytes += file_disk;
         match intent {
             FileStorageIntent::Cached => {
@@ -191,57 +202,170 @@ pub fn measure_component(
         }
     }
 
-    Ok(MemoryUsageReport {
+    MemoryUsageReport {
         disk_bytes,
         ram_bytes,
         cached_bytes,
         expected_cache_bytes,
-    })
+    }
 }
 
-/// Non-unix fallback: report disk sizes only, no residency info.
-#[cfg(not(unix))]
-pub fn measure_component(
-    usage: segment::common::memory_usage::ComponentMemoryUsage,
-) -> CollectionResult<MemoryUsageReport> {
-    use segment::common::memory_usage::{
-        ComponentFileEntry, ComponentMemoryUsage, FileStorageIntent,
-    };
+/// Probe many files concurrently. Failures become warnings; successful probes
+/// are returned in the map.
+///
+/// Concurrency is capped to `available_parallelism` so this composes with
+/// per-file range splitting inside `probe_memory_stats` without thread explosion.
+#[cfg(unix)]
+fn parallel_probe_files(
+    paths: &[std::path::PathBuf],
+    warnings: &mut Vec<String>,
+) -> std::collections::HashMap<std::path::PathBuf, FileProbe> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    let ComponentMemoryUsage {
-        files,
-        extra_ram_bytes,
-    } = usage;
+    use common::universal_io::MmapFile;
 
-    let ram_bytes = extra_ram_bytes.unwrap_or(0);
-    let mut disk_bytes = 0u64;
-    let mut expected_cache_bytes = 0u64;
-
-    for entry in files {
-        let ComponentFileEntry { path, intent } = &entry;
-        if let Ok(meta) = fs_err::metadata(path) {
-            disk_bytes += meta.len();
-            if *intent == FileStorageIntent::Cached {
-                expected_cache_bytes += meta.len();
-            }
-        }
+    if paths.is_empty() {
+        return HashMap::new();
     }
 
-    Ok(MemoryUsageReport {
-        disk_bytes,
-        ram_bytes,
-        cached_bytes: 0,
-        expected_cache_bytes,
-    })
+    if paths.len() == 1 {
+        let path = &paths[0];
+        return match MmapFile::probe_memory_stats(path) {
+            Ok((disk_bytes, resident_bytes)) => HashMap::from([(
+                path.clone(),
+                FileProbe {
+                    disk_bytes,
+                    resident_bytes,
+                },
+            )]),
+            Err(err) => {
+                warnings.push(format!(
+                    "Failed to probe memory stats for {}: {err}",
+                    path.display()
+                ));
+                HashMap::new()
+            }
+        };
+    }
+
+    let next = AtomicUsize::new(0);
+    let successes = Mutex::new(HashMap::new());
+    let failures = Mutex::new(Vec::new());
+
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(1, paths.len());
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= paths.len() {
+                        break;
+                    }
+                    let path = &paths[idx];
+                    match MmapFile::probe_memory_stats(path) {
+                        Ok((disk_bytes, resident_bytes)) => {
+                            successes.lock().unwrap().insert(
+                                path.clone(),
+                                FileProbe {
+                                    disk_bytes,
+                                    resident_bytes,
+                                },
+                            );
+                        }
+                        Err(err) => {
+                            failures.lock().unwrap().push(format!(
+                                "Failed to probe memory stats for {}: {err}",
+                                path.display()
+                            ));
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    warnings.extend(failures.into_inner().unwrap());
+    successes.into_inner().unwrap()
 }
 
-/// Build a `CollectionMemoryReport` from a segment-level report.
-pub fn report_from_segment(
-    segment_report: segment::segment::memory::SegmentMemoryReport,
-) -> CollectionResult<CollectionMemoryReport> {
+#[cfg(not(unix))]
+fn parallel_probe_files(
+    _paths: &[std::path::PathBuf],
+    _warnings: &mut Vec<String>,
+) -> std::collections::HashMap<std::path::PathBuf, FileProbe> {
+    std::collections::HashMap::new()
+}
+
+/// Collect every file path referenced by a segment memory report.
+fn collect_segment_paths(
+    segment_report: &segment::segment::memory::SegmentMemoryReport,
+) -> Vec<std::path::PathBuf> {
     use segment::segment::memory::{
         PayloadIndexMemoryReport, SegmentMemoryReport, VectorMemoryReport,
     };
+
+    let mut paths = Vec::new();
+    let SegmentMemoryReport {
+        vectors,
+        sparse_vectors,
+        payload,
+        payload_index,
+        id_tracker,
+    } = segment_report;
+
+    for vr in vectors.values() {
+        let VectorMemoryReport {
+            storage,
+            index,
+            quantized,
+        } = vr;
+        paths.extend(storage.files.iter().map(|f| f.path.clone()));
+        paths.extend(index.files.iter().map(|f| f.path.clone()));
+        if let Some(q) = quantized {
+            paths.extend(q.files.iter().map(|f| f.path.clone()));
+        }
+    }
+    for vr in sparse_vectors.values() {
+        let VectorMemoryReport {
+            storage,
+            index,
+            quantized: _,
+        } = vr;
+        paths.extend(storage.files.iter().map(|f| f.path.clone()));
+        paths.extend(index.files.iter().map(|f| f.path.clone()));
+    }
+    paths.extend(payload.files.iter().map(|f| f.path.clone()));
+    for pi in payload_index.values() {
+        let PayloadIndexMemoryReport { usage } = pi;
+        paths.extend(usage.files.iter().map(|f| f.path.clone()));
+    }
+    paths.extend(id_tracker.files.iter().map(|f| f.path.clone()));
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+/// Build a `CollectionMemoryReport` from a segment-level report.
+///
+/// Callers must invoke this **outside** segment locks: it performs page-cache
+/// probing I/O that can take a long time on large files.
+pub fn report_from_segment(
+    segment_report: segment::segment::memory::SegmentMemoryReport,
+) -> CollectionMemoryReport {
+    use segment::segment::memory::{
+        PayloadIndexMemoryReport, SegmentMemoryReport, VectorMemoryReport,
+    };
+
+    let mut warnings = Vec::new();
+    let paths = collect_segment_paths(&segment_report);
+    let probes = parallel_probe_files(&paths, &mut warnings);
 
     let SegmentMemoryReport {
         vectors,
@@ -259,14 +383,14 @@ pub fn report_from_segment(
                 index,
                 quantized,
             } = vr;
-            Ok(NamedVectorMemoryReport {
+            NamedVectorMemoryReport {
                 name,
-                storage: measure_component(storage)?,
-                index: measure_component(index)?,
-                quantized: quantized.map(measure_component).transpose()?,
-            })
+                storage: measure_component_with_probes(storage, &probes),
+                index: measure_component_with_probes(index, &probes),
+                quantized: quantized.map(|q| measure_component_with_probes(q, &probes)),
+            }
         })
-        .collect::<CollectionResult<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
     let sparse_vectors = sparse_vectors
         .into_iter()
@@ -276,28 +400,28 @@ pub fn report_from_segment(
                 index,
                 quantized: _,
             } = vr;
-            Ok(NamedSparseVectorMemoryReport {
+            NamedSparseVectorMemoryReport {
                 name,
-                storage: measure_component(storage)?,
-                index: measure_component(index)?,
-            })
+                storage: measure_component_with_probes(storage, &probes),
+                index: measure_component_with_probes(index, &probes),
+            }
         })
-        .collect::<CollectionResult<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
     let payload_index = payload_index
         .into_iter()
         .map(|(name, pi)| {
             let PayloadIndexMemoryReport { usage } = pi;
-            Ok(NamedPayloadIndexMemoryReport {
+            NamedPayloadIndexMemoryReport {
                 name,
-                usage: measure_component(usage)?,
-            })
+                usage: measure_component_with_probes(usage, &probes),
+            }
         })
-        .collect::<CollectionResult<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
-    let payload = measure_component(payload)?;
+    let payload = measure_component_with_probes(payload, &probes);
     let other = OtherMemoryReport {
-        id_tracker: measure_component(id_tracker)?,
+        id_tracker: measure_component_with_probes(id_tracker, &probes),
     };
 
     let mut total = MemoryUsageReport::default();
@@ -331,12 +455,13 @@ pub fn report_from_segment(
     let OtherMemoryReport { id_tracker: ref id } = other;
     total.merge(id);
 
-    Ok(CollectionMemoryReport {
+    CollectionMemoryReport {
         total,
         vectors,
         sparse_vectors,
         payload,
         payload_index,
         other,
-    })
+        warnings,
+    }
 }

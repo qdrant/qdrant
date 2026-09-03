@@ -653,6 +653,9 @@ impl Collection {
     }
 
     /// Collect memory report across all shards (local + remote).
+    ///
+    /// Individual shard failures are recorded as warnings; the response still
+    /// includes data from shards that succeeded (partial results).
     pub async fn memory_report(
         &self,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
@@ -669,11 +672,26 @@ impl Collection {
             .collect();
 
         let mut reports = Vec::new();
+        let mut warnings = Vec::new();
         while let Some(result) = futures::StreamExt::next(&mut futures).await {
-            reports.push(result?);
+            match result {
+                Ok(report) => reports.push(report),
+                Err(err) => {
+                    warnings.push(format!("Failed to get memory report from a shard: {err}"))
+                }
+            }
         }
 
-        Ok(CollectionMemoryReport::merge_all(reports))
+        if reports.is_empty() {
+            return Err(CollectionError::service_error(format!(
+                "Failed to get memory report from all shards: {}",
+                warnings.join("; ")
+            )));
+        }
+
+        let mut merged = CollectionMemoryReport::merge_all(reports);
+        merged.warnings.extend(warnings);
+        Ok(merged)
     }
 
     pub async fn local_shard_memory_report(

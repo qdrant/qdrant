@@ -1,4 +1,6 @@
 mod async_io;
+#[cfg(unix)]
+mod memory_stats;
 mod pipeline;
 
 use std::borrow::Cow;
@@ -541,56 +543,21 @@ impl MmapFile {
     }
 
     /// Returns the number of bytes currently resident in RAM (page cache),
-    /// measured via `mincore`. This is a point-in-time approximation.
+    /// measured via `mincore` on this mapping. This is a point-in-time approximation.
     #[cfg(unix)]
     pub fn resident_bytes(&self) -> std::io::Result<u64> {
-        let len = self.len;
-        if len == 0 {
-            return Ok(0);
-        }
-
-        let page_size = crate::mmap::advice::page_size()
-            .ok_or_else(|| std::io::Error::other("failed to determine page size"))?;
-        let num_pages = len.div_ceil(page_size);
-        let mut vec = vec![0u8; num_pages];
-
-        // SAFETY: `self.ptr.as_ptr()` is a valid page-aligned pointer for `len` bytes
-        // (guaranteed by memmap2). `vec` is correctly sized for `num_pages` entries.
-        let ret = unsafe { nix::libc::mincore(self.ptr.0.cast(), len, vec.as_mut_ptr().cast()) };
-        if ret != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // `mincore` writes one byte per page. The least significant bit indicates
-        // whether the page is currently resident in RAM (page cache).
-        // See: https://man7.org/linux/man-pages/man2/mincore.2.html
-        let resident_pages = vec.iter().filter(|&&b| b & 1 != 0).count();
-        let resident_bytes = (resident_pages * page_size).min(len) as u64;
-        Ok(resident_bytes)
+        self.resident_bytes_range(0, self.len as u64)
     }
 
-    /// Opens a file as a read-only `MmapFile` and returns its memory stats.
+    /// Returns `(disk_bytes, resident_bytes)` for a file without requiring an
+    /// existing mapping.
     ///
-    /// This creates a temporary `MmapFile` to measure `mincore` residency,
-    /// ensuring all measurements go through the same mmap path.
+    /// On Linux 6.5+ this uses `cachestat(2)` (no mmap). Older kernels and
+    /// other Unix platforms fall back to a temporary read-only mmap + `mincore`.
+    /// Large files are probed in parallel page-aligned ranges.
     #[cfg(unix)]
     pub fn probe_memory_stats(path: impl AsRef<Path>) -> std::io::Result<(u64, u64)> {
-        let fs = MmapFs;
-        let file = fs
-            .open(
-                path,
-                OpenOptions {
-                    writeable: false,
-                    need_sequential: false,
-                    populate: Populate::No,
-                    advice: AdviceSetting::Advice(Advice::Normal),
-                },
-                (),
-            )
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let disk_bytes = file.disk_bytes()?;
-        let resident_bytes = file.resident_bytes()?;
-        Ok((disk_bytes, resident_bytes))
+        memory_stats::probe_memory_stats(path)
     }
 }
 
