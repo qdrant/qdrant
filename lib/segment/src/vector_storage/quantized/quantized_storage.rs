@@ -59,9 +59,8 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     /// Reopen after the file grew so reads observe appended vectors. Build-time only.
-    pub(crate) fn reload(&mut self, fs: &S::Fs) -> OperationResult<()> {
-        let path = self.path.clone();
-        *self = Self::from_file(fs, &path, self.quantized_vector_size.get())?;
+    pub(crate) fn reload(&mut self) -> OperationResult<()> {
+        self.storage.live_reload()?;
         Ok(())
     }
 

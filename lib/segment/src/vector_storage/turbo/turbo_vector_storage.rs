@@ -30,10 +30,11 @@ use crate::common::Flusher;
 use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::io_uring::{IoUringFallback, use_io_uring};
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::data_types::vectors::{DenseVector, VectorRef};
 use crate::types::{Distance, Memory, VectorStorageDatatype};
+use crate::vector_storage::common::error_immutable_insert;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, TurboScoring, VectorStorage, VectorStorageEnum,
@@ -47,10 +48,6 @@ pub struct TurboVectorStorageImpl<S: UniversalRead = MmapFile> {
     /// Single-file encoded vectors, read through `S`.
     storage: QuantizedStorage<S>,
 
-    /// The filesystem `storage` was opened through, needed to re-open it after a
-    /// bulk append in [`DenseTQVectorStorage::update_from`].
-    fs: S::Fs,
-
     /// Quantizer used to de/quantize.
     quantizer: TurboQuantizer,
 
@@ -63,10 +60,6 @@ pub struct TurboVectorStorageImpl<S: UniversalRead = MmapFile> {
     distance: Distance,
     /// Original (un-padded) vector dimensionality.
     dim: usize,
-
-    /// Reusable scratch buffer for the padded, rotated working vector that
-    /// `TurboQuantizer::quantize` writes into. Sized to the padded dimension.
-    quantization_buffer: Vec<f64>,
 }
 
 /// Open (create-or-load) a single-file TurboQuant vector storage (non-appendable),
@@ -127,7 +120,7 @@ impl TurboVectorStorageImpl<MmapFile> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, MmapFs, quantizer, path, dim, distance, populate)
+        Self::finalize(storage, quantizer, path, dim, distance, populate)
     }
 }
 
@@ -147,7 +140,7 @@ impl TurboVectorStorageImpl<IoUringFile> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, IoUringFs, quantizer, path, dim, distance, populate)
+        Self::finalize(storage, quantizer, path, dim, distance, populate)
     }
 }
 
@@ -156,7 +149,6 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
     /// deletion flags and assemble the storage.
     fn finalize(
         storage: QuantizedStorage<S>,
-        fs: S::Fs,
         quantizer: TurboQuantizer,
         path: &Path,
         dim: usize,
@@ -171,17 +163,14 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
             Populate::from(populate),
         )?;
         let deleted_count = deleted.count_trues();
-        let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
 
         Ok(Self {
             storage,
-            fs,
             quantizer,
             deleted,
             deleted_count,
             distance,
             dim,
-            quantization_buffer,
         })
     }
 
@@ -204,25 +193,14 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
         Ok(())
     }
 
-    /// Upsert one vector from its already-encoded TurboQuant bytes, verbatim.
-    /// The single-file backend is not appendable, so `upsert_vector` rejects the
-    /// write with an unsupported error and nothing is mutated.
+    #[expect(clippy::unused_self)]
     pub(crate) fn insert_tq_bytes(
-        &mut self,
-        key: PointOffsetType,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
+        &self,
+        _key: PointOffsetType,
+        _bytes: &[u8],
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let expected_size = self.quantizer.quantized_size();
-        if bytes.len() != expected_size {
-            return Err(OperationError::malformed_vector_blob(format!(
-                "Malformed dense TQ blob of {} bytes, expected {expected_size}",
-                bytes.len(),
-            )));
-        }
-        self.storage.upsert_vector(key, bytes, hw_counter)?;
-        self.set_deleted(key, false);
-        Ok(())
+        Err(error_immutable_insert())
     }
 
     /// Set the deleted flag for `key`, keeping `deleted_count` in sync, and
@@ -349,19 +327,11 @@ impl<S: UniversalRead> VectorStorageRead for TurboVectorStorageImpl<S> {
 impl<S: UniversalRead> VectorStorage for TurboVectorStorageImpl<S> {
     fn insert_vector(
         &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
+        _key: PointOffsetType,
+        _vector: VectorRef,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let dense: &[VectorElementType] = vector.try_into()?;
-        let quantized = self
-            .quantizer
-            .quantize(dense, &mut self.quantization_buffer);
-        // The single-file backend is not appendable: `upsert_vector` returns the
-        // "unsupported" error, matching the immutable dense storage.
-        self.storage.upsert_vector(key, &quantized, hw_counter)?;
-        self.set_deleted(key, false);
-        Ok(())
+        Err(error_immutable_insert())
     }
 
     fn flusher(&self) -> Flusher {
@@ -477,9 +447,6 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for TurboVectorStorageImpl<S> {
 }
 
 impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<S> {
-    /// Bulk-append already-encoded vectors: write the encoded bytes to the file,
-    /// then re-open the storage through `fs` so reads observe the appended
-    /// vectors (mirrors `DenseVectorStorageImpl::update_from`).
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
@@ -505,7 +472,7 @@ impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<S> {
             .into_inner()
             .map_err(io::IntoInnerError::into_error)?;
         file.sync_data()?;
-        self.storage.reload(&self.fs)?;
+        self.storage.reload()?;
 
         for key in deleted_offsets {
             self.set_deleted(key, true);
