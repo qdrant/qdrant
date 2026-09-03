@@ -445,6 +445,14 @@ cluster:
     # If 0 - disable compaction
     compact_wal_entries: 128
 
+    # Apply every consensus operation to an in-memory state machine as well, and
+    # compare its state against the applied one. Used to validate the state
+    # machine against the implementation it is going to replace.
+    shadow_state_machine:
+      enabled: false
+      # What to do when the two disagree: `log` the difference, or `panic`
+      on_divergence: log
+
 # Set to true to prevent service from sending usage statistics to the developers.
 # Read more: https://qdrant.tech/documentation/guides/telemetry
 telemetry_disabled: false

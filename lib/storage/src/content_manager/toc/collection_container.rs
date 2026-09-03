@@ -14,6 +14,7 @@ use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::consensus_state_machine::NodeContext;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::{CollectionContainer, consensus_manager};
 use crate::quota::QuotaConfig;
@@ -45,6 +46,14 @@ impl CollectionContainer for TableOfContent {
     fn alias_mapping(&self) -> AliasMapping {
         self.general_runtime
             .block_on(async { self.alias_persistence.read().await.state().clone() })
+    }
+
+    fn node_context(&self) -> NodeContext {
+        NodeContext::from_storage_config(
+            &self.storage_config,
+            self.this_peer_id,
+            self.is_distributed(),
+        )
     }
 
     fn apply_collections_snapshot(

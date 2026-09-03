@@ -576,6 +576,7 @@ fn main() -> anyhow::Result<()> {
             storage_path,
         )
         .expect("initialize consensus manager")
+        .with_shadow(settings.cluster.consensus.shadow_state_machine)
         .into();
         let is_new_deployment = consensus_state.is_new_deployment();
 

@@ -30,6 +30,8 @@ use tonic::transport::Uri;
 use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
+use super::consensus_shadow::{ShadowConfig, ShadowStateMachine};
+use super::consensus_state_machine::ApplyOutcome;
 use super::errors::StorageError;
 use crate::content_manager::consensus::applied_log::{AppliedEntryRing, AppliedLog};
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -116,6 +118,9 @@ pub struct ConsensusManager<C: CollectionContainer> {
     next_peer_metadata_update_attempt: Mutex<Instant>,
     /// Recently applied entries, for `/profiler/consensus_lag`. Diagnostics only.
     applied_log: AppliedEntryRing,
+    /// State machine applying every entry alongside the handlers below, to compare the two.
+    /// `None` unless the shadow run is enabled.
+    shadow: Option<Mutex<ShadowStateMachine>>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -160,7 +165,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
             applied_log: Default::default(),
+            shadow: None,
         })
+    }
+
+    /// Run the state machine alongside this manager, comparing the two after every entry
+    pub fn with_shadow(mut self, config: ShadowConfig) -> Self {
+        self.shadow = config.build();
+        self
     }
 
     /// Snapshot of the recently applied entries on this peer, oldest first.
@@ -556,6 +568,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        let shadow = self.shadow_apply(&operation);
         let result = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
                 self.toc.perform_collection_meta_op(*operation)
@@ -596,6 +609,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         };
 
+        if let Some((operation, outcome)) = shadow {
+            self.shadow_compare(&operation, &outcome, &result);
+        }
+
         if let Some(on_apply) = on_apply
             && on_apply.send(result.clone()).is_err()
         {
@@ -604,6 +621,42 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             )
         }
         result
+    }
+
+    /// Apply `operation` to the shadow state, when the shadow run is enabled.
+    ///
+    /// Hands the operation back as well, since applying it authoritatively consumes it before
+    /// the compare.
+    fn shadow_apply(
+        &self,
+        operation: &ConsensusOperations,
+    ) -> Option<(ConsensusOperations, ApplyOutcome)> {
+        let shadow = self.shadow.as_ref()?;
+
+        let outcome = shadow
+            .lock()
+            .apply(&*self.toc, &self.persistent.read(), operation);
+
+        Some((operation.clone(), outcome))
+    }
+
+    fn shadow_compare(
+        &self,
+        operation: &ConsensusOperations,
+        outcome: &ApplyOutcome,
+        result: &Result<bool, StorageError>,
+    ) {
+        let Some(shadow) = self.shadow.as_ref() else {
+            return;
+        };
+
+        shadow.lock().compare(
+            &*self.toc,
+            &self.persistent.read(),
+            operation,
+            outcome,
+            result,
+        );
     }
 
     // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
@@ -1384,6 +1437,7 @@ mod tests {
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
     use crate::content_manager::consensus::operation_sender::OperationSender;
     use crate::content_manager::consensus::persistent::Persistent;
+    use crate::content_manager::consensus_state_machine::NodeContext;
     use crate::quota::QuotaConfig;
 
     #[test]
@@ -1515,6 +1569,11 @@ mod tests {
 
         fn alias_mapping(&self) -> AliasMapping {
             AliasMapping::default()
+        }
+
+        // Only the shadow run reads the node config, and these tests never enable it
+        fn node_context(&self) -> NodeContext {
+            unimplemented!()
         }
 
         fn apply_collections_snapshot(

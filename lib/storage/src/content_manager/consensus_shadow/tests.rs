@@ -1,35 +1,100 @@
-//! Reading state back out of `TableOfContent`
+//! Running the shadow alongside a stand-in for `TableOfContent`
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::{Arc, mpsc};
 
 use collection::collection_state;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
+use raft::eraftpb::Entry as RaftEntry;
 use serde_json::json;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 
 use super::fixtures::*;
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
-use crate::content_manager::errors::StorageError;
+use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::consensus_manager::ConsensusManager;
+use crate::content_manager::consensus_state_machine::NodeContext;
 use crate::quota::QuotaConfig;
 
 const ALIAS: &str = "novels";
+const OTHER_ALIAS: &str = "crime";
 const METADATA_KEY: &str = "owner";
+
+/// Both sides record the same cluster metadata key: the machine in its own state, the apply
+/// path in `Persistent`, which the compare reads back
+#[test]
+fn matching_entry() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container, panicking_shadow(), dir.path());
+
+    let operation = ConsensusOperations::UpdateClusterMetadata {
+        key: "answer".to_string(),
+        value: json!(42),
+    };
+
+    manager
+        .apply_normal_entry(&entry(&operation))
+        .expect("entry applied");
+}
+
+/// An alias appearing in `TableOfContent` without an operation is the shape of the bug the
+/// shadow looks for: the machine has no way to know about it
+#[test]
+#[should_panic(expected = "aliases")]
+fn diverged_aliases() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container.clone(), panicking_shadow(), dir.path());
+
+    // Builds the machine out of the container, so the two start out equal
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    container
+        .aliases
+        .lock()
+        .insert(OTHER_ALIAS.to_string(), COLLECTION.to_string());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+}
+
+/// Same divergence as above, with the shadow off. Panicking is left on, so a shadow that runs
+/// anyway fails this test.
+#[test]
+fn disabled() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let config = ShadowConfig {
+        enabled: false,
+        ..panicking_shadow()
+    };
+    let manager = manager(container.clone(), config, dir.path());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    container
+        .aliases
+        .lock()
+        .insert(OTHER_ALIAS.to_string(), COLLECTION.to_string());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+}
 
 #[test]
 fn scrape_cluster_state() {
-    let dir = Builder::new().prefix("shadow").tempdir().unwrap();
+    let dir = tempdir();
     let persistent = persistent(dir.path());
     let container = container();
 
     let state = super::scrape_cluster_state(&container, &persistent);
 
     assert_eq!(state.collections, container.collections);
-    assert_eq!(state.aliases, container.aliases);
+    assert_eq!(state.aliases, *container.aliases.lock());
     assert_eq!(state.quota_config, container.quota_config);
     assert_eq!(
         state.peer_address_by_id,
@@ -44,14 +109,14 @@ fn scrape_cluster_state() {
 
 #[test]
 fn scrape_actual_state() {
-    let dir = Builder::new().prefix("shadow").tempdir().unwrap();
+    let dir = tempdir();
     let persistent = persistent(dir.path());
     let container = container();
 
     let actual = super::scrape_actual_state(&container, &persistent);
 
     assert_eq!(actual.collections, BTreeSet::from([COLLECTION.to_string()]));
-    assert_eq!(actual.aliases, container.aliases);
+    assert_eq!(actual.aliases, *container.aliases.lock());
     assert_eq!(actual.quota_config, container.quota_config);
     assert_eq!(
         actual.peer_address_by_id,
@@ -62,6 +127,46 @@ fn scrape_actual_state() {
         *persistent.peer_metadata_by_id.read(),
     );
     assert_eq!(actual.cluster_metadata, persistent.cluster_metadata);
+}
+
+fn tempdir() -> TempDir {
+    Builder::new().prefix("shadow").tempdir().expect("temp dir")
+}
+
+/// Manager over `container`, applying entries with the shadow `config` describes
+fn manager(
+    container: Arc<Container>,
+    config: ShadowConfig,
+    path: &Path,
+) -> ConsensusManager<Container> {
+    let (sender, _receiver) = mpsc::channel();
+
+    ConsensusManager::new(
+        persistent(path),
+        container,
+        OperationSender::new(sender),
+        path,
+    )
+    .expect("manager initialized")
+    .with_shadow(config)
+}
+
+fn panicking_shadow() -> ShadowConfig {
+    ShadowConfig {
+        enabled: true,
+        on_divergence: OnDivergence::Panic,
+    }
+}
+
+fn entry(operation: &ConsensusOperations) -> RaftEntry {
+    RaftEntry {
+        data: serde_cbor::to_vec(operation).expect("operation serialized"),
+        ..Default::default()
+    }
+}
+
+fn nop() -> ConsensusOperations {
+    ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop { token: 0 }))
 }
 
 /// Peer state holding this peer's address and metadata, and one cluster metadata key
@@ -87,7 +192,7 @@ fn container() -> Container {
 
     Container {
         collections: HashMap::from([(COLLECTION.to_string(), collection_state())]),
-        aliases,
+        aliases: Mutex::new(aliases),
         quota_config: QuotaConfig {
             enabled: true,
             ..Default::default()
@@ -95,10 +200,13 @@ fn container() -> Container {
     }
 }
 
-/// `TableOfContent` stand-in answering out of the state a test gives it
+/// `TableOfContent` stand-in answering out of the state a test gives it.
+///
+/// Aliases are behind a lock, so a test can change them the way something other than consensus
+/// would.
 struct Container {
     collections: HashMap<CollectionId, collection_state::State>,
-    aliases: AliasMapping,
+    aliases: Mutex<AliasMapping>,
     quota_config: QuotaConfig,
 }
 
@@ -106,7 +214,7 @@ impl CollectionContainer for Container {
     fn collections_snapshot(&self) -> CollectionsSnapshot {
         CollectionsSnapshot {
             collections: self.collections.clone(),
-            aliases: self.aliases.clone(),
+            aliases: self.aliases.lock().clone(),
         }
     }
 
@@ -119,21 +227,30 @@ impl CollectionContainer for Container {
     }
 
     fn alias_mapping(&self) -> AliasMapping {
-        self.aliases.clone()
+        self.aliases.lock().clone()
+    }
+
+    fn node_context(&self) -> NodeContext {
+        node_context()
     }
 
     fn quota_config(&self) -> QuotaConfig {
         self.quota_config
     }
 
-    // Reading state back is all these tests do
-
     fn perform_collection_meta_op(
         &self,
-        _operation: CollectionMetaOperations,
+        operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
-        unimplemented!()
+        assert!(
+            matches!(operation, CollectionMetaOperations::Nop { .. }),
+            "no test applies {operation:?} through this container",
+        );
+
+        Ok(true)
     }
+
+    // Never reached: no test recovers a snapshot, removes a peer or writes a quota config
 
     fn apply_collections_snapshot(&self, _data: CollectionsSnapshot) -> Result<(), StorageError> {
         unimplemented!()
