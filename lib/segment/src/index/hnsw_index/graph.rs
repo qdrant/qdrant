@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -19,8 +20,17 @@ use crate::common::operation_error::OperationResult;
 
 #[derive(Debug)]
 pub enum HnswGraph<S: UniversalRead> {
-    Direct(GraphLayers),
-    Batched(Box<GraphLayersBatched<S>>),
+    Direct(Arc<GraphLayers>),
+    Batched(Arc<GraphLayersBatched<S>>),
+}
+
+impl<S: UniversalRead> Clone for HnswGraph<S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Direct(graph) => Self::Direct(Arc::clone(graph)),
+            Self::Batched(graph) => Self::Batched(Arc::clone(graph)),
+        }
+    }
 }
 
 /// Backend the writable [`HNSWIndex`][1] reads its graph links through.
@@ -57,12 +67,12 @@ impl HnswGraph<HnswLinksStorage> {
             #[cfg(target_os = "linux")]
             if Self::is_batched(&IoUringFs, dir, residency)? {
                 let graph = GraphLayersBatched::open(&IoUringFs, dir, residency)?;
-                return Ok(HnswGraph::Batched(Box::new(graph)));
+                return Ok(HnswGraph::Batched(Arc::new(graph)));
             }
         }
 
         let graph = GraphLayers::load(dir, residency, do_convert)?;
-        Ok(HnswGraph::Direct(graph))
+        Ok(HnswGraph::Direct(Arc::new(graph)))
     }
 }
 
@@ -98,13 +108,13 @@ impl<S: UniversalRead> HnswGraph<S> {
         S: 'static,
     {
         Ok(if Self::is_batched(fs, dir, residency)? {
-            HnswGraph::Batched(Box::new(GraphLayersBatched::open(fs, dir, residency)?))
+            HnswGraph::Batched(Arc::new(GraphLayersBatched::open(fs, dir, residency)?))
         } else {
             // Note that on non-borrowable backends this materializes the
             // links into heap RAM whatever the residency: `Plain` is not
             // supported by the batched view, and `Pinned` asks for
             // materialization explicitly.
-            HnswGraph::Direct(GraphLayers::load_universal(fs, dir, residency)?)
+            HnswGraph::Direct(Arc::new(GraphLayers::load_universal(fs, dir, residency)?))
         })
     }
 
