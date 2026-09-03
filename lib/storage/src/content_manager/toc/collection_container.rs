@@ -67,6 +67,10 @@ impl CollectionContainer for TableOfContent {
         })
     }
 
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        self.general_runtime.block_on(self.peer_has_shards(peer_id))
+    }
+
     fn quota_config(&self) -> QuotaConfig {
         self.quota_manager().config()
     }

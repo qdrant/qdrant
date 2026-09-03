@@ -716,7 +716,7 @@ impl ShardOperation for ForwardProxyShard {
 
             op.map(|op| OperationWithClockTag::new(op, operation.clock_tag))
         } else if let Some(point_ids) = points_matching_filter_before {
-            let mut modified_operation = operation.clone();
+            let mut modified_operation = operation;
             modified_operation
                 .operation
                 .retain_point_ids(|point_id| point_ids.contains(point_id));

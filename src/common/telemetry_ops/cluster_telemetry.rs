@@ -100,30 +100,32 @@ impl ClusterTelemetry {
             return None;
         }
 
+        // Fetch cluster status once, both `status` and `peers` are derived from it
+        let cluster_info = (detail.level >= DetailsLevel::Level1)
+            .then(|| match dispatcher.cluster_status() {
+                ClusterStatus::Disabled => None,
+                ClusterStatus::Enabled(cluster_info) => Some(cluster_info),
+            })
+            .flatten();
+
         Some(ClusterTelemetry {
             enabled: settings.cluster.enabled,
-            status: (detail.level >= DetailsLevel::Level1)
-                .then(|| match dispatcher.cluster_status() {
-                    ClusterStatus::Disabled => None,
-                    ClusterStatus::Enabled(cluster_info) => Some(ClusterStatusTelemetry {
-                        number_of_peers: cluster_info.peers.len(),
-                        term: cluster_info.raft_info.term,
-                        commit: cluster_info.raft_info.commit,
-                        pending_operations: cluster_info.raft_info.pending_operations,
-                        role: cluster_info.raft_info.role,
-                        is_voter: cluster_info.raft_info.is_voter,
-                        peer_id: Some(cluster_info.peer_id),
-                        consensus_thread_status: cluster_info.consensus_thread_status,
-                    }),
-                })
-                .flatten(),
+            status: cluster_info
+                .as_ref()
+                .map(|cluster_info| ClusterStatusTelemetry {
+                    number_of_peers: cluster_info.peers.len(),
+                    term: cluster_info.raft_info.term,
+                    commit: cluster_info.raft_info.commit,
+                    pending_operations: cluster_info.raft_info.pending_operations,
+                    role: cluster_info.raft_info.role,
+                    is_voter: cluster_info.raft_info.is_voter,
+                    peer_id: Some(cluster_info.peer_id),
+                    consensus_thread_status: cluster_info.consensus_thread_status.clone(),
+                }),
             config: (detail.level >= DetailsLevel::Level2)
                 .then(|| ClusterConfigTelemetry::from(settings)),
             peers: (detail.level >= DetailsLevel::Level2)
-                .then(|| match dispatcher.cluster_status() {
-                    ClusterStatus::Disabled => None,
-                    ClusterStatus::Enabled(cluster_info) => Some(cluster_info.peers),
-                })
+                .then(|| cluster_info.map(|cluster_info| cluster_info.peers))
                 .flatten(),
             peer_metadata: (detail.level >= DetailsLevel::Level3)
                 .then(|| {

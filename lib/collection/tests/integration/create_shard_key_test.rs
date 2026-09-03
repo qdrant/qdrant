@@ -147,7 +147,7 @@ async fn test_create_shard_key_allocates_contiguous_ids() {
         .await
         .unwrap();
 
-    // Ids are allocated past `max_shard_id`, which starts at 0 for an empty mapping
+    // Ids are allocated past the highest mapped shard ID, which is 0 for an empty mapping
     assert_eq!(mapped_shard_ids(&collection, &key("k")).await, [1, 2, 3]);
     assert_eq!(registered_shard_ids(&collection).await, [1, 2, 3]);
 

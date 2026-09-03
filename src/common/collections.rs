@@ -111,14 +111,13 @@ pub async fn do_get_collection_shard_keys(
 
     let collection = toc.get_collection(&collection_pass).await?;
 
-    let state = collection.state().await;
-    let shard_keys = match state.config.params.sharding_method.unwrap_or_default() {
+    let (sharding_method, shard_keys) = collection.get_sharding_method_and_keys().await;
+    let shard_keys = match sharding_method {
         ShardingMethod::Auto => None,
         ShardingMethod::Custom => Some(
-            state
-                .shards_key_mapping
-                .iter_shard_keys()
-                .map(|k| ShardKeyDescription { key: k.clone() })
+            shard_keys
+                .into_iter()
+                .map(|key| ShardKeyDescription { key })
                 .collect(),
         ),
     };
@@ -603,9 +602,9 @@ pub async fn do_update_collection_cluster(
             // - proper sharding method is used
             // - key does exist
 
-            let state = collection.state().await;
+            let (sharding_method, shard_keys) = collection.get_sharding_method_and_keys().await;
 
-            match state.config.params.sharding_method.unwrap_or_default() {
+            match sharding_method {
                 ShardingMethod::Auto => {
                     return Err(StorageError::bad_request(
                         "Shard Key cannot be created with Auto sharding method",
@@ -614,8 +613,7 @@ pub async fn do_update_collection_cluster(
                 ShardingMethod::Custom => {}
             }
 
-            let shard_keys_mapping = state.shards_key_mapping;
-            if !shard_keys_mapping.contains_key(&drop_sharding_key.shard_key) {
+            if !shard_keys.contains(&drop_sharding_key.shard_key) {
                 return Err(StorageError::bad_request(format!(
                     "Sharding key {} does not exist for collection {collection_name}",
                     drop_sharding_key.shard_key,

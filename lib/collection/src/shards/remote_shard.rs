@@ -1502,14 +1502,14 @@ impl ShardOperation for RemoteShard {
                     .map(|request| QueryShardPoints::from(request.clone()))
                     .collect();
 
-                let request = &QueryBatchPointsInternal {
+                let request = QueryBatchPointsInternal {
                     collection_name: self.collection_id.clone(),
                     query_points,
                     shard_id: Some(self.id),
                     timeout: processed_timeout.map(|t| t.as_secs()),
                 };
 
-                let mut request = tonic::Request::new(request.clone());
+                let mut request = tonic::Request::new(request);
 
                 if let Some(timeout) = processed_timeout {
                     request.set_timeout(timeout);

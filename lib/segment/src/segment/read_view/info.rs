@@ -71,8 +71,8 @@ where
             })
             .collect();
 
-        let vectors_size_bytes =
-            total_average_vectors_size_bytes * self.id_tracker.available_point_count();
+        let num_points = self.id_tracker.available_point_count();
+        let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
 
         // Unwrap and default to 0 here because the RocksDB storage is the only fallible one,
         // and we will remove it eventually.
@@ -83,7 +83,7 @@ where
             segment_type,
             num_vectors: num_vectors_total,
             num_indexed_vectors: num_indexed_vectors_total,
-            num_points: self.id_tracker.available_point_count(),
+            num_points,
             num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: Some(self.deferred_deleted_count()),
             num_deleted_vectors: self.id_tracker.deleted_point_count(),

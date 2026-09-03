@@ -754,7 +754,7 @@ impl ShardOperation for Inner {
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
         local_shard
-            .update(operation.clone(), wait, timeout, hw_measurement_acc)
+            .update(operation, wait, timeout, hw_measurement_acc)
             .await
     }
 

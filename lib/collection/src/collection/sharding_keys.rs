@@ -66,8 +66,14 @@ impl Collection {
     ) -> CollectionResult<()> {
         let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
 
-        let state = self.state().await;
-        match state.config.params.sharding_method.unwrap_or_default() {
+        let (sharding_method, key_mapping) = {
+            let shards_holder = self.shards_holder.read().await;
+            (
+                shards_holder.get_sharding_method(),
+                shards_holder.get_shard_key_to_ids_mapping(),
+            )
+        };
+        match sharding_method {
             ShardingMethod::Auto => {
                 return Err(CollectionError::bad_request(format!(
                     "Shard Key {shard_key} cannot be created with Auto sharding method"
@@ -80,7 +86,7 @@ impl Collection {
         // If shard key already exists, either user submitted invalid/duplicate operation,
         // or we are re-applying fully applied and persisted operation after crash.
         // Returning "bad request" error is fine in both cases.
-        if state.shards_key_mapping.contains_key(&shard_key) {
+        if key_mapping.contains_key(&shard_key) {
             return Err(CollectionError::bad_request(format!(
                 "Shard key {shard_key} already exists"
             )));
@@ -112,7 +118,7 @@ impl Collection {
             )));
         }
 
-        let base_id = state.max_shard_id() + 1;
+        let base_id = key_mapping.iter_shard_ids().max().unwrap_or(0) + 1;
         let payload_schema = self.payload_index_schema.read().schema.clone();
 
         // Create shards on disk *before* updating shard key mapping.
@@ -167,9 +173,9 @@ impl Collection {
     }
 
     pub async fn drop_shard_key(&self, shard_key: ShardKey) -> CollectionResult<()> {
-        let state = self.state().await;
+        let sharding_method = self.shards_holder.read().await.get_sharding_method();
 
-        match state.config.params.sharding_method.unwrap_or_default() {
+        match sharding_method {
             ShardingMethod::Custom => {}
             ShardingMethod::Auto => {
                 return Err(CollectionError::bad_request(format!(
@@ -216,10 +222,9 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .get_shard_key_to_ids_mapping()
-            .get(shard_key)
-            .map(|ids| ids.iter().cloned().collect())
-            .ok_or_else(|| {
+            .get_shard_ids_by_key(shard_key)
+            .map(|ids| ids.into_iter().collect())
+            .map_err(|_| {
                 CollectionError::bad_input(format!(
                     "Shard key {shard_key} does not exist for collection {}",
                     self.name()

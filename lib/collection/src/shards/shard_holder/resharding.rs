@@ -93,7 +93,8 @@ impl ShardHolder {
         if matches!(direction, ReshardingDirection::Down) {
             let shard_count = match shard_key {
                 Some(shard_key) => self
-                    .get_shard_key_to_ids_mapping()
+                    .key_mapping
+                    .read()
                     .get(shard_key)
                     .map_or(0, |shards| shards.len()),
                 None => self.shards.len(),

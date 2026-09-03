@@ -280,11 +280,18 @@ impl Collection {
         &self,
         payload_index_schema: PayloadIndexSchema,
     ) -> CollectionResult<()> {
-        let state = self.state().await;
+        // Collect keys first, `drop_payload_index` takes the schema write lock
+        let existing_fields: Vec<_> = self
+            .payload_index_schema
+            .read()
+            .schema
+            .keys()
+            .cloned()
+            .collect();
 
-        for field_name in state.payload_index_schema.schema.keys() {
-            if !payload_index_schema.schema.contains_key(field_name) {
-                self.drop_payload_index(field_name.clone()).await?;
+        for field_name in existing_fields {
+            if !payload_index_schema.schema.contains_key(&field_name) {
+                self.drop_payload_index(field_name).await?;
             }
         }
 

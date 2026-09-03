@@ -840,12 +840,11 @@ impl SegmentBuilder {
         progress: ProgressTracker,
     ) -> OperationResult<HashMap<VectorNameBuf, QuantizedVectors>> {
         progress.start();
-        let config = segment_config.clone();
 
         let mut quantized_vectors_map = HashMap::new();
 
         for (vector_name, vector_info) in vector_storages {
-            let Some(vector_config) = config.vector_data.get(vector_name) else {
+            let Some(vector_config) = segment_config.vector_data.get(vector_name) else {
                 continue;
             };
 
@@ -858,7 +857,7 @@ impl SegmentBuilder {
 
             let max_threads = permit.num_cpus as usize;
 
-            if let Some(quantization_config) = config.quantization_config(vector_name) {
+            if let Some(quantization_config) = segment_config.quantization_config(vector_name) {
                 // Don't build quantization for appendable vectors if quantization method does not support it
                 if is_appendable && !quantization_config.supports_appendable() {
                     continue;

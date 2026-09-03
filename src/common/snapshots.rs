@@ -10,6 +10,7 @@ use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
+use collection::shards::shard_holder::shard_not_found_error;
 use collection::shards::transfer::RecoveryStage;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
@@ -352,13 +353,17 @@ pub async fn recover_shard_snapshot_impl(
         .await?
         .await?;
 
-    let state = collection.state().await;
-    let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
+    let shard_holder = collection.shards_holder();
+    let replicas = shard_holder
+        .read()
+        .await
+        .get_shard(shard)
+        .ok_or_else(|| shard_not_found_error(shard))?
+        .peers();
 
     // TODO: Unify (and de-duplicate) "recovered shard state notification" logic in `_do_recover_from_snapshot` with this one!
 
-    let other_active_replicas: Vec<_> = shard_info
-        .replicas
+    let other_active_replicas: Vec<_> = replicas
         .iter()
         .map(|(&peer, &state)| (peer, state))
         .filter(|&(peer, state)| {

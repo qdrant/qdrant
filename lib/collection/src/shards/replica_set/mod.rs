@@ -484,6 +484,17 @@ impl ShardReplicaSet {
         self.replica_state.read().check_peers_state_all(check)
     }
 
+    /// Whether at least one replica is active and not locally disabled
+    ///
+    /// Same as checking `active_shards(false)` is not empty, without collecting the peers.
+    pub fn has_active_shard(&self) -> bool {
+        let replica_state = self.replica_state.read();
+        replica_state
+            .peers()
+            .iter()
+            .any(|(&peer_id, state)| state.is_active() && !self.is_locally_disabled(peer_id))
+    }
+
     /// List the peer IDs on which this shard is active
     /// - `remote_only`: if true, excludes the local peer ID from the result
     pub fn active_shards(&self, remote_only: bool) -> Vec<PeerId> {

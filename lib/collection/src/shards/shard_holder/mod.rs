@@ -173,6 +173,11 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
+    /// All shard keys in the shard key mapping
+    pub fn shard_keys(&self) -> Vec<ShardKey> {
+        self.key_mapping.read().iter_shard_keys().cloned().collect()
+    }
+
     pub fn get_sharding_method(&self) -> ShardingMethod {
         self.sharding_method
     }
@@ -857,10 +862,15 @@ impl ShardHolder {
     ) -> CollectionResult<Vec<(HashSet<ShardId>, ShardKey)>> {
         let ShardKeyWithFallback { target, fallback } = key;
 
-        let mut shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
-
-        let target_shard_ids = shard_key_to_ids_mapping.remove(&target);
-        let fallback_shard_ids = shard_key_to_ids_mapping.remove(&fallback);
+        let (target_shard_ids, fallback_shard_ids) = {
+            let key_mapping = self.key_mapping.read();
+            let target_shard_ids = key_mapping.get(&target).cloned();
+            // No distinct fallback if it is the same as the target
+            let fallback_shard_ids = (fallback != target)
+                .then(|| key_mapping.get(&fallback).cloned())
+                .flatten();
+            (target_shard_ids, fallback_shard_ids)
+        };
 
         if let Some(target_shard_ids) = target_shard_ids {
             let target_replicas = target_shard_ids
@@ -871,7 +881,7 @@ impl ShardHolder {
             // Check that at least one active replica per shard exists
             let target_shards_active = target_replicas
                 .iter()
-                .all(|replica_set| !replica_set.active_shards(false).is_empty());
+                .all(|replica_set| replica_set.has_active_shard());
 
             if target_replicas.is_empty() {
                 return if let Some(fallback_shard_ids) = fallback_shard_ids {
