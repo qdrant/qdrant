@@ -226,11 +226,10 @@ pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) 
 }
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
-    let mut length: f32 = vector.iter().map(|x| x * x).sum();
+    let length: f32 = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
     if is_length_zero_or_normalized(length) {
         return vector;
     }
-    length = length.sqrt();
     vector.iter().map(|x| x / length).collect()
 }
 
@@ -248,6 +247,21 @@ mod tests {
     fn test_cosine_preprocessing() {
         let res = <CosineMetric as Metric<VectorElementType>>::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
         assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_cosine_preprocessing_normalizes_small_vectors() {
+        let vector = vec![1.0e-4, 0.0];
+        let preprocessed = cosine_preprocess(vector);
+
+        assert_eq!(preprocessed, vec![1.0, 0.0]);
+
+        let mut vector = vec![0.0; MIN_DIM_SIZE_SIMD];
+        vector[0] = 1.0e-4;
+        let preprocessed = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+
+        assert_eq!(preprocessed[0], 1.0);
+        assert!(preprocessed[1..].iter().all(|&value| value == 0.0));
     }
 
     /// If we preprocess a vector multiple times, we expect the same result.

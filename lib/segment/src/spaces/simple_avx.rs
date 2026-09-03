@@ -151,16 +151,17 @@ pub(crate) unsafe fn cosine_preprocess_avx(mut vector: DenseVector) -> DenseVect
             i += 32;
         }
 
-        let mut length = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
+        let mut length_squared = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
 
         for i in 0..n - m {
-            length += (*ptr.add(i)).powi(2);
+            length_squared += (*ptr.add(i)).powi(2);
         }
+        let length = length_squared.sqrt();
         if is_length_zero_or_normalized(length) {
             return vector;
         }
 
-        let inv_length = 1.0 / length.sqrt();
+        let inv_length = 1.0 / length;
         let v_inv_length = _mm256_set1_ps(inv_length);
         let mut_ptr: *mut f32 = vector.as_mut_ptr();
 
@@ -277,6 +278,12 @@ mod tests {
                 let tol = 1e-6_f32.max(8.0 * f32::EPSILON * a.abs().max(b.abs()).max(1.0));
                 assert!((a - b).abs() <= tol, "Cosine SIMD mismatch: {a} vs {b}",);
             }
+
+            let mut small_vector = vec![0.0; 32];
+            small_vector[0] = 1.0e-4;
+            let cosine_simd = unsafe { cosine_preprocess_avx(small_vector) };
+            assert_eq!(cosine_simd[0], 1.0);
+            assert!(cosine_simd[1..].iter().all(|&value| value == 0.0));
         } else {
             println!("avx test skipped");
         }
