@@ -244,7 +244,7 @@ where
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
         // first, get range of values for point
-        let Some(bytes_range) = self.get_bytes_range(point_id)?.map(|range| {
+        let Some((bytes_range, count)) = self.get_bytes_range(point_id)?.map(|(range, count)| {
             let range = universal_io::ReadRange {
                 byte_offset: range.start,
                 length: range.end - range.start,
@@ -252,13 +252,12 @@ where
             // Measure IO overhead of `self.get_bytes_range()` and the length of the values
             hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
 
-            range
+            (range, count)
         }) else {
             return Ok(None);
         };
 
         let bytes = self.store.read(bytes_range, Random)?;
-        let count = self.get_values_count(point_id)?.unwrap_or(0);
 
         let iter = ValuesIter::new(bytes, count);
 
@@ -366,8 +365,12 @@ where
         }
     }
 
-    fn get_bytes_range(&self, point_id: PointOffsetType) -> OperationResult<Option<Range<u64>>> {
-        let Some(start) = self.get_range(point_id).map_some(|range| range.start)? else {
+    /// Byte range of the values of `point_id`, along with the number of values in it.
+    fn get_bytes_range(
+        &self,
+        point_id: PointOffsetType,
+    ) -> OperationResult<Option<(Range<u64>, usize)>> {
+        let Some(MmapRange { start, count }) = self.get_range(point_id)? else {
             return Ok(None);
         };
 
@@ -380,7 +383,7 @@ where
             }
         };
 
-        Ok(Some(start..end))
+        Ok(Some((start..end, count as usize)))
     }
 
     /// Populate all pages in the mmap.

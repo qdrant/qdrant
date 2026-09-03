@@ -231,7 +231,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn peers(&self) -> Vec<PeerId> {
         self.persistent
             .read()
-            .peer_address_by_id()
+            .peer_address_by_id
+            .read()
             .keys()
             .copied()
             .collect()
@@ -713,13 +714,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn peer_has_shards(&self, peer_id: PeerId) -> bool {
-        self.toc
-            .collections_snapshot()
-            .collections
-            .values()
-            .flat_map(|state| state.shards.values())
-            .flat_map(|shard_info| shard_info.replicas.keys())
-            .any(|&id| id == peer_id)
+        self.toc.peer_has_shards(peer_id)
     }
 
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
@@ -884,6 +879,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.persistent.read().peer_address_by_id()
+    }
+
+    pub fn peer_address(&self, peer_id: PeerId) -> Option<Uri> {
+        self.persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .get(&peer_id)
+            .cloned()
     }
 
     pub fn peer_count(&self) -> usize {
@@ -1498,6 +1502,10 @@ mod tests {
             _peer_id: PeerId,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
+        }
+
+        fn peer_has_shards(&self, _peer_id: PeerId) -> bool {
+            false
         }
 
         fn sync_local_state(&self) -> Result<(), crate::content_manager::errors::StorageError> {

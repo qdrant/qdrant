@@ -74,6 +74,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
     /// Number of segments currently open in the follower.
     pub fn segments_count(&self) -> usize {
-        self.segments.read().uuids().len()
+        self.segments.read().len()
     }
 }

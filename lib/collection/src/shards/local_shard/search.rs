@@ -105,7 +105,7 @@ impl LocalShard {
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = std::time::Instant::now();
-        let (query_context, collection_params) = {
+        let (query_context, distances) = {
             let collection_config = self.collection_config.read().await;
             let query_context_opt = SegmentsSearcher::prepare_query_context(
                 self.segments.clone(),
@@ -123,7 +123,18 @@ impl LocalShard {
                 return Ok(vec![]);
             };
 
-            (query_context, collection_config.params.clone())
+            // Resolve the per-request distances now, rather than cloning all collection params
+            let distances = core_request
+                .searches
+                .iter()
+                .map(|req| {
+                    collection_config
+                        .params
+                        .get_distance(req.query.get_vector_name())
+                })
+                .collect::<Vec<_>>();
+
+            (query_context, distances)
         };
 
         // update timeout
@@ -149,9 +160,9 @@ impl LocalShard {
         let top_results = res
             .into_iter()
             .zip(core_request.searches.iter())
-            .map(|(vector_res, req)| {
-                let vector_name = req.query.get_vector_name();
-                let distance = collection_params.get_distance(vector_name).unwrap();
+            .zip(distances)
+            .map(|((vector_res, req), distance)| {
+                let distance = distance.unwrap();
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     match req.query {
                         QueryEnum::Nearest(_) => {

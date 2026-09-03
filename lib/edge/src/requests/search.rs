@@ -2,7 +2,7 @@ use common::types::ScoreType;
 use segment::data_types::load_profile::LoadProfile;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 use shard::query::query_enum::QueryEnum;
-use shard::search::CoreSearchRequest;
+use shard::search::search_load_profile;
 
 /// Single-query vector search over an edge shard.
 ///
@@ -47,6 +47,10 @@ impl SearchRequest {
     /// this search: only the queried vector's components and the filter's field indexes
     /// keep their configured placement.
     pub fn load_profile(&self) -> LoadProfile {
-        CoreSearchRequest::from(self.clone()).load_profile()
+        search_load_profile(
+            &self.query,
+            self.filter.as_ref(),
+            self.with_payload.as_ref(),
+        )
     }
 }

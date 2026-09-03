@@ -17,7 +17,7 @@ use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use crate::index::{VectorIndex, VectorIndexRead};
+use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::sparse::StoredSparseVector;
@@ -39,10 +39,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         self.with_view(|view| {
+            let query_cardinality = view
+                .payload_index
+                .estimate_cardinality(filter, &vector_query_context.hardware_counter())?;
             view.search_plain(
                 sparse_vector,
                 filter,
                 top,
+                &query_cardinality,
                 prefiltered_points,
                 vector_query_context,
             )

@@ -1,6 +1,6 @@
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::InvertedIndex;
@@ -150,6 +150,7 @@ where
         sparse_vector: &SparseVector,
         filter: &Filter,
         top: usize,
+        query_cardinality: &CardinalityEstimation,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -168,9 +169,16 @@ where
             // so no additional filtering is required in that case.
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points =
-                    self.payload_index
-                        .query_points(filter, &hw_counter, &is_stopped)?;
+                let filtered_points = self
+                    .payload_index
+                    .iter_filtered_points(
+                        filter,
+                        query_cardinality,
+                        &hw_counter,
+                        &is_stopped,
+                        DeferredBehavior::VisibleOnly,
+                    )?
+                    .collect();
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }
@@ -278,6 +286,7 @@ where
                         vector,
                         filter,
                         top,
+                        &query_cardinality,
                         prefiltered_points,
                         vector_query_context,
                     )

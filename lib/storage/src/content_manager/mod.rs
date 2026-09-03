@@ -214,6 +214,9 @@ pub trait CollectionContainer {
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 
+    /// Whether the given peer has any shard replicas
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool;
+
     fn sync_local_state(&self) -> Result<(), StorageError>;
 
     fn quota_config(&self) -> QuotaConfig;

@@ -42,7 +42,7 @@ impl CollectionsTelemetry {
         timeout: Duration,
         is_stopped: &AtomicBool,
     ) -> CollectionResult<Self> {
-        let number_of_collections = toc.all_collections(access).await.len();
+        let number_of_collections = toc.collections_count(access).await;
         let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = if detail.level >= DetailsLevel::Level2 {
                 let toc_telemetry = toc

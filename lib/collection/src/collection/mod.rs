@@ -370,11 +370,7 @@ impl Collection {
         let shards_holder = self.shards_holder.read().await;
 
         let sharding_method = shards_holder.get_sharding_method();
-        let shard_keys = shards_holder
-            .get_shard_key_to_ids_mapping()
-            .keys()
-            .cloned()
-            .collect();
+        let shard_keys = shards_holder.shard_keys();
 
         (sharding_method, shard_keys)
     }
@@ -571,23 +567,12 @@ impl Collection {
 
         // If not initialized yet, we need to check if it was initialized by this call
         if !self.is_initialized.check_ready() {
-            let state = self.state().await;
-
-            let mut is_ready = true;
-
-            for (_shard_id, shard_info) in state.shards {
-                let all_replicas_active = shard_info.replicas.into_iter().all(|(_, state)| {
-                    matches!(
-                        state,
-                        ReplicaState::Active | ReplicaState::ReshardingScaleDown
-                    )
-                });
-
-                if !all_replicas_active {
-                    is_ready = false;
-                    break;
-                }
-            }
+            let is_ready = self
+                .shards_holder
+                .read()
+                .await
+                .all_shards()
+                .all(|replica_set| replica_set.check_peers_state_all(ReplicaState::is_active));
 
             if is_ready {
                 self.is_initialized.make_ready();

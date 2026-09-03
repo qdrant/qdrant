@@ -52,9 +52,9 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<UriStr>, tonic::Status> {
-        let addresses = self.consensus_state.peer_address_by_id();
-        let uri = addresses
-            .get(&request.get_ref().id)
+        let uri = self
+            .consensus_state
+            .peer_address(request.get_ref().id)
             .ok_or_else(|| Status::internal("Peer not found"))?;
         Ok(Response::new(UriStr {
             uri: uri.to_string(),
@@ -94,10 +94,13 @@ impl Raft for RaftService {
         // shards, remove the old peer first so the new one can take its place.
         let existing_peer_id = self
             .consensus_state
-            .peer_address_by_id()
-            .into_iter()
-            .find(|(id, peer_uri)| *peer_uri == uri && *id != peer.id)
-            .map(|(id, _)| id);
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .iter()
+            .find(|(id, peer_uri)| **peer_uri == uri && **id != peer.id)
+            .map(|(id, _)| *id);
 
         if let Some(old_peer_id) = existing_peer_id {
             let consensus_state = self.consensus_state.clone();

@@ -270,9 +270,10 @@ pub async fn group_by(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
-    let collection_params = collection.collection_config.read().await.params.clone();
-    let score_ordering =
-        shard_query::query_result_order(request.source.query.as_ref(), &collection_params)?;
+    let score_ordering = shard_query::query_result_order(
+        request.source.query.as_ref(),
+        &collection.collection_config.read().await.params,
+    )?;
 
     let QueryGroupRequest {
         mut source,

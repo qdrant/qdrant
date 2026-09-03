@@ -532,16 +532,17 @@ impl TableOfContent {
                     .await?;
             }
             ShardTransferOperations::Restart(transfer_restart) => {
-                let transfers: HashSet<transfer::ShardTransfer> =
-                    collection.state().await.transfers;
-
                 let transfer_key = transfer_restart.key();
 
                 // The record must exist. A restart updates the record in place, never
                 // removing it, so a missing record means a stale duplicate restart —
                 // reject it. A restart to an unchanged method is not rejected here; it
                 // is an idempotent no-op inside `restart_shard_transfer`.
-                let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
+                let Some(old_transfer) = collection
+                    .shards_holder()
+                    .read()
+                    .await
+                    .get_transfer(&transfer_key)
                 else {
                     return Err(StorageError::bad_request(format!(
                         "There is no transfer for shard {} from {} to {}",
@@ -614,30 +615,23 @@ impl TableOfContent {
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
-                transfer::helpers::validate_transfer_exists(
-                    &transfer.key(),
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer.key()).await?;
 
                 collection.finish_shard_transfer(transfer, None).await?;
             }
             ShardTransferOperations::RecoveryToPartial(transfer)
             | ShardTransferOperations::SnapshotRecovered(transfer) => {
                 // Validate transfer exists
-                transfer::helpers::validate_transfer_exists(
-                    &transfer,
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer).await?;
 
                 let collection = self.get_collection_unchecked(&collection_id).await?;
 
                 let current_state = collection
-                    .state()
+                    .shards_holder()
+                    .read()
                     .await
-                    .shards
-                    .get(&transfer.shard_id)
-                    .and_then(|info| info.replicas.get(&transfer.to))
-                    .copied();
+                    .get_shard(transfer.shard_id)
+                    .and_then(|replica_set| replica_set.peer_state(transfer.to));
 
                 let Some(current_state) = current_state else {
                     return Err(StorageError::bad_input(format!(
@@ -684,10 +678,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
-                transfer::helpers::validate_transfer_exists(
-                    &transfer,
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer).await?;
                 log::warn!("Aborting shard transfer: {reason}");
                 collection
                     .abort_shard_transfer_and_resharding(transfer)
