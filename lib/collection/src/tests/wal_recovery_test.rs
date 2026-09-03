@@ -1183,7 +1183,11 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-    let config = create_collection_config();
+    // This test inspects live WAL contents after applied updates. The default
+    // fixture uses `flush_interval_sec = 0`, so the flush worker can ack and
+    // truncate earlier records before we read them (issue #10423).
+    let mut config = create_collection_config();
+    config.optimizer_config.flush_interval_sec = 3600;
     let collection_name = "test".to_string();
 
     let update_runtime = Handle::current();
