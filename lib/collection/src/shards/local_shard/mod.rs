@@ -1255,7 +1255,7 @@ impl LocalShard {
             let reports = segment_reports
                 .into_iter()
                 .map(crate::common::memory_reporter::report_from_segment)
-                .collect::<CollectionResult<Vec<_>>>()?;
+                .collect();
 
             Ok(CollectionMemoryReport::merge_all(reports))
         })
