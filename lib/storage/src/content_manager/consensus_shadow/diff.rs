@@ -4,12 +4,14 @@
 //! until the compare covers it.
 
 use std::collections::{BTreeSet, HashMap};
+use std::mem;
 
 use collection::collection_state;
 use collection::shards::CollectionId;
 
 use crate::content_manager::alias_mapping::AliasMapping;
-use crate::content_manager::consensus_state_machine::ClusterState;
+use crate::content_manager::consensus_state_machine::{ApplyOutcome, ClusterState};
+use crate::content_manager::errors::StorageResult;
 use crate::quota::QuotaConfig;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
@@ -135,6 +137,38 @@ pub fn collection(
         .into_iter()
         .map(|field| format!("collections[{name}].{field}"))
         .collect()
+}
+
+/// How the machine's decision differs from what the apply path answered.
+///
+/// Only the class of the answer is compared. A rejection message reaches the client, so the
+/// machine reproduces the wording of the handler it replaces, but a difference in wording is
+/// for the soak to collect rather than for this to report.
+pub fn outcome(shadow: &ApplyOutcome, actual: &StorageResult<bool>) -> Option<String> {
+    match (shadow, actual) {
+        (ApplyOutcome::Accepted(_), Ok(_)) => None,
+
+        (ApplyOutcome::Rejected(shadow), Err(actual))
+            if mem::discriminant(shadow) == mem::discriminant(actual) =>
+        {
+            None
+        }
+
+        (ApplyOutcome::Accepted(_), Err(actual)) => {
+            Some(format!("machine accepted, apply rejected it: {actual}"))
+        }
+
+        (ApplyOutcome::Rejected(shadow), Ok(_)) => Some(format!(
+            "machine rejected it with `{shadow}`, apply accepted"
+        )),
+
+        (ApplyOutcome::Rejected(shadow), Err(actual)) => Some(format!(
+            "machine and apply rejected it differently: `{shadow}` against `{actual}`"
+        )),
+
+        // Caller invalidates the machine rather than comparing
+        (ApplyOutcome::NotCovered, Ok(_) | Err(_)) => None,
+    }
 }
 
 #[cfg(test)]

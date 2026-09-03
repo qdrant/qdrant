@@ -9,13 +9,14 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
 use raft::eraftpb::Entry as RaftEntry;
+use segment::types::PayloadSchemaType;
 use serde_json::json;
 use tempfile::{Builder, TempDir};
 
 use super::fixtures::*;
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
-use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
+use crate::content_manager::collection_meta_ops::{CollectionMetaOperations, CreatePayloadIndex};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_manager::ConsensusManager;
 use crate::content_manager::consensus_state_machine::NodeContext;
@@ -24,6 +25,7 @@ use crate::quota::QuotaConfig;
 const ALIAS: &str = "novels";
 const OTHER_ALIAS: &str = "crime";
 const METADATA_KEY: &str = "owner";
+const MISSING: &str = "outis";
 
 /// Both sides record the same cluster metadata key: the machine in its own state, the apply
 /// path in `Persistent`, which the compare reads back
@@ -83,6 +85,39 @@ fn disabled() {
         .insert(OTHER_ALIAS.to_string(), COLLECTION.to_string());
 
     manager.apply_normal_entry(&entry(&nop())).expect("nop");
+}
+
+/// A rejection of the same class on both sides is a match, whatever the state says
+#[test]
+fn matching_rejection() {
+    let dir = tempdir();
+    let rejection = StorageError::not_found(format!("Collection `{MISSING}` doesn't exist!"));
+    let container = Arc::new(container_answering(Err(rejection)));
+    let manager = manager(container, panicking_shadow(), dir.path());
+
+    manager
+        .apply_normal_entry(&entry(&create_payload_index(MISSING)))
+        .expect_err("both sides reject a missing collection");
+}
+
+#[test]
+#[should_panic(expected = "rejected it differently")]
+fn differing_rejection() {
+    let dir = tempdir();
+    let container = Arc::new(container_answering(Err(StorageError::bad_request("no"))));
+    let manager = manager(container, panicking_shadow(), dir.path());
+
+    let _ = manager.apply_normal_entry(&entry(&create_payload_index(MISSING)));
+}
+
+#[test]
+#[should_panic(expected = "machine accepted, apply rejected")]
+fn rejected_by_apply_only() {
+    let dir = tempdir();
+    let container = Arc::new(container_answering(Err(StorageError::bad_request("no"))));
+    let manager = manager(container, panicking_shadow(), dir.path());
+
+    let _ = manager.apply_normal_entry(&entry(&nop()));
 }
 
 #[test]
@@ -165,6 +200,18 @@ fn entry(operation: &ConsensusOperations) -> RaftEntry {
     }
 }
 
+fn create_payload_index(collection: &str) -> ConsensusOperations {
+    let operation = CreatePayloadIndex {
+        collection_name: collection.to_string(),
+        field_name: "city".parse().expect("valid field name"),
+        field_schema: PayloadSchemaType::Keyword.into(),
+    };
+
+    ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::CreatePayloadIndex(
+        operation,
+    )))
+}
+
 fn nop() -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop { token: 0 }))
 }
@@ -197,6 +244,15 @@ fn container() -> Container {
             enabled: true,
             ..Default::default()
         },
+        meta_op_result: Ok(true),
+    }
+}
+
+/// Container whose apply path answers `result` for every collection meta operation
+fn container_answering(result: StorageResult<bool>) -> Container {
+    Container {
+        meta_op_result: result,
+        ..container()
     }
 }
 
@@ -208,6 +264,8 @@ struct Container {
     collections: HashMap<CollectionId, collection_state::State>,
     aliases: Mutex<AliasMapping>,
     quota_config: QuotaConfig,
+    /// What the apply path answers for a collection meta operation
+    meta_op_result: StorageResult<bool>,
 }
 
 impl CollectionContainer for Container {
@@ -238,16 +296,13 @@ impl CollectionContainer for Container {
         self.quota_config
     }
 
+    /// Answers and changes nothing: every test either applies a nop, or an operation the
+    /// answer rejects
     fn perform_collection_meta_op(
         &self,
-        operation: CollectionMetaOperations,
+        _operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
-        assert!(
-            matches!(operation, CollectionMetaOperations::Nop { .. }),
-            "no test applies {operation:?} through this container",
-        );
-
-        Ok(true)
+        self.meta_op_result.clone()
     }
 
     // Never reached: no test recovers a snapshot, removes a peer or writes a quota config

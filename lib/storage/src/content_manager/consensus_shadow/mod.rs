@@ -83,7 +83,9 @@ impl ShadowStateMachine {
         }
 
         let actual = scrape_actual_state(toc, persistent);
-        let mut report = diff::cluster(machine.state(), &actual);
+
+        let mut report = Vec::from_iter(diff::outcome(outcome, result));
+        report.extend(diff::cluster(machine.state(), &actual));
 
         for collection in compared_collections(operation, machine.state()) {
             let shadow = machine.state().collection(&collection);
