@@ -204,6 +204,17 @@ fn dotprod_cold<const PLANES: usize, const QUERY_BYTES: usize>(
                 });
             }
 
+            if std::is_x86_feature_detected!("avxvnni") {
+                group.bench_with_input(BenchmarkId::new("avx_vnni", dim), &dim, |b, _| {
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let v = pool.vector(cursor);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { black_box(&query).dotprod_raw_avx_vnni(black_box(v)) }
+                    });
+                });
+            }
+
             if std::is_x86_feature_detected!("avx512f")
                 && std::is_x86_feature_detected!("avx512bw")
                 && std::is_x86_feature_detected!("avx512vnni")
@@ -289,6 +300,19 @@ fn dotprod_scan<const PLANES: usize, const QUERY_BYTES: usize>(
                         let run = pool.run(cursor, SCAN_RUN);
                         cursor = cursor.wrapping_add(1);
                         unsafe { query.dotprod_batch_avx2(black_box(run), stride, &mut out) };
+                        black_box(&out);
+                    });
+                });
+            }
+
+            if std::is_x86_feature_detected!("avxvnni") {
+                group.bench_with_input(BenchmarkId::new("batch_avx_vnni", dim), &dim, |b, _| {
+                    let mut out = vec![0.0f32; SCAN_RUN];
+                    let mut cursor = 0usize;
+                    b.iter(|| {
+                        let run = pool.run(cursor, SCAN_RUN);
+                        cursor = cursor.wrapping_add(1);
+                        unsafe { query.dotprod_batch_avx_vnni(black_box(run), stride, &mut out) };
                         black_box(&out);
                     });
                 });

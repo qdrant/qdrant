@@ -11,11 +11,11 @@
 //!
 //! Available SIMD backends:
 //!
-//! | Path              | x86_64                                | aarch64           |
-//! |-------------------|---------------------------------------|-------------------|
-//! | asymmetric, 1/2/4 | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
-//! | symmetric, 1      | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3 | NEON              |
-//! | symmetric, 2/4    | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
+//! | Path              | x86_64                                     | aarch64           |
+//! |-------------------|--------------------------------------------|-------------------|
+//! | asymmetric, 1/2/4 | AVX-512 VNNI, AVX-VNNI, AVX2, SSE4.1+SSSE3 | NEON + SDOT, NEON |
+//! | symmetric, 1      | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3      | NEON              |
+//! | symmetric, 2/4    | AVX-512 VNNI, AVX2, SSE4.1+SSSE3           | NEON + SDOT, NEON |
 //!
 //! On any other target the scalar reference kernels take over.
 
@@ -26,15 +26,23 @@ pub mod query2bit;
 pub mod query4bit;
 
 /// Best multiply-accumulate backend the host CPU supports, in preference
-/// order AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar.  Shared by
-/// every kernel built on `u8 × i8` / `i8 × i8` products (the asymmetric
-/// paths of every width and the symmetric 2- and 4-bit paths); resolve it
-/// once with [`SimdBackend::detect`] and dispatch on the value, so a scoring
-/// loop doesn't re-run CPU feature detection per vector.
+/// order AVX-512 VNNI → AVX-VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar.
+/// Shared by every kernel built on `u8 × i8` / `i8 × i8` products (the
+/// asymmetric paths of every width and the symmetric 2- and 4-bit paths);
+/// resolve it once with [`SimdBackend::detect`] and dispatch on the value, so
+/// a scoring loop doesn't re-run CPU feature detection per vector.
+///
+/// `AvxVnni` is the VEX-encoded `VPDPBUSD` (`_mm256_dpbusd_avx_epi32`) that
+/// CPUs with AVX-VNNI but no usable AVX-512 VNNI expose — client Intel from
+/// Alder Lake on. Only the asymmetric [`query::QuerySimd`] kernels have an
+/// AVX-VNNI variant; the symmetric 2-/4-bit paths reuse the AVX2 kernel for
+/// it (the batched query scoring is where the wider MAC pays off).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SimdBackend {
     #[cfg(target_arch = "x86_64")]
     Avx512Vnni,
+    #[cfg(target_arch = "x86_64")]
+    AvxVnni,
     #[cfg(target_arch = "x86_64")]
     Avx2,
     #[cfg(target_arch = "x86_64")]
@@ -55,6 +63,9 @@ impl SimdBackend {
                 && std::is_x86_feature_detected!("avx512vnni")
             {
                 return SimdBackend::Avx512Vnni;
+            }
+            if std::is_x86_feature_detected!("avxvnni") {
+                return SimdBackend::AvxVnni;
             }
             if std::is_x86_feature_detected!("avx2") {
                 return SimdBackend::Avx2;

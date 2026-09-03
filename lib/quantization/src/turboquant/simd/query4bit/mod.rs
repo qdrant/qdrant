@@ -165,8 +165,9 @@ pub fn score_4bit_internal(a: &[u8], b: &[u8]) -> f32 {
     match SimdBackend::detect() {
         #[cfg(target_arch = "x86_64")]
         SimdBackend::Avx512Vnni => unsafe { x64::score_4bit_internal_avx512_vnni(a, b) },
+        // Symmetric scoring has no AVX-VNNI kernel; the AVX2 one serves it.
         #[cfg(target_arch = "x86_64")]
-        SimdBackend::Avx2 => unsafe { x64::score_4bit_internal_avx2(a, b) },
+        SimdBackend::Avx2 | SimdBackend::AvxVnni => unsafe { x64::score_4bit_internal_avx2(a, b) },
         #[cfg(target_arch = "x86_64")]
         SimdBackend::Sse => unsafe { x64::score_4bit_internal_sse(a, b) },
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -237,7 +238,7 @@ pub fn score_4bit_internal_weighted(a: &[u8], b: &[u8], weights: &[i16]) -> i64 
 
     match SimdBackend::detect() {
         #[cfg(target_arch = "x86_64")]
-        SimdBackend::Avx512Vnni | SimdBackend::Avx2 => unsafe {
+        SimdBackend::Avx512Vnni | SimdBackend::Avx2 | SimdBackend::AvxVnni => unsafe {
             x64::score_4bit_internal_weighted_avx2(a, b, weights)
         },
         #[cfg(target_arch = "x86_64")]

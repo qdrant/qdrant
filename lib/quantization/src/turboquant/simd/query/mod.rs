@@ -325,6 +325,8 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx512Vnni => unsafe { self.dotprod_batch_avx512_vnni(data, stride, out) },
             #[cfg(target_arch = "x86_64")]
+            SimdBackend::AvxVnni => unsafe { self.dotprod_batch_avx_vnni(data, stride, out) },
+            #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2 => unsafe { self.dotprod_batch_avx2(data, stride, out) },
             #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
             SimdBackend::NeonSdot => unsafe { self.dotprod_batch_neon_sdot(data, stride, out) },
@@ -354,6 +356,8 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         match self.backend {
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx512Vnni => unsafe { self.dotprod_raw_avx512_vnni(vector) },
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::AvxVnni => unsafe { self.dotprod_raw_avx_vnni(vector) },
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2 => unsafe { self.dotprod_raw_avx2(vector) },
             #[cfg(target_arch = "x86_64")]

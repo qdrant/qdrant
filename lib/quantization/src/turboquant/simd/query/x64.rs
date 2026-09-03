@@ -245,6 +245,73 @@ impl<const QUERY_BYTES: usize> Acc256<QUERY_BYTES> {
     }
 }
 
+/// `VPDPBUSD` accumulators of one vector on YMM, the VEX-encoded
+/// `_mm256_dpbusd_avx_epi32` (AVX-VNNI): per query byte two independent
+/// chains, plane `k` feeding chain `k & 1`, the 256-bit form of [`Acc512`].
+/// Two chains per byte keep the multiply-accumulate latency off the critical
+/// path within one vector; the batch kernel interleaves whole vectors on top
+/// of that (see [`QuerySimd::dotprod_batch_avx_vnni`]).
+///
+/// i32 lane bound: each `VPDPBUSD` adds at most `4 · 255 · 64 = 65 280`
+/// (`4 · 128 · 128 = 65 536` for the 1-bit encoding) to a lane — the same
+/// per-lane bound as [`Acc512`], since a lane always covers four byte
+/// products regardless of register width, so overflow needs ~32 K blocks.
+#[derive(Clone, Copy)]
+struct Acc256Vnni<const QUERY_BYTES: usize> {
+    bytes: [[__m256i; 2]; QUERY_BYTES],
+}
+
+impl<const QUERY_BYTES: usize> Acc256Vnni<QUERY_BYTES> {
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn zero() -> Self {
+        Self {
+            bytes: [[_mm256_setzero_si256(); 2]; QUERY_BYTES],
+        }
+    }
+
+    /// Fold one block of packed `codes` (32 bytes) into the accumulators:
+    /// plane by plane, the codes are shifted down, masked to one code per
+    /// byte, looked up in the codebook and multiplied into the chains with
+    /// `VPDPBUSD`.  The 256-bit counterpart of [`Acc512::accumulate`].
+    ///
+    /// # Safety
+    /// CPU must support `avx2` and `avxvnni`.
+    #[inline]
+    #[target_feature(enable = "avx2,avxvnni")]
+    unsafe fn accumulate<const PLANES: usize>(
+        &mut self,
+        codes: __m256i,
+        query: QueryBlock256<PLANES, QUERY_BYTES>,
+    ) {
+        let table = const { codebook::<PLANES>() };
+        let codebook = _mm256_broadcastsi128_si256(unsafe {
+            _mm_loadu_si128(table.as_ptr().cast::<__m128i>())
+        });
+        let mask = _mm256_set1_epi8(const { code_mask::<PLANES>() });
+        let mut shifted = codes;
+        for k in 0..PLANES {
+            let values = _mm256_shuffle_epi8(codebook, _mm256_and_si256(shifted, mask));
+            for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
+                acc[k & 1] = _mm256_dpbusd_avx_epi32(acc[k & 1], values, planes[k]);
+            }
+            shifted = unsafe { next_plane_256::<PLANES>(shifted) };
+        }
+    }
+
+    /// Per-lane totals of every query byte.
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn fold(self) -> [__m256i; QUERY_BYTES] {
+        self.bytes.map(|[a, b]| _mm256_add_epi32(a, b))
+    }
+}
+
 /// One [`BLOCK_512`]-byte block of every query plane.
 #[derive(Clone, Copy)]
 struct QueryBlock512<const PLANES: usize, const QUERY_BYTES: usize> {
@@ -589,6 +656,193 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         }
     }
 
+    /// AVX-VNNI (VEX-encoded `VPDPBUSD`, `_mm256_dpbusd_avx_epi32`) over the
+    /// query planes: one YMM of packed codes per block, one `vpshufb`
+    /// codebook lookup per plane and `VPDPBUSD` into independent accumulators
+    /// (see [`Acc256Vnni`]).  The 256-bit counterpart of
+    /// [`Self::dotprod_raw_avx512_vnni`], for CPUs with AVX-VNNI but no usable
+    /// AVX-512 VNNI (client Intel from Alder Lake on).  The last partial
+    /// block runs on a zero-padded copy of the remaining bytes — AVX-VNNI has
+    /// no masked load.
+    ///
+    /// # Safety
+    /// CPU must support `avx2` and `avxvnni`.
+    #[target_feature(enable = "avx2,avxvnni")]
+    pub unsafe fn dotprod_raw_avx_vnni(&self, vector: &[u8]) -> i64 {
+        assert_eq!(
+            vector.len(),
+            self.vector_bytes,
+            "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_raw_avx_vnni: vector length mismatch ({} \
+             vs expected {})",
+            vector.len(),
+            self.vector_bytes,
+        );
+
+        unsafe {
+            let [acc] = self.accumulate_avx_vnni::<1>(vector.as_ptr(), 0);
+            self.reduce_avx_vnni(acc)
+        }
+    }
+
+    /// Batch counterpart of [`Self::dotprod_raw_avx_vnni`] with the float
+    /// reconstruction applied — see `dotprod_batch` for the layout contract
+    /// (asserted there).  The 256-bit form of
+    /// [`Self::dotprod_batch_avx512_vnni`]: short one-byte queries are scored
+    /// in interleaved groups of [`GROUP_256_VNNI`], whose independent
+    /// accumulators keep `VPDPBUSD` saturated, with the group's reduction
+    /// shared four-wide as in [`Self::dotprod_batch_avx2`].
+    ///
+    /// Interleaving is limited to a one-byte query here, unlike the AVX-512
+    /// kernel which interleaves both query widths: a group holds
+    /// `GROUP_256_VNNI · 2 · QUERY_BYTES` accumulator registers, which fits
+    /// the 16 YMM of a base AVX2 target at one query byte (eight) but not at
+    /// two (sixteen, the whole register file).  A two-byte query, and any
+    /// vector past [`INTERLEAVE_MAX_BYTES`], walks the block loop one vector
+    /// at a time.
+    ///
+    /// # Safety
+    /// CPU must support `avx2` and `avxvnni`; `data` must hold `out.len()`
+    /// vectors at `stride`.
+    #[target_feature(enable = "avx2,avxvnni")]
+    pub unsafe fn dotprod_batch_avx_vnni(&self, data: &[u8], stride: usize, out: &mut [f32]) {
+        unsafe {
+            // Resolve the interleave choice here so the group loop holds one
+            // shape only, as in [`Self::dotprod_batch_avx512_vnni`].
+            if QUERY_BYTES == 1 && self.vector_bytes <= INTERLEAVE_MAX_BYTES {
+                self.dotprod_batch_avx_vnni_groups::<true>(data, stride, out);
+            } else {
+                self.dotprod_batch_avx_vnni_groups::<false>(data, stride, out);
+            }
+        }
+    }
+
+    /// [`Self::dotprod_batch_avx_vnni`] with the interleave choice fixed:
+    /// `INTERLEAVE` groups score [`GROUP_256_VNNI`] vectors through one block
+    /// loop, otherwise each vector walks the blocks on its own and the group
+    /// only shares the reduction.
+    ///
+    /// # Safety
+    /// CPU must support `avx2` and `avxvnni`; `data` must hold `out.len()`
+    /// vectors at `stride`.
+    #[target_feature(enable = "avx2,avxvnni")]
+    unsafe fn dotprod_batch_avx_vnni_groups<const INTERLEAVE: bool>(
+        &self,
+        data: &[u8],
+        stride: usize,
+        out: &mut [f32],
+    ) {
+        unsafe {
+            let (groups, rest) = out.as_chunks_mut::<GROUP_256_VNNI>();
+            let mut v = 0;
+            for group in groups {
+                let accs = if INTERLEAVE {
+                    self.accumulate_avx_vnni::<GROUP_256_VNNI>(
+                        data.as_ptr().add(v * stride),
+                        stride,
+                    )
+                } else {
+                    std::array::from_fn(|i| {
+                        let [single] = self
+                            .accumulate_avx_vnni::<1>(data.as_ptr().add((v + i) * stride), stride);
+                        single
+                    })
+                };
+                // Share the reduction only for a one-byte query, as in the
+                // AVX-512 kernel: two bytes double the accumulator state a
+                // group would have to hold until the transpose.
+                if QUERY_BYTES == 1 {
+                    let lanes = accs.map(|acc| self.widen_avx_vnni(acc));
+                    let scores = self.postprocess_x4_avx2(transpose_sum_4x64(lanes));
+                    _mm_storeu_ps(group.as_mut_ptr(), scores);
+                } else {
+                    for (out, acc) in group.iter_mut().zip(accs) {
+                        *out = self.postprocess(self.reduce_avx_vnni(acc));
+                    }
+                }
+                v += GROUP_256_VNNI;
+            }
+            for out in rest {
+                let [acc] = self.accumulate_avx_vnni::<1>(data.as_ptr().add(v * stride), stride);
+                *out = self.postprocess(self.reduce_avx_vnni(acc));
+                v += 1;
+            }
+        }
+    }
+
+    /// One AVX-VNNI accumulator folded to four i64 lanes whose sum is the raw
+    /// dot product; [`Self::widen_avx2`] over [`Acc256Vnni`].
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn widen_avx_vnni(&self, acc: Acc256Vnni<QUERY_BYTES>) -> __m256i {
+        unsafe { self.widen_totals_256(acc.fold()) }
+    }
+
+    /// Block loop of the AVX-VNNI kernels over `N` vectors stored `stride`
+    /// bytes apart starting at `data`.  Every query block is loaded once and
+    /// folded into all `N` accumulator sets.  The 256-bit form of
+    /// [`Self::accumulate_avx512`], with the tail block zero-padded rather
+    /// than masked.
+    ///
+    /// # Safety
+    /// CPU must support `avx2` and `avxvnni`; `data` must be readable for
+    /// `(N - 1) * stride + self.vector_bytes` bytes.
+    #[inline]
+    #[target_feature(enable = "avx2,avxvnni")]
+    unsafe fn accumulate_avx_vnni<const N: usize>(
+        &self,
+        data: *const u8,
+        stride: usize,
+    ) -> [Acc256Vnni<QUERY_BYTES>; N] {
+        unsafe {
+            let mut accs = [Acc256Vnni::zero(); N];
+
+            let full_blocks = self.vector_bytes / BLOCK_256;
+            for block in 0..full_blocks {
+                let offset = block * BLOCK_256;
+                let query = QueryBlock256::load(&self.planes, offset);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    let codes = _mm256_loadu_si256(data.add(v * stride + offset).cast::<__m256i>());
+                    acc.accumulate(codes, query);
+                }
+            }
+
+            let tail = self.vector_bytes % BLOCK_256;
+            if tail > 0 {
+                let offset = full_blocks * BLOCK_256;
+                let query = QueryBlock256::load(&self.planes, offset);
+                for (v, acc) in accs.iter_mut().enumerate() {
+                    let block = tail_block::<BLOCK_256>(data.add(v * stride + offset), tail);
+                    let codes = _mm256_loadu_si256(block.as_ptr().cast::<__m256i>());
+                    acc.accumulate(codes, query);
+                }
+            }
+
+            accs
+        }
+    }
+
+    /// Raw dot product from one AVX-VNNI accumulator: the fused reduction
+    /// whenever the vector is short enough for its lane bound, otherwise one
+    /// reduction per query byte.  Mirrors [`Self::reduce_avx2`].
+    ///
+    /// # Safety
+    /// CPU must support `avx2`.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn reduce_avx_vnni(&self, acc: Acc256Vnni<QUERY_BYTES>) -> i64 {
+        unsafe {
+            let totals = acc.fold();
+            if self.vector_bytes <= Self::FUSED_REDUCTION_MAX_BYTES {
+                reduce_fused_256::<PLANES, QUERY_BYTES>(totals)
+            } else {
+                Self::combine_bytes(totals.map(|total| i64::from(hsum_i32_avx2(total))))
+            }
+        }
+    }
+
     /// AVX-512 VNNI (Ice Lake Xeon+, Zen 4+) over the query planes: one ZMM
     /// of packed codes per block, one `vpshufb` codebook lookup per plane
     /// and `VPDPBUSD` into independent accumulators (see [`Acc512`]).  The
@@ -793,6 +1047,14 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
 /// interleaved group feeds one shared reduction.
 const GROUP_512: usize = REDUCE_GROUP_256;
 
+/// Vectors per interleaved group of the AVX-VNNI batch kernel — the AVX-512
+/// group size ([`GROUP_512`]).  At a one-byte query (the only width it
+/// interleaves) its `4 · 2` accumulator registers fit the 16 YMM of a base
+/// AVX2 target, and its four i64 lanes feed one shared reduction.  The value
+/// and [`INTERLEAVE_MAX_BYTES`] are carried over from AVX-512, not yet tuned
+/// on AVX-VNNI hardware.
+const GROUP_256_VNNI: usize = REDUCE_GROUP_256;
+
 /// Longest encoded vector (bytes) the AVX-512 batch kernel scores in
 /// interleaved groups: four cache lines per vector.  Measured streaming
 /// from DRAM on Zen 4 at the 4-bit width: grouping is 10 % faster than the
@@ -967,6 +1229,10 @@ mod tests {
             && std::is_x86_feature_detected!("avx512vnni")
     }
 
+    fn has_avx_vnni() -> bool {
+        std::is_x86_feature_detected!("avxvnni")
+    }
+
     /// Every kernel the host supports must reproduce the scalar reference
     /// bit-exactly at every parity dim.
     fn kernels_match_scalar<const PLANES: usize, const QUERY_BYTES: usize>() {
@@ -983,6 +1249,10 @@ mod tests {
                 if std::is_x86_feature_detected!("avx2") {
                     let avx2 = query.dotprod_raw_avx2(&vector);
                     assert_eq!(scalar, avx2, "{tag}: scalar {scalar} != avx2 {avx2}");
+                }
+                if has_avx_vnni() {
+                    let vnni = query.dotprod_raw_avx_vnni(&vector);
+                    assert_eq!(scalar, vnni, "{tag}: scalar {scalar} != avx_vnni {vnni}");
                 }
                 if has_avx512_vnni() {
                     let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
@@ -1022,6 +1292,10 @@ mod tests {
             if std::is_x86_feature_detected!("avx2") {
                 let avx2 = query.dotprod_raw_avx2(&vector);
                 assert_eq!(scalar, avx2, "{tag}: avx2 disagrees");
+            }
+            if has_avx_vnni() {
+                let vnni = query.dotprod_raw_avx_vnni(&vector);
+                assert_eq!(scalar, vnni, "{tag}: avx_vnni disagrees");
             }
             if has_avx512_vnni() {
                 let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
@@ -1085,6 +1359,11 @@ mod tests {
                         query.dotprod_batch_avx2(&data, stride, &mut actual);
                         assert_eq!(expected, actual, "{tag}: avx2 batch");
                     }
+                    if has_avx_vnni() {
+                        let mut actual = vec![0.0; count];
+                        query.dotprod_batch_avx_vnni(&data, stride, &mut actual);
+                        assert_eq!(expected, actual, "{tag}: avx_vnni batch");
+                    }
                     if has_avx512_vnni() {
                         let mut actual = vec![0.0; count];
                         query.dotprod_batch_avx512_vnni(&data, stride, &mut actual);
@@ -1118,6 +1397,10 @@ mod tests {
                 if std::is_x86_feature_detected!("avx2") {
                     let avx2 = query.dotprod_raw_avx2(&vector);
                     assert_eq!(scalar, avx2, "{tag}: avx2 fused reduction overflowed");
+                }
+                if has_avx_vnni() {
+                    let vnni = query.dotprod_raw_avx_vnni(&vector);
+                    assert_eq!(scalar, vnni, "{tag}: avx_vnni fused reduction overflowed");
                 }
                 if has_avx512_vnni() {
                     let vnni512 = query.dotprod_raw_avx512_vnni(&vector);
