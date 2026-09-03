@@ -114,6 +114,10 @@ def test_telemetry():
 
 def test_telemetry_jq():
     """jq returns a subset of telemetry in `result` (shape is no longer TelemetryData)."""
+    import requests
+    from .helpers.helpers import qdrant_host_headers
+    from .helpers.settings import QDRANT_HOST
+
     unfiltered = request_with_validation(
         api="/telemetry",
         method="GET",
@@ -122,10 +126,10 @@ def test_telemetry_jq():
     expected = unfiltered.json()["result"]["collections"]["number_of_collections"]
 
     # Optional `result.` prefix (as seen in the full API envelope) is accepted.
-    response = request_with_validation(
-        api="/telemetry",
-        method="GET",
-        query_params={"jq": "result.collections.number_of_collections"},
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={"jq": "result.collections.number_of_collections"},
+        headers=qdrant_host_headers(),
     )
     assert response.ok, response.text
     body = response.json()
@@ -133,10 +137,10 @@ def test_telemetry_jq():
     assert body["result"] == expected
 
     # Invalid path syntax → 400
-    response = request_with_validation(
-        api="/telemetry",
-        method="GET",
-        query_params={"jq": ".foo..bar"},
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={"jq": ".foo..bar"},
+        headers=qdrant_host_headers(),
     )
     assert response.status_code == 400
 
