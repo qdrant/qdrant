@@ -234,6 +234,21 @@ fn merge_positive_and_negative_avg(
 ) -> OperationResult<VectorInternal> {
     match (positive, negative) {
         (VectorInternal::Dense(positive), VectorInternal::Dense(negative)) => {
+            // The `zip` below silently truncates to the shorter of the two
+            // vectors. When the positive and negative averages have
+            // different dimensions (e.g. positive from a local dim-2
+            // collection, negative resolved from a dim-8 `lookup_from`
+            // collection), the result loses the trailing negative
+            // dimensions and the recommend score becomes magnitude-
+            // dependent. Reject the mismatch explicitly (qdrant/qdrant#10369).
+            if positive.len() != negative.len() {
+                return Err(OperationError::validation_error(format!(
+                    "Positive and negative vectors must have the same dimension \
+                     for average-vector recommend: positive has dim {}, negative has dim {}",
+                    positive.len(),
+                    negative.len(),
+                )));
+            }
             let vector: DenseVector = positive
                 .iter()
                 .zip(negative.iter())
@@ -241,9 +256,24 @@ fn merge_positive_and_negative_avg(
                 .collect();
             Ok(vector.into())
         }
-        (VectorInternal::Sparse(positive), VectorInternal::Sparse(negative)) => Ok(positive
-            .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
-            .into()),
+        (VectorInternal::Sparse(positive), VectorInternal::Sparse(negative)) => {
+            // `combine_aggregate` walks both vectors' index sets; if the
+            // dimensions differ the result is a sparse vector with the
+            // union of indices, not a length-matched merge. Reject the
+            // mismatch explicitly.
+            if positive.indices.len() != negative.indices.len() {
+                return Err(OperationError::validation_error(format!(
+                    "Positive and negative sparse vectors must have the same \
+                     dimension for average-vector recommend: positive has dim {}, \
+                     negative has dim {}",
+                    positive.indices.len(),
+                    negative.indices.len(),
+                )));
+            }
+            Ok(positive
+                .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
+                .into())
+        }
         (VectorInternal::MultiDense(mut positive), VectorInternal::MultiDense(negative)) => {
             // merge positive and negative vectors as concatenated vectors with negative vectors negated
             positive
@@ -267,7 +297,7 @@ mod test {
     use rstest::rstest;
     use sparse::common::sparse_vector::SparseVector;
 
-    use super::{avg_vector_for_recommendation, avg_vectors};
+    use super::{avg_vector_for_recommendation, avg_vectors, merge_positive_and_negative_avg};
     use crate::data_types::vectors::{VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
@@ -448,5 +478,42 @@ mod test {
         )
         .unwrap();
         assert_eq!(vector, vec![1.0, 0.0].into());
+    }
+
+    /// Regression for qdrant/qdrant#10369: when a positive (e.g. bare
+    /// vector in the main collection) and a negative (e.g. resolved
+    /// from a `lookup_from` collection with a different dimension)
+    /// have different dimensions, the `zip` inside
+    /// `merge_positive_and_negative_avg` silently truncates the longer
+    /// one. The score is then magnitude-dependent and the nearest
+    /// neighbour can be wrong. Reject the mismatch explicitly so the
+    /// caller sees the dimension error.
+    #[test]
+    fn test_merge_rejects_dimension_mismatch_dense() {
+        let positive: VectorInternal = vec![1.0, 0.0].into();
+        let negative: VectorInternal = vec![0.0, 1.0, 0.0, 0.0].into();
+        let err = merge_positive_and_negative_avg(positive, negative).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("dimension") && msg.contains("positive") && msg.contains("negative"),
+            "expected dimension-mismatch diagnostic, got: {msg}",
+        );
+    }
+
+    /// Same for sparse vectors: `combine_aggregate` walks both index
+    /// sets and produces a length-`union` sparse vector, which is
+    /// also wrong when the source dimensions differ.
+    #[test]
+    fn test_merge_rejects_dimension_mismatch_sparse() {
+        let positive: VectorInternal = SparseVector::new(vec![0], vec![1.0]).unwrap().into();
+        let negative: VectorInternal = SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
+            .unwrap()
+            .into();
+        let err = merge_positive_and_negative_avg(positive, negative).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("dimension") && msg.contains("sparse"),
+            "expected dimension-mismatch diagnostic, got: {msg}",
+        );
     }
 }
