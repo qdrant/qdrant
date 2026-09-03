@@ -21,15 +21,13 @@ const SEARCH_ASYNC_WORKERS: usize = 1;
 
 /// Finish building a runtime, optionally attaching dial9 telemetry hooks.
 fn finish_runtime(builder: runtime::Builder, runtime_name: &str) -> io::Result<Runtime> {
-    #[cfg(feature = "dial9")]
-    {
-        crate::dial9_telemetry::build_runtime(builder, runtime_name)
-    }
-    #[cfg(not(feature = "dial9"))]
-    {
-        let _ = runtime_name;
-        let mut builder = builder;
-        builder.build()
+    cfg_select! {
+        feature = "dial9" => crate::dial9_telemetry::build_runtime(builder, runtime_name),
+        not(feature = "dial9") => {
+            let _ = runtime_name;
+            let mut builder = builder;
+            builder.build()
+        }
     }
 }
 
