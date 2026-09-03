@@ -185,6 +185,10 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     env["QDRANT__LOG_LEVEL"] = "TRACE,raft::raft=info,actix_http=info,tonic=info,want=info,mio=info"
     env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
+    # Apply every consensus operation to the state machine as well, and fail the peer when its
+    # state disagrees with the applied one
+    env["QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE__ENABLED"] = "true"
+    env["QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE__ON_DIVERGENCE"] = "panic"
 
     if is_coverage_mode():
         env["LLVM_PROFILE_FILE"] = get_llvm_profile_file()

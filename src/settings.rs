@@ -540,6 +540,7 @@ mod tests {
 
     use fs_err as fs;
     use sealed_test::prelude::*;
+    use storage::content_manager::consensus_shadow::OnDivergence;
 
     use super::*;
 
@@ -569,6 +570,29 @@ mod tests {
         config
             .validate()
             .expect("failed to validate default config");
+    }
+
+    /// The consensus test suite turns the shadow run on through these two variables, so a
+    /// rename here leaves that suite testing nothing.
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn shadow_state_machine_from_env() {
+        unsafe {
+            env::set_var(
+                "QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE__ENABLED",
+                "true",
+            );
+            env::set_var(
+                "QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE__ON_DIVERGENCE",
+                "panic",
+            );
+        }
+
+        let settings = Settings::new(None).expect("failed to load config");
+        let shadow = settings.cluster.consensus.shadow_state_machine;
+
+        assert!(shadow.enabled);
+        assert_eq!(shadow.on_divergence, OnDivergence::Panic);
     }
 
     #[expect(
