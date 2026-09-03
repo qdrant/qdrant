@@ -47,7 +47,7 @@ paths:
             type: boolean
         - name: jq
           in: query
-          description: "Optional jq-like path selecting a subset of telemetry JSON into `result`. Supports key traversal and `*`/`[]` iteration (e.g. `.collections.collections[].transfers`). An optional `result.` prefix is accepted."
+          description: "Optional jq-like path selecting a subset of telemetry JSON into `result`. Without this parameter, `result` contains the complete `TelemetryData`. Supports key traversal and `*`/`[]` iteration (e.g. `.collections.collections[].transfers`). An optional `result.` prefix is accepted."
           required: false
           schema:
             type: string
@@ -61,7 +61,7 @@ paths:
             type: integer
             minimum: 1
             default: 60 #! Keep in sync with DEFAULT_TELEMETRY_TIMEOUT
-      responses: #@ response({"anyOf": [reference("TelemetryData"), {}]})
+      responses: #@ response({})
 
   /metrics:
     get:
