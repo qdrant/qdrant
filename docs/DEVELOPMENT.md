@@ -245,6 +245,8 @@ that can be enabled with optional features.
   - note, that you'll also have to [pass `--cfg tokio_unstable` arguments to `rustc`][tokio-tracing] to enable this feature
   - this is required (and enabled automatically) by the `console` feature
   - but you can enable it explicitly with the `tracy` feature, to see Tokio traces in [`Tracy`] profiler
+- `dial9` feature enables [dial9](https://github.com/dial9-rs/dial9) Tokio runtime telemetry,
+  see [its own section](#dial9-tokio-runtime-telemetry) below
 
 Qdrant code is **not** instrumented by default, so you'll have to manually add `#[tracing::instrument]` attributes
 on functions and methods that you want to profile.
@@ -278,6 +280,51 @@ fn some_other_function() {
 [`tracing-log`]: https://docs.rs/tracing-log/latest/tracing_log/
 [`log`]: https://docs.rs/log/latest/log/
 [tracing-log-warning]: https://docs.rs/tracing-log/latest/tracing_log/#caution-mixing-both-conversions
+
+### dial9 (Tokio runtime telemetry)
+
+The `dial9` feature attaches [dial9](https://github.com/dial9-rs/dial9) hooks to Qdrant's storage
+Tokio runtimes (`general`, `update`, `search-cpu`, `search-io`) and records worker, task and poll
+events, with optional CPU and schedule profiling. Unlike [`tracing`] it needs no `#[instrument]`
+attributes: it observes the runtime rather than your code, and it does *not* pick up [`tracing`]
+spans.
+
+Recording needs both the feature at build time and `DIAL9_ENABLED=true` at run time. With the
+feature off, runtime construction is unchanged.
+
+Three rustflags matter, and none of them is set anywhere in the repo:
+
+- `--cfg tokio_unstable` is **required for any task data at all**, not just for fuller coverage.
+  dial9's poll, spawn and terminate hooks are all `#[cfg(tokio_unstable)]`, so without it a trace
+  carries worker park/unpark and runtime metrics only, with no task timeline, and
+  `DIAL9_TASK_TRACKING_ENABLED` is a silent no-op.
+- `-C force-frame-pointers=yes` lets the CPU and schedule profilers unwind.
+- `-C debuginfo=2` lets those frames symbolize. `[profile.perf]` inherits `release` and sets no
+  `debug` key, so without it the symbolizer falls back to the ELF symtab: inlined callees collapse
+  into their caller and frames carry no file or line.
+
+```console
+# Build with dial9 support (perf profile: release opts, no LTO)
+$ RUSTFLAGS='--cfg tokio_unstable -C force-frame-pointers=yes -C debuginfo=2' \
+    cargo build --profile perf --features dial9
+
+# Run with telemetry + CPU/schedule profiling
+$ DIAL9_ENABLED=true DIAL9_TRACE_DIR=/tmp/qdrant-dial9 ./target/perf/qdrant
+```
+
+Env knobs: `DIAL9_TRACE_DIR` (default `/tmp/dial9-traces`), `DIAL9_MAX_DISK_USAGE_MB`,
+`DIAL9_ROTATION_SECS`, `DIAL9_TASK_TRACKING_ENABLED`, `DIAL9_CPU_PROFILE_ENABLED`,
+`DIAL9_SCHEDULE_PROFILE_ENABLED`, `DIAL9_CPU_SAMPLE_HZ`. Booleans accept `1/true/yes/on` and
+`0/false/no/off`; blank or unrecognized values log a warning and keep the default.
+
+Use a fresh `DIAL9_TRACE_DIR` per run: segments from separate runs in one directory are merged into
+a single trace spanning the gap between them.
+
+View traces with the hosted viewer at <https://dial9-tokio-telemetry.netlify.app/>, or install the
+CLI with `cargo install --locked dial9 --features cli` and run
+`dial9 serve --local-dir $DIAL9_TRACE_DIR`. In the browser, the **Browse** tab is built for dial9's
+S3 key layout and stays empty for a local directory; use the **Raw** tab with an empty prefix, or
+open a segment directly at `viewer.html?trace=trace.0.bin.gz`.
 
 ### Pyroscope (continuous CPU profiling)
 

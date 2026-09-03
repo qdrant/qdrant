@@ -427,6 +427,14 @@ fn main() -> anyhow::Result<()> {
     welcome(&settings);
 
     //
+    // Optional dial9 Tokio telemetry (compile with `--features dial9`,
+    // enable at runtime with DIAL9_ENABLED=true). Must run before any
+    // TableOfContent Tokio runtimes are constructed.
+    //
+    #[cfg(feature = "dial9")]
+    let _dial9_guard = storage::dial9_telemetry::init(env!("CARGO_PKG_VERSION"));
+
+    //
     // Audit logging
     //
 
