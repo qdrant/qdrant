@@ -72,8 +72,7 @@ pub fn cluster(shadow: &ClusterState, actual: &ActualState) -> Vec<String> {
         diff.push("cluster_metadata".to_string());
     }
 
-    // `TableOfContent` always has an effective quota config, so a shadow holding none diverges
-    if quota_config.as_ref() != Some(actual_quota_config) {
+    if quota_config != actual_quota_config {
         diff.push("quota_config".to_string());
     }
 
@@ -224,7 +223,7 @@ mod tests {
             peer_address_by_id: peer_address_by_id.clone(),
             peer_metadata_by_id: peer_metadata_by_id.clone(),
             cluster_metadata: cluster_metadata.clone(),
-            quota_config: Some(quota_config),
+            quota_config,
         };
 
         let actual = ActualState {

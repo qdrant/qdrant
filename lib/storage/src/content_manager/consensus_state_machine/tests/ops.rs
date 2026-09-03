@@ -1172,13 +1172,13 @@ fn set_quota_config() {
         [Action::SetQuotaConfig { .. }],
     ));
 
-    assert_eq!(machine.state().quota_config, Some(quota_config(true)));
+    assert_eq!(machine.state().quota_config, quota_config(true));
 }
 
 #[test]
 fn set_quota_config_replace() {
     let state = ClusterState {
-        quota_config: Some(quota_config(true)),
+        quota_config: quota_config(true),
         ..Default::default()
     };
 
@@ -1194,13 +1194,13 @@ fn set_quota_config_replace() {
         [Action::SetQuotaConfig { .. }],
     ));
 
-    assert_eq!(machine.state().quota_config, Some(quota_config(false)));
+    assert_eq!(machine.state().quota_config, quota_config(false));
 }
 
 #[test]
 fn set_quota_config_replay() {
     let state = ClusterState {
-        quota_config: Some(quota_config(true)),
+        quota_config: quota_config(true),
         ..Default::default()
     };
 

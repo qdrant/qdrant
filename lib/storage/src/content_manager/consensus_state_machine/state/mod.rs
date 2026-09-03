@@ -14,8 +14,10 @@ use crate::types::{PeerAddressById, PeerMetadataById};
 
 /// Cluster state consensus decides on.
 ///
-/// Same fields and types as [`SnapshotData`], the state we serialize into Raft snapshots,
-/// so a copy can be compared against state read back from `TableOfContent` field by field.
+/// Same fields as [`SnapshotData`], the state we serialize into Raft snapshots, so a copy can be
+/// compared against state read back from `TableOfContent` field by field. Types match too, except
+/// that `SnapshotData` wraps the quota config in an `Option` to read snapshots taken before
+/// global quotas existed.
 ///
 /// `TableOfContent` stays the source of truth; this is the copy we validate operations against.
 ///
@@ -27,7 +29,7 @@ pub struct ClusterState {
     pub peer_address_by_id: PeerAddressById,
     pub peer_metadata_by_id: PeerMetadataById,
     pub cluster_metadata: HashMap<String, serde_json::Value>,
-    pub quota_config: Option<QuotaConfig>,
+    pub quota_config: QuotaConfig,
 }
 
 impl ClusterState {
