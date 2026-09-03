@@ -183,6 +183,7 @@ fn hnsw_quantized_search_test(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )
@@ -919,6 +920,7 @@ fn build_quantized_hnsw_for_compare(
             stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

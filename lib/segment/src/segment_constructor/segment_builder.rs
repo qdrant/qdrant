@@ -741,6 +741,7 @@ impl SegmentBuilder {
                         rng,
                         hnsw_global_config: &hnsw_global_config,
                         feature_flags: feature_flags(),
+                        inline_vectors: vector_config.inline_vectors_in_graph(),
                         progress: progress_vector_index.running_subtask(vector_name),
                     },
                 )?;
