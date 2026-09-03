@@ -14,6 +14,7 @@ workspace = true
 [features]
 tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"]
 staging = ["collection/staging"]
+dial9 = ["dep:dial9"]
 
 [dev-dependencies]
 collection = { path = "../collection", features = ["testing"] }
@@ -70,3 +71,9 @@ async-trait = { workspace = true }
 
 tracing = { workspace = true, optional = true }
 tracing-appender = "0.2"
+
+# Optional Tokio telemetry (https://github.com/dial9-rs/dial9)
+dial9 = { version = "0.5.0", optional = true, default-features = false, features = [
+    "tokio",
+    "cpu-profiling",
+] }
