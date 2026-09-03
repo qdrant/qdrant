@@ -100,8 +100,7 @@ impl ConfigMismatchOptimizer {
                         }
                     }
 
-                    if !vector_data.storage_type.is_empty()
-                        && let Some(required_memory) = self.requested_vectors_memory(vector_name)
+                    if let Some(required_memory) = self.requested_vectors_memory(vector_name)
                         && required_memory.is_on_disk() != vector_data.storage_type.is_on_disk()
                     {
                         return true;

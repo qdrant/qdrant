@@ -79,15 +79,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// if it is not there yet.
     ///
     /// Fails for a storage type an update-only segment cannot have: the mmap
-    /// ones are immutable, built whole rather than appended to, and the empty
-    /// placeholder has no files at all.
+    /// ones are immutable, built whole rather than appended to.
     pub fn open(fs: S::Fs, path: &Path, config: &VectorDataConfig) -> OperationResult<Self> {
         match config.storage_type {
             VectorStorageType::ChunkedMmap | VectorStorageType::InRamChunkedMmap => {}
             storage_type @ (VectorStorageType::Mmap
             | VectorStorageType::InRamMmap
-            | VectorStorageType::Memory
-            | VectorStorageType::Empty) => {
+            | VectorStorageType::Memory) => {
                 return Err(OperationError::service_error(format!(
                     "Cannot open a {storage_type:?} vector storage for appending: it is not an \
                      appendable storage type",

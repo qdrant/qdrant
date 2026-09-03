@@ -148,21 +148,20 @@ mod tests {
             .collect()
     }
 
-    /// `Memory` and `Empty` storage types are a no-op: nothing to open read-only.
+    /// The `Memory` storage type is a no-op: nothing to open read-only.
     #[test]
-    fn open_memory_and_empty_are_noop() {
+    fn open_memory_is_noop() {
         let dir = Builder::new().prefix("disp_noop").tempdir().unwrap();
-        for storage_type in [VectorStorageType::Memory, VectorStorageType::Empty] {
-            let opened = VectorStorageReadEnum::<MmapFile>::open(
-                &MmapFs,
-                &dense_config(storage_type, None),
-                dir.path(),
-                dir.path(),
-                None,
-            )
-            .unwrap();
-            assert!(opened.is_none(), "{storage_type:?} should be a no-op");
-        }
+        let storage_type = VectorStorageType::Memory;
+        let opened = VectorStorageReadEnum::<MmapFile>::open(
+            &MmapFs,
+            &dense_config(storage_type, None),
+            dir.path(),
+            dir.path(),
+            None,
+        )
+        .unwrap();
+        assert!(opened.is_none(), "{storage_type:?} should be a no-op");
     }
 
     /// `ChunkedMmap` single-dense routes to the chunked read-only storage.
@@ -683,8 +682,7 @@ mod tests {
                 }
                 VectorStorageType::InRamMmap
                 | VectorStorageType::InRamChunkedMmap
-                | VectorStorageType::Memory
-                | VectorStorageType::Empty => {
+                | VectorStorageType::Memory => {
                     unreachable!("unexpected storage type {storage_type:?}")
                 }
             }
@@ -706,8 +704,7 @@ mod tests {
                 }
                 VectorStorageType::Memory
                 | VectorStorageType::InRamChunkedMmap
-                | VectorStorageType::InRamMmap
-                | VectorStorageType::Empty => false,
+                | VectorStorageType::InRamMmap => false,
             };
             assert!(
                 routed,
