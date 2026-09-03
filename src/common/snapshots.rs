@@ -352,6 +352,12 @@ pub async fn recover_shard_snapshot_impl(
         .await?
         .await?;
 
+    // A partial recovery rewrites the payload index schema of the collection, which is part of
+    // the state consensus decides on, without an operation asking for it
+    if recovery_type.is_partial() {
+        toc.mark_collection_dirty(collection.name());
+    }
+
     let state = collection.state().await;
     let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
 

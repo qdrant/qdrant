@@ -48,6 +48,10 @@ impl CollectionContainer for TableOfContent {
             .block_on(async { self.alias_persistence.read().await.state().clone() })
     }
 
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId> {
+        std::mem::take(&mut self.dirty_collections.lock())
+    }
+
     fn node_context(&self) -> NodeContext {
         NodeContext::from_storage_config(
             &self.storage_config,

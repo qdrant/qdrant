@@ -1603,6 +1603,10 @@ mod tests {
             unimplemented!()
         }
 
+        fn take_dirty_collections(&self) -> BTreeSet<CollectionId> {
+            BTreeSet::new()
+        }
+
         fn apply_collections_snapshot(
             &self,
             _data: super::CollectionsSnapshot,

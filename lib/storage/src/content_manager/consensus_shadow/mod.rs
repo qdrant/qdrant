@@ -52,6 +52,8 @@ impl ShadowStateMachine {
         persistent: &Persistent,
         operation: &ConsensusOperations,
     ) -> ApplyOutcome {
+        self.resync(toc, toc.take_dirty_collections());
+
         let machine = self.machine.get_or_insert_with(|| {
             let state = scrape_cluster_state(toc, persistent);
             ConsensusStateMachine::new(state, toc.node_context())
@@ -87,11 +89,25 @@ impl ShadowStateMachine {
         let collections = compared_collections(operation, machine.state());
 
         // An operation the machine does not model leaves the state of the collections it names
-        // behind, so those are read back instead of compared
+        // behind, so those are read back instead of compared. One that names none, `RemovePeer`
+        // above all, can have changed any of them.
         if matches!(outcome, ApplyOutcome::NotCovered) {
-            self.resync(toc, collections);
+            if collections.is_empty() {
+                self.machine = None;
+            } else {
+                self.resync(toc, collections);
+            }
+
             return;
         }
+
+        // Something other than consensus may have changed a collection while the entry was
+        // being applied, and what it wrote is not a divergence
+        self.resync(toc, toc.take_dirty_collections());
+
+        let Some(machine) = &self.machine else {
+            return;
+        };
 
         let actual = scrape_actual_state(toc, persistent);
 
@@ -110,16 +126,12 @@ impl ShadowStateMachine {
         self.report_divergence(report);
     }
 
-    /// Read the state of `collections` back into the machine.
-    ///
-    /// An operation naming none of them, `RemovePeer` above all, can have changed any
-    /// collection, so the machine goes instead.
-    fn resync(&mut self, toc: &impl CollectionContainer, collections: Vec<CollectionId>) {
-        if collections.is_empty() {
-            self.machine = None;
-            return;
-        }
-
+    /// Read the state of `collections` back into the machine
+    fn resync(
+        &mut self,
+        toc: &impl CollectionContainer,
+        collections: impl IntoIterator<Item = CollectionId>,
+    ) {
         let Some(machine) = &mut self.machine else {
             return;
         };

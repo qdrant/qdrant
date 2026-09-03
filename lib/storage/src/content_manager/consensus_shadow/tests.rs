@@ -93,6 +93,25 @@ fn disabled() {
     manager.apply_normal_entry(&entry(&nop())).expect("nop");
 }
 
+/// Recovering a partial shard snapshot rewrites the payload index schema of a collection
+/// without a consensus operation. The collection is read back, rather than reported.
+#[test]
+fn dirty_collection_resync() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container.clone(), panicking_shadow(), dir.path());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    container.add_shard(0);
+    container.mark_dirty();
+
+    // Names the collection, so its state is compared
+    manager
+        .apply_normal_entry(&entry(&drop_payload_index(COLLECTION)))
+        .expect("index dropped");
+}
+
 /// Snapshot recovery leaves state no operation asked for, so the machine goes and the next
 /// entry builds a new one. Here the snapshot empties the container while the machine still
 /// holds a collection and its alias.
@@ -370,6 +389,7 @@ fn container() -> Container {
         },
         meta_op_result: Ok(true),
         snapshots: AtomicUsize::new(0),
+        dirty: Mutex::new(BTreeSet::new()),
     }
 }
 
@@ -393,11 +413,19 @@ struct Container {
     meta_op_result: StorageResult<bool>,
     /// How many times the whole state was read back, to tell a resync from a rebuild
     snapshots: AtomicUsize,
+    /// Collections changed without a consensus operation asking for it
+    dirty: Mutex<BTreeSet<CollectionId>>,
 }
 
 impl Container {
     fn snapshots(&self) -> usize {
         self.snapshots.load(Ordering::Relaxed)
+    }
+
+    /// Record that the collection changed without a consensus operation, as recovering a
+    /// partial shard snapshot does
+    fn mark_dirty(&self) {
+        self.dirty.lock().insert(COLLECTION.to_string());
     }
 
     /// Add a shard to the collection, the way an operation the machine does not model would
@@ -433,6 +461,10 @@ impl CollectionContainer for Container {
 
     fn alias_mapping(&self) -> AliasMapping {
         self.aliases.lock().clone()
+    }
+
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId> {
+        std::mem::take(&mut self.dirty.lock())
     }
 
     fn node_context(&self) -> NodeContext {

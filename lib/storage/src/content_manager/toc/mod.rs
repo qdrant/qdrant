@@ -12,7 +12,7 @@ mod temp_directories;
 pub mod transfer;
 
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -109,6 +109,12 @@ pub struct TableOfContent {
     telemetry: TocTelemetryCollector,
     /// Cluster-wide resource quotas, applied to updates on top of strict mode.
     quota_manager: Arc<QuotaManager>,
+    /// Collections whose state changed without a consensus operation asking for it.
+    ///
+    /// Recovering a partial shard snapshot rewrites the payload index schema, which is part of
+    /// the state consensus decides on. The shadow run reads these collections back rather than
+    /// reporting the change as a divergence.
+    dirty_collections: parking_lot::Mutex<BTreeSet<CollectionId>>,
 }
 
 impl TableOfContent {
@@ -297,7 +303,13 @@ impl TableOfContent {
             collection_hw_metrics: DashMap::new(),
             telemetry,
             quota_manager,
+            dirty_collections: Default::default(),
         })
+    }
+
+    /// Record that `collection` changed without a consensus operation asking for it
+    pub fn mark_collection_dirty(&self, collection: &str) {
+        self.dirty_collections.lock().insert(collection.to_string());
     }
 
     /// Cluster-wide resource quotas.
