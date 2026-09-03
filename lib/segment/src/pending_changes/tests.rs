@@ -5,7 +5,9 @@ use fs_err as fs;
 use tempfile::Builder;
 
 use super::*;
-use crate::data_types::vectors::only_default_vector;
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::vector_name_config::DenseVectorConfig;
+use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::ReadSegmentEntry as _;
 use crate::entry::entry_point::SegmentEntry as _;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -13,6 +15,19 @@ use crate::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 
 fn keyword_schema() -> PayloadFieldSchema {
     PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+}
+
+fn integer_schema() -> PayloadFieldSchema {
+    PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+}
+
+fn dense_config(size: usize, distance: Distance) -> VectorNameConfig {
+    VectorNameConfig::dense(DenseVectorConfig {
+        size,
+        distance,
+        multivector_config: None,
+        datatype: None,
+    })
 }
 
 fn field(name: &str) -> PayloadKeyType {
@@ -596,5 +611,237 @@ fn test_pending_change_version() {
         }
         .version(),
         44,
+    );
+}
+
+#[test]
+fn test_recover_delete_if_incompatible_index_change() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_segment(dir.path());
+    let segment_dir = segment.data_path();
+
+    segment
+        .create_field_index(6, &field("color"), Some(&keyword_schema()), &hw_counter)
+        .unwrap();
+    assert!(segment.get_indexed_fields().contains_key(&field("color")));
+
+    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    pending_changes.register_index_change(
+        field("color"),
+        ProxyIndexChange::DeleteIfIncompatible(7, keyword_schema()),
+    );
+    pending_changes.flusher(7).unwrap()().unwrap();
+    drop(pending_changes);
+
+    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+    assert!(
+        segment.get_indexed_fields().contains_key(&field("color")),
+        "a compatible schema must keep the index",
+    );
+
+    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    pending_changes.register_index_change(
+        field("color"),
+        ProxyIndexChange::DeleteIfIncompatible(8, integer_schema()),
+    );
+    pending_changes.flusher(8).unwrap()().unwrap();
+    drop(pending_changes);
+
+    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+    assert!(
+        !segment.get_indexed_fields().contains_key(&field("color")),
+        "an incompatible schema must drop the index",
+    );
+    assert!(list_pending_changes_log_files(&segment_dir).is_empty());
+}
+
+/// Replaying a create that supersedes the segment's own schema must clear the stale vector data
+/// first, mirroring what `propagate_to_wrapped` does. A plain create is idempotent and would
+/// silently keep it.
+#[test]
+fn test_recover_superseding_vector_name_change() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_segment(dir.path());
+
+    segment
+        .create_vector_name(6, "v2", &dense_config(4, Distance::Dot))
+        .unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![1.0f32; 4].into());
+    vectors.insert("v2".to_owned(), vec![2.0f32; 4].into());
+    segment
+        .upsert_point(7, 1.into(), vectors, &hw_counter)
+        .unwrap();
+    segment.flush(true).unwrap();
+    assert!(
+        segment
+            .vector("v2", 1.into(), &hw_counter)
+            .unwrap()
+            .is_some()
+    );
+
+    let segment_dir = segment.data_path();
+    let segment_config = segment.config().clone();
+    let segment_version = segment.version();
+
+    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    pending_changes.register_vector_name_create(
+        "v2".into(),
+        dense_config(8, Distance::Cosine),
+        segment_version + 1,
+        &segment_config,
+    );
+    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    drop(pending_changes);
+
+    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+
+    let vector_config = segment.config().vector_data.get("v2").unwrap();
+    assert_eq!(vector_config.size, 8);
+    assert_eq!(vector_config.distance, Distance::Cosine);
+    assert!(
+        segment
+            .vector("v2", 1.into(), &hw_counter)
+            .unwrap()
+            .is_none(),
+        "superseded vector data must be cleared on replay",
+    );
+    assert!(list_pending_changes_log_files(&segment_dir).is_empty());
+}
+
+/// An append that failed half way leaves bytes past the last durable entry. The next flush must
+/// truncate them rather than append behind them, which would corrupt the log.
+#[test]
+fn test_partial_append_is_truncated_on_next_flush() {
+    use std::io::Write as _;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    pending_changes.register_delete_point(
+        1.into(),
+        ProxyDeletedPoint {
+            local_version: 1,
+            operation_version: 10,
+        },
+    );
+    pending_changes.flusher(10).unwrap()().unwrap();
+
+    let log_path = pending_changes.log_path().to_path_buf();
+    let intact_len = fs::metadata(&log_path).unwrap().len();
+
+    let mut file = fs::OpenOptions::new().append(true).open(&log_path).unwrap();
+    file.write_all(&[0xFF; 7]).unwrap();
+    drop(file);
+    assert_eq!(fs::metadata(&log_path).unwrap().len(), intact_len + 7);
+
+    pending_changes.register_delete_point(
+        2.into(),
+        ProxyDeletedPoint {
+            local_version: 2,
+            operation_version: 11,
+        },
+    );
+    pending_changes.flusher(11).unwrap()().unwrap();
+
+    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    assert_eq!(loaded.deleted_points().len(), 2);
+    assert_eq!(loaded.persisted_version(), 11);
+}
+
+/// Every prefix of the log must load as the entries that fully fit in it, and the torn tail past
+/// them must be truncated away.
+#[test]
+fn test_torn_tail_truncation_sweep() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    for point_id in 1..=4u64 {
+        pending_changes.register_delete_point(
+            point_id.into(),
+            ProxyDeletedPoint {
+                local_version: point_id,
+                operation_version: 10 + point_id,
+            },
+        );
+    }
+    pending_changes.flusher(14).unwrap()().unwrap();
+    let log_path = pending_changes.log_path().to_path_buf();
+    let pristine = fs::read(&log_path).unwrap();
+    drop(pending_changes);
+
+    let mut boundaries = Vec::new();
+    let mut offset = 0;
+    while offset < pristine.len() {
+        let entry_len = u32::from_le_bytes(pristine[offset..offset + 4].try_into().unwrap());
+        offset += size_of::<u32>() + entry_len as usize;
+        boundaries.push(offset);
+    }
+    assert_eq!(boundaries.len(), 4);
+
+    for prefix_len in 0..=pristine.len() {
+        fs::write(&log_path, &pristine[..prefix_len]).unwrap();
+
+        let expected_entries = boundaries.iter().filter(|end| **end <= prefix_len).count();
+        let expected_len = boundaries
+            .iter()
+            .rfind(|end| **end <= prefix_len)
+            .copied()
+            .unwrap_or(0);
+
+        let loaded = PendingChanges::load(dir.path(), 0)
+            .unwrap_or_else(|err| panic!("prefix of {prefix_len} bytes must load: {err}"));
+        assert_eq!(
+            loaded.deleted_points().len(),
+            expected_entries,
+            "prefix of {prefix_len} bytes",
+        );
+        assert_eq!(
+            fs::metadata(&log_path).unwrap().len(),
+            expected_len as u64,
+            "torn tail must be truncated for a prefix of {prefix_len} bytes",
+        );
+    }
+}
+
+/// A corrupted length prefix is not a torn write: the bytes it claims are on disk, so entries
+/// behind it may have been acknowledged in the WAL. Load must fail loudly instead of silently
+/// dropping them and truncating the file.
+#[test]
+fn test_corrupt_length_prefix_is_hard_error() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    for point_id in 1..=2u64 {
+        pending_changes.register_delete_point(
+            point_id.into(),
+            ProxyDeletedPoint {
+                local_version: point_id,
+                operation_version: 10 + point_id,
+            },
+        );
+    }
+    pending_changes.flusher(12).unwrap()().unwrap();
+    let log_path = pending_changes.log_path().to_path_buf();
+    let pristine = fs::read(&log_path).unwrap();
+    drop(pending_changes);
+
+    // A single bit flip in the first entry's length prefix
+    let mut mangled = pristine.clone();
+    mangled[3] ^= 1 << 4;
+    fs::write(&log_path, &mangled).unwrap();
+
+    let result = PendingChanges::load(dir.path(), 0);
+    assert!(
+        result.is_err(),
+        "corrupt length prefix must be an error, got {} entries",
+        result.map_or(0, |loaded| loaded.deleted_points().len()),
+    );
+    assert_eq!(
+        fs::metadata(&log_path).unwrap().len(),
+        pristine.len() as u64,
+        "a corrupt entry that is not a torn tail must not truncate the log",
     );
 }
