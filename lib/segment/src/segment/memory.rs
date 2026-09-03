@@ -35,7 +35,7 @@ impl Segment {
     /// Collect memory usage from all sub-components.
     ///
     /// This method only collects file lists and RAM estimates (no I/O).
-    /// The actual `mincore` measurement happens at a higher layer.
+    /// The actual page-cache measurement happens at a higher layer, outside locks.
     pub fn memory_report(&self) -> SegmentMemoryReport {
         let Segment {
             uuid: _,
