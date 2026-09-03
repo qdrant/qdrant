@@ -2755,43 +2755,73 @@ impl<'de> Deserialize<'de> for PayloadFieldSchema {
         // invalid shape produces a 4xx diagnostic instead of a created
         // index.
         //
-        // The guard only applies to human-readable formats. The
-        // non-human-readable path (rmp-serde, used by the WAL and the
-        // consensus state machine) encodes `FieldParams` as a tuple
-        // array, which `serde_json::Value::deserialize` would surface
-        // as `Value::Array` and the guard would then mis-reject,
-        // breaking shard recovery and consensus replay.
+        // The array rejection only applies to human-readable formats.
+        // The non-human-readable path (rmp-serde, used by the WAL and
+        // the consensus state machine) encodes `FieldParams` as a
+        // tuple array; if the shadow used here carried the `FieldArray`
+        // sentinel the untagged deserializer would match the tuple
+        // array first and the `FieldParams` struct match would never
+        // run, breaking shard recovery and consensus replay. So the
+        // sentinel is added only to the human-readable shadow.
         if deserializer.is_human_readable() {
-            let value = serde_json::Value::deserialize(deserializer)?;
-            if value.is_array() {
-                return Err(serde::de::Error::custom(
+            let shadow = PayloadFieldSchemaShadowHuman::deserialize(deserializer)?;
+            match shadow {
+                PayloadFieldSchemaShadowHuman::FieldArray(_) => Err(serde::de::Error::custom(
                     "field_schema must be a string identifier (e.g. \"keyword\") \
                      or an object with `type` and parameters, not a JSON array",
-                ));
+                )),
+                other => Ok(other.into()),
             }
-            // Delegate to a private shadow enum with the derived
-            // untagged `Deserialize` so we don't recurse into this impl.
-            serde_json::from_value::<PayloadFieldSchemaShadow>(value)
-                .map(Into::into)
-                .map_err(serde::de::Error::custom)
         } else {
-            PayloadFieldSchemaShadow::deserialize(deserializer).map(Into::into)
+            PayloadFieldSchemaShadowNonHuman::deserialize(deserializer).map(Into::into)
         }
     }
 }
 
+/// Shadow enum for human-readable formats (REST JSON, etc.). The
+/// `FieldArray` sentinel catches JSON array inputs first under the
+/// untagged deserializer; the manual `Deserialize` impl then rejects
+/// that match with a 4xx diagnostic.
 #[derive(Deserialize)]
 #[serde(untagged, rename_all = "snake_case")]
-enum PayloadFieldSchemaShadow {
+enum PayloadFieldSchemaShadowHuman {
+    FieldType(PayloadSchemaType),
+    FieldArray(Vec<serde_json::Value>),
+    FieldParams(PayloadSchemaParams),
+}
+
+/// Shadow enum for non-human-readable formats (rmp-serde MessagePack
+/// for the WAL and consensus state machine). Lacks the `FieldArray`
+/// sentinel so the untagged deserializer matches the `FieldParams`
+/// struct variant for tuple-encoded inputs.
+#[derive(Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+enum PayloadFieldSchemaShadowNonHuman {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
 }
 
-impl From<PayloadFieldSchemaShadow> for PayloadFieldSchema {
-    fn from(shadow: PayloadFieldSchemaShadow) -> Self {
+impl From<PayloadFieldSchemaShadowHuman> for PayloadFieldSchema {
+    fn from(shadow: PayloadFieldSchemaShadowHuman) -> Self {
         match shadow {
-            PayloadFieldSchemaShadow::FieldType(t) => Self::FieldType(t),
-            PayloadFieldSchemaShadow::FieldParams(p) => Self::FieldParams(p),
+            PayloadFieldSchemaShadowHuman::FieldType(t) => Self::FieldType(t),
+            // `FieldArray` is handled in the manual `Deserialize` impl
+            // before reaching this `From`, so the variant is unreachable
+            // here. Mark it explicitly so future readers see the
+            // invariant.
+            PayloadFieldSchemaShadowHuman::FieldArray(_) => {
+                unreachable!("FieldArray is rejected by the manual Deserialize impl")
+            }
+            PayloadFieldSchemaShadowHuman::FieldParams(p) => Self::FieldParams(p),
+        }
+    }
+}
+
+impl From<PayloadFieldSchemaShadowNonHuman> for PayloadFieldSchema {
+    fn from(shadow: PayloadFieldSchemaShadowNonHuman) -> Self {
+        match shadow {
+            PayloadFieldSchemaShadowNonHuman::FieldType(t) => Self::FieldType(t),
+            PayloadFieldSchemaShadowNonHuman::FieldParams(p) => Self::FieldParams(p),
         }
     }
 }
