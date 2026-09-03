@@ -61,7 +61,7 @@ paths:
             type: integer
             minimum: 1
             default: 60 #! Keep in sync with DEFAULT_TELEMETRY_TIMEOUT
-      responses: #@ response(reference("TelemetryData"))
+      responses: #@ response({"anyOf": [reference("TelemetryData"), {}]})
 
   /metrics:
     get:

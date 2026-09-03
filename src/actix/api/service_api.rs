@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -21,7 +20,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::auth::ActixAuth;
-use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
 use crate::common::json_path_filter::apply_filter_jq;
 use crate::common::metrics::MetricsData;
@@ -52,13 +51,12 @@ impl TelemetryParam {
 }
 
 #[get("/telemetry")]
-fn telemetry(
+async fn telemetry(
     telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
     ActixAuth(auth): ActixAuth,
-) -> impl Future<Output = HttpResponse> {
-    async move {
-        let instant = Instant::now();
+) -> HttpResponse {
+    helpers::time(async move {
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -70,44 +68,25 @@ fn telemetry(
             per_collection: params.per_collection.unwrap_or(false),
         };
 
-        let telemetry_data = match telemetry_collector
+        let telemetry_data = telemetry_collector
             .lock()
             .await
             .prepare_data(&auth, detail, None, params.timeout())
-            .await
-        {
-            Ok(data) => {
-                if anonymize {
-                    data.anonymize()
-                } else {
-                    data
-                }
-            }
-            Err(err) => return process_response_error(err, instant, None),
+            .await?;
+        let telemetry_data = if anonymize {
+            telemetry_data.anonymize()
+        } else {
+            telemetry_data
         };
 
-        match params.filter_jq.as_deref() {
-            Some(filter_jq) => {
-                let value = match serde_json::to_value(&telemetry_data) {
-                    Ok(value) => value,
-                    Err(err) => {
-                        return process_response_error(
-                            StorageError::service_error(err.to_string()),
-                            instant,
-                            None,
-                        );
-                    }
-                };
-                match apply_filter_jq(&value, filter_jq) {
-                    Ok(filtered) => process_response(Ok(filtered), instant, None),
-                    Err(err) => {
-                        process_response_error(StorageError::bad_request(err), instant, None)
-                    }
-                }
-            }
-            None => process_response(Ok(telemetry_data), instant, None),
+        let value = serde_json::to_value(telemetry_data)?;
+        if let Some(filter_jq) = params.filter_jq.as_deref() {
+            apply_filter_jq(&value, filter_jq).map_err(StorageError::bad_request)
+        } else {
+            Ok(value)
         }
-    }
+    })
+    .await
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]

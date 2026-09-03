@@ -125,7 +125,7 @@ fn collect_matches(value: &Value, segments: &[Segment], out: &mut Vec<Value>) {
                     collect_matches(child, rest, out);
                 }
             }
-            _ => {}
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
         },
     }
 }

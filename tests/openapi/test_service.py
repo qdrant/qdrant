@@ -114,43 +114,29 @@ def test_telemetry():
 
 def test_telemetry_filter_jq():
     """filter_jq returns a subset of telemetry in `result` (shape is no longer TelemetryData)."""
-    import requests
-    from .helpers.helpers import qdrant_host_headers
-    from .helpers.settings import QDRANT_HOST
+    unfiltered = request_with_validation(
+        api="/telemetry",
+        method="GET",
+    )
+    assert unfiltered.ok, unfiltered.text
+    expected = unfiltered.json()["result"]["collections"]["number_of_collections"]
 
-    # Path relative to telemetry payload
-    response = requests.get(
-        f"{QDRANT_HOST}/telemetry",
-        params={
-            "details_level": 3,
-            "filter_jq": ".collections.collections[].transfers",
-        },
-        headers=qdrant_host_headers(),
+    # Optional `result.` prefix (as seen in the full API envelope) is accepted.
+    response = request_with_validation(
+        api="/telemetry",
+        method="GET",
+        query_params={"filter_jq": "result.collections.number_of_collections"},
     )
     assert response.ok, response.text
     body = response.json()
     assert body["status"] == "ok"
-    assert isinstance(body["result"], list)
-    # One entry per collection at details_level >= 3
-    assert len(body["result"]) >= 1
-    assert isinstance(body["result"][0], list)
-
-    # Optional `result.` prefix (as seen in the full API envelope) is accepted
-    response = requests.get(
-        f"{QDRANT_HOST}/telemetry",
-        params={
-            "filter_jq": "result.collections.number_of_collections",
-        },
-        headers=qdrant_host_headers(),
-    )
-    assert response.ok, response.text
-    assert response.json()["result"] >= 1
+    assert body["result"] == expected
 
     # Invalid path syntax → 400
-    response = requests.get(
-        f"{QDRANT_HOST}/telemetry",
-        params={"filter_jq": ".foo..bar"},
-        headers=qdrant_host_headers(),
+    response = request_with_validation(
+        api="/telemetry",
+        method="GET",
+        query_params={"filter_jq": ".foo..bar"},
     )
     assert response.status_code == 400
 

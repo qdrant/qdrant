@@ -405,7 +405,12 @@
                       "example": "ok"
                     },
                     "result": {
-                      "$ref": "#/components/schemas/TelemetryData"
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/TelemetryData"
+                        },
+                        {}
+                      ]
                     }
                   }
                 }
