@@ -1,4 +1,6 @@
 mod async_io;
+#[cfg(unix)]
+mod memory_stats;
 mod pipeline;
 
 use std::borrow::Cow;
@@ -575,22 +577,7 @@ impl MmapFile {
     /// ensuring all measurements go through the same mmap path.
     #[cfg(unix)]
     pub fn probe_memory_stats(path: impl AsRef<Path>) -> std::io::Result<(u64, u64)> {
-        let fs = MmapFs;
-        let file = fs
-            .open(
-                path,
-                OpenOptions {
-                    writeable: false,
-                    need_sequential: false,
-                    populate: Populate::No,
-                    advice: AdviceSetting::Advice(Advice::Normal),
-                },
-                (),
-            )
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let disk_bytes = file.disk_bytes()?;
-        let resident_bytes = file.resident_bytes()?;
-        Ok((disk_bytes, resident_bytes))
+        memory_stats::probe_memory_stats(path)
     }
 }
 
