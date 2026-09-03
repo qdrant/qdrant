@@ -343,7 +343,7 @@ where
         let store = self.vectors.as_mut().unwrap();
         for id in deleted_ids {
             check_process_stopped(stopped)?;
-            store.delete(id);
+            store.deleted_mut().delete(id);
         }
         store.flusher()()?;
 
@@ -414,15 +414,15 @@ where
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.vectors.as_ref().unwrap().is_deleted_vector(key)
+        self.vectors.as_ref().unwrap().deleted().is_deleted(key)
     }
 
     fn deleted_vector_count(&self) -> usize {
-        self.vectors.as_ref().unwrap().deleted_count
+        self.vectors.as_ref().unwrap().deleted().count()
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.vectors.as_ref().unwrap().deleted_vector_bitslice()
+        self.vectors.as_ref().unwrap().deleted().bitslice()
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
@@ -469,7 +469,7 @@ where
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.vectors.as_mut().unwrap().delete(key))
+        Ok(self.vectors.as_mut().unwrap().deleted_mut().delete(key))
     }
 }
 

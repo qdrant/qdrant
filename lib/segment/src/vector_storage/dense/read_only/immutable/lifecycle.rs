@@ -10,10 +10,9 @@ use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::Distance;
+use crate::vector_storage::deleted_flags::deleted_mmap_data_start;
 use crate::vector_storage::dense::dense_vector_storage::{DELETED_PATH, VECTORS_PATH};
-use crate::vector_storage::dense::immutable_dense_vectors::{
-    ImmutableDenseVectorData, deleted_mmap_data_start,
-};
+use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
 fn bitslice_open_options(populate: Populate) -> OpenOptions {

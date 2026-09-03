@@ -1,5 +1,6 @@
 mod chunked_vectors;
 pub mod common;
+pub mod deleted_flags;
 pub mod dense;
 mod memory_reporter;
 pub mod multi_dense;
