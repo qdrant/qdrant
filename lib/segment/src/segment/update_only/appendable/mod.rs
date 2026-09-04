@@ -24,8 +24,9 @@ use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore}
 /// A segment open for appends: the write target. Every point a batch stores
 /// lands here, in a fresh slot — nothing is ever rewritten in place.
 pub struct AppendableSegment<S: UniversalAppend + 'static> {
-    id_tracker: UpdateOnlyAppendableIdTracker<S>,
-    /// What [`store_components`](Self::store_components) opens with.
+    id_tracker: UpdateOnlyAppendableIdTracker,
+    /// What the id tracker appends through and
+    /// [`store_components`](Self::store_components) opens with.
     fs: S::Fs,
     segment_path: PathBuf,
     config: SegmentConfig,
@@ -39,6 +40,8 @@ pub struct AppendableSegment<S: UniversalAppend + 'static> {
 /// point is not here: it belongs to the segment itself, since deletes need it
 /// too.
 struct StoreComponents<S: UniversalAppend + 'static> {
+    /// What the components write through, passed down per call.
+    fs: S::Fs,
     payload_storage: UpdateOnlyPayloadStorage<S>,
     payload_indexes: UpdateOnlyStructPayloadIndex<S>,
     /// One writer per named vector, dense and sparse alike.
@@ -53,16 +56,16 @@ struct StoreComponents<S: UniversalAppend + 'static> {
 }
 
 impl<S: UniversalAppend + 'static> StoreComponents<S> {
-    fn open(fs: &S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
-        let payload_storage = UpdateOnlyPayloadStorage::open(fs.clone(), segment_path)?;
-        let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs.clone(), segment_path)?;
+    fn open(fs: S::Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
+        let payload_storage = UpdateOnlyPayloadStorage::open(&fs, segment_path)?;
+        let payload_indexes = UpdateOnlyStructPayloadIndex::open(&fs, segment_path)?;
 
         let mut vector_storages =
             Vec::with_capacity(config.vector_data.len() + config.sparse_vector_data.len());
         let mut quantized_vectors = HashMap::new();
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open(fs.clone(), &path, vector_config)?;
+            let storage = UpdateOnlyVectorStorage::open(&fs, &path, vector_config)?;
             vector_storages.push((vector_name.clone(), storage));
 
             if let Some(quantized) =
@@ -73,11 +76,12 @@ impl<S: UniversalAppend + 'static> StoreComponents<S> {
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
-            let storage = UpdateOnlyVectorStorage::open_sparse(fs.clone(), &path)?;
+            let storage = UpdateOnlyVectorStorage::open_sparse(&fs, &path)?;
             vector_storages.push((vector_name.clone(), storage));
         }
 
         Ok(Self {
+            fs,
             payload_storage,
             payload_indexes,
             vector_storages,
@@ -106,7 +110,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         } = state;
 
         let id_tracker = UpdateOnlyAppendableIdTracker::new(
-            fs.clone(),
+            &fs,
             segment_path,
             max_claimed_internal_id,
             pending_inserts,
@@ -125,7 +129,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
     fn store_components(&mut self) -> OperationResult<&mut StoreComponents<S>> {
         if self.store.is_none() {
             self.store = Some(StoreComponents::open(
-                &self.fs,
+                self.fs.clone(),
                 &self.segment_path,
                 &self.config,
             )?);
@@ -157,7 +161,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
             .iter()
             .map(|point| MappingOperation::Insert(point.id))
             .collect();
-        let inserted = self.id_tracker.insert_operations(&operations)?;
+        let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
 
         let store = self.store_components()?;
@@ -183,7 +187,7 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
                     }
                 })
                 .collect();
-            storage.append_many(start_slot, vectors.iter().copied(), hw_counter)?;
+            storage.append_many(&store.fs, start_slot, vectors.iter().copied(), hw_counter)?;
 
             // The quantized storage takes the same run, row-for-row with the raw storage.
             if let Some(quantized) = store.quantized_vectors.get_mut(vector_name) {
@@ -199,16 +203,17 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         };
         store
             .payload_storage
-            .append_many(slot_payloads(), hw_counter)?;
+            .append_many(&store.fs, slot_payloads(), hw_counter)?;
         store
             .payload_indexes
-            .append_many(slot_payloads(), hw_counter)?;
+            .append_many(&store.fs, slot_payloads(), hw_counter)?;
 
         // Publish: covering the slots with their versions is what makes the
         // points visible, so everything above must already be durable.
         let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
         let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
-        self.id_tracker.set_internal_versions(&slots, &versions)?;
+        self.id_tracker
+            .set_internal_versions(&self.fs, &slots, &versions)?;
 
         Ok(())
     }
@@ -225,7 +230,9 @@ impl<S: UniversalAppend + 'static> AppendableSegment<S> {
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        self.id_tracker
-            .delete_points(points.iter().map(|(point_id, _internal_id)| *point_id))
+        self.id_tracker.delete_points(
+            &self.fs,
+            points.iter().map(|(point_id, _internal_id)| *point_id),
+        )
     }
 }

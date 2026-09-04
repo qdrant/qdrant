@@ -6,7 +6,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
 
 use super::appendable_mmap_multi_dense_vector_storage::{
     DELETED_DIR_PATH, MultivectorMmapOffset, OFFSETS_DIR_PATH, VECTORS_DIR_PATH,
@@ -26,32 +26,30 @@ use crate::vector_storage::update_only::VectorToStore;
 /// point owns a run of them — so this writer tracks where the row space ends.
 ///
 /// [`AppendableMmapMultiDenseVectorStorage`]: super::appendable_mmap_multi_dense_vector_storage::AppendableMmapMultiDenseVectorStorage
-pub struct UpdateOnlyMultiDenseVectorStorage<
-    T: PrimitiveVectorElement,
-    S: UniversalAppend + 'static,
-> {
+pub struct UpdateOnlyMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     /// Flat inner-vector space: one row per inner vector.
-    vectors: UpdateOnlyChunkedVectors<T, S>,
+    vectors: UpdateOnlyChunkedVectors<T>,
     /// Maps each point slot to its row range.
-    offsets: UpdateOnlyChunkedVectors<MultivectorMmapOffset, S>,
-    deleted: UpdateOnlyStoredFlags<S>,
+    offsets: UpdateOnlyChunkedVectors<MultivectorMmapOffset>,
+    deleted: UpdateOnlyStoredFlags,
     dim: usize,
     /// One past the last row in use, carried across the batch.
     next_row: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
-    UpdateOnlyMultiDenseVectorStorage<T, S>
-{
+impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: S::Fs, path: &Path, dim: usize) -> OperationResult<Self> {
-        let vectors =
-            UpdateOnlyChunkedVectors::open(fs.clone(), &path.join(VECTORS_DIR_PATH), dim)?;
-        // One offset entry per point, so the "vector" is a single element.
-        let offsets = UpdateOnlyChunkedVectors::open(fs.clone(), &path.join(OFFSETS_DIR_PATH), 1)?;
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        path: &Path,
+        dim: usize,
+    ) -> OperationResult<Self> {
         let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
-        let next_row = vectors.stored_len()?;
+        let vectors = UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?;
+        // One offset entry per point, so the "vector" is a single element.
+        let offsets = UpdateOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1)?;
+        let next_row = vectors.stored_len(fs)?;
 
         Ok(Self {
             vectors,
@@ -64,8 +62,9 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
 
     /// Append one multi-vector per point of a batch, starting at `start_slot`,
     /// and persist them.
-    pub fn append_many<'a>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
         &mut self,
+        fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -99,12 +98,14 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
         }
 
         self.vectors.append_many(
+            fs,
             batch_start as VectorOffsetType,
             rows.chunks_exact(self.dim),
             hw_counter,
         )?;
 
         self.offsets.append_many(
+            fs,
             start_slot as VectorOffsetType,
             offsets.iter().map(std::slice::from_ref),
             hw_counter,
@@ -114,7 +115,7 @@ impl<T: PrimitiveVectorElement, S: UniversalAppend + 'static>
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(hw_counter)
+        self.deleted.flush(fs, hw_counter)
     }
 
     fn flatten_decoded(&self, vector: VectorRef<'_>) -> OperationResult<Vec<T>> {

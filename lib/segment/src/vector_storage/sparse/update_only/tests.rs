@@ -29,9 +29,10 @@ fn sparse_vectors_round_trip() {
     let first = sparse(&[1, 5], &[1.0, 2.0]);
     let second = sparse(&[3], &[3.0]);
 
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [
                 VectorToStore::Decoded(VectorRef::from(&first)),
@@ -60,9 +61,10 @@ fn batches_resume() {
     let first = sparse(&[1], &[1.0]);
     let second = sparse(&[2], &[2.0]);
 
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(&first))],
             &hw_counter,
@@ -70,9 +72,10 @@ fn batches_resume() {
         .unwrap();
     drop(writer);
 
-    let mut writer = Writer::open(MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
+            &MmapFs,
             1,
             [VectorToStore::Decoded(VectorRef::from(&second))],
             &hw_counter,

@@ -2,13 +2,13 @@ use std::cmp::Ordering;
 use std::path::Path;
 
 use common::generic_consts::Sequential;
-use common::universal_io::{UniversalAppend, UniversalWriteFileOps as _};
+use common::universal_io::{UniversalRead as _, UniversalWriteFileOps};
 
 use super::UpdateOnlyAppendableIdTracker;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::mutable_id_tracker::versions_storage::heal_versions_tail;
 
-impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
+impl UpdateOnlyAppendableIdTracker {
     /// Heal a versions file that ends mid-entry, per [`heal_versions_tail`].
     ///
     /// An append-only backend cannot truncate, so the file is shrunk the only way it can be: the
@@ -16,14 +16,19 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     ///
     /// Takes ownership of `file` and drops it before the rewrite, Windows cannot replace a path
     /// that still has an mmap open. Callers open a fresh handle afterwards.
-    pub(super) fn heal_versions(&self, path: &Path, file: S, file_len: u64) -> OperationResult<()> {
+    pub(super) fn heal_versions<Fs: UniversalWriteFileOps>(
+        fs: &Fs,
+        path: &Path,
+        file: Fs::AppendFile,
+        file_len: u64,
+    ) -> OperationResult<()> {
         heal_versions_tail(path, file_len, move |healthy_len| {
             let committed = file
                 .read_bytes(0..healthy_len, Sequential, align_of::<u8>())?
                 .to_vec();
             // Release the mmap before replacing the path.
             drop(file);
-            self.fs.atomic_save(path, &committed)?;
+            fs.atomic_save(path, &committed)?;
             Ok(())
         })
     }
@@ -43,8 +48,12 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     /// The caller must drop any open handle on `path` first, Windows cannot replace a path that
     /// still has an mmap open. Opens its own handle, drops it before the rewrite, and leaves the
     /// caller to open a fresh one.
-    pub(super) fn heal_mappings(&self, path: &Path) -> OperationResult<()> {
-        let file = self.open_append(path)?;
+    pub(super) fn heal_mappings<Fs: UniversalWriteFileOps>(
+        &self,
+        fs: &Fs,
+        path: &Path,
+    ) -> OperationResult<()> {
+        let file = Self::open_append(fs, path)?;
         let file_len = Self::end_of_file(&file)?;
 
         match file_len.cmp(&self.mappings_end) {
@@ -59,7 +68,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
                     .to_vec();
                 // Release the mmap before replacing the path.
                 drop(file);
-                self.fs.atomic_save(path, &log)?;
+                fs.atomic_save(path, &log)?;
                 Ok(())
             }
             // Entries the log counts on are not in the file: it was truncated under us, or this

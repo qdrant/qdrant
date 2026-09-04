@@ -73,9 +73,10 @@ fn batch_reaches_every_index_of_a_field() {
         payload_json! { "f": null },
     ];
 
-    let mut index = Index::open(MmapFs, dir.path()).unwrap();
+    let mut index = Index::open(&MmapFs, dir.path()).unwrap();
     index
         .append_many(
+            &MmapFs,
             payloads.iter().enumerate().map(|(i, p)| (i as u32, p)),
             &hw_counter,
         )
@@ -128,8 +129,10 @@ fn batches_resume() {
 
     for (slot, value) in [(0, "alpha"), (1, "beta")] {
         let payload = payload_json! { "f": value };
-        let mut index = Index::open(MmapFs, dir.path()).unwrap();
-        index.append_many([(slot, &payload)], &hw_counter).unwrap();
+        let mut index = Index::open(&MmapFs, dir.path()).unwrap();
+        index
+            .append_many(&MmapFs, [(slot, &payload)], &hw_counter)
+            .unwrap();
     }
 
     let path = get_payload_index_path(dir.path());
@@ -169,8 +172,10 @@ fn segment_without_indexes_opens_empty() {
     let hw_counter = HardwareCounterCell::new();
 
     let payload = payload_json! { "f": "alpha" };
-    let mut index = Index::open(MmapFs, dir.path()).unwrap();
-    index.append_many([(0, &payload)], &hw_counter).unwrap();
+    let mut index = Index::open(&MmapFs, dir.path()).unwrap();
+    index
+        .append_many(&MmapFs, [(0, &payload)], &hw_counter)
+        .unwrap();
 }
 
 /// A config that does not say which indexes a field has is refused: this writer
@@ -180,7 +185,7 @@ fn undeclared_index_types_are_refused() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
     write_config(dir.path(), vec![]);
 
-    let Err(err) = Index::open(MmapFs, dir.path()) else {
+    let Err(err) = Index::open(&MmapFs, dir.path()) else {
         panic!("a field with no declared index types must be refused");
     };
     assert!(
