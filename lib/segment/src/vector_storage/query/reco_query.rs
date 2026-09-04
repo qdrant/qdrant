@@ -254,25 +254,17 @@ fn merge_positive_and_negative_avg(
                 .zip(negative.iter())
                 .map(|(pos, neg)| pos + pos - neg)
                 .collect();
-            Ok(vector.into())
+            Ok(VectorInternal::from(vector))
         }
         (VectorInternal::Sparse(positive), VectorInternal::Sparse(negative)) => {
-            // `combine_aggregate` walks both vectors' index sets; if the
-            // dimensions differ the result is a sparse vector with the
-            // union of indices, not a length-matched merge. Reject the
-            // mismatch explicitly.
-            if positive.indices.len() != negative.indices.len() {
-                return Err(OperationError::validation_error(format!(
-                    "Positive and negative sparse vectors must have the same \
-                     dimension for average-vector recommend: positive has dim {}, \
-                     negative has dim {}",
-                    positive.indices.len(),
-                    negative.indices.len(),
-                )));
-            }
-            Ok(positive
-                .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
-                .into())
+            // Sparse vectors have no fixed dimension; `combine_aggregate`
+            // walks the union of both index sets and applies the closure
+            // to each. The closure is responsible for treating missing
+            // dimensions as zero, which `pos + pos - neg` does via the
+            // `Default` DimWeight.
+            Ok(VectorInternal::from(
+                positive.combine_aggregate(&negative, |pos, neg| pos + pos - neg),
+            ))
         }
         (VectorInternal::MultiDense(mut positive), VectorInternal::MultiDense(negative)) => {
             // merge positive and negative vectors as concatenated vectors with negative vectors negated
@@ -281,9 +273,13 @@ fn merge_positive_and_negative_avg(
                 .extend(negative.flattened_vectors.into_iter().map(|x| -x));
             Ok(VectorInternal::MultiDense(positive))
         }
-        _ => Err(OperationError::validation_error(
-            "Positive and negative vectors should be of the same type, either all dense or all sparse or all multi",
-        )),
+        (VectorInternal::Dense(_), VectorInternal::Sparse(_) | VectorInternal::MultiDense(_))
+        | (VectorInternal::Sparse(_), VectorInternal::Dense(_) | VectorInternal::MultiDense(_))
+        | (VectorInternal::MultiDense(_), VectorInternal::Dense(_) | VectorInternal::Sparse(_)) => {
+            Err(OperationError::validation_error(
+                "Positive and negative vectors should be of the same type, either all dense or all sparse or all multi",
+            ))
+        }
     }
 }
 
@@ -500,20 +496,21 @@ mod test {
         );
     }
 
-    /// Same for sparse vectors: `combine_aggregate` walks both index
-    /// sets and produces a length-`union` sparse vector, which is
-    /// also wrong when the source dimensions differ.
+    /// Sparse vectors have no fixed dimension. `combine_aggregate` walks
+    /// the union of the two index sets and applies the closure to each
+    /// pair, treating missing dimensions on either side as zero. With
+    /// the `pos + pos - neg` closure, a positive-only index `i` becomes
+    /// `2 * pos` and a negative-only index `j` becomes `-neg`.
     #[test]
-    fn test_merge_rejects_dimension_mismatch_sparse() {
+    fn test_merge_sparse_unions_indices() {
         let positive: VectorInternal = SparseVector::new(vec![0], vec![1.0]).unwrap().into();
         let negative: VectorInternal = SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
             .unwrap()
             .into();
-        let err = merge_positive_and_negative_avg(positive, negative).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("dimension") && msg.contains("sparse"),
-            "expected dimension-mismatch diagnostic, got: {msg}",
-        );
+        let merged = merge_positive_and_negative_avg(positive, negative).unwrap();
+        let expected: VectorInternal = SparseVector::new(vec![0, 1, 2], vec![2.0, -1.0, -2.0])
+            .unwrap()
+            .into();
+        assert_eq!(merged, expected);
     }
 }
