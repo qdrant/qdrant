@@ -17,27 +17,32 @@ use crate::types::PointIdType;
 /// batch can do here is retire points that are already there. Where their
 /// tombstones go is the id tracker's decision.
 pub struct DeleteOnlySegment<Fs: UniversalAppendFs> {
-    id_tracker: DeleteOnlyIdTrackerEnum<Fs>,
+    fs: Fs,
+    id_tracker: DeleteOnlyIdTrackerEnum,
 }
 
 impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
     /// Open the segment directory at `segment_path` for deletes, resuming the
     /// tracker kind its [`DeleteOnlyIdTrackerState`] variant names; nothing is
     /// read.
-    pub fn open(fs: Fs, segment_path: &Path, id_tracker_state: DeleteOnlyIdTrackerState) -> Self {
+    pub fn open(
+        fs: Fs,
+        segment_path: &Path,
+        id_tracker_state: DeleteOnlyIdTrackerState,
+    ) -> OperationResult<Self> {
         let id_tracker = match id_tracker_state {
             DeleteOnlyIdTrackerState::Immutable(deleted) => DeleteOnlyIdTrackerEnum::Immutable(
-                UpdateOnlyImmutableIdTracker::new(fs, segment_path, deleted),
+                UpdateOnlyImmutableIdTracker::new(segment_path, deleted)?,
             ),
             DeleteOnlyIdTrackerState::DiskResident(deleted) => {
                 DeleteOnlyIdTrackerEnum::DiskResident(UpdateOnlyDiskIdTracker::new(
-                    fs,
                     segment_path,
                     deleted,
-                ))
+                )?)
             }
         };
-        Self { id_tracker }
+
+        Ok(Self { fs, id_tracker })
     }
 
     /// Retire the given points by marking the slots they occupy in the id
@@ -47,6 +52,6 @@ impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        self.id_tracker.tombstone_points(points)
+        self.id_tracker.tombstone_points(&self.fs, points)
     }
 }
