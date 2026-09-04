@@ -429,6 +429,18 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseMemmapHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
             }
+            VectorStorageEnum::DenseGraphInline(vector_storage) => Self::new_dense_f32(
+                device,
+                vector_storage.as_ref(),
+                force_half_precision,
+                stopped,
+            ),
+            VectorStorageEnum::DenseGraphInlineByte(vector_storage) => {
+                Self::new_dense(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::DenseGraphInlineHalf(vector_storage) => {
+                Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
+            }
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(vector_storage) => Self::new_dense_f32(
                 device,
@@ -492,6 +504,9 @@ impl GpuVectorStorage {
             // back to float (or half-float, when the device supports it) and
             // upload it as a regular dense storage.
             VectorStorageEnum::DenseTurboMemmap(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::DenseTurboGraphInline(vector_storage) => {
                 Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
             }
             #[cfg(target_os = "linux")]

@@ -42,6 +42,15 @@ impl MemoryReporter for VectorStorageEnum {
             VectorStorageEnum::DenseMemmapHalf(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
+            VectorStorageEnum::DenseGraphInline(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
+            VectorStorageEnum::DenseGraphInlineByte(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
+            VectorStorageEnum::DenseGraphInlineHalf(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
 
             // io_uring dense variants: always on-disk, no mmap caching
             #[cfg(target_os = "linux")]
@@ -69,6 +78,9 @@ impl MemoryReporter for VectorStorageEnum {
             }
 
             VectorStorageEnum::DenseTurboMemmap(v) => {
+                from_files_with_on_disk(v.files(), v.is_on_disk())
+            }
+            VectorStorageEnum::DenseTurboGraphInline(v) => {
                 from_files_with_on_disk(v.files(), v.is_on_disk())
             }
             #[cfg(target_os = "linux")]

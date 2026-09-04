@@ -75,6 +75,21 @@ pub(crate) fn merge_from<'a>(
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
+        VectorStorageEnum::DenseGraphInline(target) => {
+            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
+            let range = target.update_from(&mut reader, stopped);
+            reader.finish(range)
+        }
+        VectorStorageEnum::DenseGraphInlineByte(target) => {
+            let mut reader = BatchedReader::new(points, sources, read_dense_byte);
+            let range = target.update_from(&mut reader, stopped);
+            reader.finish(range)
+        }
+        VectorStorageEnum::DenseGraphInlineHalf(target) => {
+            let mut reader = BatchedReader::new(points, sources, read_dense_half);
+            let range = target.update_from(&mut reader, stopped);
+            reader.finish(range)
+        }
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(target) => {
             let mut reader = BatchedReader::new(points, sources, read_dense_f32);
@@ -109,6 +124,11 @@ pub(crate) fn merge_from<'a>(
             reader.finish(range)
         }
         VectorStorageEnum::DenseTurboMemmap(target) => {
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
+            let range = target.update_from(&mut reader, stopped);
+            reader.finish(range)
+        }
+        VectorStorageEnum::DenseTurboGraphInline(target) => {
             let mut reader = BatchedReader::new(points, sources, read_dense_tq);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
@@ -334,12 +354,15 @@ fn read_dense_f32(
     let vector = match source {
         VectorStorageEnum::DenseVolatile(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseMemmap(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseGraphInline(v) => v.get_dense::<Sequential>(key),
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseAppendableMemmap(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::EmptyDense(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseMemmapByte(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
         | VectorStorageEnum::SparseVolatile(_)
@@ -349,6 +372,7 @@ fn read_dense_f32(
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
@@ -386,12 +410,15 @@ fn read_dense_byte(
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileByte(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseMemmapByte(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseGraphInlineByte(v) => v.get_dense::<Sequential>(key),
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringByte(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
+        | VectorStorageEnum::DenseGraphInline(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
         | VectorStorageEnum::SparseVolatile(_)
@@ -401,6 +428,7 @@ fn read_dense_byte(
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
@@ -438,12 +466,15 @@ fn read_dense_half(
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileHalf(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseMemmapHalf(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseGraphInlineHalf(v) => v.get_dense::<Sequential>(key),
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringHalf(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
+        | VectorStorageEnum::DenseGraphInline(_)
         | VectorStorageEnum::DenseMemmapByte(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::SparseVolatile(_)
@@ -453,6 +484,7 @@ fn read_dense_half(
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
@@ -488,6 +520,7 @@ fn read_dense_tq(
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         VectorStorageEnum::DenseTurboMemmap(v) => v.get_dense_tq::<Sequential>(key),
+        VectorStorageEnum::DenseTurboGraphInline(v) => v.get_dense_tq::<Sequential>(key),
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseTurboUring(v) => v.get_dense_tq::<Sequential>(key),
         VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_dense_tq::<Sequential>(key),
@@ -495,6 +528,9 @@ fn read_dense_tq(
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInline(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
@@ -543,10 +579,14 @@ fn read_multi_tq(
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInline(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::SparseVolatile(_)
         | VectorStorageEnum::SparseMmap(_)
@@ -594,6 +634,9 @@ fn read_multi_f32(
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInline(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
@@ -602,6 +645,7 @@ fn read_multi_f32(
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
@@ -645,6 +689,9 @@ fn read_multi_byte(
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInline(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
@@ -654,6 +701,7 @@ fn read_multi_byte(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
@@ -696,6 +744,9 @@ fn read_multi_half(
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInline(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
@@ -705,6 +756,7 @@ fn read_multi_half(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
@@ -759,6 +811,9 @@ fn read_sparse(
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
+        | VectorStorageEnum::DenseGraphInline(_)
+        | VectorStorageEnum::DenseGraphInlineByte(_)
+        | VectorStorageEnum::DenseGraphInlineHalf(_)
         | VectorStorageEnum::DenseAppendableMemmap(_)
         | VectorStorageEnum::DenseAppendableMemmapByte(_)
         | VectorStorageEnum::DenseAppendableMemmapHalf(_)
@@ -767,6 +822,7 @@ fn read_sparse(
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
         | VectorStorageEnum::DenseTurboMemmap(_)
+        | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptyDense(_) => {
