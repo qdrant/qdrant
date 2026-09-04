@@ -256,7 +256,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                         "Write target {uuid} was opened as delete-only, it cannot store points",
                     ))
                 })?
-                .store_points(&to_store, &hw_counter)?;
+                .store_points(&self.pool, &to_store, &hw_counter)?;
             log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
 
             // The write target's retirements happen after the store, since
