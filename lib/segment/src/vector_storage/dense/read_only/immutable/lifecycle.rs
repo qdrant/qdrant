@@ -25,7 +25,9 @@ fn bitslice_open_options(populate: Populate) -> OpenOptions {
     }
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyImmutableDenseVectorStorage<T, S> {
+impl<T: PrimitiveVectorElement, S: UniversalRead>
+    ReadOnlyImmutableDenseVectorStorage<ImmutableDenseVectorData<T, S>>
+{
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// Absent files are skipped rather than reported: the subsequent open is

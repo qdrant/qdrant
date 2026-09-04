@@ -23,9 +23,9 @@ use common::universal_io::{IoUringFile, IoUringFs};
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
+use super::turbo_vectors::TurboVectorBlob;
 use crate::common::Flusher;
 use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -41,12 +41,12 @@ use crate::vector_storage::{
     VectorStorageRead,
 };
 
-/// Single-file TurboQuant dense vector storage over a [`UniversalRead`] backend
-/// `S` (mmap by default, io_uring on Linux). Non-appendable data, mutable
-/// deletions.
-pub struct TurboVectorStorageImpl<S: UniversalRead = MmapFile> {
-    /// Single-file encoded vectors, read through `S`.
-    storage: QuantizedStorage<S>,
+/// Single-file TurboQuant dense vector storage over the encoded-vector blob `B`
+/// — for now only its own file, read through mmap or io_uring. Non-appendable
+/// data, mutable deletions.
+pub struct TurboVectorStorageImpl<B: TurboVectorBlob> {
+    /// Encoded vectors.
+    storage: B,
 
     /// Quantizer used to de/quantize.
     quantizer: TurboQuantizer,
@@ -55,6 +55,8 @@ pub struct TurboVectorStorageImpl<S: UniversalRead = MmapFile> {
     deleted: BitvecFlags<MmapFile>,
     /// Number of vectors currently flagged as deleted.
     deleted_count: usize,
+
+    on_disk: bool,
 
     /// Distance used for scoring / query preprocessing.
     distance: Distance,
@@ -93,7 +95,9 @@ pub fn open_turbo_vector_storage_with_uring(
 
     #[cfg(target_os = "linux")]
     if with_uring {
-        match TurboVectorStorageImpl::<IoUringFile>::open_uring(path, dim, distance, populate) {
+        match TurboVectorStorageImpl::<QuantizedStorage<IoUringFile>>::open_uring(
+            path, dim, distance, populate,
+        ) {
             Ok(storage) => return Ok(VectorStorageEnum::DenseTurboUring(Box::new(storage))),
             Err(err) => {
                 log::error!("Failed to open io_uring based TurboQuant storage: {err}");
@@ -101,11 +105,13 @@ pub fn open_turbo_vector_storage_with_uring(
         }
     }
 
-    let storage = TurboVectorStorageImpl::<MmapFile>::open_mmap(path, dim, distance, populate)?;
+    let storage = TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
+        path, dim, distance, populate,
+    )?;
     Ok(VectorStorageEnum::DenseTurboMemmap(Box::new(storage)))
 }
 
-impl TurboVectorStorageImpl<MmapFile> {
+impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
     /// Open (create-or-load) the mem-mapped single-file backend.
     pub fn open_mmap(
         path: &Path,
@@ -125,7 +131,7 @@ impl TurboVectorStorageImpl<MmapFile> {
 }
 
 #[cfg(target_os = "linux")]
-impl TurboVectorStorageImpl<IoUringFile> {
+impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
     /// Open (create-or-load) the single-file io_uring backend.
     pub fn open_uring(
         path: &Path,
@@ -144,11 +150,11 @@ impl TurboVectorStorageImpl<IoUringFile> {
     }
 }
 
-impl<S: UniversalRead> TurboVectorStorageImpl<S> {
+impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     /// Shared tail of the backend-specific `open_*` constructors: open the
     /// deletion flags and assemble the storage.
     fn finalize(
-        storage: QuantizedStorage<S>,
+        storage: B,
         quantizer: TurboQuantizer,
         path: &Path,
         dim: usize,
@@ -169,6 +175,7 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
             quantizer,
             deleted,
             deleted_count,
+            on_disk: true,
             distance,
             dim,
         })
@@ -188,7 +195,7 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
 
     /// Drop the disk cache for the encoded vectors and deleted flags.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache();
+        self.storage.clear_cache()?;
         self.deleted.clear_cache()?;
         Ok(())
     }
@@ -243,7 +250,7 @@ impl<S: UniversalRead> TurboVectorStorageImpl<S> {
     }
 }
 
-impl<S: UniversalRead> std::fmt::Debug for TurboVectorStorageImpl<S> {
+impl<B: TurboVectorBlob> std::fmt::Debug for TurboVectorStorageImpl<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TurboVectorStorageImpl")
             .field("dim", &self.dim)
@@ -254,7 +261,7 @@ impl<S: UniversalRead> std::fmt::Debug for TurboVectorStorageImpl<S> {
     }
 }
 
-impl<S: UniversalRead> VectorStorageRead for TurboVectorStorageImpl<S> {
+impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.quantized_vector_size()
     }
@@ -268,7 +275,7 @@ impl<S: UniversalRead> VectorStorageRead for TurboVectorStorageImpl<S> {
     }
 
     fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+        self.on_disk
     }
 
     fn total_vector_count(&self) -> usize {
@@ -324,7 +331,7 @@ impl<S: UniversalRead> VectorStorageRead for TurboVectorStorageImpl<S> {
     }
 }
 
-impl<S: UniversalRead> VectorStorage for TurboVectorStorageImpl<S> {
+impl<B: TurboVectorBlob> VectorStorage for TurboVectorStorageImpl<B> {
     fn insert_vector(
         &mut self,
         _key: PointOffsetType,
@@ -352,7 +359,7 @@ impl<S: UniversalRead> VectorStorage for TurboVectorStorageImpl<S> {
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        self.storage.immutable_files()
+        self.storage.files()
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
@@ -360,7 +367,7 @@ impl<S: UniversalRead> VectorStorage for TurboVectorStorageImpl<S> {
     }
 }
 
-impl<S: UniversalRead> TurboScoring for TurboVectorStorageImpl<S> {
+impl<B: TurboVectorBlob> TurboScoring for TurboVectorStorageImpl<B> {
     fn preprocess_query(&self, query: DenseVector) -> EncodedQueryTQ {
         Self::preprocess_query(self, query)
     }
@@ -375,14 +382,8 @@ impl<S: UniversalRead> TurboScoring for TurboVectorStorageImpl<S> {
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
     ) {
-        shared::score_query_batch(
-            &self.storage,
-            &self.quantizer,
-            self.distance,
-            query,
-            ids,
-            scores,
-        )
+        self.storage
+            .score_query_batch(&self.quantizer, self.distance, query, ids, scores);
     }
 
     fn score_internal_encoded(
@@ -398,7 +399,7 @@ impl<S: UniversalRead> TurboScoring for TurboVectorStorageImpl<S> {
     }
 }
 
-impl<S: UniversalRead> DenseTQVectorStorageRead for TurboVectorStorageImpl<S> {
+impl<B: TurboVectorBlob> DenseTQVectorStorageRead for TurboVectorStorageImpl<B> {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -446,7 +447,7 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for TurboVectorStorageImpl<S> {
     }
 }
 
-impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<S> {
+impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<QuantizedStorage<S>> {
     fn update_from<'a>(
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
