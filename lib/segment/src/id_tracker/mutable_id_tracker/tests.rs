@@ -440,7 +440,7 @@ fn test_point_mappings_truncation() {
     );
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
 
-    // One entry and and one extra byte, file must be truncated
+    // One entry and one extra byte, file must be truncated
     fs::write(
         &mappings_path,
         b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01",

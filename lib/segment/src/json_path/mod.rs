@@ -216,7 +216,7 @@ impl JsonPath {
 
     /// Check if the path will be affected by a call to `path_to_remove.value_remove(_)`.
     pub fn is_affected_by_value_remove(&self, path_to_remove: &JsonPath) -> bool {
-        // If we have, e.g., indexed field "a.b", then it is not safe to delete any of of "a",
+        // If we have, e.g., indexed field "a.b", then it is not safe to delete any of "a",
         // "a.b", or "a.b.c".
         path_to_remove.compatible(self)
     }

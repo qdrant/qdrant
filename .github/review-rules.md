@@ -55,7 +55,7 @@ Rules that are intended to reduce noise in AI code review and are not considered
 - We don't mind using `.unwrap()` and `panic!()` in tests and benchmarks.
 
 - For Rust, checking whether the code compiles is out of scope of AI code review. In particular:
-  - Don't report mising imports for `size_of` or `align_of`.
+  - Don't report missing imports for `size_of` or `align_of`.
     The prelude used in Rust 1.80+ includes these functions.
   - Don't report that some method is used but not implemented for a type. Most likely, it is.
   - Some versions of the `rand` crate provide methods named `random_*`, and some provide `gen_*`, e.g., `random_range` vs `gen_range`.

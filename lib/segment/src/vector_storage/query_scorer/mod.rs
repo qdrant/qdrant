@@ -113,7 +113,7 @@ fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
 /// TODO: For example
 ///
 /// - If the whole batch is less than one page - don't use prefetch
-/// - If one vector is bigger then the prefetch size - don't use prefetch
+/// - If one vector is bigger than the prefetch size - don't use prefetch
 /// - ???
 pub fn is_read_with_prefetch_efficient<O: VectorOffset>(ids: &[O]) -> bool {
     let mut min = usize::MAX;
