@@ -1,4 +1,5 @@
 use std::ops::Deref as _;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
@@ -601,7 +602,7 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            graph: HnswGraph::Direct(graph),
+            graph: HnswGraph::Direct(Arc::new(graph)),
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
         })

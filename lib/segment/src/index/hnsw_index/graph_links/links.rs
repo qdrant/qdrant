@@ -6,6 +6,7 @@
 //! through the parsed view and never touch the owning storage, so the search
 //! hot path involves no dynamic dispatch even for the `Universal` backend.
 
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::Cursor;
@@ -147,6 +148,22 @@ impl GraphLinks {
             CompressionInfo::CompressedWithVectors { .. } => {
                 GraphLinksFormat::CompressedWithVectors
             }
+        }
+    }
+
+    pub fn base_vector_layout(&self) -> Option<Layout> {
+        match &self.view().compression {
+            CompressionInfo::Uncompressed { .. } => None,
+            CompressionInfo::Compressed { .. } => None,
+            CompressionInfo::CompressedWithVectors {
+                neighbors: _,
+                offsets: _,
+                hnsw_m: _,
+                bits_per_unsorted: _,
+                base_vector_layout,
+                link_vector_size: _,
+                link_vector_alignment: _,
+            } => Some(*base_vector_layout),
         }
     }
 

@@ -24,6 +24,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DenseVector;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::prefill_deleted::fill_turbo;
+use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::turbo::shared::{
     DELETED_DIR_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
 };
@@ -43,8 +44,8 @@ fn open_turbo_vector_storage(
     dim: usize,
     distance: Distance,
     populate: bool,
-) -> OperationResult<TurboVectorStorageImpl<MmapFile>> {
-    TurboVectorStorageImpl::<MmapFile>::open_mmap(path, dim, distance, populate)
+) -> OperationResult<TurboVectorStorageImpl<QuantizedStorage<MmapFile>>> {
+    TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(path, dim, distance, populate)
 }
 
 /// Concrete single-file opener with an explicit backend. Only the mmap
@@ -56,12 +57,12 @@ fn open_turbo_vector_storage_with_uring(
     distance: Distance,
     populate: bool,
     with_uring: bool,
-) -> OperationResult<TurboVectorStorageImpl<MmapFile>> {
+) -> OperationResult<TurboVectorStorageImpl<QuantizedStorage<MmapFile>>> {
     assert!(
         !with_uring,
         "use `open_turbo_single_uring` for the io_uring backend in tests",
     );
-    TurboVectorStorageImpl::<MmapFile>::open_mmap(path, dim, distance, populate)
+    TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(path, dim, distance, populate)
 }
 
 /// Concrete single-file io_uring opener for the tests.
@@ -71,8 +72,10 @@ fn open_turbo_single_uring(
     dim: usize,
     distance: Distance,
     populate: bool,
-) -> OperationResult<TurboVectorStorageImpl<IoUringFile>> {
-    TurboVectorStorageImpl::<IoUringFile>::open_uring(path, dim, distance, populate)
+) -> OperationResult<TurboVectorStorageImpl<QuantizedStorage<IoUringFile>>> {
+    TurboVectorStorageImpl::<QuantizedStorage<IoUringFile>>::open_uring(
+        path, dim, distance, populate,
+    )
 }
 
 /// Deterministic test vectors in `[-1, 1]`, seeded so that the storage and
@@ -1078,7 +1081,7 @@ fn optimizer_copy(
     dim: usize,
     distance: Distance,
     stopped: &AtomicBool,
-) -> TurboVectorStorageImpl<MmapFile> {
+) -> TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
     let count = src.total_vector_count() as PointOffsetType;
     {
         let mut dst = open_turbo_vector_storage(dst_dir, dim, distance, false).unwrap();

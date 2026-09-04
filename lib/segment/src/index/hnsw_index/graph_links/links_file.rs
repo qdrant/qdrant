@@ -3,6 +3,7 @@ use std::num::NonZero;
 
 use common::bitpacking_links::{PackedLinksIterator, iterate_packed_links};
 use common::bitpacking_ordered;
+use common::ext::aligned_vec::ACow;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
@@ -23,6 +24,7 @@ use crate::index::hnsw_index::graph_links::view_utils::{
 use crate::index::hnsw_index::graph_links::{GraphLinksFormat, GraphLinksResidency};
 
 /// UIO-backed counterpart of [super::view::GraphLinksView].
+#[derive(Debug)]
 pub struct GraphLinksFile<S: UniversalRead> {
     file: S,
     point_count: u64,
@@ -223,6 +225,18 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         Ok(find_level(u64::from(reindexed), &self.level_offsets))
     }
 
+    /// See [`super::GraphLinks::base_vector_layout`].
+    pub fn base_vector_layout(&self) -> Option<Layout> {
+        match self.compression {
+            CompressionInfo::Compressed => None,
+            CompressionInfo::CompressedWithVectors {
+                base_vector_layout,
+                link_vector_size: _,
+                link_vector_alignment: _,
+            } => Some(base_vector_layout),
+        }
+    }
+
     pub fn populate(&self) -> OperationResult<()> {
         Ok(self.file.populate()?)
     }
@@ -242,13 +256,12 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         match self.compression {
             CompressionInfo::Compressed => {
                 let sorted_count = self.hnsw_m.level_m(level);
-                self.read_neighbors(arena, point_ids, level, 1, |position, _start, data| {
-                    callback(
-                        position,
-                        iterate_packed_links(data, self.bits_per_unsorted, sorted_count),
-                    );
+                let cb = |position, _start, data: ACow<'_>| {
+                    let iter = iterate_packed_links(&data, self.bits_per_unsorted, sorted_count);
+                    callback(position, iter);
                     OperationResult::Ok(())
-                })
+                };
+                self.read_entries(arena, point_ids, level, 1, None, cb)
             }
             CompressionInfo::CompressedWithVectors { .. } => self.links_with_vectors(
                 arena,
@@ -286,9 +299,9 @@ impl<S: UniversalRead> GraphLinksFile<S> {
 
         let sorted_count = self.hnsw_m.level_m(level);
         let align = std::cmp::max(base_vector_layout.align(), link_vector_alignment as usize);
-        self.read_neighbors(arena, point_ids, level, align, |position, start, data| {
+        let cb = |position, start, data: ACow<'_>| {
             let (base_vector, links, link_vectors) = parse_links_with_vectors(
-                data,
+                &data,
                 start as usize,
                 (level == 0).then_some(base_vector_layout),
                 self.bits_per_unsorted,
@@ -297,16 +310,60 @@ impl<S: UniversalRead> GraphLinksFile<S> {
                 link_vector_alignment,
             );
             callback(position, base_vector, links, link_vectors)
-        })
+        };
+        self.read_entries(arena, point_ids, level, align, None, cb)
     }
 
-    fn read_neighbors(
+    /// Read a single base vector.
+    pub fn read_base_vector(
+        &self,
+        point_id: PointOffsetType,
+        align: usize,
+    ) -> OperationResult<ACow<'_>> {
+        let (_position, (start, _end)) = self
+            .offsets
+            .read_pairs_iter(&self.file, self.offsets_offset, &[point_id as usize])?
+            .exactly_one()
+            .map_err(|_| OperationError::service_error("Expect the point"))??;
+        let start = self.neighbors_offset + start;
+        let size = self.base_vector_layout().expect("inline vectors").size() as u64;
+        Ok(self.file.read_bytes(start..start + size, Random, align)?)
+    }
+
+    /// Batched read of base vectors.
+    pub fn read_base_vectors(
+        &self,
+        arena: &stumpalo::Arena,
+        point_ids: &[PointOffsetType],
+        align: usize,
+        mut callback: impl FnMut(usize, ACow<'_>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        let layout = match self.compression {
+            CompressionInfo::Compressed => unimplemented!(),
+            CompressionInfo::CompressedWithVectors {
+                base_vector_layout,
+                link_vector_size: _,
+                link_vector_alignment: _,
+            } => base_vector_layout,
+        };
+        self.read_entries(
+            arena,
+            point_ids,
+            0,
+            align,
+            Some(layout.size() as u64),
+            |position, _start, data| callback(position, data),
+        )
+    }
+
+    fn read_entries(
         &self,
         arena: &stumpalo::Arena,
         point_ids: &[PointOffsetType],
         level: usize,
         align: usize,
-        mut callback: impl FnMut(usize, u64, &[u8]) -> OperationResult<()>,
+        vec_size: Option<u64>, // If `Some(x)`, read only the first bytes.
+        mut callback: impl FnMut(usize, u64, ACow<'_>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         // Compute an offset index for each point.
         let offset_indices = if level == 0 {
@@ -331,12 +388,13 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         pairs.process_results(|pairs| {
             let items = pairs.map(|(position, (start, end))| ReadBytesItem {
                 user_data: (position, start),
-                range: self.neighbors_offset + start..self.neighbors_offset + end,
+                range: self.neighbors_offset + start
+                    ..self.neighbors_offset + vec_size.map_or(end, |len| start + len),
                 align,
             });
             for result in self.file.read_bytes_iter(items, Random)? {
                 let ((position, start), data) = result?;
-                callback(position, start, &data)?;
+                callback(position, start, data)?;
             }
             Ok(())
         })?

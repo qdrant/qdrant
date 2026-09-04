@@ -254,6 +254,13 @@ fn test_links_file_links<F: UniversalReadFs>(
             }
         }
     }
+
+    if let Some(vectors) = &vectors {
+        for point_id in 0..links.len() as PointOffsetType {
+            let base_vector = view.read_base_vector(point_id, 1).unwrap();
+            vectors.assert_base_vector(point_id, 0, &base_vector);
+        }
+    }
 }
 
 #[rstest]

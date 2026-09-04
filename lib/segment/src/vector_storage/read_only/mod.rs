@@ -5,10 +5,12 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{
     QueryVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
+use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
 use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
 };
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
+use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::vector_storage::turbo::read_only::{
@@ -28,16 +30,24 @@ mod read_ops;
 /// Wraps each on-disk storage type with its [`super`] read-only variant.
 /// Volatile, empty and test-only variants are intentionally absent.
 pub enum VectorStorageReadEnum<S: UniversalRead> {
-    Dense(Box<ReadOnlyImmutableDenseVectorStorage<VectorElementType, S>>),
-    DenseByte(Box<ReadOnlyImmutableDenseVectorStorage<VectorElementTypeByte, S>>),
-    DenseHalf(Box<ReadOnlyImmutableDenseVectorStorage<VectorElementTypeHalf, S>>),
+    Dense(Box<ReadOnlyImmutableDenseVectorStorage<ImmutableDenseVectorData<VectorElementType, S>>>),
+    DenseByte(
+        Box<
+            ReadOnlyImmutableDenseVectorStorage<ImmutableDenseVectorData<VectorElementTypeByte, S>>,
+        >,
+    ),
+    DenseHalf(
+        Box<
+            ReadOnlyImmutableDenseVectorStorage<ImmutableDenseVectorData<VectorElementTypeHalf, S>>,
+        >,
+    ),
     DenseChunked(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementType, S>>),
     DenseChunkedByte(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementTypeByte, S>>),
     DenseChunkedHalf(Box<ReadOnlyChunkedDenseVectorStorage<VectorElementTypeHalf, S>>),
     MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    DenseTurbo(Box<ReadOnlyImmutableTurboVectorStorage<S>>),
+    DenseTurbo(Box<ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>>>),
     DenseTurboChunked(Box<ReadOnlyChunkedTurboVectorStorage<S>>),
     MultiDenseTurbo(Box<ReadOnlyChunkedMultiTurboVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
@@ -665,13 +675,14 @@ mod tests {
             // matching read-only variant.
             match storage_type {
                 VectorStorageType::Mmap => {
-                    let mut target = TurboVectorStorageImpl::<MmapFile>::open_mmap(
-                        dir.path(),
-                        DIM,
-                        Distance::Dot,
-                        false,
-                    )
-                    .unwrap();
+                    let mut target =
+                        TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
+                            dir.path(),
+                            DIM,
+                            Distance::Dot,
+                            false,
+                        )
+                        .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::ChunkedMmap => {
