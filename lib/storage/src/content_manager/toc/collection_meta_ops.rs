@@ -18,6 +18,7 @@ use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::consensus_state_machine::apply_collection_config_diffs;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -155,6 +156,21 @@ impl TableOfContent {
         mut operation: UpdateCollectionOperation,
     ) -> Result<bool, StorageError> {
         let replica_changes = operation.take_shard_replica_changes();
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+
+        // Check every diff against a copy of the config first. A diff rejected in the middle of
+        // the operation must not keep the diffs saved before it.
+        //
+        // `ClusterState::plan_update_collection` checks an operation with the same call, so both
+        // reject the same ones. Once the state machine drives consensus, this call is the only
+        // thing checking a diff on this path, and it goes with the code below it.
+        apply_collection_config_diffs(
+            &mut collection.config().await,
+            &operation.update_collection,
+        )?;
+
         let UpdateCollection {
             vectors,
             hnsw_config,
@@ -165,9 +181,6 @@ impl TableOfContent {
             strict_mode_config: strict_mode,
             metadata,
         } = operation.update_collection;
-        let collection = self
-            .get_collection_unchecked(&operation.collection_name)
-            .await?;
         let mut recreate_optimizers = false;
 
         if let Some(diff) = optimizers_config {

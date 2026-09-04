@@ -366,6 +366,11 @@ impl Collection {
         self.collection_config.read().await.uuid
     }
 
+    /// Copy of the config, for a caller that has to reason about it without holding the lock
+    pub async fn config(&self) -> CollectionConfigInternal {
+        self.collection_config.read().await.clone()
+    }
+
     pub async fn get_sharding_method_and_keys(&self) -> (ShardingMethod, Vec<ShardKey>) {
         let shards_holder = self.shards_holder.read().await;
 
