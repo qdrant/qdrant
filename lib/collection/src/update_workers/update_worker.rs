@@ -185,18 +185,21 @@ impl UpdateWorkers {
                         }
                     };
 
-                    // `AppliedSeqHandler::update` may fsync every APPLIED_SEQ_SAVE_INTERVAL ops.
-                    let applied_seq_handler = applied_seq_handler.clone();
-                    if let Err(err) =
-                        tokio::task::spawn_blocking(move || applied_seq_handler.update(op_num))
-                            .await
-                            .unwrap_or_else(|join_err| {
-                                Err(CollectionError::service_error(format!(
-                                    "applied_seq update task panicked: {join_err}"
-                                )))
-                            })
-                    {
-                        log::error!("Can't update last applied_seq {err}")
+                    // The in-memory bump is a pair of atomics, but the interval-triggered
+                    // save fsyncs: keep only the save off the async worker.
+                    if applied_seq_handler.update_in_memory(op_num) {
+                        let applied_seq_handler = applied_seq_handler.clone();
+                        if let Err(err) =
+                            tokio::task::spawn_blocking(move || applied_seq_handler.save(op_num))
+                                .await
+                                .unwrap_or_else(|join_err| {
+                                    Err(CollectionError::service_error(format!(
+                                        "applied_seq save task panicked: {join_err}"
+                                    )))
+                                })
+                        {
+                            log::error!("Can't update last applied_seq {err}")
+                        }
                     }
 
                     if wait_for_deferred && prevent_unoptimized {

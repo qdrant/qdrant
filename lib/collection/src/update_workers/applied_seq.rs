@@ -134,24 +134,34 @@ impl AppliedSeqHandler {
         }
     }
 
-    fn save(&self, op_num: u64) -> CollectionResult<()> {
+    /// Persist `op_num` to the underlying file. Uses fsync, so callers on an async
+    /// runtime must wrap this in `spawn_blocking`.
+    pub(super) fn save(&self, op_num: u64) -> CollectionResult<()> {
         if let Some(file) = self.file.as_ref() {
             file.write(|current| current.op_num = op_num)?;
         }
         Ok(())
     }
 
-    /// Update the underlying file every `APPLIED_SEQ_SAVE_INTERVAL` updates.
-    /// Always update memory representation
-    pub fn update(&self, op_num: u64) -> CollectionResult<()> {
-        // update in-memory
+    /// Update the memory representation and report whether it is time to persist.
+    ///
+    /// Returns `true` every `APPLIED_SEQ_SAVE_INTERVAL` updates, in which case the caller
+    /// is expected to call [`Self::save`] with the same `op_num`.
+    #[must_use]
+    pub fn update_in_memory(&self, op_num: u64) -> bool {
         self.op_num.store(op_num, Ordering::Relaxed);
         let prev_count = self.update_count.fetch_add(1, Ordering::Relaxed);
         if prev_count == 0 {
-            return Ok(());
+            return false;
         }
-        // update on disk according to interval to amortize fsync
-        if prev_count.is_multiple_of(APPLIED_SEQ_SAVE_INTERVAL) {
+        // persist according to interval to amortize fsync
+        prev_count.is_multiple_of(APPLIED_SEQ_SAVE_INTERVAL)
+    }
+
+    /// Update the underlying file every `APPLIED_SEQ_SAVE_INTERVAL` updates.
+    /// Always update memory representation
+    pub fn update(&self, op_num: u64) -> CollectionResult<()> {
+        if self.update_in_memory(op_num) {
             self.save(op_num)?;
         }
         Ok(())
