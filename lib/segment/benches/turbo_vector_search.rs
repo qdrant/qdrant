@@ -37,6 +37,7 @@ use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
+use segment::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use segment::vector_storage::turbo::{
     TurboVectorStorageImpl, open_appendable_turbo_vector_storage,
     open_turbo_vector_storage_with_uring,
@@ -88,8 +89,9 @@ fn build_dataset(dir: &Path) {
             .expect("vector inserted");
     }
 
-    let mut storage = TurboVectorStorageImpl::<MmapFile>::open_mmap(dir, DIM, DISTANCE, false)
-        .expect("single-file storage created");
+    let mut storage =
+        TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(dir, DIM, DISTANCE, false)
+            .expect("single-file storage created");
     let mut encoded =
         (0..VECTORS as PointOffsetType).map(|key| (encoder.get_quantized_vector(key), false));
     DenseTQVectorStorage::update_from(&mut storage, &mut encoded, &DEFAULT_STOPPED)
