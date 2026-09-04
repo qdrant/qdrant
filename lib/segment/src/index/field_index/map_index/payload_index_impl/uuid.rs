@@ -21,7 +21,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     PrimaryCondition,
 };
-use crate::index::query_estimator::combine_should_estimations;
+use crate::index::query_estimator::combine_disjoint_should_estimations;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     UuidIntType, ValueVariants,
@@ -232,7 +232,11 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
                 let estimation = if estimations.is_empty() {
                     CardinalityEstimation::exact(0)
                 } else {
-                    combine_should_estimations(&estimations, index.get_indexed_points())
+                    // `match_any` on a single uuid field — values are
+                    // mutually exclusive (each point has at most one value
+                    // per uuid field), so the count is the sum, not the
+                    // independence-OR formula. qdrant/qdrant#10127.
+                    combine_disjoint_should_estimations(&estimations, index.get_indexed_points())
                 };
                 Some(
                     estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(
