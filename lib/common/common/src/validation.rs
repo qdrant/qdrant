@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
@@ -229,6 +230,22 @@ pub fn validate_sha256_hash(value: &str) -> Result<(), ValidationError> {
             Cow::from("message"),
             &"invalid characters, expected 0-9, a-f, A-F",
         );
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+/// Reject a `timeout=0` write-operation query parameter. The OpenAPI schema
+/// declares `timeout` as `minimum: 1` on every write endpoint, but the field
+/// itself is a plain `Option<Duration>`, so `timeout=0` deserializes to
+/// `Duration::ZERO` and is silently accepted instead of rejected as the
+/// schema promises.
+pub fn validate_write_timeout(timeout: &Duration) -> Result<(), ValidationError> {
+    if timeout.is_zero() {
+        let mut err = ValidationError::new("range");
+        err.add_param(Cow::from("min"), &1);
+        err.add_param(Cow::from("message"), &"timeout must be at least 1 second");
         return Err(err);
     }
 
@@ -499,5 +516,12 @@ mod tests {
             )
             .is_err(),
         );
+    }
+
+    #[test]
+    fn test_validate_write_timeout() {
+        assert!(validate_write_timeout(&Duration::from_secs(0)).is_err());
+        assert!(validate_write_timeout(&Duration::from_secs(1)).is_ok());
+        assert!(validate_write_timeout(&Duration::from_secs(30)).is_ok());
     }
 }

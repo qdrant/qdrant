@@ -179,3 +179,30 @@ def test_wait_timeout_twice(collection_name):
     )
     assert sleep.ok and sleep.json()["result"]["status"] == "wait_timeout"
     assert op.ok and op.json()["result"]["status"] == "wait_timeout"
+
+
+def test_zero_timeout_rejected(collection_name):
+    # The OpenAPI schema declares `timeout` as `minimum: 1` on every write
+    # endpoint, but the server used to accept `timeout=0` as if it were a
+    # valid value instead of rejecting it per the published contract.
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"timeout": 0},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "bm25": {
+                            "text": "Lorem ipsum, dolor sit amet.",
+                            "model": "qdrant/bm25",
+                        }
+                    },
+                }
+            ]
+        },
+    )
+    assert not response.ok
+    assert response.status_code == 400

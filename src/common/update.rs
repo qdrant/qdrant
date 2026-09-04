@@ -41,6 +41,7 @@ pub struct UpdateParams {
     #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde_as(as = "Option<DurationSeconds<String>>")]
+    #[validate(custom(function = "::common::validation::validate_write_timeout"))]
     pub timeout: Option<Duration>,
 }
 
@@ -1345,5 +1346,38 @@ fn get_shard_selector_for_update(
         }
         (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
         (None, None) => ShardSelectorInternal::Empty,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use validator::Validate;
+
+    use super::*;
+
+    // Regression test for the write-operation `timeout` query parameter
+    // silently accepting `timeout=0` despite the OpenAPI schema declaring
+    // `minimum: 1` (see issue: write ops accept timeout=0 despite the
+    // schema forbidding it). `UpdateParams` backs every points/vectors
+    // write endpoint (upsert, delete, set/clear payload, update vectors).
+    #[test]
+    fn update_params_rejects_zero_timeout() {
+        let params: UpdateParams = serde_urlencoded::from_str("timeout=0").unwrap();
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn update_params_accepts_positive_timeout() {
+        let params: UpdateParams = serde_urlencoded::from_str("timeout=1").unwrap();
+        assert!(params.validate().is_ok());
+
+        let params: UpdateParams = serde_urlencoded::from_str("timeout=30").unwrap();
+        assert!(params.validate().is_ok());
+    }
+
+    #[test]
+    fn update_params_accepts_missing_timeout() {
+        let params: UpdateParams = serde_urlencoded::from_str("").unwrap();
+        assert!(params.validate().is_ok());
     }
 }
