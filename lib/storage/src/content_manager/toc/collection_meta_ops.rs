@@ -14,6 +14,7 @@ use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
 use crate::common::utils::try_unwrap_with_timeout_async;
+use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
@@ -317,36 +318,19 @@ impl TableOfContent {
         // Prevent search on partially switched collections
         let collection_lock = self.collections.write().await;
         let mut alias_lock = self.alias_persistence.write().await;
-        for action in operation.actions {
-            match action {
-                AliasOperations::CreateAlias(CreateAliasOperation {
-                    create_alias:
-                        CreateAlias {
-                            collection_name,
-                            alias_name,
-                        },
-                }) => {
-                    collection_lock.validate_collection_exists(&collection_name)?;
-                    collection_lock.validate_collection_not_exists(&alias_name)?;
 
-                    alias_lock.insert(alias_name, collection_name)?;
-                }
-                AliasOperations::DeleteAlias(DeleteAliasOperation {
-                    delete_alias: DeleteAlias { alias_name },
-                }) => {
-                    alias_lock.remove(&alias_name)?;
-                }
-                AliasOperations::RenameAlias(RenameAliasOperation {
-                    rename_alias:
-                        RenameAlias {
-                            old_alias_name,
-                            new_alias_name,
-                        },
-                }) => {
-                    alias_lock.rename_alias(&old_alias_name, new_alias_name)?;
-                }
-            };
-        }
+        // Validate and apply `actions` to a copy of the mapping, and save it once at the end.
+        //
+        // Rejecting an action in the middle of the list must not keep the actions before it,
+        // so nothing is persisted until every action is validated.
+        let mut aliases = alias_lock.state().clone();
+
+        apply_alias_actions(&mut aliases, &operation.actions, |collection_name| {
+            collection_lock.collection_exists(collection_name)
+        })?;
+
+        alias_lock.apply_state(aliases)?;
+
         Ok(true)
     }
 
@@ -794,4 +778,68 @@ impl TableOfContent {
 
         Ok(())
     }
+}
+
+/// Apply `actions` to `aliases`, validating each one against `collection_exists`.
+///
+/// Returns on the first invalid action, leaving `aliases` partially updated. `update_aliases`
+/// works on a copy it only saves on success, so a rejected operation changes nothing.
+///
+/// `ClusterState::plan_change_aliases` calls this as well, so that both accept and reject the
+/// same operations. Inline it back here once the state machine drives consensus and this is the
+/// only caller.
+pub(crate) fn apply_alias_actions(
+    aliases: &mut AliasMapping,
+    actions: &[AliasOperations],
+    collection_exists: impl Fn(&str) -> bool,
+) -> Result<(), StorageError> {
+    for action in actions {
+        match action {
+            AliasOperations::CreateAlias(CreateAliasOperation {
+                create_alias:
+                    CreateAlias {
+                        collection_name,
+                        alias_name,
+                    },
+            }) => {
+                // `collection_name` must name a collection, not an alias
+                if !collection_exists(collection_name) {
+                    return Err(StorageError::not_found(format!(
+                        "Collection `{collection_name}` does not exist"
+                    )));
+                }
+
+                if collection_exists(alias_name) {
+                    return Err(StorageError::already_exists(format!(
+                        "Collection `{alias_name}` already exists"
+                    )));
+                }
+
+                aliases.insert(alias_name.clone(), collection_name.clone());
+            }
+
+            AliasOperations::DeleteAlias(DeleteAliasOperation {
+                delete_alias: DeleteAlias { alias_name },
+            }) => {
+                // Deleting an alias that does not exist is a no-op, not an error
+                aliases.remove(alias_name);
+            }
+
+            AliasOperations::RenameAlias(RenameAliasOperation {
+                rename_alias:
+                    RenameAlias {
+                        old_alias_name,
+                        new_alias_name,
+                    },
+            }) => {
+                if !aliases.rename(old_alias_name, new_alias_name.clone()) {
+                    return Err(StorageError::not_found(format!(
+                        "Alias {old_alias_name} does not exist"
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
