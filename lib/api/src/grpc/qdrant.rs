@@ -809,7 +809,7 @@ pub struct OptimizersConfigDiff {
     pub default_segment_number: ::core::option::Option<u64>,
     /// Deprecated:
     ///
-    /// Do not create segments larger this size (in kilobytes).
+    /// Do not create segments larger than this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///

@@ -49,7 +49,7 @@ pub struct EdgeConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hnsw_config: Option<HnswConfig>,
     /// Global quantization config for all vectors
-    /// Per-vector override in in `vectors[].quantization_config`
+    /// Per-vector override in `vectors[].quantization_config`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantization_config: Option<QuantizationConfig>,
     /// `None` defaults to [`EdgeOptimizersConfig::default`], see [`EdgeConfig::optimizers`].
