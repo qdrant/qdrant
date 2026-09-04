@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use itertools::Itertools as _;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use tracing_appender::non_blocking::{NonBlocking, NonBlockingBuilder, WorkerGuard};
+use tracing_appender::non_blocking::{ErrorCounter, NonBlocking, NonBlockingBuilder, WorkerGuard};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 use crate::audit::{AuditConfig, AuditRotation};
@@ -96,8 +96,14 @@ pub struct AuditSink {
     // per-record `to_vec` copy that `NonBlocking::write` performs, and support
     // a bounded `send_timeout` instead of the lazy binary block-or-drop above
     writer: Mutex<NonBlocking>,
-    /// Records this sink discarded because its queue was full
-    dropped: AtomicU64,
+    /// Records this sink's queue discarded because it was full.
+    ///
+    /// `ErrorCounter` is a handle on the same `Arc<AtomicUsize>` that
+    /// `NonBlocking::write` increments
+    dropped: ErrorCounter,
+    /// How much of `dropped` has already been logged, so a burst of discards
+    /// produces one message rather than one per record
+    reported_dropped: AtomicU64,
 }
 
 impl AuditSink {
@@ -150,11 +156,14 @@ impl AuditSink {
             .thread_name(kind.thread_name())
             .finish(writer);
 
+        let dropped = non_blocking.error_counter();
+
         let sink = Self {
             kind,
             on_full,
             writer: Mutex::new(non_blocking),
-            dropped: AtomicU64::new(0),
+            dropped,
+            reported_dropped: AtomicU64::new(0),
         };
 
         (sink, guard)
@@ -171,14 +180,14 @@ impl AuditSink {
     /// Number of records this sink has discarded due to a full queue.
     ///
     /// This does not cover records lost to a failed write on the worker
-    /// thread (full/disconnected disk, broken pipe): `tracing_appender`'s 
-    //  worker swallows I/O errors and keeps draining, so such losses are 
+    /// thread (full/disconnected disk, broken pipe): `tracing_appender`'s
+    //  worker swallows I/O errors and keeps draining, so such losses are
     //  invisible here and to [`OnFull::Block`] alike.
     //
     // TODO: closing that hole needs a purpose-built worker (see the TODO on
     // `AuditSink::writer`) that reports write failures back to the sink
     pub fn dropped_records(&self) -> u64 {
-        self.dropped.load(Ordering::Relaxed)
+        self.dropped.dropped_lines() as u64
     }
 
     /// Write one already-serialized, newline-terminated audit record.
@@ -186,11 +195,6 @@ impl AuditSink {
     /// `line` must be a complete record. It is handed to the worker in a
     /// single `write_all` so concurrent callers cannot interleave partial JSON
     pub(crate) fn write(&self, line: &[u8]) {
-        // Snapshot the queue's drop counter so we can attribute new drops to
-        // this sink. In lossy mode `write_all` reports success even when the
-        // record was discarded, so the counter is the only signal.
-        let dropped_before = self.queue_dropped();
-
         let result = {
             let mut writer = self.writer.lock();
             writer.write_all(line)
@@ -204,21 +208,36 @@ impl AuditSink {
             return;
         }
 
-        let newly_dropped = self.queue_dropped().saturating_sub(dropped_before);
-        if newly_dropped > 0 {
-            self.dropped.fetch_add(newly_dropped, Ordering::Relaxed);
-            // TODO: rate-limit this to prevent spam, maybe also emit a 
-            // synthetic `audit_gap` record into the sink itself so the stream
-            // declares its own gaps?
-            log::error!(
-                "Audit {} sink queue is full, discarded {newly_dropped} record(s)",
-                self.kind.as_str(),
-            );
-        }
+        // In lossy mode `write_all` reports success even when the record was
+        // discarded, so the writer's counter is the only signal that it was
+        self.report_new_drops();
     }
 
-    fn queue_dropped(&self) -> u64 {
-        self.writer.lock().error_counter().dropped_lines() as u64
+    /// Log whatever the queue has discarded since the last report
+    //
+    // TODO: also emit a synthetic `audit_gap` record into the sink itself, so
+    // the stream declares its own gaps rather than only the process log?
+    fn report_new_drops(&self) {
+        let dropped = self.dropped_records();
+        let reported = self.reported_dropped.load(Ordering::Relaxed);
+
+        if dropped <= reported {
+            return;
+        }
+
+        if self
+            .reported_dropped
+            .compare_exchange(reported, dropped, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        log::error!(
+            "Audit {} sink queue is full, discarded {} record(s) ({dropped} total)",
+            self.kind.as_str(),
+            dropped - reported,
+        );
     }
 }
 
@@ -405,6 +424,84 @@ mod tests {
                  write_to_stdout={write_to_stdout} ({on_stdout_full:?})",
             );
         }
+    }
+
+    /// A writer that blocks on every write until its gate is released, so a
+    /// sink's worker cannot drain and its queue fills up
+    struct StalledWriter(std::sync::Arc<Mutex<()>>);
+
+    impl io::Write for StalledWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let _held = self.0.lock();
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Concurrent writers must not inflate the drop count.
+    /// The count is read straight off the writer's monotonic counter, so it
+    /// cannot exceed the records handed over
+    #[test]
+    fn concurrent_writes_do_not_overcount_drops() {
+        use std::sync::Arc;
+
+        let gate = Arc::new(Mutex::new(()));
+        let held = gate.lock();
+
+        // Drop policy plus a stalled writer, so a full queue discards
+        let (sink, guard) = AuditSink::spawn(
+            AuditSinkKind::Stdout,
+            OnFull::Drop,
+            StalledWriter(Arc::clone(&gate)),
+        );
+        let sink = Arc::new(sink);
+
+        let threads = 8u64;
+        let per_thread = 40_000u64;
+        let sent = threads * per_thread;
+
+        let handles: Vec<_> = (0..threads)
+            .map(|t| {
+                let sink = Arc::clone(&sink);
+                std::thread::spawn(move || {
+                    for i in 0..per_thread {
+                        sink.write(format!("{{\"t\":{t},\"i\":{i}}}\n").as_bytes());
+                    }
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let dropped = sink.dropped_records();
+
+        // The queue is far smaller than the load, so discards must have
+        // happened, else this test is not exercising the path it claims to
+        assert!(dropped > 0, "expected the queue to overflow");
+
+        // no way we could have discarded more records than were ever written
+        assert!(
+            dropped <= sent,
+            "reported {dropped} drops from only {sent} writes - count is inflated",
+        );
+
+        // the records NOT dropped are those the queue accepted, capped at its
+        // capacity plus the one the worker is blocked writing
+        let accepted = sent - dropped;
+        let capacity = tracing_appender::non_blocking::DEFAULT_BUFFERED_LINES_LIMIT as u64;
+        assert!(
+            accepted <= capacity + 1,
+            "{accepted} records accepted exceeds queue capacity {capacity} (+1 in flight)",
+        );
+
+        // Release the worker before dropping the guard, which joins it
+        drop(held);
+        drop(guard);
     }
 
     #[test]
