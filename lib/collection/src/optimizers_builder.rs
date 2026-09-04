@@ -53,7 +53,7 @@ pub struct OptimizersConfig {
     /// so that each segment would be handled evenly by one of the threads.
     /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs.
     pub default_segment_number: usize,
-    /// Do not create segments larger this size (in kilobytes).
+    /// Do not create segments larger than this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
