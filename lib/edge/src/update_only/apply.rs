@@ -145,6 +145,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        const LOG_TARGET: &str = "apply_batch";
+
         let start = std::time::Instant::now();
         let plan = UpdateBatchPlan::build(operations)?;
         if plan.is_empty() {
@@ -158,7 +160,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         // `preview_batch`, so a preview cannot drift from the real apply.
         let instant = std::time::Instant::now();
         let resolved = resolve_batch(&segments, plan, &self.pool)?;
-        log::info!("resolve_batch took {:?}", instant.elapsed());
+        log::trace!(target: LOG_TARGET, "resolve_batch took {:?}", instant.elapsed());
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
@@ -239,7 +241,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
         // writers buffer nothing across calls, so a write is durable when it
         // returns.
         let mut written: Vec<Uuid> = Vec::new();
-        let instant = std::time::Instant::now();
         let mut tombstone_start = None;
         if !to_store.is_empty() {
             let uuid = write_target_uuid.ok_or_else(|| {
@@ -247,6 +248,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
             })?;
             let writer = get_writer(&mut self.writers, uuid)?;
 
+            let instant = std::time::Instant::now();
             writer
                 .as_appendable_mut()
                 .ok_or_else(|| {
@@ -255,13 +257,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
                     ))
                 })?
                 .store_points(&to_store, &hw_counter)?;
-            log::info!("store_points took: {:?}", instant.elapsed());
+            log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
 
-            tombstone_start = Some(std::time::Instant::now());
             // The write target's retirements happen after the store, since
             // every write is durable when it returns and the reverse order
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
+                tombstone_start = Some(std::time::Instant::now());
                 writer.tombstone_points(&points)?;
             }
             written.push(uuid);
@@ -272,13 +274,13 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
             get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
             written.push(uuid);
         }
-        log::info!("tombstone_points took {:?}", instant.elapsed());
+        log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());
 
         let instant = std::time::Instant::now();
         self.reload_lookups(&written)?;
-        log::info!("reload_lookups took {:?}", instant.elapsed());
+        log::trace!(target: LOG_TARGET, "reload_lookups took {:?}", instant.elapsed());
 
-        log::info!("total apply_batch took {:?}", start.elapsed());
+        log::trace!(target: LOG_TARGET, "total apply_batch took {:?}", start.elapsed());
         Ok((self, outcome))
     }
 
