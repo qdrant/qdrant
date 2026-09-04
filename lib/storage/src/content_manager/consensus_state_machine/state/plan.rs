@@ -9,6 +9,7 @@ use collection::shards::shard::PeerId;
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff, NodeContext};
+use crate::content_manager::toc::apply_alias_actions;
 
 type Actions = Vec<Action>;
 
@@ -263,72 +264,17 @@ impl ClusterState {
     pub fn plan_change_aliases(&self, op: &ChangeAliasesOperation) -> StorageResult<Actions> {
         let ChangeAliasesOperation { actions } = op;
 
-        // TODO:
+        // Validate all `actions` before emitting anything, and emit a single `UpdateAliases`,
+        // which the applier writes in one go. So either all `actions` apply, or none of them do.
         //
-        // This is intentionally different from `TableOfContent::update_aliases`.
-        //
-        // `ToC::update_aliases` validates and applies `actions` one by one,
-        // and `AliasPersistence` writes the mapping on every insert, remove and rename.
-        // So if an `AliasOperation` in the middle of the list is rejected, every action
-        // before it is applied and persisted, and every action after it never runs.
-        //
-        // `plan_change_aliases` validates all `actions` first, and emits a single
-        // `UpdateAliases` action, which the applier has to write in one go.
-        // So either all `actions` apply, or none of them do.
-        //
-        // E.g., take a list of two actions:
-        // the first creates alias `new`, the second renames alias `missing`, which does not exist.
-        //
-        // `ToC::update_aliases` would create alias `new`, then return an error.
-        // `plan_change_aliases` would return an error *before* creating alias `new`.
+        // `ToC::update_aliases` runs the same actions against a copy of the mapping it saves
+        // once, and owns the function both call.
 
         let mut aliases = self.aliases.clone();
 
-        for action in actions {
-            match action {
-                AliasOperations::CreateAlias(action) => {
-                    let CreateAlias {
-                        collection_name,
-                        alias_name,
-                    } = &action.create_alias;
-
-                    // `collection_name` must name a collection, not an alias
-                    if !self.has_collection(collection_name) {
-                        return Err(StorageError::not_found(format!(
-                            "Collection `{collection_name}` does not exist"
-                        )));
-                    }
-
-                    if self.has_collection(alias_name) {
-                        return Err(StorageError::already_exists(format!(
-                            "Collection `{alias_name}` already exists"
-                        )));
-                    }
-
-                    aliases.insert(alias_name.clone(), collection_name.clone());
-                }
-
-                AliasOperations::DeleteAlias(action) => {
-                    let DeleteAlias { alias_name } = &action.delete_alias;
-
-                    // Deleting an alias that does not exist is a no-op, not an error
-                    aliases.remove(alias_name);
-                }
-
-                AliasOperations::RenameAlias(action) => {
-                    let RenameAlias {
-                        old_alias_name,
-                        new_alias_name,
-                    } = &action.rename_alias;
-
-                    if !aliases.rename(old_alias_name, new_alias_name.clone()) {
-                        return Err(StorageError::not_found(format!(
-                            "Alias {old_alias_name} does not exist"
-                        )));
-                    }
-                }
-            }
-        }
+        apply_alias_actions(&mut aliases, actions, |collection| {
+            self.has_collection(collection)
+        })?;
 
         let set: BTreeMap<_, _> = aliases
             .iter()

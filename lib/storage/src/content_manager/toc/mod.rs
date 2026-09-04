@@ -42,6 +42,7 @@ use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, Semaphore};
 
+pub(crate) use self::collection_meta_ops::apply_alias_actions;
 use self::dispatcher::TocDispatcher;
 use crate::ConsensusOperations;
 use crate::content_manager::alias_mapping::AliasPersistence;
