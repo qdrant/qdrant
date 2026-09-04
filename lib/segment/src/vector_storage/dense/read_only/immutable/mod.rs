@@ -1,9 +1,8 @@
-use common::universal_io::{Populate, UniversalRead};
+use common::universal_io::Populate;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
-use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::Distance;
-use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
+use crate::vector_storage::dense::dense_vectors::DenseVectorBlob;
 
 mod lifecycle;
 mod live_reload;
@@ -12,11 +11,11 @@ mod read_ops;
 /// Read-only counterpart of the immutable (mmap) dense vector storage.
 ///
 /// Vector data is immutable, so it is read straight from the shared
-/// [`ImmutableDenseVectorData`] blob; deletions are tracked in memory and folded
-/// from the live-reload delta.
+/// [`DenseVectorBlob`]; deletions are tracked in memory and folded from the
+/// live-reload delta.
 #[derive(Debug)]
-pub struct ReadOnlyImmutableDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
-    vectors: ImmutableDenseVectorData<T, S>,
+pub struct ReadOnlyImmutableDenseVectorStorage<B: DenseVectorBlob> {
+    vectors: B,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
@@ -41,6 +40,7 @@ mod tests {
     use crate::segment_constructor::batched_reader::merge_from_single_source;
     use crate::types::Memory;
     use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
+    use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
@@ -84,13 +84,9 @@ mod tests {
             storage.flusher()().unwrap();
         }
 
-        let storage = ReadOnlyImmutableDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
-            dir.path(),
-            DIM,
-            Distance::Dot,
-            Populate::No,
-        )
+        let storage = ReadOnlyImmutableDenseVectorStorage::<
+            ImmutableDenseVectorData<VectorElementType, MmapFile>,
+        >::open(&MmapFs, dir.path(), DIM, Distance::Dot, Populate::No)
         .unwrap();
 
         assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
@@ -138,13 +134,9 @@ mod tests {
             writer.flusher()().unwrap();
         }
 
-        let mut reader = ReadOnlyImmutableDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
-            dir.path(),
-            DIM,
-            Distance::Dot,
-            Populate::No,
-        )
+        let mut reader = ReadOnlyImmutableDenseVectorStorage::<
+            ImmutableDenseVectorData<VectorElementType, MmapFile>,
+        >::open(&MmapFs, dir.path(), DIM, Distance::Dot, Populate::No)
         .unwrap();
         assert_eq!(reader.deleted_vector_count(), 0);
 
