@@ -9,7 +9,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
-use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
+use rayon::iter::{IntoParallelIterator as _, IntoParallelRefIterator, ParallelIterator as _};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::UpdateOnlyFieldIndex;
@@ -41,7 +41,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     /// is a config from before those types were recorded, which only the
     /// writable index can repair, by deriving them from the schema on its next
     /// open.
-    pub fn open(
+    pub fn par_open(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         segment_path: &Path,
     ) -> OperationResult<Self> {
@@ -49,25 +49,30 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path))?
             .unwrap_or_default();
 
-        let mut field_indexes = AHashMap::with_capacity(config.indices.len());
-        for (field, indexed) in config.indices.iter() {
-            if indexed.types.is_empty() {
-                return Err(OperationError::service_error(format!(
-                    "Payload index of field {field} does not record which indexes it has; \
-                     open the segment for writing once to have them derived and stored",
-                )));
-            }
+        let field_indexes = config
+            .indices
+            .par_iter()
+            .map(|(field, indexed)| {
+                if indexed.types.is_empty() {
+                    return Err(OperationError::service_error(format!(
+                        "Payload index of field {field} does not record which indexes it has; \
+                         open the segment for writing once to have them derived and stored",
+                    )));
+                }
 
-            let indexes = indexed
-                .types
-                .iter()
-                .map(|index_type| {
-                    UpdateOnlyFieldIndex::open(fs, &path, field, &indexed.schema, index_type)
-                })
-                .collect::<OperationResult<Vec<_>>>()?;
+                let indexes = indexed
+                    .types
+                    .par_iter()
+                    .map(|index_type| {
+                        UpdateOnlyFieldIndex::open(fs, &path, field, &indexed.schema, index_type)
+                    })
+                    .collect::<OperationResult<Vec<_>>>()?;
 
-            field_indexes.insert(field.clone(), indexes);
-        }
+                Ok((field.clone(), indexes))
+            })
+            .collect::<OperationResult<Vec<_>>>()?
+            .into_iter()
+            .collect();
 
         Ok(Self { field_indexes })
     }
