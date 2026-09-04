@@ -41,7 +41,7 @@ use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::HnswConfig;
 
-pub use self::action::{Action, CollectionConfigDiff};
+pub use self::action::{Action, CollectionConfigDiff, apply_collection_config_diffs};
 pub use self::state::ClusterState;
 use super::errors::StorageResult;
 use crate::content_manager::collection_meta_ops::*;
