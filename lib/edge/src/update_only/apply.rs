@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalRead};
+use common::universal_io::{UniversalAppendFs, UniversalRead};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -123,7 +123,7 @@ pub(super) struct PointLocations {
     pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
+impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// Apply a batch of update operations, each paired with the operation
     /// number to record as its version. Operations are expected in ascending
     /// operation-number order; see [`UpdateBatchPlan::build`] for what is
@@ -306,10 +306,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
 
 /// The held writer for segment `uuid`; an error when there is none, which can
 /// only mean the shard's inventory changed under a batch in flight.
-fn get_writer<S: UniversalAppend + 'static>(
-    writers: &mut HashMap<Uuid, UpdateOnlySegmentEnum<S>>,
+fn get_writer<Fs: UniversalAppendFs>(
+    writers: &mut HashMap<Uuid, UpdateOnlySegmentEnum<Fs>>,
     uuid: Uuid,
-) -> OperationResult<&mut UpdateOnlySegmentEnum<S>> {
+) -> OperationResult<&mut UpdateOnlySegmentEnum<Fs>> {
     writers
         .get_mut(&uuid)
         .ok_or_else(|| OperationError::service_error(format!("No writer open for segment {uuid}")))

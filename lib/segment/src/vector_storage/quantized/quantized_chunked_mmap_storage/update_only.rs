@@ -7,7 +7,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::UniversalAppendFs;
 use quantization::{EncodedStorageBuilder, EncodedStorageWrite};
 
 use crate::common::operation_error::OperationResult;
@@ -20,7 +20,8 @@ use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVector
 /// A quantized vector persists through [`UpdateOnlyChunkedVectors`] — the same append-only,
 /// fresh-slot-per-upsert storage [`UpdateOnlyDenseVectorStorage`] uses for raw vectors — instead
 /// of the positional writes `ChunkedVectors::insert` needs, so this only requires
-/// `S: UniversalAppend`, not `UniversalWrite`. It writes files in the exact layout
+/// append-capable files
+/// (`Fs::File: UniversalAppend`), not `UniversalWrite`. It writes files in the exact layout
 /// `QuantizedChunkedStorage` reads, so no new reading code is needed once a segment is promoted.
 ///
 /// Implements [`EncodedStorageWrite`], not the full [`EncodedStorage`](quantization::EncodedStorage):
@@ -31,15 +32,15 @@ use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVector
 /// exist.
 ///
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
-pub struct UpdateOnlyQuantizedChunkedStorage<S: UniversalAppend + 'static> {
+pub struct UpdateOnlyQuantizedChunkedStorage<Fs: UniversalAppendFs> {
     vectors: UpdateOnlyChunkedVectors<u8>,
     /// Owned rather than passed down: [`EncodedStorageWrite`] cannot carry a
     /// filesystem per call.
-    fs: S::Fs,
+    fs: Fs,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedChunkedStorage<S> {
-    pub fn open(fs: S::Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
+impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedChunkedStorage<Fs> {
+    pub fn open(fs: Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
         Ok(Self {
             vectors: UpdateOnlyChunkedVectors::open(&fs, path, quantized_vector_size)?,
             fs,
@@ -47,7 +48,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedChunkedStorage<S> {
     }
 }
 
-impl<S: UniversalAppend + 'static> EncodedStorageWrite for UpdateOnlyQuantizedChunkedStorage<S> {
+impl<Fs: UniversalAppendFs> EncodedStorageWrite for UpdateOnlyQuantizedChunkedStorage<Fs> {
     fn is_in_ram_or_mmap() -> bool {
         false
     }
@@ -101,22 +102,20 @@ impl<S: UniversalAppend + 'static> EncodedStorageWrite for UpdateOnlyQuantizedCh
 /// Builder counterpart, used once at segment creation to open an empty overlay — an update-only
 /// segment always starts with zero quantized vectors, so [`build`](Self::build) never has
 /// [`push_vector_data`](Self::push_vector_data) called on it.
-pub struct UpdateOnlyQuantizedChunkedStorageBuilder<S: UniversalAppend + 'static> {
-    storage: UpdateOnlyQuantizedChunkedStorage<S>,
+pub struct UpdateOnlyQuantizedChunkedStorageBuilder<Fs: UniversalAppendFs> {
+    storage: UpdateOnlyQuantizedChunkedStorage<Fs>,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedChunkedStorageBuilder<S> {
-    pub fn new(fs: S::Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
+impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedChunkedStorageBuilder<Fs> {
+    pub fn new(fs: Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
         Ok(Self {
             storage: UpdateOnlyQuantizedChunkedStorage::open(fs, path, quantized_vector_size)?,
         })
     }
 }
 
-impl<S: UniversalAppend + 'static> EncodedStorageBuilder
-    for UpdateOnlyQuantizedChunkedStorageBuilder<S>
-{
-    type Storage = UpdateOnlyQuantizedChunkedStorage<S>;
+impl<Fs: UniversalAppendFs> EncodedStorageBuilder for UpdateOnlyQuantizedChunkedStorageBuilder<Fs> {
+    type Storage = UpdateOnlyQuantizedChunkedStorage<Fs>;
     type Error = std::io::Error;
 
     fn build(self) -> std::io::Result<Self::Storage> {

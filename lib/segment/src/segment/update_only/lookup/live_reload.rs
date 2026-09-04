@@ -1,6 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalReadFs};
 
 use super::LookupSegment;
 use crate::common::live_reload::LiveReload as _;
@@ -20,7 +20,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// [`ReadOnlySegment::live_reload`]: crate::segment::read_only::ReadOnlySegment::live_reload
     pub fn live_reload(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {

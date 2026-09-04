@@ -3,7 +3,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
-use common::universal_io::{Flusher, OpenOptions, Populate, TypedStorage, UniversalWrite};
+use common::universal_io::{
+    Flusher, OpenOptions, Populate, TypedStorage, UniversalReadFs, UniversalWrite,
+};
 use itertools::Itertools;
 
 use super::{GridstoreConfig, RegionId};
@@ -92,7 +94,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
     }
 
     pub fn create(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         iter: impl ExactSizeIterator<Item = RegionGaps>,
         config: GridstoreConfig,
@@ -122,7 +124,11 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         })
     }
 
-    pub fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        config: GridstoreConfig,
+    ) -> Result<Self> {
         let path = gaps_file_path(dir);
         let options = OpenOptions {
             writeable: true,
