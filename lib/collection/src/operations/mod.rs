@@ -1,3 +1,4 @@
+pub mod block_hashes;
 pub mod cluster_ops;
 pub mod config_diff;
 pub mod consistency_params;

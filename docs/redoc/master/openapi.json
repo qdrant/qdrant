@@ -5460,6 +5460,113 @@
         }
       }
     },
+    "/collections/{collection_name}/points/block-hashes": {
+      "post": {
+        "tags": [
+          "Points"
+        ],
+        "summary": "Compute block hashes",
+        "description": "Read-only live audit of point IDs and a stored string fingerprint at an object payload path. Returns all blocks, including empty blocks, using the block-hashes v1 SHA-256 contract. Filtering precedes slice-compatible partitioning. Missing or non-string fingerprints fail the entire request. This operation scans the participating dataset without reading vectors and does not provide a snapshot.",
+        "operationId": "block_hashes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockHashesRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for each internal read",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Overrides the global timeout for the whole audit, in seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/BlockHashesResponse"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/points/scroll": {
       "post": {
         "tags": [
@@ -7387,7 +7494,7 @@
             "minimum": 0
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
+            "description": "Do not create segments larger than this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
             "default": null,
             "type": "integer",
             "format": "uint",
@@ -9812,7 +9919,7 @@
             "nullable": true
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
+            "description": "Do not create segments larger than this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 1,
@@ -17056,6 +17163,78 @@
             "format": "uint8",
             "minimum": 0,
             "nullable": true
+          }
+        }
+      },
+      "BlockHashesRequest": {
+        "description": "Compute deterministic block hashes of point IDs and one stored string payload field.",
+        "type": "object",
+        "required": [
+          "block_count",
+          "payload_key"
+        ],
+        "properties": {
+          "payload_key": {
+            "description": "Object path to a stored fingerprint string. Array traversal is not supported.",
+            "type": "string"
+          },
+          "block_count": {
+            "description": "Number of blocks to return, including empty blocks (1..=65536).",
+            "type": "integer",
+            "format": "uint32",
+            "maximum": 65536,
+            "minimum": 1
+          },
+          "filter": {
+            "description": "Only include points matching this filter.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BlockHashesResponse": {
+        "type": "object",
+        "required": [
+          "blocks"
+        ],
+        "properties": {
+          "blocks": {
+            "description": "All requested blocks, ordered by block_id.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockHash"
+            }
+          }
+        }
+      },
+      "BlockHash": {
+        "type": "object",
+        "required": [
+          "block_id",
+          "hash",
+          "point_count"
+        ],
+        "properties": {
+          "block_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "point_count": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "hash": {
+            "description": "Lowercase hexadecimal SHA-256 digest under the block-hashes v1 contract.",
+            "type": "string"
           }
         }
       }

@@ -7,6 +7,7 @@ use api::rest::{
     QueryResponse, Record, ScoredPoint, SearchMatrixOffsetsResponse, SearchMatrixPairsResponse,
     SearchMatrixRequest, UpdateVectors,
 };
+use collection::operations::block_hashes::{BlockHashesRequest, BlockHashesResponse};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -93,6 +94,8 @@ struct AllDefinitions {
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
     bs: QuotaStatus,
+    block_hashes_request: BlockHashesRequest,
+    block_hashes_response: BlockHashesResponse,
 }
 
 fn save_schema<T: JsonSchema>() {
