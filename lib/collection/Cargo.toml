@@ -15,7 +15,11 @@ workspace = true
 testing = ["common/testing", "segment/testing", "shard/testing"]
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
-staging = ["shard/staging"]
+# `edge?/staging` keeps feature-unified builds coherent: with `edge-verify` on, `shard/staging`
+# adds the `StagingOperation` variant, and edge's match over it is gated on its own `staging`.
+staging = ["shard/staging", "edge?/staging"]
+# Implies `testing`: the only consumer is the model_testing module, which is testing-gated.
+edge-verify = ["dep:edge", "testing"]
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -73,6 +77,7 @@ cancel = { path = "../common/cancel" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false, features = ["api"] }
+edge = { path = "../edge", optional = true }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 wal = { path = "../wal" }
