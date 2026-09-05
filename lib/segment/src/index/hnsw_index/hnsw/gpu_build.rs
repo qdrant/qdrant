@@ -29,11 +29,16 @@ pub(super) fn build_main_graph_on_gpu(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     gpu_vectors: Option<&GpuVectorStorage>,
+    // Passed through so a DEVICE_LOST hit during the graph dispatch below (as opposed to
+    // during create_gpu_vectors' own device acquisition) can also trigger
+    // recreate_if_device_lost() — see build_graph_on_gpu's doc comment. This path hits
+    // DEVICE_LOST about as often as create_gpu_vectors does, not a rare edge case.
+    mut gpu_device: Option<&mut LockedGpuDevice>,
     graph_layers_builder: &GraphLayersBuilder,
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
     stopped: &AtomicBool,
-) -> OperationResult<Option<GraphLayersBuilder>> {
+) -> OperationResult<(Option<GraphLayersBuilder>, bool)> {
     let points_scorer_builder = |vector_id| {
         let hardware_counter = HardwareCounterCell::disposable();
         FilteredScorer::new_internal(
@@ -46,21 +51,37 @@ pub(super) fn build_main_graph_on_gpu(
         )
     };
 
-    let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors {
-        Some(GpuInsertContext::new(
-            gpu_vectors,
-            get_gpu_groups_count(),
-            graph_layers_builder.hnsw_m(),
-            graph_layers_builder.ef_construct(),
-            false,
-            1..=GPU_MAX_VISITED_FLAGS_FACTOR,
-        )?)
-    } else {
-        None
+    let Some(gpu_vectors) = gpu_vectors else {
+        return Ok((None, false));
+    };
+
+    // Was a bare `?` before: GpuInsertContext::new() can hit DEVICE_LOST just as much as the
+    // graph dispatch in build_graph_on_gpu() below, but `?` skipped both the CPU-fallback
+    // pattern every other GPU failure here uses and device recreation. Same shape as
+    // build_graph_on_gpu's own match below.
+    let mut gpu_insert_context = match GpuInsertContext::new(
+        gpu_vectors,
+        get_gpu_groups_count(),
+        graph_layers_builder.hnsw_m(),
+        graph_layers_builder.ef_construct(),
+        false,
+        1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+    ) {
+        Ok(gpu_insert_context) => gpu_insert_context,
+        Err(err) => {
+            log::warn!("Failed to create GPU insert context: {err}. Falling back to CPU.");
+            let device_lost = if let Some(gpu_device) = gpu_device.as_deref_mut() {
+                gpu_device.recreate_if_device_lost(&err)
+            } else {
+                false
+            };
+            return Ok((None, device_lost));
+        }
     };
 
     build_graph_on_gpu(
-        gpu_insert_context.as_mut(),
+        gpu_device,
+        Some(&mut gpu_insert_context),
         graph_layers_builder,
         id_tracker
             .point_mappings()
@@ -76,13 +97,16 @@ pub(super) fn build_filtered_graph_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
+    // See build_main_graph_on_gpu's identical parameter for why this is here.
+    gpu_device: Option<&mut LockedGpuDevice>,
     gpu_insert_context: Option<&mut GpuInsertContext<'_>>,
     graph_layers_builder: &GraphLayersBuilder,
     block_filter_list: &VisitedListHandle,
     points_to_index: &[PointOffsetType],
     stopped: &AtomicBool,
-) -> OperationResult<Option<GraphLayersBuilder>> {
+) -> OperationResult<(Option<GraphLayersBuilder>, bool)> {
     build_graph_on_gpu(
+        gpu_device,
         gpu_insert_context,
         graph_layers_builder,
         points_to_index.iter().copied(),
@@ -107,14 +131,20 @@ pub(super) fn build_filtered_graph_on_gpu(
     )
 }
 
+/// Returns `(constructed graph if GPU succeeded, whether a DEVICE_LOST was hit)`. The second
+/// field lets callers holding other GPU resources built against the same device (e.g.
+/// `GpuVectorStorage`/`GpuInsertContext` in `hnsw/build.rs`) know to discard them instead of
+/// reusing them against what is now a different, freshly recreated device.
+#[allow(clippy::too_many_arguments)]
 fn build_graph_on_gpu<'a, 'b>(
+    gpu_device: Option<&mut LockedGpuDevice>,
     gpu_insert_context: Option<&mut GpuInsertContext<'b>>,
     graph_layers_builder: &GraphLayersBuilder,
     points_to_index: impl Iterator<Item = PointOffsetType>,
     entry_points_num: usize,
     points_scorer_builder: impl Fn(PointOffsetType) -> OperationResult<FilteredScorer<'a>> + Send + Sync,
     stopped: &AtomicBool,
-) -> OperationResult<Option<GraphLayersBuilder>> {
+) -> OperationResult<(Option<GraphLayersBuilder>, bool)> {
     if let Some(gpu_insert_context) = gpu_insert_context {
         let gpu_constructed_graph = build_hnsw_on_gpu(
             gpu_insert_context,
@@ -132,26 +162,34 @@ fn build_graph_on_gpu<'a, 'b>(
         check_process_stopped(stopped)?;
 
         match gpu_constructed_graph {
-            Ok(gpu_constructed_graph) => Ok(Some(gpu_constructed_graph)),
+            Ok(gpu_constructed_graph) => Ok((Some(gpu_constructed_graph), false)),
             Err(gpu_error) => {
                 log::warn!("Failed to build HNSW on GPU: {gpu_error}. Falling back to CPU.");
-                Ok(None)
+                // Same DEVICE_LOST recreate-in-place logic as create_gpu_vectors() below.
+                let device_lost = if let Some(gpu_device) = gpu_device {
+                    gpu_device.recreate_if_device_lost(&gpu_error)
+                } else {
+                    false
+                };
+                Ok((None, device_lost))
             }
         }
     } else {
-        Ok(None)
+        Ok((None, false))
     }
 }
 
+/// Returns `(created storage if GPU succeeded, whether a DEVICE_LOST was hit)` — see
+/// `build_graph_on_gpu`'s own doc comment for why the second field matters to callers.
 pub(super) fn create_gpu_vectors(
-    gpu_device: Option<&LockedGpuDevice>,
+    gpu_device: Option<&mut LockedGpuDevice>,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     stopped: &AtomicBool,
-) -> OperationResult<Option<GpuVectorStorage>> {
+) -> OperationResult<(Option<GpuVectorStorage>, bool)> {
     use crate::index::hnsw_index::gpu::get_gpu_force_half_precision;
     if vector_storage.total_vector_count() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
-        return Ok(None);
+        return Ok((None, false));
     }
 
     if let Some(gpu_device) = gpu_device {
@@ -168,13 +206,15 @@ pub(super) fn create_gpu_vectors(
         check_process_stopped(stopped)?;
 
         match gpu_vectors {
-            Ok(gpu_vectors) => Ok(Some(gpu_vectors)),
+            Ok(gpu_vectors) => Ok((Some(gpu_vectors), false)),
             Err(err) => {
                 log::error!("Failed to create GPU vectors, use CPU instead. Error: {err}.");
-                Ok(None)
+                // Recreates the device if this was DEVICE_LOST; no-op otherwise.
+                let device_lost = gpu_device.recreate_if_device_lost(&err);
+                Ok((None, device_lost))
             }
         }
     } else {
-        Ok(None)
+        Ok((None, false))
     }
 }

@@ -31,6 +31,7 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
+use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
@@ -53,7 +54,7 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
         open_args: HnswIndexOpenArgs<'_>,
-        build_args: VectorIndexBuildArgs<'_, R>,
+        build_args: VectorIndexBuildArgs<'_, '_, R>,
     ) -> OperationResult<Self> {
         if HnswGraphConfig::get_config_path(open_args.path).exists()
             || GraphLayers::get_path(open_args.path).exists()
@@ -77,7 +78,7 @@ impl HNSWIndex {
         let VectorIndexBuildArgs {
             permit,
             old_indices,
-            gpu_device,
+            mut gpu_device,
             rng,
             stopped,
             hnsw_global_config,
@@ -168,7 +169,7 @@ impl HNSWIndex {
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
         #[cfg(feature = "gpu")]
-        let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
+        let gpu_name_postfix = if let Some(gpu_device) = gpu_device.as_deref() {
             format!(" and GPU {}", gpu_device.device().name())
         } else {
             Default::default()
@@ -251,27 +252,41 @@ impl HNSWIndex {
         #[cfg(feature = "gpu")]
         let gpu_vectors = if needs_gpu_vectors {
             let timer = std::time::Instant::now();
-            let gpu_vectors = super::gpu_build::create_gpu_vectors(
-                gpu_device,
+            let (mut gpu_vectors, vectors_device_lost) = super::gpu_build::create_gpu_vectors(
+                gpu_device.as_deref_mut(),
                 &vector_storage_ref,
                 &quantized_vectors_ref,
                 stopped,
             )?;
-            if build_main_graph
-                && let Some(gpu_constructed_graph) = super::gpu_build::build_main_graph_on_gpu(
-                    id_tracker_ref.deref(),
-                    &vector_storage_ref,
-                    &quantized_vectors_ref,
-                    gpu_vectors.as_ref(),
-                    &graph_layers_builder,
-                    deleted_bitslice,
-                    num_entries,
-                    stopped,
-                )?
-            {
-                graph_layers_builder = gpu_constructed_graph;
-                build_main_graph = false;
-                debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+            if build_main_graph {
+                let (main_graph_result, graph_device_lost) =
+                    super::gpu_build::build_main_graph_on_gpu(
+                        id_tracker_ref.deref(),
+                        &vector_storage_ref,
+                        &quantized_vectors_ref,
+                        gpu_vectors.as_ref(),
+                        gpu_device.as_deref_mut(),
+                        &graph_layers_builder,
+                        deleted_bitslice,
+                        num_entries,
+                        stopped,
+                    )?;
+                if let Some(gpu_constructed_graph) = main_graph_result {
+                    graph_layers_builder = gpu_constructed_graph;
+                    build_main_graph = false;
+                    debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+                }
+                if graph_device_lost {
+                    // Device was recreated mid-dispatch — gpu_vectors is bound to the now-dead
+                    // device. Discard it so the additional-links pass below falls back to CPU
+                    // instead of reusing stale buffers.
+                    gpu_vectors = None;
+                }
+            }
+            if vectors_device_lost {
+                // Already None here, but kept explicit so this doesn't silently start passing
+                // Some again if create_gpu_vectors' contract changes.
+                gpu_vectors = None;
             }
             gpu_vectors
         } else {
@@ -425,16 +440,32 @@ impl HNSWIndex {
             let visited_pool = VisitedPool::new();
             let mut block_filter_list = visited_pool.get(total_vector_count);
 
+            // Was a bare `?` before: GpuInsertContext::new() can hit DEVICE_LOST just as much
+            // as the per-block dispatch below, but `?` skipped both the CPU-fallback pattern
+            // every other GPU failure here uses, and device recreation. Same shape as
+            // build_main_graph_on_gpu's own GpuInsertContext::new() call.
             #[cfg(feature = "gpu")]
             let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors.as_ref() {
-                Some(GpuInsertContext::new(
+                match GpuInsertContext::new(
                     gpu_vectors,
                     get_gpu_groups_count(),
                     payload_m,
                     config.ef_construct,
                     false,
                     1..=GPU_MAX_VISITED_FLAGS_FACTOR,
-                )?)
+                ) {
+                    Ok(gpu_insert_context) => Some(gpu_insert_context),
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to create GPU insert context for additional links: {err}. \
+                             Falling back to CPU."
+                        );
+                        if let Some(gpu_device) = gpu_device.as_deref_mut() {
+                            gpu_device.recreate_if_device_lost(&err);
+                        }
+                        None
+                    }
+                }
             } else {
                 None
             };
@@ -522,6 +553,7 @@ impl HNSWIndex {
                         &vector_storage_ref,
                         &quantized_vectors_ref,
                         &mut gpu_insert_context,
+                        gpu_device.as_deref_mut(),
                         &payload_index_ref,
                         &pool,
                         stopped,
@@ -643,6 +675,10 @@ fn build_filtered_graph(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     #[allow(unused_variables)] gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
+    // See build_main_graph_on_gpu's identical parameter (hnsw/gpu_build.rs) for why this is
+    // threaded through — lets a DEVICE_LOST during THIS (additional-links) GPU dispatch also
+    // recreate the device in place, not just the main-graph dispatch above.
+    #[allow(unused_variables)] gpu_device: Option<&mut LockedGpuDevice>,
     payload_index: &StructPayloadIndex,
     pool: &ThreadPool,
     stopped: &AtomicBool,
@@ -662,18 +698,29 @@ fn build_filtered_graph(
     }
 
     #[cfg(feature = "gpu")]
-    if let Some(gpu_constructed_graph) = super::gpu_build::build_filtered_graph_on_gpu(
-        id_tracker,
-        vector_storage,
-        quantized_vectors,
-        gpu_insert_context.as_mut(),
-        graph_layers_builder,
-        block_filter_list,
-        &points_to_index,
-        stopped,
-    )? {
-        *graph_layers_builder = gpu_constructed_graph;
-        return Ok(());
+    {
+        let (gpu_result, device_lost) = super::gpu_build::build_filtered_graph_on_gpu(
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            gpu_device,
+            gpu_insert_context.as_mut(),
+            graph_layers_builder,
+            block_filter_list,
+            &points_to_index,
+            stopped,
+        )?;
+        if device_lost {
+            // gpu_insert_context is bound to the now-dead device. Discard it so every
+            // remaining block in this additional-links pass (this function runs once per
+            // payload block, reusing the same outer gpu_insert_context) falls back to CPU
+            // instead of repeatedly failing against stale buffers.
+            *gpu_insert_context = None;
+        }
+        if let Some(gpu_constructed_graph) = gpu_result {
+            *graph_layers_builder = gpu_constructed_graph;
+            return Ok(());
+        }
     }
 
     let insert_points = |block_point_id| {
