@@ -86,7 +86,7 @@ impl ComponentMemoryUsage {
 
 /// Trait for components to report their memory footprint.
 ///
-/// Implementations should be cheap (no I/O). The actual `mincore` measurement
+/// Implementations should be cheap (no I/O). The actual page-cache measurement
 /// happens in the aggregation layer after file entries are collected.
 pub trait MemoryReporter {
     fn memory_usage(&self) -> ComponentMemoryUsage;

@@ -1252,12 +1252,9 @@ impl LocalShard {
                 reports
             };
 
-            let reports = segment_reports
-                .into_iter()
-                .map(crate::common::memory_reporter::report_from_segment)
-                .collect::<CollectionResult<Vec<_>>>()?;
-
-            Ok(CollectionMemoryReport::merge_all(reports))
+            Ok(crate::common::memory_reporter::report_from_segments(
+                segment_reports,
+            ))
         })
         .await
         .map_err(|e| CollectionError::service_error(format!("Memory report task failed: {e}")))?
