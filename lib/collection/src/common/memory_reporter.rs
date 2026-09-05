@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use rayon::prelude::*;
 use segment::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
@@ -184,21 +183,31 @@ fn measure_component(
     report
 }
 
-/// Reuse workers across segments, shards and requests.
-static FILE_PROBE_POOL: LazyLock<Option<rayon::ThreadPool>> = LazyLock::new(|| {
-    // Bound scheduling overhead while retaining parallelism for large files.
-    let threads = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
+const MIN_PARALLEL_PROBE_FILES: usize = 128;
+
+/// Small reports run on the caller; large reports join temporary workers before returning.
+fn map_file_probes<T: Send>(paths: &[&Path], probe: impl Fn(&&Path) -> T + Sync) -> Vec<T> {
+    let sequential = || paths.iter().map(&probe).collect();
+    if paths.len() < MIN_PARALLEL_PROBE_FILES {
+        return sequential();
+    }
+
+    // Amortize thread creation over at least 32 files per worker.
+    let threads = (paths.len() / 32)
+        .min(std::thread::available_parallelism().map_or(1, |n| n.get()))
         .min(32);
-    if threads == 1 {
-        return None;
+    if threads <= 1 {
+        return sequential();
     }
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .thread_name(|i| format!("memory-probe-{i}"))
-        .build()
-        .ok()
-});
+        .build_scoped(
+            |thread| thread.run(),
+            |pool| pool.install(|| paths.par_iter().map(&probe).collect()),
+        )
+        .unwrap_or_else(|_| sequential())
+}
 
 /// Probe each path once, retaining disk sizes when residency is unavailable.
 fn probe_files(paths: &[&Path], warnings: &mut Vec<String>) -> HashMap<PathBuf, FileProbe> {
@@ -228,15 +237,7 @@ fn probe_files(paths: &[&Path], warnings: &mut Vec<String>) -> HashMap<PathBuf, 
             ),
         }
     };
-    // Avoid initializing the pool for empty and single-file reports. If worker
-    // creation fails, measuring sequentially still produces a complete report.
-    let results: Vec<_> = if paths.len() > 1
-        && let Some(pool) = &*FILE_PROBE_POOL
-    {
-        pool.install(|| paths.par_iter().map(probe).collect())
-    } else {
-        paths.iter().map(probe).collect()
-    };
+    let results = map_file_probes(paths, probe);
     paths
         .iter()
         .zip(results)

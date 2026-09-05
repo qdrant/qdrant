@@ -2,6 +2,49 @@ use segment::segment::memory::{PayloadIndexMemoryReport, VectorMemoryReport};
 
 use super::*;
 
+#[test]
+fn small_reports_use_the_calling_thread() {
+    let paths = vec![Path::new("unused"); MIN_PARALLEL_PROBE_FILES - 1];
+    let caller = std::thread::current().id();
+    let threads = map_file_probes(&paths, |_| std::thread::current().id());
+    assert_eq!(threads.len(), paths.len());
+    assert!(threads.iter().all(|thread| *thread == caller));
+}
+
+#[test]
+fn large_reports_release_their_workers() {
+    use std::cell::RefCell;
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
+
+    thread_local! {
+        static WORKER_LIFETIME: RefCell<Option<Arc<mpsc::Sender<()>>>> = const { RefCell::new(None) };
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    let lifetime = Arc::new(sender);
+    let paths = vec![Path::new("unused"); MIN_PARALLEL_PROBE_FILES];
+    let caller = std::thread::current().id();
+    let threads = map_file_probes(&paths, |_| {
+        WORKER_LIFETIME.with(|guard| *guard.borrow_mut() = Some(lifetime.clone()));
+        std::thread::current().id()
+    });
+    assert_eq!(threads.len(), paths.len());
+    if std::thread::available_parallelism().unwrap().get() > 1 {
+        assert!(threads.iter().all(|thread| *thread != caller));
+    } else {
+        assert!(threads.iter().all(|thread| *thread == caller));
+        WORKER_LIFETIME.with(|guard| guard.borrow_mut().take());
+    }
+    // Scoped joins wait for worker functions; TLS destructors can finish later.
+    // The channel closes when all workers have released their TLS references.
+    drop(lifetime);
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    );
+}
+
 fn segment_report() -> SegmentMemoryReport {
     SegmentMemoryReport {
         vectors: HashMap::new(),

@@ -11,9 +11,13 @@ fn memory_report(c: &mut Criterion) {
     for (name, segments, files_per_segment, file_bytes) in [
         ("one_file", 1, 1, 4096),
         ("small_files", 1, 32, 4096),
+        ("below_parallel_threshold", 1, 127, 4096),
+        ("parallel_threshold", 1, 128, 4096),
         ("many_segments", 16, 32, 4096),
+        ("many_files", 16, 256, 4096),
         ("large_files", 1, 32, 64 * 1024 * 1024),
         ("large_files_many_segments", 16, 2, 64 * 1024 * 1024),
+        ("large_parallel_report", 16, 32, 4 * 1024 * 1024),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let data = vec![1; file_bytes.min(1024 * 1024)];
