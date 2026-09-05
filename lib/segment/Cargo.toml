@@ -15,6 +15,11 @@ workspace = true
 default = []
 testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
 gpu = ["gpu/gpu"]
+# Read segment data through the `io_bridge_object_store` blob backend.
+# Only needed by consumers that actually read shards from object storage
+# (the edge CLI tools); keeping it off elsewhere keeps the object-store
+# stack (reqwest/hyper, cloud SDKs, aws-lc-sys) out of edge builds.
+object-storage = ["dep:io_bridge_object_store"]
 
 [build-dependencies]
 cc = { workspace = true }
@@ -45,7 +50,7 @@ tap = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
-io_bridge_object_store = { path = "../common/io_bridge_object_store" }
+io_bridge_object_store = { path = "../common/io_bridge_object_store", optional = true }
 blink-alloc = { workspace = true }
 futures = { workspace = true }
 bytemuck = { workspace = true }
