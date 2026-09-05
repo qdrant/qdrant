@@ -486,8 +486,57 @@ impl Validate for grpc::feedback_strategy::Variant {
             grpc::feedback_strategy::Variant::Naive(naive_feedback_strategy) => {
                 naive_feedback_strategy.validate()
             }
+            // The "at least two feedback items" rule lives on
+            // [`validate_relevance_feedback_input`], because the strategy
+            // variant cannot see the feedback collection.
+            grpc::feedback_strategy::Variant::Sefr(sefr) => validate_sefr_feedback_strategy(sefr),
         }
     }
+}
+
+/// Reject non-finite `threshold` / `target_weight` before they reach conversion.
+fn validate_sefr_feedback_strategy(
+    sefr: &grpc::SefrFeedbackStrategy,
+) -> Result<(), ValidationErrors> {
+    let mut errors = ValidationErrors::new();
+
+    if sefr.threshold.is_some_and(|value| !value.is_finite()) {
+        errors.add("threshold", ValidationError::new("must be finite"));
+    }
+    if sefr.target_weight.is_some_and(|value| !value.is_finite()) {
+        errors.add("target_weight", ValidationError::new("must be finite"));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Struct-level check for gRPC `RelevanceFeedbackInput`, mirroring the REST
+/// `validate_relevance_feedback_input`. Failures surface as `INVALID_ARGUMENT`.
+pub fn validate_relevance_feedback_input(
+    relevance_feedback_input: &grpc::RelevanceFeedbackInput,
+) -> Result<(), ValidationError> {
+    let is_sefr = matches!(
+        relevance_feedback_input
+            .strategy
+            .as_ref()
+            .and_then(|s| s.variant.as_ref()),
+        Some(grpc::feedback_strategy::Variant::Sefr(_))
+    );
+
+    // SEFR separates two classes, which a single item can never form.
+    if is_sefr && relevance_feedback_input.feedback.len() < 2 {
+        let mut err = ValidationError::new("feedback");
+        err.message = Some(Cow::from(
+            "the `sefr` strategy needs at least two feedback elements to separate",
+        ));
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 /// Validate that GeoLineString has at least 4 points and is closed.
@@ -606,8 +655,10 @@ mod tests {
 
     use crate::grpc::qdrant::{
         CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
-        DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
-        GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request, vector,
+        DenseVectorCreationConfig, FeedbackItem, FeedbackStrategy, FieldCondition, GeoBoundingBox,
+        GeoLineString, GeoPoint, GeoPolygon, GeoRadius, RelevanceFeedbackInput, SearchPoints,
+        SefrFeedbackStrategy, UpdateCollection, VectorInput, create_vector_name_request,
+        feedback_strategy, vector, vector_input,
     };
 
     #[test]
@@ -987,5 +1038,88 @@ mod tests {
             ..Default::default()
         };
         assert!(good_request.validate().is_ok());
+    }
+
+    fn dense_input(data: Vec<f32>) -> VectorInput {
+        VectorInput {
+            variant: Some(vector_input::Variant::Dense(DenseVector { data })),
+        }
+    }
+
+    fn sefr_feedback(feedback: Vec<FeedbackItem>) -> RelevanceFeedbackInput {
+        RelevanceFeedbackInput {
+            target: Some(dense_input(vec![1.0, 0.0])),
+            feedback,
+            strategy: Some(FeedbackStrategy {
+                variant: Some(feedback_strategy::Variant::Sefr(SefrFeedbackStrategy {
+                    threshold: None,
+                    target_weight: None,
+                })),
+            }),
+        }
+    }
+
+    #[test]
+    fn sefr_relevance_feedback_rejects_fewer_than_two_items() {
+        let one_item = sefr_feedback(vec![FeedbackItem {
+            example: Some(dense_input(vec![1.0, 0.0])),
+            score: 1.0,
+        }]);
+        let err = one_item
+            .validate()
+            .expect_err("one feedback item must fail");
+        let rendered = err.to_string();
+        assert!(
+            rendered
+                .contains("the `sefr` strategy needs at least two feedback elements to separate"),
+            "unexpected validation error: {rendered}",
+        );
+    }
+
+    #[test]
+    fn sefr_relevance_feedback_accepts_two_items() {
+        let two_items = sefr_feedback(vec![
+            FeedbackItem {
+                example: Some(dense_input(vec![1.0, 0.0])),
+                score: 1.0,
+            },
+            FeedbackItem {
+                example: Some(dense_input(vec![0.0, 1.0])),
+                score: 0.0,
+            },
+        ]);
+        assert!(two_items.validate().is_ok());
+    }
+
+    #[test]
+    fn sefr_strategy_rejects_non_finite_parameters() {
+        for (threshold, target_weight) in [
+            (Some(f32::NAN), None),
+            (Some(f32::INFINITY), None),
+            (None, Some(f32::NAN)),
+            (None, Some(f32::NEG_INFINITY)),
+            (Some(f32::NAN), Some(f32::INFINITY)),
+        ] {
+            let strategy = feedback_strategy::Variant::Sefr(SefrFeedbackStrategy {
+                threshold,
+                target_weight,
+            });
+            assert!(
+                strategy.validate().is_err(),
+                "expected non-finite params to fail: threshold={threshold:?} target_weight={target_weight:?}",
+            );
+        }
+
+        let finite = feedback_strategy::Variant::Sefr(SefrFeedbackStrategy {
+            threshold: Some(0.5),
+            target_weight: Some(0.1),
+        });
+        assert!(finite.validate().is_ok());
+
+        let unset = feedback_strategy::Variant::Sefr(SefrFeedbackStrategy {
+            threshold: None,
+            target_weight: None,
+        });
+        assert!(unset.validate().is_ok());
     }
 }

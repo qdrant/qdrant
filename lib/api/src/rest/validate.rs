@@ -102,6 +102,7 @@ impl Validate for FeedbackStrategy {
             FeedbackStrategy::Naive(simple_feedback_strategy) => {
                 simple_feedback_strategy.validate()
             }
+            FeedbackStrategy::Sefr(sefr_feedback_strategy) => sefr_feedback_strategy.validate(),
         }
     }
 }
@@ -298,6 +299,17 @@ pub fn validate_relevance_feedback_input(
         return Err(err);
     }
 
+    // SEFR separates two classes, which a single item can never form.
+    if matches!(relevance_feedback_input.strategy, FeedbackStrategy::Sefr(_))
+        && relevance_feedback_input.feedback.len() < 2
+    {
+        let mut err = ValidationError::new("feedback");
+        err.message = Some(Cow::from(
+            "the `sefr` strategy needs at least two feedback elements to separate",
+        ));
+        return Err(err);
+    }
+
     Ok(())
 }
 
@@ -339,5 +351,63 @@ mod tests {
         }));
 
         assert!(query.validate().is_ok());
+    }
+
+    fn relevance_feedback_input(strategy: serde_json::Value) -> RelevanceFeedbackInput {
+        serde_json::from_value(serde_json::json!({
+            "target": [1.0, 0.0],
+            "feedback": [
+                { "example": [1.0, 0.0], "score": 1.0 },
+                { "example": [0.0, 1.0], "score": 0.0 },
+            ],
+            "strategy": strategy,
+        }))
+        .unwrap()
+    }
+
+    /// `FeedbackStrategy` is an untagged union, so each variant has to be
+    /// distinguishable by its wrapper key alone.
+    #[test]
+    fn feedback_strategy_variants_are_distinguishable() {
+        let naive = relevance_feedback_input(serde_json::json!({
+            "naive": { "a": 1.0, "b": 1.0, "c": 1.0 },
+        }));
+        assert!(matches!(naive.strategy, FeedbackStrategy::Naive(_)));
+        assert!(naive.validate().is_ok());
+
+        let sefr = relevance_feedback_input(serde_json::json!({
+            "sefr": { "threshold": 0.5, "target_weight": 0.25 },
+        }));
+        let FeedbackStrategy::Sefr(ref params) = sefr.strategy else {
+            panic!("expected the sefr strategy, got {:?}", sefr.strategy);
+        };
+        assert_eq!(params.sefr.threshold, Some(0.5));
+        assert_eq!(params.sefr.target_weight, Some(0.25));
+        assert!(sefr.validate().is_ok());
+    }
+
+    #[test]
+    fn sefr_strategy_parameters_are_optional() {
+        let sefr = relevance_feedback_input(serde_json::json!({ "sefr": {} }));
+
+        let FeedbackStrategy::Sefr(ref params) = sefr.strategy else {
+            panic!("expected the sefr strategy, got {:?}", sefr.strategy);
+        };
+        assert_eq!(params.sefr.threshold, None);
+        assert_eq!(params.sefr.target_weight, None);
+        assert!(sefr.validate().is_ok());
+    }
+
+    /// A single feedback item can never form two classes.
+    #[test]
+    fn sefr_strategy_requires_two_feedback_items() {
+        let input: RelevanceFeedbackInput = serde_json::from_value(serde_json::json!({
+            "target": [1.0, 0.0],
+            "feedback": [{ "example": [1.0, 0.0], "score": 1.0 }],
+            "strategy": { "sefr": {} },
+        }))
+        .unwrap();
+
+        assert!(input.validate().is_err());
     }
 }

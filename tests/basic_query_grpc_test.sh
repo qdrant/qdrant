@@ -155,3 +155,31 @@ fi
     }
   }
 }' $QDRANT_HOST qdrant.Points/Query
+
+# SEFR needs two feedback classes; a single item must be rejected as INVALID_ARGUMENT.
+set +e
+response=$(
+  "${docker_grpcurl[@]}" -d '{
+    "collection_name": "test_collection",
+    "query": {
+      "relevance_feedback": {
+        "target": {
+          "dense": { "data": [0.2, 0.1, 0.9, 0.7] }
+        },
+        "feedback": [
+          {
+            "example": { "dense": { "data": [0.05, 0.61, 0.76, 0.74] } },
+            "score": 1.0
+          }
+        ],
+        "strategy": { "sefr": {} }
+      }
+    },
+    "limit": 3
+  }' $QDRANT_HOST qdrant.Points/Query 2>&1
+)
+if [[ $response != *"Validation error in body"* ]] || [[ $response != *"the \`sefr\` strategy needs at least two feedback elements to separate"* ]]; then
+    echo Unexpected response, expected SEFR feedback validation error: "$response"
+    exit 1
+fi
+set -e

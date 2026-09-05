@@ -189,6 +189,10 @@ name = "numeric_index_check_values"
 harness = false
 
 [[bench]]
+name = "relevance_feedback"
+harness = false
+
+[[bench]]
 name = "sparse_index_search"
 harness = false
 
