@@ -307,7 +307,7 @@ tonic-prost-build = { version = "0.14.6" }
 tonic-reflection = "0.14.6"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
-validator = { version = "0.20.0", features = ["derive"] }
+validator = { version = "0.21.0", features = ["derive"] }
 zerocopy = { version = "0.8.50", features = ["derive"] }
 atomic_refcell = "0.1.14"
 byteorder = "1.5.0"
@@ -319,6 +319,9 @@ walkdir = "2.5.0"
 
 [patch.crates-io]
 tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.14.6-qdrant" }
+# actix-web-validator 7.0.0 still depends on validator 0.20; use upstream PR until released:
+# https://github.com/rambler-digital-solutions/actix-web-validator/pull/67
+actix-web-validator = { git = "https://github.com/AverageHelper/actix-web-validator", rev = "e81c38abb8a370ceb7f2abf1e7c29c8a1e30d539" }
 
 [[bin]]
 name = "schema_generator"
