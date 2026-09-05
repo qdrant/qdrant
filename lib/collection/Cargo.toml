@@ -41,6 +41,7 @@ fs-err = { workspace = true }
 parking_lot = { workspace = true }
 ahash = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -108,4 +109,8 @@ harness = false
 
 [[bench]]
 name = "batch_query_bench"
+harness = false
+
+[[bench]]
+name = "memory_report"
 harness = false
