@@ -42,8 +42,6 @@ mod tracing;
 
 #[derive(Serialize, JsonSchema)]
 struct AllDefinitions {
-    block_hashes_request: BlockHashesRequest,
-    block_hashes_response: BlockHashesResponse,
     a1: CollectionsResponse,
     a2: CollectionInfo,
     // a3: CollectionMetaOperations,
@@ -96,6 +94,8 @@ struct AllDefinitions {
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
     bs: QuotaStatus,
+    block_hashes_request: BlockHashesRequest,
+    block_hashes_response: BlockHashesResponse,
 }
 
 fn save_schema<T: JsonSchema>() {
