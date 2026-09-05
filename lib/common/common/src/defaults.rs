@@ -101,3 +101,25 @@ pub fn search_thread_count(max_search_threads: usize) -> usize {
 
     cpu::get_num_cpus().max(1) * CPU_OVERCOMMIT_FACTOR
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thread_count_for_hnsw() {
+        assert_eq!(thread_count_for_hnsw(0), 1);
+        assert_eq!(thread_count_for_hnsw(4), 4);
+        assert_eq!(thread_count_for_hnsw(16), 8);
+        assert_eq!(thread_count_for_hnsw(50), 12);
+        assert_eq!(thread_count_for_hnsw(128), 16);
+    }
+
+    #[test]
+    fn test_default_cpu_budget_unallocated() {
+        assert_eq!(default_cpu_budget_unallocated(2), 0);
+        assert_eq!(default_cpu_budget_unallocated(16), -1);
+        assert_eq!(default_cpu_budget_unallocated(40), -2);
+        assert_eq!(default_cpu_budget_unallocated(160), -10);
+    }
+}
