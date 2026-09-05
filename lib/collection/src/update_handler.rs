@@ -108,6 +108,17 @@ pub struct UpdateHandler {
     /// queue proxy shard.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
     pub(super) wal_keep_from: Arc<AtomicU64>,
+    /// Version (`op_num`) of the last operation the update worker finished applying.
+    ///
+    /// An operation writes to segments in several separately locked steps, so a flush pass can
+    /// capture segments that already carry the version of an operation that is only partially
+    /// applied. The flush worker reads this before flushing and never acknowledges past it in
+    /// the WAL, so an operation that is still in flight stays replayable.
+    ///
+    /// Bumped by the update worker once an operation is done, whatever its outcome, and raised
+    /// by `LocalShard::load_from_wal` past the entries it replays synchronously. Starts at zero:
+    /// nothing has been applied by this process yet.
+    pub(super) applied_version: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
@@ -175,6 +186,7 @@ impl UpdateHandler {
             runtime_handle,
             wal,
             wal_keep_from: Arc::new(u64::MAX.into()),
+            applied_version: Arc::new(AtomicU64::new(0)),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -220,6 +232,7 @@ impl UpdateHandler {
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
         let applied_seq_handler = self.applied_seq_handler.clone();
+        let applied_version = self.applied_version.clone();
 
         // Cancel the old update worker and create a new cancellation token
         self.update_worker_cancel.cancel();
@@ -239,12 +252,14 @@ impl UpdateHandler {
             self.payload_index_schema.clone(),
             optimization_finished_receiver,
             applied_seq_handler,
+            applied_version,
             cancel,
         )));
 
         let segments = self.segments.clone();
         let wal = self.wal.clone();
         let wal_keep_from = self.wal_keep_from.clone();
+        let applied_version = self.applied_version.clone();
         let clocks = self.clocks.clone();
         let flush_interval_sec = self.flush_interval_sec;
         let shard_path = self.shard_path.clone();
@@ -253,6 +268,7 @@ impl UpdateHandler {
             segments,
             wal,
             wal_keep_from,
+            applied_version,
             clocks,
             flush_interval_sec,
             flush_rx,

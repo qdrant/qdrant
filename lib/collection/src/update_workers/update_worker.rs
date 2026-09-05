@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use cancel::CancellationToken;
@@ -57,6 +58,7 @@ impl UpdateWorkers {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
+        applied_version: Arc<AtomicU64>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
         // Take thresholds from the first optimizer, like the optimization worker does.
@@ -165,6 +167,11 @@ impl UpdateWorkers {
                         )
                     })
                     .await;
+
+                    // Done applying, whatever the outcome: no segment write for `op_num` can
+                    // follow, so the flush worker may acknowledge it in the WAL from now on.
+                    // Operations pass through here strictly in order, so a plain store suffices.
+                    applied_version.store(op_num, Ordering::Release);
 
                     let res = match operation_result {
                         Ok(Ok(update_res)) => optimize_sender
@@ -403,6 +410,7 @@ impl UpdateWorkers {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use cancel::CancellationToken;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -416,6 +424,9 @@ mod tests {
     use shard::fixtures::random_segment;
     use shard::operations::OperationWithClockTag;
     use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use shard::operations::point_ops::{
+        PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+    };
     use shard::segment_holder::SegmentHolder;
     use shard::wal::SerdeWal;
     use tempfile::Builder;
@@ -423,6 +434,7 @@ mod tests {
     use wal::WalOptions;
 
     use super::*;
+    use crate::collection_manager::fixtures::build_test_holder;
     use crate::config::CollectionConfigInternal;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
@@ -521,6 +533,7 @@ mod tests {
             payload_index_schema,
             finished_receiver,
             Arc::new(AppliedSeqHandler::load_or_init(dir.path(), 0)),
+            Arc::new(AtomicU64::new(0)),
             cancel.clone(),
         ));
 
@@ -567,6 +580,78 @@ mod tests {
                 .has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
             "Moved point should not land in the full segment",
         );
+
+        cancel.cancel();
+        let _ = worker.await;
+    }
+
+    /// The worker publishes an operation as applied right after applying it, whether it
+    /// succeeded or failed, so the flush worker may acknowledge it in the WAL from then on.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_worker_publishes_applied_version() {
+        let dir = Builder::new().prefix("shard").tempdir().unwrap();
+        let segments = build_test_holder(dir.path());
+
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap());
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(dir.path(), WalOptions::default()).unwrap();
+        let wal = Arc::new(TokioMutex::new(wal));
+
+        let (update_sender, update_receiver) = mpsc::channel(8);
+        let (optimize_sender, _optimize_receiver) = mpsc::channel(8);
+        let (_finished_sender, finished_receiver) = watch::channel(());
+        let cancel = CancellationToken::new();
+        let applied_version = Arc::new(AtomicU64::new(0));
+
+        let worker = tokio::spawn(UpdateWorkers::update_worker_fn(
+            "test".to_string(),
+            update_receiver,
+            optimize_sender,
+            wal,
+            segments,
+            Arc::new(TokioRwLock::new(())),
+            UpdateTracker::default(),
+            false,
+            Arc::new(vec![]),
+            payload_index_schema,
+            finished_receiver,
+            Arc::new(AppliedSeqHandler::load_or_init(dir.path(), 0)),
+            applied_version.clone(),
+            cancel.clone(),
+        ));
+
+        let upsert = |op_num, vector| {
+            let (feedback_sender, feedback_receiver) = oneshot::channel();
+            let signal = UpdateSignal::Operation(OperationData {
+                op_num,
+                operation: Some(Box::new(CollectionUpdateOperations::PointOperation(
+                    PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
+                        PointStructPersisted {
+                            id: 100.into(),
+                            vector: VectorStructPersisted::Single(vector),
+                            payload: None,
+                        },
+                    ])),
+                ))),
+                sender: Some(feedback_sender),
+                wait_for_deferred: false,
+                hw_measurements: HwMeasurementAcc::new(),
+            });
+            (signal, feedback_receiver)
+        };
+
+        // A successful operation
+        let (signal, feedback) = upsert(10, vec![1.0, 0.0, 0.0, 0.0]);
+        update_sender.send(signal).await.unwrap();
+        feedback.await.unwrap().unwrap();
+        assert_eq!(applied_version.load(Ordering::Acquire), 10);
+
+        // A failed one (wrong vector dimension) is done applying all the same
+        let (signal, feedback) = upsert(11, vec![1.0, 0.0]);
+        update_sender.send(signal).await.unwrap();
+        assert!(feedback.await.unwrap().is_err());
+        assert_eq!(applied_version.load(Ordering::Acquire), 11);
 
         cancel.cancel();
         let _ = worker.await;
