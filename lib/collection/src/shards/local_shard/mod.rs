@@ -146,6 +146,10 @@ pub struct LocalShard {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+
+    /// Effective optimizer config, with any node-local `optimizers_overwrite` applied.
+    /// Used everywhere the override must win over the persisted collection config.
+    effective_optimizers_config: OptimizersConfig,
 }
 
 /// Shard holds information about segments and WAL.
@@ -257,6 +261,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        effective_optimizers_config: OptimizersConfig,
         optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
@@ -297,10 +302,9 @@ impl LocalShard {
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
-            config.optimizer_config.flush_interval_sec,
-            config.optimizer_config.max_optimization_threads,
-            config
-                .optimizer_config
+            effective_optimizers_config.flush_interval_sec,
+            effective_optimizers_config.max_optimization_threads,
+            effective_optimizers_config
                 .prevent_unoptimized
                 .unwrap_or_default(),
             clocks.clone(),
@@ -351,6 +355,7 @@ impl LocalShard {
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
+            effective_optimizers_config,
         }
     }
 
@@ -536,6 +541,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            effective_optimizers_config,
             optimizer_resource_budget,
             shard_path,
             clocks,
@@ -703,6 +709,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            effective_optimizers_config,
             optimizer_resource_budget,
             shard_path,
             LocalShardClocks::default(),
@@ -755,10 +762,7 @@ impl LocalShard {
         // (the pre-`applied_seq` behavior) keeps the shard unavailable until every acknowledged
         // operation is applied, which is what every read path assumes.
         let prevent_unoptimized = self
-            .collection_config
-            .read()
-            .await
-            .optimizer_config
+            .effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or_default();
         let op_num_upper_bound = if prevent_unoptimized {
@@ -1146,10 +1150,7 @@ impl LocalShard {
 
     pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
         let prevent_unoptimized = self
-            .collection_config
-            .read()
-            .await
-            .optimizer_config
+            .effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or(false);
 
